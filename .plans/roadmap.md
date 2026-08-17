@@ -63,9 +63,9 @@ archive and put only the residue here.
 
 ### Analytics
 
-| Track                    | Remaining                                                                                                           | Plan                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Usage analytics redesign | Spec and plan written, not executed. Replaces the never-shipped opt-in ping with an opt-out subsystem over Postgres | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+| Track                    | Remaining                                                                                                                                  | Plan                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Usage analytics redesign | Explicit opt-in implementation is complete; verified Neon/Vercel deployment, secret/firewall/cost controls, and live endpoint smoke remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
 
 ### Structure
 
@@ -82,22 +82,22 @@ archive and put only the residue here.
 Numbered plans from an external audit. They keep their original numbers because
 the K-reconciliation below and the commit history both cite them by id.
 
-| Plan                                                | Remaining work                                              | Status                                              |
-| --------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------- |
-| [006](./006-startup-defer-network-and-providers.md) | Startup provider loading residue                            | BLOCKED (engine registry is intentionally fixed)    |
-| [008](./008-tui-timer-and-poster-perf.md)           | Download-alert root coupling                                | BLOCKED (other timer/poster slices landed)          |
-| [010](./010-characterization-tests-for-giants.md)   | Characterization net for private `AppRoot`                  | BLOCKED (needs a full-container harness)            |
-| [011](./011-split-shell-workflows.md)               | Split `shell-workflows.ts`                                  | BLOCKED by 010                                      |
-| [012](./012-decompose-playback-phase.md)            | Extract `PlaybackPhase` transition core                     | BLOCKED by 010                                      |
-| [013](./013-split-ink-shell-host-surface.md)        | Split Ink host/surface/overlay winner                       | BLOCKED by 010                                      |
-| [014](./014-enforce-layering-boundaries.md)         | Retire remaining baselined layer inversions                 | BLOCKED (boundary ratchet is active)                |
-| [015](./015-retire-legacy-flat-modules.md)          | Retire legacy flat root modules                             | BLOCKED by 011 and 012                              |
-| [021](./021-provider-contract-enforcement.md)       | Enforce or remove unread provider/relay contracts           | PARTIAL; K-04/K-08 are the release slice            |
-| [022](./022-shell-interaction-coherence.md)         | Destructive confirms, filter capture, errors, Esc semantics | PARTIAL; 022.1 landed                               |
-| [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                         | TODO; narrow misleading global `--dry-run` for K-16 |
-| [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                            | TODO after release behavior settles                 |
-| [032](./032-sync-identity-and-capability-truth.md)  | Sync identity and capability truth                          | TODO; execute after the reliability train           |
-| [043](./043-history-key-migration-transaction.md)   | Transactional legacy history-key migration                  | TODO; independent data-migration PR                 |
+| Plan                                                | Remaining work                                                            | Status                                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------- |
+| [006](./006-startup-defer-network-and-providers.md) | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)    |
+| [008](./008-tui-timer-and-poster-perf.md)           | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)          |
+| [010](./010-characterization-tests-for-giants.md)   | Characterization net for private `AppRoot`                                | BLOCKED (needs a full-container harness)            |
+| [011](./011-split-shell-workflows.md)               | Split `shell-workflows.ts`                                                | BLOCKED by 010                                      |
+| [012](./012-decompose-playback-phase.md)            | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                      |
+| [013](./013-split-ink-shell-host-surface.md)        | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                      |
+| [014](./014-enforce-layering-boundaries.md)         | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)                |
+| [015](./015-retire-legacy-flat-modules.md)          | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                              |
+| [021](./021-provider-contract-enforcement.md)       | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 are the release slice            |
+| [022](./022-shell-interaction-coherence.md)         | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                               |
+| [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                                       | TODO; narrow misleading global `--dry-run` for K-16 |
+| [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles                 |
+| [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete   |
+| [043](./043-history-key-migration-transaction.md)   | Transactional legacy history-key migration                                | TODO; independent data-migration PR                 |
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
@@ -138,8 +138,9 @@ Count: **14 fixed, 3 open** (K-04, K-08, K-16).
    and plan 023 K-16 narrowing together only if the diff stays reviewable.
    Keep separate commits so any provider change can be reverted alone.
 3. Execute plan 043 as its own migration PR.
-4. Rebase and re-audit the existing `fix/tracker-sync-correctness` worktree,
-   then execute plan 032. Do not merge that stale branch as-is.
+4. The rebased tracker-sync implementation and plan 032's deterministic work
+   are complete. Keep sync experimental until the disposable-account live smoke
+   proves the production container → SQLite outbox → restart → remote mutation path.
 5. Run the deterministic release gate, provider signoff, real mpv playback,
    and poster-protocol smokes. Only then merge version PR #31.
 

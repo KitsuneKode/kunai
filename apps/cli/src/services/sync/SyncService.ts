@@ -91,6 +91,9 @@ export interface SyncServiceDeps {
   readonly outbox: SyncOutboxRepository;
   readonly config: SyncConfigPort;
   readonly diagnostics?: Pick<DiagnosticsService, "record">;
+  /** Injectable only so due-time and shutdown behavior are deterministic in tests. */
+  readonly scheduleWake?: (task: () => void, delayMs: number) => () => void;
+  readonly now?: () => Date;
 }
 
 const DRAIN_BATCH_LIMIT = 25;
@@ -205,8 +208,14 @@ export class SyncService {
   private readonly outbox: SyncOutboxRepository;
   private readonly config: SyncConfigPort;
   private readonly diagnostics?: Pick<DiagnosticsService, "record">;
+  private readonly scheduleWake: (task: () => void, delayMs: number) => () => void;
+  private readonly now: () => Date;
   private readonly shutdownController = new AbortController();
   private activeDrain: Promise<SyncPushSummary> | null = null;
+  private continuationScheduled = false;
+  private deliveryRequestedWhileActive = false;
+  private retryWakeCancel?: () => void;
+  private retryWakeAt?: number;
   private accepting = true;
   private lastPushFailed = false;
 
@@ -215,6 +224,14 @@ export class SyncService {
     this.outbox = deps.outbox;
     this.config = deps.config;
     this.diagnostics = deps.diagnostics;
+    this.now = deps.now ?? (() => new Date());
+    this.scheduleWake =
+      deps.scheduleWake ??
+      ((task, delayMs) => {
+        const timer = setTimeout(task, delayMs);
+        timer.unref();
+        return () => clearTimeout(timer);
+      });
   }
 
   get adapters(): readonly SyncAdapter[] {
@@ -428,7 +445,10 @@ export class SyncService {
     for (const entry of buildProgressUpdates(entries)) {
       enqueued += await this.enqueueProgressIfEnabled(entry);
     }
-    if (this.activeDrain) return { status: "already-running", enqueued };
+    if (this.activeDrain) {
+      this.deliverSoon();
+      return { status: "already-running", enqueued };
+    }
     return { status: "completed", enqueued, summary: await this.drain() };
   }
 
@@ -447,13 +467,32 @@ export class SyncService {
    * transition and remain queued for retry.
    */
   deliverSoon(): void {
-    void this.drain().catch((error) => {
-      this.diagnostics?.record({
-        category: "sync",
-        message: "Deferred tracker-sync drain failed before completing",
-        context: { error: error instanceof Error ? error.name : "unknown" },
+    if (this.activeDrain) this.deliveryRequestedWhileActive = true;
+    void this.drain()
+      .then((summary) => {
+        const requestedWhileActive = this.deliveryRequestedWhileActive;
+        this.deliveryRequestedWhileActive = false;
+        if (
+          (requestedWhileActive || summary.claimed >= DRAIN_MAX_OPERATIONS) &&
+          summary.pending > 0 &&
+          !this.continuationScheduled &&
+          !this.shutdownController.signal.aborted
+        ) {
+          this.continuationScheduled = true;
+          setTimeout(() => {
+            this.continuationScheduled = false;
+            if (!this.shutdownController.signal.aborted) this.deliverSoon();
+          }, 0);
+        }
+        return undefined;
+      })
+      .catch((error) => {
+        this.diagnostics?.record({
+          category: "sync",
+          message: "Deferred tracker-sync drain failed before completing",
+          context: { error: error instanceof Error ? error.name : "unknown" },
+        });
       });
-    });
   }
 
   /**
@@ -462,9 +501,14 @@ export class SyncService {
    */
   async drain(limit = 25, options?: SyncMutationOptions): Promise<SyncPushSummary> {
     if (this.activeDrain) return this.activeDrain;
-    const run = this.drainBatches(Math.min(limit, DRAIN_BATCH_LIMIT), options).finally(() => {
-      if (this.activeDrain === run) this.activeDrain = null;
-    });
+    const run = this.drainBatches(Math.min(limit, DRAIN_BATCH_LIMIT), options)
+      .then((summary) => {
+        this.scheduleNextPendingAttempt();
+        return summary;
+      })
+      .finally(() => {
+        if (this.activeDrain === run) this.activeDrain = null;
+      });
     this.activeDrain = run;
     return run;
   }
@@ -488,9 +532,12 @@ export class SyncService {
     // Checked before claiming, not per row: a paused queue should not churn
     // leases it has no intention of using.
     const pause = resolvePauseState((await this.config.read()).sync.pausedUntil);
-    if (pause.paused) return emptySummary(this.outbox.counts().pending);
+    if (pause.paused) {
+      this.scheduleRetryWake(pause.until.getTime());
+      return emptySummary(this.outbox.counts().pending);
+    }
 
-    const claims = this.outbox.claimDue(limit);
+    const claims = this.outbox.claimDue(limit, this.now());
     if (claims.length === 0) return emptySummary(this.outbox.counts().pending);
 
     const tally = {
@@ -528,7 +575,7 @@ export class SyncService {
       else tally[result.bucket] += 1;
       if (result.failure) failures.push(result.failure);
       if (result.retryAfterMs !== undefined) {
-        backOffUntil.set(claim.trackerId, new Date(Date.now() + result.retryAfterMs));
+        backOffUntil.set(claim.trackerId, new Date(this.now().getTime() + result.retryAfterMs));
       }
     }
 
@@ -594,8 +641,9 @@ export class SyncService {
       // another eligible tracker forever.
       this.outbox.hold({
         item: claim,
-        notBefore: new Date(Date.now() + DISABLED_RECHECK_MS),
+        notBefore: new Date(this.now().getTime() + DISABLED_RECHECK_MS),
         errorCode: "disabled-by-config",
+        now: this.now(),
       });
       return { transition: "applied", bucket: "released" };
     }
@@ -656,13 +704,14 @@ export class SyncService {
       case "cancelled":
         // Cancellation is not failure: the claim goes back untouched so an
         // orderly shutdown cannot walk a row toward dead-letter.
-        return { transition: this.outbox.release(claim), bucket: "released" };
+        return { transition: this.outbox.release(claim, this.now()), bucket: "released" };
       case "rate-limited":
         return {
           transition: this.outbox.defer({
             item: claim,
-            notBefore: new Date(Date.now() + outcome.retryAfterMs),
+            notBefore: new Date(this.now().getTime() + outcome.retryAfterMs),
             errorCode: "rate-limited",
+            now: this.now(),
           }),
           bucket: "deferred",
           retryAfterMs: outcome.retryAfterMs,
@@ -683,6 +732,7 @@ export class SyncService {
             transition: this.outbox.retry({
               item: claim,
               errorCode: outcome.code,
+              now: this.now(),
               ...(outcome.detail ? { errorDetail: outcome.detail } : {}),
             }),
             bucket: "retrying",
@@ -721,6 +771,37 @@ export class SyncService {
     return this.outbox.resetNeedsReauth(trackerId);
   }
 
+  private scheduleNextPendingAttempt(): void {
+    const nextAttemptAt = this.outbox.nextPendingAttemptAt();
+    if (!nextAttemptAt) {
+      this.clearRetryWake();
+      return;
+    }
+    const wakeAt = Date.parse(nextAttemptAt);
+    if (Number.isFinite(wakeAt)) this.scheduleRetryWake(wakeAt);
+  }
+
+  private scheduleRetryWake(wakeAt: number): void {
+    if (this.shutdownController.signal.aborted) return;
+    if (this.retryWakeAt !== undefined && this.retryWakeAt <= wakeAt) return;
+    this.clearRetryWake();
+    this.retryWakeAt = wakeAt;
+    this.retryWakeCancel = this.scheduleWake(
+      () => {
+        this.retryWakeAt = undefined;
+        this.retryWakeCancel = undefined;
+        if (!this.shutdownController.signal.aborted) this.deliverSoon();
+      },
+      Math.max(1, wakeAt - this.now().getTime()),
+    );
+  }
+
+  private clearRetryWake(): void {
+    this.retryWakeCancel?.();
+    this.retryWakeCancel = undefined;
+    this.retryWakeAt = undefined;
+  }
+
   stopAccepting(): void {
     this.accepting = false;
   }
@@ -733,6 +814,7 @@ export class SyncService {
   async shutdown(): Promise<void> {
     this.stopAccepting();
     this.shutdownController.abort(SYNC_SHUTDOWN_REASON);
+    this.clearRetryWake();
     try {
       await this.activeDrain;
     } catch {

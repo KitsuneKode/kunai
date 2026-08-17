@@ -21,6 +21,7 @@ export interface ListItem {
   readonly listId: string;
   readonly titleId: string;
   readonly mediaKind: string;
+  readonly contentType?: "movie" | "series";
   readonly title: string;
   readonly season?: number;
   readonly episode?: number;
@@ -34,6 +35,7 @@ export interface ListItemInput {
   readonly listId: string;
   readonly titleId: string;
   readonly mediaKind: string;
+  readonly contentType?: "movie" | "series";
   readonly title: string;
   readonly season?: number;
   readonly episode?: number;
@@ -57,6 +59,7 @@ interface ListItemRow {
   readonly list_id: string;
   readonly title_id: string;
   readonly media_kind: string;
+  readonly content_type: string | null;
   readonly title: string;
   readonly season: number | null;
   readonly episode: number | null;
@@ -85,6 +88,8 @@ function mapListItemRow(row: ListItemRow): ListItem {
     listId: row.list_id,
     titleId: row.title_id,
     mediaKind: row.media_kind,
+    contentType:
+      row.content_type === "movie" || row.content_type === "series" ? row.content_type : undefined,
     title: row.title,
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
@@ -197,10 +202,11 @@ export class ListRepository {
 
     this.db
       .query(
-        `INSERT INTO list_items (id, list_id, title_id, media_kind, title, season, episode, notes, external_ids_json, added_at, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO list_items (id, list_id, title_id, media_kind, content_type, title, season, episode, notes, external_ids_json, added_at, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(list_id, title_id) DO UPDATE SET
            media_kind = excluded.media_kind,
+           content_type = excluded.content_type,
            title = excluded.title,
            season = excluded.season,
            episode = excluded.episode,
@@ -212,6 +218,7 @@ export class ListRepository {
         input.listId,
         input.titleId,
         input.mediaKind,
+        input.contentType ?? null,
         input.title,
         input.season ?? null,
         input.episode ?? null,

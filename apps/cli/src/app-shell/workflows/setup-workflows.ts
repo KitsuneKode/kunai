@@ -65,11 +65,10 @@ export async function runSetupWizard({
   const { outcome, prefs } = await result;
   // One writer: the service owns what a consent choice means in config, and
   // `consentPatch` is pure so it folds into the single batched update below.
-  // Aborting the wizard is not disclosure, so a skip stays off.
+  // Aborting a rerun is not a consent choice. Preserve whatever the user had
+  // already chosen; only completing the analytics slide may change it.
   const analyticsPatch =
-    outcome === "skipped"
-      ? container.usageAnalytics.consentPatch("disabled")
-      : container.usageAnalytics.consentPatch(prefs.analyticsChoice);
+    outcome === "skipped" ? {} : container.usageAnalytics.consentPatch(prefs.analyticsChoice);
 
   if (outcome === "skipped") {
     await container.config.update({
@@ -115,7 +114,11 @@ export async function runSetupWizard({
   container.diagnosticsService.record({
     category: "session",
     message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
-    context: { outcome, force, analytics: analyticsPatch.analytics },
+    context: {
+      outcome,
+      force,
+      analytics: outcome === "skipped" ? current.analytics : analyticsPatch.analytics,
+    },
   });
 
   return outcome === "completed" ? "completed" : "skipped";

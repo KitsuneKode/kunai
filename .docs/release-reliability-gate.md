@@ -104,6 +104,41 @@ Before changing the default resolve hedge delay, aggregate actual
 current delay values are reasoned defaults; a single local run is not evidence
 for global calibration.
 
+## Tracker Sync Promotion Gate
+
+Tracker sync may ship as fail-closed experimental code, but must not be called
+release-ready or exposed as a stable feature until this disposable-account gate passes:
+
+```sh
+KUNAI_LIVE_SYNC=1 \
+KUNAI_LIVE_SYNC_ANILIST_MEDIA_ID=<disposable-media-id> \
+bun run test:live:tracker-sync
+```
+
+Expected evidence: OAuth returns the matching attempt state; the production
+container persists one desired-state mutation in `sync_outbox`; disposal and a
+fresh container preserve it; the restarted service drains it; remote read-back
+confirms the state; cleanup restores the disposable title and removes test
+activity. The isolated profile must be removed at exit. This check is never run
+with a maintainer's real library.
+
+## Analytics Deployment Gate
+
+Analytics may ship with an empty endpoint and explicit opt-in because that
+configuration sends nothing. Before deploying or configuring a public endpoint:
+
+```sh
+TEST_DATABASE_URL=<isolated-neon-url> bun run --cwd apps/analytics-ingest test
+DATABASE_URL=<isolated-neon-url> bun run --cwd apps/analytics-ingest migrate
+```
+
+Expected evidence: all three Postgres integration cases run instead of skip;
+the production stable-hash secret is configured; Vercel/Neon secrets, firewall,
+retention, cron freshness, and cost limits are verified; a live opt-in ping is
+stored once, appears only as bounded aggregate data, and disabling analytics in
+Settings stops later sends. These checks block endpoint deployment, not a code
+release whose endpoint remains empty.
+
 ## Discord Presence Gate
 
 Run this only when Discord Rich Presence behavior changed:

@@ -274,11 +274,10 @@ export class AniListAdapter implements SyncAdapter {
   /**
    * Run the implicit grant against the registered callback.
    *
-   * The authorization URL carries `client_id` and `response_type` and nothing
-   * else, because that is empirically the only shape AniList accepts: adding
-   * `redirect_uri` or `state` makes it answer `unsupported_grant_type`. It uses
-   * the callback registered on the application, which is why that URI is fixed
-   * configuration rather than something Kunai can choose at runtime.
+   * The authorization URL carries a fresh `state` value that the loopback
+   * collector requires before it will read the token. The callback registered
+   * on the application is fixed configuration rather than something Kunai can
+   * choose at runtime.
    *
    * No client secret is involved. The token comes back in the redirect
    * fragment, so there is no token endpoint to authenticate against and Kunai
@@ -297,13 +296,12 @@ export class AniListAdapter implements SyncAdapter {
       return { ok: false, error: aniListAuthMessage("client-id-invalid") };
     }
 
+    const state = crypto.randomUUID();
     let callback: LoopbackServer;
     try {
       callback = startLoopbackServer({
         redirectUri: availability.redirectUri,
-        // AniList echoes no nonce back on this grant, so there is none to
-        // compare. The listener is single-use and torn down either way.
-        expectedState: "",
+        expectedState: state,
         signal,
         timeoutMs: OAUTH_TIMEOUT_MS,
         serviceName: "AniList",
@@ -320,7 +318,7 @@ export class AniListAdapter implements SyncAdapter {
     try {
       const authorizeUrl =
         `${OAUTH_BASE}/authorize?client_id=${encodeURIComponent(clientId)}` +
-        `&response_type=token`;
+        `&response_type=token&state=${encodeURIComponent(state)}`;
       onPrompt?.("Approve Kunai in your browser to finish connecting AniList.");
       void openExternalUrl(authorizeUrl);
 

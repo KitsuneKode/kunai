@@ -659,6 +659,17 @@ export const dataMigrations: readonly Migration[] = [
         ON sync_reconciliation(next_attempt_at ASC, created_at ASC);
     `,
   },
+  {
+    id: "034_data_playlist_identity",
+    database: "data",
+    sql: `
+      ALTER TABLE playlist_queue ADD COLUMN content_type TEXT;
+      ALTER TABLE playlist_queue ADD COLUMN external_ids_json TEXT;
+      ALTER TABLE user_playlist_items ADD COLUMN content_type TEXT;
+      ALTER TABLE user_playlist_items ADD COLUMN external_ids_json TEXT;
+      ALTER TABLE list_items ADD COLUMN content_type TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

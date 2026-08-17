@@ -325,7 +325,7 @@ test("service shutdown during post-identity admission retains for a fresh servic
   expect(result).toEqual({ processed: 0, queued: 0, retained: 1 });
   expect(outbox.counts().pending).toBe(0);
   const retained = reconciliation.listPending()[0];
-  expect(retained).toMatchObject({ attempts: 1 });
+  expect(retained).toMatchObject({ attempts: 0 });
 
   const freshSync = new SyncService({
     adapters: [adapter],
@@ -394,7 +394,54 @@ test("service shutdown promptly cancels in-flight reconciliation enrichment", as
   expect(enrichmentSignal?.aborted).toBe(true);
   expect(result).toEqual({ processed: 0, queued: 0, retained: 1 });
   expect(state.outbox.counts().pending).toBe(0);
-  expect(state.reconciliation.listPending()).toMatchObject([{ attempts: 1 }]);
+  expect(state.reconciliation.listPending()).toMatchObject([{ attempts: 0 }]);
+});
+
+test("shutdown can close SQLite while ignored enrichment settles without a late repository access", async () => {
+  const state = fixture();
+  state.lists.addItem({
+    listId: "favorites",
+    titleId: "anidb:native-title",
+    mediaKind: "anime",
+    title: "Example",
+    externalIds: { malId: "21", providerNativeIds: { anidb: "native-title-123" } },
+  });
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let releaseEnrichment!: () => void;
+  const enrichment = new Promise<{
+    externalIds: { anilistId: string };
+    graph: { anilistId: string; confidence: "high"; source: "arm" };
+  }>((resolve) => {
+    releaseEnrichment = () =>
+      resolve({
+        externalIds: { anilistId: "123" },
+        graph: { anilistId: "123", confidence: "high", source: "arm" },
+      });
+  });
+  const run = reconcileSyncMutations(
+    {
+      syncReconciliationRepository: state.reconciliation,
+      historyRepository: state.history,
+      syncService: state.sync,
+      catalogIdentityService: {
+        enrich: async () => {
+          markStarted();
+          return enrichment;
+        },
+      },
+    },
+    { scheduleContinuation: () => {} },
+  );
+
+  await started;
+  await state.sync.shutdown();
+  state.db.close();
+  releaseEnrichment();
+
+  await expect(run).resolves.toEqual({ processed: 0, queued: 0, retained: 1 });
 });
 
 test("a hard-kill fact is replayed into the outbox after the database reopens", async () => {
@@ -1031,4 +1078,41 @@ test("caller abort during identity lookup retains the fact with a bounded diagno
     message: "Local sync reconciliation retained for retry",
     context: { kind: "list", reason: "caller-aborted" },
   });
+});
+
+test("a captured continuation is inert after service shutdown and database disposal", async () => {
+  const state = fixture();
+  for (const id of ["1", "2"]) {
+    state.lists.addItem({
+      listId: "favorites",
+      titleId: `anilist:${id}`,
+      mediaKind: "anime",
+      title: `Example ${id}`,
+      externalIds: { anilistId: id },
+    });
+  }
+  let continuation: (() => Promise<void>) | undefined;
+  await reconcileSyncMutations(
+    {
+      syncReconciliationRepository: state.reconciliation,
+      historyRepository: state.history,
+      syncService: state.sync,
+      catalogIdentityService: {
+        enrich: async () => {
+          throw new Error("unexpected enrichment");
+        },
+      },
+    },
+    {
+      maxRows: 1,
+      scheduleContinuation: (task) => {
+        continuation = task;
+      },
+    },
+  );
+
+  expect(continuation).toBeDefined();
+  await state.sync.shutdown();
+  state.db.close();
+  await expect(continuation!()).resolves.toBeUndefined();
 });

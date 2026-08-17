@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { createServer } from "node:net";
 
+import * as externalUrl from "@/infra/shell/open-external-url";
 import type { SyncTokenStore } from "@/services/persistence/SyncTokenStore";
 import { AniListAdapter } from "@/services/sync/AniListAdapter";
 import type { TrackerOperation } from "@/services/sync/operations";
@@ -82,6 +84,64 @@ async function connectedAdapter(fetchImpl: ConstructorParameters<typeof AniListA
 }
 
 const signal = () => ({ signal: new AbortController().signal });
+
+async function reserveLoopbackPort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", resolve);
+  });
+  const address = probe.address();
+  const port = typeof address === "object" && address ? address.port : undefined;
+  await new Promise<void>((resolve, reject) => {
+    probe.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+  if (!port) throw new Error("Could not reserve AniList callback port");
+  return port;
+}
+
+test("AniList Connect sends a non-empty attempt state to the browser", async () => {
+  const port = await reserveLoopbackPort();
+  const controller = new AbortController();
+  const opened: string[] = [];
+  const open = spyOn(externalUrl, "openExternalUrl").mockImplementation(async (url) => {
+    opened.push(url);
+    return { ok: false, reason: "disabled", target: { kind: "url", url } };
+  });
+  const adapter = new AniListAdapter(
+    { load: async () => ({}) } as unknown as SyncTokenStore,
+    async () => new Response("{}"),
+    {
+      availability: {
+        available: true,
+        redirectUri: `http://127.0.0.1:${port}/callback`,
+        clientIdSource: "environment",
+      },
+      clientId: "48500",
+    },
+  );
+  const pending = adapter.connect({ signal: controller.signal });
+
+  try {
+    for (let attempt = 0; attempt < 50 && opened.length === 0; attempt += 1) {
+      await Bun.sleep(5);
+    }
+    expect(opened).toHaveLength(1);
+    expect(new URL(opened[0]!).searchParams.get("state")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+  } finally {
+    controller.abort();
+    await pending;
+    open.mockRestore();
+  }
+});
 
 describe("AniListAdapter.apply", () => {
   test("sends the cour-relative progress and desired status", async () => {

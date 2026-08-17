@@ -9,9 +9,9 @@ does not claim to do.
 
 **Status: experimental.** The dedicated commands select the named tracker (and
 disconnect only a connected tracker), but tracker sync remains withheld from a
-release claim until a disposable-account smoke has exercised the CLI, SQLite
-outbox, restart recovery, and one remote mutation end to end. Do not describe
-it as release-ready before that gate passes.
+release claim until a disposable-account smoke has exercised the production
+container, SQLite outbox, restart recovery, and one remote mutation end to end.
+Do not describe it as release-ready before that gate passes.
 
 ## Why the machinery exists
 
@@ -80,7 +80,7 @@ resolves to nothing rather than being guessed at.
 ## Delivery
 
 `SyncService` owns a SQLite outbox in the data DB (`sync_outbox`, data migration
-`027`). Callers enqueue and return; nothing waits on a remote call.
+`029`). Callers enqueue and return; nothing waits on a remote call.
 
 - **Claim ownership.** Each row has a monotonic `generation` and, while in
   flight, a unique `claim_token`. Every terminal transition is guarded on
@@ -96,6 +96,10 @@ resolves to nothing rather than being guessed at.
   that batch's summary, because its rows were enqueued after the batch was
   claimed. It walks batches beyond the first 25 up to a fixed operation budget;
   disabled rows are held briefly so they cannot repeatedly occupy every claim.
+- **Self-waking retries.** A request arriving during an active drain latches a
+  continuation, hitting the operation budget schedules another bounded drain,
+  and future retry/rate-limit timestamps schedule the earliest durable wake.
+  Shutdown cancels that timer before SQLite closes.
 - **Live config.** The gate is re-read immediately before every external
   mutation, so disabling a tracker stops the very next write. Queued work is
   released untouched — not delivered, not discarded, and attempts unchanged.
@@ -114,12 +118,15 @@ interpreting the environment.
 loopback callback registered against it, so connecting is one approval in a
 browser.
 
-The flow is the **implicit grant**: `authorize?client_id=…&response_type=token`
-and nothing else. That exact shape matters — adding `redirect_uri` or `state`
-makes AniList answer `unsupported_grant_type`. The token comes back in the
-redirect fragment, so there is no token endpoint to authenticate against and
-Kunai ships no client secret. A client id is not a secret; it travels in every
-authorization URL the user's browser visits.
+The flow is the **implicit grant**: `authorize?client_id=…&response_type=token`.
+Kunai also sends a cryptographically random `state` and requires the callback
+to return the exact value before accepting a token. AniList's public implicit
+grant guide does not document `state`; the authorize endpoint preserves it
+through the login redirect, but callback echo remains part of the disposable
+account live gate. The token comes back in the redirect fragment, so there is
+no token endpoint to authenticate against and Kunai ships no client secret. A
+client id is not a secret; it travels in every authorization URL the user's
+browser visits.
 
 Because the fragment is never sent to a server, the callback serves a bridge
 page that reads `location.hash` and hands it back over same-origin loopback,
@@ -131,9 +138,9 @@ request:
 
 - The loopback port is fixed. A busy port is a dead end, reported as one —
   another port cannot match the registration.
-- There is no `state` nonce to compare, since sending one breaks the request.
-  The listener is single-use, bound for one attempt, and torn down immediately;
-  a _wrong_ state is still refused, an absent one is expected.
+- The listener is single-use, bound for one attempt, and torn down immediately.
+  Missing or wrong state is refused, preventing a different browser attempt
+  from substituting its token into the pending connection.
 
 The refresh token AniList would return on the code grant does not exist here.
 Access tokens last a year.

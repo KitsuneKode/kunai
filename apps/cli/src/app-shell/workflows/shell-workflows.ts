@@ -1910,6 +1910,7 @@ async function handleBookmark(container: Container): Promise<"handled"> {
   const result = container.listService.toggleWatchlist({
     titleId: title.id,
     mediaKind: resolveCurrentMediaKind(state),
+    contentType: title.type,
     title: title.name,
     season: episode?.season,
     episode: episode?.episode,
@@ -1920,6 +1921,7 @@ async function handleBookmark(container: Container): Promise<"handled"> {
     {
       titleId: title.id,
       mediaKind: resolveCurrentMediaKind(state),
+      contentType: title.type,
       title: title.name,
       season: episode?.season,
       episode: episode?.episode,
@@ -2149,8 +2151,9 @@ async function handleMarkUpToEpisode(container: Container): Promise<"handled"> {
 
 function resolveCurrentMediaKind(state: SessionState): MediaKind {
   const title = state.currentTitle;
-  if (title?.type === "movie") return "movie";
-  return state.mode === "anime" || title?.isAnime === true ? "anime" : "series";
+  if (state.mode === "anime" || title?.isAnime === true) return "anime";
+  if (state.mode === "youtube") return "video";
+  return title?.type === "movie" ? "movie" : "series";
 }
 
 /** Open a kunai:// share link from the clipboard. */
@@ -2759,6 +2762,8 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
         container.durablePlaylistService.addItem(playlist.id, {
           titleId: item.titleId,
           mediaKind: item.mediaKind,
+          contentType: item.contentType,
+          externalIds: item.externalIds,
           title: item.title,
           season: item.season,
           episode: item.episode,
@@ -3027,14 +3032,18 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
     return "handled";
   }
 
-  queueService.enqueue({
-    title: title.name,
-    mediaKind: state.mode === "anime" ? "anime" : "series",
-    titleId: title.id,
-    season: state.currentEpisode?.season,
-    episode: state.currentEpisode?.episode,
-    source: "manual",
-  });
+  queueService.enqueueMediaItem(
+    {
+      title: title.name,
+      mediaKind: resolveCurrentMediaKind(state),
+      contentType: title.type,
+      externalIds: title.externalIds,
+      titleId: title.id,
+      season: state.currentEpisode?.season,
+      episode: state.currentEpisode?.episode,
+    },
+    { placement: "end", source: "manual" },
+  );
 
   stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",

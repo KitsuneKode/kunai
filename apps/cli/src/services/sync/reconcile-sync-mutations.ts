@@ -60,6 +60,7 @@ export async function reconcileSyncMutations(
   const signal = options.signal
     ? AbortSignal.any([deps.syncService.lifetimeSignal, options.signal])
     : deps.syncService.lifetimeSignal;
+  if (signal.aborted) return { processed: 0, queued: 0, retained: 0 };
   const startedAt = now();
   const snapshot = deps.syncReconciliationRepository.listDue(wallNow(), maxRows + 1);
   const records = snapshot.slice(0, maxRows);
@@ -80,6 +81,12 @@ export async function reconcileSyncMutations(
       // reread the same durable fact so callers never need another keypress.
       for (let generationAttempt = 0; current && generationAttempt < 8; generationAttempt += 1) {
         const projection = await projectRecord(deps, current, signal);
+        if (signal.aborted) {
+          retained += 1;
+          recordAbortedReconciliation(deps, current);
+          current = undefined;
+          break;
+        }
         if (projection.status === "retained") {
           if (deps.syncReconciliationRepository.defer(current, wallNow())) {
             retained += 1;
@@ -111,6 +118,11 @@ export async function reconcileSyncMutations(
       }
       if (current) needsContinuation = true;
     } catch (error) {
+      if (signal.aborted) {
+        retained += 1;
+        recordAbortedReconciliation(deps, current ?? record);
+        break;
+      }
       retained += 1;
       if (current && !deps.syncReconciliationRepository.defer(current, wallNow())) {
         needsContinuation = true;
@@ -165,6 +177,17 @@ export async function reconcileSyncMutations(
     }, continuationDelayMs);
   }
   return { processed, queued, retained };
+}
+
+function recordAbortedReconciliation(
+  deps: SyncReconciliationDeps,
+  record: SyncReconciliationRecord,
+): void {
+  deps.diagnosticsService?.record({
+    category: "sync",
+    message: "Local sync reconciliation retained for retry",
+    context: { kind: record.kind, reason: "caller-aborted" },
+  });
 }
 
 function boundedInteger(

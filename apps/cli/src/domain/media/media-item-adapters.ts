@@ -85,14 +85,16 @@ export function titleInfoFromQueueEntry(
       : sourceOrIntent;
   return {
     id: entry.titleId,
-    type: entry.mediaKind === "movie" ? "movie" : "series",
+    type: entry.contentType ?? (entry.mediaKind === "movie" ? "movie" : "series"),
     name: entry.title,
+    ...(entry.mediaKind === "anime" ? { isAnime: true } : {}),
+    ...(entry.externalIds ? { externalIds: entry.externalIds } : {}),
     queuePlaybackIntent,
   };
 }
 
 export function episodeInfoFromQueueEntry(entry: QueueEntry): EpisodeInfo | undefined {
-  if (entry.mediaKind === "movie") return undefined;
+  if (entry.mediaKind === "movie" || entry.contentType === "movie") return undefined;
   if (
     entry.season === undefined &&
     entry.episode === undefined &&

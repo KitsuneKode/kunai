@@ -101,18 +101,9 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
         return bridgeAck();
       }
 
-      /**
-       * State is compared before the token is read at all.
-       *
-       * An absent one is accepted: AniList's implicit grant rejects the request
-       * outright when `state` is sent — it answers `unsupported_grant_type` —
-       * so there is no nonce to echo, and requiring one would make the only
-       * working flow unusable. The bridge is same-origin on a listener bound
-       * for a single attempt and torn down immediately after, so there is no
-       * third party in position to forge one. A *wrong* state is still refused.
-       */
+      /** State binds this browser response to the one attempt that opened it. */
       const returnedState = params.get("state");
-      if (returnedState !== null && returnedState !== options.expectedState) {
+      if (returnedState !== options.expectedState) {
         settle({ ok: false, reason: "state-mismatch" });
         return bridgeAck();
       }

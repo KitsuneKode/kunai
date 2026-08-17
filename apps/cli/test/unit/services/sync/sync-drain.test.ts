@@ -127,6 +127,104 @@ function historyProgress(episode: number, updatedAt: string): HistoryProgress {
 }
 
 describe("SyncService drain", () => {
+  test("a direct startup drain schedules continuation beyond its operation budget", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    for (let id = 1; id <= 103; id += 1) {
+      seedOperation(repo, {
+        version: 1,
+        kind: "favorite-membership:set",
+        target: { tracker: "anilist", anilistId: id, mediaKind: "anime" },
+        present: true,
+      });
+    }
+
+    const first = await service.drain(25);
+    expect(first.claimed).toBe(100);
+    for (let attempt = 0; attempt < 100 && repo.counts().pending > 0; attempt += 1) {
+      await Bun.sleep(10);
+    }
+
+    expect(anilist.calls).toHaveLength(103);
+    expect(repo.counts().pending).toBe(0);
+  });
+
+  test("deliverSoon continues after its operation budget until every due row is attempted", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    for (let id = 1; id <= 103; id += 1) {
+      seedOperation(repo, {
+        version: 1,
+        kind: "favorite-membership:set",
+        target: { tracker: "anilist", anilistId: id, mediaKind: "anime" },
+        present: true,
+      });
+    }
+
+    service.deliverSoon();
+    for (let attempt = 0; attempt < 100 && repo.counts().pending > 0; attempt += 1) {
+      await Bun.sleep(10);
+    }
+
+    expect(anilist.calls).toHaveLength(103);
+    expect(repo.counts().pending).toBe(0);
+  });
+
+  test("deliverSoon called during an active drain delivers work enqueued behind that drain", async () => {
+    const repo = outbox();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const anilist = adapter("anilist", async (operation) => {
+      if (operation.target.tracker === "anilist" && operation.target.anilistId === 1) {
+        await held;
+      }
+      return syncOk();
+    });
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    seedOperation(repo, {
+      version: 1,
+      kind: "favorite-membership:set",
+      target: { tracker: "anilist", anilistId: 1, mediaKind: "anime" },
+      present: true,
+    });
+    service.deliverSoon();
+    while (anilist.calls.length === 0) await Bun.sleep(1);
+
+    seedOperation(repo, {
+      version: 1,
+      kind: "favorite-membership:set",
+      target: { tracker: "anilist", anilistId: 2, mediaKind: "anime" },
+      present: true,
+    });
+    service.deliverSoon();
+    release();
+
+    for (let attempt = 0; attempt < 100 && repo.counts().pending > 0; attempt += 1) {
+      await Bun.sleep(10);
+    }
+    expect(anilist.calls).toHaveLength(2);
+    expect(repo.counts().pending).toBe(0);
+  });
+
   test("continues past a disabled first batch to deliver an eligible tracker", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
@@ -296,7 +394,51 @@ describe("SyncService drain", () => {
     await service.drain();
     const [claimed] = repo.claimDue(1, new Date(Date.now() + 60 * 60 * 1000));
 
-    expect(claimed?.attempts).toBe(2);
+    expect(claimed?.attempts).toBe(1);
+  });
+
+  test("automatically wakes when a retry becomes due and cancels the wake on shutdown", async () => {
+    const repo = outbox();
+    const scheduled: Array<{ task: () => void; delayMs: number; cancelled: boolean }> = [];
+    let now = new Date("2026-08-16T12:00:00.000Z");
+    let calls = 0;
+    const anilist = adapter("anilist", () => {
+      calls += 1;
+      return calls === 1 ? syncFailed("temporary", "network") : syncOk();
+    });
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+      now: () => now,
+      scheduleWake: (task, delayMs) => {
+        const wake = { task, delayMs, cancelled: false };
+        scheduled.push(wake);
+        return () => {
+          wake.cancelled = true;
+        };
+      },
+    });
+
+    seedOperation(repo, anilistFavourite);
+    await service.drain();
+
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]?.delayMs).toBeGreaterThan(0);
+    now = new Date(now.getTime() + 60_000);
+    scheduled[0]?.task();
+    for (let attempt = 0; attempt < 20 && repo.counts().pending > 0; attempt += 1) {
+      await Bun.sleep(1);
+    }
+    expect(anilist.calls).toHaveLength(2);
+    expect(repo.counts().pending).toBe(0);
+
+    seedOperation(repo, anilistFavourite);
+    calls = 0;
+    await service.drain();
+    const lastWake = scheduled.at(-1)!;
+    await service.shutdown();
+    expect(lastWake.cancelled).toBe(true);
   });
 
   test("delivers a claimed row and removes it on success", async () => {

@@ -125,6 +125,7 @@ export function createContainerMediaActionRouter(
         container.listService.addToWatchlist({
           titleId: item.titleId,
           mediaKind: item.mediaKind,
+          contentType: item.contentType,
           title: item.title,
           season: item.season,
           episode: item.episode,
@@ -138,6 +139,7 @@ export function createContainerMediaActionRouter(
         const outcome = container.listService.toggleFavorites({
           titleId: item.titleId,
           mediaKind: item.mediaKind,
+          contentType: item.contentType,
           title: item.title,
           season: item.season,
           episode: item.episode,

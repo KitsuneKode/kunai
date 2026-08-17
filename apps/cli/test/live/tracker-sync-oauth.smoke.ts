@@ -30,8 +30,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { SyncTokenStore } from "@/services/persistence/SyncTokenStore";
-import { AniListAdapter } from "@/services/sync/AniListAdapter";
 import { resolveAniListAuth, resolveTmdbAuth } from "@/services/sync/auth-contract";
 import type { TrackerOperation } from "@/services/sync/operations";
 import { TmdbAdapter } from "@/services/sync/TmdbAdapter";
@@ -286,10 +284,9 @@ async function main(): Promise<void> {
    * Isolated profile: the live run must never touch the developer's real
    * config, history, or cached credentials.
    *
-   * `SyncTokenStore` is handed `configDir` directly below, which is what
-   * actually decides where the token file lands. The XDG overrides are belt and
-   * braces for anything else this process might resolve a path through —
-   * `getKunaiPaths()` reads them, and there is no `KUNAI_CONFIG_DIR`.
+   * The production container resolves both SQLite and token storage through
+   * these XDG roots. Imports happen after the overrides so this exercises the
+   * same path resolution as the CLI without touching the developer profile.
    */
   const profile = mkdtempSync(join(tmpdir(), "kunai-live-sync-"));
   process.env.XDG_CONFIG_HOME = join(profile, "config");
@@ -300,9 +297,12 @@ async function main(): Promise<void> {
   const controller = new AbortController();
   const options = { signal: controller.signal };
   let anilistConnected = false;
-  const tokenStore = new SyncTokenStore({ configDir: profile } as never);
+  const { createContainer, disposeContainer } = await import("@/container");
+  let container: Awaited<ReturnType<typeof createContainer>> | undefined;
 
   try {
+    container = await createContainer();
+    let tokenStore = container.syncTokenStore;
     // --- AniList -------------------------------------------------------------
     const auth = resolveAniListAuth();
     if (!record("anilist auth contract resolves", auth.availability.available)) {
@@ -312,11 +312,17 @@ async function main(): Promise<void> {
           "KUNAI_ANILIST_CLIENT_ID, KUNAI_ANILIST_REDIRECT_URI must be the URI registered\n" +
           "on that application exactly, e.g. http://127.0.0.1:43863/callback\n",
       );
-      process.exit(1);
+      throw new Error("AniList auth contract is unavailable");
     }
 
-    const anilist = new AniListAdapter(tokenStore, undefined, auth);
-    await anilist.init();
+    let anilist = container.syncService.adapters.find((adapter) => adapter.id === "anilist");
+    if (!anilist) throw new Error("Production container did not register the AniList adapter");
+    await container.config.update({
+      sync: {
+        ...container.config.getRaw().sync,
+        anilist: { enabled: true, trackWatched: true, syncList: true },
+      },
+    });
 
     process.stdout.write("\nA browser window will open for AniList authorization.\n");
     const connected = await anilist.connect({
@@ -324,7 +330,7 @@ async function main(): Promise<void> {
       onPrompt: (note) => process.stdout.write(`${note}\n`),
     });
     if (!record("anilist connect", connected.ok, connected.ok ? undefined : connected.error)) {
-      process.exit(1);
+      throw new Error("AniList connection failed");
     }
     anilistConnected = true;
     const connection = anilist.getConnection();
@@ -340,22 +346,43 @@ async function main(): Promise<void> {
     }
 
     const target = { tracker: "anilist", anilistId: anilistMediaId, mediaKind: "anime" } as const;
-    const progress: TrackerOperation = {
-      version: 1,
-      kind: "progress:set",
-      target,
-      progress: 2,
-      status: "watching",
-    };
-    record("anilist progress:set 2", await anilist.apply(progress, options));
-
     const favouriteOn: TrackerOperation = {
       version: 1,
       kind: "favorite-membership:set",
       target,
       present: true,
     };
-    recordDetail("anilist favourite add", await anilist.apply(favouriteOn, options), null);
+    const queued = await container.syncService.enqueueFavoriteMembershipIfEnabled({
+      identities: [target],
+      present: true,
+    });
+    record("anilist favourite intent queued through container", queued === 1);
+    const pendingBeforeRestart = container.dataDb
+      .query<{ total: number }, []>(
+        "SELECT COUNT(*) AS total FROM sync_outbox WHERE state = 'pending'",
+      )
+      .get()?.total;
+    record("anilist intent persisted in SQLite", pendingBeforeRestart === 1);
+
+    await disposeContainer(container);
+    container = undefined;
+    container = await createContainer();
+    tokenStore = container.syncTokenStore;
+    anilist = container.syncService.adapters.find((adapter) => adapter.id === "anilist");
+    if (!anilist) throw new Error("Restarted container did not register the AniList adapter");
+    record("anilist token recovered after container restart", anilist.isConnected());
+    const pendingAfterRestart = container.dataDb
+      .query<{ total: number }, []>(
+        "SELECT COUNT(*) AS total FROM sync_outbox WHERE state = 'pending'",
+      )
+      .get()?.total;
+    record("anilist outbox recovered after container restart", pendingAfterRestart === 1);
+    const recovered = await container.syncService.drain();
+    record(
+      "anilist recovered outbox mutation delivered",
+      recovered.succeeded === 1 && recovered.pending === 0,
+      `succeeded=${recovered.succeeded} pending=${recovered.pending}`,
+    );
 
     /**
      * The property that motivated desired state: a redelivery must converge,
@@ -382,10 +409,14 @@ async function main(): Promise<void> {
       );
     }
 
-    recordDetail(
-      "anilist favourite remove (cleanup)",
-      await anilist.apply({ ...favouriteOn, present: false }, options),
-      null,
+    const cleanupQueued = await container.syncService.enqueueFavoriteMembershipIfEnabled({
+      identities: [target],
+      present: false,
+    });
+    const cleanup = await container.syncService.drain();
+    record(
+      "anilist favourite remove delivered through outbox (cleanup)",
+      cleanupQueued === 1 && cleanup.succeeded === 1 && cleanup.pending === 0,
     );
     record(
       "anilist watchlist remove (cleanup)",
@@ -526,6 +557,7 @@ async function main(): Promise<void> {
       }
     }
   } finally {
+    await disposeContainer(container);
     if (anilistConnected) {
       process.stdout.write(
         "\nLocal AniList token cleared. Revoke the application at\n" +

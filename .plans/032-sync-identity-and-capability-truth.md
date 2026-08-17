@@ -19,14 +19,14 @@ receive a `pushProgress` operation.
 - **Risk:** HIGH (remote account mutation)
 - **Planned at:** `36da54c4`, 2026-08-11
 - **Implementation state (2026-08-16):** Deterministic implementation and
-  regression work is complete. Data migrations 030–032 add a tracker-neutral,
+  regression work is complete. Data migrations 031–034 add a tracker-neutral,
   generation-checked reconciliation fact plus durable retry eligibility, all
   committed in the same transaction as local list/history mutations. Startup
   replay checks opt-in before enrichment, distinguishes definitive mapping
   misses from retryable identity failures, accepts provider-native history only
   through explicit or high-confidence tracker proof, and drains in bounded
   yielding batches without retained-row starvation. Tracker sync remains
-  experimental until the disposable-account CLI → SQLite outbox → restart
+  experimental until the disposable-account production container → SQLite outbox → restart
   recovery → remote mutation smoke below passes.
 
 ## Confirmed defects
@@ -104,8 +104,8 @@ are worse than a missing integration.
 ## Verification
 
 ```sh
-bun run --cwd apps/cli test:file test/unit/services/sync/SyncService.test.ts
-bun run --cwd apps/cli test:file test/unit/services/sync/anilist-adapter.test.ts
+bun run --cwd apps/cli test -- test/unit/services/sync/sync-drain.test.ts test/unit/services/sync/sync-reconciliation.test.ts test/unit/services/sync/anilist-adapter.test.ts
+bun run --cwd packages/storage test:file -- test/sync-outbox.test.ts test/sync-reconciliation.test.ts
 bun run typecheck
 bun run lint
 bun run fmt:check

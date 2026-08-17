@@ -47,6 +47,8 @@ export class QueueService {
     return this.enqueue({
       title: item.title,
       mediaKind: item.mediaKind,
+      contentType: item.contentType,
+      externalIds: item.externalIds,
       titleId: item.titleId,
       season: item.season,
       episode: item.episode,
@@ -265,16 +267,18 @@ export class QueueService {
     let added = 0;
     for (const item of watchlist) {
       if (!existingTitleIds.has(item.titleId)) {
-        this.repo.enqueue({
-          title: item.title,
-          mediaKind: item.mediaKind,
-          titleId: item.titleId,
-          season: item.season,
-          episode: item.episode,
-          priority: 0,
-          source: "watchlist",
-          sessionId: this.sessionId,
-        });
+        this.enqueueMediaItem(
+          {
+            title: item.title,
+            mediaKind: item.mediaKind as MediaItemIdentity["mediaKind"],
+            contentType: item.contentType,
+            externalIds: item.externalIds,
+            titleId: item.titleId,
+            season: item.season,
+            episode: item.episode,
+          },
+          { placement: "end", source: "watchlist" },
+        );
         added++;
       }
     }

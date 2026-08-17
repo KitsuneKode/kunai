@@ -199,16 +199,11 @@ describe("startLoopbackServer bridge", () => {
     }
   });
 
-  /**
-   * AniList's implicit grant rejects the request outright when `state` is sent,
-   * so there is no nonce to echo back. Requiring one would make the only
-   * working flow unusable; a *wrong* one is still refused.
-   */
-  test("accepts a missing state but still rejects a wrong one", async () => {
+  test("rejects a missing or wrong state before accepting a token", async () => {
     const without = await fragmentServer();
     try {
       await submitCollector(without, "access_token=tok-123");
-      expect((await without.result).ok).toBe(true);
+      expect(await without.result).toEqual({ ok: false, reason: "state-mismatch" });
     } finally {
       without.close();
     }

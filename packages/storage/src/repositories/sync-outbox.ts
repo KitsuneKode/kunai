@@ -314,11 +314,7 @@ export class SyncOutboxRepository {
     return apply();
   }
 
-  /**
-   * Keep a claim pending without spending or refunding its delivery attempt.
-   * Configuration is neither a remote failure nor a rate limit; it must not be
-   * retried immediately, but the fact that a claim was started remains visible.
-   */
+  /** Keep a claim pending without spending a delivery attempt. */
   hold(input: {
     readonly item: SyncOutboxClaimRef;
     readonly notBefore: Date;
@@ -331,6 +327,7 @@ export class SyncOutboxRepository {
       `state = 'pending',
        claim_token = NULL,
        claimed_at = NULL,
+       attempts = MAX(attempts - 1, 0),
        next_attempt_at = ?,
        last_error_code = ?,
        updated_at = ?`,
@@ -349,6 +346,7 @@ export class SyncOutboxRepository {
       `state = 'pending',
        claim_token = NULL,
        claimed_at = NULL,
+       attempts = MAX(attempts - 1, 0),
        updated_at = ?`,
       [now.toISOString()],
     );
@@ -377,6 +375,17 @@ export class SyncOutboxRepository {
       needsReauth: byState.get("needs-reauth") ?? 0,
       deadLetter: byState.get("dead-letter") ?? 0,
     };
+  }
+
+  /** Earliest durable wake-up among deliverable states; parked rows are excluded. */
+  nextPendingAttemptAt(): string | undefined {
+    return (
+      this.db
+        .query<{ next_attempt_at: string | null }, []>(
+          "SELECT MIN(next_attempt_at) AS next_attempt_at FROM sync_outbox WHERE state = 'pending'",
+        )
+        .get()?.next_attempt_at ?? undefined
+    );
   }
 
   /**

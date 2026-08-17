@@ -60,6 +60,8 @@ export async function addMediaItemToPickedPlaylist(
     durablePlaylistService.addItem(playlist.id, {
       titleId: item.titleId,
       mediaKind: item.mediaKind,
+      contentType: item.contentType,
+      externalIds: item.externalIds,
       title: item.title,
       season: item.season,
       episode: item.episode,

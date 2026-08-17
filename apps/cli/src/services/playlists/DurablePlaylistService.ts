@@ -1,6 +1,7 @@
 import type { MediaProviderHint } from "@/domain/media/media-item-identity";
 import type { QueueService } from "@/domain/queue/QueueService";
 import type { PlaylistsRepository, UserPlaylistRecord } from "@kunai/storage";
+import type { ProviderExternalIds } from "@kunai/types";
 
 import {
   exportKunaiPlaylist,
@@ -19,6 +20,8 @@ export interface DurablePlaylistClock {
 export interface DurablePlaylistItemInput {
   readonly titleId: string;
   readonly mediaKind: string;
+  readonly contentType?: "movie" | "series";
+  readonly externalIds?: ProviderExternalIds;
   readonly title: string;
   readonly season?: number;
   readonly episode?: number;
@@ -65,6 +68,8 @@ export class DurablePlaylistService {
       playlistId,
       titleId: input.titleId,
       mediaKind: input.mediaKind,
+      contentType: input.contentType,
+      externalIds: input.externalIds,
       title: input.title,
       season: input.season,
       episode: input.episode,
@@ -102,6 +107,8 @@ export class DurablePlaylistService {
       return {
         titleId: item.titleId,
         mediaKind: item.mediaKind,
+        contentType: item.contentType,
+        externalIds: item.externalIds,
         title: item.title,
         season: item.season,
         episode: item.episode,
@@ -126,6 +133,8 @@ export class DurablePlaylistService {
       queueService.enqueue({
         title: item.title,
         mediaKind: item.mediaKind,
+        contentType: item.contentType,
+        externalIds: item.externalIds,
         titleId: item.titleId,
         season: item.season,
         episode: item.episode,
@@ -143,6 +152,8 @@ export class DurablePlaylistService {
       this.addItem(playlist.id, {
         titleId: item.titleId,
         mediaKind: item.mediaKind,
+        contentType: item.contentType,
+        externalIds: item.externalIds,
         title: item.title,
         season: item.season,
         episode: item.episode,

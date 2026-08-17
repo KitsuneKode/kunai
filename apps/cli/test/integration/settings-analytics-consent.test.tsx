@@ -52,6 +52,20 @@ function createSettingsContainer(config: ConfigService): Container {
       getState: () => ({ mode: "series" }),
       dispatch: () => undefined,
     },
+    syncAuthAvailability: {
+      anilist: { available: false, reason: "callback-missing" },
+      tmdb: { available: false, reason: "api-key-missing" },
+    },
+    syncService: {
+      adapters: [],
+      getStatus: () => ({
+        connected: 0,
+        pending: 0,
+        needsReauth: 0,
+        deadLettered: 0,
+        health: "disconnected",
+      }),
+    },
     connectivity: { notifyIntentChanged: () => undefined },
     featureFlags: {},
   } as unknown as Container;
