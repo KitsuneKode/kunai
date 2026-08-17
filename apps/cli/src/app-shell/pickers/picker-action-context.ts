@@ -1,4 +1,4 @@
-import { resolveCommands, type AppCommandId } from "@/app-shell/commands";
+import { COMMAND_CONTEXTS, resolveCommands, type AppCommandId } from "@/app-shell/commands";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 
@@ -8,7 +8,7 @@ export function buildPickerActionContext({
   container,
   taskLabel,
   footerMode = effectiveFooterHints(container),
-  allowed = ["settings", "history", "diagnostics", "help", "about", "quit", "downloads", "library"],
+  allowed = COMMAND_CONTEXTS.modalPicker,
 }: {
   container: Container;
   taskLabel: string;
