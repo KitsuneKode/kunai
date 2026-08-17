@@ -400,7 +400,10 @@ describe("SyncService drain", () => {
   test("automatically wakes when a retry becomes due and cancels the wake on shutdown", async () => {
     const repo = outbox();
     const scheduled: Array<{ task: () => void; delayMs: number; cancelled: boolean }> = [];
-    let now = new Date("2026-08-16T12:00:00.000Z");
+    // Anchored to the real clock: `seedOperation` stamps `next_attempt_at`
+    // from `Date.now()`, so a fixed literal here stops being due the day
+    // after it is written and the row is never claimed.
+    let now = new Date();
     let calls = 0;
     const anilist = adapter("anilist", () => {
       calls += 1;
