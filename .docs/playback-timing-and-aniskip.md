@@ -57,6 +57,17 @@ Reference ecosystem: [synacktraa/ani-skip](https://github.com/synacktraa/ani-ski
 | Numeric                          | AniList, TMDB TV, or other     | Try ARM `anilist` → MAL; if missing, try ARM **TMDB → MAL** list (first entry; split cours caveat).                                                                   |
 | Opaque + non-AllAnime provider   | Unknown catalog                | Fall back: AniList **title search** (optional `seasonYear` from `title.year`) → ARM AniList → MAL.                                                                    |
 
+**AniDB stamps MAL at resolve time.** The AniDB module's `resolve()` calls
+`fetchAnidbMalId()` (in `packages/providers/src/anidb/client.ts`, TTL 1 h cache,
+scrapes `myanimelist.net/anime/{id}` from the anidb.app anime page) when the input
+title carries no `malId`, and stamps the value into the resolve result's
+`externalIds.malId`. AniSkip's direct `externalIds.malId` short-circuit
+(`resolveMalIdForAniSkip`) then wins, so AniDB-sourced titles skip the fuzzy
+AniList title-search fallback entirely. Input `malId` is always preferred over the
+scrape; the scrape is best-effort (undefined on failure), runs **in parallel** with
+stream resolution so it never adds a serial request to the resolve hot path, and
+never blocks resolve.
+
 **Important:** `PlaybackTimingFetchContext.providerId` must match the **manifest provider id** (e.g. `allanime` from `@kunai/core`), because branching keys off that string.
 
 ## `PlaybackTimingFetchContext` (extension seam)

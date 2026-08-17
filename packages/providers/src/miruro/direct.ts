@@ -1606,7 +1606,7 @@ async function pipeCall(
  * it, so the message shape and this predicate must not drift apart.
  */
 const MIRURO_WAF_BLOCK_MESSAGE =
-  "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML)";
+  "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML). A user-owned relay (providerRelay.baseUrl) in an ungated region can bypass this.";
 
 function isMiruroWafBlockError(error: Error): boolean {
   return error.message.includes("Cloudflare WAF on multiple mirrors");

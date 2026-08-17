@@ -81,5 +81,6 @@ export const miruroManifest = defineProviderManifest({
     "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
     "Still not the default anime auto-fallback (AniDB is the default, AllAnime the fallback); Miruro is available for manual pick when curl/http2 path works.",
     "May hit Cloudflare rate limits if called too frequently.",
+    "2026-08-17: curl --http2 with browser headers also receives CF 403 HTML from some networks; the WAF block message now carries a relay hint.",
   ],
 });

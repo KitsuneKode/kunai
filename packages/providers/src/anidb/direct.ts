@@ -301,6 +301,18 @@ export const anidbProviderModule: CoreProviderModule = {
       startupPriority: input.startupPriority,
     });
 
+    // Overlap the MAL scrape with stream resolution so it never adds a serial
+    // request to the resolve hot path. TTL-cached per show; a cache hit settles
+    // immediately. If resolve bails out early, the fetch just warms the cache.
+    const existingMalId = input.title.externalIds?.malId ?? input.title.malId;
+    const malIdPromise =
+      existingMalId !== undefined && existingMalId !== ""
+        ? Promise.resolve(String(existingMalId))
+        : fetchAnidbMalId(showId, context.signal).then(
+            (id) => (id !== undefined ? String(id) : undefined),
+            () => undefined,
+          );
+
     emitTraceEvent(events, context, {
       type: "provider:start",
       providerId: ANIDB_PROVIDER_ID,
@@ -364,13 +376,7 @@ export const anidbProviderModule: CoreProviderModule = {
         attributes: { sourceId, showId, ...routeAttributes },
       });
 
-      const existingMalId = input.title.externalIds?.malId ?? input.title.malId;
-      const malId =
-        existingMalId !== undefined && existingMalId !== ""
-          ? String(existingMalId)
-          : await fetchAnidbMalId(showId, context.signal)
-              .then((id) => (id !== undefined ? String(id) : undefined))
-              .catch(() => undefined);
+      const malId = await malIdPromise;
 
       return {
         status: "resolved",

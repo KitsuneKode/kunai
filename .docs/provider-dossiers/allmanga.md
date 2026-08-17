@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-19"
+lastReviewed: "2026-08-17"
 ---
 
 # Provider: AllManga / AllAnime
@@ -10,7 +10,7 @@ lastReviewed: "2026-07-19"
 ## Summary
 
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
-- **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli`.
+- **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
 - **Current status (2026-07-18):** Episode resolve requires ani-cli `aaReq` AES-GCM attestation + rotated hex decrypt key (`origin/fix`). Without it the API returns `AA_CRYPTO_MISSING`. Search/episode catalog POST paths still work without `aaReq`.
 
@@ -29,7 +29,7 @@ The source flow matches ani-cli:
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-CTR payload (hex key)
+  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 81)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS / DASH-shaped candidates
@@ -37,14 +37,14 @@ episode GraphQL persisted GET + aaReq + x-build-id
 
 ani-cli currently generates links for these source families:
 
-| Source family       | ani-cli behavior                          | Kunai behavior today            |
-| ------------------- | ----------------------------------------- | ------------------------------- |
-| `Default`           | WIXMP/repackager or master HLS extraction | Supported                       |
-| `Yt-mp4`            | direct tools/fast4speed URL               | Supported                       |
-| `S-mp4`             | API JSON with direct mp4 when present     | Supported when link exists      |
-| `Mp4`               | mp4upload page scrape                     | Not a current production target |
-| `Fm-mp4` / Filemoon | AES/decrypt path                          | Partially supported             |
-| `Ak`                | Not in the older ani-cli provider list    | **Current drift gap**           |
+| Source family       | ani-cli behavior                          | Kunai behavior today                                                                      |
+| ------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `Default`           | WIXMP/repackager or master HLS extraction | Supported                                                                                 |
+| `Yt-mp4`            | direct tools/fast4speed URL               | Supported                                                                                 |
+| `S-mp4`             | API JSON with direct mp4 when present     | Supported when link exists                                                                |
+| `Mp4`               | mp4upload page scrape                     | Supported (embed scrape + `Referer: https://www.mp4upload.com`, scoped `--tls-verify=no`) |
+| `Fm-mp4` / Filemoon | AES/decrypt path                          | Removed upstream (b8032b7); no Kunai code path remains                                    |
+| `Ak`                | Not in the older ani-cli provider list    | **Current drift gap**                                                                     |
 
 ### Solo Leveling S01E01 drift
 
@@ -94,7 +94,7 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Known
 
 - GraphQL search/catalog is working with `youtu-chan.com` referer.
-- The AES-CTR `tobeparsed` decode constants still match ani-cli parity.
+- The AES-256-GCM `tobeparsed` decode path and build id 81 crypto bootstrap are verified working; AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.

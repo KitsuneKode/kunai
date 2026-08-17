@@ -697,7 +697,10 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
 - **The WAF fail-fast threshold of 2 is deliberate, not a defect.** It equals the real
   mirror count (`www.miruro.bz` + `www.miruro.ru`); when both return Cloudflare HTML
   the block is region-wide and further candidates fail identically. Changing it needs
-  a reproducible failure sequence, not a guess.
+  a reproducible failure sequence, not a guess. The block message names the one
+  escape hatch that exists — a user-owned relay (`providerRelay.baseUrl`) in an
+  ungated region; as of 2026-08-17 the `curl --http2` fallback is itself CF-403'd
+  from some networks, so the hint is the actionable part of the failure.
 - **Live evidence is the smoke's job.** `bun run test:live:miruro` resolves through
   `container.engine.resolve(...)`, probes the selected stream itself, and reports
   `streamReachable` and `resolverAttestedReachable` separately. It passes on measured
