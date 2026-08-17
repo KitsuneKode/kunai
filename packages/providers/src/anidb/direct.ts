@@ -46,6 +46,7 @@ export {
   anidbNumericId,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
+  fetchAnidbMalId,
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
   parseAnidbSeasonEvidence,
@@ -363,6 +364,14 @@ export const anidbProviderModule: CoreProviderModule = {
         attributes: { sourceId, showId, ...routeAttributes },
       });
 
+      const existingMalId = input.title.externalIds?.malId ?? input.title.malId;
+      const malId =
+        existingMalId !== undefined && existingMalId !== ""
+          ? String(existingMalId)
+          : await fetchAnidbMalId(showId, context.signal)
+              .then((id) => (id !== undefined ? String(id) : undefined))
+              .catch(() => undefined);
+
       return {
         status: "resolved",
         providerId: ANIDB_PROVIDER_ID,
@@ -374,7 +383,7 @@ export const anidbProviderModule: CoreProviderModule = {
         subtitles: [],
         externalIds: {
           anilistId: input.title.externalIds?.anilistId ?? input.title.anilistId,
-          malId: input.title.externalIds?.malId ?? input.title.malId,
+          malId,
           providerNativeIds: { [ANIDB_PROVIDER_ID]: showId },
         },
         cachePolicy,

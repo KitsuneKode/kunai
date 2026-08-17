@@ -21,6 +21,7 @@ export const ANIDB_USER_AGENT =
 
 const episodeCache = new TTLCache<string, readonly AnidbEpisodeEntry[]>(1_800_000);
 const languageCache = new TTLCache<string, readonly AnidbLanguageEntry[]>(300_000);
+const malCache = new TTLCache<string, number | undefined>(3_600_000);
 
 export type AnidbEpisodeEntry = {
   readonly id: number;
@@ -164,14 +165,20 @@ export async function fetchAnidbMalId(
   showId: string,
   signal?: AbortSignal,
 ): Promise<number | undefined> {
+  const cached = malCache.get(showId);
+  if (cached !== undefined) return cached;
+
   try {
     const page = await anidbFetchText(`${ANIDB_BASE}/anime/${encodeURIComponent(showId)}`, {
       signal,
     });
     const mal = /https:\/\/myanimelist\.net\/anime\/(\d+)/.exec(page)?.[1];
     const parsed = mal ? Number(mal) : NaN;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    const result = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    malCache.set(showId, result);
+    return result;
   } catch {
+    malCache.set(showId, undefined);
     return undefined;
   }
 }
@@ -310,4 +317,5 @@ export async function resolveAnidbEpisodeStreams(options: {
 export function clearAnidbCachesForTest(): void {
   episodeCache.clear();
   languageCache.clear();
+  malCache.clear();
 }
