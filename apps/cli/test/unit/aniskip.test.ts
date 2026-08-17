@@ -56,13 +56,20 @@ test("fetchAniSkipTimingMetadata resolves MAL id from AniDB show page for opaque
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
     calls.push(url);
-    if (url.includes("anidb.app/anime/onigiri-3942")) {
+    const parsed = (() => {
+      try {
+        return new URL(url);
+      } catch {
+        return null;
+      }
+    })();
+    if (parsed?.hostname === "anidb.app" && parsed.pathname === "/anime/onigiri-3942") {
       return new Response(
         '<html><body><a href="https://myanimelist.net/anime/32606/Onigiri">MAL</a></body></html>',
         { status: 200, headers: { "content-type": "text/html" } },
       );
     }
-    if (url.includes("api.aniskip.com")) {
+    if (parsed?.hostname === "api.aniskip.com") {
       return new Response(
         JSON.stringify({
           found: true,
@@ -82,6 +89,14 @@ test("fetchAniSkipTimingMetadata resolves MAL id from AniDB show page for opaque
   });
 
   expect(timing?.intro).toEqual([{ startMs: 0, endMs: 30000 }]);
-  expect(calls.some((url) => url.includes("anidb.app/anime/onigiri-3942"))).toBe(true);
+  const anidbShowCall = calls.find((url) => {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === "anidb.app" && parsed.pathname === "/anime/onigiri-3942";
+    } catch {
+      return false;
+    }
+  });
+  expect(anidbShowCall).toBeDefined();
   expect(calls.some((url) => url.includes("/32606/1?"))).toBe(true);
 });
