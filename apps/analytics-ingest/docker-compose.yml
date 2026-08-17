@@ -1,0 +1,44 @@
+# Local stand-in for Neon, so the Postgres-backed analytics tests run without
+# touching a real project.
+#
+# The store talks to Neon over HTTP (`neon()` from @neondatabase/serverless),
+# not the Postgres wire protocol, so a bare postgres container is not enough on
+# its own: `neon-proxy` terminates that HTTP `/sql` endpoint and forwards to
+# `postgres`. Point the driver at it with `neonConfig.fetchEndpoint`, which
+# `test/local-neon.ts` does from `NEON_FETCH_ENDPOINT`.
+#
+#   bun run --cwd apps/analytics-ingest db:up
+#   bun run --cwd apps/analytics-ingest test:pg
+#   bun run --cwd apps/analytics-ingest db:down
+#
+# Ports are deliberately non-default so this never collides with — or writes
+# into — a Postgres the developer is already running on 5432.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: kunai
+      POSTGRES_PASSWORD: kunai
+      POSTGRES_DB: kunai_analytics
+    ports:
+      - "55432:5432"
+    # No named volume: every `db:up` starts from an empty database, so a test
+    # run can never inherit rows from the previous one.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kunai -d kunai_analytics"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  neon-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    environment:
+      PG_CONNECTION_STRING: postgres://kunai:kunai@postgres:5432/kunai_analytics
+    ports:
+      - "54444:4444"
+    depends_on:
+      postgres:
+        condition: service_healthy

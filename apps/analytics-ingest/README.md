@@ -79,9 +79,29 @@ recording install UUIDs.
 ## Tests
 
 ```sh
-bun run --cwd apps/analytics-ingest test
+bun run --cwd apps/analytics-ingest test      # offline, in-memory store
+bun run --cwd apps/analytics-ingest test:pg   # real Postgres, needs Docker
 ```
 
-Runs offline against an in-memory store. `test/postgres-store.test.ts` is
-skipped unless `DATABASE_URL` is set; point it only at a scratch database,
-because it writes and prunes.
+`test` runs everything that does not need a database. The two Postgres suites
+skip, and a skip reads as a pass — which is why `test:pg` exists.
+
+`test:pg` brings up the throwaway Postgres in `docker-compose.yml`, applies the
+schema, runs `postgres-store` and `postgres-ingest-lifecycle` against it, and
+tears it down. `--keep` leaves the containers up for iteration.
+
+The store speaks Neon's **HTTP** protocol rather than the Postgres wire
+protocol, so the compose file pairs `postgres` with a local proxy that
+terminates the `/sql` endpoint. `src/neon-fetch-endpoint.ts` redirects the
+driver there via `NEON_FETCH_ENDPOINT`; it is a no-op when that is unset, so
+the deployed path is untouched.
+
+These suites gate on **`ANALYTICS_TEST_DATABASE_URL`**, deliberately not
+`DATABASE_URL` — they write and prune, and a stray `DATABASE_URL` must never
+let a plain `bun run test` mutate a real database. Point it only at a scratch
+database.
+
+What the Postgres suites prove that the in-memory store cannot: the
+data-modifying CTE's two independent conflict targets, `jsonb` round-tripping
+through `by_*`, `date`/`timestamptz` casts surviving the HTTP driver, what
+`prune` actually deletes, and that a rejected payload writes nothing.

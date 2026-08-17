@@ -9,6 +9,9 @@
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
     "test": "bun test test",
+    "test:pg": "bun run scripts/test-postgres.ts",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down -v",
     "migrate": "bun run scripts/migrate.ts"
   },
   "dependencies": {
