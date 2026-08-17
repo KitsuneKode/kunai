@@ -594,4 +594,57 @@ describe("fetchAnidbMalId", () => {
       Bun.which = originalWhich;
     }
   });
+
+  test("caches a genuine absence instead of re-scraping every resolve", async () => {
+    // "No MAL link on the page" is an answer, not a miss. Representing it the
+    // same way as a cache miss silently disables the cache for every show
+    // without a MAL id, which is the population that gets scraped repeatedly.
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () => {
+        fetchCalls++;
+        return new Response("<html><body>No links here</body></html>", { status: 200 });
+      }) as unknown as typeof fetch;
+
+      expect(await fetchAnidbMalId("no-mal-1")).toBeUndefined();
+      expect(await fetchAnidbMalId("no-mal-1")).toBeUndefined();
+      expect(fetchCalls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("does not cache a transport failure, so a retry can still succeed", async () => {
+    // A Cloudflare block or dropped connection says nothing about the show.
+    // Caching it would suppress auto-skip for the full hour-long TTL.
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () => {
+        fetchCalls++;
+        if (fetchCalls === 1) throw new Error("connection reset");
+        return new Response(
+          '<html><body><a href="https://myanimelist.net/anime/32612/Onigiri">MAL</a></body></html>',
+          { status: 200 },
+        );
+      }) as unknown as typeof fetch;
+
+      expect(await fetchAnidbMalId("flaky-1")).toBeUndefined();
+      expect(await fetchAnidbMalId("flaky-1")).toBe(32612);
+      expect(fetchCalls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
 });

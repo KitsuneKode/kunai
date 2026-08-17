@@ -1,11 +1,16 @@
 import { afterEach, expect, test } from "bun:test";
 
 import { fetchAniSkipTimingMetadata, mapAniSkipTypeToTimingField } from "@/aniskip";
+import { clearAnidbCachesForTest } from "@kunai/providers";
 
 const originalFetch = globalThis.fetch;
+const originalWhich = Bun.which;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  Bun.which = originalWhich;
+  // The AniDB MAL cache lives in the provider package and outlives a test file.
+  clearAnidbCachesForTest();
 });
 
 test("mapAniSkipTypeToTimingField only accepts playback skip categories we intentionally support", () => {
@@ -52,6 +57,10 @@ test("fetchAniSkipTimingMetadata uses provider-native MAL id before lookup fallb
 });
 
 test("fetchAniSkipTimingMetadata resolves MAL id from AniDB show page for opaque anidb catalog ids", async () => {
+  // The AniDB scrape goes through the provider package's curl transport, which
+  // only falls back to `fetch` when no curl is on PATH. Hiding curl is what
+  // makes the stub below observable.
+  Bun.which = ((_command: string) => null) as typeof Bun.which;
   const calls: string[] = [];
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);

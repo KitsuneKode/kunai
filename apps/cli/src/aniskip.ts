@@ -5,6 +5,7 @@ import {
   type PlaybackTimingSourceFetchResult,
 } from "@/infra/timing/PlaybackTimingSource";
 import { fetchArmIdGraph } from "@/services/catalog/arm-client";
+import { fetchAnidbMalId } from "@kunai/providers";
 import type { ProviderExternalIds } from "@kunai/types";
 
 const ANISKIP_API = "https://api.aniskip.com/v1/skip-times";
@@ -84,40 +85,19 @@ async function fetchMalIdFromAllAnimeShow(
   }
 }
 
-const ANIDB_MAL_LOOKUP_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-const malIdFromAnidbShowCache = new Map<string, number | null>();
-
 /**
  * Resolve MAL numeric id from an AniDB catalog show id, matching ani-cli `anidb_desc`.
+ *
+ * Delegates to the provider package rather than scraping here: AniDB sits behind
+ * Cloudflare, and `fetchAnidbMalId` goes through the shared curl transport that
+ * gets past it. A plain `fetch` from this side would be served the interstitial,
+ * find no MAL link in it, and cache that as "this show has no MAL id".
  */
 async function fetchMalIdFromAnidbShow(
   showId: string,
   signal?: AbortSignal,
 ): Promise<number | null> {
-  if (malIdFromAnidbShowCache.has(showId)) return malIdFromAnidbShowCache.get(showId) ?? null;
-
-  try {
-    const res = await fetch(`https://anidb.app/anime/${encodeURIComponent(showId)}`, {
-      headers: {
-        "User-Agent": ANIDB_MAL_LOOKUP_UA,
-        Referer: "https://anidb.app/",
-      },
-      signal: signal ?? AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) {
-      malIdFromAnidbShowCache.set(showId, null);
-      return null;
-    }
-    const page = await res.text();
-    const match = /https:\/\/myanimelist\.net\/anime\/(\d+)/.exec(page);
-    const parsed = match?.[1] ? Number.parseInt(match[1], 10) : null;
-    malIdFromAnidbShowCache.set(showId, parsed);
-    return parsed;
-  } catch {
-    malIdFromAnidbShowCache.set(showId, null);
-    return null;
-  }
+  return (await fetchAnidbMalId(showId, signal)) ?? null;
 }
 
 async function resolveMalIdForAniSkip(opts: {
