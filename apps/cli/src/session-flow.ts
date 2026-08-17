@@ -14,6 +14,7 @@ import { applyUserProviderSwitch } from "@/app/playback/playback-provider-switch
 import type { Container } from "@/container";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { resolveEpisodeAvailability } from "@/domain/playback/playback-policy";
+import { COMMAND_CONTEXTS, type AppCommandId } from "@/domain/session/command-registry";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { EpisodePickerOption } from "@/domain/types";
 import { cyan, dim, yellow } from "@/menu";
@@ -177,20 +178,17 @@ export async function chooseMovieStartingPoint(opts: {
   return resolveMovieStartingChoice(picked, history);
 }
 
-const STARTING_POINT_PICKER_COMMANDS = [
-  "settings",
-  "history",
-  "diagnostics",
-  "help",
-  "about",
-  "quit",
-  "provider",
-] as const;
+/**
+ * The shared modal-picker set plus `provider`: these two pickers are the one
+ * place where switching provider mid-choice is meaningful, because the choice
+ * being made is which provider route to start on.
+ */
+const STARTING_POINT_PICKER_COMMANDS = [...COMMAND_CONTEXTS.modalPicker, "provider"] as const;
 
 function createPickerActionContext(
   container: Container | undefined,
   taskLabel: string,
-  allowed?: readonly (typeof STARTING_POINT_PICKER_COMMANDS)[number][],
+  allowed?: readonly AppCommandId[],
 ) {
   return container
     ? buildPickerActionContext({

@@ -21,6 +21,25 @@ describe("workflows characterization", () => {
     expect(typeof ctx.onAction).toBe("function");
   });
 
+  test("a picker offers the consent-bearing overlays, not a narrower hand-list", () => {
+    // These two were unreachable from the starting-point pickers while the
+    // footer still advertised `[/] commands`, because the surface carried its
+    // own array that had drifted from the registry. Analytics and presence are
+    // the ones that matter: both govern data leaving the machine, so "the
+    // command does not exist" is the wrong answer to give about them anywhere.
+    const { container } = createContainerFixture({
+      config: { minimalMode: false, footerHints: "detailed" },
+      shellChrome: { footerMode: "detailed" },
+    } as never);
+    const ids = buildPickerActionContext({ container, taskLabel: "Where to start?" }).commands.map(
+      (command) => command.id,
+    );
+
+    expect(ids).toContain("analytics");
+    expect(ids).toContain("presence");
+    expect(ids).toContain("settings");
+  });
+
   test("waitForOverlayClose resolves when overlay type is no longer on top", async () => {
     const { stateManager, closeTopOverlay } = createContainerFixture();
     stateManager.dispatch({

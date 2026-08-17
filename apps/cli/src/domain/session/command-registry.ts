@@ -243,6 +243,38 @@ export const COMMAND_CONTEXTS = {
     "update",
     "quit",
   ],
+  /**
+   * Commands offered while a modal picker owns the screen.
+   *
+   * A picker is a question the shell is waiting on, so the set is limited to
+   * overlays that open, inform, and return. Anything that starts playback or
+   * moves to another catalog surface would strand that question with no way
+   * back to it.
+   *
+   * Kept here rather than inline at the call sites: the two picker surfaces
+   * previously carried their own hand-written arrays, which drifted apart and
+   * left `/analytics` and `/presence` answering "no matching commands" on a
+   * screen where the footer still advertised `[/] commands`.
+   */
+  modalPicker: [
+    "settings",
+    "providers",
+    "presence",
+    "analytics",
+    "analytics-show",
+    "notifications",
+    "history",
+    "stats",
+    "library",
+    "downloads",
+    "diagnostics",
+    "export-diagnostics",
+    "report-issue",
+    "docs",
+    "help",
+    "about",
+    "quit",
+  ],
 } as const satisfies Record<string, readonly AppCommandId[]>;
 
 export type CommandContextId = keyof typeof COMMAND_CONTEXTS;

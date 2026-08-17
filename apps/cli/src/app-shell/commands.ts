@@ -53,6 +53,12 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "diagnostics",
 ];
 
+/**
+ * Deliberately narrower than `COMMAND_CONTEXTS.modalPicker`: a media picker is
+ * nested inside an active browse or playback flow, so the palette stays local
+ * and non-destructive rather than offering overlays that would strand it.
+ * Locked by `command-registry.coverage.test.ts`.
+ */
 const MEDIA_PICKER_SURFACE_COMMANDS: readonly AppCommandId[] = ["diagnostics", "help"];
 
 function isMediaPickerOverlay(type: string): boolean {
