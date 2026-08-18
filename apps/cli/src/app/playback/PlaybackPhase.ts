@@ -130,6 +130,7 @@ import {
 } from "@/app/playback/policies/startup-stage-policy";
 import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attempt";
 import {
+  isRecentPlaybackStreamFresh,
   recentPlaybackStreamKey,
   recentPlaybackStreamMatchesProvider,
   restoreRecentPlaybackStream,
@@ -1563,7 +1564,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const recent = recentEpisodeStreams.get(recentKey);
             if (
               recentPlaybackStreamMatchesProvider(recent, currentProvider.metadata.id) &&
-              recentStreamMatchesPreferred(recent, currentProvider.metadata.id, currentEpisode)
+              recentStreamMatchesPreferred(recent, currentProvider.metadata.id, currentEpisode) &&
+              isRecentPlaybackStreamFresh(recent)
             ) {
               const restored = restoreRecentPlaybackStream(recent);
               stream = restored.stream;
