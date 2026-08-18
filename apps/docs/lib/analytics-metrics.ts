@@ -3,7 +3,17 @@
  * Fetches aggregates only — never Redis, never install ids.
  */
 
-/** Empty until a verified analytics deployment is deliberately configured. */
+/**
+ * Empty until a verified analytics deployment is deliberately configured.
+ *
+ * `KUNAI_ANALYTICS_METRICS_URL` must be present **at build time**, not only at
+ * runtime: `/analytics` is statically prerendered, so the deployed HTML is
+ * whatever the build could fetch. Setting it as a runtime-only variable leaves
+ * the page showing "Public pulse not published yet" until the next ISR
+ * revalidation (1h) or redeploy — which reads as a broken page, not a
+ * pending one. Verified 2026-08-18: same build, URL unset renders the empty
+ * state and URL set renders the full breakdown.
+ */
 export const DEFAULT_ANALYTICS_METRICS_URL = "";
 
 export type DocsAnalyticsMetrics = {
