@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 export type KunaiDatabase = Database;
@@ -16,6 +16,26 @@ function ensureParentDirectory(path: string): void {
   const parent = dirname(path);
   if (parent === "." || parent === path) return;
   mkdirSync(parent, { recursive: true });
+}
+
+function bestEffortChmodOwnerOnly(dbPath: string): void {
+  if (dbPath === ":memory:" || dbPath.startsWith("file::memory:")) return;
+
+  try {
+    chmodSync(dbPath, 0o600);
+  } catch {
+    // Windows and exotic filesystems may reject chmod; opening must still succeed.
+  }
+
+  for (const suffix of ["-wal", "-shm"] as const) {
+    const sibling = `${dbPath}${suffix}`;
+    if (!existsSync(sibling)) continue;
+    try {
+      chmodSync(sibling, 0o600);
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export interface OpenDatabaseOptions {
@@ -42,6 +62,8 @@ export function openKunaiDatabase(path: string, options: OpenDatabaseOptions = {
     if (options.wal !== false) {
       db.exec("PRAGMA journal_mode = WAL");
     }
+
+    bestEffortChmodOwnerOnly(path);
   }
 
   return db;
