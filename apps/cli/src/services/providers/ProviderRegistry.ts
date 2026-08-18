@@ -133,6 +133,11 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 name: ep.name,
                 detail: ep.detail,
                 previewImageUrl: ep.artwork?.thumbnailUrl,
+                airDate: ep.release?.airDate,
+                overview: ep.detail,
+                externalIds: ep.externalIds,
+                release: ep.release,
+                artwork: ep.artwork,
                 totalEpisodeCount: ep.totalEpisodeCount,
               }));
             }
