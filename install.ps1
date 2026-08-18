@@ -634,7 +634,10 @@ function Install-OptionalDeps {
   }
   if ($installMpv) {
     if (Test-Cmd 'winget') {
-      Invoke-OptionalStep 'winget install --id mpv.net -e' { winget install --id mpv.net -e --accept-package-agreements --accept-source-agreements }
+      # mpv.net ships mpvnet.exe, but Kunai probes for `mpv` and drives playback
+      # over mpv's IPC socket + Lua bridge. mpv-player.mpv-CI.MSVC is the winget
+      # package that provides a real mpv.exe (same upstream build CI pins).
+      Invoke-OptionalStep 'winget install --id mpv-player.mpv-CI.MSVC -e' { winget install --id mpv-player.mpv-CI.MSVC -e --accept-package-agreements --accept-source-agreements }
     }
     elseif (Test-Cmd 'scoop') {
       Invoke-OptionalStep 'scoop install mpv' { scoop install mpv }

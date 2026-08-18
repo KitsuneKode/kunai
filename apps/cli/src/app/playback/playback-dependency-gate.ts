@@ -41,8 +41,8 @@ export function buildMpvRemediation(platform?: NodeJS.Platform): DependencyRemed
     case "win32":
       return {
         platform: "win32",
-        summary: "Install mpv.net with winget, then retry playback.",
-        commands: ["winget install --id mpv.net -e"],
+        summary: "Install mpv with winget, then retry playback.",
+        commands: ["winget install --id mpv-player.mpv-CI.MSVC -e", "scoop install mpv"],
       };
     default:
       return {

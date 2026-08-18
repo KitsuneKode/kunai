@@ -235,7 +235,7 @@ function SystemSlide({
         ? "Playback engine ready"
         : "Required for playback — continue setup and install later",
       install:
-        "brew install mpv  ·  pacman -S mpv  ·  apt install mpv  ·  winget install --id mpv.net -e",
+        "brew install mpv  ·  pacman -S mpv  ·  apt install mpv  ·  winget install --id mpv-player.mpv-CI.MSVC -e",
       fatal: true,
     },
     {
