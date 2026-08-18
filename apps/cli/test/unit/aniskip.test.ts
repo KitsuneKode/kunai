@@ -10,6 +10,15 @@ import { clearAnidbCachesForTest } from "@kunai/providers";
 const originalFetch = globalThis.fetch;
 const originalWhich = Bun.which;
 
+/** Parsed hostname, or null for non-URL inputs — mock routing must never match on substrings. */
+function hostnameOf(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
   Bun.which = originalWhich;
@@ -55,9 +64,12 @@ test("fetchAniSkipTimingMetadata uses provider-native MAL id before lookup fallb
   expect(timing?.intro).toEqual([{ startMs: 12000, endMs: 88000 }]);
   expect(calls).toHaveLength(1);
   expect(calls[0]).toContain("/32182/1?");
-  expect(calls.some((url) => url.includes("haglund.dev") || url.includes("anilist.co"))).toBe(
-    false,
-  );
+  expect(
+    calls.some((url) => {
+      const hostname = hostnameOf(url);
+      return hostname === "arm.haglund.dev" || hostname === "graphql.anilist.co";
+    }),
+  ).toBe(false);
 });
 
 test("fetchAniSkipTimingMetadata resolves MAL id from AniDB show page for opaque anidb catalog ids", async () => {
@@ -130,8 +142,8 @@ test("fetchAniSkipTimingMetadata refuses TMDB-only MAL resolution for season > 1
 
   expect(detailed.metadata).toBeNull();
   expect(detailed.failureClass).toBe("identity-missing");
-  expect(calls.some((url) => url.includes("haglund.dev"))).toBe(false);
-  expect(calls.some((url) => url.includes("api.aniskip.com"))).toBe(false);
+  expect(calls.some((url) => hostnameOf(url) === "arm.haglund.dev")).toBe(false);
+  expect(calls.some((url) => hostnameOf(url) === "api.aniskip.com")).toBe(false);
 });
 
 test("fetchAniSkipTimingMetadata resolves TMDB-only identity for season 1", async () => {
@@ -139,13 +151,14 @@ test("fetchAniSkipTimingMetadata resolves TMDB-only identity for season 1", asyn
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
     calls.push(url);
-    if (url.includes("arm.haglund.dev/api/v2/themoviedb")) {
+    const hostname = hostnameOf(url);
+    if (hostname === "arm.haglund.dev" && url.includes("/api/v2/themoviedb")) {
       return new Response(JSON.stringify([{ myanimelist: 1535, themoviedb: 13916 }]), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     }
-    if (url.includes("api.aniskip.com")) {
+    if (hostname === "api.aniskip.com") {
       return new Response(
         JSON.stringify({
           found: true,
@@ -165,7 +178,11 @@ test("fetchAniSkipTimingMetadata resolves TMDB-only identity for season 1", asyn
   });
 
   expect(timing?.intro).toEqual([{ startMs: 5000, endMs: 90000 }]);
-  expect(calls.some((url) => url.includes("arm.haglund.dev/api/v2/themoviedb"))).toBe(true);
+  expect(
+    calls.some(
+      (url) => hostnameOf(url) === "arm.haglund.dev" && url.includes("/api/v2/themoviedb"),
+    ),
+  ).toBe(true);
   expect(calls.some((url) => url.includes("/1535/3?"))).toBe(true);
 });
 
@@ -174,13 +191,14 @@ test("fetchAniSkipTimingMetadata AniList path is unaffected by season > 1", asyn
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
     calls.push(url);
-    if (url.includes("arm.haglund.dev/api/v2/ids")) {
+    const hostname = hostnameOf(url);
+    if (hostname === "arm.haglund.dev" && url.includes("/api/v2/ids")) {
       return new Response(JSON.stringify({ myanimelist: 30013, anilist: 30013 }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     }
-    if (url.includes("api.aniskip.com")) {
+    if (hostname === "api.aniskip.com") {
       return new Response(
         JSON.stringify({
           found: true,
@@ -199,7 +217,13 @@ test("fetchAniSkipTimingMetadata AniList path is unaffected by season > 1", asyn
   });
 
   expect(timing?.credits).toEqual([{ startMs: 1_200_000, endMs: 1_320_000 }]);
-  expect(calls.some((url) => url.includes("arm.haglund.dev/api/v2/themoviedb"))).toBe(false);
-  expect(calls.some((url) => url.includes("arm.haglund.dev/api/v2/ids"))).toBe(true);
+  expect(
+    calls.some(
+      (url) => hostnameOf(url) === "arm.haglund.dev" && url.includes("/api/v2/themoviedb"),
+    ),
+  ).toBe(false);
+  expect(
+    calls.some((url) => hostnameOf(url) === "arm.haglund.dev" && url.includes("/api/v2/ids")),
+  ).toBe(true);
   expect(calls.some((url) => url.includes("/30013/5?"))).toBe(true);
 });
