@@ -6,6 +6,8 @@ import {
   buildYoutubeYtdlCliArgs,
   joinMpvScriptOpts,
   joinMpvYtdlRawOptions,
+  parseYoutubePlayerClients,
+  withYoutubePlayerClient,
 } from "@kunai/providers/youtube";
 
 describe("youtube ytdl options", () => {
@@ -70,6 +72,28 @@ describe("youtube ytdl options", () => {
   test("skips sub-langs when subtitles are disabled", () => {
     const args = buildYoutubeYtdlCliArgs({ subtitleLanguage: "none" });
     expect(args).not.toContain("--sub-langs");
+  });
+
+  test("parseYoutubePlayerClients reads the requested clients in order", () => {
+    expect(parseYoutubePlayerClients("youtube:player_client=mweb,tv_simply")).toEqual([
+      "mweb",
+      "tv_simply",
+    ]);
+    expect(parseYoutubePlayerClients("youtube:player_client=mweb,mweb")).toEqual(["mweb"]);
+    expect(parseYoutubePlayerClients("youtube:skip=hls")).toEqual([]);
+    expect(parseYoutubePlayerClients(undefined)).toEqual([]);
+  });
+
+  test("withYoutubePlayerClient narrows to one client and keeps other keys", () => {
+    expect(withYoutubePlayerClient("youtube:player_client=mweb,tv_simply", "tv_simply")).toBe(
+      "youtube:player_client=tv_simply",
+    );
+    // A user's unrelated extractor args must survive the rewrite.
+    expect(withYoutubePlayerClient("youtube:skip=hls", "mweb")).toBe(
+      "youtube:skip=hls;youtube:player_client=mweb",
+    );
+    expect(withYoutubePlayerClient(undefined, "mweb")).toBe("youtube:player_client=mweb");
+    expect(withYoutubePlayerClient("", "mweb")).toBe("youtube:player_client=mweb");
   });
 
   test("a multi-client extractor-args value reaches both yt-dlp and mpv intact", () => {

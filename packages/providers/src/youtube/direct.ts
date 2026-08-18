@@ -44,6 +44,7 @@ import type {
 } from "./youtube-metadata";
 import { createYoutubeMetadataService } from "./youtube-metadata-service";
 import { buildYtdlFormatSelector, defaultYtdlPlaybackFormat } from "./yt-dlp-metadata";
+import { parseYoutubePlayerClients, withYoutubePlayerClient } from "./ytdl-options";
 
 export { YOUTUBE_PROVIDER_ID, youtubeManifest };
 
@@ -346,47 +347,80 @@ async function resolveYoutube(
           qualityLabels[0])
         : qualityLabels[0];
 
-    const sourceId = `source:${YOUTUBE_PROVIDER_ID}:youtube`;
+    // One source per player client. Clients fail independently — one answers 403 on
+    // media URLs while another plays the same video — and which one works rotates
+    // without notice. Naming them separately lets the existing startup source
+    // failover walk them, so a 403 retries the next client instead of ending
+    // playback. A single configured client stays a single source.
+    const playerClients = parseYoutubePlayerClients(globalYoutubeConfig.extractorArgs);
+    const lanes =
+      playerClients.length > 0
+        ? playerClients.map((client) => ({
+            client,
+            sourceId: `source:${YOUTUBE_PROVIDER_ID}:${client}`,
+            label: `YouTube · ${client}`,
+            extractorArgs: withYoutubePlayerClient(globalYoutubeConfig.extractorArgs, client),
+          }))
+        : [
+            {
+              client: null,
+              sourceId: `source:${YOUTUBE_PROVIDER_ID}:youtube`,
+              label: "YouTube",
+              extractorArgs: globalYoutubeConfig.extractorArgs,
+            },
+          ];
 
-    const streams: StreamCandidate[] = qualityLabels.map((entry) => {
-      const streamId = `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${entry.label}`;
-      const ytdlFormat = isLive
-        ? defaultYtdlPlaybackFormat()
-        : buildYtdlFormatSelector(entry.label);
-      return {
-        id: streamId,
+    const streamId = (label: string, client: string | null) =>
+      client
+        ? `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${client}:${label}`
+        : `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${label}`;
+
+    const streams: StreamCandidate[] = lanes.flatMap((lane, laneIndex) =>
+      qualityLabels.map((entry) => ({
+        id: streamId(entry.label, lane.client),
         providerId: YOUTUBE_PROVIDER_ID,
-        sourceId,
+        sourceId: lane.sourceId,
         variantId: `variant:${YOUTUBE_PROVIDER_ID}:${entry.label}`,
         url: watchUrl,
-        protocol: "youtube",
-        container: "unknown",
+        protocol: "youtube" as const,
+        container: "unknown" as const,
         qualityLabel: entry.label,
         qualityRank: entry.rank,
         requiresYtdl: true,
         headers: {},
-        confidence: ytInfo ? 0.95 : 0.85,
+        // Later lanes are fallbacks, so rank them below the first.
+        confidence: (ytInfo ? 0.95 : 0.85) - laneIndex * 0.05,
         cachePolicy,
         metadata: {
-          ytdlFormat,
+          ytdlFormat: isLive ? defaultYtdlPlaybackFormat() : buildYtdlFormatSelector(entry.label),
+          // Read back by the player so each lane asks yt-dlp for its own client
+          // rather than the global default.
+          extractorArgs: lane.extractorArgs,
+          playerClient: lane.client,
           videoId,
           durationSeconds: ytInfo?.durationSeconds,
           isLive,
           liveStatus,
         },
-      };
-    });
+      })),
+    );
 
-    const selectedStreamId = `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${selectedQuality?.label ?? "best"}`;
+    const primaryLane = lanes[0];
+    const selectedStreamId = streamId(
+      selectedQuality?.label ?? "best",
+      primaryLane?.client ?? null,
+    );
 
+    // One variant per quality, listing that quality's stream in every lane so the
+    // failover order is preserved when a viewer picks a specific quality.
     const variants: ProviderVariantCandidate[] = qualityLabels.map((entry) => ({
       id: `variant:${YOUTUBE_PROVIDER_ID}:${entry.label}`,
       providerId: YOUTUBE_PROVIDER_ID,
-      sourceId,
+      sourceId: primaryLane?.sourceId ?? `source:${YOUTUBE_PROVIDER_ID}:youtube`,
       qualityLabel: entry.label,
       qualityRank: entry.rank,
       protocol: "youtube",
-      streamIds: [`stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${entry.label}`],
+      streamIds: lanes.map((lane) => streamId(entry.label, lane.client)),
       confidence: 0.9,
     }));
 
@@ -407,19 +441,17 @@ async function resolveYoutube(
       status: "resolved",
       providerId: YOUTUBE_PROVIDER_ID,
       selectedStreamId,
-      sources: [
-        {
-          id: sourceId,
-          providerId: YOUTUBE_PROVIDER_ID,
-          kind: "provider-api",
-          label: "YouTube",
-          host: "youtube.com",
-          status: "selected",
-          confidence: 0.95,
-          requiresRuntime: "direct-http",
-          cachePolicy,
-        },
-      ],
+      sources: lanes.map((lane, laneIndex) => ({
+        id: lane.sourceId,
+        providerId: YOUTUBE_PROVIDER_ID,
+        kind: "provider-api" as const,
+        label: lane.label,
+        host: "youtube.com",
+        status: laneIndex === 0 ? ("selected" as const) : ("available" as const),
+        confidence: 0.95 - laneIndex * 0.05,
+        requiresRuntime: "direct-http" as const,
+        cachePolicy,
+      })),
       streams,
       variants: variants.length > 0 ? variants : undefined,
       subtitles,
