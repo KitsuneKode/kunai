@@ -15,32 +15,49 @@ on the [Feature tour](/docs/users/feature-tour).
 
 ## Install and run
 
-| Command | When to use |
-| --- | --- |
-| `curl … \| bash` (`install.sh`) | Preferred end-user install (binary; no Bun required) |
-| `npm install -g @kitsunekode/kunai` | npm channel (Node launcher; no Bun required) |
-| `bun install -g @kitsunekode/kunai` | Bun global channel |
-| `kunai` | Open the interactive shell |
-| `kunai -S "Title"` | Bootstrap with a search query |
-| `kunai -i 438631 -t movie` | Open a known TMDB id (non-anime) |
-| `kunai -a -S "Anime"` | Anime mode with bootstrap search |
+| Command                             | When to use                                          |
+| ----------------------------------- | ---------------------------------------------------- |
+| `curl … \| bash` (`install.sh`)     | Preferred end-user install (binary; no Bun required) |
+| `npm install -g @kitsunekode/kunai` | npm channel (Node launcher; no Bun required)         |
+| `bun install -g @kitsunekode/kunai` | Bun global channel                                   |
+| `kunai`                             | Open the interactive shell                           |
+| `kunai -S "Title"`                  | Bootstrap with a search query                        |
+| `kunai -i 438631 -t movie`          | Open a known TMDB id (non-anime)                     |
+| `kunai -a -S "Anime"`               | Anime mode with bootstrap search                     |
 
 From a repo clone (contributor-oriented), use `bun run dev -- <flags>` so Bun forwards argv to the CLI.
 
 ## Lifecycle maintenance
 
-| Command | What it does |
-| --- | --- |
-| `kunai install` | Install or reinstall (binary default) |
-| `kunai upgrade` | Primary channel-aware update |
-| `kunai upgrade --check` | Report whether an update is available |
-| `kunai rollback` | Roll back to the previous verified local version |
-| `kunai rollback --list` | List local verified rollback candidates |
-| `kunai rollback --to <ver>` | Roll back to an explicit verified version |
-| `kunai doctor` | Read-only install health (PATH, ownership) |
-| `kunai doctor --json` | Same report as JSON |
-| `kunai uninstall` | Ownership-aware removal |
-| `kunai uninstall --purge` | Also delete config/history/cache |
+| Command                     | What it does                                     |
+| --------------------------- | ------------------------------------------------ |
+| `kunai install`             | Install or reinstall (binary default)            |
+| `kunai upgrade`             | Primary channel-aware update                     |
+| `kunai upgrade --check`     | Report whether an update is available            |
+| `kunai rollback`            | Roll back to the previous verified local version |
+| `kunai rollback --list`     | List local verified rollback candidates          |
+| `kunai rollback --to <ver>` | Roll back to an explicit verified version        |
+| `kunai doctor`              | Read-only install health (PATH, ownership)       |
+| `kunai doctor --json`       | Same report as JSON                              |
+| `kunai uninstall`           | Ownership-aware removal                          |
+| `kunai uninstall --purge`   | Also delete config/history/cache                 |
+
+## Shell completions
+
+`kunai completion <shell>` prints a completion script for `bash`, `zsh`, `fish`,
+or `powershell`. Completions cover every flag the parser accepts and every
+maintenance subcommand.
+
+| Shell      | Install                                                         |
+| ---------- | --------------------------------------------------------------- |
+| bash       | `kunai completion bash > /etc/bash_completion.d/kunai`          |
+| zsh        | `kunai completion zsh > "${fpath[1]}/_kunai"`                   |
+| fish       | `kunai completion fish > ~/.config/fish/completions/kunai.fish` |
+| PowerShell | `kunai completion powershell >> $PROFILE`                       |
+
+For a quick trial without installing, evaluate it in the current session —
+`eval "$(kunai completion bash)"` (bash/zsh), or
+`kunai completion powershell | Out-String | Invoke-Expression`.
 
 ## Launch flows
 
@@ -56,26 +73,26 @@ From a repo clone (contributor-oriented), use `bun run dev -- <flags>` so Bun fo
 
 ## Share links
 
-| Flag / command | What it does |
-| --- | --- |
-| `kunai --open "kunai://play?..."` | Resolve and play a shared catalog link |
+| Flag / command                     | What it does                                     |
+| ---------------------------------- | ------------------------------------------------ |
+| `kunai --open "kunai://play?..."`  | Resolve and play a shared catalog link           |
 | `kunai --install-protocol-handler` | Register `kunai://` with the OS (**Linux-only**) |
-| `/share` | Copy link for current playback context |
-| `/watch` | Open link from clipboard |
-| `/up-next` | Current playback order |
-| `/downloads` | Download queue overlay |
-| `/library` | Offline library |
+| `/share`                           | Copy link for current playback context           |
+| `/watch`                           | Open link from clipboard                         |
+| `/up-next`                         | Current playback order                           |
+| `/downloads`                       | Download queue overlay                           |
+| `/library`                         | Offline library                                  |
 
 More: [Share links](/docs/users/share-links).
 
 ## Download modes (do not confuse)
 
-| Entry | What it does |
-| --- | --- |
-| `kunai --download -S "Title"` | **Download-only launch flag.** Resolves a title, then runs the download flow and exits — no interactive shell queue UI. Requires `-S` or `-i` bootstrap. |
-| `kunai --download -i 438631 -t movie` | Same download-only path with a fixed TMDB id. |
-| `/downloads` in the shell | **Queue overlay** while the shell is running — queued, running, and failed jobs. |
-| `/download` during playback | Queue the **current** item for offline from inside a session. |
+| Entry                                 | What it does                                                                                                                                             |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kunai --download -S "Title"`         | **Download-only launch flag.** Resolves a title, then runs the download flow and exits — no interactive shell queue UI. Requires `-S` or `-i` bootstrap. |
+| `kunai --download -i 438631 -t movie` | Same download-only path with a fixed TMDB id.                                                                                                            |
+| `/downloads` in the shell             | **Queue overlay** while the shell is running — queued, running, and failed jobs.                                                                         |
+| `/download` during playback           | Queue the **current** item for offline from inside a session.                                                                                            |
 
 ## Launch flags
 

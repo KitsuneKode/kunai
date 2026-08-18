@@ -138,7 +138,10 @@ describePwsh("install.ps1 dry-run", () => {
       );
 
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("winget install --id mpv.net -e");
+      // mpv.net ships mpvnet.exe; Kunai probes for `mpv`. See the winget id note
+      // in install.ps1 — this asserts the installer stays on real mpv.
+      expect(result.stdout).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+      expect(result.stdout).not.toContain("mpv.net");
       expect(result.stdout).toContain("winget install yt-dlp");
     } finally {
       sandbox.cleanup();
