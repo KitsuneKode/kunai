@@ -96,6 +96,40 @@ export function projectSeriesProgress(input: SeriesProgressInput): SeriesProgres
   };
 }
 
+export type FurthestWatchedEpisodeInput = {
+  /** History rows for one title. Rows outside `season` are ignored when it is set. */
+  readonly entries: readonly {
+    readonly season?: number | null;
+    readonly episode?: number | null;
+    readonly absoluteEpisode?: number | null;
+  }[];
+  /** Season to scope to. Omit for absolute/anime numbering, where every row counts. */
+  readonly season?: number;
+  /** Episode being watched right now; progress is never behind where you already are. */
+  readonly currentEpisode?: number;
+};
+
+/**
+ * How deep into the season the viewer has reached — the FURTHEST episode with
+ * history, not the number of history rows.
+ *
+ * Counting rows answers "how many episodes did you start from this machine",
+ * which is not what a season progress bar means: jumping straight to E08 is
+ * eight episodes deep, and a fresh row for the episode you just watched is not
+ * "1 of 201". `currentEpisode` keeps the bar honest during the very first watch,
+ * when the history row for it may not be written yet.
+ */
+export function projectFurthestWatchedEpisode(input: FurthestWatchedEpisodeInput): number {
+  const furthest = input.entries.reduce((deepest, entry) => {
+    if (input.season !== undefined && (entry.season ?? 1) !== input.season) return deepest;
+    const reached =
+      finitePositive(entry.absoluteEpisode ?? undefined) ??
+      finitePositive(entry.episode ?? undefined);
+    return reached && reached > deepest ? reached : deepest;
+  }, 0);
+  return Math.max(furthest, finitePositive(input.currentEpisode) ?? 0);
+}
+
 function finiteNonNegative(value: number | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
 }

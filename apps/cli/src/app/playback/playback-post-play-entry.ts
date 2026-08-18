@@ -39,6 +39,7 @@ export type CreatePostPlaybackMenuDepsInput = {
   readonly recommendationRail: PostPlaybackRecommendationRail;
   readonly historyRepository: Container["historyRepository"];
   readonly diagnosticsService: Container["diagnosticsService"];
+  readonly readWatchedEntries: PostPlaybackMenuDeps["readWatchedEntries"];
 
   readonly getMode: () => ShellMode;
   readonly getAutoplaySessionPaused: () => boolean;
@@ -110,6 +111,7 @@ export function createPostPlaybackMenuDeps(
     recommendationRail: input.recommendationRail,
     historyRepository: input.historyRepository,
     diagnosticsService: input.diagnosticsService,
+    readWatchedEntries: input.readWatchedEntries,
     getMode: input.getMode,
     getAutoplaySessionPaused: input.getAutoplaySessionPaused,
     getAutoskipSessionPaused: input.getAutoskipSessionPaused,

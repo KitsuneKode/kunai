@@ -69,6 +69,7 @@ import {
 import type { PhaseResult } from "@/app/session/Phase";
 import type { Container } from "@/container";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
+import { projectFurthestWatchedEpisode } from "@/domain/continuation/watch-progress";
 import { resolveContentKind } from "@/domain/media/content-kind";
 import { toHistoryTimestamp } from "@/domain/playback/playback-history";
 import { didPlaybackEndNearNaturalEnd } from "@/domain/playback/playback-policy";
@@ -97,6 +98,12 @@ export type PostPlaybackMenuDeps = {
   readonly recommendationRail: PostPlaybackRecommendationRail;
   readonly historyRepository: Container["historyRepository"];
   readonly diagnosticsService: Container["diagnosticsService"];
+  /**
+   * Reads this title's history NOW. The iteration's `watchedEntries` snapshot is
+   * taken before the episode plays, so season progress read from it is always one
+   * episode stale — and reads 0 on a first watch.
+   */
+  readonly readWatchedEntries: () => readonly HistoryProgress[];
 
   readonly getMode: () => ShellMode;
   readonly getAutoplaySessionPaused: () => boolean;
@@ -421,13 +428,25 @@ export async function runPostPlaybackMenu(
             (option) => option.value === `${priorEpisode.season}:${priorEpisode.episode}`,
           )
         : undefined;
+      const postPlayTitleDetail = peekTitleDetail(title.id, title.type);
+      const isFilmStructure = title.type === "movie" || postPlayTitleDetail?.type === "movie";
       const episodesInCurrentSeason = iteration.shellEpisodePicker.options.filter((option) =>
         option.value.startsWith(`${currentEpisode.season}:`),
       ).length;
-      const watchedEpisodes = iteration.watchedEntries.filter((entry: HistoryProgress) =>
-        title.type === "series" ? entry.season === currentEpisode.season : true,
-      ).length;
-      const postPlayTitleDetail = peekTitleDetail(title.id, title.type);
+      // ONE season total for both the "E08 of N" line and the progress bar. The
+      // playable list wins over the catalog count: the two disagree often (a
+      // provider carrying 200 of a catalog's 201 episodes), and a denominator you
+      // cannot reach is the wrong one to show next to a playable episode number.
+      const seasonEpisodeTotal = isFilmStructure
+        ? undefined
+        : episodesInCurrentSeason || title.episodeCount;
+      // Furthest episode reached, read AFTER the episode played. The iteration
+      // snapshot predates this episode's history row, so it reads 0 on a first watch.
+      const watchedEpisodes = projectFurthestWatchedEpisode({
+        entries: deps.readWatchedEntries(),
+        ...(title.type === "series" ? { season: currentEpisode.season } : {}),
+        currentEpisode: currentEpisode.episode,
+      });
       const nextEpisodeThumbUrl =
         upcomingEpisode && postPlayTitleDetail?.artwork?.episodeThumbnails
           ? postPlayTitleDetail.artwork.episodeThumbnails[
@@ -472,11 +491,7 @@ export async function runPostPlaybackMenu(
             : { label: "Ready for next action", tone: "success" },
           footerMode: "minimal",
           postPlayState,
-          episodeLabel: buildPostPlayEpisodeLabel(
-            title,
-            currentEpisode,
-            episodesInCurrentSeason || undefined,
-          ),
+          episodeLabel: buildPostPlayEpisodeLabel(title, currentEpisode, seasonEpisodeTotal),
           nextEpisodeLabel: buildPostPlayNextEpisodeLabel(
             upcomingEpisode,
             nextEpisodePickerOption?.label,
@@ -489,16 +504,12 @@ export async function runPostPlaybackMenu(
           queueNextEntryId,
           nextEpisodeThumbUrl,
           previousEpisodeThumbUrl,
-          totalEpisodes:
-            title.type === "movie" || postPlayTitleDetail?.type === "movie"
-              ? undefined
-              : (title.episodeCount ?? iteration.shellEpisodePicker.options.length),
+          totalEpisodes: seasonEpisodeTotal,
           watchedEpisodes,
           currentSeason: currentEpisode.season,
           currentEpisode: currentEpisode.episode,
           contentKind: resolveContentKind(title, mode),
-          titleType:
-            title.type === "movie" || postPlayTitleDetail?.type === "movie" ? "movie" : title.type,
+          titleType: isFilmStructure ? "movie" : title.type,
           // Carry the session's captured video metadata so the post-play `video`
           // panel keeps channel/views/length facts that were shown during playback.
           videoMeta: container.stateManager.getState().videoMeta,
