@@ -8,6 +8,7 @@ import type {
   ProviderEpisodeOption,
   ProviderFailure,
   ProviderResolveInput,
+  ProviderRuntimeContext,
   ProviderSearchResult,
   ProviderSourceCandidate,
   ProviderTraceEvent,
@@ -16,6 +17,16 @@ import type {
 } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
+import {
+  anidbEpisodeMetadataCacheKey,
+  enrichEpisodeOptionsWithAnimeMetadata,
+  fetchAnimeEpisodeMetadataByNumber,
+  mergeExternalEpisodeMetadataInto,
+  mergeSeededEpisodeMetadataInto,
+  seedEpisodeMetadataFromProvider,
+  shouldSkipExternalEpisodeMetadataEnrichment,
+  type AnimeEpisodeMetadata,
+} from "../shared/anime-metadata";
 import {
   animeQualityFields,
   formatAnimeSourceArchetype,
@@ -30,6 +41,8 @@ import {
   anidbNumericId,
   chooseAnidbSearchMatch,
   fetchAnidbEpisodes,
+  fetchAnidbExternalIds,
+  fetchAnidbOfficialEpisodeMetadata,
   fetchAnidbMalId,
   looksLikeAnidbShowId,
   parseAnidbSeasonEvidence,
@@ -46,6 +59,8 @@ export {
   anidbNumericId,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
+  fetchAnidbExternalIds,
+  fetchAnidbOfficialEpisodeMetadata,
   fetchAnidbMalId,
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
@@ -76,13 +91,14 @@ function directAnidbShowFromInput(input: {
 async function resolveAnidbShow(
   input: { readonly title: ProviderResolveInput["title"] },
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<AnidbSearchResult | null> {
   const direct = directAnidbShowFromInput(input);
   if (direct) return direct;
 
   const query = input.title.title?.trim() ?? "";
   if (!query) return null;
-  return chooseAnidbSearchMatch(query, await searchAnidb(query, signal));
+  return chooseAnidbSearchMatch(query, await searchAnidb(query, signal, context));
 }
 
 function buildStreamHeaders(referer: string): Record<string, string> {
@@ -132,19 +148,19 @@ function buildAnidbSourceInventory(
 
 function linksToCandidates(
   links: readonly AnidbStreamLink[],
-  audioMode: "sub" | "dub",
   cachePolicy: ReturnType<typeof createProviderCachePolicy>,
 ): {
   readonly streams: StreamCandidate[];
   readonly variants: ProviderVariantCandidate[];
   readonly sourceId: string;
 } {
+  const audioMode = links[0]?.audioMode ?? "sub";
   const sourceId = `source:${ANIDB_PROVIDER_ID}:${audioMode}`;
   const streams: StreamCandidate[] = [];
   const variants: ProviderVariantCandidate[] = [];
   const sourceDetail = formatAnimeSourceDetail({
     audio: audioMode,
-    subtitleMode: audioMode === "sub" ? "hard" : "unknown",
+    subtitleMode: "unknown",
   });
   const archetype = formatAnimeSourceArchetype({
     audio: audioMode,
@@ -168,8 +184,6 @@ function linksToCandidates(
       qualityRank: quality.qualityRank,
       presentation: audioMode,
       audioLanguages: audioMode === "dub" ? ["en"] : ["ja"],
-      hardSubLanguage: audioMode === "sub" ? "en" : undefined,
-      subtitleDelivery: audioMode === "sub" ? "hardcoded" : undefined,
       flavorArchetype: archetype,
       flavorLabel: audioMode === "dub" ? "Dub" : "Sub",
       serverName: "anidb",
@@ -203,7 +217,7 @@ export const anidbProviderModule: CoreProviderModule = {
   manifest: anidbManifest,
 
   async search(input, context) {
-    const results = await searchAnidb(input.query, context.signal);
+    const results = await searchAnidb(input.query, context.signal, context);
     const mapped: ProviderSearchResult[] = [];
     for (const result of results.slice(0, 40)) {
       mapped.push({
@@ -211,41 +225,73 @@ export const anidbProviderModule: CoreProviderModule = {
         type: "series",
         title: result.title,
         metadataSource: "AniDB",
-        availableAudioModes: ["sub", "dub"],
-        subtitleAvailability: "hardsub",
         externalIds: {
           providerNativeIds: { [ANIDB_PROVIDER_ID]: result.id },
         },
-        languageEvidence: [
-          {
-            role: "audio",
-            normalizedLanguage: "ja",
-            nativeLabel: "sub",
-            confidence: 0.8,
-          },
-        ],
       });
     }
     return mapped;
   },
 
   async listEpisodes(input, context) {
-    const showId = (await resolveAnidbShow(input, context.signal))?.id;
+    const showId = (await resolveAnidbShow(input, context.signal, context))?.id;
     if (!showId) return null;
-    const episodes = await fetchAnidbEpisodes(showId, context.signal);
+    const episodes = await fetchAnidbEpisodes(showId, context.signal, context);
     if (episodes.length === 0) return [];
-    const malId = await fetchAnidbMalId(showId, context.signal);
-    return episodes.map(
+
+    const suppliedMalId = input.title.externalIds?.malId ?? input.title.malId;
+    const suppliedAnilistId = input.title.externalIds?.anilistId ?? input.title.anilistId;
+    const pageIds = await fetchAnidbExternalIds(showId, context.signal, context);
+    const malId = suppliedMalId?.trim() ? suppliedMalId : pageIds?.malId;
+    const anilistId = suppliedAnilistId ?? pageIds?.anilistId;
+    const metadataMalId = malId === undefined ? undefined : String(malId);
+
+    // Official AniDB is the title/synopsis/air-date authority for this provider
+    // and answers in one request for the whole series, so it runs first and its
+    // values win. Seeded so a second listing (or the same show under another
+    // surface) does not pay for it again.
+    const metadataCacheKey = anidbEpisodeMetadataCacheKey(showId);
+    const metadata = new Map<number, AnimeEpisodeMetadata>();
+    mergeSeededEpisodeMetadataInto(metadata, metadataCacheKey);
+    if (metadata.size === 0 && pageIds?.officialAid) {
+      const official = await fetchAnidbOfficialEpisodeMetadata(pageIds.officialAid, context.signal);
+      for (const [number, meta] of official) metadata.set(number, meta);
+      seedEpisodeMetadataFromProvider(metadataCacheKey, [...official.values()]);
+    }
+
+    // AniDB publishes no episode stills, so AniList still runs for artwork even
+    // when every title is already known — but the paginated, rate-limited Jikan
+    // pass is skipped, which is the slow half.
+    if (anilistId || metadataMalId) {
+      const pass = shouldSkipExternalEpisodeMetadataEnrichment(metadata, episodes.length)
+        ? "artwork"
+        : "full";
+      const externalMetadata = await fetchAnimeEpisodeMetadataByNumber(
+        { anilistId, malId: metadataMalId },
+        context.signal,
+        pass,
+      );
+      mergeExternalEpisodeMetadataInto(metadata, externalMetadata);
+    }
+
+    const baseEpisodes = episodes.map(
       (episode): ProviderEpisodeOption => ({
         index: episode.number,
         label: `Episode ${episode.number}`,
         detail: episode.filler ? "Filler" : undefined,
         totalEpisodeCount: episodes.length,
+        // Series poster as the still fallback: an empty art slot reads as a
+        // broken row, and AniDB has no per-episode image of its own.
+        artwork: pageIds?.posterUrl ? { thumbnailUrl: pageIds.posterUrl } : undefined,
         externalIds: {
+          anilistId,
           malId: malId ? String(malId) : undefined,
         },
       }),
     );
+    return metadata.size > 0
+      ? enrichEpisodeOptionsWithAnimeMetadata(baseEpisodes, metadata)
+      : baseEpisodes;
   },
 
   async resolve(input, context) {
@@ -264,7 +310,7 @@ export const anidbProviderModule: CoreProviderModule = {
       });
     }
 
-    const baseShow = await resolveAnidbShow(input, context.signal);
+    const baseShow = await resolveAnidbShow(input, context.signal, context);
     if (!baseShow) {
       return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
         code: "unsupported-title",
@@ -276,8 +322,8 @@ export const anidbProviderModule: CoreProviderModule = {
     const route = await routeAnidbSeason({
       base: baseShow,
       episode: input.episode,
-      search: searchAnidb,
-      episodes: fetchAnidbEpisodes,
+      search: (query, signal) => searchAnidb(query, signal, context),
+      episodes: (showId, signal) => fetchAnidbEpisodes(showId, signal, context),
       signal: context.signal,
     });
     if (!route) {
@@ -308,7 +354,7 @@ export const anidbProviderModule: CoreProviderModule = {
     const malIdPromise =
       existingMalId !== undefined && existingMalId !== ""
         ? Promise.resolve(String(existingMalId))
-        : fetchAnidbMalId(showId, context.signal).then(
+        : fetchAnidbMalId(showId, context.signal, context).then(
             (id) => (id !== undefined ? String(id) : undefined),
             () => undefined,
           );
@@ -353,7 +399,7 @@ export const anidbProviderModule: CoreProviderModule = {
         });
       }
 
-      const { streams, variants, sourceId } = linksToCandidates(links, audioMode, cachePolicy);
+      const { streams, variants, sourceId } = linksToCandidates(links, cachePolicy);
       const selection = selectReadyStream(streams, {
         startupPriority: input.startupPriority,
         qualityPreference: input.qualityPreference,
@@ -387,6 +433,8 @@ export const anidbProviderModule: CoreProviderModule = {
         streams,
         variants,
         subtitles: [],
+        release: input.episode?.release,
+        artwork: input.episode?.artwork,
         externalIds: {
           anilistId: input.title.externalIds?.anilistId ?? input.title.anilistId,
           malId,

@@ -609,6 +609,44 @@ used by search and resolve so they cannot drift apart:
   markup) become results, so nav, breadcrumb, related-rail and footer links cannot become
   `results[0]` and pin the wrong show.
 
+### AniDB metadata and language evidence
+
+The active `anidb.app` episode endpoint is a stream catalog, not a rich episode metadata catalog:
+it currently returns episode ids, numbers, and filler flags. `anidb.listEpisodes()` first follows
+the title page's explicit cross-link to the official AniDB AID and enriches from the official XML
+catalog. It then uses the existing shared AniList/Jikan path for still thumbnails and missing fields
+when the title identity carries an AniList or MAL id. This keeps the metadata authority explicit
+instead of pretending those fields came from `anidb.app`.
+
+- `anidb.app` language evidence is per episode: `jpn` is the sub/original embed and `eng` is the
+  dub embed when present. Search does not advertise both modes blindly; availability is confirmed
+  only by the episode languages response.
+- A missing requested language is an exhausted AniDB attempt. It must not fall back to the other
+  language and label the stream incorrectly.
+- The embed probe currently exposes an HLS source but no independently addressable subtitle track.
+  AniDB results keep `subtitles: []` and mark subtitle delivery unknown; `jpn` is not sufficient
+  evidence that captions are hardcoded.
+- Official AniDB XML is a separate catalog namespace. It can provide richer anime and episode
+  metadata, but its AIDs must not be confused with the numeric ids in `anidb.app` URLs. See
+  [the metadata capability dossier](./provider-dossiers/anidb-metadata-capabilities.md).
+
+The cost model matters as much as the data, because this runs in front of the episode picker:
+
+- Official AniDB XML is **one request for the whole series**, cached for a month and seeded into
+  the shared episode-metadata cache, so a second listing of the same show is free.
+- AniList runs even when every title is already known — it is a single request and the only source
+  of episode stills AniDB has.
+- Jikan is the expensive pass (100 episodes per page, strict rate limit) and is **skipped** when
+  official titles already cover the catalog, matching the AllManga path via
+  `shouldSkipExternalEpisodeMetadataEnrichment()`.
+- An official response that carries `<error>` (rate limit, ban, bad client credentials) is never
+  cached. Caching what it parses to would suppress every episode title for that show for a month
+  after the block lifted.
+- AniDB is relay-registered (`/rpc/anidb`, settings toggle). Metadata HTML/JSON uses `context.fetch`
+  with curl fallback. HLS ladder expansion uses the same path so a relay miss does not collapse
+  qualities to a silent `auto` row. Video remains direct from `hls.anidb.app` unless the user
+  enables video fallback (which is still unwired).
+
 ### AniDB season routing and episode numbering
 
 AniDB models each season as its own title, so `routeAnidbSeason()` in

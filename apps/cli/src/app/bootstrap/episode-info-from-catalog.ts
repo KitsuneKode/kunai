@@ -16,7 +16,13 @@ export function episodeInfoFromSelection(args: {
       season,
       episode,
       name: match?.name ?? match?.label,
-      ...(match?.previewImageUrl ? { artwork: { thumbnailUrl: match.previewImageUrl } } : {}),
+      airDate: match?.airDate ?? match?.release?.airDate,
+      overview: match?.overview ?? match?.detail,
+      externalIds: match?.externalIds,
+      release: match?.release,
+      artwork:
+        match?.artwork ??
+        (match?.previewImageUrl ? { thumbnailUrl: match.previewImageUrl } : undefined),
     };
   }
 

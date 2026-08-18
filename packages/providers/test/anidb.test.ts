@@ -16,9 +16,23 @@ import {
   searchAnidb,
 } from "../src/anidb/direct";
 import { anidbManifest, ANIDB_PROVIDER_ID } from "../src/anidb/manifest";
+import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
+import { isOfficialAnidbApi, urlHasHostname } from "./helpers/anidb-urls";
 
 const fixture = (name: string) =>
   Bun.file(new URL(`./fixtures/anidb/${name}`, import.meta.url)).text();
+
+describe("anidb fetch stub URL match", () => {
+  test("official API match is host and port, not a substring spoof", () => {
+    expect(isOfficialAnidbApi("http://api.anidb.net:9001/httpapi")).toBe(true);
+    expect(isOfficialAnidbApi("https://evil.test/?x=api.anidb.net:9001")).toBe(false);
+    expect(isOfficialAnidbApi("http://api.anidb.net.evil.test:9001/httpapi")).toBe(false);
+    expect(urlHasHostname("https://graphql.anilist.co/api", "graphql.anilist.co")).toBe(true);
+    expect(urlHasHostname("https://evil.test/?x=graphql.anilist.co", "graphql.anilist.co")).toBe(
+      false,
+    );
+  });
+});
 
 describe("anidb id helpers", () => {
   test("accepts slug-numeric show ids", () => {
@@ -319,6 +333,29 @@ describe("anidb search delegation", () => {
       Bun.which = originalWhich;
     }
   });
+
+  test("does not claim audio or subtitle availability before an episode probe", async () => {
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () =>
+        new Response('<a href="/anime/show-1" title="Show"><article></article></a>', {
+          status: 200,
+        })) as unknown as typeof fetch;
+
+      const search = anidbProviderModule.search;
+      if (!search) throw new Error("AniDB search is not configured");
+      const result = await search({ query: "Show" }, { now: () => new Date().toISOString() });
+
+      expect(result?.[0]?.availableAudioModes).toBeUndefined();
+      expect(result?.[0]?.subtitleAvailability).toBeUndefined();
+      expect(result?.[0]?.languageEvidence).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
 });
 
 describe("anidb direct resolve season routing", () => {
@@ -539,6 +576,164 @@ describe("anidb direct resolve season routing", () => {
 
     expect(result.status).toBe("resolved");
     expect(result.externalIds?.malId).toBe("99999");
+  });
+
+  test("does not fall back to Japanese when a requested dub is unavailable", async () => {
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "en",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      anidbFetchStub({ episodesByNumericId: { "700": [{ id: 70001, number: 1 }] } }),
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.message).toContain("No AniDB streams");
+  });
+
+  test("does not advertise hardcoded English subs without a subtitle track", async () => {
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      anidbFetchStub({ episodesByNumericId: { "700": [{ id: 70001, number: 1 }] } }),
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved result");
+    const stream = result.streams[0];
+    expect(stream?.hardSubLanguage).toBeUndefined();
+    expect(stream?.subtitleDelivery).toBeUndefined();
+    expect(stream?.subtitleLanguages).toBeUndefined();
+    expect(stream?.languageEvidence ?? []).not.toContainEqual(
+      expect.objectContaining({ role: "hardsub" }),
+    );
+    expect(result.sources?.[0]?.languageEvidence ?? []).not.toContainEqual(
+      expect.objectContaining({ role: "hardsub" }),
+    );
+    expect(result.subtitles).toEqual([]);
+  });
+});
+
+describe("anidb episode metadata", () => {
+  test("enriches episode titles, air dates, and thumbnails from existing catalog ids", async () => {
+    clearAnidbCachesForTest();
+    clearAnimeMetadataCacheForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async (input: unknown) => {
+        const url = String(input);
+        if (url.includes("/api/frontend/anime/700/episodes")) {
+          return new Response(
+            JSON.stringify({
+              episodes: [
+                { id: 70001, number: 1 },
+                { id: 70002, number: 2 },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/anime/plain-show-700")) {
+          return new Response(
+            '<a href="https://myanimelist.net/anime/5678/Plain-Show">MAL</a>' +
+              '<a href="https://anilist.co/anime/1234">AniList</a>' +
+              '<a href="https://anidb.net/anime/9876">AniDB</a>' +
+              '<meta property="og:image" content="https://img.example/poster.jpg">',
+            { status: 200 },
+          );
+        }
+        if (isOfficialAnidbApi(url)) {
+          return new Response(
+            `<?xml version="1.0"?>
+              <anime id="9876">
+                <episode id="1"><epno type="1">2</epno><airdate>2020-01-09</airdate>
+                  <title xml:lang="en">Official Journey</title><summary>Official synopsis</summary>
+                </episode>
+                <episode id="2"><epno type="1">1</epno><airdate>2020-01-02</airdate>
+                  <title xml:lang="ja">公式の始まり</title><title xml:lang="x-jat">The Beginning</title>
+                </episode>
+                <episode id="3"><epno type="2">1</epno><title xml:lang="en">Special</title></episode>
+              </anime>`,
+            { status: 200 },
+          );
+        }
+        if (urlHasHostname(url, "graphql.anilist.co")) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                Media: {
+                  streamingEpisodes: [
+                    { title: "The Beginning", thumbnail: "https://img.example/ep-1.jpg" },
+                    { title: "The Journey", thumbnail: "https://img.example/ep-2.jpg" },
+                  ],
+                },
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        if (urlHasHostname(url, "api.jikan.moe")) {
+          return new Response(
+            JSON.stringify({
+              data: [
+                { mal_id: 1, title: "The Beginning", aired: "2020-01-02T00:00:00+00:00" },
+                { mal_id: 2, title: "The Journey", aired: "2020-01-09T00:00:00+00:00" },
+              ],
+              pagination: { has_next_page: false },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }) as unknown as typeof fetch;
+
+      const episodes = await anidbProviderModule.listEpisodes?.(
+        {
+          title: {
+            id: "plain-show-700",
+            kind: "anime",
+            title: "Plain Show",
+          },
+          preferredAudioLanguage: "ja",
+        },
+        { now: () => new Date().toISOString(), signal: new AbortController().signal },
+      );
+
+      expect(episodes?.[0]).toMatchObject({
+        index: 1,
+        name: "The Beginning",
+        label: "Episode 1 · The Beginning",
+        release: { airDate: "2020-01-02" },
+        artwork: { thumbnailUrl: "https://img.example/ep-1.jpg" },
+      });
+      expect(episodes?.[1]).toMatchObject({
+        index: 2,
+        name: "Official Journey",
+        label: "Episode 2 · Official Journey",
+        release: { airDate: "2020-01-09" },
+        artwork: { thumbnailUrl: "https://img.example/ep-2.jpg" },
+        detail: "Official synopsis",
+      });
+      expect(episodes?.[0]?.externalIds).toEqual({ anilistId: "1234", malId: "5678" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+      clearAnidbCachesForTest();
+      clearAnimeMetadataCacheForTest();
+    }
   });
 });
 

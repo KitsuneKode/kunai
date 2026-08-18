@@ -3474,6 +3474,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             recommendationRail,
             historyRepository,
             diagnosticsService,
+            readWatchedEntries: () => historyRepository.listByTitleIdentity(historyTitleLookup),
             getMode: () => stateManager.getState().mode,
             getAutoplaySessionPaused: () => stateManager.getState().autoplaySessionPaused,
             getAutoskipSessionPaused: () => stateManager.getState().autoskipSessionPaused,
