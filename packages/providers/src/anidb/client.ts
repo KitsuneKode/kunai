@@ -3,6 +3,7 @@ import type { ProviderRuntimeContext } from "@kunai/types";
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import { curlCipherArgs, resolveCurlCandidate } from "../shared/curl-impersonate";
 import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { markupToPlainText } from "../shared/markup-text";
 import { TTLCache } from "../shared/provider-cache";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
@@ -246,7 +247,7 @@ export async function fetchAnidbOfficialEpisodeMetadata(
   }
 }
 
-function parseAnidbOfficialEpisodeMetadata(xml: string): Map<number, AnimeEpisodeMetadata> {
+export function parseAnidbOfficialEpisodeMetadata(xml: string): Map<number, AnimeEpisodeMetadata> {
   const metadata = new Map<number, AnimeEpisodeMetadata>();
   const episodePattern = /<episode\b[^>]*>([\s\S]*?)<\/episode>/gi;
   let match: RegExpExecArray | null;
@@ -301,34 +302,11 @@ function readXmlAttribute(attributes: string, name: string): string | undefined 
 }
 
 function normalizeXmlText(value: string): string {
-  return decodeXmlEntities(value.replace(/<[^>]+>/g, ""))
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function decodeXmlEntities(value: string): string {
-  return value.replace(
-    /&(?:#x([0-9a-f]+)|#(\d+)|(amp|lt|gt|quot|apos));/gi,
-    (raw, hex?: string, decimal?: string, named?: string) => {
-      if (hex !== undefined) return decodeXmlCodePoint(raw, Number.parseInt(hex, 16));
-      if (decimal !== undefined) return decodeXmlCodePoint(raw, Number.parseInt(decimal, 10));
-      return (
-        { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" }[named?.toLowerCase() ?? ""] ?? raw
-      );
-    },
-  );
-}
-
-function decodeXmlCodePoint(raw: string, codePoint: number): string {
-  if (
-    !Number.isInteger(codePoint) ||
-    codePoint < 0 ||
-    codePoint > 0x10ffff ||
-    (codePoint >= 0xd800 && codePoint <= 0xdfff)
-  ) {
-    return raw;
-  }
-  return String.fromCodePoint(codePoint);
+  // Official summaries carry markup and numeric entities, and land straight in
+  // terminal output. `markupToPlainText` is the same hardened path the browse
+  // scraper uses: script spans first, then tags, entities decoded once, and no
+  // decoded control character — `&#27;` must never become a live ESC byte.
+  return markupToPlainText(value);
 }
 
 function readMetaContent(html: string, property: string): string | undefined {

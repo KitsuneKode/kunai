@@ -17,6 +17,7 @@ import {
 } from "../src/anidb/direct";
 import { anidbManifest, ANIDB_PROVIDER_ID } from "../src/anidb/manifest";
 import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
+import { isOfficialAnidbApi } from "./helpers/anidb-urls";
 
 const fixture = (name: string) =>
   Bun.file(new URL(`./fixtures/anidb/${name}`, import.meta.url)).text();
@@ -614,7 +615,7 @@ describe("anidb episode metadata", () => {
             { status: 200 },
           );
         }
-        if (url.includes("api.anidb.net:9001")) {
+        if (isOfficialAnidbApi(url)) {
           return new Response(
             `<?xml version="1.0"?>
               <anime id="9876">

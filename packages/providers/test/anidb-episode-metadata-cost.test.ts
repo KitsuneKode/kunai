@@ -4,6 +4,7 @@ import type { ProviderRuntimeContext } from "@kunai/types";
 
 import { anidbProviderModule, clearAnidbCachesForTest } from "../src/anidb/direct";
 import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
+import { isOfficialAnidbApi } from "./helpers/anidb-urls";
 
 // What this file protects: AniDB's own metadata is one request for a whole
 // series, while Jikan pages 100 episodes at a time under a rate limit. Paying
@@ -50,7 +51,7 @@ function stubAnidbFetch(officialBody: string): string[] {
       );
     }
     if (url.includes("/anime/plain-show-700")) return new Response(ANIDB_PAGE, { status: 200 });
-    if (url.includes("api.anidb.net:9001")) return new Response(officialBody, { status: 200 });
+    if (isOfficialAnidbApi(url)) return new Response(officialBody, { status: 200 });
     if (url.includes("graphql.anilist.co")) {
       return new Response(
         JSON.stringify({
