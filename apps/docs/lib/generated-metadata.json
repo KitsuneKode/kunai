@@ -1,9 +1,9 @@
 {
-  "syncedAt": "2026-08-18T09:43:00.820Z",
+  "syncedAt": "2026-08-18T10:57:56.286Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "99c2c28b",
-  "cliSourceFingerprint": "0b65d1a676ffa988d3ada7fb4a6a7b5177ebd0ac02870904f2353b0b7f61d6c5",
+  "cliSourceRevision": "2291d461",
+  "cliSourceFingerprint": "563c7f4bd69fea33fca72398350e0da049f70c653bd04bd2c4409b41d9a764cb",
   "docsContentFingerprint": "483acbc973e88226ec894a6e57466689f87a24edf9a9f884610afcb6b5a0823a",
   "featureStatusRevision": "d4c1e1d0943d18f05bca1a12a5b0ff966754a588f12e4a86a03510d2bc424c1d",
   "commandCount": 81,
@@ -68,6 +68,8 @@
         "Parity with ani-cli v5.0 (2026-08-01): browse search",
         "/api/frontend anime episodes + episode languages",
         "embed → HLS master.",
+        "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link",
+        "then reads official XML; AniList/Jikan fill missing fields and still artwork.",
         "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
         "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained.",
         "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it."

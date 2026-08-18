@@ -5,6 +5,7 @@ import {
 } from "@kunai/relay";
 
 export const RELAY_CAPABLE_PROVIDER_OPTIONS = [
+  { value: "anidb", label: "AniDB" },
   { value: "allanime", label: "AllAnime" },
   { value: "miruro", label: "Miruro" },
   { value: "videasy", label: "Videasy" },

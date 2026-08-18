@@ -195,7 +195,17 @@ test("listEpisodes receives the full title identity and language preferences", a
     },
     async listEpisodes(input): Promise<ProviderEpisodeOption[]> {
       received = input as unknown as Record<string, unknown>;
-      return [{ index: 1, label: "Episode 1", totalEpisodeCount: 1 }];
+      return [
+        {
+          index: 1,
+          label: "Episode 1 · Pilot",
+          name: "Pilot",
+          detail: "The first episode",
+          release: { airDate: "2026-01-02" },
+          artwork: { thumbnailUrl: "https://img.example/episode-1.jpg" },
+          totalEpisodeCount: 1,
+        },
+      ];
     },
   };
 
@@ -207,7 +217,7 @@ test("listEpisodes receives the full title identity and language preferences", a
   } as unknown as ProviderEngine;
 
   const registry = new ProviderRegistryImpl(engine);
-  await registry.get("hooked")?.listEpisodes?.({
+  const episodes = await registry.get("hooked")?.listEpisodes?.({
     title: {
       id: "anilist:21",
       name: "One Piece",
@@ -223,4 +233,13 @@ test("listEpisodes receives the full title identity and language preferences", a
   expect(title.title).toBe("One Piece");
   expect((received as unknown as Record<string, unknown>).preferredAudioLanguage).toBe("dub");
   expect((received as unknown as Record<string, unknown>).preferredSubtitleLanguage).toBe("en");
+  expect(episodes?.[0]).toMatchObject({
+    name: "Pilot",
+    detail: "The first episode",
+    overview: "The first episode",
+    airDate: "2026-01-02",
+    release: { airDate: "2026-01-02" },
+    previewImageUrl: "https://img.example/episode-1.jpg",
+    artwork: { thumbnailUrl: "https://img.example/episode-1.jpg" },
+  });
 });

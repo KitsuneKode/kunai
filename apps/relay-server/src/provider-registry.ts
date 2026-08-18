@@ -1,5 +1,6 @@
 import {
   allmangaProviderModule,
+  anidbProviderModule,
   miruroProviderModule,
   rivestreamProviderModule,
   videasyProviderModule,
@@ -12,6 +13,7 @@ export const relayProviderModules = [
   vidlinkProviderModule,
   rivestreamProviderModule,
   allmangaProviderModule,
+  anidbProviderModule,
   miruroProviderModule,
 ] as const;
 

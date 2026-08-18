@@ -17,8 +17,8 @@ export const anidbManifest = defineProviderManifest({
       runtime: "direct-http",
       operations: ["search", "list-episodes", "resolve-stream", "health-check"],
       browserSafe: false,
-      relaySafe: false,
-      localOnly: true,
+      relaySafe: true,
+      localOnly: false,
     },
   ],
   cachePolicy: {
@@ -39,7 +39,7 @@ export const anidbManifest = defineProviderManifest({
     allowStale: true,
   },
   browserSafe: false,
-  relaySafe: false,
+  relaySafe: true,
   relayProfile: {
     upstreamHosts: ["anidb.app", "hls.anidb.app"],
     defaultHeaders: {
@@ -48,6 +48,7 @@ export const anidbManifest = defineProviderManifest({
   },
   notes: [
     "Parity with ani-cli v5.0 (2026-08-01): browse search, /api/frontend anime episodes + episode languages, embed → HLS master.",
+    "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link, then reads official XML; AniList/Jikan fill missing fields and still artwork.",
     "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
     "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained.",
     "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it.",
