@@ -21,7 +21,12 @@ import type {
 
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { formatDurationSeconds } from "./format-duration";
-import { buildYoutubeWatchUrl, parseYoutubeCatalogId, toYoutubeVideoCatalogId } from "./ids";
+import {
+  buildYoutubeWatchUrl,
+  parseYoutubeCatalogId,
+  toYoutubeVideoCatalogId,
+  youtubeThumbnailUrl,
+} from "./ids";
 import {
   invidiousGetChannelVideos,
   invidiousGetPlaylist,
@@ -154,12 +159,16 @@ async function searchYoutubeViaYtsearch(
           live_status?: string;
         };
         if (!entry.id || !entry.title) continue;
+        // `--flat-playlist` returns `thumbnail: null` on every entry (the images live
+        // in a `thumbnails[]` array it does not flatten), so without this fallback the
+        // whole yt-dlp search lane renders with empty posters.
+        const poster = entry.thumbnail ?? youtubeThumbnailUrl(entry.id);
         results.push({
           id: toYoutubeVideoCatalogId(entry.id),
           type: "movie",
           title: entry.title,
           overview: "",
-          posterPath: entry.thumbnail ?? null,
+          posterPath: poster,
           metadataSource: "yt-dlp",
           durationSeconds: entry.duration,
           channelTitle: entry.uploader,
@@ -169,8 +178,8 @@ async function searchYoutubeViaYtsearch(
           contentShape: "video",
           externalIds: { youtubeId: entry.id, youtubeChannelId: entry.channel_id },
           artwork: {
-            thumbnailUrl: entry.thumbnail,
-            posterUrl: entry.thumbnail,
+            thumbnailUrl: poster,
+            posterUrl: poster,
           },
         });
       } catch {

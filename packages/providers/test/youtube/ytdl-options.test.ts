@@ -71,4 +71,17 @@ describe("youtube ytdl options", () => {
     const args = buildYoutubeYtdlCliArgs({ subtitleLanguage: "none" });
     expect(args).not.toContain("--sub-langs");
   });
+
+  test("a multi-client extractor-args value reaches both yt-dlp and mpv intact", () => {
+    const extractorArgs = "youtube:player_client=mweb,tv_simply";
+
+    const args = buildYoutubeYtdlCliArgs({ extractorArgs });
+    expect(args).toContain("--extractor-args");
+    expect(args).toContain(extractorArgs);
+
+    // mpv sub-option values are length-prefixed; a miscount silently truncates the
+    // client list back toward yt-dlp's own default, which is the 403-ing one.
+    const joined = joinMpvYtdlRawOptions(buildYoutubeMpvYtdlRawOptions({ extractorArgs }));
+    expect(joined).toContain(`extractor-args=%${extractorArgs.length}%${extractorArgs}`);
+  });
 });

@@ -6,6 +6,7 @@ import {
   isYoutubeWatchUrl,
   parseYoutubeCatalogId,
   toYoutubeChannelCatalogId,
+  youtubeThumbnailUrl,
 } from "@kunai/providers/youtube";
 
 describe("youtube ids", () => {
@@ -38,5 +39,17 @@ describe("youtube ids", () => {
     expect(isYoutubeCollectionCatalogId("youtube-channel:UC123")).toBe(true);
     expect(isYoutubeCollectionCatalogId("youtube-playlist:PL123")).toBe(true);
     expect(isYoutubeCollectionCatalogId("youtube:abc12345678")).toBe(false);
+  });
+
+  test("youtubeThumbnailUrl derives a CDN poster from a video id alone", () => {
+    expect(youtubeThumbnailUrl("0v1MKQDr7d8")).toBe(
+      "https://i.ytimg.com/vi/0v1MKQDr7d8/hqdefault.jpg",
+    );
+  });
+
+  test("youtubeThumbnailUrl escapes ids so they cannot break out of the path", () => {
+    expect(youtubeThumbnailUrl("../../evil")).toBe(
+      "https://i.ytimg.com/vi/..%2F..%2Fevil/hqdefault.jpg",
+    );
   });
 });
