@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 2,
+  "status": "staged",
+  "publishedAt": null,
+  "packageName": "@kitsunekode/kunai",
+  "version": "0.3.1",
+  "tag": "v0.3.1",
+  "title": "Kunai 0.3.1",
+  "date": null,
+  "summary": "[`6065233`](https://github.com/KitsuneKode/kunai/commit/606523359ca5436c8ca286a478e56ad32eefa10a) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Security and honesty fixes from a full codebase review.\n\n- **Downloads:** provider stream URLs and headers are now guarded before\n  reaching yt-dlp (scheme check, leading-dash rejection, `--` terminator,\n  CRLF-stripped headers), closing an argv option-injection path the mpv lane\n  already blocked.\n- **Storage:** the data and cache SQLite files (plus `-wal`/`-shm`) are\n  chmod'd to owner-only on every open, matching config and token handling.\n- **CLI:** `--jump` help now says what the flag does (auto-pick the n-th\n  search result) and warns on invalid values; headless download failures and\n  rejected `--handoff-url` values exit nonzero.\n- **Playback:** one-shot mpv launches attach the full collected subtitle\n  inventory and report the real track count; prefetched and back-navigation\n  streams are re-resolved when blocked or older than five minutes instead of\n  replaying a possibly expired URL.\n- **AniSkip:** the TMDB→MAL fallback is refused beyond season 1 so\n  split-cour anime no longer risk wrong auto-skip windows.\n- **Docs/palette:** the command-honesty gate now counts the browse palette;\n  user docs stop promising `/sync`, `/random`, and `/surprise` as typed\n  commands; the keybindings doc's post-playback table matches the code.",
+  "sections": [],
+  "changelogBody": "[`6065233`](https://github.com/KitsuneKode/kunai/commit/606523359ca5436c8ca286a478e56ad32eefa10a) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Security and honesty fixes from a full codebase review.\n\n- **Downloads:** provider stream URLs and headers are now guarded before\n  reaching yt-dlp (scheme check, leading-dash rejection, `--` terminator,\n  CRLF-stripped headers), closing an argv option-injection path the mpv lane\n  already blocked.\n- **Storage:** the data and cache SQLite files (plus `-wal`/`-shm`) are\n  chmod'd to owner-only on every open, matching config and token handling.\n- **CLI:** `--jump` help now says what the flag does (auto-pick the n-th\n  search result) and warns on invalid values; headless download failures and\n  rejected `--handoff-url` values exit nonzero.\n- **Playback:** one-shot mpv launches attach the full collected subtitle\n  inventory and report the real track count; prefetched and back-navigation\n  streams are re-resolved when blocked or older than five minutes instead of\n  replaying a possibly expired URL.\n- **AniSkip:** the TMDB→MAL fallback is refused beyond season 1 so\n  split-cour anime no longer risk wrong auto-skip windows.\n- **Docs/palette:** the command-honesty gate now counts the browse palette;\n  user docs stop promising `/sync`, `/random`, and `/surprise` as typed\n  commands; the keybindings doc's post-playback table matches the code.",
+  "install": {
+    "npm": "npm install -g @kitsunekode/kunai@0.3.1",
+    "bunx": "bunx @kitsunekode/kunai@0.3.1",
+    "binaryLatest": "https://github.com/KitsuneKode/kunai/releases/latest"
+  }
+}

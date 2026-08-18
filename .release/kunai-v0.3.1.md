@@ -1,9 +1,6 @@
----
-"@kitsunekode/kunai": patch
-"@kunai/storage": patch
----
+# Kunai 0.3.1
 
-Security and honesty fixes from a full codebase review.
+[`6065233`](https://github.com/KitsuneKode/kunai/commit/606523359ca5436c8ca286a478e56ad32eefa10a) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Security and honesty fixes from a full codebase review.
 
 - **Downloads:** provider stream URLs and headers are now guarded before
   reaching yt-dlp (scheme check, leading-dash rejection, `--` terminator,
