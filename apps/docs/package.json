@@ -22,6 +22,7 @@
     "@base-ui/react": "catalog:web",
     "@kunai/design": "workspace:*",
     "@tabler/icons-react": "catalog:web",
+    "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "catalog:web",
     "clsx": "catalog:web",
     "fumadocs-core": "catalog:web",
