@@ -13,6 +13,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 
 // Side-effecting: honours NEON_FETCH_ENDPOINT. Must precede store construction.
+// oxlint-disable-next-line import/no-unassigned-import -- the side effect is the point
 import "../src/neon-fetch-endpoint";
 import { hashInstallId, ingestAnalyticsPing, RAW_RETENTION_DAYS } from "../src/ingest";
 import { createPostgresAnalyticsStore } from "../src/postgres-store";

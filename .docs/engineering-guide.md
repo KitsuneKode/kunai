@@ -187,7 +187,7 @@ Bun-first means using Bun primitives where they are the clearly better choice. I
 - **Config reads**: `Bun.file().json()` for config and capability notice files
 - **Crypto IDs**: `crypto.randomUUID()` and `crypto.getRandomValues()` (not `node:crypto` `randomUUID`/`randomBytes`)
 - **Atomic writes**: `Bun.write()` + Node `rename`/`unlink` via shared `infra/fs/atomic-write.ts` helpers (`writeAtomicText`, `writeAtomicBytes`, `writeAtomicJson`)
-- **End-file telemetry**: Promise-based `endFileReceived` races `Bun.sleep(1500)` instead of a 50ms polling loop
+- **End-file stats**: Promise-based `endFileReceived` races `Bun.sleep(1500)` instead of a 50ms polling loop
 
 ### Keep Node Intentionally
 

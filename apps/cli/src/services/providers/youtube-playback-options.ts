@@ -1,6 +1,21 @@
 import { buildYoutubeYtdlProfile, getYoutubeProviderConfig } from "@kunai/providers/youtube";
 import type { StreamCandidate } from "@kunai/types";
 
+/**
+ * Extractor args for this specific stream.
+ *
+ * Each YouTube source is one player client, and the stream carries the args that
+ * select it. Falling back to the global config would collapse every lane onto the
+ * same client and silently defeat failover.
+ */
+function extractorArgsFor(selected: StreamCandidate): string | undefined {
+  const metadata = selected.metadata as { readonly extractorArgs?: string } | undefined;
+  if (typeof metadata?.extractorArgs === "string" && metadata.extractorArgs.trim()) {
+    return metadata.extractorArgs;
+  }
+  return getYoutubeProviderConfig().extractorArgs;
+}
+
 export function resolveYoutubeYtdlRawOptions(
   selected: StreamCandidate,
   subtitleLanguage?: string,
@@ -14,7 +29,7 @@ export function resolveYoutubeYtdlRawOptions(
   return buildYoutubeYtdlProfile({
     cookiesFromBrowser: config.cookiesFromBrowser,
     cookiesFile: config.cookiesFile,
-    extractorArgs: config.extractorArgs,
+    extractorArgs: extractorArgsFor(selected),
     sponsorblockRemove: config.sponsorblockRemove,
     isLive,
     qualityLabel: selected.qualityLabel,
@@ -35,7 +50,7 @@ export function resolveYtdlFormatFromCandidate(selected: StreamCandidate): strin
   return buildYoutubeYtdlProfile({
     cookiesFromBrowser: config.cookiesFromBrowser,
     cookiesFile: config.cookiesFile,
-    extractorArgs: config.extractorArgs,
+    extractorArgs: extractorArgsFor(selected),
     sponsorblockRemove: config.sponsorblockRemove,
     isLive,
     qualityLabel: selected.qualityLabel,

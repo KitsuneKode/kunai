@@ -218,7 +218,7 @@ export type LoadingShellState = {
   stage?: LoadingShellStage;
   /** Human-readable sub-status within the current stage (e.g. "Resolving direct link…"). */
   stageDetail?: string;
-  /** Dominant slow startup phase from playback.startup.phases telemetry. */
+  /** Dominant slow startup phase from the playback.startup.phases diagnostic event. */
   dominantPhaseLabel?: string;
   progress?: number; // 0-100 or undefined for indeterminate
   details?: string;
@@ -238,7 +238,7 @@ export type LoadingShellState = {
   autoplayPaused?: boolean;
   isSeriesPlayback?: boolean;
   fallbackProviderName?: string;
-  /** Playback supervision telemetry (populated when operation === "playing"). */
+  /** Playback supervision stats (populated when operation === "playing"). */
   currentPosition?: number;
   duration?: number;
   qualityLabel?: string;

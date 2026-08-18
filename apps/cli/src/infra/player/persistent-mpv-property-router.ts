@@ -1,15 +1,15 @@
 import type { PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
 
 import type { MpvIpcSession } from "./mpv-ipc";
-import { applyObservedPropertySample, type PlayerTelemetryState } from "./mpv-telemetry";
+import { applyObservedPropertySample, type PlayerStatsState } from "./mpv-stats";
 import type { PersistentSubtitleManager } from "./persistent-subtitle-manager";
 import type { MpvRequestedAction } from "./PlayerControlService";
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
-type LatestIpcSample = NonNullable<PlayerTelemetryState["latestIpcSample"]>;
+type LatestIpcSample = NonNullable<PlayerStatsState["latestIpcSample"]>;
 
 export type PersistentMpvPropertyCycle = {
-  telemetry: PlayerTelemetryState;
+  stats: PlayerStatsState;
   acceptPlaybackProperties: boolean;
   playerReadyNotified: boolean;
   playerStartedNotified: boolean;
@@ -83,14 +83,14 @@ export class PersistentMpvPropertyRouter {
     if (!active) return;
 
     applyObservedPropertySample(
-      active.telemetry,
+      active.stats,
       { name, value, observedAt },
       { acceptPlaybackProperties: active.acceptPlaybackProperties },
     );
     if (!active.acceptPlaybackProperties) return;
 
-    if (active.telemetry.latestIpcSample) {
-      this.deps.observeWatchdog(active.telemetry.latestIpcSample);
+    if (active.stats.latestIpcSample) {
+      this.deps.observeWatchdog(active.stats.latestIpcSample);
     }
 
     if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {

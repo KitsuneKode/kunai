@@ -13,7 +13,7 @@ export type ResolveTraceStore = Pick<ResolveTraceRepository, "add" | "listRecent
  * and **never leave the machine**.
  *
  * Retention is owned by the repository and `packages/storage/src/maintenance.ts`;
- * this class adds no second policy. Every call is best-effort: telemetry must
+ * this class adds no second policy. Every call is best-effort: trace persistence must
  * never be able to fail a playback.
  */
 export class ResolveTraceSink {

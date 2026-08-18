@@ -26,7 +26,7 @@ describe("buildDiagnosticsSections", () => {
   test("separates unknown from broken", () => {
     const sections = buildDiagnosticsSections([
       row("discord", "blocked", "Could not connect"),
-      row("provider", "unknown", "no resolve telemetry yet"),
+      row("provider", "unknown", "no resolve traces yet"),
       row("cache", "healthy", "No cache issue"),
     ]);
 

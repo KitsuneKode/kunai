@@ -91,7 +91,9 @@ describe("CLI → ingest → docs wire contract", () => {
     await service.maybePing();
 
     expect(results).toHaveLength(1);
-    expect(results[0]).toEqual({ ok: true, day: utcDayKey(NOW) });
+    // `stored` reports whether the day's global write budget admitted the ping,
+    // so an accepted-but-dropped ping is distinguishable from a stored one.
+    expect(results[0]).toEqual({ ok: true, day: utcDayKey(NOW), stored: true });
     expect(store.rawCount()).toBe(1);
   });
 

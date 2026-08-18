@@ -99,7 +99,7 @@ export class SixelOverlayManager {
   /**
    * Called from Ink's onRender hook. Component registration already runs after
    * the commit and schedules a paint when pixels or geometry changed. Repainting
-   * every unchanged overlay here made one-second playback telemetry blink the
+   * every unchanged overlay here made one-second playback stats blink the
    * poster continuously on ConPTY.
    */
   afterInkRender(): void {

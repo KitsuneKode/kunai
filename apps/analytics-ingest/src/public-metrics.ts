@@ -1,3 +1,4 @@
+import { ALLOWED_ARCH, ALLOWED_OS } from "./payload-validation";
 import type { DailyRollup } from "./store";
 
 export const METRICS_SCHEMA_VERSION = 2;
@@ -10,6 +11,9 @@ export const METRICS_SCHEMA_VERSION = 2;
  * separate aggregates. This is small-cell suppression, not joint anonymity.
  */
 export const SMALL_CELL_FLOOR = 5;
+
+/** The residual bucket. Never a real dimension value — `os`/`arch` are allowlisted. */
+export const OTHER_BUCKET = "other";
 
 /**
  * The snapshot is rewritten once per day by cron, so a CDN may safely serve a
@@ -30,18 +34,59 @@ export type PublicAnalyticsMetrics = {
   readonly updatedAt: string;
 };
 
-/** Totals are preserved: suppressed counts move into "other", they are not dropped. */
+/**
+ * How many values a dimension can take. `other` hides nothing once every value
+ * but one is published as its own bucket.
+ *
+ * `version` is an open space — any semver — so elimination never closes on it.
+ */
+export const DIMENSION_VALUE_SPACE = {
+  version: Number.POSITIVE_INFINITY,
+  os: ALLOWED_OS.length,
+  arch: ALLOWED_ARCH.length,
+} as const;
+
+/**
+ * Totals are preserved: suppressed counts move into "other", they are not
+ * dropped. `activeInstalls` is published alongside, so `other` is always
+ * recoverable by subtraction anyway — folding hides *which* bucket, never how
+ * many installs are unaccounted for.
+ *
+ * Which is exactly why folding alone is not enough on a closed dimension. With
+ * `arch` taking two values, `{ x64: 8, other: 1 }` says "one arm64 install" in
+ * as many words: the reader eliminates the published bucket and one candidate
+ * remains. `os` has the same hole once two of its three values are published.
+ *
+ * So after folding, while fewer than two candidate values could account for
+ * `other`, the smallest surviving bucket is folded in as well until at least
+ * two could. The total still holds, the dimension still publishes its shape
+ * where it safely can, and no bucket is recoverable by elimination.
+ */
 export function suppressSmallBuckets(
   counts: Readonly<Record<string, number>>,
   floor = SMALL_CELL_FLOOR,
+  valueSpace = Number.POSITIVE_INFINITY,
 ): Record<string, number> {
   const kept: Record<string, number> = {};
   let other = 0;
   for (const [bucket, count] of Object.entries(counts)) {
-    if (count < floor) other += count;
+    // A stored `other` is already a residual — the rollup's bucket cap folds a
+    // long tail into it — so it merges rather than surviving as a named bucket.
+    if (bucket === OTHER_BUCKET || count < floor) other += count;
     else kept[bucket] = count;
   }
-  if (other > 0) kept.other = other;
+
+  // Only a non-empty `other` can be attributed by elimination.
+  while (other > 0 && valueSpace - Object.keys(kept).length < 2) {
+    const smallest = Object.entries(kept).sort(
+      (a, b) => a[1] - b[1] || a[0].localeCompare(b[0]),
+    )[0];
+    if (!smallest) break;
+    other += smallest[1];
+    delete kept[smallest[0]];
+  }
+
+  if (other > 0) kept[OTHER_BUCKET] = other;
   return kept;
 }
 
@@ -51,9 +96,13 @@ export function buildPublicMetrics(rollup: DailyRollup): PublicAnalyticsMetrics 
     day: rollup.day,
     activeInstalls: Math.max(0, Math.floor(rollup.activeInstalls)),
     lifetimeInstalls: Math.max(0, Math.floor(rollup.lifetimeInstalls)),
-    byVersion: suppressSmallBuckets(rollup.byVersion),
-    byOs: suppressSmallBuckets(rollup.byOs),
-    byArch: suppressSmallBuckets(rollup.byArch),
+    byVersion: suppressSmallBuckets(
+      rollup.byVersion,
+      SMALL_CELL_FLOOR,
+      DIMENSION_VALUE_SPACE.version,
+    ),
+    byOs: suppressSmallBuckets(rollup.byOs, SMALL_CELL_FLOOR, DIMENSION_VALUE_SPACE.os),
+    byArch: suppressSmallBuckets(rollup.byArch, SMALL_CELL_FLOOR, DIMENSION_VALUE_SPACE.arch),
     updatedAt: rollup.computedAt,
   };
 }

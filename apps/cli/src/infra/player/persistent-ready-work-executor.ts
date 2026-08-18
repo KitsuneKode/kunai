@@ -4,7 +4,7 @@ import type { MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { collectAdditionalSubtitleTracks, shouldApplyStartAtSeek } from "@/mpv";
 
 import type { MpvIpcSession } from "./mpv-ipc";
-import { noteTrustedSeek, type PlayerTelemetryState } from "./mpv-telemetry";
+import { noteTrustedSeek, type PlayerStatsState } from "./mpv-stats";
 import {
   resolvePersistentStartSeekTarget,
   type PersistentResumeStartChoice,
@@ -26,7 +26,7 @@ export type PersistentReadyWorkOptions = {
 };
 
 export type PersistentReadyWorkCycle = {
-  telemetry: PlayerTelemetryState;
+  stats: PlayerStatsState;
   playerReadyNotified: boolean;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
@@ -123,13 +123,13 @@ export class PersistentReadyWorkExecutor {
         options.onPlaybackEvent?.({ type: "resolving-playback" });
         if (this.deps.getLoadStartAt() !== null && target === this.deps.getLoadStartAt()) {
           this.deps.setCurrentPositionSeconds(target);
-          noteTrustedSeek(cycle.telemetry, target);
+          noteTrustedSeek(cycle.stats, target);
         } else {
           const seekResult = await ipcSession.send(["seek", target, "absolute"], 2_000);
           if (!isCurrent()) return;
           if (seekResult.ok) {
             this.deps.setCurrentPositionSeconds(target);
-            noteTrustedSeek(cycle.telemetry, target);
+            noteTrustedSeek(cycle.stats, target);
           }
         }
       }

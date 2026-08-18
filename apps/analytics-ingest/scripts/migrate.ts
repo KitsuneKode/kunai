@@ -6,6 +6,7 @@ import { neon } from "@neondatabase/serverless";
 
 // Side-effecting: honours NEON_FETCH_ENDPOINT so the schema lands in the same
 // database the tests query. Must precede the client below.
+// oxlint-disable-next-line import/no-unassigned-import -- the side effect is the point
 import "../src/neon-fetch-endpoint";
 import { splitSqlStatements } from "../src/sql-statements";
 

@@ -1,12 +1,10 @@
-import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
+import type { PlaybackStatsSnapshot } from "@/domain/playback/playback-stats-snapshot";
 
-import type { PlayerTelemetryState } from "./mpv-telemetry";
+import type { PlayerStatsState } from "./mpv-stats";
 
-export type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
+export type { PlaybackStatsSnapshot } from "@/domain/playback/playback-stats-snapshot";
 
-export function buildPlaybackTelemetrySnapshot(
-  state: PlayerTelemetryState,
-): PlaybackTelemetrySnapshot | null {
+export function buildPlaybackStatsSnapshot(state: PlayerStatsState): PlaybackStatsSnapshot | null {
   const sample = state.latestIpcSample;
   if (!sample) return null;
 

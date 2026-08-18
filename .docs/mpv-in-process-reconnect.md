@@ -22,7 +22,7 @@ After a successful reload, **external subtitles are re-attached** from the curre
 
 1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0` while paused-for-cache, sustained for ~8s. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
 
-2. **Premature EOF** (telemetry guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
+2. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
 
 3. **`end-file` with `error`** while **`demuxer-via-network`** was true: treat as a reconnectable network demuxer error before surfacing a terminal failure.
 
@@ -89,7 +89,7 @@ session exists" and includes the bootstrap states `loading`/`ready`, while
 `isPlaybackTransportStarted()` means "bootstrap is over" and does not. Surfaces
 deciding whether to keep a loading presentation need the latter.
 
-## Telemetry and UI
+## Playback stats and UI
 
 - Diagnostics / shell may show **`mpv-in-process-reconnect`** events (`started` | `complete` | `failed`) with attempt number and a short `detail` (trigger + error when failed).
 - Seek policy lives in `apps/cli/src/infra/player/mpv-in-process-reconnect.ts` (`computeInProcessReconnectSeek`).

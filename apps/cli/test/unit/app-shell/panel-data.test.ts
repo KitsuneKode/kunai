@@ -127,6 +127,7 @@ describe("panel-data", () => {
           latencyMs: 120,
           instanceCount: 3,
         },
+        poToken: { provider: true, plugins: ["BgUtilHTTP"] },
       },
     });
 

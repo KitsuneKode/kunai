@@ -84,7 +84,7 @@ export function shouldShowPlaybackRuntimeStrip(input: {
 // ── 4-stage loading UX ──────────────────────────────────────────────────────
 
 // "preparing-provider" is emitted from AppRoot LoadingShell while playbackStatus is "loading".
-// Will be connected when provider-resolution telemetry is plumbed in.
+// Will be connected when provider-resolution traces are plumbed in.
 const STAGE_ORDER: readonly LoadingShellStage[] = [
   "finding-stream",
   "preparing-provider",

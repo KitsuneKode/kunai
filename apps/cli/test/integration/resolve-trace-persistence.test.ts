@@ -6,7 +6,7 @@ import { ResolveTraceSink } from "@/services/diagnostics/ResolveTraceSink";
 import { openKunaiDatabase, ResolveTraceRepository, runMigrations } from "@kunai/storage";
 
 /**
- * The sink deliberately swallows storage faults so telemetry can never fail a
+ * The sink deliberately swallows storage faults so trace persistence can never fail a
  * playback. That makes a schema mismatch silent: traces would simply never
  * appear and nothing would say why. These tests close that gap by driving a
  * finalized trace through the real repository and a real migrated database.

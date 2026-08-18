@@ -126,7 +126,7 @@ No provider should be marked "subtitle ready" unless:
 
 ## Phase Order
 
-1. Fix MPV telemetry/history sign-off.
+1. Fix MPV playback-stats/history sign-off.
 2. Temporarily harden English subtitle selection in CLI shared helpers.
 3. Finish provider dossiers with subtitle evidence.
 4. Define `@kunai/core` provider interfaces/adapters.

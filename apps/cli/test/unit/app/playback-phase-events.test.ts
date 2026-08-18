@@ -181,7 +181,7 @@ test("describePlayerEvent surfaces player control failures verbatim", () => {
   });
 });
 
-test("describePlayerEvent returns empty descriptors for silent telemetry", () => {
+test("describePlayerEvent returns empty descriptors for silent stats", () => {
   const describe = describePlayerEventFor();
   expect(describe({ type: "network-sample" })).toEqual({});
 });

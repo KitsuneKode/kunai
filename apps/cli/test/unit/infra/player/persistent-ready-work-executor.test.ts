@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc";
-import { createPlayerTelemetryState } from "@/infra/player/mpv-telemetry";
+import { createPlayerStatsState } from "@/infra/player/mpv-stats";
 import { PersistentReadyWorkExecutor } from "@/infra/player/persistent-ready-work-executor";
 import { PersistentSubtitleManager } from "@/infra/player/persistent-subtitle-manager";
 
@@ -28,7 +28,7 @@ function createFakeIpc(): { ipc: MpvIpcSession; commands: readonly unknown[][] }
 
 function createCycle(events: unknown[]) {
   return {
-    telemetry: createPlayerTelemetryState("/tmp/kunai-test.sock"),
+    stats: createPlayerStatsState("/tmp/kunai-test.sock"),
     playerReadyNotified: false,
     onPlayerReady: () => events.push("ready-callback"),
     onPlaybackEvent: (event: unknown) => events.push(event),

@@ -151,7 +151,7 @@ to confirm sixel support; if it times out, capability falls back to half-block.
 `KUNAI_IMAGE_PROTOCOL=sixel` forces it; `kunai doctor` reports the resolved
 renderer and the reason it was chosen. `half-block` only improves text-mode fallback.
 The Now Playing rail intentionally uses half-block on Sixel terminals because
-its one-second telemetry frames otherwise replay and blink the framebuffer;
+its one-second playback-stats frames otherwise replay and blink the framebuffer;
 browse and post-play should still use sharp Sixel output.
 
 **Providers behave differently than on Linux.** The `curl.exe` Windows ships in
