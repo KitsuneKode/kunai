@@ -17,10 +17,22 @@ import {
 } from "../src/anidb/direct";
 import { anidbManifest, ANIDB_PROVIDER_ID } from "../src/anidb/manifest";
 import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
-import { isOfficialAnidbApi } from "./helpers/anidb-urls";
+import { isOfficialAnidbApi, urlHasHostname } from "./helpers/anidb-urls";
 
 const fixture = (name: string) =>
   Bun.file(new URL(`./fixtures/anidb/${name}`, import.meta.url)).text();
+
+describe("anidb fetch stub URL match", () => {
+  test("official API match is host and port, not a substring spoof", () => {
+    expect(isOfficialAnidbApi("http://api.anidb.net:9001/httpapi")).toBe(true);
+    expect(isOfficialAnidbApi("https://evil.test/?x=api.anidb.net:9001")).toBe(false);
+    expect(isOfficialAnidbApi("http://api.anidb.net.evil.test:9001/httpapi")).toBe(false);
+    expect(urlHasHostname("https://graphql.anilist.co/api", "graphql.anilist.co")).toBe(true);
+    expect(urlHasHostname("https://evil.test/?x=graphql.anilist.co", "graphql.anilist.co")).toBe(
+      false,
+    );
+  });
+});
 
 describe("anidb id helpers", () => {
   test("accepts slug-numeric show ids", () => {
@@ -57,6 +69,7 @@ describe("anidb browse parsing", () => {
         id: "onigiri-3942",
         title: "Onigiri & Friends",
         numericId: 3942,
+        posterUrl: "https://anidb.app/covers/3942.jpg",
         seasonEvidence: {
           seasonNumber: null,
           label: null,
@@ -72,6 +85,7 @@ describe("anidb browse parsing", () => {
         id: "solo-leveling-19413",
         title: "Solo Leveling",
         numericId: 19413,
+        posterUrl: "https://anidb.app/covers/19413.jpg",
         seasonEvidence: {
           seasonNumber: null,
           label: null,
@@ -141,6 +155,57 @@ describe("anidb browse parsing", () => {
     const results = parseAnidbBrowseHtml(await fixture("browse-with-page-chrome.html"));
     expect(results.map((result) => result.id)).toEqual(["onigiri-3942", "onigiri-tabetai-4501"]);
     expect(results[0]?.id).toBe("onigiri-3942");
+  });
+
+  test("keeps poster, rating, and Movie-vs-series from the live card without inventing a year", async () => {
+    const results = parseAnidbBrowseHtml(await fixture("browse-live-cards.html"));
+    expect(results).toEqual([
+      {
+        id: "onigiri-3942",
+        title: "Onigiri",
+        numericId: 3942,
+        posterUrl: "https://cdn.xlsbox.com/poster/small/1782735600/3942.jpg",
+        rating: 5.3,
+        seasonEvidence: {
+          seasonNumber: null,
+          label: null,
+          normalizedBaseTitle: "onigiri",
+        },
+      },
+      {
+        id: "a-silent-voice-movie-2187",
+        title: "A Silent Voice",
+        numericId: 2187,
+        posterUrl: "https://cdn.xlsbox.com/poster/small/1782735600/2187.jpg",
+        rating: 8.2,
+        kind: "movie",
+        seasonEvidence: {
+          seasonNumber: null,
+          label: null,
+          normalizedBaseTitle: "a silent voice",
+        },
+      },
+      {
+        id: "placeholder-only-9001",
+        title: "No Art Yet",
+        numericId: 9001,
+        seasonEvidence: {
+          seasonNumber: null,
+          label: null,
+          normalizedBaseTitle: "no art yet",
+        },
+      },
+    ]);
+  });
+
+  test("absolutizes a relative poster and ignores javascript src", () => {
+    const html = [
+      '<a href="/anime/onigiri-3942" title="Onigiri"><img src="/covers/3942.jpg" alt="Onigiri"></a>',
+      '<a href="/anime/hostile-2" title="Hostile"><img src="javascript:alert(1)" alt="Hostile"></a>',
+    ].join("");
+    const results = parseAnidbBrowseHtml(html);
+    expect(results[0]?.posterUrl).toBe("https://anidb.app/covers/3942.jpg");
+    expect(results[1]?.posterUrl).toBeUndefined();
   });
 
   test("strips script blocks behind every legal end-tag form", () => {
@@ -339,6 +404,39 @@ describe("anidb search delegation", () => {
       expect(result?.[0]?.availableAudioModes).toBeUndefined();
       expect(result?.[0]?.subtitleAvailability).toBeUndefined();
       expect(result?.[0]?.languageEvidence).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("search maps browse poster and rating onto the catalog result", async () => {
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () =>
+        new Response(await fixture("browse-live-cards.html"), {
+          status: 200,
+        })) as unknown as typeof fetch;
+
+      const search = anidbProviderModule.search;
+      if (!search) throw new Error("AniDB search is not configured");
+      const result = await search({ query: "Onigiri" }, { now: () => new Date().toISOString() });
+      const onigiri = result?.find((row) => row.id === "onigiri-3942");
+      const movie = result?.find((row) => row.id === "a-silent-voice-movie-2187");
+
+      expect(onigiri).toMatchObject({
+        type: "series",
+        posterPath: "https://cdn.xlsbox.com/poster/small/1782735600/3942.jpg",
+        rating: 5.3,
+      });
+      expect(onigiri).not.toHaveProperty("year");
+      expect(onigiri?.artwork?.posterUrl).toBe(
+        "https://cdn.xlsbox.com/poster/small/1782735600/3942.jpg",
+      );
+      expect(movie?.type).toBe("movie");
+      expect(movie?.rating).toBe(8.2);
     } finally {
       globalThis.fetch = originalFetch;
       Bun.which = originalWhich;
@@ -582,6 +680,34 @@ describe("anidb direct resolve season routing", () => {
     expect(result.status).toBe("exhausted");
     expect(result.failures[0]?.message).toContain("No AniDB streams");
   });
+
+  test("does not advertise hardcoded English subs without a subtitle track", async () => {
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      anidbFetchStub({ episodesByNumericId: { "700": [{ id: 70001, number: 1 }] } }),
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved result");
+    const stream = result.streams[0];
+    expect(stream?.hardSubLanguage).toBeUndefined();
+    expect(stream?.subtitleDelivery).toBeUndefined();
+    expect(stream?.subtitleLanguages).toBeUndefined();
+    expect(stream?.languageEvidence ?? []).not.toContainEqual(
+      expect.objectContaining({ role: "hardsub" }),
+    );
+    expect(result.sources?.[0]?.languageEvidence ?? []).not.toContainEqual(
+      expect.objectContaining({ role: "hardsub" }),
+    );
+    expect(result.subtitles).toEqual([]);
+  });
 });
 
 describe("anidb episode metadata", () => {
@@ -630,7 +756,7 @@ describe("anidb episode metadata", () => {
             { status: 200 },
           );
         }
-        if (url.includes("graphql.anilist.co")) {
+        if (urlHasHostname(url, "graphql.anilist.co")) {
           return new Response(
             JSON.stringify({
               data: {
@@ -645,7 +771,7 @@ describe("anidb episode metadata", () => {
             { status: 200 },
           );
         }
-        if (url.includes("api.jikan.moe")) {
+        if (urlHasHostname(url, "api.jikan.moe")) {
           return new Response(
             JSON.stringify({
               data: [

@@ -88,13 +88,34 @@ export function resolveAnidbCurl(
  */
 export async function anidbFetchText(
   url: string,
-  options: { readonly signal?: AbortSignal; readonly maxTimeSec?: number } = {},
+  options: {
+    readonly context?: ProviderRuntimeContext;
+    readonly signal?: AbortSignal;
+    readonly maxTimeSec?: number;
+  } = {},
 ): Promise<string> {
+  if (options.context?.fetch) {
+    try {
+      const response = await options.context.fetch.fetch(url, {
+        headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
+        signal: createTimeoutSignal(options.signal, 15_000),
+      });
+      if (response.ok) {
+        const text = await response.text();
+        if (!/just a moment/i.test(text)) {
+          return text;
+        }
+      }
+    } catch {
+      // Fallback to local curl/impersonate
+    }
+  }
+
   const curl = resolveAnidbCurl();
   if (!curl) {
     const response = await fetch(url, {
       headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
-      signal: options.signal ?? AbortSignal.timeout(15_000),
+      signal: createTimeoutSignal(options.signal, 15_000),
     });
     if (!response.ok) {
       throw new Error(`anidb fetch HTTP ${response.status}`);
@@ -141,11 +162,13 @@ export async function anidbFetchText(
 export async function searchAnidb(
   query: string,
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<readonly AnidbSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
   const page = await anidbFetchText(`${ANIDB_BASE}/browse?q=${encodeURIComponent(trimmed)}`, {
     signal,
+    context,
   });
   return parseAnidbBrowseHtml(page);
 }
@@ -153,6 +176,7 @@ export async function searchAnidb(
 export async function fetchAnidbMalId(
   showId: string,
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<number | undefined> {
   // `null` is "this page has no MAL link", which is a real answer worth caching.
   // A cache miss is `undefined`, so the two must not share a representation or
@@ -160,7 +184,7 @@ export async function fetchAnidbMalId(
   const cached = malCache.get(showId);
   if (cached !== undefined) return cached ?? undefined;
 
-  const ids = await fetchAnidbExternalIds(showId, signal);
+  const ids = await fetchAnidbExternalIds(showId, signal, context);
   if (!ids) return undefined;
   const result = ids?.malId ?? null;
   malCache.set(showId, result);
@@ -177,6 +201,7 @@ export type AnidbExternalIds = {
 export async function fetchAnidbExternalIds(
   showId: string,
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<AnidbExternalIds | undefined> {
   const cached = externalIdsCache.get(showId);
   if (cached) {
@@ -191,6 +216,7 @@ export async function fetchAnidbExternalIds(
   try {
     const page = await anidbFetchText(`${ANIDB_BASE}/anime/${encodeURIComponent(showId)}`, {
       signal,
+      context,
     });
     const mal = /https:\/\/myanimelist\.net\/anime\/(\d+)/.exec(page)?.[1];
     const parsedMal = mal ? Number(mal) : NaN;
@@ -325,6 +351,7 @@ function readMetaContent(html: string, property: string): string | undefined {
 export async function fetchAnidbEpisodes(
   showId: string,
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<readonly AnidbEpisodeEntry[]> {
   const numericId = anidbNumericId(showId);
   if (!numericId) return [];
@@ -332,7 +359,7 @@ export async function fetchAnidbEpisodes(
   if (cached) return cached;
 
   const url = `${ANIDB_BASE}/api/frontend/anime/${numericId}/episodes`;
-  const text = await anidbFetchText(url, { signal });
+  const text = await anidbFetchText(url, { signal, context });
   let parsed: { episodes?: readonly Record<string, unknown>[] };
   try {
     parsed = JSON.parse(text) as { episodes?: readonly Record<string, unknown>[] };
@@ -360,13 +387,14 @@ export async function fetchAnidbEpisodes(
 export async function fetchAnidbLanguages(
   episodeId: number,
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<readonly AnidbLanguageEntry[]> {
   const cacheKey = String(episodeId);
   const cached = languageCache.get(cacheKey);
   if (cached) return cached;
 
   const url = `${ANIDB_BASE}/api/frontend/episode/${episodeId}/languages`;
-  const text = await anidbFetchText(url, { signal });
+  const text = await anidbFetchText(url, { signal, context });
   let parsed: { languages?: readonly Record<string, unknown>[] };
   try {
     parsed = JSON.parse(text) as { languages?: readonly Record<string, unknown>[] };
@@ -396,8 +424,9 @@ export async function fetchAnidbLanguages(
 export async function fetchAnidbMasterUrl(
   embedUrl: string,
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<string | null> {
-  const page = await anidbFetchText(embedUrl, { signal });
+  const page = await anidbFetchText(embedUrl, { signal, context });
   const match = /file:\s*'([^']+)'/.exec(page);
   return match?.[1]?.trim() || null;
 }
@@ -409,34 +438,34 @@ export async function resolveAnidbEpisodeStreams(options: {
   readonly audioMode: "sub" | "dub";
   readonly signal?: AbortSignal;
 }): Promise<readonly AnidbStreamLink[]> {
-  const episodes = await fetchAnidbEpisodes(options.showId, options.signal);
+  const episodes = await fetchAnidbEpisodes(options.showId, options.signal, options.context);
   const episode = episodes.find((entry) => entry.number === options.episodeNumber);
   if (!episode) return [];
 
-  const languages = await fetchAnidbLanguages(episode.id, options.signal);
+  const languages = await fetchAnidbLanguages(episode.id, options.signal, options.context);
   const preferredCode = options.audioMode === "dub" ? "eng" : "jpn";
   // Do not silently play the other language and label it as the requested mode.
   // The caller can then fall back to another provider or let the user switch.
   const language = languages.find((entry) => entry.code === preferredCode);
   if (!language) return [];
 
-  const masterUrl = await fetchAnidbMasterUrl(language.embedUrl, options.signal);
+  const masterUrl = await fetchAnidbMasterUrl(language.embedUrl, options.signal, options.context);
   if (!masterUrl) return [];
 
-  const fetchPort =
-    options.context?.fetch?.fetch?.bind(options.context.fetch) ??
-    ((url: string, init?: RequestInit) =>
-      fetch(url, {
-        ...init,
-        headers: {
-          "User-Agent": ANIDB_USER_AGENT,
-          Referer: ANIDB_REFERER,
-          ...(init?.headers as Record<string, string> | undefined),
-        },
-      }));
-
+  // Same transport as metadata: try the relay fetch port, then curl. Using
+  // context.fetch alone 404s on an unregistered /rpc/anidb and expandHls
+  // silently collapses to one "auto" row.
   const variants = await expandHlsMasterPlaylist({
-    fetch: fetchPort,
+    fetch: async (url: string, init?: RequestInit) => {
+      const text = await anidbFetchText(url, {
+        signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
+        context: options.context,
+      });
+      return new Response(text, {
+        status: 200,
+        headers: { "content-type": "application/vnd.apple.mpegurl" },
+      });
+    },
     masterUrl,
     headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
     signal: options.signal,

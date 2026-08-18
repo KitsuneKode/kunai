@@ -8,6 +8,7 @@ import type {
   ProviderEpisodeOption,
   ProviderFailure,
   ProviderResolveInput,
+  ProviderRuntimeContext,
   ProviderSearchResult,
   ProviderSourceCandidate,
   ProviderTraceEvent,
@@ -90,13 +91,14 @@ function directAnidbShowFromInput(input: {
 async function resolveAnidbShow(
   input: { readonly title: ProviderResolveInput["title"] },
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<AnidbSearchResult | null> {
   const direct = directAnidbShowFromInput(input);
   if (direct) return direct;
 
   const query = input.title.title?.trim() ?? "";
   if (!query) return null;
-  return chooseAnidbSearchMatch(query, await searchAnidb(query, signal));
+  return chooseAnidbSearchMatch(query, await searchAnidb(query, signal, context));
 }
 
 function buildStreamHeaders(referer: string): Record<string, string> {
@@ -215,14 +217,21 @@ export const anidbProviderModule: CoreProviderModule = {
   manifest: anidbManifest,
 
   async search(input, context) {
-    const results = await searchAnidb(input.query, context.signal);
+    const results = await searchAnidb(input.query, context.signal, context);
     const mapped: ProviderSearchResult[] = [];
     for (const result of results.slice(0, 40)) {
       mapped.push({
         id: result.id,
-        type: "series",
+        type: result.kind === "movie" ? "movie" : "series",
         title: result.title,
         metadataSource: "AniDB",
+        ...(result.posterUrl
+          ? {
+              posterPath: result.posterUrl,
+              artwork: { posterUrl: result.posterUrl, thumbnailUrl: result.posterUrl },
+            }
+          : {}),
+        ...(result.rating !== undefined ? { rating: result.rating } : {}),
         externalIds: {
           providerNativeIds: { [ANIDB_PROVIDER_ID]: result.id },
         },
@@ -232,14 +241,14 @@ export const anidbProviderModule: CoreProviderModule = {
   },
 
   async listEpisodes(input, context) {
-    const showId = (await resolveAnidbShow(input, context.signal))?.id;
+    const showId = (await resolveAnidbShow(input, context.signal, context))?.id;
     if (!showId) return null;
-    const episodes = await fetchAnidbEpisodes(showId, context.signal);
+    const episodes = await fetchAnidbEpisodes(showId, context.signal, context);
     if (episodes.length === 0) return [];
 
     const suppliedMalId = input.title.externalIds?.malId ?? input.title.malId;
     const suppliedAnilistId = input.title.externalIds?.anilistId ?? input.title.anilistId;
-    const pageIds = await fetchAnidbExternalIds(showId, context.signal);
+    const pageIds = await fetchAnidbExternalIds(showId, context.signal, context);
     const malId = suppliedMalId?.trim() ? suppliedMalId : pageIds?.malId;
     const anilistId = suppliedAnilistId ?? pageIds?.anilistId;
     const metadataMalId = malId === undefined ? undefined : String(malId);
@@ -308,7 +317,7 @@ export const anidbProviderModule: CoreProviderModule = {
       });
     }
 
-    const baseShow = await resolveAnidbShow(input, context.signal);
+    const baseShow = await resolveAnidbShow(input, context.signal, context);
     if (!baseShow) {
       return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
         code: "unsupported-title",
@@ -320,8 +329,8 @@ export const anidbProviderModule: CoreProviderModule = {
     const route = await routeAnidbSeason({
       base: baseShow,
       episode: input.episode,
-      search: searchAnidb,
-      episodes: fetchAnidbEpisodes,
+      search: (query, signal) => searchAnidb(query, signal, context),
+      episodes: (showId, signal) => fetchAnidbEpisodes(showId, signal, context),
       signal: context.signal,
     });
     if (!route) {
@@ -352,7 +361,7 @@ export const anidbProviderModule: CoreProviderModule = {
     const malIdPromise =
       existingMalId !== undefined && existingMalId !== ""
         ? Promise.resolve(String(existingMalId))
-        : fetchAnidbMalId(showId, context.signal).then(
+        : fetchAnidbMalId(showId, context.signal, context).then(
             (id) => (id !== undefined ? String(id) : undefined),
             () => undefined,
           );

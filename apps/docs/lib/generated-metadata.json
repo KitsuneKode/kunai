@@ -1,9 +1,9 @@
 {
-  "syncedAt": "2026-08-18T14:37:53.794Z",
+  "syncedAt": "2026-08-18T14:47:27.084Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "44241931",
-  "cliSourceFingerprint": "1a277328f91c83d57abb7ece42e3e3d10610e66cfe1c8abed07a7acb0ea31a0e",
+  "cliSourceRevision": "ade6600a",
+  "cliSourceFingerprint": "929de048bc30cb10b2daa8406dc3f81ce8e6fffcc91462976cbd79dcb81f80c4",
   "docsContentFingerprint": "3bbc65a431a26a397f9d4827926f2f1f0ec04307ec2b860057dd6a96a40ca5f7",
   "featureStatusRevision": "d4c1e1d0943d18f05bca1a12a5b0ff966754a588f12e4a86a03510d2bc424c1d",
   "commandCount": 81,
@@ -62,7 +62,7 @@
       "domain": "anidb.app",
       "recommended": true,
       "mediaKinds": ["anime"],
-      "capabilities": ["search", "episode-list", "source-resolve", "multi-source", "quality-ranked"],
+      "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
       "status": "active",
       "notes": [
         "Parity with ani-cli v5.0 (2026-08-01): browse search",
@@ -71,8 +71,9 @@
         "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link",
         "then reads official XML; AniList/Jikan fill missing fields and still artwork.",
         "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
-        "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained.",
-        "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it."
+        "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained. Ladder expansion uses the same curl fallback as metadata so a relay miss does not collapse to one auto row.",
+        "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it. No independently addressable subtitle track has been observed — do not advertise hardsub.",
+        "Relay-safe for metadata RPC (/rpc/anidb). Video stays direct: `videoFallback` is persisted but has no production reader and no `/stream/` handler."
       ]
     },
     {

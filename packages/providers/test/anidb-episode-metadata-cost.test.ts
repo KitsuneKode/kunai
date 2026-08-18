@@ -4,7 +4,7 @@ import type { ProviderRuntimeContext } from "@kunai/types";
 
 import { anidbProviderModule, clearAnidbCachesForTest } from "../src/anidb/direct";
 import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
-import { isOfficialAnidbApi } from "./helpers/anidb-urls";
+import { isOfficialAnidbApi, urlHasHostname } from "./helpers/anidb-urls";
 
 // What this file protects: AniDB's own metadata is one request for a whole
 // series, while Jikan pages 100 episodes at a time under a rate limit. Paying
@@ -52,7 +52,7 @@ function stubAnidbFetch(officialBody: string): string[] {
     }
     if (url.includes("/anime/plain-show-700")) return new Response(ANIDB_PAGE, { status: 200 });
     if (isOfficialAnidbApi(url)) return new Response(officialBody, { status: 200 });
-    if (url.includes("graphql.anilist.co")) {
+    if (urlHasHostname(url, "graphql.anilist.co")) {
       return new Response(
         JSON.stringify({
           data: {
@@ -67,7 +67,7 @@ function stubAnidbFetch(officialBody: string): string[] {
         { status: 200 },
       );
     }
-    if (url.includes("api.jikan.moe")) {
+    if (urlHasHostname(url, "api.jikan.moe")) {
       return new Response(
         JSON.stringify({
           data: [
@@ -104,8 +104,11 @@ async function withStubbedRuntime<T>(
   }
 }
 
-const countCalls = (calls: readonly string[], host: string) =>
-  calls.filter((url) => url.includes(host)).length;
+const countHostCalls = (calls: readonly string[], hostname: string) =>
+  calls.filter((url) => urlHasHostname(url, hostname)).length;
+
+const countOfficialAnidbApiCalls = (calls: readonly string[]) =>
+  calls.filter(isOfficialAnidbApi).length;
 
 describe("anidb episode metadata cost", () => {
   test("skips the paginated Jikan pass when official AniDB already titles every episode", async () => {
@@ -113,9 +116,9 @@ describe("anidb episode metadata cost", () => {
       const episodes = await anidbProviderModule.listEpisodes?.(listInput, listContext);
 
       expect(episodes?.map((episode) => episode.name)).toEqual(["The Beginning", "The Journey"]);
-      expect(countCalls(calls, "api.jikan.moe")).toBe(0);
+      expect(countHostCalls(calls, "api.jikan.moe")).toBe(0);
       // AniList still runs: one request, and the only source of episode stills.
-      expect(countCalls(calls, "graphql.anilist.co")).toBe(1);
+      expect(countHostCalls(calls, "graphql.anilist.co")).toBe(1);
       expect(episodes?.[0]?.artwork?.thumbnailUrl).toBe("https://img.example/ep-1.jpg");
     });
   });
@@ -123,7 +126,7 @@ describe("anidb episode metadata cost", () => {
   test("falls back to the full external pass when official metadata is unavailable", async () => {
     await withStubbedRuntime(OFFICIAL_ERROR, async (calls) => {
       const episodes = await anidbProviderModule.listEpisodes?.(listInput, listContext);
-      expect(countCalls(calls, "api.jikan.moe")).toBe(1);
+      expect(countHostCalls(calls, "api.jikan.moe")).toBe(1);
       // Filler is a Jikan-only signal, so its presence proves the pass ran and
       // its answer reached the option, not just that a request was made.
       expect(episodes?.[0]?.label).toContain("Filler");
@@ -133,13 +136,13 @@ describe("anidb episode metadata cost", () => {
   test("an error answer is never cached as 'this show has no episode metadata'", async () => {
     await withStubbedRuntime(OFFICIAL_ERROR, async (calls) => {
       await anidbProviderModule.listEpisodes?.(listInput, listContext);
-      expect(countCalls(calls, "api.anidb.net:9001")).toBe(1);
+      expect(countOfficialAnidbApiCalls(calls)).toBe(1);
 
       // Only the shared external cache is dropped; the official-metadata cache
       // must not be holding an empty answer from the failed read.
       clearAnimeMetadataCacheForTest();
       await anidbProviderModule.listEpisodes?.(listInput, listContext);
-      expect(countCalls(calls, "api.anidb.net:9001")).toBe(2);
+      expect(countOfficialAnidbApiCalls(calls)).toBe(2);
     });
   });
 
@@ -147,7 +150,7 @@ describe("anidb episode metadata cost", () => {
     await withStubbedRuntime(OFFICIAL_XML, async (calls) => {
       await anidbProviderModule.listEpisodes?.(listInput, listContext);
       const episodes = await anidbProviderModule.listEpisodes?.(listInput, listContext);
-      expect(countCalls(calls, "api.anidb.net:9001")).toBe(1);
+      expect(countOfficialAnidbApiCalls(calls)).toBe(1);
       expect(episodes?.[0]?.name).toBe("The Beginning");
     });
   });
