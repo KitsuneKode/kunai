@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS } from "@/domain/playback/in-memory-stream-replay-policy";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { PlaybackResolveService } from "@/services/playback/PlaybackResolveService";
 import { StreamHealthService } from "@/services/playback/StreamHealthService";
@@ -2005,4 +2006,145 @@ test("PlaybackResolveService routes AniDB identity and absolute episode into the
   expect(input?.title.id).toBe("151807");
   expect(input?.title.anilistId).toBe("151807");
   expect(input?.episode).toEqual({ season: 2, episode: 1, absoluteEpisode: 13 });
+});
+
+test("PlaybackResolveService rejects blocked prefetched streams and falls through to resolve", async () => {
+  const blockedUrl = "https://cdn.example/prefetch-dead.m3u8";
+  const freshStreamUrl = "https://cdn.example/refetched-good.m3u8";
+  const cache = createMemoryCache(null);
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "vidking" as ProviderId,
+      streams: [
+        {
+          id: "stream:vidking:fresh",
+          providerId: "vidking" as ProviderId,
+          url: freshStreamUrl,
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:fresh",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "vidking" as ProviderId,
+    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+  });
+  const events: string[] = [];
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    prefetchedStream: { ...stream, url: blockedUrl, timestamp: Date.now() },
+    blockedStreamUrls: [blockedUrl],
+    onEvent: (event) => events.push(event.type),
+  });
+
+  expect(events).toContain("cache-stale");
+  expect(result.cacheStatus).toBe("miss");
+  expect(result.stream?.url).toBe(freshStreamUrl);
+});
+
+test("PlaybackResolveService rejects stale prefetched streams and falls through to resolve", async () => {
+  const stalePrefetchedUrl = "https://cdn.example/prefetch-stale.m3u8";
+  const freshStreamUrl = "https://cdn.example/refetched-good.m3u8";
+  const cache = createMemoryCache(null);
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "vidking" as ProviderId,
+      streams: [
+        {
+          id: "stream:vidking:fresh",
+          providerId: "vidking" as ProviderId,
+          url: freshStreamUrl,
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:fresh",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "vidking" as ProviderId,
+    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+  });
+  const events: string[] = [];
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+  const now = Date.now();
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    prefetchedStream: {
+      ...stream,
+      url: stalePrefetchedUrl,
+      timestamp: now - MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS - 1,
+    },
+    onEvent: (event) => events.push(event.type),
+  });
+
+  expect(events).toContain("cache-stale");
+  expect(result.cacheStatus).toBe("miss");
+  expect(result.stream?.url).toBe(freshStreamUrl);
+});
+
+test("PlaybackResolveService adopts fresh prefetched streams without provider resolve", async () => {
+  const prefetchedUrl = "https://cdn.example/prefetch-good.m3u8";
+  const cache = createMemoryCache(null);
+  let providerCalled = false;
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    {
+      onResolveInput: () => {
+        providerCalled = true;
+      },
+    },
+  );
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    prefetchedStream: { ...stream, url: prefetchedUrl, timestamp: Date.now() },
+  });
+
+  expect(providerCalled).toBe(false);
+  expect(result.cacheStatus).toBe("prefetched");
+  expect(result.cacheProvenance).toBe("prefetched");
+  expect(result.stream?.url).toBe(prefetchedUrl);
 });

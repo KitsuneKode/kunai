@@ -353,7 +353,7 @@ async function launchMpvInner(
     emitPlaybackEvent({ type: "ipc-connected" });
     emitPlaybackEvent({ type: "opening-stream" });
     notifyPlayerReady();
-    const trackCount = opts.subtitle ? 1 : 0;
+    const trackCount = allowedLaunchSubtitleFiles(opts).length;
     if (trackCount > 0) {
       emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
       emitPlaybackEvent({ type: "subtitle-attached", trackCount });
@@ -552,10 +552,8 @@ export function buildMpvArgs(
     args.push("--tls-verify=no");
   }
 
-  if (opts.subtitle && isAllowedMpvUrl(opts.subtitle, opts.subtitleUrlKind ?? "remote")) {
-    args.push(`--sub-file=${opts.subtitle}`);
-  } else if (opts.subtitle) {
-    dbg("mpv", "subtitle-target-rejected", { delivery: "launch" });
+  for (const file of allowedLaunchSubtitleFiles(opts)) {
+    args.push(`--sub-file=${file}`);
   }
 
   const alang = toMpvLanguageToken(opts.audioPreference, {
@@ -698,6 +696,23 @@ export function collectLaunchSubtitleFiles(
     files.push(track.url);
   }
   return files;
+}
+
+function allowedLaunchSubtitleFiles(opts: {
+  subtitle: string | null;
+  subtitleUrlKind?: MpvUrlKind;
+  subtitleTracks?: readonly SubtitleTrack[];
+}): string[] {
+  const allowed: string[] = [];
+  for (const file of collectLaunchSubtitleFiles(opts.subtitle, opts.subtitleTracks)) {
+    const kind = file === opts.subtitle ? (opts.subtitleUrlKind ?? "remote") : "remote";
+    if (isAllowedMpvUrl(file, kind)) {
+      allowed.push(file);
+    } else {
+      dbg("mpv", "subtitle-target-rejected", { delivery: "launch" });
+    }
+  }
+  return allowed;
 }
 
 export function describeSubtitleTrackForMpv(

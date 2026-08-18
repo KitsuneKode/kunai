@@ -1,13 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  isRecentPlaybackStreamFresh,
   recentPlaybackStreamKey,
   recentPlaybackStreamMatchesProvider,
   restoreRecentPlaybackStream,
   type RecentPlaybackStreamRecord,
 } from "@/app/playback/recent-playback-stream";
+import { MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS } from "@/domain/playback/in-memory-stream-replay-policy";
+import type { StreamInfo } from "@/domain/types";
 
-const stream = { url: "https://example.test/stream.m3u8" } as never;
+const stream = { url: "https://example.test/stream.m3u8", headers: {} } as StreamInfo;
 
 describe("recent playback stream", () => {
   test("restores verified local provenance with its exact trust source", () => {
@@ -64,5 +67,44 @@ describe("recent playback stream", () => {
 
     expect(recentPlaybackStreamMatchesProvider(recent, "rivestream")).toBe(true);
     expect(recentPlaybackStreamMatchesProvider(recent, "vidking")).toBe(false);
+  });
+
+  test("isRecentPlaybackStreamFresh exempts local provenance regardless of age", () => {
+    const recent: RecentPlaybackStreamRecord = {
+      stream: { ...stream, timestamp: 0 },
+      selectedProviderId: "vidking",
+      resolvedProviderId: "vidking",
+      provenance: "local",
+      localPlaybackSource: {
+        kind: "local",
+        jobId: "job-1",
+        titleId: "title-1",
+        titleName: "Offline episode",
+        mediaKind: "series",
+        providerId: "vidking",
+        season: 1,
+        episode: 2,
+        filePath: "/media/episode-2.mkv",
+      },
+    };
+
+    expect(isRecentPlaybackStreamFresh(recent, 1_700_000_000_000)).toBe(true);
+  });
+
+  test("isRecentPlaybackStreamFresh rejects stale non-local streams", () => {
+    const now = 1_700_000_000_000;
+    const fresh: RecentPlaybackStreamRecord = {
+      stream: { ...stream, timestamp: now - 1_000 },
+      selectedProviderId: "vidking",
+      resolvedProviderId: "vidking",
+      provenance: "prefetch",
+    };
+    const stale: RecentPlaybackStreamRecord = {
+      ...fresh,
+      stream: { ...stream, timestamp: now - MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS - 1 },
+    };
+
+    expect(isRecentPlaybackStreamFresh(fresh, now)).toBe(true);
+    expect(isRecentPlaybackStreamFresh(stale, now)).toBe(false);
   });
 });

@@ -100,8 +100,13 @@ When on, Kunai sends at most one tiny ping per day:
   anonymity guarantee. Those numbers can be inflated by abuse; they cannot expose
   what you watch. See the live [usage analytics](/analytics) page.
 
-Preview the exact JSON with `/analytics show`. Until an operator configures and
-verifies an analytics endpoint, no production analytics request can be sent.
+Preview the exact JSON with `/analytics show`.
+
+If you turn analytics on, pings go to `analytics.kunai.kitsunekode.in`. Point
+them somewhere else — or nowhere — by setting `KUNAI_ANALYTICS_URL`, or
+`analyticsEndpoint` in your config; an empty value disables sending outright.
+Leaving analytics off, running without a terminal, or setting `DO_NOT_TRACK`
+means nothing is ever sent, whatever the endpoint says.
 
 ## Release Confidence
 

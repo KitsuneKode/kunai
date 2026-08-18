@@ -1,6 +1,11 @@
 {
   "regions": ["iad1"],
-  "rewrites": [{ "source": "/metrics/daily.json", "destination": "/api/metrics/daily" }],
+  "rewrites": [
+    {
+      "source": "/metrics/daily.json",
+      "destination": "/api/metrics/daily"
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron/snapshot",
@@ -24,7 +29,12 @@
   "headers": [
     {
       "source": "/api/ping",
-      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
     }
   ]
 }

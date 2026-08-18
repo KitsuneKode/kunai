@@ -4,6 +4,7 @@ import {
   classifyTimingThrownError,
   type PlaybackTimingSourceFetchResult,
 } from "@/infra/timing/PlaybackTimingSource";
+import { dbg } from "@/logger";
 import { fetchArmIdGraph } from "@/services/catalog/arm-client";
 import { fetchAnidbMalId } from "@kunai/providers";
 import type { ProviderExternalIds } from "@kunai/types";
@@ -105,11 +106,13 @@ async function resolveMalIdForAniSkip(opts: {
   externalIds?: ProviderExternalIds;
   titleName?: string;
   titleYear?: string;
+  /** TMDB season for the episode; gates ambiguous TMDB→MAL fallback when > 1. */
+  season?: number;
   /** `allanime` enables GraphQL `malId` lookup for opaque show ids (ani-skip `-s allanime`). */
   providerId?: string;
   signal?: AbortSignal;
 }): Promise<number | null> {
-  const { catalogTitleId, externalIds, titleName, titleYear, providerId, signal } = opts;
+  const { catalogTitleId, externalIds, titleName, titleYear, season, providerId, signal } = opts;
 
   const seasonYear = (() => {
     const y = titleYear ? Number.parseInt(titleYear, 10) : Number.NaN;
@@ -138,6 +141,7 @@ async function resolveMalIdForAniSkip(opts: {
   if (isNumericAniListId(catalogTitleId)) {
     const fromCatalogId = await resolveMALForSkipTiming({
       catalogId: catalogTitleId,
+      season,
       signal,
     });
     if (fromCatalogId) return fromCatalogId;
@@ -145,7 +149,7 @@ async function resolveMalIdForAniSkip(opts: {
 
   const nativeTmdbId = normalizeNumericId(externalIds?.tmdbId);
   if (nativeTmdbId) {
-    const fromNativeTmdb = await resolveMALFromTheMovieDbId(nativeTmdbId, signal);
+    const fromNativeTmdb = await resolveMALFromTheMovieDbId(nativeTmdbId, signal, season);
     if (fromNativeTmdb) return fromNativeTmdb;
   }
 
@@ -228,11 +232,25 @@ async function resolveMALFromAniListId(
   return malId;
 }
 
-/** TMDB TV id → MAL (first mapping; split cours may list multiple MAL entries). */
+/**
+ * TMDB TV id → MAL (first ARM mapping; split cours may list multiple MAL entries).
+ * Only trusted for season 1 — later seasons use a different MAL entry and episode
+ * numbers are season-relative, so callers must pass `season` and skip when > 1.
+ */
 async function resolveMALFromTheMovieDbId(
   tmdbId: string,
   signal?: AbortSignal,
+  season?: number,
 ): Promise<number | null> {
+  if (season !== undefined && season > 1) {
+    dbg("aniskip", "refused tmdb-mal fallback", {
+      tmdbId,
+      season,
+      reason: "tmdb-mal-mapping-ambiguous-for-season",
+    });
+    return null;
+  }
+
   const cacheKey = `tmdb:${tmdbId}`;
   if (malIdCache.has(cacheKey)) return malIdCache.get(cacheKey) ?? null;
 
@@ -248,15 +266,16 @@ async function resolveMALFromTheMovieDbId(
  */
 async function resolveMALForSkipTiming(opts: {
   catalogId: string;
+  season?: number;
   signal?: AbortSignal;
 }): Promise<number | null> {
-  const { catalogId, signal } = opts;
+  const { catalogId, season, signal } = opts;
   if (!isNumericAniListId(catalogId)) return null;
 
   const fromAnilist = await resolveMALFromAniListId(catalogId, signal);
   if (fromAnilist) return fromAnilist;
 
-  return await resolveMALFromTheMovieDbId(catalogId, signal);
+  return await resolveMALFromTheMovieDbId(catalogId, signal, season);
 }
 
 export function mapAniSkipTypeToTimingField(
@@ -302,6 +321,8 @@ export async function fetchAniSkipTimingMetadata(opts: {
   titleName?: string;
   /** Helps AniList `Media(search, seasonYear: …)` when the catalog id is not numeric. */
   titleYear?: string;
+  /** TMDB season for the episode; gates ambiguous TMDB→MAL fallback when > 1. */
+  season?: number;
   episode: number;
   episodeLength?: number;
   signal?: AbortSignal;
@@ -317,6 +338,7 @@ export async function fetchAniSkipTimingMetadataDetailed(opts: {
   externalIds?: ProviderExternalIds;
   titleName?: string;
   titleYear?: string;
+  season?: number;
   episode: number;
   episodeLength?: number;
   signal?: AbortSignal;
@@ -328,6 +350,7 @@ export async function fetchAniSkipTimingMetadataDetailed(opts: {
     externalIds,
     titleName,
     titleYear,
+    season,
     episode,
     episodeLength,
     signal,
@@ -342,6 +365,7 @@ export async function fetchAniSkipTimingMetadataDetailed(opts: {
       externalIds,
       titleName,
       titleYear,
+      season,
       providerId,
       signal,
     });
