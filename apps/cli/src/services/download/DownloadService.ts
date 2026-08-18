@@ -13,6 +13,7 @@ import type {
 } from "@/domain/types";
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
+import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import {
@@ -68,6 +69,29 @@ const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
+const YTDLP_HEADER_CRLF_PATTERN = /[\r\n]/g;
+
+/** Sanitized yt-dlp argv tail: validated stream URL, scrubbed headers, `--` before positional URL. */
+export function buildYtDlpDownloadStreamArgs(
+  streamUrl: string,
+  tempPath: string,
+  headers: Record<string, string>,
+): string[] {
+  if (!isAllowedMpvUrl(streamUrl, "remote")) {
+    throw new Error("Refusing to download unsafe stream URL");
+  }
+  const args: string[] = [];
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value !== "string") continue;
+    const sanitizedKey = key.trim().replace(YTDLP_HEADER_CRLF_PATTERN, "");
+    const sanitizedValue = value.trim().replace(YTDLP_HEADER_CRLF_PATTERN, "");
+    if (sanitizedKey.length > 0 && sanitizedValue.length > 0) {
+      args.push("--add-header", `${sanitizedKey}: ${sanitizedValue}`);
+    }
+  }
+  args.push("-o", tempPath, "--", streamUrl);
+  return args;
+}
 
 export type DownloadEnqueueEligibility =
   | { readonly allowed: true }
@@ -886,14 +910,7 @@ export class DownloadService {
       }
     }
 
-    // Add headers
-    for (const [key, value] of Object.entries(job.headers)) {
-      if (value) {
-        args.push("--add-header", `${key}: ${value}`);
-      }
-    }
-
-    args.push("-o", job.tempPath, job.streamUrl);
+    args.push(...buildYtDlpDownloadStreamArgs(job.streamUrl, job.tempPath, job.headers));
 
     let lastProgressPersistAt = 0;
     let lastPersistedPercent = 0;
@@ -1645,6 +1662,12 @@ export function analyzeDownloadFailure(message: string): {
   }
   if (normalized.includes("cannot be downloaded")) {
     return { failureKind: "unsupported", retryable: false };
+  }
+  if (
+    normalized.includes("refusing to download unsafe stream url") ||
+    normalized.includes("refusing to load unsafe stream url")
+  ) {
+    return { failureKind: "unsafe-url", retryable: false };
   }
   if (normalized.includes("unsupported url") || normalized.includes("protocol not found")) {
     return { failureKind: "protocol", retryable: false };
