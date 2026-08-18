@@ -49,12 +49,7 @@ export async function fetchHealthyInvidiousInstances(
     string,
     InvidiousInstanceRecord,
   ])[];
-  const instances = payload
-    .map(([host, meta]) => {
-      if (meta?.api === false) return null;
-      return normalizeInstanceUrl(host);
-    })
-    .filter((value): value is string => Boolean(value));
+  const instances = selectReachableInstances(payload);
 
   cachedInstances = { fetchedAt: now, instances };
   return filterAvailableInstances(instances, now);
@@ -76,6 +71,43 @@ export async function pickInvidiousInstance(
     throw new Error("No healthy Invidious instances available");
   }
   return instance;
+}
+
+/** Overlay networks a plain machine has no route to; reaching them needs a proxy we never spawn. */
+const UNREACHABLE_HOST_SUFFIXES = [".onion", ".i2p", ".ygg"] as const;
+
+function isReachableInstance(url: string): boolean {
+  let host: string;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    host = parsed.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return !UNREACHABLE_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+}
+
+/**
+ * Pick the instances worth trying, reachability first.
+ *
+ * Upstream's `api` flag is not dependable in either direction: as of 2026-08 every
+ * working clearnet instance reports `api: false` while the `api: true`/`null` entries
+ * are Tor, I2P and Yggdrasil addresses. Filtering on `api` alone therefore yielded a
+ * pool of exclusively unroutable hosts, and each search burned three 15s timeouts
+ * before falling back. So reachability is the hard filter and `api` is only a
+ * preference — applied when it actually selects something, ignored when it does not,
+ * which keeps this correct whichever way upstream flips next.
+ */
+function selectReachableInstances(
+  payload: readonly (readonly [string, InvidiousInstanceRecord])[],
+): readonly string[] {
+  const reachable = payload
+    .map(([host, meta]) => ({ url: normalizeInstanceUrl(meta?.uri?.trim() || host), meta }))
+    .filter((entry) => isReachableInstance(entry.url));
+  const apiEnabled = reachable.filter((entry) => entry.meta?.api === true);
+  const selected = apiEnabled.length > 0 ? apiEnabled : reachable;
+  return [...new Set(selected.map((entry) => entry.url))];
 }
 
 function filterAvailableInstances(instances: readonly string[], now: number): readonly string[] {

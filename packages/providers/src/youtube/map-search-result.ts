@@ -4,6 +4,7 @@ import {
   toYoutubeChannelCatalogId,
   toYoutubePlaylistCatalogId,
   toYoutubeVideoCatalogId,
+  youtubeThumbnailUrl,
 } from "./ids";
 import type {
   InvidiousRecommendedVideo,
@@ -46,13 +47,15 @@ function mapLiveStatus(item: InvidiousSearchVideo): YouTubeLiveStatus {
 
 export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearchResult | null {
   if (item.type === "video") {
+    const poster =
+      pickInvidiousThumbnail(item.videoThumbnails) ?? youtubeThumbnailUrl(item.videoId);
     return {
       id: toYoutubeVideoCatalogId(item.videoId),
       type: "movie",
       title: item.title,
       year: publishedYearFromEpochSeconds(item.published),
       overview: item.description ?? "",
-      posterPath: pickInvidiousThumbnail(item.videoThumbnails),
+      posterPath: poster,
       metadataSource: "Invidious",
       durationSeconds: item.lengthSeconds,
       channelTitle: item.author,
@@ -68,8 +71,8 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
         youtubeChannelId: item.authorId,
       },
       artwork: {
-        thumbnailUrl: pickInvidiousThumbnail(item.videoThumbnails) ?? undefined,
-        posterUrl: pickInvidiousThumbnail(item.videoThumbnails) ?? undefined,
+        thumbnailUrl: poster,
+        posterUrl: poster,
       },
     };
   }
@@ -130,13 +133,14 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
   if (!videoId || !item.title) return null;
   const uploadedMs = item.uploaded && item.uploaded > 0 ? item.uploaded : undefined;
   const channelId = extractPipedChannelId(item.uploaderUrl);
+  const poster = item.thumbnail ?? youtubeThumbnailUrl(videoId);
   return {
     id: toYoutubeVideoCatalogId(videoId),
     type: "movie",
     title: item.title,
     year: uploadedMs ? String(new Date(uploadedMs).getUTCFullYear()) : undefined,
     overview: item.shortDescription ?? "",
-    posterPath: item.thumbnail ?? null,
+    posterPath: poster,
     metadataSource: "Piped",
     durationSeconds: item.duration,
     channelTitle: item.uploaderName,
@@ -150,8 +154,8 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
       ...(channelId ? { youtubeChannelId: channelId } : {}),
     },
     artwork: {
-      posterUrl: item.thumbnail,
-      thumbnailUrl: item.thumbnail,
+      posterUrl: poster,
+      thumbnailUrl: poster,
     },
   };
 }
@@ -179,7 +183,7 @@ export function mapInvidiousRecommendedVideo(
   const videoId = item.videoId?.trim();
   const title = item.title?.trim();
   if (!videoId || !title) return null;
-  const poster = pickInvidiousThumbnail(item.videoThumbnails);
+  const poster = pickInvidiousThumbnail(item.videoThumbnails) ?? youtubeThumbnailUrl(videoId);
   return {
     id: toYoutubeVideoCatalogId(videoId),
     type: "movie",
@@ -199,12 +203,10 @@ export function mapInvidiousRecommendedVideo(
       youtubeId: videoId,
       ...(item.authorId ? { youtubeChannelId: item.authorId } : {}),
     },
-    artwork: poster
-      ? {
-          posterUrl: poster,
-          thumbnailUrl: poster,
-        }
-      : undefined,
+    artwork: {
+      posterUrl: poster,
+      thumbnailUrl: poster,
+    },
   };
 }
 

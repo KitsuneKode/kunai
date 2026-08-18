@@ -9,6 +9,43 @@ export type YoutubeYtdlOptionsInput = {
   readonly subtitleLanguage?: string;
 };
 
+const PLAYER_CLIENT_PATTERN = /(^|;)\s*youtube:([^;]*\b)?player_client=([^;]*)/i;
+
+/**
+ * The player clients an extractor-args string asks for, in order.
+ *
+ * Each client is a separate way of asking YouTube for the same video, and they
+ * fail independently — one 403s on media URLs while another plays. Naming them
+ * individually is what lets playback fail over between them instead of dying on
+ * whichever one yt-dlp happened to pick.
+ */
+export function parseYoutubePlayerClients(extractorArgs: string | undefined): readonly string[] {
+  const match = extractorArgs?.match(PLAYER_CLIENT_PATTERN);
+  if (!match?.[3]) return [];
+  return [
+    ...new Set(
+      match[3]
+        .split(",")
+        .map((client) => client.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+/** Rewrite extractor args to request exactly one player client, preserving other keys. */
+export function withYoutubePlayerClient(extractorArgs: string | undefined, client: string): string {
+  const trimmed = extractorArgs?.trim();
+  if (!trimmed) return `youtube:player_client=${client}`;
+  if (!PLAYER_CLIENT_PATTERN.test(trimmed)) {
+    return `${trimmed};youtube:player_client=${client}`;
+  }
+  return trimmed.replace(
+    PLAYER_CLIENT_PATTERN,
+    (_full, lead: string, prefix: string | undefined) =>
+      `${lead}youtube:${prefix ?? ""}player_client=${client}`,
+  );
+}
+
 /** Build yt-dlp CLI args shared by metadata extract, download, and mpv raw-options. */
 export function buildYoutubeYtdlCliArgs(options: YoutubeYtdlOptionsInput): string[] {
   const args: string[] = [];
