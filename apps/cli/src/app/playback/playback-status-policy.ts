@@ -80,7 +80,7 @@ function accept(
   };
 }
 
-/** Accepted, but carries no authority to move the status (telemetry, copy, tracks). */
+/** Accepted, but carries no authority to move the status (playback stats, copy, tracks). */
 function informational(current: PlaybackStatusSnapshot): PlaybackStatusDecision {
   return { accepted: true, snapshot: current, statusChanged: false, clearFeedback: false };
 }

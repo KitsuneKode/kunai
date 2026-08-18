@@ -1,4 +1,4 @@
-import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
+import type { PlaybackStatsSnapshot } from "@/domain/playback/playback-stats-snapshot";
 import type { EpisodeInfo, PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
 
 import type { SubtitleAttachmentResult } from "./persistent-subtitle-manager";
@@ -70,7 +70,7 @@ export interface ActivePlayerControl {
   updateTiming?(timing: PlaybackTimingMetadata | null): void;
   updateAutoSkipEnabled?(enabled: boolean): void;
   getTimingSnapshot?(): PlaybackTimingMetadata | null;
-  getTelemetrySnapshot?(): PlaybackTelemetrySnapshot | null;
+  getStatsSnapshot?(): PlaybackStatsSnapshot | null;
   showOsdMessage?(text: string, durationMs: number): Promise<void>;
   /** Full-window loading overlay via Lua (`user-data/kunai-loading`); survives idle between files. */
   setEpisodeTransitionLoading?(message: string | null): Promise<void>;
@@ -118,5 +118,5 @@ export interface PlayerControlService {
   returnToSearchFromPlayback(reason?: string): Promise<boolean>;
   updateCurrentPlaybackTiming(timing: PlaybackTimingMetadata | null, reason?: string): void;
   updateCurrentPlaybackAutoSkipEnabled(enabled: boolean, reason?: string): void;
-  getTelemetrySnapshot(): PlaybackTelemetrySnapshot | null;
+  getStatsSnapshot(): PlaybackStatsSnapshot | null;
 }

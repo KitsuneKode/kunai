@@ -19,9 +19,9 @@ import {
 } from "@/domain/media/content-kind";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import {
-  describePlaybackTelemetrySnapshot,
-  type PlaybackTelemetrySnapshot,
-} from "@/domain/playback/playback-telemetry-snapshot";
+  describePlaybackStatsSnapshot,
+  type PlaybackStatsSnapshot,
+} from "@/domain/playback/playback-stats-snapshot";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import type { SessionState } from "@/domain/session/SessionState";
@@ -95,7 +95,7 @@ export type PlaybackRootContentInput = {
   readonly activeProvider: { metadata: { name: string } } | undefined;
   readonly hasStreamCandidates: boolean;
   readonly isSeriesPlayback: boolean;
-  readonly activePlaybackTelemetrySnapshot?: PlaybackTelemetrySnapshot | null;
+  readonly activePlaybackStatsSnapshot?: PlaybackStatsSnapshot | null;
   readonly canGoNext: boolean;
   readonly canGoPrevious: boolean;
   readonly canToggleAutoplay: boolean;
@@ -121,7 +121,7 @@ export function buildPlaybackRootLoadingShellState(
     activeProvider,
     hasStreamCandidates,
     isSeriesPlayback,
-    activePlaybackTelemetrySnapshot,
+    activePlaybackStatsSnapshot,
     canGoNext,
     canGoPrevious,
     canToggleAutoplay,
@@ -176,14 +176,14 @@ export function buildPlaybackRootLoadingShellState(
     // and substring-matching it lit "Trying another source" over successful
     // resolves. Alarm state comes from `problem` below, which is structured.
     problem: state.playbackProblem,
-    currentPosition: activePlaybackTelemetrySnapshot?.positionSeconds,
-    duration: activePlaybackTelemetrySnapshot?.durationSeconds,
+    currentPosition: activePlaybackStatsSnapshot?.positionSeconds,
+    duration: activePlaybackStatsSnapshot?.durationSeconds,
     bufferHealth:
       state.playbackStatus === "stalled"
         ? "stalled"
-        : state.playbackStatus === "buffering" || activePlaybackTelemetrySnapshot?.pausedForCache
+        : state.playbackStatus === "buffering" || activePlaybackStatsSnapshot?.pausedForCache
           ? "buffering"
-          : activePlaybackTelemetrySnapshot
+          : activePlaybackStatsSnapshot
             ? "healthy"
             : undefined,
     playbackSourceLine: formatPlaybackSourceLine(state.stream) ?? undefined,
@@ -282,9 +282,7 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
     input;
   useEffect(preloadTracksPanelModules, []);
   const playbackIsActive = isPlaybackSessionActive(state.playbackStatus);
-  const [telemetrySnapshot, setTelemetrySnapshot] = useState<PlaybackTelemetrySnapshot | null>(
-    null,
-  );
+  const [statsSnapshot, setStatsSnapshot] = useState<PlaybackStatsSnapshot | null>(null);
 
   // Count this playback against the key card's budget once it actually starts,
   // so the card retires after being seen rather than after N launches that may
@@ -300,30 +298,27 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
   useEffect(() => {
     if (!playbackIsActive) return undefined;
     const refreshSnapshot = () => {
-      setTelemetrySnapshot(input.container.playerControl.getTelemetrySnapshot());
+      setStatsSnapshot(input.container.playerControl.getStatsSnapshot());
     };
     refreshSnapshot();
     const timer = setInterval(refreshSnapshot, 1_000);
     return () => clearInterval(timer);
   }, [input.container.playerControl, playbackIsActive]);
 
-  const activePlaybackTelemetrySnapshot = playbackIsActive ? telemetrySnapshot : null;
-  const telemetryInput = useMemo(
+  const activePlaybackStatsSnapshot = playbackIsActive ? statsSnapshot : null;
+  const statsInput = useMemo(
     () => ({
       ...input,
-      activePlaybackTelemetrySnapshot,
+      activePlaybackStatsSnapshot,
       playbackTrace:
         state.playbackNote ??
-        (activePlaybackTelemetrySnapshot
-          ? describePlaybackTelemetrySnapshot(activePlaybackTelemetrySnapshot)
+        (activePlaybackStatsSnapshot
+          ? describePlaybackStatsSnapshot(activePlaybackStatsSnapshot)
           : input.playbackTrace),
     }),
-    [activePlaybackTelemetrySnapshot, input, state.playbackNote],
+    [activePlaybackStatsSnapshot, input, state.playbackNote],
   );
-  const loadingState = useMemo(
-    () => buildPlaybackRootLoadingShellState(telemetryInput),
-    [telemetryInput],
-  );
+  const loadingState = useMemo(() => buildPlaybackRootLoadingShellState(statsInput), [statsInput]);
 
   /**
    * The playing title as a media item, or null when nothing is playing.

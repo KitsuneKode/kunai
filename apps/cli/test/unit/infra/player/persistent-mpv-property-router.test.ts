@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc";
-import { createPlayerTelemetryState } from "@/infra/player/mpv-telemetry";
+import { createPlayerStatsState } from "@/infra/player/mpv-stats";
 import { PersistentMpvPropertyRouter } from "@/infra/player/persistent-mpv-property-router";
 import { PersistentSubtitleManager } from "@/infra/player/persistent-subtitle-manager";
 
@@ -30,7 +30,7 @@ describe("PersistentMpvPropertyRouter", () => {
     const subtitleManager = new PersistentSubtitleManager();
     const router = new PersistentMpvPropertyRouter({
       getActiveCycle: () => ({
-        telemetry: createPlayerTelemetryState("/tmp/kunai-test.sock"),
+        stats: createPlayerStatsState("/tmp/kunai-test.sock"),
         acceptPlaybackProperties: false,
         playerReadyNotified: false,
         playerStartedNotified: false,
@@ -99,10 +99,10 @@ describe("PersistentMpvPropertyRouter", () => {
   test("accepts playback samples, updates position, and emits ready/start progress hooks", () => {
     const events: unknown[] = [];
     let currentPosition = 0;
-    const telemetry = createPlayerTelemetryState("/tmp/kunai-test.sock");
+    const stats = createPlayerStatsState("/tmp/kunai-test.sock");
     const router = new PersistentMpvPropertyRouter({
       getActiveCycle: () => ({
-        telemetry,
+        stats,
         acceptPlaybackProperties: true,
         playerReadyNotified: false,
         playerStartedNotified: false,
@@ -125,7 +125,7 @@ describe("PersistentMpvPropertyRouter", () => {
       maybeRearmSkippedSegmentsOnBackwardSeek: () => {},
       getCurrentPositionSeconds: () => currentPosition,
       maybeEmitPlaybackProgress: (cycle, observedAt) => {
-        events.push({ type: "progress-hook", observedAt, sample: cycle.telemetry.latestIpcSample });
+        events.push({ type: "progress-hook", observedAt, sample: cycle.stats.latestIpcSample });
       },
       handleSegmentSkipProgress: async () => {},
       fireNearEofIfNeeded: () => {},

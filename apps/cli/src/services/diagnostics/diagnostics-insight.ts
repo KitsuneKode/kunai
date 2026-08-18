@@ -747,7 +747,7 @@ function resolveProviderReason(
     return timeline.message || `${timelineProvider} · ${runtimeDetail}`;
   }
 
-  return runtimeDetail || `${provider} · no resolve telemetry yet`;
+  return runtimeDetail || `${provider} · no resolve traces yet`;
 }
 
 function resolveDiscordReason(presenceSnapshot: PresenceSnapshot | null | undefined): string {

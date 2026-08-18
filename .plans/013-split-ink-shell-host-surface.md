@@ -21,7 +21,7 @@
 
 ## Current state
 
-- `ink-shell.tsx:29-45` imports mix host concerns (`registerExitHandler`/`requestHardExit` from graceful-exit, `markInteractiveShellMounted`, `deleteAllKittyImages`, `recordRender` diagnostics, playback telemetry) with rendering.
+- `ink-shell.tsx:29-45` imports mix host concerns (`registerExitHandler`/`requestHardExit` from graceful-exit, `markInteractiveShellMounted`, `deleteAllKittyImages`, `recordRender` diagnostics, playback stats) with rendering.
 - 26 `useState` at the root component (grep-verified); timer effects at `:404`, `:619`, `:637`, `:661` (plan 008 addresses the timer-driven ones).
 - Overlay mechanisms present: `root-overlay-shell.tsx`, `overlay-panel.tsx`, `picker-overlay.tsx`, `overlay-picker-row.tsx`, `root-overlay-model.ts`, `overlay-back-stack.ts`, `root-workflow-dispatch.ts`, `root-overlay-bridge.ts`, plus `command-router.ts`.
 

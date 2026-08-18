@@ -148,7 +148,7 @@ export function summarizePlaybackNetworkHealth(
   if (!event || !context || !eventType) {
     return {
       label: "Network",
-      detail: "waiting for mpv network telemetry",
+      detail: "waiting for mpv network stats",
       tone: "neutral",
     };
   }
@@ -257,7 +257,7 @@ export function summarizeProviderHealth(
     }
     return {
       label: "Provider",
-      detail: `${provider} · no resolve telemetry yet`,
+      detail: `${provider} · no resolve traces yet`,
       tone: "neutral",
     };
   }
@@ -373,28 +373,28 @@ export function buildRuntimeHealthSnapshot(input: {
   readonly memorySamples?: readonly RuntimeMemorySample[];
   readonly persistedProviderHealth?: ProviderHealth;
 }): RuntimeHealthSnapshot {
-  const telemetryProvider = summarizeProviderHealth(input.recentEvents, input.currentProvider);
+  const eventProvider = summarizeProviderHealth(input.recentEvents, input.currentProvider);
   const effective = resolveEffectiveProviderHealth(input.persistedProviderHealth);
   const persistedBadge = formatProviderHealthBadge(effective ?? undefined);
   const healthDetail = persistedBadge
     ? appendProviderHealthResetHint(
-        `${telemetryProvider.detail}  ·  health: ${persistedBadge}`,
+        `${eventProvider.detail}  ·  health: ${persistedBadge}`,
         effective?.effectiveStatus,
       )
-    : telemetryProvider.detail;
+    : eventProvider.detail;
   const healthTone =
     effective?.effectiveStatus === "down"
       ? ("error" as const)
       : effective?.effectiveStatus === "degraded"
         ? ("warning" as const)
-        : telemetryProvider.tone;
+        : eventProvider.tone;
   const provider = persistedBadge
     ? {
-        label: telemetryProvider.label,
+        label: eventProvider.label,
         detail: healthDetail,
         tone: healthTone,
       }
-    : telemetryProvider;
+    : eventProvider;
 
   return {
     network: summarizePlaybackNetworkHealth(input.recentEvents),

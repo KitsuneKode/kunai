@@ -35,7 +35,7 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 - **WezTerm stays on sixel** even though it also implements the iTerm2 protocol, because the sixel overlay path is the verified one there. `KUNAI_IMAGE_PROTOCOL=iterm` gives higher fidelity for users who want it; promoting it to the default needs a real-terminal check first.
 - **Half-block is the universal floor.** It decodes in-process and needs no external binary, which is what makes posters work on Windows at all — `chafa` is effectively never installed there.
 - **Ink app shell**: sixel posters reserve a blank measured Ink rectangle. A shared overlay manager uses absolute cursor movement to redraw navigation surfaces after Ink frames and applies Yazi's three-move ConPTY workaround on Windows. Removal and movement rely on the Ink commit that changed the pane; same-slot image replacement clears and paints atomically so old pixels cannot flash through. Terminals that answer the kitty probe but implement no Unicode placeholders (WezTerm's opt-in mode, Konsole) still use text renderers for Kitty.
-- **Now Playing**: unrelated one-second playback telemetry does not resend the framebuffer payload. Its high-frequency rail repaints only when the poster pane commits; history, browse, and other navigation surfaces repaint after Ink frames so a later metadata commit cannot erase a newly displayed cached poster.
+- **Now Playing**: unrelated one-second playback stats do not resend the framebuffer payload. Its high-frequency rail repaints only when the poster pane commits; history, browse, and other navigation surfaces repaint after Ink frames so a later metadata commit cannot erase a newly displayed cached poster.
 
 Details live in `apps/cli/src/image/capability.ts`.
 

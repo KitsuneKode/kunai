@@ -143,7 +143,7 @@ describe("loading shell runtime policy", () => {
     });
   });
 
-  test("loading copy ignores informational mpv telemetry notes", () => {
+  test("loading copy ignores informational mpv stats notes", () => {
     expect(normalizeLoadingIssue("Audio track switched in mpv (id 1)")).toBeNull();
     expect(normalizeLoadingIssue("Intro skipped automatically")).toBeNull();
     expect(normalizeLoadingIssue("12s buffering")).toBeNull();

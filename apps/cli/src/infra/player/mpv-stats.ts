@@ -1,6 +1,6 @@
 import type { EndReason, PlaybackResult } from "@/domain/types";
 
-export interface PlayerTelemetrySample {
+export interface PlayerStatsSample {
   source: "ipc";
   observedAt: number;
   positionSeconds: number;
@@ -29,10 +29,10 @@ export interface PlayerTelemetrySample {
   endReason?: EndReason;
 }
 
-export interface PlayerTelemetryState {
+export interface PlayerStatsState {
   readonly socketPath?: string;
-  latestIpcSample: PlayerTelemetrySample | null;
-  lastNonZeroSample: PlayerTelemetrySample | null;
+  latestIpcSample: PlayerStatsSample | null;
+  lastNonZeroSample: PlayerStatsSample | null;
   endReason: EndReason;
   playerExitedCleanly: boolean;
   playerExitCode: number | null;
@@ -75,14 +75,14 @@ function normalizeNumber(value: unknown): number {
   return 0;
 }
 
-function isMeaningful(sample: Pick<PlayerTelemetrySample, "positionSeconds" | "durationSeconds">) {
+function isMeaningful(sample: Pick<PlayerStatsSample, "positionSeconds" | "durationSeconds">) {
   return sample.positionSeconds > 0 || sample.durationSeconds > 0;
 }
 
 function preferStrongerProgressSample(
-  existing: PlayerTelemetrySample | null,
-  candidate: PlayerTelemetrySample,
-): PlayerTelemetrySample {
+  existing: PlayerStatsSample | null,
+  candidate: PlayerStatsSample,
+): PlayerStatsSample {
   if (!existing) return candidate;
 
   if (candidate.positionSeconds > existing.positionSeconds) return candidate;
@@ -94,7 +94,7 @@ function preferStrongerProgressSample(
   return existing;
 }
 
-export function createPlayerTelemetryState(socketPath?: string): PlayerTelemetryState {
+export function createPlayerStatsState(socketPath?: string): PlayerStatsState {
   return {
     socketPath,
     latestIpcSample: null,
@@ -122,7 +122,7 @@ const EOF_TRUST_TAIL_MIN_SEC = 120;
 const EOF_TRUST_PERCENT_POS_MIN = 95;
 
 /** Called when the playback watchdog reports stream/ipc stall (correlate with spurious EOF). */
-export function noteStreamStall(state: PlayerTelemetryState, observedAtMs: number): void {
+export function noteStreamStall(state: PlayerStatsState, observedAtMs: number): void {
   const pos = state.latestIpcSample?.positionSeconds ?? 0;
   state.lastStreamStallAtMs = observedAtMs;
   if (pos > 0) {
@@ -131,7 +131,7 @@ export function noteStreamStall(state: PlayerTelemetryState, observedAtMs: numbe
 }
 
 function advanceTrustedProgressSeconds(
-  state: PlayerTelemetryState,
+  state: PlayerStatsState,
   prevPositionSeconds: number,
   newPositionSeconds: number,
   durationSeconds: number,
@@ -170,7 +170,7 @@ function advanceTrustedProgressSeconds(
   }
 }
 
-export function noteTrustedSeek(state: PlayerTelemetryState, positionSeconds: number): void {
+export function noteTrustedSeek(state: PlayerStatsState, positionSeconds: number): void {
   if (!Number.isFinite(positionSeconds) || positionSeconds <= 0) return;
   state.maxTrustedProgressSeconds = Math.max(state.maxTrustedProgressSeconds, positionSeconds);
   state.lastReliableProgressSeconds = Math.max(state.lastReliableProgressSeconds, positionSeconds);
@@ -196,8 +196,8 @@ function eofTrustTailSeconds(durationSeconds: number): number {
 }
 
 function shouldDemotePrematureEof(
-  state: PlayerTelemetryState,
-  sample: PlayerTelemetrySample | null | undefined,
+  state: PlayerStatsState,
+  sample: PlayerStatsSample | null | undefined,
   durationSeconds: number,
   maxTrusted: number,
   observedAtMs: number,
@@ -242,8 +242,8 @@ function shouldDemotePrematureEof(
 }
 
 function shouldDemotePauseDroppedEof(
-  state: PlayerTelemetryState,
-  sample: PlayerTelemetrySample | null | undefined,
+  state: PlayerStatsState,
+  sample: PlayerStatsSample | null | undefined,
   durationSeconds: number,
   maxTrusted: number,
   observedAtMs: number,
@@ -276,7 +276,7 @@ export function mapMpvEndReason(reason: string | null | undefined): EndReason {
 }
 
 export function applyObservedPropertySample(
-  state: PlayerTelemetryState,
+  state: PlayerStatsState,
   update: {
     name: string;
     value: unknown;
@@ -296,7 +296,7 @@ export function applyObservedPropertySample(
     durationSeconds: 0,
   };
 
-  const next: PlayerTelemetrySample = {
+  const next: PlayerStatsSample = {
     ...base,
     source: "ipc",
     observedAt,
@@ -426,7 +426,7 @@ export type EndFileEventContext = {
 };
 
 export function applyEndFileEvent(
-  state: PlayerTelemetryState,
+  state: PlayerStatsState,
   reason: string | null | undefined,
   observedAt = Date.now(),
   context: EndFileEventContext = {},
@@ -487,7 +487,7 @@ export function applyEndFileEvent(
 
   if (!base) return;
 
-  const finalSample: PlayerTelemetrySample = {
+  const finalSample: PlayerStatsSample = {
     ...base,
     source: "ipc",
     observedAt,
@@ -517,7 +517,7 @@ export function applyEndFileEvent(
 }
 
 export function recordPlayerExit(
-  state: PlayerTelemetryState,
+  state: PlayerStatsState,
   exit: {
     code: number | null;
     signal: NodeJS.Signals | null;
@@ -545,7 +545,7 @@ export function recordPlayerExit(
 }
 
 export function finalizePlaybackResult(
-  state: PlayerTelemetryState,
+  state: PlayerStatsState,
   cleanup: CleanupStatus,
 ): PlaybackResult {
   const chosen =
