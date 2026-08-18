@@ -136,6 +136,68 @@ describe("parseTopCliChangelogEntry", () => {
     expect(entry?.body).not.toContain("<!--");
   });
 
+  // Regression: a single replace pass leaves a spliced-together opener behind
+  // (`<!<!-- -->--` collapses to `<!--`), which then comments out everything
+  // after it in the rendered notes. CodeQL flags this as incomplete
+  // multi-character sanitization.
+  test("strips comment markers spliced together by an inner comment", () => {
+    const entry = parseTopCliChangelogEntry(`
+## 0.3.0
+
+### Patch Changes
+
+- abc123: Fix installer ownership.
+  <!<!-- -->-- secret note --> Visible tail.
+`);
+
+    expect(entry?.body).toContain("Fix installer ownership");
+    expect(entry?.body).not.toContain("<!--");
+  });
+
+  test("strips nested comment openers", () => {
+    const entry = parseTopCliChangelogEntry(`
+## 0.3.0
+
+### Patch Changes
+
+- abc123: Fix installer ownership.
+  <!--<!-- inner --> outer -->
+`);
+
+    expect(entry?.body).toContain("Fix installer ownership");
+    expect(entry?.body).not.toContain("<!--");
+    expect(entry?.body).not.toContain("inner");
+  });
+
+  // An unterminated opener comments out the rest of the document in any HTML
+  // renderer, so the parser must drop the remainder rather than leave it.
+  test("drops everything after an unterminated comment opener", () => {
+    const entry = parseTopCliChangelogEntry(`
+## 0.3.0
+
+### Patch Changes
+
+- abc123: Fix installer ownership.
+  <!-- never closed, so this tail is commented out
+`);
+
+    expect(entry?.body).toContain("Fix installer ownership");
+    expect(entry?.body).not.toContain("<!--");
+    expect(entry?.body).not.toContain("never closed");
+  });
+
+  test("leaves ordinary prose untouched", () => {
+    const entry = parseTopCliChangelogEntry(`
+## 0.3.0
+
+### Patch Changes
+
+- abc123: Fix installer ownership without touching user files.
+`);
+
+    expect(entry?.body).toContain("Fix installer ownership without touching user files");
+  });
+
   test("keeps a human-written summary without leaking draft notes", () => {
     const entry = parseTopCliChangelogEntry(`
 ## 0.3.0
