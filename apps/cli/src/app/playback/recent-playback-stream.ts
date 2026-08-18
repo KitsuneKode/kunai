@@ -1,5 +1,11 @@
+import {
+  isStreamTimestampFresh,
+  MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS,
+} from "@/domain/playback/in-memory-stream-replay-policy";
 import type { EpisodeInfo, StreamInfo } from "@/domain/types";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+
+export { MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS, isStreamTimestampFresh };
 
 export type RecentPlaybackStreamProvenance = "fresh" | "cache" | "prefetch" | "fallback" | "local";
 
@@ -44,4 +50,12 @@ export function recentPlaybackStreamMatchesProvider(
   if (!recent) return false;
   if (recent.resolvedProviderId !== effectiveProviderId) return false;
   return recent.selectedProviderId === effectiveProviderId || recent.provenance === "fallback";
+}
+
+export function isRecentPlaybackStreamFresh(
+  record: RecentPlaybackStreamRecord,
+  now: number = Date.now(),
+): boolean {
+  if (record.provenance === "local") return true;
+  return isStreamTimestampFresh(record.stream, now);
 }

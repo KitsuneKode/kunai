@@ -232,6 +232,33 @@ describe("DownloadService", () => {
     });
   });
 
+  test("rejects a stream URL that begins with a dash without spawning yt-dlp", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "--exec=touch /tmp/pwned", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    await service.processQueue();
+
+    expect(
+      spawnSpy.mock.calls.some(
+        (call: readonly unknown[]) =>
+          Array.isArray(call[0]) && (call[0] as readonly string[])[0] === "yt-dlp",
+      ),
+    ).toBe(false);
+    const reloaded = repo.get(job.id);
+    expect(reloaded?.status).toBe("failed");
+    expect(reloaded?.errorMessage).toContain("Refusing to download unsafe stream URL");
+  });
+
   test("rejects enqueue when downloads are disabled", async () => {
     const service = buildService({
       repo,

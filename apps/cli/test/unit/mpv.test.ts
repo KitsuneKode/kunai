@@ -32,13 +32,17 @@ test("buildMpvArgs whitelists HTTPS for local materialized HLS playlists", () =>
   );
 });
 
-test("buildMpvArgs attaches only the preferred subtitle during initial launch", () => {
+test("buildMpvArgs attaches full subtitle inventory during initial launch", () => {
   const args = buildMpvArgs(
     {
       url: "https://cdn.example/master.m3u8",
       headers: { referer: "https://www.vidking.net/", "user-agent": "Mozilla/5.0" },
       subtitle: "https://sub.example/en.srt",
-      subtitleTracks: [{ url: "https://sub.example/ar.srt", language: "ar" }],
+      subtitleTracks: [
+        { url: "https://sub.example/ar.srt", language: "ar" },
+        { url: "https://sub.example/fr.srt", language: "fr" },
+        { url: "https://sub.example/en.srt", language: "en" },
+      ],
       displayTitle: "Friends - S01E03",
     },
     "/tmp/kunai-test.sock",
@@ -58,6 +62,29 @@ test("buildMpvArgs attaches only the preferred subtitle during initial launch", 
   expect(args).toContain("--input-ipc-server=/tmp/kunai-test.sock");
   expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
     "--sub-file=https://sub.example/en.srt",
+    "--sub-file=https://sub.example/ar.srt",
+    "--sub-file=https://sub.example/fr.srt",
+  ]);
+});
+
+test("buildMpvArgs rejects option-injection subtitle URLs from launch inventory", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/master.m3u8",
+      headers: {},
+      subtitle: "https://sub.example/en.srt",
+      subtitleTracks: [
+        { url: "--script=evil.lua", language: "evil" },
+        { url: "https://sub.example/ar.srt", language: "ar" },
+      ],
+      displayTitle: "Unsafe subtitle inventory",
+    },
+    null,
+  );
+
+  expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
+    "--sub-file=https://sub.example/en.srt",
+    "--sub-file=https://sub.example/ar.srt",
   ]);
 });
 

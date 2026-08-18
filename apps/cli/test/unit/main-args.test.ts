@@ -12,6 +12,9 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("Register the Linux-only kunai:// URL handler");
   expect(help).toContain("-y, --youtube");
   expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
+  expect(help).toContain(
+    "--jump <n>             Auto-pick the n-th search result (1-based, with -S)",
+  );
   expect(help).toContain("kunai doctor");
   expect(help).toContain("kunai doctor --json");
   expect(help).toContain("kunai rollback");
@@ -146,6 +149,12 @@ test("parseArgs supports --jump <n> for hands-off first-result playback", () => 
   expect(args.jump).toBe(1);
 });
 
+test("parseArgs parses a positive --jump index", () => {
+  const args = parseArgs(["-S", "Dune", "--jump", "3"]);
+
+  expect(args.jump).toBe(3);
+});
+
 test("parseArgs supports -q / --quick as hands-off first-result", () => {
   const quickShort = parseArgs(["-S", "Dune", "-q"]);
   const quickLong = parseArgs(["-S", "Dune", "--quick"]);
@@ -156,15 +165,34 @@ test("parseArgs supports -q / --quick as hands-off first-result", () => {
 });
 
 test("parseArgs ignores invalid --jump values without crashing", () => {
-  const negative = parseArgs(["-S", "Dune", "--jump", "-1"]);
-  const zero = parseArgs(["-S", "Dune", "--jump", "0"]);
-  const missing = parseArgs(["-S", "Dune", "--jump"]);
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = ((message: string) => warnings.push(message)) as typeof console.warn;
 
-  // Invalid --jump values fall back to "ask the user" — the field stays
-  // undefined so the bootstrap resolves the search to the browse surface.
-  expect(negative.jump).toBeUndefined();
-  expect(zero.jump).toBeUndefined();
-  expect(missing.jump).toBeUndefined();
+  try {
+    const negative = parseArgs(["-S", "Dune", "--jump", "-1"]);
+    warnings.length = 0;
+    const zero = parseArgs(["-S", "Dune", "--jump", "0"]);
+    warnings.length = 0;
+    const nonNumeric = parseArgs(["-S", "Dune", "--jump", "abc"]);
+    warnings.length = 0;
+    const missing = parseArgs(["-S", "Dune", "--jump"]);
+
+    expect(negative.jump).toBeUndefined();
+    expect(zero.jump).toBeUndefined();
+    expect(nonNumeric.jump).toBeUndefined();
+    expect(missing.jump).toBeUndefined();
+
+    warnings.length = 0;
+    parseArgs(["-S", "Dune", "--jump", "0"]);
+    expect(warnings.join("; ")).toContain("--jump expects a positive result index; ignoring");
+
+    warnings.length = 0;
+    parseArgs(["-S", "Dune", "--jump", "abc"]);
+    expect(warnings.join("; ")).toContain("--jump expects a positive result index; ignoring");
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 test("parseArgs treats a bare argument as a search query", () => {

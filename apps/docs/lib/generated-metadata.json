@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-08-18T11:09:26.757Z",
+  "syncedAt": "2026-08-18T12:14:18.224Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "26fa49e2",
-  "cliSourceFingerprint": "cbdb7a8d171a7184fd9f9e8302c20e0e9d8dc91032413170dd3c4606a19ae44e",
-  "docsContentFingerprint": "483acbc973e88226ec894a6e57466689f87a24edf9a9f884610afcb6b5a0823a",
+  "cliSourceRevision": "b181d11a",
+  "cliSourceFingerprint": "7e26d3e72a7edb6fd201a2925df0ffcbaf8288ffabb1e6ed4a34746e70e7205d",
+  "docsContentFingerprint": "9560b4c2ffe815810a356c4514330e4ca39b0536afefc6f34a3040ec3e8cfaec",
   "featureStatusRevision": "d4c1e1d0943d18f05bca1a12a5b0ff966754a588f12e4a86a03510d2bc424c1d",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
@@ -711,7 +711,7 @@
     {
       "short": "",
       "long": "--jump",
-      "description": "Resume/seek to episode n"
+      "description": "Auto-pick the n-th search result (1-based, with -S)"
     },
     {
       "short": "",

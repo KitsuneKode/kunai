@@ -42,6 +42,7 @@ export const AniSkipTimingSource: PlaybackTimingSource = {
       externalIds: title.externalIds,
       titleName: title.name,
       titleYear: title.year,
+      season: episode.season,
       episode: episode.episode ?? 1,
       signal,
       parentSignal: context?.parentSignal,
