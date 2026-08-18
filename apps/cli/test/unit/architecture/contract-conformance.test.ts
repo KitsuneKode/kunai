@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { KEYBINDINGS } from "@/app-shell/keybindings";
 import { resolveHelpScope } from "@/app-shell/root-shell-state";
+import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 import { COMMAND_CONTEXTS, COMMANDS } from "@/domain/session/command-registry";
 
 import {
@@ -57,18 +58,16 @@ function readerFilesFor(symbol: string, definedIn: readonly string[]): string[] 
 describe("contract conformance", () => {
   /**
    * A command the palette never offers is unreachable: `resolveCommands` only
-   * surfaces ids listed in a `COMMAND_CONTEXTS` entry, so a registered command
-   * missing from every context can never be typed, however complete its handler
-   * and aliases are.
+   * surfaces ids listed in a `COMMAND_CONTEXTS` entry or the browse command pool
+   * (`SEARCH_BROWSE_COMMAND_IDS`), so a registered command missing from every
+   * surface can never be typed, however complete its handler and aliases are.
    */
   test("every registered command is offered by at least one palette context", () => {
     // DEBT (2026-07-21): implemented + aliased, reachable from no palette surface.
     // `sync*` means the AniList/TMDB integration has no entry point at all.
     const KNOWN_UNREACHABLE_COMMANDS = new Set([
       "clear-history",
-      "details",
       "favorites",
-      "filters",
       "image-pane",
       "playlist-add",
       "queue-season",
@@ -78,10 +77,12 @@ describe("contract conformance", () => {
       "sync-connect-anilist",
       "sync-connect-tmdb",
       "sync-disconnect",
-      "trending",
     ]);
 
-    const offered = new Set<string>(Object.values(COMMAND_CONTEXTS).flat());
+    const offered = new Set<string>([
+      ...Object.values(COMMAND_CONTEXTS).flat(),
+      ...SEARCH_BROWSE_COMMAND_IDS,
+    ]);
     const unreachable = COMMANDS.map((command) => command.id)
       .filter((id) => !offered.has(id))
       .filter((id) => !KNOWN_UNREACHABLE_COMMANDS.has(id));
@@ -99,7 +100,10 @@ describe("contract conformance", () => {
    * debt above turned outward, where the user rather than an agent pays for it.
    */
   test("user-facing copy never instructs the user to run an unreachable command", () => {
-    const offered = new Set<string>(Object.values(COMMAND_CONTEXTS).flat());
+    const offered = new Set<string>([
+      ...Object.values(COMMAND_CONTEXTS).flat(),
+      ...SEARCH_BROWSE_COMMAND_IDS,
+    ]);
     const unreachableAlias = new Map<string, string>();
     for (const command of COMMANDS) {
       if (offered.has(command.id)) continue;
@@ -135,8 +139,6 @@ describe("contract conformance", () => {
     // each belongs to whoever wires that command up. Fixing one means deleting
     // its entry.
     const KNOWN_DEAD_INSTRUCTIONS = new Set<string>([
-      'apps/cli/src/app-shell/browse-shell.tsx: "/filters" -> filters',
-      'apps/cli/src/app-shell/browse-shell.tsx: "/trending" -> trending',
       'apps/cli/src/app-shell/details-panel.ts: "/playlist-add" -> playlist-add',
       'apps/cli/src/app-shell/settings/registry/discover.ts: "/random" -> random',
       'apps/cli/src/app-shell/settings/registry/discover.ts: "/surprise" -> surprise',
@@ -144,7 +146,6 @@ describe("contract conformance", () => {
       'apps/cli/src/app-shell/workflows/shell-workflows.ts: "/playlist-add" -> playlist-add',
       'apps/cli/src/app/discover/random-results.ts: "/random" -> random',
       'apps/cli/src/app/discover/random-results.ts: "/surprise" -> surprise',
-      'apps/cli/src/app/discover/random-results.ts: "/trending" -> trending',
     ]);
 
     expect(

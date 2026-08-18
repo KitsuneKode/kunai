@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-07-21"
+lastReviewed: "2026-08-18"
 ---
 
 # Kunai CLI Keybindings
@@ -115,26 +115,27 @@ mid-session". `l` carries the favourite toggle on those screens instead.
 
 ## Post-Playback
 
-| Key         | Action                                                             |
-| ----------- | ------------------------------------------------------------------ |
-| `/`         | Open command palette                                               |
-| `n`         | Next episode                                                       |
-| `p`         | Previous episode                                                   |
-| `c`         | Continue from saved point when resumable                           |
-| `r`         | Replay from start with mpv resume prompt available when applicable |
-| `e`         | Episode picker                                                     |
-| `k`         | Streams                                                            |
-| `o`         | Source                                                             |
-| `Shift+F`   | Fallback provider                                                  |
-| `/provider` | Provider picker                                                    |
-| `a`         | Toggle autoplay                                                    |
-| `d`         | Diagnostics                                                        |
-| `i`         | Recommendation pick actions, when the rail is visible              |
-| `1-3`       | Recommendation pick actions, when the rail is visible              |
-| `?`         | Help                                                               |
-| `s`         | Fresh search                                                       |
-| `q`         | Quit                                                               |
-| `Esc`       | Back to previous results                                           |
+| Key             | Action                                                                               |
+| --------------- | ------------------------------------------------------------------------------------ |
+| `/`             | Open command palette                                                                 |
+| `↑` / `k`       | Move selection up through the action list                                            |
+| `↓` / `j`       | Move selection down through the action list                                          |
+| `Enter`         | Run the highlighted action (or the first recommendation on series-complete)          |
+| `n`             | Continue / next — resume, next episode, next season, or queued head per footer label |
+| `r`             | Replay from start with mpv resume prompt available when applicable                   |
+| `e`             | Episode picker                                                                       |
+| `o`             | Source picker                                                                        |
+| `Shift+F`       | Fallback provider                                                                    |
+| `m`             | Title control menu                                                                   |
+| `h`             | History                                                                              |
+| `w`             | Watchlist (caught-up only)                                                           |
+| `d`             | Diagnostics                                                                          |
+| `1` / `2` / `3` | Play recommendation 1 / 2 / 3 when the rail is visible                               |
+| `!` / `@` / `#` | Open action menu for recommendation 1 / 2 / 3 when the rail is visible               |
+| `?`             | Help                                                                                 |
+| `s`             | Fresh search                                                                         |
+| `q`             | Quit                                                                                 |
+| `Esc`           | Back to previous results                                                             |
 
 ## Pickers
 
@@ -174,10 +175,10 @@ manual skip key can still offer finite known segments while autoskip is paused.
 
 ## Collision Notes
 
-| Key | Collision risk                                          | Decision                                                   |
-| --- | ------------------------------------------------------- | ---------------------------------------------------------- |
-| `g` | Settings in playback loading/resolving                  | Do not use for return/search                               |
-| `s` | Subtitles during active playback; search after playback | Keep contextual; use `Shift+S` for active return-to-search |
-| `r` | Recover during active playback; replay after playback   | Context is visible and acceptable                          |
-| `f` | Fallback in resolve/playback/post-playback              | Same intent across surfaces                                |
-| `e` | Episode picker in playback surfaces                     | Same intent across surfaces                                |
+| Key | Collision risk                                          | Decision                                                                             |
+| --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `g` | Settings in playback loading/resolving                  | Do not use for return/search                                                         |
+| `s` | Subtitles during active playback; search after playback | Keep contextual; use `Shift+S` for active return-to-search                           |
+| `r` | Recover during active playback; replay after playback   | Context is visible and acceptable                                                    |
+| `f` | Favourite while browsing; fallback elsewhere            | Bare `f` is browse-only; fallback is `Shift+F` in loading, player, and post-playback |
+| `e` | Episode picker in playback surfaces                     | Same intent across surfaces                                                          |
