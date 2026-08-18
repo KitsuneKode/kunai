@@ -18,8 +18,8 @@ const copy: Record<
       <>
         Kunai is a terminal-first CLI during beta. Preferred install is <code>install.sh</code> /{" "}
         <code>install.ps1</code> (self-contained binary — Bun runtime embedded; you do not need
-        Bun). Bun/npm globals are secondary; npm requires Bun on <code>PATH</code>. You still need{" "}
-        <strong>mpv</strong> for playback — setup and browsing work without it. Kunai is a
+        Bun). Bun/npm globals are secondary; npm needs Node on <code>PATH</code>, not Bun. You still
+        need <strong>mpv</strong> for playback — setup and browsing work without it. Kunai is a
         client-side playback tool. It does not host, upload, mirror, seed, or distribute video
         content. Streams and related assets are served by non-affiliated third-party providers. Use
         responsibly and in accordance with applicable laws and service terms. Provider availability

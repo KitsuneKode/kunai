@@ -107,6 +107,10 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 **Caveats:** requires network; yt-dlp must be available for resolve. Kunai does **not** bypass DRM or circumvent YouTube access controls — it only forwards optional cookies you already have to yt-dlp/mpv.
 
+Search can return **videos, playlists, and channels**. Playlists and channels are catalog collections (`youtube-playlist:…` / channel ids) — pick a video inside them to play. Live URLs (`youtube.com/live/…`) resolve as videos; Kunai passes `--no-live-from-start` to yt-dlp so a live handoff does not start from the beginning of the stream unless you change that.
+
+**SponsorBlock** is off unless you set `youtubeMetadata.sponsorblockRemove` in Settings › YouTube (for example `sponsor,intro`). That value is forwarded to yt-dlp / mpv. There is no shipped default category list.
+
 ### Cookie safety (age-restricted / members)
 
 Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also editable from `/settings` → YouTube):
@@ -254,15 +258,9 @@ What it does not do:
 - Kunai does not host or proxy video. Enabling `videoFallback` in config does not route media through the relay in the current runtime.
 - The relay does not bypass provider login or DRM.
 
-Local contributor smoke:
+Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct fetches. To use a relay you operate, set `baseUrl` (and optional token) in `/settings` or `config.json` to **your** origin — Kunai never ships a public relay URL. `fallbackToDirect: true` lets a broken relay degrade to direct fetches where the provider is not geo-blocked. Env overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`.
 
-```sh
-bun run dev:relay
-KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787 bun run test:live:relay-allanime
-```
-
-Deploy/config details live in `apps/relay-server/README.md` for source
-checkouts.
+Source-checkout smoke and Vercel deploy steps: [Debugging workflow](/docs/developer/debugging-workflow) and `apps/relay-server/README.md`.
 
 ## When providers fail (expected behavior)
 

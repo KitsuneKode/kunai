@@ -449,8 +449,10 @@ All completed downloads are grouped by title in the library panel (`/library`):
 
 Enable via `/presence` or `/settings`. Kunai talks to Discord over **local IPC**
 (Unix socket on Linux/macOS, named pipe on Windows) — there's no extra service or
-`discord-rpc` package to install; just have the Discord desktop app running. It
-shows what you're watching:
+`discord-rpc` package to install. The Discord desktop app must be running.
+Kunai ships a default Discord application client id; override it in Settings or
+`KUNAI_DISCORD_CLIENT_ID` only if you use your own Discord app. Presence is
+**off** until you enable it. It shows what you're watching:
 
 - **Watching Kunai** — Attack on Titan · Season 1, Episode 5 · provider
 - A browsing state when you're searching between episodes

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-29"
+lastReviewed: "2026-08-18"
 ---
 
 # Playback timing, IntroDB, and AniSkip
@@ -94,7 +94,7 @@ Use the following patterns so new providers stay compatible with timing and auto
 
 ### 1. Manifest and registry
 
-- Implement the module in `packages/providers/src/<provider>/direct.ts`, define the manifest in `manifest.ts`, export from `packages/providers/src/index.ts`, and register it in `apps/cli/src/container.ts` inside `providerModules` (single source of truth per repo rules).
+- Implement the module in `packages/providers/src/<provider>/direct.ts`, define the manifest in `manifest.ts`, export from `packages/providers/src/index.ts`, and register it in `apps/cli/src/container/bootstrap-providers.ts` inside `loadProductionProviderModules()` (single source of truth per repo rules).
 - Note the **string id** you use in `defineProviderManifest({ id: "…" })` — that is `providerId` at runtime.
 
 ### 2. What `TitleInfo.id` means for your provider

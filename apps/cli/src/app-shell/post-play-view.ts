@@ -343,7 +343,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           id: "fallback",
           label: "Fallback",
           detail: "try another provider",
-          shortcut: postPlayShortcut(bindings, "post-fallback", "f"),
+          shortcut: postPlayShortcut(bindings, "post-fallback", "⇧F"),
           primary: false,
         },
         {

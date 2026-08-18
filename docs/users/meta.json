@@ -11,8 +11,8 @@
     "what-you-can-do",
     "commands-and-shortcuts",
     "feature-tour",
-    "share-links",
     "playback-and-recovery",
+    "troubleshooting",
     "media-selection",
     "providers",
     "continue-watching-and-new-episodes",
@@ -20,10 +20,10 @@
     "customization",
     "runtime-feedback",
     "cli-reference",
-    "glossary",
     "diagnostics-and-reporting",
-    "troubleshooting",
+    "reliability-and-privacy",
     "supported-and-unsupported",
-    "reliability-and-privacy"
+    "share-links",
+    "glossary"
   ]
 }

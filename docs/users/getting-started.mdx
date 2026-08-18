@@ -1,13 +1,11 @@
 ---
 title: Getting Started
-description: Install Kunai, verify dependencies, and complete your first playback session with explicit recovery steps.
+description: Install Kunai, put it on PATH, install mpv, and complete a first playback session.
 ---
 
 Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream on your machine, and hands playback to `mpv`. The shell stays alive so you can recover, continue, or pick something else without restarting.
 
 **Who this is for:** anyone installing Kunai for the first time.
-
-**You will learn:** how to install, launch your first search, use high-signal shell commands, and recover when playback fails.
 
 <ScopeCallout variant="beta" />
 
@@ -15,7 +13,7 @@ Kunai is a terminal-first media shell. You search for a title, pick what to watc
 
 <QuickStartSteps />
 
-The preferred path installs a self-contained binary — you do not need Bun. Confirm the install, check `mpv`, run setup, then search:
+Preferred Linux/macOS bootstrap (same command the steps above use):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
@@ -24,6 +22,8 @@ mpv --version
 kunai --setup
 kunai -S "Dune"
 ```
+
+If `kunai: command not found` after install, the binary is not on `PATH`. On Linux/macOS add `~/.local/bin` (the installer prints the exact `export`). On Windows add `%LOCALAPPDATA%\kunai\bin`. Then `kunai doctor`.
 
 `-S` opens search results. Select a title, pick an episode when prompted, wait for provider resolution, then confirm the committed `mpv` startup. If `mpv` is missing, setup and browsing stay available — only playback handoff is blocked.
 
@@ -60,84 +60,31 @@ bun run link:global
 kunai --setup
 ```
 
-Use `bun run dev -- <flags>` when you need to forward argv without a global link. Prefer this path for contributors debugging providers or docs — not for day-to-day watching.
+Day-to-day watching uses the installed `kunai` binary. Source launch recipes live in [Contribute](/docs/developer/contribute).
 
 </Tab>
 </Tabs>
 
-## Launch recipes
+## First week in the shell
 
-Four common first-week patterns. Full flag list: [CLI reference](/docs/users/cli-reference).
+Press `/` for the command palette. Surfaces that matter:
 
-### First play (search, then pick)
+| Surface | Command | Meaning |
+| --- | --- | --- |
+| Watchlist | `/watchlist` | Built-in watch-later list |
+| Playlists | `/playlists` | Durable named collections |
+| Up Next | `/up-next` | Current playback order (`/queue` is an alias) |
+| Downloads | `/downloads` | Queued / running / failed jobs |
+| Library | `/library` | Completed offline titles |
+| History | `/history` | Resume progress |
 
-```sh
-kunai -S "Dune"
-```
-
-`-S` opens search results — it does not auto-play. Add `--jump 1` or `-q` when you want the first match selected automatically.
-
-### Anime mode
-
-```sh
-kunai -a -S "Attack on Titan" --jump 1
-```
-
-### Continue where you left off
-
-```sh
-kunai --continue
-```
-
-Use `--history` when you want to pick from recent entries instead of the newest unfinished one.
-
-### Offline library
-
-```sh
-kunai --offline
-```
-
-`--zen --offline` keeps chrome minimal over the same library. Download-only bootstrap: `kunai --download -S "Title"` (resolve, queue, exit).
-
-<Callout type="idea" title="Search does not mean auto-play">
-`-S "Title"` lands on results. Discovery trays (`--discover`, `--random`, `--calendar`) also open without auto-play.
-</Callout>
-
-<ScopeCallout variant="downloads" />
-
-## In the shell
-
-Press `/` to open the command palette. High-signal commands for a first week:
-
-| Command | Purpose |
-| --- | --- |
-| `/history` | Recent watch progress |
-| `/up-next` | Current playback order |
-| `/downloads` | Queued, running, and failed download jobs |
-| `/library` or `/offline` | Playable completed downloads |
-| `/diagnostics` | Runtime state and recent evidence |
-| `/update` | Manual version check (`kunai upgrade` is the primary update path) |
-| `/recover` | Refresh the current stream after failure evidence |
-| `/fallback` | Try the next compatible provider |
-
-Browse mode uses `Tab` to cycle catalog mode (series / anime / YouTube). Narrow loaded results with `Ctrl+F`. Open filters with `/filters`. During playback, provider fallback is `⇧F` (`Shift+F`), not a bare `f`.
+`Tab` cycles catalog mode (series / anime / YouTube). `Ctrl+F` narrows loaded results. `/filters` opens the public filter surface. During playback, provider fallback is `⇧F` (`Shift+F`), not a bare `f`.
 
 ## When playback fails
 
-<Steps>
-<Step>
-### Stay in the shell
-Do not restart blindly. Kunai keeps session context, provider inventory, and local watch history.
-</Step>
-<Step>
-### Recover, then fallback
-Run `/recover` to refresh the current provider intent. If that fails, `/fallback` walks the priority chain.
-</Step>
-<Step>
-### Read evidence
-Open `/diagnostics`. For a shareable bundle use `/export-diagnostics` — exports are redacted by default.
-</Step>
-</Steps>
+Stay in the shell. `/recover` refreshes the current provider. `/fallback` or `⇧F` walks the priority chain. `/diagnostics` shows evidence; `/export-diagnostics` writes a redacted bundle.
+
+Empty anime search with AniDB as the default often means **curl is missing** — AniDB sits behind Cloudflare. `kunai doctor` reports curl. See [Troubleshooting](/docs/users/troubleshooting).
 
 ## Next reads
 
@@ -146,3 +93,4 @@ Open `/diagnostics`. For a shareable bundle use `/export-diagnostics` — export
 - [Platforms](/docs/users/platforms) for OS-specific optional tools
 - [Providers](/docs/users/providers) for fallback chains and per-provider notes
 - [Playback and recovery](/docs/users/playback-and-recovery) for the full failure playbook
+- [CLI reference](/docs/users/cli-reference) for launch flags (`--continue`, `-a`, `--offline`)

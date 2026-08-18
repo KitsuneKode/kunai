@@ -142,7 +142,7 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 }
 ```
 
-Tokens are stored separately. Sync never runs unless explicitly enabled.
+Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
 
 ## providers.json overrides
 
@@ -222,15 +222,9 @@ Or use `/settings` and navigate to Presence.
 - Set **Presence privacy** to `full` (title/episode detail) or `private` (generic activity).
 </Step>
 <Step>
-### Provide a Discord application client id
+### Discord desktop, then connect
 
-Enter a numeric Discord application client id in Settings, or set:
-
-```sh
-export KUNAI_DISCORD_CLIENT_ID="your_app_id"
-```
-
-Create an application at [Discord Developer Portal](https://discord.com/developers/applications) if you need a new id.
+The Discord **desktop app** must be running (local IPC). Kunai ships a default application client id; you do not need to create a Discord app for the default path. Override in Settings › Presence or `KUNAI_DISCORD_CLIENT_ID` only if you want your own application. Presence stays **off** until you set the provider to `discord`.
 </Step>
 <Step>
 ### Connect and verify

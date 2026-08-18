@@ -52,9 +52,29 @@ Review the bundle locally before sharing. It must not contain raw stream URLs or
 1. Open `/diagnostics` and read the **provider attempt timeline**.
 2. Note the failure class (timeout, empty inventory, HTTP error, offline/network).
 3. Press `⇧F` (`Shift+F`) or `/fallback` to try the next provider in your priority list.
-4. If one provider always fails, check [Customization](/docs/users/customization) for `providerPriority` / `animeProviderPriority`.
-5. For domain drift, verify `~/.config/kunai/providers.json` overrides are still valid.
-6. If diagnostics mention geo-blocking, captcha placeholders, or `NEED_CAPTCHA`, try a user-owned provider relay for metadata calls. See [Providers](/docs/users/providers#provider-geo-relay).
+4. If yesterday's provider still wins and always fails, run `/reset-provider-health` so auto-fallback can retry it. `/clear-cache` drops cached stream URLs (optionally health memory too).
+5. If one provider always fails, check [Customization](/docs/users/customization) for `providerPriority` / `animeProviderPriority`.
+6. For domain drift, verify `~/.config/kunai/providers.json` overrides are still valid.
+7. If diagnostics mention geo-blocking, captcha placeholders, or `NEED_CAPTCHA`, try a user-owned provider relay for metadata calls. See [Providers](/docs/users/providers#provider-geo-relay).
+
+### Failure classes
+
+`/diagnostics` labels each attempt. The strings below are what the classifier writes into `userSummary`:
+
+| Class | What you see | What to do |
+| --- | --- | --- |
+| timeout | Provider is taking longer than expected | Wait, then `/recover`. `fallback-first` recovery auto-falls over after ~15s on a slow resolve |
+| network | Provider had a network issue | Check connectivity; `/recover` |
+| offline | Kunai cannot reach the network right now | Use `/library` if you have downloads; do not cycle providers |
+| rate-limited | Provider is rate limiting requests | Wait, then `/fallback` |
+| provider-empty | Provider did not return a playable stream | `/fallback` or another title |
+| provider-parse | Provider returned data Kunai could not read | `/recompute`, then `/fallback` |
+| expired-stream | Provider returned an expired stream | `r` / `/recover` |
+| blocked | Provider appears blocked right now | User-owned metadata relay, or `/fallback` |
+| sub-dub-mismatch | Does not match the selected sub/dub preference | Change language profile, then retry |
+| title-episode-gap | Does not have this episode available yet | Wait for the episode, or another provider |
+
+Empty **search** (not playback) with anime mode and AniDB often means **curl is missing**. `kunai doctor` reports it. Install curl, then search again — AniDB sits behind Cloudflare.
 
 ### Evidence to collect
 
@@ -71,6 +91,19 @@ If Kunai is still cycling sources or retrying within one provider, the UI may sh
 </Callout>
 
 More: [Providers](/docs/users/providers), [Supported and unsupported](/docs/users/supported-and-unsupported).
+
+---
+
+## Subtitles missing during playback
+
+**Symptoms:** Video plays, no soft subs; diagnostics mentions Wyzie or late subtitle lookup.
+
+### What to try
+
+1. Press `s` during playback to **reload subtitles** (hotkey, not a slash command).
+2. Open `/source` or `/tracks` if inventory already lists another subtitle.
+3. Late lookup uses **Wyzie** only when you set a Wyzie API key in Settings › Language. Kunai ships none. Without a key, lookup is skipped and a one-time notice explains why.
+4. Hardsub sources have burned-in text — switching tracks cannot remove them.
 
 ---
 
@@ -293,18 +326,6 @@ More: [Install and update](/docs/users/install-and-update), [Platforms](/docs/us
 
 ## Still stuck?
 
-<Callout type="info" title="Contributors with a source checkout">
-Run a structured trace session:
+Binary installs: launch with `--debug` (writes `./logs.txt`), reproduce, then `/export-diagnostics`. Open an issue via `/report-issue` after reviewing redaction.
 
-```sh
-KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Title" --debug-session
-```
-
-Export diagnostics before exit: `/export-diagnostics`. See [Debugging workflow](/docs/developer/debugging-workflow).
-</Callout>
-
-For everyone else:
-
-1. Export diagnostics before exit: `/export-diagnostics`
-2. Open an issue via `/report-issue` with the bundle attached (after reviewing redaction).
-3. Include the symptom section you followed and what you already tried from this page.
+Source-checkout traces (`KUNAI_TRACE`, `bun run dev`) live in [Debugging workflow](/docs/developer/debugging-workflow).

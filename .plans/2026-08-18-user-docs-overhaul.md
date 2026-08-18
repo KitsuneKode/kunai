@@ -11,13 +11,13 @@ lastReviewed: "2026-08-18"
 
 **PRs (split by workstream, against `main`):**
 
-1. `docs/accuracy-and-framing` — wrong-and-shipping copy + disclaimer
-2. `docs/first-run` — getting-started / install / PATH / mpv
-3. `docs/debugging-playbook` — symptom → check → meaning → action
-4. `docs/coverage-gaps` — YouTube, anime numbering/AniSkip, relay, tracker, Discord, downloads resume, surfaces
-5. `docs/nav-and-readability` — `meta.json` order, dual-job splits, inbound links
-6. `docs/agent-docs-routing` — `.docs/` stale paths (lower priority)
-7. Deploy `apps/docs` to `kunai.kitsunekode.in`
+1. `docs/accuracy-and-framing` — landed on this branch (wrong-and-shipping copy + disclaimer)
+2. `docs/first-run` — landed on this branch (PATH, mpv, doctor)
+3. `docs/debugging-playbook` — landed on this branch
+4. `docs/coverage-gaps` — landed on this branch
+5. `docs/nav-and-readability` — landed on this branch (`meta.json` order; contributor recipes moved)
+6. `docs/agent-docs-routing` — landed on this branch (register providers in `bootstrap-providers.ts`)
+7. Deploy `apps/docs` to `kunai.kitsunekode.in` — **remaining**
 
 ## Global constraints
 

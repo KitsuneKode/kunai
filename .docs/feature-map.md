@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-08-18"
 ---
 
 # Feature Map
@@ -14,7 +14,7 @@ answer "where does X live" without grepping the whole tree.
 owning code or the doc in the last column. If a row disagrees with the tree, the
 tree is right — fix the row.
 
-Verified against the tree on 2026-08-14. Paths are checked by
+Verified against the tree on 2026-08-18. Paths are checked by
 `bun run verify:doc-paths`.
 
 ## How a session flows
