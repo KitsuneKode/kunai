@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-08-18T11:59:51.487Z",
+  "syncedAt": "2026-08-18T14:37:53.794Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "2291d461",
-  "cliSourceFingerprint": "b57e364d9ec97498bd6a47345e2c92b07a2d124d867514ca44ded0d726f0d0ae",
-  "docsContentFingerprint": "9560b4c2ffe815810a356c4514330e4ca39b0536afefc6f34a3040ec3e8cfaec",
+  "cliSourceRevision": "44241931",
+  "cliSourceFingerprint": "1a277328f91c83d57abb7ece42e3e3d10610e66cfe1c8abed07a7acb0ea31a0e",
+  "docsContentFingerprint": "3bbc65a431a26a397f9d4827926f2f1f0ec04307ec2b860057dd6a96a40ca5f7",
   "featureStatusRevision": "d4c1e1d0943d18f05bca1a12a5b0ff966754a588f12e4a86a03510d2bc424c1d",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
@@ -68,6 +68,8 @@
         "Parity with ani-cli v5.0 (2026-08-01): browse search",
         "/api/frontend anime episodes + episode languages",
         "embed → HLS master.",
+        "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link",
+        "then reads official XML; AniList/Jikan fill missing fields and still artwork.",
         "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
         "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained.",
         "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it."

@@ -1,11 +1,11 @@
-import { DEFAULT_ANALYTICS_LIMITS, type AnalyticsLimits } from "./limits";
+import { DEFAULT_ANALYTICS_LIMITS, type AnalyticsLimits } from "./limits.js";
 import {
   capBuckets,
   countBy,
   type AnalyticsStore,
   type DailyRollup,
   type RecordPingInput,
-} from "./store";
+} from "./store.js";
 
 /** In-process test double. Mirrors the Postgres semantics, including idempotency. */
 export function createMemoryAnalyticsStore(

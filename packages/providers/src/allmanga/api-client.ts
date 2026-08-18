@@ -8,6 +8,7 @@ import {
   enrichEpisodeOptionsWithAnimeMetadata,
   fetchAnimeEpisodeMetadataByNumber,
   getSeededEpisodeMetadata,
+  mergeExternalEpisodeMetadataInto,
   parseAllMangaEpisodeNumber,
   seedEpisodeMetadataFromProvider,
   shouldSkipExternalEpisodeMetadataEnrichment,
@@ -15,6 +16,7 @@ import {
 } from "../shared/anime-metadata";
 import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
+import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
   ALLMANGA_BUILD_ID,
   ALLMANGA_CRYPTO_MATERIAL_TTL_MS,
@@ -493,27 +495,6 @@ export function clearAllMangaProviderCachesForTest(): void {
   retrySleep = (ms, signal) => sleepAbortable(ms, signal);
 }
 
-type AbortSignalConstructorWithAny = typeof AbortSignal & {
-  readonly any?: (signals: readonly AbortSignal[]) => AbortSignal;
-};
-
-function createTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  if (!signal) return timeoutSignal;
-  const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
-  if (abortSignal.any) return abortSignal.any([signal, timeoutSignal]);
-
-  const controller = new AbortController();
-  const abort = (source: AbortSignal) => {
-    if (!controller.signal.aborted) controller.abort(source.reason);
-  };
-  if (signal.aborted) abort(signal);
-  if (timeoutSignal.aborted) abort(timeoutSignal);
-  signal.addEventListener("abort", () => abort(signal), { once: true });
-  timeoutSignal.addEventListener("abort", () => abort(timeoutSignal), { once: true });
-  return controller.signal;
-}
-
 export async function loadAvailableEpisodesDetail(
   context: ProviderRuntimeContext,
   apiUrl: string,
@@ -901,23 +882,7 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
   if (!anilistId && !malId) return baseEpisodes;
 
   const externalMetadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId, malId }, signal);
-  for (const [number, meta] of externalMetadata) {
-    const existing = metadata.get(number);
-    if (!existing) {
-      metadata.set(number, meta);
-      continue;
-    }
-    metadata.set(number, {
-      number,
-      title: existing.title ?? meta.title,
-      synopsis: existing.synopsis ?? meta.synopsis,
-      airDate: existing.airDate ?? meta.airDate,
-      thumbnail: existing.thumbnail ?? meta.thumbnail,
-      isFiller: existing.isFiller ?? meta.isFiller,
-      isRecap: existing.isRecap ?? meta.isRecap,
-      source: "merged",
-    });
-  }
+  mergeExternalEpisodeMetadataInto(metadata, externalMetadata);
 
   if (metadata.size === 0) return baseEpisodes;
 

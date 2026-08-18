@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { authorizeBearer } from "../../src/bearer-auth";
-import { snapshotDayKey } from "../../src/public-metrics";
-import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
+import { authorizeBearer } from "../../src/bearer-auth.js";
+import { snapshotDayKey } from "../../src/public-metrics.js";
+import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config.js";
 
 /** Last 30 days including the snapshot day. */
 const ADMIN_WINDOW_DAYS = 30;

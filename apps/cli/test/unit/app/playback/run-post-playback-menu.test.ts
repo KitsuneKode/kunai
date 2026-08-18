@@ -107,6 +107,7 @@ function createDeps(overrides: Partial<PostPlaybackMenuDeps> = {}): TestDeps {
     historyRepository: {
       listByTitle: () => [],
     } as unknown as PostPlaybackMenuDeps["historyRepository"],
+    readWatchedEntries: () => [],
     diagnosticsService: {
       record: () => {},
     } as unknown as PostPlaybackMenuDeps["diagnosticsService"],
@@ -164,6 +165,60 @@ function createDeps(overrides: Partial<PostPlaybackMenuDeps> = {}): TestDeps {
 }
 
 describe("runPostPlaybackMenu", () => {
+  test("season progress reads history AFTER the episode played, and one total feeds both lines", async () => {
+    // Reproduces the post-play screen showing "E08 of 200" beside "0 / 201 · 0%":
+    // the count came from a pre-playback snapshot (empty on a first watch) and the
+    // two totals came from two different sources.
+    const run = createRun();
+    const iteration = createBaseIteration({
+      episodeAvailability: {
+        nextEpisode: { season: 1, episode: 9 },
+        previousEpisode: { season: 1, episode: 7 },
+        nextSeasonEpisode: null,
+        upcomingNext: null,
+        animeNextReleaseUnknown: false,
+        tmdbUnavailable: false,
+      },
+    });
+    // The picker is the playable list: 200 episodes, all in season 1.
+    const playableEpisodes = {
+      options: Array.from({ length: 200 }, (_, index) => ({
+        label: `Episode ${index + 1}`,
+        value: `1:${index + 1}`,
+      })),
+      subtitle: "",
+      initialIndex: 0,
+    };
+
+    let seenState: { totalEpisodes?: number; watchedEpisodes?: number; episodeLabel?: string } = {};
+    const deps = createDeps({
+      readWatchedEntries: () =>
+        [{ season: 1, episode: 8 }] as unknown as ReturnType<
+          PostPlaybackMenuDeps["readWatchedEntries"]
+        >,
+      openPlaybackShell: async (input) => {
+        seenState = input.state;
+        return "quit";
+      },
+    });
+
+    await runPostPlaybackMenu(
+      run,
+      {
+        ...iteration,
+        // Catalog says 201 episodes; the playable list carries 200.
+        title: { ...title, episodeCount: 201 },
+        currentEpisode: { season: 1, episode: 8 },
+        shellEpisodePicker: playableEpisodes,
+      },
+      deps,
+    );
+
+    expect(seenState.watchedEpisodes).toBe(8);
+    expect(seenState.totalEpisodes).toBe(200);
+    expect(seenState.episodeLabel).toContain("of 200");
+  });
+
   test("near-end auto-next uses stopAfterCurrentAtMenuEntry snapshot (B1)", async () => {
     let countdownOffered = false;
     const run = createRun();

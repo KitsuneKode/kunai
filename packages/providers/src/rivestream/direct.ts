@@ -43,6 +43,7 @@ import {
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { createTimeoutSignal } from "../shared/timeout-signal";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
 export { RIVESTREAM_PROVIDER_ID };
@@ -104,27 +105,6 @@ type RivestreamResolvedCandidate = {
   readonly variants: readonly ProviderVariantCandidate[];
   readonly subtitles: readonly SubtitleCandidate[];
 };
-
-type AbortSignalConstructorWithAny = typeof AbortSignal & {
-  readonly any?: (signals: readonly AbortSignal[]) => AbortSignal;
-};
-
-function createTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  if (!signal) return timeout;
-  const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
-  if (abortSignal.any) return abortSignal.any([signal, timeout]);
-  // Manual combine fallback so the timeout is never dropped.
-  const controller = new AbortController();
-  const abortFrom = (source: AbortSignal) => {
-    if (!controller.signal.aborted) controller.abort(source.reason);
-  };
-  if (signal.aborted) abortFrom(signal);
-  else signal.addEventListener("abort", () => abortFrom(signal), { once: true });
-  if (timeout.aborted) abortFrom(timeout);
-  else timeout.addEventListener("abort", () => abortFrom(timeout), { once: true });
-  return controller.signal;
-}
 
 function getRivestreamRawSources(
   data: RivestreamSourceResponse["data"],

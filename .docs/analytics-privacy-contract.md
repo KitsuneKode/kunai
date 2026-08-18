@@ -24,8 +24,18 @@ Read this before touching `apps/cli/src/services/analytics/`,
   The id exists on disk only while analytics is enabled.
 - No analytics request is made before consent, in a non-TTY session, or while
   `DO_NOT_TRACK` or `CI` is truthy (`1`, `true`, or `yes`).
-- The endpoint is empty by default. Sending requires an explicitly configured,
-  verified `KUNAI_ANALYTICS_URL` or `analyticsEndpoint`.
+- A default endpoint ships: `analytics.kunai.kitsunekode.in`. It is where a ping
+  goes, never permission to send one — every gate above still applies, and an
+  install that has not explicitly opted in sends nothing to it. The default
+  exists because requiring a consenting user to find and paste a URL meant
+  consent produced no data at all.
+- `KUNAI_ANALYTICS_URL` and `analyticsEndpoint` override the default, so a
+  self-hoster can point their installs at their own ingest, and setting either
+  to an empty value disables sending entirely.
+- The default is a domain Kunai controls, never a hosting provider's own URL.
+  This string is baked into immutable npm tarballs and compiled binaries, so it
+  must outlive whatever serves it today: DNS can be re-pointed, a published
+  binary cannot. Changing it strands every install already in the wild.
 
 ## Payload and ingest
 

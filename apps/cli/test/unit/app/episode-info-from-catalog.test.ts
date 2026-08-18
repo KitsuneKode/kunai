@@ -11,9 +11,21 @@ describe("episodeInfoFromSelection", () => {
       episode: 2,
       isAnime: true,
       titleId: "anilist:21",
-      animeEpisodes: [{ index: 2, label: "Episode 2 · Cherry", name: "Cherry" }],
+      animeEpisodes: [
+        {
+          index: 2,
+          label: "Episode 2 · Cherry",
+          name: "Cherry",
+          detail: "A deterministic anime episode.",
+          release: { airDate: "2026-01-02" },
+          artwork: { thumbnailUrl: "https://img.example/episode-2.jpg" },
+        },
+      ],
     });
     expect(info.name).toBe("Cherry");
+    expect(info.overview).toBe("A deterministic anime episode.");
+    expect(info.airDate).toBe("2026-01-02");
+    expect(info.artwork?.thumbnailUrl).toBe("https://img.example/episode-2.jpg");
   });
 
   test("falls back to TMDB cache for series when warmed", async () => {

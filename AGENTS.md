@@ -47,9 +47,11 @@ judgment.
   implementation; `apps/relay-server` stays a thin adapter.
 - **Kunai must never ship a shared public relay URL.** `providerRelay.baseUrl`
   is empty by default and user-owned.
-- **Analytics is explicit opt-in and endpoint-disabled by default.** A fresh
-  install is `unset`; only an explicit enable creates `installId` or permits a
-  send. No TTY, CI, and DNT send nothing. The payload is bounded to five keys.
+- **Analytics is explicit opt-in.** A fresh install is `unset`; only an explicit
+  enable creates `installId` or permits a send. No TTY, CI, and DNT send
+  nothing. The payload is bounded to five keys. A default endpoint ships and is
+  overridable — it is where a ping goes, never permission to send one, and it
+  must stay on a domain Kunai controls because published binaries are immutable.
   See
   [.docs/analytics-privacy-contract.md](.docs/analytics-privacy-contract.md)
   before touching `services/analytics`, `domain/analytics`, or
