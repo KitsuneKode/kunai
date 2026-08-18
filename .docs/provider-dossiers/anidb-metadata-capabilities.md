@@ -199,10 +199,11 @@ The repository already has places for the missing data:
 7. **Keep drift fixtures current.** The provider tests now cover official XML,
    title-page crosswalks, episode JSON, language responses, and embed parsing.
    Keep volatile stream tokens out of committed fixtures.
-8. **Relay is metadata-only.** AniDB is registered for `/rpc/anidb` and the CLI
-   settings toggle. HLS ladder fetches go through the same curl fallback as
-   HTML/JSON so a missing RPC route cannot silently become a single `auto`
-   variant. Do not enable `videoFallback` until a `/stream/` handler exists.
+8. **Relay is metadata-only.** `createRelayFetchPort` and `handleRpcRequest` now
+   consult `manifest.relaySafe`. AllManga and Videasy declare `true` for metadata
+   RPC (the Settings toggle use case). Video URL rewrite is still unused:
+   `videoFallback` is persisted with no production reader and no `/stream/`
+   handler — do not enable it (roadmap K-04).
 
 ## Request Budget
 

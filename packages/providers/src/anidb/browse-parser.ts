@@ -23,6 +23,10 @@ export interface AnidbSearchResult {
   readonly id: string;
   readonly title: string;
   readonly numericId: number;
+  readonly posterUrl?: string;
+  readonly rating?: number;
+  /** Present only when the card badge is Movie. Everything else stays a series. */
+  readonly kind?: "movie";
   readonly seasonEvidence: AnidbSeasonEvidence;
 }
 
@@ -74,7 +78,16 @@ export function parseAnidbBrowseHtml(html: string): readonly AnidbSearchResult[]
     const numericId = anidbNumericId(id);
     if (!title || numericId === null) continue;
     seen.add(id);
-    results.push({ id, title, numericId, seasonEvidence: parseAnidbSeasonEvidence(title) });
+    const card = extractAnidbCardFields(body, title);
+    results.push({
+      id,
+      title,
+      numericId,
+      ...(card.posterUrl ? { posterUrl: card.posterUrl } : {}),
+      ...(card.rating !== undefined ? { rating: card.rating } : {}),
+      ...(card.kind === "movie" ? { kind: "movie" as const } : {}),
+      seasonEvidence: parseAnidbSeasonEvidence(title),
+    });
   }
   return results;
 }
@@ -155,6 +168,44 @@ function extractAnidbTitle(attrs: string, body: string): string {
   return markupToPlainText(anchorTitle ?? imageAlt ?? stripScriptBlocks(body));
 }
 
+function extractAnidbCardFields(
+  body: string,
+  title: string,
+): {
+  readonly posterUrl?: string;
+  readonly rating?: number;
+  readonly kind?: "movie";
+} {
+  const remainder = stripTitleFromCardText(markupToPlainText(body), title);
+  const ratingMatch = remainder.match(/\b(10(?:\.0)?|[0-9]\.[0-9])\b/);
+  const rating = ratingMatch ? Number(ratingMatch[1]) : undefined;
+  return {
+    posterUrl: extractAnidbPosterUrl(body),
+    ...(rating !== undefined && Number.isFinite(rating) ? { rating } : {}),
+    ...(/\bmovie\b/i.test(remainder) ? { kind: "movie" as const } : {}),
+  };
+}
+
+function extractAnidbPosterUrl(body: string): string | undefined {
+  const raw = IMAGE_SRC_PATTERN.exec(body)?.[1];
+  if (!raw) return undefined;
+  try {
+    const parsed = new URL(decodeMarkupEntities(raw).trim(), "https://anidb.app/");
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+    if (parsed.pathname.toLowerCase().endsWith("placeholder.svg")) return undefined;
+    return parsed.href;
+  } catch {
+    return undefined;
+  }
+}
+
+function stripTitleFromCardText(plain: string, title: string): string {
+  const trimmed = title.trim();
+  if (!trimmed) return plain;
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return plain.replace(new RegExp(escaped, "gi"), " ").replace(/\s+/g, " ").trim();
+}
+
 /**
  * Attribute patterns are precompiled and anchored on a start-or-whitespace
  * boundary. A `\b` boundary also matches after `-` and `:`, which would let
@@ -168,6 +219,7 @@ const ATTRIBUTE_PATTERNS = {
 } as const;
 
 const IMAGE_ALT_PATTERN = /<img\b[^>]*\salt\s*=\s*["']([^"']*)["']/i;
+const IMAGE_SRC_PATTERN = /<img\b[^>]*\ssrc\s*=\s*["']([^"']*)["']/i;
 
 function extractAttribute(
   attrs: string,

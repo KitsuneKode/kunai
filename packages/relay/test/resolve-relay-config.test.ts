@@ -11,6 +11,7 @@ const registry = buildProviderRelayRegistry([
   {
     providerId: "allanime",
     manifest: {
+      relaySafe: true,
       relayProfile: {
         upstreamHosts: ["api.allanime.day"],
       },

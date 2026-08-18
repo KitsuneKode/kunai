@@ -52,6 +52,6 @@ export const anidbManifest = defineProviderManifest({
     "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
     "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained. Ladder expansion uses the same curl fallback as metadata so a relay miss does not collapse to one auto row.",
     "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it. No independently addressable subtitle track has been observed — do not advertise hardsub.",
-    "Relay-safe for metadata RPC (/rpc/anidb). Video stays direct unless the user-owned relay implements /stream/ and videoFallback is on.",
+    "Relay-safe for metadata RPC (/rpc/anidb). Video stays direct: `videoFallback` is persisted but has no production reader and no `/stream/` handler.",
   ],
 });

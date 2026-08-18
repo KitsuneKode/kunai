@@ -7,6 +7,7 @@ const registry = buildProviderRelayRegistry([
   {
     providerId: "allanime",
     manifest: {
+      relaySafe: true,
       relayProfile: {
         upstreamHosts: ["api.allanime.day"],
         maxRequestBodyBytes: 128,
@@ -17,8 +18,18 @@ const registry = buildProviderRelayRegistry([
   {
     providerId: "miruro",
     manifest: {
+      relaySafe: true,
       relayProfile: {
         upstreamHosts: ["miruro.bz"],
+      },
+    },
+  },
+  {
+    providerId: "videasy",
+    manifest: {
+      relaySafe: false,
+      relayProfile: {
+        upstreamHosts: ["api.videasy.to"],
       },
     },
   },
@@ -113,6 +124,7 @@ test("handleRpcRequest rejects unsafe upstream hosts before fetch", async () => 
     {
       providerId: "unsafe",
       manifest: {
+        relaySafe: true,
         relayProfile: {
           upstreamHosts: ["127.0.0.1"],
         },
@@ -225,6 +237,25 @@ test("handleRpcRequest enforces bearer token when configured", async () => {
   );
 
   expect(response.status).toBe(401);
+});
+
+test("handleRpcRequest refuses a provider whose manifest is not relay-safe", async () => {
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "GET",
+      upstreamUrl: "https://api.videasy.to/api",
+    }),
+    {
+      providerId: "videasy",
+      registry,
+      async fetch() {
+        throw new Error("should not fetch");
+      },
+    },
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ error: { code: "provider-not-relayable" } });
 });
 
 test("handleRpcRequest handles CORS preflight without upstream fetch", async () => {

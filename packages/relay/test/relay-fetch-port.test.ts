@@ -8,8 +8,18 @@ const registry = buildProviderRelayRegistry([
   {
     providerId: "allanime",
     manifest: {
+      relaySafe: true,
       relayProfile: {
         upstreamHosts: ["api.allanime.day"],
+      },
+    },
+  },
+  {
+    providerId: "videasy",
+    manifest: {
+      relaySafe: false,
+      relayProfile: {
+        upstreamHosts: ["api.videasy.to"],
       },
     },
   },
@@ -75,6 +85,23 @@ test("createRelayFetchPort falls back to direct when relay network fails", async
   const response = await port.fetch("https://api.allanime.day/api");
   expect(await response.json()).toEqual({ direct: true });
   expect(calls).toEqual(["https://relay.example/rpc/allanime", "https://api.allanime.day/api"]);
+});
+
+test("createRelayFetchPort stays on direct fetch when the manifest is not relay-safe", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example" },
+    registry,
+    providerId: "videasy",
+    async fetch(input) {
+      calls.push(String(input));
+      return Response.json({ direct: true });
+    },
+  });
+
+  const response = await port.fetch("https://api.videasy.to/api");
+  expect(await response.json()).toEqual({ direct: true });
+  expect(calls).toEqual(["https://api.videasy.to/api"]);
 });
 
 test("normalizeRelayBaseUrl accepts HTTPS and local HTTP only", () => {

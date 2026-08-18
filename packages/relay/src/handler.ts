@@ -38,7 +38,7 @@ export async function handleRpcRequest(
   if (!provider) {
     return relayError("unknown-provider", options.providerId, "Unknown provider", 404);
   }
-  if (!provider.profile) {
+  if (!provider.profile || provider.manifest.relaySafe !== true) {
     return relayError(
       "provider-not-relayable",
       options.providerId,

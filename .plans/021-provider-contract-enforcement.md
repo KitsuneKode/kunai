@@ -33,25 +33,18 @@ Land these in order. Each is independently shippable and independently revertabl
 
 ---
 
-### Stage 1 — Enforce `relaySafe` (S)
+### Stage 1 — Enforce `relaySafe` (S) — landed
 
-`packages/providers/src/allmanga/manifest.ts:49` and `videasy/manifest.ts:45` both
-declare `relaySafe: false`, and their metadata is relayed anyway. The only gate,
-`packages/relay/src/create-relay-fetch-port.ts:27`, asks `registry.isHostAllowed(...)`
-and never consults the flag. The server-side guard at `packages/relay/src/handler.ts:36`
-is `if (!provider.profile)`, which can never be true because `registry.ts:14` already
-skips profile-less modules — so `RelayErrorCode` value `"provider-not-relayable"` is
-unreachable.
+Semantics: **manifest-level `relaySafe` means metadata may traverse `/rpc/{id}`**.
+It is not permission to proxy media. `ProviderRuntimePort.relaySafe` stays a
+declaration for now.
 
-**Decide the semantics first.** There are two `relaySafe` fields — manifest-level
-(`packages/core/src/provider-manifest.ts:25`) and `ProviderRuntimePort.relaySafe`
-(`packages/types/src/index.ts:429`). Pick one meaning (suggested: manifest-level =
-"may traverse a relay at all") and document it on the type.
-
-**STOP and report** before flipping the gate on: enforcing it as written will _stop_
-relaying AllAnime metadata, which is the main relay use case today. The two manifests
-declaring `false` most likely want `true`. This is a maintainer decision, not an
-executor one.
+- `createRelayFetchPort` falls through to direct fetch when `manifest.relaySafe !== true`.
+- `handleRpcRequest` returns `provider-not-relayable` in that case, so the error
+  code is reachable.
+- AllManga and Videasy declare `relaySafe: true` because they are on the Settings
+  relay list and metadata relay is the product. YouTube stays `false`.
+- Video remains gated by the unused `videoFallback` flag (K-04) — do not add `/stream/`.
 
 ---
 

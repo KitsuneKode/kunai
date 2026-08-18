@@ -23,7 +23,7 @@ export const allanimeManifest = defineProviderManifest({
         "health-check",
       ],
       browserSafe: false,
-      relaySafe: false,
+      relaySafe: true,
       localOnly: true,
     },
   ],
@@ -46,7 +46,9 @@ export const allanimeManifest = defineProviderManifest({
     allowStale: true,
   },
   browserSafe: false,
-  relaySafe: false,
+  // Metadata RPC is the relay use case. Stream tokens stay IP-bound; that is
+  // `videoFallback`, which has no production reader and must stay off.
+  relaySafe: true,
   relayProfile: {
     upstreamHosts: [
       "api.mkissa.net",

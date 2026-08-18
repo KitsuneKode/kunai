@@ -222,9 +222,16 @@ export const anidbProviderModule: CoreProviderModule = {
     for (const result of results.slice(0, 40)) {
       mapped.push({
         id: result.id,
-        type: "series",
+        type: result.kind === "movie" ? "movie" : "series",
         title: result.title,
         metadataSource: "AniDB",
+        ...(result.posterUrl
+          ? {
+              posterPath: result.posterUrl,
+              artwork: { posterUrl: result.posterUrl, thumbnailUrl: result.posterUrl },
+            }
+          : {}),
+        ...(result.rating !== undefined ? { rating: result.rating } : {}),
         externalIds: {
           providerNativeIds: { [ANIDB_PROVIDER_ID]: result.id },
         },
