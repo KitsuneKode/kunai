@@ -592,6 +592,20 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     const { runInstall } = await import("./services/update/run-install");
     process.exit(await runInstall(argv.slice(1)));
   }
+  if (argv[0] === "completion") {
+    const { isCompletionShell, renderCompletionScript, COMPLETION_SHELLS } =
+      await import("./services/completion/completion-script");
+    const requested = argv[1];
+    if (requested === undefined || !isCompletionShell(requested)) {
+      process.stderr.write(
+        `kunai completion <${COMPLETION_SHELLS.join("|")}>\n` +
+          (requested === undefined ? "Missing shell name.\n" : `Unsupported shell: ${requested}\n`),
+      );
+      process.exit(2);
+    }
+    process.stdout.write(renderCompletionScript(requested));
+    process.exit(0);
+  }
   if (argv[0] === "diagnostics") {
     const { runDiagnosticsRecentCommand } =
       await import("./services/diagnostics/diagnostics-export");
