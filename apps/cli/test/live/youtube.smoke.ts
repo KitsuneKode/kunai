@@ -94,7 +94,15 @@ if (!payload.ok) {
   process.exit(1);
 }
 
-if (!payload.streamHost?.includes("youtube.com")) {
+// Substring matching would accept `youtube.com.evil.test`. Compare the parsed
+// hostname against the exact apex plus its subdomains instead.
+const rawStreamHost = payload.streamHost ?? "";
+const streamHostname = rawStreamHost.includes("://")
+  ? new URL(rawStreamHost).hostname
+  : rawStreamHost;
+const isYouTubeHost = streamHostname === "youtube.com" || streamHostname.endsWith(".youtube.com");
+
+if (!isYouTubeHost) {
   console.error(JSON.stringify({ ok: false, reason: "expected_youtube_watch_host" }));
   process.exit(1);
 }
