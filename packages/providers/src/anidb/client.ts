@@ -3,7 +3,9 @@ import type { ProviderRuntimeContext } from "@kunai/types";
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import { curlCipherArgs, resolveCurlCandidate } from "../shared/curl-impersonate";
 import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { markupToPlainText } from "../shared/markup-text";
 import { TTLCache } from "../shared/provider-cache";
+import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
 
 export {
@@ -18,6 +20,14 @@ export {
 
 export const ANIDB_BASE = "https://anidb.app";
 export const ANIDB_REFERER = "https://anidb.app/";
+/**
+ * Official AniDB HTTP API. Read-only, one request per series, cached for a
+ * month: AniDB's terms are strict about repeat traffic and it answers abuse by
+ * banning the client name, so nothing here may run per episode or per playback.
+ */
+export const ANIDB_HTTP_API = "http://api.anidb.net:9001/httpapi";
+export const ANIDB_HTTP_API_CLIENT = "anidb";
+export const ANIDB_HTTP_API_CLIENT_VERSION = "1";
 export const ANIDB_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -88,7 +98,7 @@ export async function anidbFetchText(
     try {
       const response = await options.context.fetch.fetch(url, {
         headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
-        signal: options.signal ?? AbortSignal.timeout(15_000),
+        signal: createTimeoutSignal(options.signal, 15_000),
       });
       if (response.ok) {
         const text = await response.text();
@@ -105,7 +115,7 @@ export async function anidbFetchText(
   if (!curl) {
     const response = await fetch(url, {
       headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
-      signal: options.signal ?? AbortSignal.timeout(15_000),
+      signal: createTimeoutSignal(options.signal, 15_000),
     });
     if (!response.ok) {
       throw new Error(`anidb fetch HTTP ${response.status}`);
@@ -241,15 +251,21 @@ export async function fetchAnidbOfficialEpisodeMetadata(
 
   try {
     const response = await fetch(
-      `http://api.anidb.net:9001/httpapi?request=anime&client=anidb&clientver=1&protover=1&aid=${officialAid}`,
+      `${ANIDB_HTTP_API}?request=anime&client=${ANIDB_HTTP_API_CLIENT}&clientver=${ANIDB_HTTP_API_CLIENT_VERSION}&protover=1&aid=${officialAid}`,
       {
         headers: { Accept: "text/xml", "User-Agent": ANIDB_USER_AGENT },
-        signal: signal ?? AbortSignal.timeout(15_000),
+        signal: createTimeoutSignal(signal, 15_000),
       },
     );
     if (!response.ok) return new Map();
     const xml = await response.text();
+    // AniDB answers rate limits, bans, and bad client credentials with HTTP 200
+    // and an <error> body. Caching what that parses to (nothing) would suppress
+    // every episode title for this show for the full TTL, long after the block
+    // lifted — so an empty read stays uncached and simply retries next time.
+    if (/<error\b/i.test(xml)) return new Map();
     const metadata = parseAnidbOfficialEpisodeMetadata(xml);
+    if (metadata.size === 0) return new Map();
     officialEpisodeMetadataCache.set(cacheKey, metadata);
     return new Map(metadata);
   } catch {
@@ -257,7 +273,7 @@ export async function fetchAnidbOfficialEpisodeMetadata(
   }
 }
 
-function parseAnidbOfficialEpisodeMetadata(xml: string): Map<number, AnimeEpisodeMetadata> {
+export function parseAnidbOfficialEpisodeMetadata(xml: string): Map<number, AnimeEpisodeMetadata> {
   const metadata = new Map<number, AnimeEpisodeMetadata>();
   const episodePattern = /<episode\b[^>]*>([\s\S]*?)<\/episode>/gi;
   let match: RegExpExecArray | null;
@@ -312,34 +328,11 @@ function readXmlAttribute(attributes: string, name: string): string | undefined 
 }
 
 function normalizeXmlText(value: string): string {
-  return decodeXmlEntities(value.replace(/<[^>]+>/g, ""))
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function decodeXmlEntities(value: string): string {
-  return value.replace(
-    /&(?:#x([0-9a-f]+)|#(\d+)|(amp|lt|gt|quot|apos));/gi,
-    (raw, hex?: string, decimal?: string, named?: string) => {
-      if (hex !== undefined) return decodeXmlCodePoint(raw, Number.parseInt(hex, 16));
-      if (decimal !== undefined) return decodeXmlCodePoint(raw, Number.parseInt(decimal, 10));
-      return (
-        { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" }[named?.toLowerCase() ?? ""] ?? raw
-      );
-    },
-  );
-}
-
-function decodeXmlCodePoint(raw: string, codePoint: number): string {
-  if (
-    !Number.isInteger(codePoint) ||
-    codePoint < 0 ||
-    codePoint > 0x10ffff ||
-    (codePoint >= 0xd800 && codePoint <= 0xdfff)
-  ) {
-    return raw;
-  }
-  return String.fromCodePoint(codePoint);
+  // Official summaries carry markup and numeric entities, and land straight in
+  // terminal output. `markupToPlainText` is the same hardened path the browse
+  // scraper uses: script spans first, then tags, entities decoded once, and no
+  // decoded control character — `&#27;` must never become a live ESC byte.
+  return markupToPlainText(value);
 }
 
 function readMetaContent(html: string, property: string): string | undefined {
@@ -459,20 +452,20 @@ export async function resolveAnidbEpisodeStreams(options: {
   const masterUrl = await fetchAnidbMasterUrl(language.embedUrl, options.signal, options.context);
   if (!masterUrl) return [];
 
-  const fetchPort =
-    options.context?.fetch?.fetch?.bind(options.context.fetch) ??
-    ((url: string, init?: RequestInit) =>
-      fetch(url, {
-        ...init,
-        headers: {
-          "User-Agent": ANIDB_USER_AGENT,
-          Referer: ANIDB_REFERER,
-          ...(init?.headers as Record<string, string> | undefined),
-        },
-      }));
-
+  // Same transport as metadata: try the relay fetch port, then curl. Using
+  // context.fetch alone 404s on an unregistered /rpc/anidb and expandHls
+  // silently collapses to one "auto" row.
   const variants = await expandHlsMasterPlaylist({
-    fetch: fetchPort,
+    fetch: async (url: string, init?: RequestInit) => {
+      const text = await anidbFetchText(url, {
+        signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
+        context: options.context,
+      });
+      return new Response(text, {
+        status: 200,
+        headers: { "content-type": "application/vnd.apple.mpegurl" },
+      });
+    },
     masterUrl,
     headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
     signal: options.signal,

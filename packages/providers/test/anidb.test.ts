@@ -17,6 +17,7 @@ import {
 } from "../src/anidb/direct";
 import { anidbManifest, ANIDB_PROVIDER_ID } from "../src/anidb/manifest";
 import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
+import { isOfficialAnidbApi } from "./helpers/anidb-urls";
 
 const fixture = (name: string) =>
   Bun.file(new URL(`./fixtures/anidb/${name}`, import.meta.url)).text();
@@ -582,7 +583,7 @@ describe("anidb direct resolve season routing", () => {
     expect(result.failures[0]?.message).toContain("No AniDB streams");
   });
 
-  test("advertises English hardsub metadata for Japanese sub streams", async () => {
+  test("does not advertise hardcoded English subs without a subtitle track", async () => {
     const result = await resolveWithStub(
       {
         title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
@@ -598,21 +599,16 @@ describe("anidb direct resolve season routing", () => {
     expect(result.status).toBe("resolved");
     if (result.status !== "resolved") throw new Error("expected resolved result");
     const stream = result.streams[0];
-    expect(stream?.hardSubLanguage).toBe("en");
-    expect(stream?.subtitleDelivery).toBe("hardcoded");
-    expect(stream?.subtitleLanguages).toEqual(["en"]);
-    expect(stream?.languageEvidence).toContainEqual(
-      expect.objectContaining({
-        role: "hardsub",
-        normalizedLanguage: "en",
-      }),
+    expect(stream?.hardSubLanguage).toBeUndefined();
+    expect(stream?.subtitleDelivery).toBeUndefined();
+    expect(stream?.subtitleLanguages).toBeUndefined();
+    expect(stream?.languageEvidence ?? []).not.toContainEqual(
+      expect.objectContaining({ role: "hardsub" }),
     );
-    expect(result.sources?.[0]?.languageEvidence).toContainEqual(
-      expect.objectContaining({
-        role: "hardsub",
-        normalizedLanguage: "en",
-      }),
+    expect(result.sources?.[0]?.languageEvidence ?? []).not.toContainEqual(
+      expect.objectContaining({ role: "hardsub" }),
     );
+    expect(result.subtitles).toEqual([]);
   });
 });
 
@@ -647,7 +643,7 @@ describe("anidb episode metadata", () => {
             { status: 200 },
           );
         }
-        if (url.includes("api.anidb.net:9001")) {
+        if (isOfficialAnidbApi(url)) {
           return new Response(
             `<?xml version="1.0"?>
               <anime id="9876">

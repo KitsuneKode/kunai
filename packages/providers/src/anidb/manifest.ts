@@ -11,7 +11,7 @@ export const anidbManifest = defineProviderManifest({
   recommended: true,
   mediaKinds: ["anime"],
   catalogIdentity: "provider-native",
-  capabilities: ["search", "episode-list", "source-resolve", "multi-source", "quality-ranked"],
+  capabilities: ["search", "episode-list", "source-resolve", "quality-ranked"],
   runtimePorts: [
     {
       runtime: "direct-http",
@@ -50,7 +50,8 @@ export const anidbManifest = defineProviderManifest({
     "Parity with ani-cli v5.0 (2026-08-01): browse search, /api/frontend anime episodes + episode languages, embed → HLS master.",
     "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link, then reads official XML; AniList/Jikan fill missing fields and still artwork.",
     "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
-    "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained.",
-    "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it.",
+    "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained. Ladder expansion uses the same curl fallback as metadata so a relay miss does not collapse to one auto row.",
+    "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it. No independently addressable subtitle track has been observed — do not advertise hardsub.",
+    "Relay-safe for metadata RPC (/rpc/anidb). Video stays direct unless the user-owned relay implements /stream/ and videoFallback is on.",
   ],
 });

@@ -1,9 +1,9 @@
 {
-  "syncedAt": "2026-08-18T10:57:56.286Z",
+  "syncedAt": "2026-08-18T11:09:26.757Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "2291d461",
-  "cliSourceFingerprint": "563c7f4bd69fea33fca72398350e0da049f70c653bd04bd2c4409b41d9a764cb",
+  "cliSourceRevision": "26fa49e2",
+  "cliSourceFingerprint": "cbdb7a8d171a7184fd9f9e8302c20e0e9d8dc91032413170dd3c4606a19ae44e",
   "docsContentFingerprint": "483acbc973e88226ec894a6e57466689f87a24edf9a9f884610afcb6b5a0823a",
   "featureStatusRevision": "d4c1e1d0943d18f05bca1a12a5b0ff966754a588f12e4a86a03510d2bc424c1d",
   "commandCount": 81,
@@ -62,7 +62,7 @@
       "domain": "anidb.app",
       "recommended": true,
       "mediaKinds": ["anime"],
-      "capabilities": ["search", "episode-list", "source-resolve", "multi-source", "quality-ranked"],
+      "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
       "status": "active",
       "notes": [
         "Parity with ani-cli v5.0 (2026-08-01): browse search",
@@ -71,8 +71,9 @@
         "Episode metadata follows the explicit anidb.app → official anidb.net AID cross-link",
         "then reads official XML; AniList/Jikan fill missing fields and still artwork.",
         "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
-        "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained.",
-        "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it."
+        "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained. Ladder expansion uses the same curl fallback as metadata so a relay miss does not collapse to one auto row.",
+        "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it. No independently addressable subtitle track has been observed — do not advertise hardsub.",
+        "Relay-safe for metadata RPC (/rpc/anidb). Video stays direct unless the user-owned relay implements /stream/ and videoFallback is on."
       ]
     },
     {
