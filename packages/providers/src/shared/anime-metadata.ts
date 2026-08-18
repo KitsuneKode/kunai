@@ -2,7 +2,13 @@ import type { ProviderEpisodeOption } from "@kunai/types";
 
 import { TTLCache } from "./provider-cache";
 
-export type AnimeEpisodeMetadataSource = "anilist" | "jikan" | "miruro" | "allmanga" | "merged";
+export type AnimeEpisodeMetadataSource =
+  | "anidb"
+  | "anilist"
+  | "jikan"
+  | "miruro"
+  | "allmanga"
+  | "merged";
 
 export type AnimeEpisodeMetadata = {
   readonly number: number;

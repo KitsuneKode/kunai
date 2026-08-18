@@ -95,6 +95,11 @@ export interface EpisodePickerOption {
   readonly name?: string;
   readonly detail?: string;
   readonly previewImageUrl?: string;
+  readonly airDate?: string;
+  readonly overview?: string;
+  readonly externalIds?: ProviderExternalIds;
+  readonly release?: ProviderReleaseInfo;
+  readonly artwork?: ProviderArtworkInfo;
   /** Total episode count for the series, if known. Used to detect completion. */
   readonly totalEpisodeCount?: number;
 }
