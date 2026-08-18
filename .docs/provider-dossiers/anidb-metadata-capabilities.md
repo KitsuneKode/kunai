@@ -49,8 +49,10 @@ crosswalk.
 
 ### Live HTTP XML
 
-The following live request succeeded on 2026-08-18 using the registered
-`anidb` client name and returned the current XML shape for AID `17617`:
+The following live request succeeded on 2026-08-18 with the client name
+`anidb` (that the endpoint answered is the evidence here; this dossier makes no
+claim that the name is registered to this project) and returned the current XML
+shape for AID `17617`:
 
 [`httpapi?request=anime&...&aid=17617`](http://api.anidb.net:9001/httpapi?request=anime&client=anidb&clientver=1&protover=1&aid=17617)
 
@@ -197,3 +199,34 @@ The repository already has places for the missing data:
 7. **Keep drift fixtures current.** The provider tests now cover official XML,
    title-page crosswalks, episode JSON, language responses, and embed parsing.
    Keep volatile stream tokens out of committed fixtures.
+
+## Request Budget
+
+Official AniDB's terms are strict about repeat traffic and it answers abuse by
+blocking the client name, so the provider treats the official API as a
+once-per-series read:
+
+- One `request=anime` call per show, cached for 30 days in process and seeded
+  into the shared episode-metadata cache. Nothing here may run per episode or
+  per playback.
+- A response carrying `<error>` (rate limit, ban, invalid client values) arrives
+  as HTTP 200. It is never cached: caching what it parses to would suppress
+  every episode title for that show until the TTL expired, long after the block
+  lifted.
+- AniList is still called for stills even when titles are complete (one
+  request). Jikan, which pages 100 episodes at a time under a rate limit, is
+  skipped whenever official titles already cover the catalog.
+
+Measured on 2026-08-18 for Gintama (`gintama-1816`, 200 playable episodes):
+cold `listEpisodes` 4.4s with 200/200 titles, synopses, air dates, and stills;
+warm 1ms.
+
+## Known Limitation: Positional Stills
+
+AniList `streamingEpisodes` is an ordered array with no episode numbers, so
+stills are matched by position. When a stream catalog's numbering has gaps —
+`anidb.app` carries 200 of Gintama's 201 official episodes, with no `2` — a
+still can drift from its episode. The provider accepts this because the
+alternative is no stills at all, and it is the same trade-off AllManga and
+Miruro already make. A numbered still source (TMDB episode images, Jikan
+`/pictures`) would remove the guesswork.

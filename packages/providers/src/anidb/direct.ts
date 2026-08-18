@@ -17,8 +17,13 @@ import type {
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
+  anidbEpisodeMetadataCacheKey,
   enrichEpisodeOptionsWithAnimeMetadata,
   fetchAnimeEpisodeMetadataByNumber,
+  mergeExternalEpisodeMetadataInto,
+  mergeSeededEpisodeMetadataInto,
+  seedEpisodeMetadataFromProvider,
+  shouldSkipExternalEpisodeMetadataEnrichment,
   type AnimeEpisodeMetadata,
 } from "../shared/anime-metadata";
 import {
@@ -231,42 +236,40 @@ export const anidbProviderModule: CoreProviderModule = {
     if (!showId) return null;
     const episodes = await fetchAnidbEpisodes(showId, context.signal);
     if (episodes.length === 0) return [];
+
     const suppliedMalId = input.title.externalIds?.malId ?? input.title.malId;
     const suppliedAnilistId = input.title.externalIds?.anilistId ?? input.title.anilistId;
     const pageIds = await fetchAnidbExternalIds(showId, context.signal);
     const malId = suppliedMalId?.trim() ? suppliedMalId : pageIds?.malId;
     const anilistId = suppliedAnilistId ?? pageIds?.anilistId;
     const metadataMalId = malId === undefined ? undefined : String(malId);
+
+    // Official AniDB is the title/synopsis/air-date authority for this provider
+    // and answers in one request for the whole series, so it runs first and its
+    // values win. Seeded so a second listing (or the same show under another
+    // surface) does not pay for it again.
+    const metadataCacheKey = anidbEpisodeMetadataCacheKey(showId);
     const metadata = new Map<number, AnimeEpisodeMetadata>();
-    if (pageIds?.officialAid) {
-      for (const [number, meta] of await fetchAnidbOfficialEpisodeMetadata(
-        pageIds.officialAid,
-        context.signal,
-      )) {
-        metadata.set(number, meta);
-      }
+    mergeSeededEpisodeMetadataInto(metadata, metadataCacheKey);
+    if (metadata.size === 0 && pageIds?.officialAid) {
+      const official = await fetchAnidbOfficialEpisodeMetadata(pageIds.officialAid, context.signal);
+      for (const [number, meta] of official) metadata.set(number, meta);
+      seedEpisodeMetadataFromProvider(metadataCacheKey, [...official.values()]);
     }
-    const externalMetadata = await fetchAnimeEpisodeMetadataByNumber(
-      { anilistId, malId: metadataMalId },
-      context.signal,
-    );
-    for (const [number, meta] of externalMetadata) {
-      const existing = metadata.get(number);
-      metadata.set(
-        number,
-        existing
-          ? {
-              ...existing,
-              title: existing.title ?? meta.title,
-              synopsis: existing.synopsis ?? meta.synopsis,
-              airDate: existing.airDate ?? meta.airDate,
-              thumbnail: existing.thumbnail ?? meta.thumbnail,
-              isFiller: existing.isFiller ?? meta.isFiller,
-              isRecap: existing.isRecap ?? meta.isRecap,
-              source: "merged",
-            }
-          : meta,
+
+    // AniDB publishes no episode stills, so AniList still runs for artwork even
+    // when every title is already known — but the paginated, rate-limited Jikan
+    // pass is skipped, which is the slow half.
+    if (anilistId || metadataMalId) {
+      const pass = shouldSkipExternalEpisodeMetadataEnrichment(metadata, episodes.length)
+        ? "artwork"
+        : "full";
+      const externalMetadata = await fetchAnimeEpisodeMetadataByNumber(
+        { anilistId, malId: metadataMalId },
+        context.signal,
+        pass,
       );
+      mergeExternalEpisodeMetadataInto(metadata, externalMetadata);
     }
 
     const baseEpisodes = episodes.map(
@@ -275,6 +278,8 @@ export const anidbProviderModule: CoreProviderModule = {
         label: `Episode ${episode.number}`,
         detail: episode.filler ? "Filler" : undefined,
         totalEpisodeCount: episodes.length,
+        // Series poster as the still fallback: an empty art slot reads as a
+        // broken row, and AniDB has no per-episode image of its own.
         artwork: pageIds?.posterUrl ? { thumbnailUrl: pageIds.posterUrl } : undefined,
         externalIds: {
           anilistId,

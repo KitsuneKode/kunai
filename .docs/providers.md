@@ -630,6 +630,19 @@ instead of pretending those fields came from `anidb.app`.
   metadata, but its AIDs must not be confused with the numeric ids in `anidb.app` URLs. See
   [the metadata capability dossier](./provider-dossiers/anidb-metadata-capabilities.md).
 
+The cost model matters as much as the data, because this runs in front of the episode picker:
+
+- Official AniDB XML is **one request for the whole series**, cached for a month and seeded into
+  the shared episode-metadata cache, so a second listing of the same show is free.
+- AniList runs even when every title is already known — it is a single request and the only source
+  of episode stills AniDB has.
+- Jikan is the expensive pass (100 episodes per page, strict rate limit) and is **skipped** when
+  official titles already cover the catalog, matching the AllManga path via
+  `shouldSkipExternalEpisodeMetadataEnrichment()`.
+- An official response that carries `<error>` (rate limit, ban, bad client credentials) is never
+  cached. Caching what it parses to would suppress every episode title for that show for a month
+  after the block lifted.
+
 ### AniDB season routing and episode numbering
 
 AniDB models each season as its own title, so `routeAnidbSeason()` in
