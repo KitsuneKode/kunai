@@ -132,3 +132,26 @@ test("AniSkipTimingSource reports identity-missing when MAL cannot be resolved",
   expect(detailed.metadata).toBeNull();
   expect(detailed.failureClass).toBe("identity-missing");
 });
+
+test("AniSkipTimingSource refuses TMDB-only identity for season > 1", async () => {
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    calls.push(String(input));
+    throw new Error("should not fetch without MAL");
+  }) as unknown as typeof fetch;
+
+  const detailed = await AniSkipTimingSource.fetchDetailed!({
+    title: {
+      id: "opaque-show",
+      type: "series",
+      name: "",
+      externalIds: { tmdbId: "13916" },
+    },
+    episode: { season: 2, episode: 1 },
+    context: { providerId: "unknown-provider" },
+  });
+
+  expect(detailed.metadata).toBeNull();
+  expect(detailed.failureClass).toBe("identity-missing");
+  expect(calls).toHaveLength(0);
+});

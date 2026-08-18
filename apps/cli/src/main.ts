@@ -458,7 +458,8 @@ async function maybeRunDownloadMode(
     { container, signal: new AbortController().signal },
   );
   if (result.status === "error") {
-    console.log(`Download queue failed: ${result.error.message}`);
+    console.error(`Download queue failed: ${result.error.message}`);
+    process.exitCode = 1;
   } else if (result.status === "success" && result.value === "queued") {
     await container.downloadService.drainQueue(24 * 60 * 60 * 1000);
   }
@@ -660,6 +661,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     const handoff = parseKunaiHandoffUrl(args.handoffUrl);
     if (!handoff) {
       console.error("Invalid kunai:// handoff URL. Refusing to run external action.");
+      process.exitCode = 1;
       return;
     }
     pendingShareLaunch = { action: handoff.action, ref: handoff.ref, trusted: false };

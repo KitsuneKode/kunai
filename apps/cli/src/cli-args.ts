@@ -63,7 +63,7 @@ DISPLAY
   -m, --minimal              Minimal chrome
   -z, --zen                  Zen mode (bare, ani-cli-style)
   -q, --quick                Quick layout
-      --jump <n>             Resume/seek to episode n
+      --jump <n>             Auto-pick the n-th search result (1-based, with -S)
 
 mpv
       --mpv-debug            Verbose mpv logging
@@ -342,6 +342,8 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   const parsedJump = options.jump ? Number.parseInt(options.jump, 10) : Number.NaN;
   if (Number.isFinite(parsedJump) && parsedJump >= 1) {
     args.jump = parsedJump;
+  } else if (options.jump !== undefined) {
+    warnings.push("--jump expects a positive result index; ignoring");
   }
 
   args.debug = Boolean(options.debug || options.debugJson || options.debugSession);

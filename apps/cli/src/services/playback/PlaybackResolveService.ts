@@ -1,3 +1,4 @@
+import { isStreamTimestampFresh } from "@/domain/playback/in-memory-stream-replay-policy";
 import { describeProviderResolveProviderNote } from "@/domain/playback/provider-resolve-copy";
 import {
   createProviderAttemptTimeline,
@@ -280,13 +281,19 @@ export class PlaybackResolveService {
     const catalogIdentity = manifest ? resolveProviderCatalogIdentity(manifest) : undefined;
 
     if (input.prefetchedStream) {
-      return {
-        stream: input.prefetchedStream,
-        providerId: input.providerId,
-        attempts: [],
-        cacheStatus: "prefetched",
-        cacheProvenance: "prefetched",
-      };
+      const prefetched = input.prefetchedStream;
+      const blocked = isBlockedStreamUrl(prefetched.url, input.blockedStreamUrls);
+      const stale = !isStreamTimestampFresh(prefetched);
+      if (!blocked && !stale) {
+        return {
+          stream: prefetched,
+          providerId: input.providerId,
+          attempts: [],
+          cacheStatus: "prefetched",
+          cacheProvenance: "prefetched",
+        };
+      }
+      input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
     }
 
     const cacheKey = this.buildCacheKey(input, input.providerId);

@@ -57,6 +57,8 @@ Reference ecosystem: [synacktraa/ani-skip](https://github.com/synacktraa/ani-ski
 | Numeric                          | AniList, TMDB TV, or other     | Try ARM `anilist` → MAL; if missing, try ARM **TMDB → MAL** list (first entry; split cours caveat).                                                                   |
 | Opaque + non-AllAnime provider   | Unknown catalog                | Fall back: AniList **title search** (optional `seasonYear` from `title.year`) → ARM AniList → MAL.                                                                    |
 
+**TMDB → MAL fallback is season-1 only.** ARM returns the first mapping for a TMDB TV id, which is the season-1 MAL entry for split-cour shows. AniSkip episode numbers are season-relative, so using that mapping for season 2+ would apply the wrong show's skip windows. When the only remaining resolver is `resolveMALFromTheMovieDbId` and the requested season is known and greater than 1, Kunai skips AniSkip (`identity-missing`) rather than guess. Direct `externalIds.malId`, provider-native lookups, and the AniList ARM path are unaffected.
+
 **AniDB stamps MAL at resolve time.** The AniDB module's `resolve()` calls
 `fetchAnidbMalId()` (in `packages/providers/src/anidb/client.ts`, TTL 1 h cache,
 scrapes `myanimelist.net/anime/{id}` from the anidb.app anime page) when the input
