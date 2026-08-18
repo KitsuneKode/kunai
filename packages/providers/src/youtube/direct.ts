@@ -36,6 +36,7 @@ import { YOUTUBE_PROVIDER_ID, youtubeManifest } from "./manifest";
 import { mapInvidiousSearchResults, mapPipedSearchResults } from "./map-search-result";
 import { pipedSearch } from "./piped-client";
 import { spawnYtDlpWithTimeout } from "./spawn-ytdlp";
+import { boundYoutubeSubtitleTracks } from "./subtitle-language";
 import type {
   YoutubeMetadataCachePort,
   YoutubeMetadataService,
@@ -389,7 +390,11 @@ async function resolveYoutube(
       confidence: 0.9,
     }));
 
-    const subtitles: SubtitleCandidate[] = mapYoutubeMetadataSubtitles(ytInfo, cachePolicy);
+    const subtitles: SubtitleCandidate[] = mapYoutubeMetadataSubtitles(
+      ytInfo,
+      cachePolicy,
+      input.preferredSubtitleLanguage,
+    );
 
     const endedAt = context.now();
     emitTraceEvent(events, context, {
@@ -467,10 +472,13 @@ async function resolveYoutube(
 function mapYoutubeMetadataSubtitles(
   info: YoutubeVideoMetadata | null,
   cachePolicy: StreamCandidate["cachePolicy"],
+  subtitlePreference: string | undefined,
 ): SubtitleCandidate[] {
   if (!info) return [];
   const subtitles: SubtitleCandidate[] = [];
-  for (const track of info.subtitles) {
+  // Bounded at resolve time, not in the cached metadata: the full inventory stays
+  // cached so changing the language preference does not require a re-fetch.
+  for (const track of boundYoutubeSubtitleTracks(info.subtitles, subtitlePreference)) {
     if (!track.url) continue;
     subtitles.push({
       id: `subtitle:${YOUTUBE_PROVIDER_ID}:${track.language}:${track.ext ?? "vtt"}`,
