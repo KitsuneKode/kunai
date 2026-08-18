@@ -1,23 +1,49 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 
 // Side-effecting: honours NEON_FETCH_ENDPOINT. Must precede store construction.
 // oxlint-disable-next-line import/no-unassigned-import -- the side effect is the point
 import "../src/neon-fetch-endpoint";
-import { createPostgresAnalyticsStore, RECORD_PING_SQL } from "../src/postgres-store";
+import {
+  createPostgresAnalyticsStore,
+  PRUNE_LIFETIME_SQL,
+  RECORD_PING_SQL,
+  ROLL_UP_DAY_SQL,
+} from "../src/postgres-store";
+import { resetAnalyticsTables, TEST_DATABASE_URL } from "./support/pg";
 
-/**
- * Deliberately NOT `DATABASE_URL`. These tests write and prune, and
- * `DATABASE_URL` is set in far too many shells for something destructive to
- * key off it — a stray one must never let `bun run test` mutate a real
- * database. Opting in has to be explicit.
- */
-const TEST_DATABASE_URL = process.env.ANALYTICS_TEST_DATABASE_URL?.trim();
-
-test("recordPing writes ping-day and lifetime state in one SQL statement", () => {
-  expect(RECORD_PING_SQL).toContain("with ping_day_insert as");
+test("recordPing charges the budget and writes both tables in one SQL statement", () => {
+  expect(RECORD_PING_SQL).toContain("with budget as");
+  expect(RECORD_PING_SQL).toContain("insert into ingest_budget");
+  expect(RECORD_PING_SQL).toContain("ping_day_insert as");
   expect(RECORD_PING_SQL).toContain("insert into install_lifetime");
   expect(RECORD_PING_SQL).toContain("on conflict (day, install_hash) do nothing");
-  expect(RECORD_PING_SQL).toContain("on conflict (install_hash) do nothing");
+  // Both inserts select from `admitted`, which is what forces them to run after
+  // the budget upsert rather than in an unspecified order. Asserted per-insert
+  // rather than by counting occurrences, since the closing result count reads
+  // `admitted` too and made a bare count say 3.
+  expect(RECORD_PING_SQL).toMatch(/insert into ping_day[\s\S]*?from admitted/);
+  expect(RECORD_PING_SQL).toMatch(/insert into install_lifetime[\s\S]*?from admitted/);
+});
+
+test("the rollup reads lifetime as of the day, not as of now", () => {
+  // The bug this pins: `count(*) from install_lifetime` counted installs first
+  // seen *after* the day being rolled up, so yesterday's published lifetime
+  // figure moved every time it was recomputed.
+  expect(ROLL_UP_DAY_SQL).toContain("from install_lifetime where first_seen <= $1::date");
+  expect(ROLL_UP_DAY_SQL).not.toContain("select count(*) from install_lifetime\n");
+});
+
+test("the rollup is a single statement so its parts share one snapshot", () => {
+  expect(ROLL_UP_DAY_SQL.startsWith("with ")).toBe(true);
+  expect(ROLL_UP_DAY_SQL).toContain("insert into daily_rollup");
+  for (const dimension of ["by_version", "by_os", "by_arch"]) {
+    expect(ROLL_UP_DAY_SQL).toContain(`${dimension} as (`);
+  }
+});
+
+test("lifetime pruning and the retired counter move in one statement", () => {
+  expect(PRUNE_LIFETIME_SQL).toContain("delete from install_lifetime where last_seen < $1::date");
+  expect(PRUNE_LIFETIME_SQL).toContain("update lifetime_retired set retired_installs");
 });
 
 /**
@@ -34,6 +60,10 @@ test("recordPing writes ping-day and lifetime state in one SQL statement", () =>
 describe.skipIf(!TEST_DATABASE_URL)("postgres store", () => {
   const day = "1999-01-01";
   const installHash = "a".repeat(64);
+
+  // Own the database outright: install_lifetime is permanent, so a row another
+  // suite left behind would shift the lifetime figures asserted here.
+  beforeAll(resetAnalyticsTables);
 
   test("recordPing is idempotent per (day, installHash)", async () => {
     const store = createPostgresAnalyticsStore(TEST_DATABASE_URL as string);

@@ -66,7 +66,7 @@ describe("ingestAnalyticsPing", () => {
       store,
       now: NOW,
     });
-    expect(result).toEqual({ ok: true, day: utcDayKey(NOW) });
+    expect(result).toEqual({ ok: true, day: utcDayKey(NOW), stored: true });
     expect(store.rawCount()).toBe(1);
   });
 

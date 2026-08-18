@@ -53,7 +53,10 @@ describe("public metrics v2", () => {
     const metrics = buildPublicMetrics(rollup);
     expect(metrics.schemaVersion).toBe(2);
     expect(metrics.byVersion).toEqual({ "0.3.0": 96, "0.2.5": 30, other: 2 });
-    expect(metrics.byOs).toEqual({ linux: 80, darwin: 44, other: 4 });
+    // win32: 4 is under the floor, and `os` has only three possible values, so
+    // publishing both other buckets would name it by elimination. darwin folds
+    // in too, leaving two candidates for `other`.
+    expect(metrics.byOs).toEqual({ linux: 80, other: 48 });
     expect(metrics.byArch).toEqual({ x64: 96, arm64: 32 });
     expect(metrics.lifetimeInstalls).toBe(512);
     // The storage detail that used to leak into a public wire format.
