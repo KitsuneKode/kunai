@@ -116,6 +116,41 @@ Command behavior should route through the canonical command registry and shared
 picker/overlay surfaces. Avoid adding provider-specific or player-specific
 policy inside render-only shell components.
 
+### Rows missing or text welded together on screen (OPEN)
+
+Reported on the post-play rail: the `❀ anime` badge, the title row, and the
+`── synopsis ──` divider absent from the screen, with stray text fused onto fact
+values (`2006urite`, `★ 8.5tion`) in a colour no element on that surface uses.
+
+**Do not debug this in the model or the component.** That layer is ruled out and
+pinned by `apps/cli/test/unit/app-shell/media-panel-rail-frame.test.tsx`: the
+rendered frame carries every section, ends each fact value at the value, and
+emits no line wider than the rail it was given, at every rail width. A correct
+frame reaching a wrong screen means the fault is in the **write path**, so
+search there:
+
+- **Ink's frame diff.** Ink erases the previous frame by walking UP from where it
+  believes the cursor is, one erase-line per remembered row. That belief is only
+  valid while Ink is the sole writer.
+- **The two writers that are not Ink.** `sixel-overlay.ts` and
+  `image/kitty-transport.ts` write to `process.stdout` directly, at absolute
+  positions, scheduled independently of Ink's throttled frame.
+- **`clearRootContentTransitionFrame()`** in `apps/cli/src/app-shell/shell-screen-clear.ts`
+  writes a raw `ESC[2J ESC[H` on every root-content transition — playback →
+  post-play among them. It moves the cursor home behind Ink's back;
+  `apps/cli/test/unit/app-shell/ink-external-clear-desync.test.tsx` shows the
+  next frame still emitting a 12-row erase walk at a cursor that is no longer
+  there, so all 13 erases collapse onto row 1. Note the sibling
+  `clearShellScreen()` documents the opposite rule ("the raw ANSI clear is
+  intentionally omitted — Ink's reconciler handles repaint"); the two disagree.
+
+Root cause is **not yet established** and no fix should be guessed here: a wrong
+one is visible on every surface transition. What settles it is a byte-level
+capture of a real playback → post-play transition (drive the shell in a PTY at a
+fixed size, record raw stdout, and find which writer touches the rail rows
+between the two frames). The isolated-profile recipe for driving the real shell
+is in [features/privacy-and-storage.md](./features/privacy-and-storage.md).
+
 ## Windows-Specific Failure Modes
 
 Windows breaks in ways POSIX hides, and several of these presented as something
