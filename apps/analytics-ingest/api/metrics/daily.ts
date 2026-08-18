@@ -12,6 +12,12 @@ import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
  * dimension buckets under the small-cell floor are folded into "other" by
  * `buildPublicMetrics` before anything leaves here.
  *
+ * Serves the newest rollup at or before the snapshot day, not strictly that
+ * day. The contract makes `updatedAt` the staleness signal — but the previous
+ * revision answered 404 `not_ready` whenever yesterday's rollup was missing, so
+ * a cron that stopped firing took the page down rather than letting the value
+ * visibly age. A 404 now means no rollup has ever been computed.
+ *
  * Served as /metrics/daily.json via vercel rewrite.
  */
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -32,7 +38,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   try {
-    const rollup = await runtime.store.readRollup(snapshotDayKey());
+    const rollup = await runtime.store.readLatestRollupAtOrBefore(snapshotDayKey());
     if (!rollup) {
       res.statusCode = 404;
       res.setHeader("Cache-Control", "public, s-maxage=60, max-age=60");

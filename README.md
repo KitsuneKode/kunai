@@ -392,8 +392,8 @@ page or in-app `?` over duplicating chords here.
 | `/history`        | Watch history and resume                                   |
 | `/diagnostics`    | Runtime snapshot and recent events                         |
 | `/presence`       | Discord Rich Presence setup                                |
-| `/telemetry`      | Opt-in anonymous usage ping status / toggle                |
-| `/telemetry show` | Print the exact JSON that would be sent                    |
+| `/analytics`      | Opt-in anonymous usage ping status / toggle                |
+| `/analytics show` | Print the exact JSON that would be sent                    |
 
 ---
 
@@ -472,12 +472,13 @@ shows what you're watching:
 - `kunai --debug` for verbose traces during troubleshooting.
 - `/export-diagnostics` generates a redacted JSON snapshot for issue reports.
 - `/report-issue` opens GitHub issue triage guidance.
-- Opt-in telemetry (`/telemetry`) is off until you consent. Fresh installs send
-  nothing. When enabled, the ping is `{ installId, version, os, arch, ts }` only —
-  never titles, queries, providers, URLs, or paths. Preview with `/telemetry show`.
+- Opt-in usage analytics (`/analytics`) is off until you consent. Fresh installs
+  send nothing. When enabled, the ping is `{ installId, version, os, arch, ts }`
+  only — never titles, queries, providers, URLs, or paths. Preview with
+  `/analytics show`.
   Honour `DO_NOT_TRACK=1` / `CI=true` as hard blocks on send and enable.
   The ingest stores HMAC-hashed ids for daily/lifetime aggregates only; public
-  docs may show yesterday’s opt-in actives and an approximate lifetime total.
+  docs may show yesterday’s opt-in actives and an exact lifetime total.
 - Kunai checks for a newer published version on startup and notifies you in-shell — updating is a quick reinstall (see [Uninstall](#uninstall) / [Quick Start](#quick-start)).
 
 ---

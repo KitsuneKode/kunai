@@ -41,16 +41,16 @@ import {
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
 import type { MpvUrlKind } from "./mpv-playback-url";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
-import { buildPersistentLoadfileCommand } from "./mpv-stream-http-headers";
 import {
   applyEndFileEvent,
-  createPlayerTelemetryState,
+  createPlayerStatsState,
   finalizePlaybackResult,
   noteStreamStall,
   noteTrustedSeek,
   recordPlayerExit,
-  type PlayerTelemetryState,
-} from "./mpv-telemetry";
+  type PlayerStatsState,
+} from "./mpv-stats";
+import { buildPersistentLoadfileCommand } from "./mpv-stream-http-headers";
 import { PersistentMpvPropertyRouter } from "./persistent-mpv-property-router";
 import type { PersistentMpvSessionRuntime } from "./persistent-mpv-runtime";
 import { PersistentReadyWorkExecutor } from "./persistent-ready-work-executor";
@@ -70,7 +70,7 @@ import {
   pruneSkippedPlaybackSegmentKeys,
 } from "./playback-skip";
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
-import { buildPlaybackTelemetrySnapshot } from "./PlaybackTelemetrySnapshot";
+import { buildPlaybackStatsSnapshot } from "./PlaybackStatsSnapshot";
 import type { ActivePlayerControl, MpvRequestedAction } from "./PlayerControlService";
 import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
 import { extractExternalSubtitleIds } from "./subtitle-track-cache";
@@ -135,7 +135,7 @@ type PlayerCycleOptions = {
 };
 
 type PlayerCycleState = {
-  telemetry: PlayerTelemetryState;
+  stats: PlayerStatsState;
   resolve: (result: PlaybackResult) => void;
   promise: Promise<PlaybackResult>;
   playerReadyNotified: boolean;
@@ -299,8 +299,8 @@ export class PersistentMpvSession {
       skipCurrentSegment: async () => this.skipCurrentSegment(),
       updateTiming: (timing) => this.updateTiming(timing),
       updateAutoSkipEnabled: (enabled) => this.updateAutoSkipEnabled(enabled),
-      getTelemetrySnapshot: () =>
-        this.activeCycle ? buildPlaybackTelemetrySnapshot(this.activeCycle.telemetry) : null,
+      getStatsSnapshot: () =>
+        this.activeCycle ? buildPlaybackStatsSnapshot(this.activeCycle.stats) : null,
       showOsdMessage: async (text, durationMs) => {
         await this.ipcSession?.send(["show-text", text, durationMs], 1_000);
       },
@@ -437,7 +437,7 @@ export class PersistentMpvSession {
         error: `stream unreachable: ${preflight.reason}`,
       });
       this.clearPendingFileLoadIf(fileLoadId, generation);
-      cycle.telemetry.endReason = "error";
+      cycle.stats.endReason = "error";
       this.activeCycle = null;
       cycle.resolve({
         watchedSeconds: 0,
@@ -591,7 +591,7 @@ export class PersistentMpvSession {
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
       const active = this.activeCycle;
       if (active && (event.type === "stream-stalled" || event.type === "ipc-stalled")) {
-        noteStreamStall(active.telemetry, Date.now());
+        noteStreamStall(active.stats, Date.now());
       }
       this.currentCycleOptions().onPlaybackEvent?.(event);
       if (
@@ -751,13 +751,13 @@ export class PersistentMpvSession {
     options: PlayerCycleOptions,
     cycleOptions: { acceptPlaybackProperties?: boolean } = {},
   ): PlayerCycleState {
-    const telemetry = createPlayerTelemetryState(this.ipcEndpoint.path);
+    const stats = createPlayerStatsState(this.ipcEndpoint.path);
     let resolve!: (result: PlaybackResult) => void;
     const promise = new Promise<PlaybackResult>((res) => {
       resolve = res;
     });
     const cycle: PlayerCycleState = {
-      telemetry,
+      stats,
       resolve,
       promise,
       playerReadyNotified: false,
@@ -1031,7 +1031,7 @@ export class PersistentMpvSession {
   }
 
   private maybeEmitPlaybackProgress(cycle: PlayerCycleState, observedAt: number): void {
-    const sample = cycle.telemetry.latestIpcSample;
+    const sample = cycle.stats.latestIpcSample;
     if (
       !shouldEmitPlaybackProgress(
         cycle,
@@ -1056,7 +1056,7 @@ export class PersistentMpvSession {
 
   private fireNearEofIfNeeded(positionSeconds: number): void {
     if (this.nearEofFired) return;
-    const duration = this.activeCycle?.telemetry.latestIpcSample?.durationSeconds ?? 0;
+    const duration = this.activeCycle?.stats.latestIpcSample?.durationSeconds ?? 0;
     const triggerSeconds = resolveNearEofPrefetchTriggerSeconds(
       duration,
       this.currentCycleOptions().timing,
@@ -1193,7 +1193,7 @@ export class PersistentMpvSession {
     const seekResult = await this.ipcSession.send(["seek", target, "absolute"], 2_000);
     if (seekResult.ok) {
       this.currentPositionSeconds = target;
-      noteTrustedSeek(this.activeCycle.telemetry, target);
+      noteTrustedSeek(this.activeCycle.stats, target);
     }
   }
 
@@ -1367,8 +1367,8 @@ export class PersistentMpvSession {
       this.hasLoadedFile = false;
 
       if (active) {
-        recordPlayerExit(active.telemetry, exit);
-        const result = finalizePlaybackResult(active.telemetry, {
+        recordPlayerExit(active.stats, exit);
+        const result = finalizePlaybackResult(active.stats, {
           socketPathCleanedUp: shouldUnlinkUnixSocket(this.ipcEndpoint)
             ? !existsSync(this.ipcEndpoint.path)
             : true,
@@ -1432,19 +1432,19 @@ export class PersistentMpvSession {
       this.currentCycleOptions().onNearEof?.();
     }
 
-    applyEndFileEvent(active.telemetry, reason, observedAt, { fileError });
-    const result = finalizePlaybackResult(active.telemetry, {
+    applyEndFileEvent(active.stats, reason, observedAt, { fileError });
+    const result = finalizePlaybackResult(active.stats, {
       socketPathCleanedUp: false,
     });
 
-    const latest = active.telemetry.latestIpcSample ?? active.telemetry.lastNonZeroSample;
+    const latest = active.stats.latestIpcSample ?? active.stats.lastNonZeroSample;
     const networkish = latest?.demuxerViaNetwork === true;
-    const demoted = active.telemetry.eofDemotedByPrematureGuard;
+    const demoted = active.stats.eofDemotedByPrematureGuard;
     const seekFrom = Math.max(result.watchedSeconds, this.currentPositionSeconds);
     const durationForSeek =
       result.duration > 0
         ? result.duration
-        : (active.telemetry.lastNonZeroSample?.durationSeconds ?? 0);
+        : (active.stats.lastNonZeroSample?.durationSeconds ?? 0);
 
     const shouldTryReconnect =
       this.mpvInProcessStreamReconnectEnabled &&
@@ -1476,7 +1476,7 @@ export class PersistentMpvSession {
     const active = this.activeCycle;
     if (!active || !this.ipcSession) return;
 
-    const latest = active.telemetry.latestIpcSample;
+    const latest = active.stats.latestIpcSample;
     const duration = latest?.durationSeconds ?? 0;
     const reloaded = await this.runSameUrlReconnect(
       active,
@@ -1542,13 +1542,13 @@ export class PersistentMpvSession {
         detail: trigger,
       });
 
-      const savedEndReason = active.telemetry.endReason;
-      const savedMaxTrusted = active.telemetry.maxTrustedProgressSeconds;
-      const savedLastReliable = active.telemetry.lastReliableProgressSeconds;
-      active.telemetry = createPlayerTelemetryState(this.ipcEndpoint.path);
-      active.telemetry.endReason = savedEndReason;
-      active.telemetry.maxTrustedProgressSeconds = savedMaxTrusted;
-      active.telemetry.lastReliableProgressSeconds = savedLastReliable;
+      const savedEndReason = active.stats.endReason;
+      const savedMaxTrusted = active.stats.maxTrustedProgressSeconds;
+      const savedLastReliable = active.stats.lastReliableProgressSeconds;
+      active.stats = createPlayerStatsState(this.ipcEndpoint.path);
+      active.stats.endReason = savedEndReason;
+      active.stats.maxTrustedProgressSeconds = savedMaxTrusted;
+      active.stats.lastReliableProgressSeconds = savedLastReliable;
       // Reconnect reloads the same cycle: keep its generation, but retire the
       // previous pending owner so two load owners never coexist.
       this.pendingInProcessReconnect = {

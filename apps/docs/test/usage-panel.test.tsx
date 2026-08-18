@@ -55,6 +55,18 @@ describe("usage panel", () => {
     expect(html).toContain("Groups smaller than 5 installs are reported as");
   });
 
+  test("breakdowns render as bars with every value also printed", () => {
+    const html = renderToStaticMarkup(<UsagePanel metrics={sample} />);
+    // One bar per bucket across the three breakdowns (2 + 2 + 2).
+    expect(html.match(/kunai-chart-bar/g)?.length).toBe(6);
+    // The residual is de-emphasised rather than dressed as a real category.
+    expect(html).toContain('data-residual="true"');
+    // Values are never colour-only: counts and shares are printed on the rows.
+    expect(html).toContain("75%");
+    expect(html).toContain("25%");
+    expect(html).toContain("<table");
+  });
+
   test("empty blocks expose recovery links", () => {
     expect(renderToStaticMarkup(<AnalyticsMetricsEmpty />)).toContain(
       "reliability-and-privacy#usage-analytics",

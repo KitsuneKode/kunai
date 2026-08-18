@@ -3,7 +3,17 @@
  * Fetches aggregates only — never Redis, never install ids.
  */
 
-/** Empty until a verified analytics deployment is deliberately configured. */
+/**
+ * Empty until a verified analytics deployment is deliberately configured.
+ *
+ * `KUNAI_ANALYTICS_METRICS_URL` must be present **at build time**, not only at
+ * runtime: `/analytics` is statically prerendered, so the deployed HTML is
+ * whatever the build could fetch. Setting it as a runtime-only variable leaves
+ * the page showing "Public pulse not published yet" until the next ISR
+ * revalidation (1h) or redeploy — which reads as a broken page, not a
+ * pending one. Verified 2026-08-18: same build, URL unset renders the empty
+ * state and URL set renders the full breakdown.
+ */
 export const DEFAULT_ANALYTICS_METRICS_URL = "";
 
 export type DocsAnalyticsMetrics = {
@@ -83,6 +93,63 @@ export function parseDocsAnalyticsMetrics(raw: unknown): DocsAnalyticsMetrics | 
     byArch: record.byArch,
     updatedAt: record.updatedAt,
   };
+}
+
+export type ShareBucket = {
+  readonly label: string;
+  readonly count: number;
+  /** Fraction of the breakdown total, 0–1. */
+  readonly share: number;
+  /** True for the folded remainder, which is a residual and not a category. */
+  readonly residual: boolean;
+};
+
+/** The ingest's own name for the suppressed remainder. */
+const RESIDUAL_LABEL = "other";
+
+/** Visible rows before the tail folds into the residual. */
+const DEFAULT_BUCKET_LIMIT = 6;
+
+/**
+ * Rank a breakdown for display: largest first, with the ingest's suppressed
+ * `other` bucket and any folded tail pinned last as a single residual row.
+ *
+ * The residual is kept separate from the ranked categories because it is not
+ * one — it is what small-cell suppression left over, and charting it as a peer
+ * would invite reading it as a real version or platform.
+ */
+export function rankShareBuckets(
+  counts: Readonly<Record<string, number>>,
+  limit: number = DEFAULT_BUCKET_LIMIT,
+): readonly ShareBucket[] {
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  if (total <= 0) return [];
+
+  const named = Object.entries(counts)
+    .filter(([label]) => label !== RESIDUAL_LABEL)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+
+  const visible = named.slice(0, limit);
+  const foldedTail = named.slice(limit).reduce((sum, [, count]) => sum + count, 0);
+  const residual = (counts[RESIDUAL_LABEL] ?? 0) + foldedTail;
+
+  const ranked: ShareBucket[] = visible.map(([label, count]) => ({
+    label,
+    count,
+    share: count / total,
+    residual: false,
+  }));
+
+  if (residual > 0) {
+    ranked.push({
+      label: RESIDUAL_LABEL,
+      count: residual,
+      share: residual / total,
+      residual: true,
+    });
+  }
+
+  return ranked;
 }
 
 export function formatUsageLine(metrics: DocsAnalyticsMetrics): string {

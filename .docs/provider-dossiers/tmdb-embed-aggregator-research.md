@@ -509,7 +509,7 @@ If the project wants a VidAPI provider module, the shape would be:
   premature.
 - Should the project emit a usage metric when calling the API? The VidAPI
   embed business model is driven by iframe views; CLI usage is invisible to
-  them, which is good for stealth but also means no telemetry to know if
+  them, which is good for stealth but also means no signal to know if
   the IP gets flagged.
 - Should the project surface "this title is unavailable in VidAPI" (the
   Arcane S2E1 case) as a clean error message or a generic "no sources" UI?

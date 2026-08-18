@@ -82,7 +82,13 @@ export function isTimestampSkewed(clientTs: number, now: number, skewMs = TS_SKE
 }
 
 export type IngestResult =
-  | { readonly ok: true; readonly day: string }
+  /**
+   * `stored: false` means the day's global write budget was already spent. The
+   * request is still a success as far as the client is concerned — a flood must
+   * not learn where the ceiling sits, and a legitimate client cannot act on it
+   * either — but the caller can see it, so the drop is never silent to us.
+   */
+  | { readonly ok: true; readonly day: string; readonly stored: boolean }
   | { readonly ok: false; readonly status: number; readonly error: string };
 
 export async function ingestAnalyticsPing(input: {
@@ -109,8 +115,9 @@ export async function ingestAnalyticsPing(input: {
 
   const day = utcDayKey(now);
   // The store's (day, install_hash) key is the once-per-day gate. There is no
-  // separate claim step to race against.
-  await input.store.recordPing({
+  // separate claim step to race against. The store also charges the day's
+  // global admission budget in the same statement.
+  const { admitted } = await input.store.recordPing({
     day,
     installHash: hashInstallId(input.hashSecret, payload.installId),
     version: payload.version,
@@ -118,5 +125,5 @@ export async function ingestAnalyticsPing(input: {
     arch: payload.arch,
   });
 
-  return { ok: true, day };
+  return { ok: true, day, stored: admitted };
 }

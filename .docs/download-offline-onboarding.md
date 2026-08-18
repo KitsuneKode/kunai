@@ -166,7 +166,7 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   recap, preview, and credits behavior does not unexpectedly change between streamed and
   downloaded files.
 - `--offline` is a transient runtime override: it sets offline connectivity before startup
-  workers begin, skips download processing, update checks, telemetry, and sync identity work,
+  workers begin, skips download processing, update checks, analytics, and sync identity work,
   and opens the local library without provider resolution.
 - An offline-library launch keeps its explicit local-only origin through episode selection and
   playback. The validated local source is handed to the local mpv path, including local subtitle

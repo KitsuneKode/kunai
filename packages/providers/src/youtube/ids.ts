@@ -43,6 +43,19 @@ export function parseYoutubeCatalogId(id: string): {
   return { kind: "unknown", nativeId: id };
 }
 
+/**
+ * Poster URL derived from a video id alone.
+ *
+ * Every search backend drops thumbnails somewhere: `yt-dlp --flat-playlist` returns
+ * `thumbnail: null`, Piped omits it on some instances, and Invidious points at an
+ * instance that may already be cooling down. `i.ytimg.com` needs no lookup and is
+ * served straight from YouTube's CDN, so it is the honest floor for any video we
+ * can name — a result should never render with an empty poster.
+ */
+export function youtubeThumbnailUrl(videoId: string): string {
+  return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+}
+
 export function buildYoutubeWatchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }

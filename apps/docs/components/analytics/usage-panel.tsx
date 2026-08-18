@@ -1,3 +1,4 @@
+import { ShareBars } from "@/components/analytics/share-bars";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,11 @@ function formatUpdatedAt(iso: string): string {
     .replace(/\.\d{3}Z$/, " UTC");
 }
 
-function MetricHero({
+/**
+ * The one number the page leads with. Proportional figures, UI sans — tabular
+ * digits and a serif face both read as decoration at display size.
+ */
+function HeroFigure({
   label,
   value,
   hint,
@@ -51,7 +56,7 @@ function MetricHero({
       <p className="text-muted-foreground text-[11px] font-medium tracking-[0.14em] uppercase">
         {label}
       </p>
-      <p className="text-foreground font-heading text-4xl font-semibold tracking-tight tabular-nums md:text-5xl">
+      <p className="text-foreground text-5xl leading-none font-semibold tracking-tight md:text-6xl">
         {value.toLocaleString("en-US")}
       </p>
       <p className="text-muted-foreground text-sm text-pretty">{hint}</p>
@@ -59,37 +64,24 @@ function MetricHero({
   );
 }
 
-function BreakdownBar({
+function StatTile({
   label,
-  counts,
+  value,
+  hint,
 }: {
   readonly label: string;
-  readonly counts: Readonly<Record<string, number>>;
+  readonly value: number;
+  readonly hint: string;
 }) {
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const total = entries.reduce((sum, [, n]) => sum + n, 0) || 1;
-
   return (
     <div className="flex flex-col gap-2">
       <p className="text-muted-foreground text-[11px] font-medium tracking-[0.14em] uppercase">
         {label}
       </p>
-      <div className="bg-muted/40 flex h-2 w-full overflow-hidden rounded-full">
-        {entries.map(([bucket, n]) => (
-          <div
-            key={bucket}
-            className="bg-primary/70 first:rounded-l-full last:rounded-r-full"
-            style={{ width: `${(n / total) * 100}%`, opacity: bucket === "other" ? 0.35 : 1 }}
-          />
-        ))}
-      </div>
-      <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
-        {entries.map(([bucket, n]) => (
-          <li key={bucket}>
-            {bucket} <span className="text-foreground">{n}</span>
-          </li>
-        ))}
-      </ul>
+      <p className="text-foreground text-3xl leading-none font-semibold tracking-tight">
+        {value.toLocaleString("en-US")}
+      </p>
+      <p className="text-muted-foreground text-sm text-pretty">{hint}</p>
     </div>
   );
 }
@@ -97,14 +89,16 @@ function BreakdownBar({
 function BreakdownGrid({ metrics }: { readonly metrics: DocsAnalyticsMetrics }) {
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-6 sm:grid-cols-3">
-        <BreakdownBar label="By version" counts={metrics.byVersion} />
-        <BreakdownBar label="By OS" counts={metrics.byOs} />
-        <BreakdownBar label="By architecture" counts={metrics.byArch} />
+      <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+        <ShareBars label="By version" counts={metrics.byVersion} />
+        <ShareBars label="By OS" counts={metrics.byOs} />
+        <ShareBars label="By architecture" counts={metrics.byArch} />
       </div>
       <p className="text-muted-foreground m-0 text-xs text-pretty">
-        Groups smaller than 5 installs are reported as <code className="font-mono">other</code>.
-        This small-cell suppression is applied per breakdown; it is not a joint anonymity guarantee.
+        Each breakdown counts the same installs a different way, so the three add up to the same day
+        total — they are not parts of one whole. Groups smaller than 5 installs are reported as{" "}
+        <code className="font-mono">other</code>. This small-cell suppression is applied per
+        breakdown; it is not a joint anonymity guarantee.
       </p>
     </div>
   );
@@ -264,13 +258,13 @@ export function UsagePanel({ metrics }: { readonly metrics: DocsAnalyticsMetrics
           </CardHeader>
           <CardContent className="flex flex-col gap-8 pt-2">
             {metrics.activeInstalls === 0 ? <AnalyticsZeroDayEmpty day={metrics.day} /> : null}
-            <div className="grid gap-8 md:grid-cols-2">
-              <MetricHero
+            <div className="grid items-end gap-8 md:grid-cols-2">
+              <HeroFigure
                 label="Yesterday’s active installs"
                 value={metrics.activeInstalls}
                 hint="Distinct installs that pinged on the snapshot day."
               />
-              <MetricHero
+              <StatTile
                 label="Lifetime installs"
                 value={metrics.lifetimeInstalls}
                 hint="Exact distinct installs ever seen."

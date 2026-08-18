@@ -30,7 +30,7 @@ describe("ResolveTraceSink", () => {
     expect(added[0]?.id).toBe("resolve-1");
   });
 
-  test("a storage fault never escapes — a resolve must not fail on telemetry", () => {
+  test("a storage fault never escapes — a resolve must not fail on trace persistence", () => {
     const sink = new ResolveTraceSink(
       store({
         add: () => {

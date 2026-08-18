@@ -48,7 +48,7 @@ Background prune default: **7 days** (`providerHealthRetentionDays`). Title-scop
 ### 2.3 Visibility
 
 - **Provider picker** — health badge per provider (`down`, `degraded`, failure count, skipped note)
-- **Runtime health line** — merges resolve telemetry with persisted memory for the active provider
+- **Runtime health line** — merges resolve traces with persisted memory for the active provider
 - **Diagnostics panel** — **Provider memory** section lists lane providers with effective status and fallback eligibility
 - **Resolve feedback** — when providers are skipped: `Miruro (down) skipped in auto-fallback — /reset-provider-health to retry`
 

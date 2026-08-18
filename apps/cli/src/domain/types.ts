@@ -198,13 +198,13 @@ export interface TitleAlias {
 }
 
 export type EndReason = "eof" | "quit" | "error" | "unknown";
-export type PlaybackTelemetrySource = "ipc" | "unknown";
+export type PlaybackStatsSource = "ipc" | "unknown";
 
 export interface PlaybackResult {
   readonly watchedSeconds: number;
   readonly duration: number;
   readonly endReason: EndReason;
-  readonly resultSource?: PlaybackTelemetrySource;
+  readonly resultSource?: PlaybackStatsSource;
   readonly playerExitedCleanly?: boolean;
   readonly playerExitCode?: number | null;
   readonly playerExitSignal?: string | null;
@@ -216,7 +216,7 @@ export interface PlaybackResult {
    *  Updated on small forward steps AND user seeks (both forward and backward).
    *  Unlike lastTrustedProgressSeconds, this CAN go down when the user seeks backward. */
   readonly lastReliableProgressSeconds?: number;
-  /** True when mpv reported EOF but telemetry suggests the network stream died early. */
+  /** True when mpv reported EOF but playback stats suggest the network stream died early. */
   readonly suspectedDeadStream?: boolean;
   /** True when a terminal manifest response rejected this stream before mpv was launched. */
   readonly streamRejectedBeforePlayerLaunch?: boolean;

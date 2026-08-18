@@ -192,7 +192,7 @@ is omitted entirely, so a clean session shows one short block instead of three
 headings and a lot of nothing.
 
 The split exists because "unknown" is not a fault. A subsystem with no data yet
-(`Provider — Unknown · no resolve telemetry yet`) previously sat in the same
+(`Provider — Unknown · no resolve traces yet`) previously sat in the same
 visual channel as a real failure, so nothing stood out. Anything `degraded`,
 `recoverable`, or `blocked` is a fault; only `unknown` is unknown. The mapping
 in `diagnostics-dashboard-model.ts` is exhaustive over `DiagnosticSeverity`, so
