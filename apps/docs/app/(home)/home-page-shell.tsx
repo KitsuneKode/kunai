@@ -1,4 +1,5 @@
 import { HomeHeroStatic } from "@/components/home/home-hero-static";
+import { HomeStarCta } from "@/components/home/home-star-cta";
 import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
 import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
 import { StartHereCards } from "@/components/home/start-here-cards";
@@ -127,6 +128,7 @@ export default function HomePageShell({
             <Link className="kunai-button border-fd-border hover:border-fd-primary" href="/docs">
               Browse docs
             </Link>
+            <HomeStarCta />
           </div>
         </div>
       </section>
