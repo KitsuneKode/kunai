@@ -1,6 +1,6 @@
-import { loadAnalyticsLimits, type AnalyticsLimits } from "./limits";
-import { createPostgresAnalyticsStore } from "./postgres-store";
-import type { AnalyticsStore } from "./store";
+import { loadAnalyticsLimits, type AnalyticsLimits } from "./limits.js";
+import { createPostgresAnalyticsStore } from "./postgres-store.js";
+import type { AnalyticsStore } from "./store.js";
 
 export type AnalyticsRuntimeConfig = {
   readonly hashSecret: string;

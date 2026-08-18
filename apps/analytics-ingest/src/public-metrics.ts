@@ -1,5 +1,5 @@
-import { ALLOWED_ARCH, ALLOWED_OS } from "./payload-validation";
-import type { DailyRollup } from "./store";
+import { ALLOWED_ARCH, ALLOWED_OS } from "./payload-validation.js";
+import type { DailyRollup } from "./store.js";
 
 export const METRICS_SCHEMA_VERSION = 2;
 

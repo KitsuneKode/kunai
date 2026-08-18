@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { ingestAnalyticsPing, MAX_BODY_BYTES } from "../src/ingest";
-import { loadAnalyticsRuntimeConfig } from "../src/runtime-config";
+import { ingestAnalyticsPing, MAX_BODY_BYTES } from "../src/ingest.js";
+import { loadAnalyticsRuntimeConfig } from "../src/runtime-config.js";
 
 type ReadResult =
   | { ok: true; body: unknown }

@@ -1,13 +1,13 @@
 import { neon } from "@neondatabase/serverless";
 
-import { DEFAULT_ANALYTICS_LIMITS, type AnalyticsLimits } from "./limits";
+import { DEFAULT_ANALYTICS_LIMITS, type AnalyticsLimits } from "./limits.js";
 import type {
   AnalyticsStore,
   DailyRollup,
   PruneLifetimeResult,
   RecordPingInput,
   RecordPingResult,
-} from "./store";
+} from "./store.js";
 
 /**
  * One statement, three effects: charge the day's admission budget, record the

@@ -1,8 +1,15 @@
 import type { ProviderEpisodeOption } from "@kunai/types";
 
 import { TTLCache } from "./provider-cache";
+import { createTimeoutSignal } from "./timeout-signal";
 
-export type AnimeEpisodeMetadataSource = "anilist" | "jikan" | "miruro" | "allmanga" | "merged";
+export type AnimeEpisodeMetadataSource =
+  | "anidb"
+  | "anilist"
+  | "jikan"
+  | "miruro"
+  | "allmanga"
+  | "merged";
 
 export type AnimeEpisodeMetadata = {
   readonly number: number;
@@ -32,6 +39,10 @@ export function allMangaEpisodeMetadataCacheKey(showId: string, mode: "sub" | "d
 
 export function miruroEpisodeMetadataCacheKey(anilistId: string): string {
   return `miruro:${anilistId}`;
+}
+
+export function anidbEpisodeMetadataCacheKey(showId: string): string {
+  return `anidb:${showId}`;
 }
 
 export function seedEpisodeMetadataFromProvider(
@@ -111,8 +122,11 @@ type AniListStreamingEpisode = {
   readonly thumbnail?: string | null;
 };
 
-function metadataCacheKey(ids: { readonly anilistId?: string; readonly malId?: string }): string {
-  return `${ids.anilistId ?? ""}|${ids.malId ?? ""}`;
+function metadataCacheKey(
+  ids: { readonly anilistId?: string; readonly malId?: string },
+  pass: EpisodeMetadataPass,
+): string {
+  return `${ids.anilistId ?? ""}|${ids.malId ?? ""}|${pass}`;
 }
 
 function pickLongerTitle(
@@ -152,7 +166,7 @@ function mergeEpisodeMetadata(
 async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T | null> {
   try {
     const response = await fetch(url, {
-      signal: signal ?? AbortSignal.timeout(20_000),
+      signal: createTimeoutSignal(signal, 20_000),
       headers: { Accept: "application/json" },
     });
     if (!response.ok) return null;
@@ -203,7 +217,7 @@ async function fetchAniListStreamingEpisodes(
   try {
     const response = await fetch(ANILIST_GRAPHQL, {
       method: "POST",
-      signal: signal ?? AbortSignal.timeout(20_000),
+      signal: createTimeoutSignal(signal, 20_000),
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
         query: `query ($id: Int) {
@@ -262,6 +276,17 @@ export function mergeMiruroPipeEpisodeMetadata(
   }
 }
 
+/**
+ * Which external passes a caller still needs.
+ *
+ * "artwork" is the cheap half: one AniList call for stills. "full" adds the
+ * Jikan episode list, which pages 100 at a time under a strict rate limit —
+ * worth it for a bare catalog, pure latency for a provider that already knows
+ * every episode title. Callers decide with
+ * `shouldSkipExternalEpisodeMetadataEnrichment`.
+ */
+export type EpisodeMetadataPass = "full" | "artwork";
+
 /** Fetch episode titles/synopses/stills keyed by absolute episode number.
  *
  * @deprecated Prefer provider-native episode metadata (Miruro pipe, AllManga
@@ -272,9 +297,13 @@ export function mergeMiruroPipeEpisodeMetadata(
 export async function fetchAnimeEpisodeMetadataByNumber(
   ids: { readonly anilistId?: string; readonly malId?: string },
   signal?: AbortSignal,
+  pass: EpisodeMetadataPass = "full",
 ): Promise<Map<number, AnimeEpisodeMetadata>> {
-  const cacheKey = metadataCacheKey(ids);
-  const cached = metadataCache.get(cacheKey);
+  // A completed full pass already contains everything the artwork pass would
+  // fetch, so it answers both; the reverse is not true.
+  const cached =
+    metadataCache.get(metadataCacheKey(ids, "full")) ??
+    (pass === "artwork" ? metadataCache.get(metadataCacheKey(ids, "artwork")) : undefined);
   if (cached) return new Map(cached);
 
   const merged = new Map<number, AnimeEpisodeMetadata>();
@@ -287,15 +316,43 @@ export async function fetchAnimeEpisodeMetadataByNumber(
     }
   }
 
-  if (Number.isFinite(malId) && malId > 0) {
+  if (pass === "full" && Number.isFinite(malId) && malId > 0) {
     const jikanEpisodes = await fetchJikanEpisodes(malId, signal);
     for (const [number, meta] of jikanEpisodes) {
       mergeEpisodeMetadata(merged, number, meta);
     }
   }
 
-  metadataCache.set(cacheKey, merged);
+  metadataCache.set(metadataCacheKey(ids, pass), merged);
   return merged;
+}
+
+/**
+ * Fill gaps in `target` from an external source. Provider-native values win
+ * field by field: the provider knows its own catalog, the external source is
+ * only there for what the provider does not carry.
+ */
+export function mergeExternalEpisodeMetadataInto(
+  target: Map<number, AnimeEpisodeMetadata>,
+  external: ReadonlyMap<number, AnimeEpisodeMetadata>,
+): void {
+  for (const [number, meta] of external) {
+    const existing = target.get(number);
+    if (!existing) {
+      target.set(number, meta);
+      continue;
+    }
+    target.set(number, {
+      number,
+      title: existing.title ?? meta.title,
+      synopsis: existing.synopsis ?? meta.synopsis,
+      airDate: existing.airDate ?? meta.airDate,
+      thumbnail: existing.thumbnail ?? meta.thumbnail,
+      isFiller: existing.isFiller ?? meta.isFiller,
+      isRecap: existing.isRecap ?? meta.isRecap,
+      source: "merged",
+    });
+  }
 }
 
 export function parseAllMangaEpisodeNumber(episode: ProviderEpisodeOption): number {
