@@ -17,10 +17,22 @@ import {
 } from "../src/anidb/direct";
 import { anidbManifest, ANIDB_PROVIDER_ID } from "../src/anidb/manifest";
 import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
-import { isOfficialAnidbApi } from "./helpers/anidb-urls";
+import { isOfficialAnidbApi, urlHasHostname } from "./helpers/anidb-urls";
 
 const fixture = (name: string) =>
   Bun.file(new URL(`./fixtures/anidb/${name}`, import.meta.url)).text();
+
+describe("anidb fetch stub URL match", () => {
+  test("official API match is host and port, not a substring spoof", () => {
+    expect(isOfficialAnidbApi("http://api.anidb.net:9001/httpapi")).toBe(true);
+    expect(isOfficialAnidbApi("https://evil.test/?x=api.anidb.net:9001")).toBe(false);
+    expect(isOfficialAnidbApi("http://api.anidb.net.evil.test:9001/httpapi")).toBe(false);
+    expect(urlHasHostname("https://graphql.anilist.co/api", "graphql.anilist.co")).toBe(true);
+    expect(urlHasHostname("https://evil.test/?x=graphql.anilist.co", "graphql.anilist.co")).toBe(
+      false,
+    );
+  });
+});
 
 describe("anidb id helpers", () => {
   test("accepts slug-numeric show ids", () => {
@@ -658,7 +670,7 @@ describe("anidb episode metadata", () => {
             { status: 200 },
           );
         }
-        if (url.includes("graphql.anilist.co")) {
+        if (urlHasHostname(url, "graphql.anilist.co")) {
           return new Response(
             JSON.stringify({
               data: {
@@ -673,7 +685,7 @@ describe("anidb episode metadata", () => {
             { status: 200 },
           );
         }
-        if (url.includes("api.jikan.moe")) {
+        if (urlHasHostname(url, "api.jikan.moe")) {
           return new Response(
             JSON.stringify({
               data: [

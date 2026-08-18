@@ -1,4 +1,20 @@
 /**
+ * Host match that does not treat a hostname as a substring of the whole URL.
+ *
+ * `url.includes("graphql.anilist.co")` is true for
+ * `https://evil.test/?x=graphql.anilist.co`, which would make a fetch stub
+ * answer the wrong fixture. CodeQL flags the substring form as
+ * `js/incomplete-url-substring-sanitization`.
+ */
+export function urlHasHostname(url: string, hostname: string): boolean {
+  try {
+    return new URL(url).hostname === hostname;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Host-and-port match for the official AniDB HTTP API.
  *
  * A `url.includes("api.anidb.net:9001")` stub matches any URL that merely
