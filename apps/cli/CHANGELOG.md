@@ -2,6 +2,36 @@
 
 ## 0.3.0
 
+Security, honesty, and platform fixes from a full codebase review.
+
+- **Downloads:** provider stream URLs and headers are guarded before reaching
+  yt-dlp (scheme check, leading-dash rejection, `--` terminator, CRLF-stripped
+  headers), closing an argv option-injection path the mpv lane already blocked.
+- **Storage:** the data and cache SQLite files (plus `-wal`/`-shm`) are chmod'd
+  to owner-only on every open, matching config and token handling.
+- **Windows:** every install path now installs real mpv instead of mpv.net.
+  mpv.net ships `mpvnet.exe`, but Kunai probes for `mpv` and drives playback
+  over mpv's IPC socket and Lua bridge, so a "successful" dependency install
+  could still leave playback reporting mpv as missing.
+- **CLI:** `--jump` help says what the flag does (auto-pick the n-th search
+  result) and warns on invalid values; headless download failures and rejected
+  `--handoff-url` values exit nonzero.
+- **Playback:** one-shot mpv launches attach the full collected subtitle
+  inventory and report the real track count; prefetched and back-navigation
+  streams are re-resolved when blocked or older than five minutes instead of
+  replaying a possibly expired URL.
+- **AniSkip:** the TMDB to MAL fallback is refused beyond season 1, so
+  split-cour anime no longer risk wrong auto-skip windows.
+- **Docs:** the command-honesty gate counts the browse palette; user docs stop
+  promising `/sync`, `/random`, and `/surprise` as typed commands; the
+  keybindings doc's post-playback table matches the code; provider descriptions
+  state adapter roles instead of speed or "recommended" claims.
+
+New in this release: `kunai completion <shell>` prints a completion script for
+bash, zsh, fish, and PowerShell, covering every flag and maintenance
+subcommand. `/docs` now opens the published documentation site at
+https://kunai.kitsunekode.in instead of the GitHub tree.
+
 ### Minor Changes
 
 - [#59](https://github.com/KitsuneKode/kunai/pull/59) [`15cac9e`](https://github.com/KitsuneKode/kunai/commit/15cac9e0c1dbc91c957d0b2133a515b7585803e6) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Keep the anime auto-skip and provider-relay paths working after upstream rotations.
