@@ -10,19 +10,19 @@ export const metadata: Metadata = {
   description:
     "See Kunai’s public usage pulse, the exact optional ping payload, and its privacy limits.",
   alternates: {
-    canonical: `${docsSiteUrl}/telemetry`,
+    canonical: `${docsSiteUrl}/analytics`,
   },
   openGraph: {
     title: "Kunai usage analytics",
     description:
       "Public aggregate counts only — never titles, queries, or install UUIDs on this page.",
-    url: `${docsSiteUrl}/telemetry`,
+    url: `${docsSiteUrl}/analytics`,
     type: "website",
     siteName: "Kunai Docs",
   },
 };
 
-export default async function TelemetryPage() {
+export default async function AnalyticsPage() {
   const metrics = await fetchDocsAnalyticsMetrics();
 
   return (

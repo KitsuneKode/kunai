@@ -12,7 +12,7 @@ export async function UsageLine() {
       {" · "}
       <Link
         className="hover:text-fd-foreground underline decoration-dotted underline-offset-2"
-        href="/telemetry"
+        href="/analytics"
       >
         usage analytics
       </Link>
