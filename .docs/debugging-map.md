@@ -116,6 +116,48 @@ Command behavior should route through the canonical command registry and shared
 picker/overlay surfaces. Avoid adding provider-specific or player-specific
 policy inside render-only shell components.
 
+### Rows missing or text welded together on screen (OPEN)
+
+Reported on the post-play rail: the `❀ anime` badge, the title row, and the
+`── synopsis ──` divider absent from the screen, with stray text fused onto fact
+values (`2006urite`, `★ 8.5tion`) in a colour no element on that surface uses.
+
+**Do not debug this in the model or the component.** That layer is ruled out and
+pinned by `apps/cli/test/unit/app-shell/media-panel-rail-frame.test.tsx`: the
+rendered frame carries every section, ends each fact value at the value, and
+emits no line wider than the rail it was given, at every rail width. A correct
+frame reaching a wrong screen means the fault is in the **write path**, so
+search there:
+
+Ink erases the previous frame by walking UP from where it believes the cursor is,
+one erase-line per remembered row. That belief holds only while Ink is the sole
+writer to stdout, and three things in this app are not Ink.
+
+**Already eliminated — do not re-run these:**
+
+| Suspect | How it was ruled out |
+| --- | --- |
+| The model and the component | `media-panel-rail-frame.test.tsx` pins the rendered frame: every section present, each fact value ending at the value, no line wider than the rail, at all four rail widths. |
+| `clearRootContentTransitionFrame()` — the raw `ESC[2J ESC[H` on every root-content transition | Drove the real `mountRootContent` transition under a PTY and replayed the bytes through a terminal emulator. Screen was clean: header plus all four rows of the new surface, no stale cells. The `ESC[2J` blanks what the misaimed erase misses, and Ink re-synchronizes on the next frame. |
+| Ink frames interleaving into a chunked Kitty upload | The chunk loop in `image/kitty-transport.ts` yields to the event loop every 8 chunks, and the graphics protocol requires one transmission's chunks to be contiguous. Measured with both writers instrumented and Ink re-rendering on a 4 ms timer: **0 foreign writes** landed between the 14 chunks. Ink's 30 fps throttle is far slower than the yields. |
+
+Note while reading that code: `ink-external-clear-desync.test.tsx` still pins the
+desync itself (13 erase-line ops, 12 cursor-up ops, aimed at a cursor the clear
+already moved home), because it is real and load-bearing if anything ever stops
+the `ESC[2J` from landing. Its sibling `clearShellScreen()` documents the
+opposite rule — "the raw ANSI clear is intentionally omitted, Ink's reconciler
+handles repaint" — so the two disagree and one of them is wrong.
+
+**Still open:** `sixel-overlay.ts`, which writes at absolute positions on a
+`setTimeout(0)` — unthrottled, unlike Ink — and the interaction between the
+image renderer actually in use and the host terminal. Reproducing needs the
+reporter's environment: which renderer `detectImageCapability()` chose, and the
+terminal itself. The repro recipe that eliminated the two rows above is a PTY at
+a fixed size feeding raw bytes to a terminal emulator (`pyte`); it is worth
+rebuilding rather than guessing, because it shows the screen a viewer sees
+rather than the bytes a writer sent. Isolate the run per
+[features/privacy-and-storage.md](./features/privacy-and-storage.md).
+
 ## Windows-Specific Failure Modes
 
 Windows breaks in ways POSIX hides, and several of these presented as something
