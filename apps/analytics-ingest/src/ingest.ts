@@ -25,8 +25,8 @@
 
 import { createHmac } from "node:crypto";
 
-import { isAllowedArch, isAllowedOs, isValidVersion } from "./payload-validation";
-import type { AnalyticsStore } from "./store";
+import { isAllowedArch, isAllowedOs, isValidVersion } from "./payload-validation.js";
+import type { AnalyticsStore } from "./store.js";
 
 export const ANALYTICS_PAYLOAD_KEYS = ["arch", "installId", "os", "ts", "version"] as const;
 

@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { authorizeBearer } from "../../src/bearer-auth";
-import { RAW_RETENTION_DAYS } from "../../src/ingest";
-import { buildPublicMetrics, snapshotDayKey } from "../../src/public-metrics";
-import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
-import type { AnalyticsStore } from "../../src/store";
+import { authorizeBearer } from "../../src/bearer-auth.js";
+import { RAW_RETENTION_DAYS } from "../../src/ingest.js";
+import { buildPublicMetrics, snapshotDayKey } from "../../src/public-metrics.js";
+import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config.js";
+import type { AnalyticsStore } from "../../src/store.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

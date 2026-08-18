@@ -4,8 +4,8 @@ import {
   buildPublicMetrics,
   PUBLIC_METRICS_CACHE_CONTROL,
   snapshotDayKey,
-} from "../../src/public-metrics";
-import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
+} from "../../src/public-metrics.js";
+import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config.js";
 
 /**
  * Public read-only aggregates. No install hashes, IPs, or raw ids — and
