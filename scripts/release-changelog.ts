@@ -107,7 +107,18 @@ export function parseTopCliChangelogEntry(content: string): ChangelogEntry | nul
 }
 
 function stripHtmlComments(text: string): string {
-  return text.replace(/<!--[\s\S]*?-->/g, "");
+  // Single-pass replace is not sufficient: removing an inner comment can splice
+  // surrounding characters into a fresh `<!--` (e.g. `<!<!-- -->--`). Repeat
+  // until the text stops changing so no comment marker survives.
+  let current = text;
+  let previous: string;
+  do {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, "");
+  } while (current !== previous);
+  // Looping alone leaves an unterminated opener (`<!<!-- -->--` -> `<!--`),
+  // which the paired regex can never match. Drop any surviving markers.
+  return current.replace(/<!--|-->/g, "");
 }
 
 /** Extracts the content of a single `### <heading>` group up to the next `### ` heading. */
