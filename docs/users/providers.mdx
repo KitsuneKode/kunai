@@ -18,27 +18,27 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 
 Mode defaults at a glance:
 
-- **Movies / series** — Videasy, VidLink, Rivestream (candidate)
-- **Anime** — AniDB (`anidb` id, default), AllManga-compatible client (`allanime` id, fallback), Miruro (manually selectable)
+- **Movies / series** — Videasy first, then Rivestream, then VidLink (from `providerPriority`)
+- **Anime** — AniDB only in the automatic lane. AllManga (`allanime`) and Miruro stay registered and are manually selectable
 - **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
 
 <ProviderDocSection id="videasy" title="Videasy">
 
-**When to use:** default movies and series path. Fast direct streams with source selection and subtitles.
+**Adapter role:** registered default for movies and series. Availability is the provider's, not Kunai's.
 
-**Config id:** `videasy` (legacy alias `vidking` still accepted). Prefer this as `provider` unless a title works better elsewhere.
+**Config id:** `videasy` (legacy alias `vidking` still accepted).
 
-**Caveats:** catalog and source availability can change; use `/recover` then `/fallback` when a stream dies.
+**Caveats:** catalog and source availability can change; use `/recover` then `/fallback` (or `⇧F` during playback) when a stream dies.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="vidlink" title="VidLink">
 
-**When to use:** movies and series with multi-language subtitle inventory.
+**Adapter role:** registered movies/series adapter; often used for subtitle inventory.
 
-**Config id:** `vidlink`. A solid second default in `providerPriority` after Videasy.
+**Config id:** `vidlink`. After Videasy, the automatic order is Rivestream then VidLink.
 
 **Caveats:** subtitle language coverage is not guaranteed for every title.
 
@@ -46,20 +46,37 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="rivestream" title="Rivestream">
 
-**When to use:** movies and series when you want another recommended default in the chain. Marked **candidate** — quality varies by title.
+**Adapter role:** candidate movies/series adapter. Second in the automatic series lane after Videasy.
 
-**Config id:** `rivestream`. Safe to keep in priority after Videasy/VidLink.
+**Config id:** `rivestream`.
 
-**Caveats:** treat failures as normal for a beta candidate; fallback is expected.
+**Caveats:** treat failures as normal for a candidate; fallback is expected.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="anidb" title="AniDB">
 
-**When to use:** the default anime route (sub and dub). Kunai searches AniDB directly, routes each
+**Adapter role:** the only adapter in the automatic anime lane. Kunai searches AniDB, routes each
 season to its own AniDB title, and resolves streams from that title.
 
 **Config id:** `anidb` for `animeProvider` / `animeProviderPriority`.
+
+```json
+{
+  "animeProvider": "anidb",
+  "animeProviderPriority": ["anidb"]
+}
+```
+
+**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks need `curl`
+installed for AniDB requests to get past Cloudflare. If a season cannot be matched unambiguously,
+Kunai reports that rather than playing a different season. AniDB does not advertise hardsub tracks.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="allanime" title="AllManga">
+
+**Adapter role:** registered anime adapter, **not** in the automatic fallback lane. Display name is AllManga; the runtime id is `allanime`. Re-add it to `animeProviderPriority` only if you want Kunai to try it after AniDB.
 
 ```json
 {
@@ -68,47 +85,27 @@ season to its own AniDB title, and resolves streams from that title.
 }
 ```
 
-**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks need `curl`
-installed for AniDB requests to get past Cloudflare. If a season cannot be matched unambiguously,
-Kunai reports that rather than playing a different season.
-
-</ProviderDocSection>
-
-<ProviderDocSection id="allanime" title="AllManga">
-
-**When to use:** fallback anime source (sub and dub) when the AniDB route does not resolve. Display name is AllManga; the runtime id is `allanime`.
-
-**Config id:** `allanime` for `animeProvider` / `animeProviderPriority`. To make it the primary anime
-source instead of the fallback:
-
-```json
-{
-  "animeProvider": "allanime",
-  "animeProviderPriority": ["allanime", "anidb"]
-}
-```
-
-**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Do not confuse the display name with the config id.
+**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Automatic fallback was demoted because some networks hit a captcha/geo gate after the episode catalog still loads. Do not confuse the display name with the config id.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="miruro" title="Miruro">
 
-**When to use:** alternate anime source when a title is missing or weak on AllManga.
+**Adapter role:** registered anime adapter, not in the automatic lane (Cloudflare WAF on some networks).
 
-**Config id:** `miruro`. Candidate status — keep after `allanime` in priority.
+**Config id:** `miruro`. Candidate status.
 
-**Caveats:** quality and catalog coverage vary; use as fallback, not as the only anime provider.
+**Caveats:** quality and catalog coverage vary. Select it manually when you want to try it.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="youtube" title="YouTube">
 
-**When to use:** YouTube mode for video search and playback (Invidious search, yt-dlp stream handoff to mpv).
+**Adapter role:** YouTube mode — Invidious search, yt-dlp stream handoff to mpv. This is not a TMDB movie/series adapter.
 
-**Config id:** `youtube`. Switch with `/youtube-mode` or the mode cycle.
+**Config id:** `youtube`. Switch with `/youtube-mode` or `Tab` to cycle catalog mode.
 
-**Caveats:** requires network; yt-dlp must be available for resolve. This is not a TMDB movie/series provider. Kunai does **not** bypass DRM or circumvent YouTube access controls — it only forwards optional cookies you already have to yt-dlp/mpv.
+**Caveats:** requires network; yt-dlp must be available for resolve. Kunai does **not** bypass DRM or circumvent YouTube access controls — it only forwards optional cookies you already have to yt-dlp/mpv.
 
 ### Cookie safety (age-restricted / members)
 
@@ -171,13 +168,13 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
 ```json
 {
   "provider": "videasy",
-  "providerPriority": ["videasy", "vidlink", "rivestream"],
+  "providerPriority": ["rivestream", "vidlink"],
   "animeProvider": "anidb",
-  "animeProviderPriority": ["anidb", "allanime"]
+  "animeProviderPriority": ["anidb"]
 }
 ```
 
-The anime client shows as **AllManga** in the UI; the config id remains `allanime`.
+The anime client shows as **AllManga** in the UI; the config id remains `allanime`. AllManga and Miruro are registered but omitted from the automatic anime lane. Add their ids to `animeProviderPriority` only if you want them tried automatically.
 
 Rules:
 
@@ -196,7 +193,7 @@ Kunai uses three distinct user-facing actions. They are not interchangeable.
 | --- | --- | --- |
 | **Recover** | `r`, `/recover` | Refresh current playback intent on the **active** provider — new resolve, cache revalidation, or mpv reload |
 | **Retry** (automatic) | — | Provider-local cycling through sources/variants before global fallback; shown in diagnostics timeline |
-| **Fallback provider** | `f`, `/fallback` | Stop active provider; global engine picks **next compatible provider** |
+| **Fallback provider** | `⇧F`, `/fallback` | Stop active provider; global engine picks **next compatible provider** |
 | **Recompute** | `/recompute` | Bypass stream cache and provider health memory for current episode |
 
 <Callout type="idea" title="Recover before fallback">
@@ -254,7 +251,7 @@ What it does:
 What it does not do:
 
 - Kunai does not operate a public relay for you.
-- Kunai does not proxy or host video by default.
+- Kunai does not host or proxy video. Enabling `videoFallback` in config does not route media through the relay in the current runtime.
 - The relay does not bypass provider login or DRM.
 
 Local contributor smoke:

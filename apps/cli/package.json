@@ -1,7 +1,7 @@
 {
   "name": "@kitsunekode/kunai",
   "version": "0.3.0",
-  "description": "Terminal-first media streaming CLI that resolves provider streams and launches mpv.",
+  "description": "Terminal-first client that resolves third-party stream URLs and launches mpv.",
   "keywords": [
     "anime",
     "bun",

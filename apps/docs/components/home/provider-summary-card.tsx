@@ -18,8 +18,8 @@ export function ProviderSummaryCard({ summary }: ProviderSummaryCardProps) {
             {summary.count} providers · {summary.activeCount} active
           </p>
           <p className="kunai-type-body text-fd-muted-foreground mt-3 text-sm leading-relaxed">
-            Kunai resolves streams through direct HTTP adapters on your machine. Recommended
-            defaults today: {recommended}.
+            Kunai talks to third-party adapters on your machine. Registered adapters today:{" "}
+            {recommended}. They are unaffiliated and may break or disappear.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

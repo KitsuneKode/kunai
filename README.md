@@ -2,7 +2,7 @@
 
 <img src=".reference/design/brand/kunai-readme-hero.svg" alt="Kunai — terminal-native media shell" width="680" />
 
-**Search any title · pick your source · watch in `mpv` · download for offline.**
+**Search a title · pick a third-party source · watch in `mpv` · download for offline.**
 One fullscreen, keyboard-driven terminal session.
 
 [![npm](https://img.shields.io/npm/v/@kitsunekode/kunai?color=ff8fb0&label=kunai&logo=npm)](https://www.npmjs.com/package/@kitsunekode/kunai)
@@ -61,8 +61,8 @@ kunai --setup && kunai -S "Dune"
 
 ## Why Kunai
 
-Kunai is a terminal-first media shell. You search a title, pick a source, and it
-hands a direct stream to `mpv` — no browser, no tabs, no ads, no mouse. One
+Kunai is a terminal-first client. You search a title, pick a third-party source, and it
+hands a stream URL that provider already serves to `mpv` — no browser, no tabs, no ads, no mouse. One
 fullscreen keyboard session covers anime, series, and movies, with offline
 downloads, a release calendar, watch history, and Discord Rich Presence built in.
 
@@ -126,8 +126,9 @@ curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh |
 Keep it current with `kunai upgrade`; remove it with ownership-aware `kunai uninstall`
 (add `--purge` to also delete config/history/cache).
 
-> **Alternatives** (require Bun `>=1.3.14` at runtime — the published `dist/kunai.js`
-> starts with `#!/usr/bin/env bun`). Source checkout is contributor-oriented:
+> **Alternatives:** the npm channel needs **Node** (the published bin is a Node launcher
+> that spawns a platform binary — you do not need Bun). `bun install -g` needs Bun.
+> Source checkout is contributor-oriented:
 >
 > ```bash
 > # npm or bun global
@@ -204,8 +205,8 @@ brew install yt-dlp curl ffmpeg
 ```bash
 # Required
 winget install mpv
-# Optional: downloads, poster previews, integrity checks
-winget install yt-dlp hpjansson.Chafa ImageMagick.ImageMagick Gyan.FFmpeg
+# Optional: downloads and post-download integrity checks
+winget install yt-dlp Gyan.FFmpeg
 ```
 
 > `ffprobe` ships inside the FFmpeg package on every platform.
@@ -256,14 +257,14 @@ Inside the shell, `/` opens the command palette from anywhere.
 
 ### What you need up front
 
-| Tool            | Required?            | Why                                                                                     |
-| --------------- | -------------------- | --------------------------------------------------------------------------------------- |
-| **Bun** ≥1.3.14 | npm/bun/source       | Runtime for non-binary installs. The default binary embeds it — not needed.             |
-| **mpv**         | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                             |
-| **yt-dlp**      | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp` |
-| **ffprobe**     | Optional             | Post-download integrity checks (ships with FFmpeg)                                      |
-| **curl**        | Anime mode           | AniDB, the default anime provider, is behind Cloudflare. `sudo pacman -S curl`          |
-| **Discord**     | Optional             | Rich Presence via local Unix-socket / Windows named-pipe IPC                            |
+| Tool            | Required?            | Why                                                                                                  |
+| --------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Bun** ≥1.3.14 | bun/source           | Runtime for Bun-global and source installs. The default binary embeds it. The npm channel uses Node. |
+| **mpv**         | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                                          |
+| **yt-dlp**      | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp`              |
+| **ffprobe**     | Optional             | Post-download integrity checks (ships with FFmpeg)                                                   |
+| **curl**        | Anime mode           | AniDB, the default anime provider, is behind Cloudflare. `sudo pacman -S curl`                       |
+| **Discord**     | Optional             | Rich Presence via local Unix-socket / Windows named-pipe IPC                                         |
 
 ### Poster quality
 
@@ -377,23 +378,19 @@ page or in-app `?` over duplicating chords here.
 
 ### Command palette (`/`)
 
-| Command           | What it does                                               |
-| ----------------- | ---------------------------------------------------------- |
-| `/search`         | Start a new search                                         |
-| `/library`        | Browse offline titles, manage queue, toggle settings       |
-| `/download`       | Queue the current episode for download                     |
-| `/downloads`      | View active, queued, failed downloads                      |
-| `/up-next`        | Current playback order (`/queue` is a compatibility alias) |
-| `/discover`       | Personalized recommendations + trending                    |
-| `/calendar`       | Unified release calendar — anime · series · movies         |
-| `/random`         | Surprise pick without autoplay                             |
-| `/setup`          | Run the setup wizard                                       |
-| `/settings`       | Configure provider, language, downloads, Discord           |
-| `/history`        | Watch history and resume                                   |
-| `/diagnostics`    | Runtime snapshot and recent events                         |
-| `/presence`       | Discord Rich Presence setup                                |
-| `/analytics`      | Opt-in anonymous usage ping status / toggle                |
-| `/analytics show` | Print the exact JSON that would be sent                    |
+| Command        | What it does                                                                           |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `/search`      | Start a new search                                                                     |
+| `/library`     | Browse completed offline titles                                                        |
+| `/download`    | Queue the current episode for download                                                 |
+| `/downloads`   | View active, queued, failed downloads                                                  |
+| `/up-next`     | Current playback order (`/queue` is a compatibility alias)                             |
+| `/discover`    | Personalized recommendations + trending                                                |
+| `/calendar`    | Unified release calendar — anime · series · movies                                     |
+| `/setup`       | Run the setup wizard                                                                   |
+| `/settings`    | Configure provider, language, downloads, Discord (also Discord presence and analytics) |
+| `/history`     | Watch history and resume                                                               |
+| `/diagnostics` | Runtime snapshot and recent events                                                     |
 
 ---
 
@@ -401,7 +398,7 @@ page or in-app `?` over duplicating chords here.
 
 ### Search and discover
 
-- **Search** any title by name. Anime and series modes use different provider sets.
+- **Search** a title by name. Anime, series, and YouTube modes use different provider sets (`Tab` cycles modes).
 - **Stack filters** in one query: `mode:anime year:2026 rating:7 genre:isekai audio:ja subtitles:en` (`type:anime` is accepted as an alias).
 - **Discover** personalized recommendations and trending titles.
 - **Release calendar** is one content-kind–aware window across anime, series, and movies — filter by type (Tab) or day (←/→), with honest "airs today / releases / available" status. Provider resolution happens only after you open a row.
@@ -412,7 +409,7 @@ page or in-app `?` over duplicating chords here.
 - Streams are resolved from direct-provider sources and handed to `mpv`.
 - **Recover** (`r`) refreshes the current stream and resumes from last position.
 - **Recompute sources** (`/recompute`) bypasses cached provider memory when provider state looks stale.
-- **Fallback** (`f`) tries the next compatible provider when the current one fails.
+- **Fallback** (`⇧F`) tries the next compatible provider when the current one fails.
 - **Source / quality picker** switches among already-resolved stream options.
 - **Autoplay** automatically advances to the next episode in a series chain.
 - **Post-playback** controls open from prefetched data first; recommendations warm in the background instead of delaying the menu.
@@ -425,7 +422,7 @@ page or in-app `?` over duplicating chords here.
 Requires **yt-dlp** on your `PATH`. Without it, download features stay hidden and
 everything else works normally.
 
-- Queue downloads from any search result (`Ctrl+D`) or during playback (`d`).
+- Queue downloads from any search result (`Ctrl+D`) or with `/download`. During playback, `d` opens diagnostics.
 - Movies skip the episode picker — one key queues the download.
 - The download queue persists across sessions (backed by SQLite).
 - On restart, interrupted downloads are automatically resumed or retried.
@@ -494,13 +491,12 @@ shows what you're watching:
 
 ### Optional — what each enables
 
-| Tool                | What it gives you                                                                              | Without it                                                                           |
-| ------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **yt-dlp**          | YouTube playback and download queue. Required for YouTube mode play/resolve and `/download`.   | YouTube search may work via Invidious/Piped, but playback and downloads need yt-dlp. |
-| **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)             | Downloads still work; integrity check is skipped.                                    |
-| **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                 | Posters work but may fail on unusual formats.                                        |
-| **Discord desktop** | Rich Presence via local Unix-socket / named-pipe IPC — shows "Watching Kunai" on your profile. | No Discord integration.                                                              |
-| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                          | iTerm2 inline images, sixel, or half-block — all built in.                           |
+| Tool                | What it gives you                                                                                        | Without it                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **yt-dlp**          | YouTube playback and download queue. Required for YouTube mode play/resolve and `/download`.             | YouTube search may work via Invidious/Piped, but playback and downloads need yt-dlp. |
+| **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)                       | Downloads still work; integrity check is skipped.                                    |
+| **Discord desktop** | Rich Presence via local Unix-socket / named-pipe IPC. Needs a Discord application client id in Settings. | No Discord integration.                                                              |
+| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                                    | iTerm2 inline images, sixel, or half-block — all built in.                           |
 
 ### Poster previews by terminal
 
@@ -528,14 +524,15 @@ KUNAI_IMAGE_DEBUG=1                     # Verbose poster logging
 
 ### Setup wizard
 
-Run `/setup` or `kunai --setup` for a guided walkthrough (six quick slides):
+Run `/setup` or `kunai --setup` for a guided walkthrough (seven slides):
 
 1. Welcome
 2. System check — mpv, yt-dlp, ffprobe, curl, and poster renderer status
 3. Audio language preference
 4. Subtitle language preference
 5. Downloads — enable or disable the queue
-6. Tips — command palette, search, discovery, stream recovery, and rerunning setup
+6. Analytics — explicit opt-in (off unless you enable it)
+7. Tips — command palette, search, discovery, stream recovery, and rerunning setup
 
 Download location and finer preferences live in the [settings panel](#settings-panel).
 
@@ -564,15 +561,17 @@ recommended interface.
 
 ## Providers
 
-Active providers:
+Kunai can talk to these third-party adapters; they are unaffiliated, may break
+or disappear, and Kunai does not host what they serve.
 
-- **videasy**, **vidlink**, **rivestream** — series and movies
-- **allmanga**, **miruro** — anime
+- **videasy**, **rivestream**, **vidlink** — series and movies (Videasy first)
+- **anidb** — automatic anime lane; **allmanga** and **miruro** stay registered and are manually selectable
+- **youtube** — YouTube mode (Invidious search + yt-dlp)
 
-Providers are third-party integrations. Availability varies by title, region,
-subtitle track, and source mirror. Some streams are hard-sub only or expose
-incomplete subtitle metadata. The recovery paths are intentional: retry (`r`),
-source switch (`k`), provider fallback (`f`), and diagnostics export.
+Availability varies by title, region, subtitle track, and source mirror. Some
+streams are hard-sub only or expose incomplete subtitle metadata. The recovery
+paths are intentional: retry (`r`), source switch (`o` / `k`), provider fallback
+(`⇧F`), and diagnostics export.
 
 Legacy Playwright provider code is archived under `.archive/legacy/` as reference.
 Experimental provider research lives in `.reference/experiments/scratchpads/` and does
@@ -584,13 +583,13 @@ not ship as runtime behavior.
 
 **Search works but playback fails or stalls.**
 Providers break when upstream sites change. In playback, press `r` to recover the
-stream, `f` to fall back to the next compatible provider, or `k` to pick another
-source/quality. If sources look stale, `/recompute` bypasses cached provider
+stream, `⇧F` to fall back to the next compatible provider, `o` to pick another
+source, or `k` to pick quality. If sources look stale, `/recompute` bypasses cached provider
 memory. Persistent issues → `/diagnostics`, then `/export-diagnostics` for a
 redacted snapshot to attach to a bug report.
 
 **"No results found" for a title I know exists.**
-Try the other mode — series, anime, and YouTube use different provider sets (`m`
+Try the other mode — series, anime, and YouTube use different provider sets (`Tab`
 cycles modes, `/anime` and `/series` jump directly, or launch with `-a`). Some
 titles are only indexed under an alternate name.
 

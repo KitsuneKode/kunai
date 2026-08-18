@@ -64,6 +64,12 @@ export function baseOptions(): BaseLayoutProps {
         active: "url",
       },
       {
+        text: "Disclaimer",
+        url: "/docs/users/supported-and-unsupported#disclaimer",
+        icon: <IconFileText className="size-4" stroke={1.5} />,
+        active: "url",
+      },
+      {
         text: "Install",
         url: "/#install",
         icon: <IconTerminal2 className="size-4" stroke={1.5} />,

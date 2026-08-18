@@ -5,7 +5,7 @@ export const RIVESTREAM_PROVIDER_ID = "rivestream" as const;
 export const rivestreamManifest = defineProviderManifest({
   id: RIVESTREAM_PROVIDER_ID,
   displayName: "Rivestream",
-  description: "Beta movies/series source — recommended default, quality can vary by title",
+  description: "Candidate movies/series adapter; quality varies by title",
   domain: "rivestream.app",
   recommended: true,
   mediaKinds: ["movie", "series"],

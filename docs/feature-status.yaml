@@ -3,11 +3,11 @@ features:
   - id: cli-shell
     label: Terminal shell
     status: shipped
-    description: Persistent Ink shell with search, playback, and recovery workflows.
+    description: Persistent terminal shell with search, playback, and recovery workflows.
   - id: direct-providers
     label: Direct provider resolution
     status: shipped
-    description: HTTP scrapers in packages/providers without browser automation.
+    description: HTTP provider adapters in packages/providers, without browser automation.
   - id: mpv-playback
     label: mpv playback
     status: shipped
@@ -64,11 +64,3 @@ features:
     label: install.sh / install.ps1
     status: beta
     description: Preferred native binary installers; Bun/npm secondary; source contributor-oriented.
-  - id: browser-providers
-    label: Browser / Playwright providers
-    status: planned
-    description: Archived reference only; not part of active beta runtime.
-  - id: hosted-streams
-    label: Hosted stream relay
-    status: planned
-    description: No Kunai-operated video proxy or hosted transcoding in beta v1.

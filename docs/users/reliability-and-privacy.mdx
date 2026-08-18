@@ -103,10 +103,12 @@ When on, Kunai sends at most one tiny ping per day:
 Preview the exact JSON with `/analytics show`.
 
 If you turn analytics on, pings go to `analytics.kunai.kitsunekode.in`. Point
-them somewhere else — or nowhere — by setting `KUNAI_ANALYTICS_URL`, or
-`analyticsEndpoint` in your config; an empty value disables sending outright.
-Leaving analytics off, running without a terminal, or setting `DO_NOT_TRACK`
-means nothing is ever sent, whatever the endpoint says.
+them somewhere else by setting a **non-empty** `KUNAI_ANALYTICS_URL` or
+`analyticsEndpoint`. An empty `analyticsEndpoint` (the shipped default) means
+“use the built-in URL”, not “disable”. Turn analytics off in Settings, or set
+`DO_NOT_TRACK=1`, to send nothing. Leaving analytics off, running without a
+terminal, or setting `DO_NOT_TRACK` means nothing is ever sent, whatever the
+endpoint says.
 
 ## Release Confidence
 

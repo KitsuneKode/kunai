@@ -90,7 +90,7 @@ describe("loading shell runtime policy", () => {
     ).toEqual({
       message: "Preparing playback context…",
       tone: "info",
-      footerTask: "Playback bootstrap  ·  f fallback · q / Esc cancel",
+      footerTask: "Playback bootstrap  ·  ⇧F fallback · q / Esc cancel",
     });
 
     // A structured problem takes priority over elapsed-based degradation.
@@ -112,7 +112,7 @@ describe("loading shell runtime policy", () => {
     ).toEqual({
       message: "Slow source",
       tone: "warning",
-      footerTask: "Playback bootstrap  ·  f fallback · q / Esc cancel",
+      footerTask: "Playback bootstrap  ·  ⇧F fallback · q / Esc cancel",
     });
 
     // With only prose and no structured problem, the message is shown verbatim
@@ -127,7 +127,7 @@ describe("loading shell runtime policy", () => {
     ).toEqual({
       message: "Issue: vidking: CDN request timed out",
       tone: "warning",
-      footerTask: "Playback bootstrap  ·  f fallback · q / Esc cancel",
+      footerTask: "Playback bootstrap  ·  ⇧F fallback · q / Esc cancel",
     });
 
     // Without latestIssue, elapsed >= 20 triggers degradation hint
@@ -139,7 +139,7 @@ describe("loading shell runtime policy", () => {
     ).toEqual({
       message: "Slow source. Try another source, fallback, or diagnostics.",
       tone: "warning",
-      footerTask: "Slow source  ·  o source · f fallback · Esc cancel · d diagnostics",
+      footerTask: "Slow source  ·  o source · ⇧F fallback · Esc cancel · d diagnostics",
     });
   });
 

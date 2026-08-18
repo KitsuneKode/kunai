@@ -15,7 +15,8 @@ export const metadata: Metadata = {
     default: "Kunai Docs",
     template: "%s | Kunai Docs",
   },
-  description: "Guides for Kunai playback, recovery, offline use, diagnostics, and reliability.",
+  description:
+    "Guides for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
 };
 
 export const viewport: Viewport = {

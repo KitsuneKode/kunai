@@ -39,7 +39,7 @@ npm install -g @kitsunekode/kunai
 kunai --setup
 ```
 
-npm global installs **require Bun** on your `PATH` (the published package starts with `#!/usr/bin/env bun`). Postinstall writes ownership into `install.json` so `kunai upgrade` / `kunai uninstall` route correctly. Diagnose PATH and ownership with `kunai doctor`.
+npm global installs need **Node** on your `PATH` (the published bin is a Node launcher that spawns a platform binary). You do not need Bun for the npm channel. Diagnose PATH and ownership with `kunai doctor`.
 
 </Tab>
 <Tab value="Bun global">
@@ -120,7 +120,7 @@ Press `/` to open the command palette. High-signal commands for a first week:
 | `/recover` | Refresh the current stream after failure evidence |
 | `/fallback` | Try the next compatible provider |
 
-Browse mode uses `Tab` to cycle content filters; `Shift+F` opens the public filter surface when available.
+Browse mode uses `Tab` to cycle catalog mode (series / anime / YouTube). Narrow loaded results with `Ctrl+F`. Open filters with `/filters`. During playback, provider fallback is `⇧F` (`Shift+F`), not a bare `f`.
 
 ## When playback fails
 
@@ -141,7 +141,8 @@ Open `/diagnostics`. For a shareable bundle use `/export-diagnostics` — export
 
 ## Next reads
 
+- [Install and update](/docs/users/install-and-update) for upgrade, rollback, unsigned binaries, and PATH
+- [Disclaimer](/docs/users/supported-and-unsupported#disclaimer) — Kunai is a client; it does not host content
 - [Platforms](/docs/users/platforms) for OS-specific optional tools
-- [CLI reference](/docs/users/cli-reference) for launch flags and provider tables synced from the CLI
 - [Providers](/docs/users/providers) for fallback chains and per-provider notes
 - [Playback and recovery](/docs/users/playback-and-recovery) for the full failure playbook

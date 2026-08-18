@@ -30,8 +30,10 @@ Read this before touching `apps/cli/src/services/analytics/`,
   exists because requiring a consenting user to find and paste a URL meant
   consent produced no data at all.
 - `KUNAI_ANALYTICS_URL` and `analyticsEndpoint` override the default, so a
-  self-hoster can point their installs at their own ingest, and setting either
-  to an empty value disables sending entirely.
+  self-hoster can point their installs at their own ingest. An empty
+  `analyticsEndpoint` (the shipped default) means “use the built-in URL”, not
+  “disable sending”. Disable in Settings, or with `DO_NOT_TRACK` / `CI` / a
+  non-TTY session.
 - The default is a domain Kunai controls, never a hosting provider's own URL.
   This string is baked into immutable npm tarballs and compiled binaries, so it
   must outlive whatever serves it today: DNS can be re-pointed, a published

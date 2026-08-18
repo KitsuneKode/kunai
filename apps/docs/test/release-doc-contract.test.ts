@@ -94,7 +94,7 @@ describe("0.3.0 public truth contract", () => {
     expect(readme.toLowerCase()).toMatch(/keep it current with `kunai upgrade`/);
   });
 
-  test("binary does not require Bun; npm does", () => {
+  test("binary and npm do not require Bun; bun global does", () => {
     const installDoc = readSurface("docs/users/install-and-update.mdx");
     const gettingStarted = readSurface("docs/users/getting-started.mdx");
     const cliReadme = readSurface("apps/cli/README.md");
@@ -103,14 +103,9 @@ describe("0.3.0 public truth contract", () => {
     expect(joined).toMatch(
       /do not need Bun|no Bun|without Bun|Bun runtime embedded|embed(?:s|ded)? Bun/i,
     );
-    expect(joined).toMatch(
-      /npm[\s\S]{0,200}require[s]? Bun|Bun[\s\S]{0,80}npm|npm global[\s\S]{0,160}Bun/i,
-    );
-
-    // npm channel page/docs must not imply Bun-free npm installs.
-    expect(gettingStarted).not.toMatch(
-      /npm global installs may work, but Bun is what the project tests/i,
-    );
+    expect(gettingStarted).toMatch(/npm global installs need \*\*Node\*\*/i);
+    expect(cliReadme).toMatch(/Node launcher|does not need Bun|do not need Bun/i);
+    expect(installDoc).toMatch(/bun install -g/i);
   });
 
   test("protocol registration is documented as Linux-only", () => {

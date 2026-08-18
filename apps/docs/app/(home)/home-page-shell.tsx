@@ -80,7 +80,7 @@ export default function HomePageShell({
       </section>
 
       <section className="kunai-home-highlights kunai-band">
-        <h2 className="kunai-display-title">Built for daily playback, not demos.</h2>
+        <h2 className="kunai-display-title">Built for daily client use, not demos.</h2>
         <ul className="kunai-highlight-list mt-6">
           {homeHighlights.map((item) => (
             <li className="kunai-highlight-row" key={item.label}>

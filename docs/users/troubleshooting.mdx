@@ -26,7 +26,7 @@ Then open `/diagnostics` during or after the failure.
 ### Try recovery before reconfiguring
 
 - `r` or `/recover` — refresh current provider stream
-- `f` or `/fallback` — next compatible provider
+- `⇧F` (`Shift+F`) or `/fallback` — next compatible provider
 - `/recompute` — bypass stale cache for current episode
 </Step>
 <Step>
@@ -51,7 +51,7 @@ Review the bundle locally before sharing. It must not contain raw stream URLs or
 
 1. Open `/diagnostics` and read the **provider attempt timeline**.
 2. Note the failure class (timeout, empty inventory, HTTP error, offline/network).
-3. Press `f` or `/fallback` to try the next provider in your priority list.
+3. Press `⇧F` (`Shift+F`) or `/fallback` to try the next provider in your priority list.
 4. If one provider always fails, check [Customization](/docs/users/customization) for `providerPriority` / `animeProviderPriority`.
 5. For domain drift, verify `~/.config/kunai/providers.json` overrides are still valid.
 6. If diagnostics mention geo-blocking, captcha placeholders, or `NEED_CAPTCHA`, try a user-owned provider relay for metadata calls. See [Providers](/docs/users/providers#provider-geo-relay).
