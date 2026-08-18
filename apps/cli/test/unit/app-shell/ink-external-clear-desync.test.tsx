@@ -48,6 +48,12 @@ async function renderThenExternallyClear(): Promise<string> {
     patchConsole: false,
     exitOnCtrlC: false,
     alternateScreen: true,
+    // Ink auto-detects CI and, when non-interactive, "disables ANSI erase
+    // sequences, cursor manipulation ... writing only the final frame at
+    // unmount" — which is the exact behaviour under test. Force the mode a
+    // real terminal gets so this measures the shell's write path, not the
+    // runner's environment.
+    interactive: true,
   });
   try {
     await Bun.sleep(80);
