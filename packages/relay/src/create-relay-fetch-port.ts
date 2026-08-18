@@ -24,6 +24,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
 
       const providerConfig = relay.providers?.[entry.providerId];
       if (providerConfig?.enabled === false) return fetchImpl(input, init);
+      if (entry.manifest.relaySafe !== true) return fetchImpl(input, init);
       if (!options.registry.isHostAllowed(entry.providerId, requestInfo.upstreamUrl, "metadata")) {
         return fetchImpl(input, init);
       }

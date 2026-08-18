@@ -608,6 +608,10 @@ used by search and resolve so they cannot drift apart:
 - Only anchors carrying result-card evidence (a `title`/`aria-label` attribute or nested card
   markup) become results, so nav, breadcrumb, related-rail and footer links cannot become
   `results[0]` and pin the wrong show.
+- Live cards also carry a poster `img`, a TV/Movie/ONA/… badge, and a star rating (`5.3`). Search
+  maps poster and rating onto `ProviderSearchResult`; a Movie badge becomes `type: "movie"`. The
+  card has no year — Kunai does not invent one. Placeholder `img` srcs (`placeholder.svg`) and
+  non-http(s) srcs are dropped. Relative posters resolve against `https://anidb.app/`.
 
 ### AniDB metadata and language evidence
 
@@ -644,8 +648,9 @@ The cost model matters as much as the data, because this runs in front of the ep
   after the block lifted.
 - AniDB is relay-registered (`/rpc/anidb`, settings toggle). Metadata HTML/JSON uses `context.fetch`
   with curl fallback. HLS ladder expansion uses the same path so a relay miss does not collapse
-  qualities to a silent `auto` row. Video remains direct from `hls.anidb.app` unless the user
-  enables video fallback (which is still unwired).
+  qualities to a silent `auto` row. Video remains direct from `hls.anidb.app`. `videoFallback` is
+  still parsed and persisted, but has no production reader and no `/stream/` handler — do not
+  enable it.
 
 ### AniDB season routing and episode numbering
 

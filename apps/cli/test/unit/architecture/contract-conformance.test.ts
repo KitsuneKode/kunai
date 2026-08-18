@@ -258,9 +258,10 @@ describe("contract conformance", () => {
     ];
 
     // DEBT (2026-07-21): declared, wired to nothing.
-    // - rewriteStreamUrlForRelay: `providerRelay.videoFallback` is parsed, persisted
-    //   and shown in settings, but no caller rewrites the stream URL, so enabling it
-    //   is a placebo.
+    // - rewriteStreamUrlForRelay: `providerRelay.videoFallback` is parsed and
+    //   persisted, but Settings never shows it and no caller rewrites the stream
+    //   URL. Do not add a `/stream/` handler here (K-04). Enabling the flag is a
+    //   placebo.
     // - detectGeoBlockedProviderResponse: geo-blocking is the failure the relay
     //   exists for and nothing detects it; its allow-list also names "allmanga",
     //   which is the module name, not the provider id ("allanime").

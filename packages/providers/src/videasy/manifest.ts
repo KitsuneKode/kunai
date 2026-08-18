@@ -19,7 +19,7 @@ export const videasyManifest = defineProviderManifest({
       runtime: "direct-http",
       operations: ["resolve-stream", "resolve-subtitles", "health-check"],
       browserSafe: false,
-      relaySafe: false,
+      relaySafe: true,
       localOnly: true,
     },
   ],
@@ -42,7 +42,9 @@ export const videasyManifest = defineProviderManifest({
     allowStale: true,
   },
   browserSafe: false,
-  relaySafe: false,
+  // Catalog and route metadata may traverse /rpc/videasy. Stream URLs stay
+  // direct; videoFallback has no production reader.
+  relaySafe: true,
   relayProfile: {
     upstreamHosts: [
       "api.videasy.to",
