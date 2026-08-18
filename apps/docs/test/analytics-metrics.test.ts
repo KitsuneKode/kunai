@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildPublicMetrics } from "../../analytics-ingest/src/public-metrics";
-import { formatUsageLine, parseDocsAnalyticsMetrics } from "../lib/analytics-metrics";
+import {
+  formatUsageLine,
+  parseDocsAnalyticsMetrics,
+  rankShareBuckets,
+} from "../lib/analytics-metrics";
 
 const v2 = {
   schemaVersion: 2 as const,
@@ -75,5 +79,30 @@ describe("ingest output is accepted by the docs parser", () => {
     const parsed = parseDocsAnalyticsMetrics(JSON.parse(JSON.stringify(published)) as unknown);
     expect(parsed).not.toBeNull();
     expect(formatUsageLine(parsed as NonNullable<typeof parsed>)).toContain("3");
+  });
+});
+
+describe("share buckets", () => {
+  test("ranks largest first and pins the suppressed residual last", () => {
+    expect(rankShareBuckets({ linux: 10, other: 5, darwin: 25 })).toEqual([
+      { label: "darwin", count: 25, share: 0.625, residual: false },
+      { label: "linux", count: 10, share: 0.25, residual: false },
+      { label: "other", count: 5, share: 0.125, residual: true },
+    ]);
+  });
+
+  test("folds the tail past the limit into the residual", () => {
+    const buckets = rankShareBuckets({ a: 5, b: 4, c: 3, d: 2, other: 1 }, 2);
+    expect(buckets.map((bucket) => bucket.label)).toEqual(["a", "b", "other"]);
+    expect(buckets.at(-1)).toEqual({ label: "other", count: 6, share: 0.4, residual: true });
+  });
+
+  test("omits the residual row when nothing was suppressed", () => {
+    expect(rankShareBuckets({ x64: 3, arm64: 1 }).some((bucket) => bucket.residual)).toBe(false);
+  });
+
+  test("returns nothing for an empty breakdown", () => {
+    expect(rankShareBuckets({})).toEqual([]);
+    expect(rankShareBuckets({ linux: 0 })).toEqual([]);
   });
 });

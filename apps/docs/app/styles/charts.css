@@ -1,0 +1,131 @@
+/*
+ * Chart tokens.
+ *
+ * The docs shell is dark-only today (`forcedTheme: "dark"`), but a chart that
+ * only exists in one mode is a chart that breaks the day a theme switch ships.
+ * Light is the `:root` default; `:root.dark` and the OS preference both restage
+ * the same roles for the dark surface. Every value is measured against the
+ * surface it actually renders on, not flipped:
+ *
+ *   dark  — series #ff8fb0 on #1c1620 = 8.3:1 · residual #968a98 = 5.4:1
+ *   light — series #c14a71 on #fcfcfb = 4.6:1 · residual #8b8391 = 3.6:1
+ *
+ * One hue per chart: these breakdowns are single-series nominal magnitude, so
+ * every bar wears the same slot. The residual "other" bucket is not a category,
+ * so it drops to the de-emphasis gray instead of claiming a second hue.
+ */
+:root {
+  --kunai-chart-surface: var(--kunai-surface);
+  --kunai-chart-series: #c14a71;
+  --kunai-chart-residual: #8b8391;
+  --kunai-chart-axis: #e1e0d9;
+}
+
+:root.dark {
+  --kunai-chart-series: var(--kunai-accent);
+  --kunai-chart-residual: var(--color-fd-muted-foreground);
+  --kunai-chart-axis: var(--kunai-line);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --kunai-chart-series: var(--kunai-accent);
+    --kunai-chart-residual: var(--color-fd-muted-foreground);
+    --kunai-chart-axis: var(--kunai-line);
+  }
+}
+
+/*
+ * Ranked horizontal bars. Table semantics — the printed value beside each bar
+ * IS the table view — but none of the page's editorial table chrome. The
+ * `.kunai-home table` rules (serif small caps, boxed cells, `!important`
+ * padding) turn a chart into a data grid, so they are reset here; the element
+ * qualifier matches their specificity and charts.css is imported last.
+ */
+table.kunai-chart {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border: 0;
+  margin: 0;
+  background: none;
+  border-radius: 0;
+}
+
+table.kunai-chart th,
+table.kunai-chart td {
+  padding: 0.3125rem 0 !important;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  vertical-align: middle;
+}
+
+.kunai-chart-row {
+  transition: background-color var(--dur-press) var(--ease-out);
+}
+
+table.kunai-chart tr.kunai-chart-row:hover td,
+table.kunai-chart tr.kunai-chart-row:hover th {
+  color: inherit;
+  background-color: color-mix(in oklab, var(--kunai-chart-series) 8%, transparent);
+}
+
+/* Column widths: labels and values are fixed so the plot keeps the remainder. */
+.kunai-chart-col-label {
+  width: 5.5rem;
+}
+
+.kunai-chart-col-value {
+  width: 3.25rem;
+}
+
+.kunai-chart-col-share {
+  width: 2.5rem;
+}
+
+/* Plot column: a hairline baseline, then bars growing from it. */
+.kunai-chart-plot {
+  padding-left: 0.75rem !important;
+  padding-right: 0.625rem !important;
+  border-left: 1px solid var(--kunai-chart-axis) !important;
+}
+
+.kunai-chart-bar {
+  height: 10px;
+  min-width: 2px;
+  /* Square at the baseline, 4px rounded at the data end. */
+  border-radius: 0 4px 4px 0;
+  background-color: var(--kunai-chart-series);
+}
+
+.kunai-chart-bar[data-residual="true"] {
+  background-color: var(--kunai-chart-residual);
+}
+
+/*
+ * Forced-colors and print have no hue channel at all. Keep the bars readable as
+ * geometry: an outline plus a 45°/135° hatch so the residual stays distinct.
+ */
+@media (forced-colors: active), print {
+  .kunai-chart-bar {
+    outline: 1px solid currentColor;
+    background-color: transparent;
+    background-image: repeating-linear-gradient(
+      45deg,
+      currentColor 0 1px,
+      transparent 1px 4px
+    );
+  }
+
+  .kunai-chart-bar[data-residual="true"] {
+    background-image: repeating-linear-gradient(
+      135deg,
+      currentColor 0 1px,
+      transparent 1px 6px
+    );
+  }
+}

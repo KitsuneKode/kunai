@@ -145,14 +145,14 @@ describe("docs codegen drift", () => {
     const pageUrls = new Set(source.getPages().map((page) => page.url));
     pageUrls.add("/releases");
     pageUrls.add("/feedback");
-    pageUrls.add("/telemetry");
+    pageUrls.add("/analytics");
 
     for (const entry of docNavEntries) {
       if (
         entry.href.startsWith("/docs") ||
         entry.href === "/releases" ||
         entry.href === "/feedback" ||
-        entry.href === "/telemetry"
+        entry.href === "/analytics"
       ) {
         expect(pageUrls.has(entry.href)).toBe(true);
       }
