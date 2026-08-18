@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { canSend, type ConsentEnv, resolveConsentState } from "@/domain/analytics/consent-policy";
 import {
   DEFAULT_ANALYTICS_ENDPOINT,
   resolveAnalyticsEndpoint,
@@ -204,8 +205,34 @@ describe("onSessionStart", () => {
 });
 
 describe("endpoint configuration", () => {
-  test("has no production endpoint until an operator explicitly configures one", () => {
-    expect(DEFAULT_ANALYTICS_ENDPOINT).toBe("");
-    expect(resolveAnalyticsEndpoint({})).toBe("");
+  test("ships a default endpoint on a domain Kunai controls", () => {
+    // Baked into immutable npm tarballs and compiled binaries, so it has to
+    // outlive whatever host serves it today — DNS can move, a hosting
+    // provider's own URL in a shipped binary cannot.
+    expect(DEFAULT_ANALYTICS_ENDPOINT).toBe("https://analytics.kunai.kitsunekode.in/api/ping");
+    expect(new URL(DEFAULT_ANALYTICS_ENDPOINT).protocol).toBe("https:");
+    expect(DEFAULT_ANALYTICS_ENDPOINT).not.toMatch(/vercel\.app|netlify\.app|herokuapp\.com/);
+    expect(resolveAnalyticsEndpoint({})).toBe(DEFAULT_ANALYTICS_ENDPOINT);
+  });
+
+  test("a self-hoster can still point installs at their own ingest", () => {
+    expect(resolveAnalyticsEndpoint({ KUNAI_ANALYTICS_URL: "https://mine.test/ping" })).toBe(
+      "https://mine.test/ping",
+    );
+    expect(resolveAnalyticsEndpoint({}, "https://config.test/ping")).toBe(
+      "https://config.test/ping",
+    );
+  });
+
+  test("a default endpoint is not consent: the gates are unchanged by it", () => {
+    // The endpoint says where a ping would go, never whether one may be sent.
+    const gate = (stored: "unset" | "enabled", env: ConsentEnv, isInteractive = true) =>
+      canSend(resolveConsentState({ env, isInteractive, stored }));
+
+    expect(gate("unset", {})).toBe(false);
+    expect(gate("enabled", { DO_NOT_TRACK: "1" })).toBe(false);
+    expect(gate("enabled", { CI: "true" })).toBe(false);
+    expect(gate("enabled", {}, false)).toBe(false);
+    expect(gate("enabled", {})).toBe(true);
   });
 });

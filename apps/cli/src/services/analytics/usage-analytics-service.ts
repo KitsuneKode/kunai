@@ -10,10 +10,23 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ensureInstallId } from "./install-id";
 
 /**
- * Analytics is disabled until a deploy is verified and an operator configures
- * either `KUNAI_ANALYTICS_URL` or `analyticsEndpoint`.
+ * Where an opted-in install sends its daily ping.
+ *
+ * **This is not consent.** A fresh install is `unset` and sends nothing; only an
+ * explicit enable in Settings permits a request or creates an identifier, and
+ * `DO_NOT_TRACK`, `CI`, and a non-TTY session still suppress every send. Having
+ * a default only removes the step where a consenting user would otherwise have
+ * had to find and paste a URL — which nobody does, so consent produced no data.
+ *
+ * Deliberately a domain Kunai controls rather than the host's own URL. This
+ * string is baked into every published npm package and compiled binary, and
+ * those are immutable — so the endpoint has to outlive whatever is serving it
+ * today. DNS can move; a `*.vercel.app` in a shipped binary cannot.
+ *
+ * `KUNAI_ANALYTICS_URL` or `analyticsEndpoint` still override it, so a
+ * self-hoster can point their installs at their own ingest.
  */
-export const DEFAULT_ANALYTICS_ENDPOINT = "";
+export const DEFAULT_ANALYTICS_ENDPOINT = "https://analytics.kunai.kitsunekode.in/api/ping";
 
 export const ANALYTICS_PING_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
