@@ -1,8 +1,8 @@
-import type { PlayerTelemetrySample } from "./mpv-telemetry";
+import type { PlayerStatsSample } from "./mpv-stats";
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
 export interface PlaybackWatchdog {
-  observe(sample: PlayerTelemetrySample): void;
+  observe(sample: PlayerStatsSample): void;
   stop(): void;
 }
 
@@ -26,7 +26,7 @@ export function createPlaybackWatchdog(
   const networkReadDeadAfterMs = options?.networkReadDeadAfterMs ?? 8_000;
   const networkSampleEveryMs = options?.networkSampleEveryMs ?? 2_500;
   const slowNetworkAfterMs = options?.slowNetworkAfterMs ?? 6_000;
-  let latest: PlayerTelemetrySample | null = null;
+  let latest: PlayerStatsSample | null = null;
   let lastPosition = 0;
   let lastProgressAt = Date.now();
   let lastCacheAheadSeconds = 0;

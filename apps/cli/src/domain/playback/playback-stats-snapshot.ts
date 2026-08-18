@@ -1,4 +1,4 @@
-export type PlaybackTelemetrySnapshot = {
+export type PlaybackStatsSnapshot = {
   readonly positionSeconds?: number;
   readonly durationSeconds?: number;
   readonly cacheAheadSeconds?: number;
@@ -10,7 +10,7 @@ export type PlaybackTelemetrySnapshot = {
   readonly updatedAt: number;
 };
 
-export function describePlaybackTelemetrySnapshot(snapshot: PlaybackTelemetrySnapshot): string {
+export function describePlaybackStatsSnapshot(snapshot: PlaybackStatsSnapshot): string {
   const parts: string[] = [];
 
   if (
@@ -53,7 +53,7 @@ export function describePlaybackTelemetrySnapshot(snapshot: PlaybackTelemetrySna
     parts.push("video output pending");
   }
 
-  return parts.join(" · ") || "telemetry pending";
+  return parts.join(" · ") || "stats pending";
 }
 
 function formatPlaybackTime(seconds: number): string {

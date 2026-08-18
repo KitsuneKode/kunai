@@ -101,7 +101,7 @@ function PosterSlot({
       {poster.kind !== "none" ? (
         <PosterOutput
           poster={poster}
-          // Playback telemetry renders every second. The pane itself still
+          // Playback stats render every second. The pane itself still
           // repaints when it commits, but unrelated timer frames must not resend
           // a large Sixel payload and make Windows Terminal blink.
           repaintAfterInkRender={placementSlot !== "playing-rail"}

@@ -74,20 +74,29 @@ anime work that arrived through the TMDB/series lane keep its AniList/MAL histor
 unit; pure western series are never forced. Every offline lookup resolves through
 one title id.
 
-## Resolve trace vs analytics
+## Playback stats vs resolve trace vs analytics
 
-Two different things are called telemetry. Do not conflate them.
+Three different things get read as "usage data". Only one of them leaves the
+machine. Do not conflate them.
 
+- **Playback stats** — local-only mpv playback state: position, duration, cache
+  ahead, buffering, seeking, video-output readiness. Read over the mpv IPC
+  socket by `apps/cli/src/infra/player/mpv-stats.ts`, projected for the shell by
+  `apps/cli/src/domain/playback/playback-stats-snapshot.ts`. Never persisted,
+  never sent.
 - **Resolve trace** — local-only, full detail, never leaves the machine. Built by
   `packages/core/src/trace.ts`, persisted through
   `apps/cli/src/services/diagnostics/ResolveTraceSink.ts`, wired in production in
   `apps/cli/src/container/bootstrap-persistence.ts`.
-- **Analytics** — opt-in product telemetry that does leave the machine
+- **Analytics** — the opt-in usage ping that does leave the machine
   (`apps/analytics-ingest`). Payload-bounded by
   `.docs/analytics-privacy-contract.md`, and deliberately cannot carry a title
   id — so it can never diagnose a resolve.
 
-A resolve question is answered by traces, never by analytics.
+A resolve question is answered by traces, never by analytics. The word
+_telemetry_ is retired here: it once named both the first and the third, which is
+exactly the ambiguity these names remove. `/telemetry` survives only as a typed
+alias for the `/analytics` command.
 
 ## Download job vs offline asset
 

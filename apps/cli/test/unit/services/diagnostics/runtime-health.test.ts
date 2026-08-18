@@ -114,7 +114,7 @@ describe("runtime health diagnostics", () => {
     });
   });
 
-  test("summarizes physical provider attempt telemetry without a legacy resolve-start event", () => {
+  test("summarizes physical provider attempt traces without a legacy resolve-start event", () => {
     const health = buildRuntimeHealthSnapshot({
       currentProvider: "vidking",
       recentEvents: [

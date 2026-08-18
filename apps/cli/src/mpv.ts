@@ -46,12 +46,12 @@ import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
-  createPlayerTelemetryState,
+  createPlayerStatsState,
   finalizePlaybackResult,
   noteStreamStall,
   noteTrustedSeek,
   recordPlayerExit,
-} from "@/infra/player/mpv-telemetry";
+} from "@/infra/player/mpv-stats";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "@/infra/player/playback-skip";
 import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
@@ -101,12 +101,12 @@ export async function launchMpv(opts: {
   const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), {
     mpv: opts.mpv,
   });
-  const telemetry = createPlayerTelemetryState(ipcEndpoint.path);
-  noteTrustedSeek(telemetry, opts.startAt ?? 0);
+  const stats = createPlayerStatsState(ipcEndpoint.path);
+  noteTrustedSeek(stats, opts.startAt ?? 0);
   const baseEmit = opts.onPlaybackEvent ?? (() => {});
   const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
     if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
-      noteStreamStall(telemetry, Date.now());
+      noteStreamStall(stats, Date.now());
     }
     baseEmit(event);
   };
@@ -130,7 +130,7 @@ export async function launchMpv(opts: {
       opts,
       sessionId,
       ipcEndpoint,
-      telemetry,
+      stats,
       emitPlaybackEvent,
     );
   } finally {
@@ -144,7 +144,7 @@ async function launchMpvInner(
   opts: Parameters<typeof launchMpv>[0],
   sessionId: string,
   ipcEndpoint: ReturnType<typeof createMpvIpcEndpoint>,
-  telemetry: ReturnType<typeof createPlayerTelemetryState>,
+  stats: ReturnType<typeof createPlayerStatsState>,
   emitPlaybackEvent: (event: PlayerPlaybackEvent) => void,
 ): Promise<PlaybackResult> {
   let ipcSession: MpvIpcSession | null = null;
@@ -181,7 +181,7 @@ async function launchMpvInner(
     emitPlaybackEvent({ type: "playback-started" });
   };
   const maybeEmitPlaybackProgress = (observedAt: number) => {
-    const sample = telemetry.latestIpcSample;
+    const sample = stats.latestIpcSample;
     if (
       !shouldEmitPlaybackProgress(
         playbackProgressThrottle,
@@ -308,9 +308,9 @@ async function launchMpvInner(
     ipcSession = await openMpvIpcSession({
       endpoint: ipcEndpoint,
       onPropertyUpdate: ({ name, value, observedAt }) => {
-        applyObservedPropertySample(telemetry, { name, value, observedAt });
-        if (telemetry.latestIpcSample) {
-          watchdog.observe(telemetry.latestIpcSample);
+        applyObservedPropertySample(stats, { name, value, observedAt });
+        if (stats.latestIpcSample) {
+          watchdog.observe(stats.latestIpcSample);
         }
         if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
           currentPositionSeconds = value;
@@ -322,7 +322,7 @@ async function launchMpvInner(
         }
       },
       onEndFile: ({ reason, fileError, observedAt }) => {
-        applyEndFileEvent(telemetry, reason, observedAt, { fileError });
+        applyEndFileEvent(stats, reason, observedAt, { fileError });
         endFileResolve?.(reason);
       },
       onCommandResult: (result) => {
@@ -383,7 +383,7 @@ async function launchMpvInner(
   });
 
   const exit = await exitPromise;
-  recordPlayerExit(telemetry, exit);
+  recordPlayerExit(stats, exit);
 
   // Check if preflight returned a definitive failure before mpv started.
   // This catches dead URLs early so we can skip to fallback without waiting
@@ -430,7 +430,7 @@ async function launchMpvInner(
 
   opts.onControlReady?.(null);
 
-  return finalizePlaybackResult(telemetry, { socketPathCleanedUp });
+  return finalizePlaybackResult(stats, { socketPathCleanedUp });
 }
 
 export function shouldAbortLaunchForDefinitivePreflight(

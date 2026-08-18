@@ -100,7 +100,7 @@ function useRuntimeHealthLine(
 ): ShellPanelLine | undefined {
   // Hold the latest getter in a ref so the polling effect depends only on
   // refreshMs. The getter is rebuilt inline every parent render (and the parent
-  // re-renders on every playback telemetry tick), so depending on its identity
+  // re-renders on every playback stats tick), so depending on its identity
   // would tear down and restart the interval constantly.
   const getRuntimeHealthRef = React.useRef(getRuntimeHealth);
   React.useEffect(() => {
@@ -569,7 +569,7 @@ export const LoadingShell = React.memo(function LoadingShell({
     state.subtitleStatus?.toLowerCase().includes("ready"),
   );
 
-  // Active control-surface state, derived from existing playback telemetry — the
+  // Active control-surface state, derived from existing playback stats — the
   // playing body renders structured rows (health · tracks · session · up next)
   // instead of one scattered facts strip. Color = state; weight = hierarchy.
   const activeTracksLine = isPlaying

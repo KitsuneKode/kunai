@@ -245,7 +245,7 @@ describe("runProviderCycle racing", () => {
 
     const attempt = result.attempts[0];
     expect(attempt).toBeDefined();
-    // A collapsed startedAt would erase the latency the telemetry spine exists
+    // A collapsed startedAt would erase the latency the resolve-trace spine exists
     // to measure.
     expect(attempt?.startedAt).not.toBe(attempt?.endedAt);
   });

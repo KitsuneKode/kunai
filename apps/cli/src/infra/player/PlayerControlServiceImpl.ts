@@ -1,4 +1,4 @@
-import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
+import type { PlaybackStatsSnapshot } from "@/domain/playback/playback-stats-snapshot";
 import type { EpisodeInfo, PlaybackTimingMetadata } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import { buildSubtitleDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -487,8 +487,8 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     active.updateAutoSkipEnabled(enabled);
   }
 
-  getTelemetrySnapshot(): PlaybackTelemetrySnapshot | null {
-    return this.active?.getTelemetrySnapshot?.() ?? null;
+  getStatsSnapshot(): PlaybackStatsSnapshot | null {
+    return this.active?.getStatsSnapshot?.() ?? null;
   }
 
   private async stopWithAction(

@@ -91,7 +91,7 @@ test("worker passes cancellation into provider refresh and stops after abort", a
   expect(calls).toEqual(["first:false"]);
 });
 
-test("worker records budget telemetry and executes only planned ids", async () => {
+test("worker records budget stats and executes only planned ids", async () => {
   const diagnostics: string[] = [];
   const calls: string[] = [];
   const worker = new AttentionRefreshWorker({

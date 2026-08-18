@@ -221,7 +221,7 @@ describe("transitionPlaybackStatus — pause is authoritative", () => {
     expect(decision.snapshot).toEqual(snapshot("playing"));
   });
 
-  test("buffer telemetry while paused is accepted but cannot change status", () => {
+  test("buffer stats while paused is accepted but cannot change status", () => {
     const decision = transitionPlaybackStatus(snapshot("paused"), {
       kind: "player-event",
       generation: GEN,

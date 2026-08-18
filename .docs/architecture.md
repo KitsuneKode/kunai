@@ -176,7 +176,7 @@ Production resolution is browserless by default:
   start from observed player events
 - treats IPC bootstrap failure as an ownership failure: terminate and reap the
   exact spawned child before provider fallback can create another player
-- keeps socket cleanup and final telemetry bounded after process exit
+- keeps socket cleanup and final playback stats bounded after process exit
 
 This is part of the repo's reliability contract. Changes are fine, but recovery under kill signals, EOF, or expired stream URLs needs to remain solid.
 
