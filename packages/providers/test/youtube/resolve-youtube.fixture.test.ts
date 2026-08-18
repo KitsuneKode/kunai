@@ -136,12 +136,12 @@ describe("resolveYoutube", () => {
       const result = await resolve(buildResolveInput(), TEST_CONTEXT);
 
       expect(result.status).toBe("resolved");
-      expect(result.sources.map((source) => source.id)).toEqual([
+      expect(result.sources?.map((source) => source.id)).toEqual([
         "source:youtube:mweb",
         "source:youtube:tv_simply",
       ]);
       // Exactly one selected lane; the rest are failover candidates.
-      expect(result.sources.filter((source) => source.status === "selected")).toHaveLength(1);
+      expect(result.sources?.filter((source) => source.status === "selected")).toHaveLength(1);
 
       const args = result.streams.map(
         (stream) => (stream.metadata as { extractorArgs?: string }).extractorArgs,
@@ -182,7 +182,7 @@ describe("resolveYoutube", () => {
       const result = await resolve(buildResolveInput(), TEST_CONTEXT);
 
       expect(result.sources).toHaveLength(1);
-      expect(result.sources[0]?.id).toBe("source:youtube:mweb");
+      expect(result.sources?.[0]?.id).toBe("source:youtube:mweb");
     });
   });
 });
