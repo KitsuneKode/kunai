@@ -4,17 +4,26 @@
  */
 
 /**
- * Empty until a verified analytics deployment is deliberately configured.
+ * Where the docs read the public pulse from.
  *
- * `KUNAI_ANALYTICS_METRICS_URL` must be present **at build time**, not only at
- * runtime: `/analytics` is statically prerendered, so the deployed HTML is
- * whatever the build could fetch. Setting it as a runtime-only variable leaves
- * the page showing "Public pulse not published yet" until the next ISR
- * revalidation (1h) or redeploy — which reads as a broken page, not a
- * pending one. Verified 2026-08-18: same build, URL unset renders the empty
- * state and URL set renders the full breakdown.
+ * This defaults to the deployed ingest for the same reason the CLI ships a
+ * default ping endpoint: an empty default is not neutral, it is a blank page.
+ * The rollup is public, read-only, aggregate-only and needs no credential, so
+ * there is nothing to withhold by leaving this unset — and leaving it unset is
+ * exactly what shipped `/analytics` as a permanently empty "not published yet"
+ * despite the ingest answering 200 with real data the whole time.
+ *
+ * Same immutability argument as the ping endpoint: this must stay on a domain
+ * Kunai controls, never a hosting provider's own URL.
+ *
+ * `KUNAI_ANALYTICS_METRICS_URL` still overrides it, and must be present **at
+ * build time**, not only at runtime: `/analytics` is statically prerendered, so
+ * the deployed HTML is whatever the build could fetch. A runtime-only variable
+ * leaves the previous build's content up until the next ISR revalidation (1h)
+ * or redeploy.
  */
-export const DEFAULT_ANALYTICS_METRICS_URL = "";
+export const DEFAULT_ANALYTICS_METRICS_URL =
+  "https://analytics.kunai.kitsunekode.in/metrics/daily.json";
 
 export type DocsAnalyticsMetrics = {
   readonly schemaVersion: 2;

@@ -116,7 +116,7 @@ function PayloadContractCard() {
       <CardContent>
         <pre className="bg-muted/40 text-foreground overflow-x-auto rounded-lg p-4 font-mono text-xs leading-6">
           {`{
-  "installId": "<uuid>",
+  "installId": "<sha256 of a local id>",
   "version": "<semver>",
   "os": "<platform>",
   "arch": "<arch>",

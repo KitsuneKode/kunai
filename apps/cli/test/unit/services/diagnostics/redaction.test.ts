@@ -118,3 +118,40 @@ describe("diagnostics redaction", () => {
     expect(redacted).toEqual({ detail: `${"a".repeat(997)}...` });
   });
 });
+
+/**
+ * Signed-CDN query strings are the shape that actually reaches diagnostics, and
+ * a name denylist alone never covered them: the token rides in whatever key the
+ * CDN picked (`q`, `md5`, `hash`), and `ip` carries the viewer's address. These
+ * land in the debug log, the SQLite diagnostics store, the support bundle users
+ * paste into GitHub issues, and the trace reporter — one chokepoint, four
+ * surfaces — so the value has to be judged, not just the key.
+ */
+describe("opaque query values", () => {
+  test("redacts a high-entropy token regardless of its parameter name", () => {
+    const url =
+      "https://cdn.example/video.m3u8?q=UDdMMzNubjBnVTJYNWRWMkllNy1xdzpfWXp1eHVUSWk3LUhkMGp1";
+    expect(redactDiagnosticValue(url)).toBe("https://cdn.example/video.m3u8?q=[redacted]");
+  });
+
+  test("redacts signed-HLS hash and the viewer's IP", () => {
+    const url = "https://cdn.example/hls/master.m3u8?md5=9f8e7d6c5b4a39281706&ip=203.0.113.7";
+    expect(redactDiagnosticValue(url)).toBe(
+      "https://cdn.example/hls/master.m3u8?md5=[redacted]&ip=[redacted]",
+    );
+  });
+
+  test("keeps short human-meaningful values so diagnostics stay readable", () => {
+    // The whole point of judging the value: a search query must survive the
+    // same `q` key that carries a token above, or every trace loses its subject.
+    expect(redactDiagnosticValue("https://api.example/search?q=Dune")).toBe(
+      "https://api.example/search?q=Dune",
+    );
+    expect(redactDiagnosticValue("https://cdn.example/s.m3u8?quality=1080p")).toBe(
+      "https://cdn.example/s.m3u8?quality=1080p",
+    );
+    expect(redactDiagnosticValue("https://api.example/t?season=2&episode=11")).toBe(
+      "https://api.example/t?season=2&episode=11",
+    );
+  });
+});

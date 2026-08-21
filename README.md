@@ -474,7 +474,9 @@ shows what you're watching:
 - `/report-issue` opens GitHub issue triage guidance.
 - Opt-in usage analytics (`/analytics`) is off until you consent. Fresh installs
   send nothing. When enabled, the ping is `{ installId, version, os, arch, ts }`
-  only — never titles, queries, providers, URLs, or paths. Preview with
+  only — never titles, queries, providers, URLs, or paths. `installId` on the
+  wire is a `sha256` of a local random id; the id itself never leaves your
+  machine, and you can rotate it any time from Settings. Preview with
   `/analytics show`.
   Honour `DO_NOT_TRACK=1` / `CI=true` as hard blocks on send and enable.
   The ingest stores HMAC-hashed ids for daily/lifetime aggregates only; public
