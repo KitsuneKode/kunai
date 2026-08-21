@@ -377,12 +377,16 @@ jobs:
           cp "$bin" "$unsigned"
           codesign --remove-signature "$unsigned" 2>/dev/null || true
 
-          # Assert the hazard is real before asserting the fix. If an unsigned
-          # binary runs fine here, this whole step proves nothing and should be
-          # revisited rather than left as a passing no-op.
-          if "$unsigned" --version >/dev/null 2>&1; then
-            echo "NOTE: unsigned arm64 binary executed; signing is not enforced on this runner." >&2
-            echo "The install assertions below still stand, but the codesign leg is unproven." >&2
+          # Report what the strip actually achieved before drawing conclusions
+          # from it. `--remove-signature` does not always leave a binary
+          # unsigned — a linker-applied ad-hoc signature can survive — and
+          # "unsigned binary ran fine" means something very different when the
+          # binary is in fact still signed.
+          if codesign -dv "$unsigned" 2>&1 | grep -q "Signature="; then
+            echo "note: signature survived --remove-signature; the loader leg cannot be tested here"
+          elif "$unsigned" --version >/dev/null 2>&1; then
+            echo "note: a genuinely unsigned arm64 binary executed on this runner"
+            echo "      (signing is not enforced here; the install assertions below still stand)"
           else
             echo "confirmed: unsigned arm64 binary is refused by the loader"
           fi
@@ -400,12 +404,22 @@ jobs:
           # actually asks is whether `kunai` works in the next terminal.
           out="$(env -i HOME="$home" TERM=dumb /bin/zsh -lic 'command -v kunai >/dev/null && kunai --version' 2>&1 || true)"
           echo "fresh login shell => '$out'"
-          printf '%s' "$out" | grep -q '9.9.9' || {
+          # Match the binary's own version, not the fake release tag: the asset
+          # published above is the real host build, and it reports the version
+          # it was compiled with rather than the 9.9.9 the release is named.
+          # Getting *any* kunai version here is the whole assertion — it means
+          # the loader accepted the binary and PATH reached it.
+          printf '%s' "$out" | grep -Eq '^kunai[[:space:]]+v?[0-9]' || {
             echo "kunai did not run from a fresh login shell" >&2
             echo "--- .zshrc ---" >&2; cat "$home/.zshrc" 2>/dev/null >&2 || true
             exit 1; }
 
-          codesign -dv "$home/Library/Application Support/kunai/versions/9.9.9/kunai" 2>&1 | head -3
+          installed="$home/Library/Application Support/kunai/versions/9.9.9/kunai"
+          codesign -dv "$installed" 2>&1 | head -3
+          # The installer claims it signed; confirm the claim rather than trust it.
+          codesign --verify "$installed" 2>/dev/null \
+            && echo "installed binary carries a valid signature" \
+            || { echo "installed binary failed codesign --verify" >&2; exit 1; }
           echo "macOS end-to-end install ok"
 
   installer-lint:
