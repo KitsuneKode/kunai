@@ -78,6 +78,18 @@
     "dist/**",
     "node_modules/**",
 
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**",
+
     ".git/**",
     ".turbo/**",
     ".next/**",

@@ -3,7 +3,11 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
-#   ./install.sh [--method binary|npm|bun|source] [--version X.Y.Z] [--yes] [--dry-run] [--skip-deps]
+#   ./install.sh [--method binary|npm|bun|source] [--version X.Y.Z] [--yes] [--dry-run]
+#                [--skip-deps] [--skip-path-update]
+#
+# PATH is persisted to your shell rc file unless --skip-path-update (or
+# KUNAI_SKIP_PATH_UPDATE=1) is set. The block is delimited and written once.
 #
 # Installs Kunai only. After install, use `kunai upgrade` and `kunai uninstall`
 # for lifecycle — the install script does not remove or update an install.
@@ -56,6 +60,10 @@ VERSION="latest"
 DRY=0
 YES=0
 SKIP_DEPS=0
+# Parity with install.ps1's -SkipPathUpdate: managed and sandboxed environments
+# own PATH themselves and must not have their shell rc files written to.
+SKIP_PATH_UPDATE="${KUNAI_SKIP_PATH_UPDATE:-0}"
+case "$SKIP_PATH_UPDATE" in 1 | true | TRUE | yes | YES | y | Y) SKIP_PATH_UPDATE=1 ;; *) SKIP_PATH_UPDATE=0 ;; esac
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '→ %s\n' "$*"; }
@@ -67,11 +75,28 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # `curl … | bash` (where stdin is the script pipe, not the keyboard).
 ask() {
 	local question="$1" default="${2:-y}" reply
-	if [[ "$YES" == 1 || ! -r /dev/tty ]]; then
+	# An explicit --yes is consent. Nothing else is.
+	if [[ "$YES" == 1 ]]; then
 		[[ "$default" == y ]]
 		return
 	fi
-	read -r -p "$question [$default] " reply </dev/tty || true
+	# `-r /dev/tty` tests permission bits, not whether this process has a
+	# controlling terminal: the node is crw-rw-rw- and passes `-r` even under
+	# `curl … | bash` in CI, a container, or a sandbox, where opening it fails
+	# with ENXIO. Opening it is the only honest test.
+	# Redirections apply left to right, so stderr must be silenced *before* the
+	# failing open or bash prints its own "No such device or address" first.
+	if ! : 2>/dev/null </dev/tty; then
+		warn "No terminal for: $question — skipping (pass --yes to accept, --skip-deps to silence)"
+		return 1
+	fi
+	# A failed read must decline. The previous `|| true` swallowed the failure
+	# and fell through to `${reply:-$default}`, which is how a prompt nobody
+	# could answer turned into a yes and ran `sudo apt-get install` unattended.
+	if ! read -r -p "$question [$default] " reply </dev/tty; then
+		warn "No reply for: $question — skipping (pass --yes to accept)"
+		return 1
+	fi
 	reply="${reply:-$default}"
 	[[ "$reply" =~ ^([yY]|[yY][eE][sS])$ ]]
 }
@@ -531,26 +556,122 @@ detect_musl() {
 	return 1
 }
 
+# Delimited so the block can be found again — to avoid writing it twice, and so
+# `kunai uninstall` (or a human) can remove exactly what was added.
+KUNAI_PATH_BLOCK_BEGIN="# >>> kunai installer >>>"
+KUNAI_PATH_BLOCK_END="# <<< kunai installer <<<"
+
+# Every file that must carry the PATH line for this shell, newline separated.
+#
+# One file is not always enough, because bash splits its startup by shell kind:
+# .bashrc is read by interactive *non-login* shells (a Linux terminal emulator)
+# and .bash_profile/.profile by *login* shells (macOS Terminal, `bash -l`, and
+# an `su -` session). Debian happens to source .bashrc from .profile, which
+# hides the split; Alpine and macOS do not, and writing only .bashrc there
+# leaves `kunai` missing from exactly the shell the user opens. Write both.
+#
+# zsh needs only .zshrc: unlike bash, zsh reads it for every interactive shell,
+# login or not. .zprofile would cover macOS Terminal but not a Linux terminal
+# emulator, so it is the weaker choice, not the safer one.
+path_rc_files() {
+	case "$(basename "${SHELL:-sh}")" in
+	zsh) printf '%s\n' "$HOME/.zshrc" ;;
+	bash)
+		printf '%s\n' "$HOME/.bashrc"
+		# Only one login file, or the line is applied twice on a login shell.
+		if [[ -f "$HOME/.bash_profile" ]]; then
+			printf '%s\n' "$HOME/.bash_profile"
+		elif [[ -f "$HOME/.bash_login" ]]; then
+			printf '%s\n' "$HOME/.bash_login"
+		else
+			printf '%s\n' "$HOME/.profile"
+		fi
+		;;
+	fish) printf '%s\n' "$HOME/.config/fish/conf.d/kunai.fish" ;;
+	*) printf '%s\n' "$HOME/.profile" ;;
+	esac
+}
+
+# Append the PATH line to the user's shell rc file.
+#
+# A script cannot change its parent shell's environment, so printing advice was
+# the same as doing nothing for anyone who did not already have the directory on
+# PATH — the install "succeeded" and `kunai` was not found. Writing the rc file
+# is what rustup, bun, and Homebrew all do, and it is what makes this one-click.
+# Skipped entirely under --skip-path-update / KUNAI_SKIP_PATH_UPDATE.
+persist_path() {
+	local dir="$1" line rc_file wrote=0 activate=""
+
+	if [[ "$(basename "${SHELL:-sh}")" == "fish" ]]; then
+		line="fish_add_path $dir"
+	else
+		line="export PATH=\"$dir:\$PATH\""
+	fi
+
+	while IFS= read -r rc_file; do
+		[[ -n "$rc_file" ]] || continue
+
+		if [[ -f "$rc_file" ]] && grep -Fq "$KUNAI_PATH_BLOCK_BEGIN" "$rc_file"; then
+			info "PATH already persisted in $rc_file."
+			wrote=1
+			[[ -n "$activate" ]] || activate="$rc_file"
+			continue
+		fi
+
+		if [[ "$DRY" == 1 ]]; then
+			info "[dry-run] would add $dir to PATH in $rc_file"
+			wrote=1
+			continue
+		fi
+
+		mkdir -p "$(dirname "$rc_file")" 2>/dev/null || {
+			warn "Could not create $(dirname "$rc_file")."
+			continue
+		}
+		{
+			printf '\n%s\n' "$KUNAI_PATH_BLOCK_BEGIN"
+			printf '%s\n' "$line"
+			printf '%s\n' "$KUNAI_PATH_BLOCK_END"
+		} >>"$rc_file" 2>/dev/null || {
+			warn "Could not write $rc_file."
+			continue
+		}
+
+		info "Added $dir to PATH in $rc_file."
+		wrote=1
+		[[ -n "$activate" ]] || activate="$rc_file"
+	done <<<"$(path_rc_files)"
+
+	if [[ "$wrote" == 0 ]]; then
+		warn "Could not persist PATH; add '$line' to your shell profile yourself."
+		return 1
+	fi
+	# One copy-pasteable line, so the user need not open a new terminal.
+	[[ -n "$activate" ]] && info "Run this to use kunai now: source $activate"
+	return 0
+}
+
 path_hint() {
-	local dir="$1" shell_name rc_file
+	local dir="$1" rc_file
 	case ":$PATH:" in
-	*":$dir:"*) info "kunai is on PATH ($dir)." ;;
-	*)
-		warn "$dir is not on PATH yet."
-		info "Current shell: export PATH=\"$dir:\$PATH\""
-		shell_name="$(basename "${SHELL:-sh}")"
-		case "$shell_name" in
-		zsh) rc_file="$HOME/.zshrc" ;;
-		bash) rc_file="$HOME/.bashrc" ;;
-		fish)
-			info "Persist for fish: fish_add_path $dir"
-			return
-			;;
-		*) rc_file="$HOME/.profile" ;;
-		esac
-		info "Persist it: add 'export PATH=\"$dir:\$PATH\"' to $rc_file, then open a new shell."
+	*":$dir:"*)
+		info "kunai is on PATH ($dir)."
+		return 0
 		;;
 	esac
+
+	if [[ "$SKIP_PATH_UPDATE" == 1 ]]; then
+		warn "$dir is not on PATH, and PATH updates are disabled."
+		info "Add it yourself: export PATH=\"$dir:\$PATH\""
+		return 0
+	fi
+
+	# persist_path already explains itself on failure; it is not fatal, since
+	# the binary is installed either way.
+	persist_path "$dir" || return 0
+	# Make the just-installed binary usable for the rest of THIS script too
+	# (verification steps, `kunai --version`), not only in the next shell.
+	export PATH="$dir:$PATH"
 }
 
 read_previous_active_version() {
@@ -693,6 +814,25 @@ install_binary() {
 
 	if [[ "$os" == darwin ]]; then
 		xattr -d com.apple.quarantine "$version_path" 2>/dev/null || true
+
+		# Ad-hoc sign on the user's own Mac.
+		#
+		# Release binaries are cross-compiled on Linux, where `codesign` does not
+		# exist, so they arrive unsigned. Intel macOS tolerates that; Apple
+		# Silicon does not — the kernel refuses to exec an unsigned arm64 binary
+		# and the shell reports only "killed: 9", with nothing pointing at the
+		# signature as the cause. `codesign --sign -` is a local, identity-free
+		# signature that satisfies the loader; it is not notarization and makes
+		# no claim about provenance, which the checksum verified above already
+		# covers.
+		if [[ "$arch" == arm64 ]] && have codesign; then
+			if codesign --force --sign - "$version_path" 2>/dev/null; then
+				info "Ad-hoc signed the binary for Apple Silicon."
+			else
+				warn "Could not ad-hoc sign $version_path; if macOS reports 'killed',"
+				warn "run: codesign --force --sign - \"$version_path\""
+			fi
+		fi
 		info "Cleared macOS quarantine when present (Gatekeeper may still prompt on first launch)."
 	fi
 
@@ -902,7 +1042,10 @@ install_optional_deps() {
 }
 
 usage() {
-	sed -n '2,9p' "$0" | sed 's/^#\s\{0,1\}//'
+	# Print the leading comment block by content, not by line number: a
+	# hardcoded range silently truncates the help text the moment a line is
+	# added above it.
+	sed -n '2,/^$/p' "$0" | sed 's/^#\s\{0,1\}//'
 }
 
 main() {
@@ -926,6 +1069,10 @@ main() {
 			;;
 		--skip-deps)
 			SKIP_DEPS=1
+			shift
+			;;
+		--skip-path-update)
+			SKIP_PATH_UPDATE=1
 			shift
 			;;
 		-h | --help)

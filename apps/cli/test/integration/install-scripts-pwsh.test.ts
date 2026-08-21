@@ -726,6 +726,63 @@ describePwsh("install.ps1 package activeVersion", () => {
   );
 });
 
+/**
+ * `Confirm-OptionalInstall` gates winget/scoop package installs, so what it
+ * does with no console is a privilege decision, not a UX one — the same
+ * decision `ask()` makes in install.sh, where answering "yes" for an absent
+ * human is how `curl … | bash` in CI ran `sudo apt-get install` unattended.
+ *
+ * The bash half is pinned in install-scripts.test.ts. This is the half that
+ * only CI can run, and it is the half that had no coverage at all: this
+ * machine has no pwsh, so a mistake here is invisible until Windows CI.
+ */
+describePwsh("install.ps1 consent without a console", () => {
+  function runConfirm(options: { readonly yes?: boolean; readonly dryRun?: boolean } = {}): {
+    status: number | null;
+    stdout: string;
+    stderr: string;
+  } {
+    const source = readFileSync(INSTALL_PS1, "utf8");
+    const fn = /^function Confirm-OptionalInstall \{[\s\S]*?^\}$/m.exec(source)?.[0];
+    if (!fn) throw new Error("could not extract Confirm-OptionalInstall from install.ps1");
+
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      `$Yes = $${options.yes === true}`,
+      `$DryRun = $${options.dryRun === true}`,
+      'function Write-Warn($m) { Write-Host "! $m" }',
+      fn,
+      // Piping into pwsh is what makes IsInputRedirected true — the same shape
+      // as `irm … | iex` inside a CI step with no attached console.
+      "if (Confirm-OptionalInstall 'Install mpv?') { 'CONSENTED' } else { 'DECLINED' }",
+    ].join("\n");
+
+    return spawnSync("pwsh", ["-NoProfile", "-Command", "-"], {
+      encoding: "utf8",
+      input: script,
+      env: DEFAULT_SHELL_ENV,
+    });
+  }
+
+  test("declines rather than assuming yes, and names the skipped step", () => {
+    const result = runConfirm();
+    expect(result.stdout).toContain("DECLINED");
+    expect(result.stdout).not.toContain("CONSENTED");
+    // The warning has to say which step was skipped and how to accept, or the
+    // user is left with a silently incomplete install.
+    expect(result.stdout).toContain("Install mpv?");
+    expect(result.stdout).toContain("-Yes");
+  });
+
+  test("an explicit -Yes is still consent", () => {
+    expect(runConfirm({ yes: true }).stdout).toContain("CONSENTED");
+  });
+
+  test("-DryRun reports the intended action without requiring a console", () => {
+    expect(runConfirm({ dryRun: true }).stdout).toContain("CONSENTED");
+  });
+});
+
 if (!pwshAvailable()) {
   describe("install.ps1 (pwsh unavailable locally)", () => {
     test("skips PowerShell installer coverage — CI Windows/Ubuntu pwsh job required", () => {
