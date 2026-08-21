@@ -15,7 +15,6 @@ export interface KunaiPaths {
   readonly cacheDir: string;
   readonly tempDir: string;
   readonly configPath: string;
-  readonly providerOverridesPath: string;
   /** mpv bridge script installed next to Kunai config (`configDir/mpv/kunai-bridge.lua`). */
   readonly mpvBridgePath: string;
   readonly dataDbPath: string;
@@ -60,7 +59,6 @@ export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
   return {
     ...dirs,
     configPath: join(dirs.configDir, "config.json"),
-    providerOverridesPath: join(dirs.configDir, "providers.json"),
     mpvBridgePath: join(dirs.configDir, "mpv", "kunai-bridge.lua"),
     dataDbPath: join(dirs.dataDir, "kunai-data.sqlite"),
     cacheDbPath: join(dirs.cacheDir, "kunai-cache.sqlite"),

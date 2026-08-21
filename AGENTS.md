@@ -195,14 +195,13 @@ Paths are platform-resolved by `getKunaiPaths()` in
 `~/Library/Application Support/kunai`, Windows `%APPDATA%\kunai`. Do not
 hardcode `~/.config`.
 
-| Data               | Location                           |
-| ------------------ | ---------------------------------- |
-| Config             | `configDir/config.json`            |
-| Provider overrides | `configDir/providers.json`         |
-| mpv bridge script  | `configDir/mpv/kunai-bridge.lua`   |
-| Data DB            | OS data dir, `kunai-data.sqlite`   |
-| Cache DB           | OS cache dir, `kunai-cache.sqlite` |
-| Debug log          | `./logs.txt`, only under `--debug` |
+| Data              | Location                           |
+| ----------------- | ---------------------------------- |
+| Config            | `configDir/config.json`            |
+| mpv bridge script | `configDir/mpv/kunai-bridge.lua`   |
+| Data DB           | OS data dir, `kunai-data.sqlite`   |
+| Cache DB          | OS cache dir, `kunai-cache.sqlite` |
+| Debug log         | `./logs.txt`, only under `--debug` |
 
 SQLite owns history and cache. The JSON config and provider-override stores are
 current; JSON history and cache stores are legacy implementation details.

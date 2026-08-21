@@ -7,7 +7,7 @@ export const allanimeManifest = defineProviderManifest({
   displayName: "AllManga",
   aliases: ["AllAnime"],
   description: "Anime episodes in sub and dub — the primary anime source",
-  domain: "allmanga.to",
+  domain: "mkissa.to",
   recommended: false,
   mediaKinds: ["anime"],
   catalogIdentity: "provider-native",

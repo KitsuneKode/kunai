@@ -19,7 +19,7 @@ export type {
 } from "./maintenance";
 export { getKunaiPaths, joinerFor, joinerForNodePlatform } from "./paths";
 export type { KunaiPathOptions, KunaiPaths, StoragePlatform } from "./paths";
-export { openKunaiDatabase } from "./sqlite";
+export { openKunaiDatabase, openKunaiDatabaseWithCorruptionRecovery } from "./sqlite";
 export type { KunaiDatabase, OpenDatabaseOptions } from "./sqlite";
 export { defaultTtlMsByClass, getDefaultTtlMs, getExpiresAt, isExpired } from "./ttl";
 export {

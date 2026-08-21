@@ -3,10 +3,26 @@ import { spawn } from "node:child_process";
 import { isHlsPlaylistUrl, resolveHlsSegmentUrl } from "@kunai/core";
 import type { Server } from "bun";
 
+import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
+
 const CDN_PATTERNS = [/\.uwucdn\./i, /\.owocdn\./i] as const;
 /** Safety-net only; playback owns stop() for the real lifetime. */
 const IDLE_TIMEOUT_MS = 15 * 60_000;
 const CURL_META_MARKER = "__KUNAI_CURL_META__";
+/**
+ * Upstream responses are buffered whole before being served back. Segments are
+ * single HLS chunks, but a hostile or misbehaving allowlisted CDN could stream
+ * forever — bound the buffer and kill the fetch instead of growing the heap.
+ */
+const MAX_UPSTREAM_BODY_BYTES = 64 * 1024 * 1024;
+const MAX_CURL_STDERR_CHARS = 8_192;
+
+/**
+ * Backstop deadline for the whole curl invocation, above curl's own
+ * `--max-time 25` so curl reports its error first in the normal case. This only
+ * fires when curl cannot report at all — stopped, or never exec'd.
+ */
+const CURL_WATCHDOG_MS = 30_000;
 
 const AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -68,13 +84,53 @@ function curlFetch(
       "--",
       url,
     ]);
-    const chunks: Buffer[] = [];
+    let chunks: Buffer[] = [];
+    let totalBytes = 0;
     let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => chunks.push(d));
-    proc.stderr.on("data", (d: Buffer) => {
-      stderr += d.toString();
+    let settled = false;
+
+    // Nothing may settle twice, and the child must never outlive the promise.
+    const finish = (outcome: () => void, kill: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(watchdog);
+      if (kill) proc.kill("SIGKILL");
+      outcome();
+    };
+    const fail = (error: Error, kill = true) => finish(() => reject(error), kill);
+
+    // curl's own `--max-time` is the normal deadline, but it only fires if curl
+    // is running: a stopped process, or a shim that never execs curl, leaves
+    // this promise pending forever and the request handler awaiting it. This is
+    // the backstop, deliberately above curl's own limit so curl reports first.
+    const watchdog = setTimeout(() => {
+      fail(new Error(`curl did not exit within ${CURL_WATCHDOG_MS}ms`));
+    }, CURL_WATCHDOG_MS);
+
+    proc.stdout.on("data", (d: Buffer) => {
+      if (settled) return;
+      totalBytes += d.length;
+      if (totalBytes > MAX_UPSTREAM_BODY_BYTES) {
+        // Drop the buffered body before rejecting; holding 64 MiB until the
+        // rejection unwinds is the opposite of what the cap is for.
+        chunks = [];
+        fail(new Error(`upstream body exceeded ${MAX_UPSTREAM_BODY_BYTES} bytes`));
+        return;
+      }
+      chunks.push(d);
     });
+    proc.stderr.on("data", (d: Buffer) => {
+      if (stderr.length < MAX_CURL_STDERR_CHARS) stderr += d.toString();
+    });
+    // An EventEmitter 'error' with no listener is an *uncaught exception*, not a
+    // rejected promise — a pipe error (EPIPE/EIO, most likely right after the
+    // SIGKILL above) would take the whole CLI down mid-playback.
+    proc.stdout.on("error", (error: Error) => fail(error));
+    proc.stderr.on("error", (error: Error) => fail(error));
     proc.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(watchdog);
       const buf = Buffer.concat(chunks);
       if (code !== 0 && buf.length === 0) {
         reject(new Error(`curl exit ${code}: ${stderr.slice(0, 120)}`));
@@ -99,7 +155,8 @@ function curlFetch(
       }
       resolve({ status, contentType, body });
     });
-    proc.on("error", reject);
+    // Spawn failure (curl missing, ENOMEM): there is no process to kill.
+    proc.on("error", (err: Error) => fail(err, false));
   });
 }
 
@@ -179,8 +236,11 @@ export function startHlsRelay(
   }
 
   const upstream = assertRelayUpstreamUrl(originalUrl);
-  const referer = streamHeaders.referer ?? streamHeaders.Referer ?? "https://kwik.cx/";
-  const origin = streamHeaders.origin ?? streamHeaders.Origin ?? new URL(referer).origin;
+  // Same normalization the mpv path uses: case-insensitive lookup plus CR/LF
+  // stripping, so provider-supplied values can't smuggle extra curl headers.
+  const normalized = normalizeStreamHttpHeaders(streamHeaders);
+  const referer = normalized.referer ?? "https://kwik.cx/";
+  const origin = normalized.origin ?? new URL(referer).origin;
   const playlistB64 = toB64Url(Buffer.from(originalUrl));
 
   let idleTimer: Timer | null = null;

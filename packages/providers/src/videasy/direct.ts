@@ -48,6 +48,7 @@ import {
 import { selectReadyStream } from "../shared/startup-selection";
 import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "../shared/stream-health";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { combineAbortSignals, createTimeoutSignal } from "../shared/timeout-signal";
 // Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
 // to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
 // `Bun.file()` reads both). See .archive/superpowers/archive/plans/2026-06-13-*.
@@ -1140,24 +1141,16 @@ export function createVidkingResultFromPayload({
   };
 }
 
-type AbortSignalConstructorWithAny = typeof AbortSignal & {
-  readonly any?: (signals: readonly AbortSignal[]) => AbortSignal;
-};
-
 function createVideasyFetchSignal(
   signal: AbortSignal | undefined,
   timeoutMs = VIDKING_VIDEASY_FETCH_TIMEOUT_MS,
 ): AbortSignal {
-  const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
-  if (!signal) return AbortSignal.timeout(timeoutMs);
-  return abortSignal.any ? abortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : signal;
+  return createTimeoutSignal(signal, timeoutMs);
 }
 
-/** N-way signal combine (raced seed hosts); falls back to the first signal without AbortSignal.any. */
+/** N-way signal combine (raced seed hosts); keeps every member's cancel without AbortSignal.any. */
 function combineVideasyAbortSignals(signals: readonly AbortSignal[]): AbortSignal {
-  const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
-  if (abortSignal.any) return abortSignal.any(signals);
-  return signals.find((signal) => signal.aborted) ?? signals[0] ?? AbortSignal.abort();
+  return combineAbortSignals(signals);
 }
 
 function isVideasyTimeoutError(error: unknown): boolean {
@@ -2419,14 +2412,14 @@ function buildQueryVariants(opts: {
     return [base];
   }
 
-  const variants: URLSearchParams[] = [];
+  const variants: URLSearchParams[] = [base];
+  // `base` already carries the year; the extra variant retries *without* it so
+  // a title/year mismatch can still resolve when no tmdbId pins the lookup.
   if (!opts.title.tmdbId && opts.title.year) {
-    const withYear = new URLSearchParams(base);
-    withYear.set("year", String(opts.title.year));
-    variants.push(withYear);
+    const withoutYear = new URLSearchParams(base);
+    withoutYear.delete("year");
+    variants.push(withoutYear);
   }
-
-  variants.push(base);
   return variants;
 }
 
