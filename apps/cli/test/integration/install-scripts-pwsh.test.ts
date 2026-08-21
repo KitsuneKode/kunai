@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -757,9 +764,21 @@ describePwsh("install.ps1 consent without a console", () => {
       "if (Confirm-OptionalInstall 'Install mpv?') { 'CONSENTED' } else { 'DECLINED' }",
     ].join("\n");
 
-    return spawnSync("pwsh", ["-NoProfile", "-Command", "-"], {
+    // `-File` against a real file, never `-Command -` with piped input: reading
+    // a script from stdin puts pwsh in a mode that emits terminal escape
+    // sequences (`ESC[?1h`) and swallows the output entirely, so every
+    // assertion here saw escape codes rather than DECLINED/CONSENTED.
+    const scriptPath = join(
+      mkdtempSync(join(tmpdir(), "kunai-pwsh-consent-")),
+      "confirm-optional-install.ps1",
+    );
+    writeFileSync(scriptPath, script);
+
+    // stdin from a closed handle so `IsInputRedirected` is true with no
+    // console — the `irm … | iex` shape this function has to refuse.
+    return spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", scriptPath], {
       encoding: "utf8",
-      input: script,
+      stdio: ["ignore", "pipe", "pipe"],
       env: DEFAULT_SHELL_ENV,
     });
   }
