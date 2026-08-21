@@ -31,6 +31,8 @@ const TEST_DATABASE_URL = process.env.ANALYTICS_TEST_DATABASE_URL?.trim();
 /** Far enough back that no real rollup could occupy these days. */
 const DAY = "1999-02-01";
 const OLD_DAY = "1999-01-01";
+/** A third scratch day, so the digest case cannot perturb the counts above. */
+const OTHER_DAY = "1999-02-02";
 const HASH_SECRET = "local-test-secret";
 
 function installId(n: number): string {
@@ -171,5 +173,51 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres ingest lifecycle", () => {
     expect(hash).not.toContain(raw);
     // A different secret must not resolve to the same install.
     expect(hashInstallId("another-secret", raw)).not.toBe(hash);
+  });
+
+  /**
+   * The shape every 0.3.0 client sends, through the real store.
+   *
+   * The suites above ping with UUIDs, which is what pre-0.3.0 installs send and
+   * what this file was written against. Accepting a digest is checked at the
+   * parser, but nothing proved one survives the round trip into a rollup — and
+   * that is the only path a shipped client will ever take, so it has to be
+   * exercised against Postgres rather than inferred from the parser.
+   */
+  test("a client-side digest counts as an install, exactly like a uuid", async () => {
+    const now = Date.parse(`${OTHER_DAY}T12:00:00Z`);
+    const digest = "a1b2c3d4".repeat(8); // 64 hex chars, the sha256 shape
+    expect(digest).toHaveLength(64);
+
+    const first = await ingestAnalyticsPing({
+      method: "POST",
+      body: { installId: digest, version: "0.3.0", os: "linux", arch: "arm64", ts: now },
+      hashSecret: HASH_SECRET,
+      store,
+      now,
+    });
+    expect(first.ok).toBe(true);
+
+    // Same digest twice is the same install, not two: the (day, install_hash)
+    // primary key has to key off the digest exactly as it does off a uuid.
+    await ingestAnalyticsPing({
+      method: "POST",
+      body: { installId: digest, version: "0.3.0", os: "linux", arch: "arm64", ts: now },
+      hashSecret: HASH_SECRET,
+      store,
+      now,
+    });
+
+    // And a pre-0.3.0 install pinging the same day still counts alongside it,
+    // which is the whole reason both shapes are accepted.
+    await ping(store, 1, "0.2.9", now);
+
+    const rollup = await store.rollUpDay(OTHER_DAY);
+    expect(rollup.activeInstalls).toBe(2);
+    expect(rollup.byArch).toEqual({ arm64: 1, x64: 1 });
+
+    // The digest is still HMAC'd at rest — hashing client-side does not mean
+    // the server stores what it received.
+    expect(hashInstallId(HASH_SECRET, digest)).not.toBe(digest);
   });
 });
