@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -93,11 +94,15 @@ test("quarantines the corrupt main file and does not strand its siblings", () =>
     const backups = readdirSync(dir).filter(
       (name) => name.includes(".corrupt.") && name.endsWith(".bak"),
     );
-    // Exactly the database, under its own name — never a `-wal` backup that a
-    // reader would mistake for one.
-    expect(backups).toEqual([expect.stringContaining("kunai-data.sqlite.corrupt.")]);
-    expect(backups.some((name) => name.includes("-wal") || name.includes("-shm"))).toBe(false);
-    expect(readFileSync(join(dir, backups[0] as string), "utf8")).toBe("corrupt main file");
+
+    // The invariant, not the sibling count. Whether `-wal`/`-shm` survive the
+    // close is platform-dependent — Linux SQLite removes them, macOS leaves
+    // them for the quarantine to move — and either is fine. What must hold
+    // everywhere is that the *database* is preserved under its own name, so a
+    // `-wal` backup can never be mistaken for it.
+    const dbBackups = backups.filter((name) => name.startsWith("kunai-data.sqlite.corrupt."));
+    expect(dbBackups).toHaveLength(1);
+    expect(readFileSync(join(dir, dbBackups[0] as string), "utf8")).toBe("corrupt main file");
     db.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -124,6 +129,19 @@ test("leaves the wal in place when the database itself cannot be quarantined", (
     writeFileSync(`${dbPath}-wal`, "uncheckpointed history lives here");
     writeFileSync(`${dbPath}-shm`, "shared memory index");
     chmodSync(dir, 0o500); // r-x: entries readable, nothing renamed or created.
+
+    // Verify the premise before testing the behaviour. A read-only directory
+    // does not block renames as root, on Windows, or on some CI filesystems —
+    // and without a failing rename this test silently asserts nothing. Skipping
+    // where the setup cannot hold is honest; passing vacuously is not.
+    let renameBlocked = false;
+    try {
+      renameSync(dbPath, `${dbPath}.premise-probe`);
+      renameSync(`${dbPath}.premise-probe`, dbPath);
+    } catch {
+      renameBlocked = true;
+    }
+    if (!renameBlocked) return;
 
     expect(() => openKunaiDatabaseWithCorruptionRecovery(dbPath)).toThrow();
 
