@@ -1,10 +1,6 @@
----
-"@kitsunekode/kunai": patch
-"@kunai/providers": patch
-"@kunai/relay": patch
----
+# Kunai 0.3.1
 
-Privacy hardening, and a consent bug in the installer.
+[`5abe8cd`](https://github.com/KitsuneKode/kunai/commit/5abe8cde7a02cf825725ca24e9ba5bbdf49c97a6) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Privacy hardening, and a consent bug in the installer.
 
 - **Diagnostics no longer leak signed-CDN tokens or your IP address.**
   Redaction judged only the parameter _name_, so anything the CDN keyed
