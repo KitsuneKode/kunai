@@ -581,9 +581,9 @@ export function AnalyticsSlide({
       <Box flexDirection="column" marginTop={1} paddingLeft={2}>
         <Text color={palette.muted}>Exactly what is sent</Text>
         <Text color={palette.text}>
-          {'{ "installId": "9f3a…", "version": "0.3.0", "os": "linux",'}
+          {'{ "installId": "<sha256 of a local id>", "version": "0.3.0",'}
         </Text>
-        <Text color={palette.text}>{'  "arch": "x64", "ts": 0 }'}</Text>
+        <Text color={palette.text}>{'  "os": "linux", "arch": "x64", "ts": 0 }'}</Text>
         <Text color={palette.dim} dimColor>
           Never: titles · queries · providers · URLs · paths
         </Text>

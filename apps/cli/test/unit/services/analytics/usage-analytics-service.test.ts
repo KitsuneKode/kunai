@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { canSend, type ConsentEnv, resolveConsentState } from "@/domain/analytics/consent-policy";
 import {
+  installIdDigest,
+  isValidInstallId,
+  rotateInstallId,
+} from "@/services/analytics/install-id";
+import {
+  ANALYTICS_PAYLOAD_KEYS,
   DEFAULT_ANALYTICS_ENDPOINT,
   resolveAnalyticsEndpoint,
   UNSET_INSTALL_ID_PLACEHOLDER,
@@ -76,9 +82,11 @@ describe("identifier lifecycle", () => {
     expect(config.saveCount).toBe(0);
   });
 
-  test("describePayload shows the real id once enabled", () => {
+  test("describePayload shows a real identifier once enabled", () => {
+    // Was the stored UUID; it is the digest now, because that is what is sent.
+    // See "the preview shows what is actually sent" below.
     const config = makeConfig({ analytics: "enabled", installId: UUID });
-    expect(makeService(config).describePayload().installId).toBe(UUID);
+    expect(makeService(config).describePayload().installId).toBe(installIdDigest(UUID));
   });
 
   test("rendering the menu twice creates no install id", () => {
@@ -234,5 +242,87 @@ describe("endpoint configuration", () => {
     expect(gate("enabled", { CI: "true" })).toBe(false);
     expect(gate("enabled", {}, false)).toBe(false);
     expect(gate("enabled", {})).toBe(true);
+  });
+});
+
+/**
+ * The raw install id is the only per-user state analytics holds, so the
+ * property worth pinning is a negative one: whatever else the body contains,
+ * the stored id must not appear anywhere in it.
+ */
+describe("the wire carries a digest, never the stored id", () => {
+  test("the body sends sha256(installId) and the id stays on disk", async () => {
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    let body = "";
+    const service = makeService(config, {
+      fetchImpl: async (_input, init) => {
+        body = String((init as RequestInit | undefined)?.body ?? "");
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await service.onSessionStart({ isInteractive: true });
+
+    const sent = JSON.parse(body) as { installId: string };
+    expect(sent.installId).toBe(installIdDigest(UUID));
+    expect(sent.installId).toMatch(/^[0-9a-f]{64}$/);
+    // The negative that matters.
+    expect(body).not.toContain(UUID);
+    // The identity still persists locally, or every ping looks like a new install.
+    expect(config.rawRef.installId).toBe(UUID);
+  });
+
+  test("the digest is stable, so daily-active counts installs and not pings", () => {
+    expect(installIdDigest(UUID)).toBe(installIdDigest(UUID));
+    expect(installIdDigest(UUID)).not.toBe(installIdDigest(crypto.randomUUID()));
+  });
+
+  test("rotating yields an identity unlinkable to the one it replaced", () => {
+    const next = rotateInstallId();
+    expect(next).not.toBe(UUID);
+    expect(isValidInstallId(next)).toBe(true);
+    expect(installIdDigest(next)).not.toBe(installIdDigest(UUID));
+  });
+
+  test("the preview shows what is actually sent, not the stored id", async () => {
+    // `/analytics show` renders this under "Exact JSON that would be sent", and
+    // the setup screen shows the same shape. Once the wire carried a digest,
+    // previewing the raw UUID made that disclosure false on the one surface
+    // whose entire job is telling the user what leaves their machine.
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    const preview = makeService(config).describePayload();
+
+    expect(preview.installId).toBe(installIdDigest(UUID));
+    expect(preview.installId).not.toBe(UUID);
+
+    // And it must match the real body byte for byte.
+    let body = "";
+    const service = makeService(config, {
+      fetchImpl: async (_input, init) => {
+        body = String((init as RequestInit | undefined)?.body ?? "");
+        return new Response(null, { status: 204 });
+      },
+    });
+    await service.onSessionStart({ isInteractive: true });
+    expect((JSON.parse(body) as { installId: string }).installId).toBe(preview.installId);
+  });
+
+  test("previewing still mints nothing for someone who has not opted in", () => {
+    const config = makeConfig({ analytics: "unset", installId: "" });
+    expect(makeService(config).describePayload().installId).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
+    expect(config.rawRef.installId).toBe("");
+  });
+
+  test("the payload is still exactly the five documented keys", async () => {
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    let body = "";
+    const service = makeService(config, {
+      fetchImpl: async (_input, init) => {
+        body = String((init as RequestInit | undefined)?.body ?? "");
+        return new Response(null, { status: 204 });
+      },
+    });
+    await service.onSessionStart({ isInteractive: true });
+    expect(Object.keys(JSON.parse(body) as object).sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
   });
 });

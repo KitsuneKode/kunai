@@ -48,6 +48,22 @@ export type AnalyticsIngestPayload = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/**
+ * A client-side `sha256(installId)`, so the raw install id never leaves the
+ * machine that generated it.
+ *
+ * Both shapes are accepted, and the order that matters is deployment order: the
+ * ingest has to accept digests *before* any client sends one, or every ping from
+ * an upgraded install answers 400 until this deploys. Published binaries are
+ * immutable, so the UUID branch stays for as long as pre-0.3.0 installs ping --
+ * it is not transitional scaffolding to delete on a schedule.
+ */
+const INSTALL_DIGEST_RE = /^[0-9a-f]{64}$/i;
+
+export function isAcceptedInstallId(value: string): boolean {
+  return UUID_RE.test(value) || INSTALL_DIGEST_RE.test(value);
+}
+
 export function utcDayKey(now = Date.now()): string {
   return new Date(now).toISOString().slice(0, 10);
 }
@@ -65,7 +81,7 @@ export function parseAnalyticsPayload(body: unknown): AnalyticsIngestPayload | n
   const os = typeof record.os === "string" ? record.os.trim() : "";
   const arch = typeof record.arch === "string" ? record.arch.trim() : "";
   const ts = typeof record.ts === "number" && Number.isFinite(record.ts) ? record.ts : NaN;
-  if (!UUID_RE.test(installId)) return null;
+  if (!isAcceptedInstallId(installId)) return null;
   if (!isValidVersion(version)) return null;
   if (!isAllowedOs(os)) return null;
   if (!isAllowedArch(arch)) return null;

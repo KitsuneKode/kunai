@@ -76,6 +76,12 @@ if (keys.length !== 5) failures.push(`payload-key-count:${keys.length}`);
 for (const required of ["arch", "installId", "os", "ts", "version"]) {
   if (!keys.includes(required)) failures.push(`payload-missing:${required}`);
 }
+// This body is POSTed to the real endpoint below, so it is the one place a
+// regression would put a raw install id on the wire. A digest is 64 hex chars;
+// a UUID is 36 with dashes, so the shape alone catches it.
+if (!/^[0-9a-f]{64}$/.test(payload.installId)) {
+  failures.push(`install-id-not-hashed:${payload.installId.length}`);
+}
 
 // The ingest must refuse anything beyond the contract, not silently store it.
 const rejected = await fetch(endpoint, {

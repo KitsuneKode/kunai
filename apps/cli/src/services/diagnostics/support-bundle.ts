@@ -12,7 +12,7 @@ import {
 } from "./diagnostic-event-helpers";
 import type { DiagnosticsInsight, RecommendedAction } from "./diagnostics-insight";
 import { getDiagnosticOperation } from "./operation-taxonomy";
-import { redactDiagnosticValue } from "./redaction";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "./redaction";
 import {
   buildResolveWorkDiagnosticsInsight,
   type ResolveWorkDiagnosticsInsight,
@@ -331,7 +331,9 @@ function buildOperationPrefixInsight(
   if (latest?.context && Object.keys(latest.context).length > 0) {
     return {
       ...withLatest,
-      context: redactDiagnosticValue(latest.context) as Record<string, unknown>,
+      context: redactDiagnosticValue(latest.context, {
+        homeDir: resolveRedactionHomeDir(),
+      }) as Record<string, unknown>,
     };
   }
   return withLatest;
@@ -351,7 +353,12 @@ function buildOperationInsight(
     latestOperation: latest?.operation,
   };
   return latest?.context
-    ? { ...insight, context: redactDiagnosticValue(latest.context) as Record<string, unknown> }
+    ? {
+        ...insight,
+        context: redactDiagnosticValue(latest.context, {
+          homeDir: resolveRedactionHomeDir(),
+        }) as Record<string, unknown>,
+      }
     : insight;
 }
 

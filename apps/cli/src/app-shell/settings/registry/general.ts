@@ -1,3 +1,4 @@
+import { rotateInstallId } from "@/services/analytics/install-id";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { formatRelativeTime } from "../../media-panel-model";
@@ -89,5 +90,40 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
           ? { ...config, analytics: "enabled" }
           : { ...config, analytics: "disabled", installId: "" },
     },
+    {
+      kind: "action",
+      id: "rotateInstallId",
+      label: "Rotate install id",
+      detail: installIdDetail(ctx.config),
+      // Only meaningful while enabled: disabling already clears the id, so
+      // offering rotation next to an off switch would imply one still exists.
+      gate: { predicate: (config) => config.analytics === "enabled" },
+      run: async (actionCtx) => {
+        const next = rotateInstallId();
+        await actionCtx.container.config.update({
+          installId: next,
+          // The new identity has to start its own cadence. Carrying the old
+          // timestamps forward would suppress the first ping under the new id
+          // for up to a day, and a rotation nobody can observe is not one.
+          lastAnalyticsPingAt: 0,
+          analyticsRetryAfter: 0,
+        });
+        await actionCtx.container.config.save();
+        return `New install id ${next.slice(0, 8)}… — earlier pings cannot be linked to it.`;
+      },
+    },
   ];
+}
+
+/**
+ * Shows the id the user actually owns, not the digest that goes on the wire.
+ * A prefix is enough to tell one identity from another across a rotation, which
+ * is the only question this line has to answer.
+ */
+function installIdDetail(config: KitsuneConfig): string {
+  // Same rule as the ping detail above: a hand-edited or partial config must
+  // not take the Settings screen down, so this cannot assume the key is present.
+  const id = typeof config.installId === "string" ? config.installId.trim() : "";
+  if (!id) return "No identifier exists yet";
+  return `${id.slice(0, 8)}… · only its sha256 is ever sent`;
 }
