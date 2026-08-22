@@ -23,14 +23,17 @@
     },
     "test": {
       "dependsOn": ["transit"],
+      "cache": false,
       "outputs": []
     },
     "test:unit": {
       "dependsOn": ["transit"],
+      "cache": false,
       "outputs": []
     },
     "test:integration": {
       "dependsOn": ["transit"],
+      "cache": false,
       "outputs": []
     },
     "generate": {

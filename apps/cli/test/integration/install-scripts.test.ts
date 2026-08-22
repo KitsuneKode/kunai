@@ -698,3 +698,171 @@ describe("install.sh package activeVersion", () => {
     }
   });
 });
+
+/**
+ * `ask` gates `sudo apt-get/pacman/dnf install`, so what it does with no
+ * terminal is a privilege decision, not a UX one. Exercised directly because
+ * `--dry-run` returns before `install_optional_deps` ever prompts.
+ *
+ * Two separate traps, both of which defaulted to yes:
+ *   - `-r /dev/tty` tests permission bits. The node is crw-rw-rw-, so it passes
+ *     even with no controlling terminal, where opening it fails with ENXIO.
+ *   - `read … || true` swallowed the failed read and fell through to the `y`
+ *     default, so a prompt nobody could answer became consent.
+ */
+describe("install.sh consent without a terminal", () => {
+  function runAsk(yes: 0 | 1): { status: number | null; stderr: string } {
+    const source = readFileSync(INSTALL_SH, "utf8");
+    const fn = /^ask\(\) \{[\s\S]*?^\}/m.exec(source)?.[0];
+    if (!fn) throw new Error("could not extract ask() from install.sh");
+    const script = [
+      `warn() { echo "WARN: $*" >&2; }`,
+      `YES=${yes}`,
+      fn,
+      `ask "Install mpv?" y`,
+    ].join("\n");
+    // stdin closed and no controlling terminal — the `curl … | bash` in CI shape.
+    return spawnSync("bash", ["-c", script], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  }
+
+  test("declines rather than assuming yes, and says which step it skipped", () => {
+    const result = runAsk(0);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("No terminal for: Install mpv?");
+    expect(result.stderr).toContain("--yes");
+    // bash's own redirect error would mean stderr is silenced after the failing
+    // open rather than before it.
+    expect(result.stderr).not.toContain("No such device");
+  });
+
+  test("an explicit --yes is still consent", () => {
+    expect(runAsk(1).status).toBe(0);
+  });
+});
+
+/**
+ * A script cannot change its parent shell's environment, so printing PATH
+ * advice was the same as doing nothing for anyone who did not already have the
+ * bin directory on PATH: the install reported success and `kunai` was not
+ * found. These pin the writing behaviour against a throwaway HOME — never the
+ * real one.
+ */
+describe("install.sh PATH persistence", () => {
+  function runPathHint(
+    home: string,
+    options: { readonly dry?: 0 | 1; readonly skip?: 0 | 1; readonly shell?: string } = {},
+  ): { status: number | null; stdout: string; stderr: string } {
+    const source = readFileSync(INSTALL_SH, "utf8");
+    const helpers = /^KUNAI_PATH_BLOCK_BEGIN=[\s\S]*?^path_hint\(\) \{[\s\S]*?^\}/m.exec(
+      source,
+    )?.[0];
+    if (!helpers) throw new Error("could not extract PATH helpers from install.sh");
+    const script = [
+      "HOST_OS=linux",
+      `DRY=${options.dry ?? 0}`,
+      `SKIP_PATH_UPDATE=${options.skip ?? 0}`,
+      'info() { printf "> %s\\n" "$*"; }',
+      'warn() { printf "! %s\\n" "$*"; }',
+      helpers,
+      // A PATH deliberately missing the bin dir — the case that used to no-op.
+      'PATH="/usr/bin:/bin"',
+      'path_hint "$HOME/.local/bin"',
+    ].join("\n");
+    return spawnSync("bash", ["-c", script], {
+      encoding: "utf8",
+      env: { HOME: home, SHELL: options.shell ?? "/bin/zsh", PATH: process.env.PATH ?? "" },
+    });
+  }
+
+  test("writes the PATH line once, no matter how many times it runs", () => {
+    const sandbox = createInstallerSandbox("install-sh-path");
+    try {
+      const home = sandbox.root;
+      const rc = join(home, ".zshrc");
+      writeFileSync(rc, '# my settings\nalias ll="ls -la"\n');
+
+      const first = runPathHint(home);
+      expect(first.status).toBe(0);
+      runPathHint(home);
+      runPathHint(home);
+
+      const contents = readFileSync(rc, "utf8");
+      expect(contents.match(/^# >>> kunai installer >>>$/gm)).toHaveLength(1);
+      expect(contents.match(/^export PATH=/gm)).toHaveLength(1);
+      // Appending must never cost the user what was already in the file.
+      expect(contents).toContain('alias ll="ls -la"');
+      // The activation line is the whole point of writing it.
+      expect(first.stdout).toContain("source ");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("--skip-path-update and --dry-run both leave the rc file alone", () => {
+    const sandbox = createInstallerSandbox("install-sh-path-optout");
+    try {
+      const home = sandbox.root;
+      runPathHint(home, { skip: 1 });
+      expect(existsSync(join(home, ".zshrc"))).toBe(false);
+      runPathHint(home, { dry: 1 });
+      expect(existsSync(join(home, ".zshrc"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  /**
+   * bash splits startup by shell kind: `.bashrc` for interactive non-login (a
+   * Linux terminal emulator), `.bash_profile`/`.profile` for login (macOS
+   * Terminal, `bash -l`, `su -`). Debian sources `.bashrc` from `.profile`,
+   * which hides the split — Alpine and macOS do not. Writing only `.bashrc`
+   * there left `kunai` missing from exactly the shell the user opens;
+   * reproduced in a clean Alpine container before this covered both.
+   */
+  test("bash gets both the interactive and the login startup file", () => {
+    const sandbox = createInstallerSandbox("install-sh-path-bash");
+    try {
+      const home = sandbox.root;
+      expect(runPathHint(home, { shell: "/bin/bash" }).status).toBe(0);
+
+      const bashrc = readFileSync(join(home, ".bashrc"), "utf8");
+      const profile = readFileSync(join(home, ".profile"), "utf8");
+      expect(bashrc).toContain("kunai installer");
+      expect(profile).toContain("kunai installer");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("an existing .bash_profile is used instead of adding a second login file", () => {
+    const sandbox = createInstallerSandbox("install-sh-path-bash-profile");
+    try {
+      const home = sandbox.root;
+      writeFileSync(join(home, ".bash_profile"), "# existing\n");
+      runPathHint(home, { shell: "/bin/bash" });
+
+      expect(readFileSync(join(home, ".bash_profile"), "utf8")).toContain("kunai installer");
+      // Two login files would apply the PATH line twice on a login shell.
+      expect(existsSync(join(home, ".profile"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("fish gets its own conf.d file using fish_add_path", () => {
+    const sandbox = createInstallerSandbox("install-sh-path-fish");
+    try {
+      const home = sandbox.root;
+      runPathHint(home, { shell: "/usr/bin/fish" });
+      const conf = join(home, ".config", "fish", "conf.d", "kunai.fish");
+      expect(existsSync(conf)).toBe(true);
+      // `export PATH=` is not fish syntax and would error on every shell start.
+      expect(readFileSync(conf, "utf8")).toContain("fish_add_path");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+});
