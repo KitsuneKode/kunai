@@ -19,7 +19,7 @@ import {
   OfflineAssetsRepository,
   OfflineMaintenanceJobsRepository,
   OfflineTitlePoliciesRepository,
-  openKunaiDatabase,
+  openKunaiDatabaseWithCorruptionRecovery,
   PlaybackEventRepository,
   PlaylistsRepository,
   ProviderTitleBridgeRepository,
@@ -176,10 +176,32 @@ export async function bootstrapPersistence(
   const { logger, sessionId } = core;
   const debug = options?.debug ?? false;
 
-  const storage = new FileStorage();
+  const storage = new FileStorage(undefined, (message, context) => logger.warn(message, context));
   const paths = getKunaiPaths();
-  const dataDb = openKunaiDatabase(paths.dataDbPath);
-  const cacheDb = openKunaiDatabase(paths.cacheDbPath);
+  const dataOpen = openKunaiDatabaseWithCorruptionRecovery(paths.dataDbPath, {}, (message) =>
+    logger.warn(message),
+  );
+  const dataDb = dataOpen.db;
+  const cacheOpen = openKunaiDatabaseWithCorruptionRecovery(paths.cacheDbPath, {}, (message) =>
+    logger.warn(message),
+  );
+  const cacheDb = cacheOpen.db;
+  if (dataOpen.quarantinedCorruptDb && cacheOpen.quarantinedCorruptDb) {
+    logger.warn(
+      "Both database files were corrupt and have been quarantined; history and cache start empty. " +
+        "The .corrupt.*.bak files next to the databases hold the old data.",
+    );
+  } else if (dataOpen.quarantinedCorruptDb) {
+    logger.warn(
+      "The data database was corrupt and has been quarantined; watch history starts empty. " +
+        "The .corrupt.*.bak file next to it holds the old data.",
+    );
+  } else if (cacheOpen.quarantinedCorruptDb) {
+    logger.warn(
+      "The cache database was corrupt and has been quarantined; cached data refetches on demand. " +
+        "The .corrupt.*.bak file next to it holds the old data.",
+    );
+  }
   runMigrations(dataDb, "data");
   runMigrations(cacheDb, "cache");
 

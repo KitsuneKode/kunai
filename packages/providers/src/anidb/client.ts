@@ -1,7 +1,11 @@
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
-import { curlCipherArgs, resolveCurlCandidate } from "../shared/curl-impersonate";
+import {
+  curlCipherArgs,
+  isCloudflareChallengeText,
+  resolveCurlCandidate,
+} from "../shared/curl-impersonate";
 import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
 import { markupToPlainText } from "../shared/markup-text";
 import { TTLCache } from "../shared/provider-cache";
@@ -102,7 +106,7 @@ export async function anidbFetchText(
       });
       if (response.ok) {
         const text = await response.text();
-        if (!/just a moment/i.test(text)) {
+        if (!isCloudflareChallengeText(text)) {
           return text;
         }
       }
@@ -121,7 +125,7 @@ export async function anidbFetchText(
       throw new Error(`anidb fetch HTTP ${response.status}`);
     }
     const text = await response.text();
-    if (/just a moment/i.test(text)) {
+    if (isCloudflareChallengeText(text)) {
       throw new Error("anidb blocked by Cloudflare (install curl)");
     }
     return text;
@@ -153,7 +157,7 @@ export async function anidbFetchText(
   if (exitCode !== 0) {
     throw new Error(stderr.trim() || `curl exit ${exitCode}`);
   }
-  if (/just a moment/i.test(stdout)) {
+  if (isCloudflareChallengeText(stdout)) {
     throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
   }
   return stdout;

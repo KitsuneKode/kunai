@@ -854,13 +854,13 @@ For current beta publish scope, Playwright is not a required runtime dependency.
 
 ## User Overrides
 
-Users can override provider base domains through `~/.config/kunai/providers.json`.
+There are none. A `providers.json` override file was documented here with a
+worked example, but no code ever read it — writing that file did nothing, and
+the example named providers (`cineby`, `vidking`) that are quarantined or
+aliased today. The reserved path was removed along with this section rather
+than left as a declaration with no reader.
 
-```json
-{
-  "vidking": "https://mirror.example",
-  "cineby": "https://alt.example"
-}
-```
-
-Any provider URL construction should remain compatible with these overrides.
+Provider base domains are compiled in; change one by editing its manifest under
+`packages/providers/src/allmanga/manifest.ts` and rebuilding. A user-owned relay
+(`providerRelay.baseUrl`) is the supported way to reach a provider from a
+different network path.

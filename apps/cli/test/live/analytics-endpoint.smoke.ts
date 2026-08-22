@@ -40,7 +40,13 @@ if (!endpoint.startsWith("https://")) failures.push("endpoint-not-https");
 
 let raw: Record<string, unknown> = {
   analytics: "enabled",
-  installId: "",
+  // Seeded rather than left empty. `onSessionStart` fires the ping in the
+  // background on purpose — it must never hold up a session — so the
+  // `installId` it mints lands asynchronously, after `describePayload()` below
+  // has already read the config. With an empty id that read returns the
+  // "not enabled yet" placeholder, and every assertion about the wire value
+  // then describes a payload this run never sent.
+  installId: "6b1a9f2c-58d4-4e77-9c31-0a5b7e2d84f0",
   analyticsEndpoint: endpoint,
 };
 const config = {
@@ -75,6 +81,12 @@ const keys = Object.keys(payload).sort();
 if (keys.length !== 5) failures.push(`payload-key-count:${keys.length}`);
 for (const required of ["arch", "installId", "os", "ts", "version"]) {
   if (!keys.includes(required)) failures.push(`payload-missing:${required}`);
+}
+// This body is POSTed to the real endpoint below, so it is the one place a
+// regression would put a raw install id on the wire. A digest is 64 hex chars;
+// a UUID is 36 with dashes, so the shape alone catches it.
+if (!/^[0-9a-f]{64}$/.test(payload.installId)) {
+  failures.push(`install-id-not-hashed:${payload.installId.length}`);
 }
 
 // The ingest must refuse anything beyond the contract, not silently store it.

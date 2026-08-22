@@ -622,16 +622,32 @@ function Write-KunaiPathDiagnostic {
   }
 }
 
+# Consent for one optional package install.
+#
+# An explicit -Yes is consent. Redirected input is not: with no console to
+# prompt, the three call sites below each defaulted to $true and installed
+# anyway, so `irm … | iex` in CI or a container silently acquired system
+# package installs. Decline instead, and say which step was skipped so the
+# run stays useful and the gap is visible.
+function Confirm-OptionalInstall {
+  param([Parameter(Mandatory)][string]$Question)
+
+  if ($Yes) { return $true }
+  if ($DryRun) { return $true }
+  if ([Console]::IsInputRedirected) {
+    Write-Warn "No console for: $Question - skipping (pass -Yes to accept, -SkipDeps to silence)"
+    return $false
+  }
+  $reply = Read-Host "$Question [Y/n]"
+  return -not ($reply -match '^[Nn]')
+}
+
 function Install-OptionalDeps {
   if ($SkipDeps) {
     Write-Info 'Skipping optional dependencies (mpv, yt-dlp, curl).'
     return
   }
-  $installMpv = $true
-  if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
-    $reply = Read-Host 'Install mpv (required for playback)? [Y/n]'
-    if ($reply -match '^[Nn]') { $installMpv = $false }
-  }
+  $installMpv = Confirm-OptionalInstall 'Install mpv (required for playback)?'
   if ($installMpv) {
     if (Test-Cmd 'winget') {
       # mpv.net ships mpvnet.exe, but Kunai probes for `mpv` and drives playback
@@ -647,11 +663,7 @@ function Install-OptionalDeps {
     }
   }
 
-  $installYtDlp = $true
-  if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
-    $reply = Read-Host 'Install yt-dlp (YouTube playback and downloads)? [Y/n]'
-    if ($reply -match '^[Nn]') { $installYtDlp = $false }
-  }
+  $installYtDlp = Confirm-OptionalInstall 'Install yt-dlp (YouTube playback and downloads)?'
   if ($installYtDlp) {
     if (Test-Cmd 'winget') {
       Invoke-OptionalStep 'winget install yt-dlp' { winget install yt-dlp --accept-package-agreements --accept-source-agreements }
@@ -681,12 +693,8 @@ function Install-OptionalDeps {
     $curlNeedsUpgrade = $true
   }
   if ($curlNeedsUpgrade) {
-    $installCurl = $true
-    if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
-      Write-Warn 'The curl on PATH has no HTTP/2 support (Windows ships a Schannel build).'
-      $reply = Read-Host 'Install full curl with HTTP/2 (recommended for providers)? [Y/n]'
-      if ($reply -match '^[Nn]') { $installCurl = $false }
-    }
+    Write-Warn 'The curl on PATH has no HTTP/2 support (Windows ships a Schannel build).'
+    $installCurl = Confirm-OptionalInstall 'Install full curl with HTTP/2 (recommended for providers)?'
     if ($installCurl) {
       if (Test-Cmd 'winget') {
         Invoke-OptionalStep 'winget install curl' { winget install --id cURL.cURL -e --accept-package-agreements --accept-source-agreements }

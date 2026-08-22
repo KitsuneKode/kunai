@@ -5,11 +5,11 @@
 # download base and the releases API as environment overrides. That keeps
 # installer scenarios hermetic with no ports, no network and no daemons.
 #
-# Usage: make-fake-release.sh <version> <outdir>
+# Usage: make-fake-release.sh <version> <outdir> [real-binary]
 set -euo pipefail
 
-VERSION="${1:?usage: make-fake-release.sh <version> <outdir>}"
-OUT="${2:?usage: make-fake-release.sh <version> <outdir>}"
+VERSION="${1:?usage: make-fake-release.sh <version> <outdir> [real-binary]}"
+OUT="${2:?usage: make-fake-release.sh <version> <outdir> [real-binary]}"
 
 # Every asset name install.sh may request, per its os/arch/libc detection.
 ASSETS=(
@@ -31,14 +31,28 @@ printf '{"tag_name": "v%s"}\n' "$VERSION" >"$OUT/api/latest.json"
 # Stand-in for the real binary. Scenarios assert *which build owns PATH*, so it
 # only has to report a version. This proves install mechanics, not that a real
 # Kunai build runs — that is the E2E playback harness's job (#30).
+# An optional third argument supplies a *real* executable to publish as every
+# asset instead. A shell stub cannot exercise anything the loader does — macOS
+# enforces code signatures only on Mach-O binaries, so the arm64 "unsigned
+# binaries are killed" path is invisible to a `#!/bin/sh` file.
+REAL_BINARY="${3:-}"
+
 stub="$(mktemp)"
-cat >"$stub" <<STUB
+if [[ -n "$REAL_BINARY" ]]; then
+	[[ -f "$REAL_BINARY" ]] || {
+		echo "no such binary: $REAL_BINARY" >&2
+		exit 1
+	}
+	cp "$REAL_BINARY" "$stub"
+else
+	cat >"$stub" <<STUB
 #!/bin/sh
 case "\$1" in
   --version|-v) echo "$VERSION" ;;
   *) echo "kunai native stub $VERSION" ;;
 esac
 STUB
+fi
 
 for asset in "${ASSETS[@]}"; do
 	install -m 0755 "$stub" "$DL_DIR/$asset"
@@ -46,9 +60,15 @@ done
 rm -f "$stub"
 
 # Two-field format: install.sh selects with `awk '$2==asset {print $1}'`.
+# macOS has no `sha256sum` — this harness runs there too, so prefer it when
+# present and fall back to BSD `shasum`, whose output format is identical.
 (
 	cd "$DL_DIR"
-	sha256sum "${ASSETS[@]}" >SHA256SUMS
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "${ASSETS[@]}" >SHA256SUMS
+	else
+		shasum -a 256 "${ASSETS[@]}" >SHA256SUMS
+	fi
 )
 
 cp "$DL_DIR"/* "$PINNED_DIR/"

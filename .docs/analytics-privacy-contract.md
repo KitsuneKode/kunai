@@ -44,6 +44,24 @@ Read this before touching `apps/cli/src/services/analytics/`,
 The exact payload is `{ installId, version, os, arch, ts }`. A sixth key is
 rejected. Titles, queries, providers, provider results, URLs, file paths, raw
 UUIDs, and client IPs are never accepted or stored.
+
+`installId` on the wire is `sha256` of the locally stored id, not the id
+itself. The stored UUID never leaves the machine that generated it, so no
+endpoint — ours, a self-hoster's, or one that has been compromised — ever holds
+the raw value; the ingest still HMACs what arrives, making this a second,
+client-owned layer rather than a replacement for it. The digest is
+deterministic, or a daily-active count would degrade into a count of pings.
+
+The ingest accepts a UUID **or** a 64-hex digest, and the order is a deployment
+constraint, not a preference: it has to accept digests before any client sends
+one, or every ping from an upgraded install answers 400 until the ingest
+deploys. The UUID branch is not transitional scaffolding on a deletion
+schedule — published binaries are immutable, so pre-0.3.0 installs keep sending
+UUIDs for as long as they run.
+
+Because the digest changes the hash input, installs that existed before 0.3.0
+are counted again once on upgrade. That was accepted deliberately at a
+`lifetimeInstalls` of 2; it is the cheapest this change will ever be.
 `lifetimeMethod` was removed from the public schema; the public count is exact,
 not an estimate.
 

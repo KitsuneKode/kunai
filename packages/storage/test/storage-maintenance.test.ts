@@ -32,6 +32,7 @@ test("cache maintenance prunes disposable expired rows without touching durable 
     recommendationCache: 1,
     scheduleCache: 1,
     youtubeMetadataCache: 1,
+    catalogCrosswalk: 1,
     resolveTraces: 1,
     providerHealth: 1,
     titleProviderHealth: 0,
@@ -47,6 +48,7 @@ test("cache maintenance prunes disposable expired rows without touching durable 
   expect(count(cacheDb, "recommendation_cache")).toBe(1);
   expect(count(cacheDb, "schedule_cache")).toBe(1);
   expect(count(cacheDb, "youtube_metadata_cache")).toBe(1);
+  expect(count(cacheDb, "catalog_id_crosswalk")).toBe(1);
   expect(count(cacheDb, "resolve_traces")).toBe(2);
   expect(count(cacheDb, "provider_health")).toBe(1);
   expect(count(cacheDb, "diagnostic_events")).toBe(1);
@@ -186,6 +188,23 @@ function seedCacheData(db: KunaiDatabase): void {
       VALUES (?, '{}', 'yt-dlp', ?, ?)
     `,
   ).run("fresh-video", "2026-05-17T00:00:00.000Z", "2026-05-18T00:00:00.000Z");
+
+  db.query(
+    `
+      INSERT INTO catalog_id_crosswalk (
+        source_ns, source_id, graph_json, confidence, fetched_at, expires_at
+      )
+      VALUES ('anilist', 'expired', '{}', 'high', ?, ?)
+    `,
+  ).run("2026-05-15T00:00:00.000Z", "2026-05-16T00:00:00.000Z");
+  db.query(
+    `
+      INSERT INTO catalog_id_crosswalk (
+        source_ns, source_id, graph_json, confidence, fetched_at, expires_at
+      )
+      VALUES ('anilist', 'fresh', '{}', 'high', ?, ?)
+    `,
+  ).run("2026-05-17T00:00:00.000Z", "2026-05-18T00:00:00.000Z");
 }
 
 function seedExpiringCacheTable(

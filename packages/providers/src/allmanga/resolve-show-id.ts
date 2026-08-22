@@ -2,6 +2,7 @@ import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types"
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { TTLCache } from "../shared/provider-cache";
+import { createTimeoutSignal } from "../shared/timeout-signal";
 import { searchAllManga } from "./api-client";
 
 const ALLANIME_API_URL = "https://api.mkissa.net/api";
@@ -9,6 +10,7 @@ const ALLANIME_REFERER = "https://mkissa.to";
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
 const ANILIST_GRAPHQL = "https://graphql.anilist.co";
+const ANILIST_BRIDGE_TIMEOUT_MS = 12_000;
 const ANILIST_BRIDGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const anilistBridgeCache = new TTLCache<string, string>(ANILIST_BRIDGE_CACHE_TTL_MS);
@@ -117,7 +119,7 @@ async function buildAllMangaBridgeQueries(
   try {
     const response = await fetch(ANILIST_GRAPHQL, {
       method: "POST",
-      signal: signal ?? AbortSignal.timeout(12_000),
+      signal: createTimeoutSignal(signal, ANILIST_BRIDGE_TIMEOUT_MS),
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
         query: `query ($id: Int) {

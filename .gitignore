@@ -24,6 +24,10 @@ kunai-demo.tape
 # monorepo & frameworks
 .turbo
 .next
+# Written by the Vercel CLI on link/deploy. Carries the project and org ids, and
+# was neither tracked nor ignored -- so it failed `fmt:check` locally while CI
+# stayed green on a fresh checkout, and a `git add -A` would have committed it.
+.vercel
 apps/docs/.source/
 apps/docs/.lighthouseci/
 target/

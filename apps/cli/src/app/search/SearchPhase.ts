@@ -60,6 +60,7 @@ import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
+import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
   resultEnrichmentKey,
@@ -673,6 +674,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               {
                 playUrl: async (target) => {
                   if (!Bun.which("mpv")) return false;
+                  // Same scheme gate as every other mpv playback path; a
+                  // non-URL target falls back to the browser opener below.
+                  if (!isAllowedMpvUrl(target, "remote")) return false;
                   Bun.spawn(["mpv", target], {
                     stdout: "ignore",
                     stderr: "ignore",

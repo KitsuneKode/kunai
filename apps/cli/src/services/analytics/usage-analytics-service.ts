@@ -7,7 +7,7 @@ import {
 } from "@/domain/analytics/consent-policy";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
-import { ensureInstallId } from "./install-id";
+import { ensureInstallId, installIdDigest } from "./install-id";
 
 /**
  * Where an opted-in install sends its daily ping.
@@ -145,12 +145,17 @@ export class UsageAnalyticsService {
   /**
    * Exact JSON that would be sent. A query: performs no writes, and does not
    * mint an install id for someone who has not enabled analytics.
+   *
+   * `installId` is the digest, matching the body byte for byte. Showing the
+   * stored UUID here would make this screen -- the one surface whose whole job
+   * is telling the user what leaves their machine -- the only place claiming
+   * the raw id is transmitted.
    */
   describePayload(): AnalyticsPayload {
     const config = this.deps.config.getRaw();
     const enabled = config.analytics === "enabled" && config.installId.trim().length > 0;
     return {
-      installId: enabled ? config.installId : UNSET_INSTALL_ID_PLACEHOLDER,
+      installId: enabled ? installIdDigest(config.installId) : UNSET_INSTALL_ID_PLACEHOLDER,
       version: this.deps.currentVersion,
       os: this.platform.os,
       arch: this.platform.arch,
@@ -229,7 +234,9 @@ export class UsageAnalyticsService {
 
     const installId = ensureInstallId(config);
     const payload: AnalyticsPayload = {
-      installId,
+      // The digest, never the stored id. `installId` below is persisted locally
+      // so the identity survives restarts; only this hash is transmitted.
+      installId: installIdDigest(installId),
       version: this.deps.currentVersion,
       os: this.platform.os,
       arch: this.platform.arch,

@@ -355,6 +355,73 @@ jobs:
           [ -n "$help" ] || { echo "--help printed nothing" >&2; exit 1; }
           echo "macOS binary smoke ok"
 
+      # End-to-end install on Apple Silicon, against an *unsigned* binary.
+      #
+      # The smoke above proves nothing about shipped binaries: it runs one built
+      # here, which Bun signs locally. Release binaries are cross-compiled on
+      # ubuntu, where `codesign` does not exist, so users receive them unsigned —
+      # and arm64 macOS refuses to exec an unsigned Mach-O, reporting only
+      # "killed: 9" with nothing naming the signature. Stripping the signature
+      # reproduces exactly what a user downloads.
+      #
+      # This also covers PATH persistence: ~/.local/bin is not on macOS's default
+      # PATH (unlike Debian and Fedora, which add it themselves and so hide the
+      # problem), and a login shell is the only honest way to test it.
+      - name: End-to-end install of an unsigned binary
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          bin="apps/cli/dist/bin/kunai-darwin-arm64"
+
+          unsigned="$(mktemp -d)/kunai-unsigned"
+          cp "$bin" "$unsigned"
+          codesign --remove-signature "$unsigned" 2>/dev/null || true
+
+          # Report what the strip actually achieved before drawing conclusions
+          # from it. `--remove-signature` does not always leave a binary
+          # unsigned — a linker-applied ad-hoc signature can survive — and
+          # "unsigned binary ran fine" means something very different when the
+          # binary is in fact still signed.
+          if codesign -dv "$unsigned" 2>&1 | grep -q "Signature="; then
+            echo "note: signature survived --remove-signature; the loader leg cannot be tested here"
+          elif "$unsigned" --version >/dev/null 2>&1; then
+            echo "note: a genuinely unsigned arm64 binary executed on this runner"
+            echo "      (signing is not enforced here; the install assertions below still stand)"
+          else
+            echo "confirmed: unsigned arm64 binary is refused by the loader"
+          fi
+
+          rel="$(mktemp -d)"
+          bash test/install/make-fake-release.sh 9.9.9 "$rel" "$unsigned"
+
+          home="$(mktemp -d)"
+          env -i HOME="$home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" SHELL=/bin/zsh \
+            KUNAI_DL_BASE="file://$rel/releases" \
+            KUNAI_RELEASES_API="file://$rel/releases/latest" \
+            bash install.sh --yes --skip-deps --version 9.9.9
+
+          # A fresh login shell, with nothing inherited: the only question a user
+          # actually asks is whether `kunai` works in the next terminal.
+          out="$(env -i HOME="$home" TERM=dumb /bin/zsh -lic 'command -v kunai >/dev/null && kunai --version' 2>&1 || true)"
+          echo "fresh login shell => '$out'"
+          # Match the binary's own version, not the fake release tag: the asset
+          # published above is the real host build, and it reports the version
+          # it was compiled with rather than the 9.9.9 the release is named.
+          # Getting *any* kunai version here is the whole assertion — it means
+          # the loader accepted the binary and PATH reached it.
+          printf '%s' "$out" | grep -Eq '^kunai[[:space:]]+v?[0-9]' || {
+            echo "kunai did not run from a fresh login shell" >&2
+            echo "--- .zshrc ---" >&2; cat "$home/.zshrc" 2>/dev/null >&2 || true
+            exit 1; }
+
+          installed="$home/Library/Application Support/kunai/versions/9.9.9/kunai"
+          codesign -dv "$installed" 2>&1 | head -3
+          # The installer claims it signed; confirm the claim rather than trust it.
+          codesign --verify "$installed" 2>/dev/null \
+            && echo "installed binary carries a valid signature" \
+            || { echo "installed binary failed codesign --verify" >&2; exit 1; }
+          echo "macOS end-to-end install ok"
+
   installer-lint:
     name: Installer script lint
     needs: changes
@@ -379,6 +446,25 @@ jobs:
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
           $issues = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
           if ($issues) { $issues | Format-Table; exit 1 }
+
+      # The pwsh installer suite is gated on the interpreter, not the OS, and
+      # ubuntu runners ship pwsh — so it can run here in seconds instead of
+      # waiting on the Windows leg. It skips silently on any machine without
+      # pwsh (every contributor's, typically), which is exactly how a
+      # PowerShell-only regression stays invisible until CI. Running it on the
+      # cheapest runner that can is what makes that window small.
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: installer-pwsh
+
+      - name: Test PowerShell installer under pwsh
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          # Fail loudly if the suite silently skips: a green "0 fail" from a
+          # skipped file is the failure mode this step exists to prevent.
+          pwsh -NoProfile -Command 'exit 0'
+          bun run --cwd apps/cli test:file -- test/integration/install-scripts-pwsh.test.ts
 
   build-cli:
     name: Build CLI + npm pack guard

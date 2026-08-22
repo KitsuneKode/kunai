@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { isAcceptedInstallId, parseAnalyticsPayload } from "../src/ingest";
 import {
   ALLOWED_ARCH,
   ALLOWED_OS,
@@ -58,5 +59,46 @@ describe("os and arch allowlists", () => {
     expect(isAllowedArch("")).toBe(false);
     expect(isAllowedArch("X64")).toBe(false);
     expect(isAllowedArch("sparc")).toBe(false);
+  });
+});
+
+/**
+ * Clients from 0.3.0 on send `sha256(installId)`; every published binary older
+ * than that sends the raw UUID and can never be changed. Both have to be
+ * accepted for as long as those installs ping.
+ */
+describe("accepted install id shapes", () => {
+  const UUID = "11111111-2222-4333-8444-555555555555";
+  const DIGEST = "a".repeat(64);
+
+  test("accepts a UUID from a pre-0.3.0 install", () => {
+    expect(isAcceptedInstallId(UUID)).toBe(true);
+  });
+
+  test("accepts a 64-hex client-side digest", () => {
+    expect(isAcceptedInstallId(DIGEST)).toBe(true);
+    expect(isAcceptedInstallId(DIGEST.toUpperCase())).toBe(true);
+  });
+
+  test("still rejects anything that is neither", () => {
+    expect(isAcceptedInstallId("")).toBe(false);
+    expect(isAcceptedInstallId("kitsunekode")).toBe(false);
+    // A hostname, a MAC, or a truncated/overlong hash are all identity leaks.
+    expect(isAcceptedInstallId("a1:b2:c3:d4:e5:f6")).toBe(false);
+    expect(isAcceptedInstallId("a".repeat(63))).toBe(false);
+    expect(isAcceptedInstallId("a".repeat(65))).toBe(false);
+    expect(isAcceptedInstallId(`${"a".repeat(63)}z`)).toBe(false);
+  });
+
+  test("a full payload carrying a digest parses", () => {
+    expect(
+      parseAnalyticsPayload({
+        installId: DIGEST,
+        version: "0.3.0",
+        os: "linux",
+        arch: "x64",
+        ts: 1,
+      }),
+    ).not.toBeNull();
   });
 });

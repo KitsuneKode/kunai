@@ -66,7 +66,6 @@ test("path resolver is deterministic across supported platforms", () => {
   // asserting the filenames -- putting a SQLite DB in Roaming would sync it
   // between machines and corrupt it.
   expect(win.configPath).toBe("C:\\Roaming\\kunai\\config.json");
-  expect(win.providerOverridesPath).toBe("C:\\Roaming\\kunai\\providers.json");
   expect(win.mpvBridgePath).toBe("C:\\Roaming\\kunai\\mpv\\kunai-bridge.lua");
   expect(win.dataDbPath).toBe("C:\\Local\\kunai\\kunai-data.sqlite");
   expect(win.cacheDbPath).toBe("C:\\Local\\kunai\\kunai-cache.sqlite");

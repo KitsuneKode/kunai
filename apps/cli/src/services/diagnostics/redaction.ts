@@ -50,6 +50,10 @@ const SENSITIVE_QUERY_KEYS = new Set([
   "auth",
   "authorization",
   "expires",
+  // The viewer's own address. Signed-HLS CDNs bind a token to it and hand both
+  // back in the playback URL, so it arrives in diagnostics as ordinary query text.
+  "ip",
+  "md5",
   "expiresat",
   "expire",
   "key",
@@ -99,16 +103,60 @@ function redactUrl(value: string): string {
     url.password = "";
     url.pathname = redactPathIds(url.pathname);
 
-    for (const key of url.searchParams.keys()) {
-      if (isSensitiveQueryKey(key)) {
-        url.searchParams.set(key, "[redacted]");
+    // Collect first, rewrite after: mutating `searchParams` while iterating it
+    // is the kind of subtlety that only misbehaves on the input you did not test.
+    const sensitive: string[] = [];
+    for (const [key, param] of url.searchParams) {
+      if (isSensitiveQueryKey(key) || isOpaqueQueryValue(param) || looksLikeIpAddress(param)) {
+        sensitive.push(key);
       }
+    }
+    for (const key of sensitive) {
+      url.searchParams.set(key, "[redacted]");
     }
 
     return url.toString().replaceAll("%5Bredacted%5D", "[redacted]");
   } catch {
     return "[redacted-url]";
   }
+}
+
+/**
+ * A signed-CDN token rides in whatever parameter name that CDN happened to pick
+ * -- `q`, `md5`, `hash`, `__token__` -- so a name denylist can never be
+ * complete, and the ones it misses are exactly the ones that leak. This judges
+ * the value instead.
+ *
+ * The constraint that shapes it: `?q=Dune` has to survive the same `q` key that
+ * carries a token, or every trace loses the subject that makes it worth reading.
+ * The unbroken-run test is what separates them. A token is one high-entropy
+ * blob; a human value breaks into words, so its longest run between separators
+ * stays short even when the whole string is long (`attack-on-titan-final-season`
+ * runs to 6).
+ */
+const OPAQUE_MIN_LENGTH = 16;
+const OPAQUE_MIN_UNBROKEN_RUN = 12;
+
+export function isOpaqueQueryValue(value: string): boolean {
+  if (value.length < OPAQUE_MIN_LENGTH) return false;
+  // Base64url / hex alphabet, plus any padding the CDN left on.
+  if (!/^[A-Za-z0-9_.~=-]+$/.test(value)) return false;
+  // Tokens mix character classes. A slug, a date, or a version string does not.
+  if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) return false;
+  const longestRun = value.split(/[-_.~=]+/).reduce((run, part) => Math.max(run, part.length), 0);
+  return longestRun >= OPAQUE_MIN_UNBROKEN_RUN;
+}
+
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+const IPV6_FULL = /^(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}$/i;
+const IPV6_COMPRESSED = /^[0-9a-f:]*::[0-9a-f:]*$/i;
+
+/** An address is the viewer's location whatever parameter name it arrives under. */
+export function looksLikeIpAddress(value: string): boolean {
+  if (IPV4.test(value)) return value.split(".").every((octet) => Number(octet) <= 255);
+  if (IPV6_FULL.test(value)) return true;
+  // `::` only ever appears in an IPv6 literal, never in a bare query value.
+  return value.includes("::") && IPV6_COMPRESSED.test(value);
 }
 
 function isSensitiveQueryKey(key: string): boolean {

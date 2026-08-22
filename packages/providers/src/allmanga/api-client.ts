@@ -253,6 +253,24 @@ export async function decodeTobeparsed(
 }
 
 /**
+ * Decrypt the tobeparsed blob with the live material's key, falling back to the
+ * bundled key when the live key fails. During a crypto-epoch rollover the API
+ * can still seal blobs under the previous epoch's key while bootstrap already
+ * serves the next one; without this fallback those episodes resolve to a silent
+ * empty result.
+ */
+export async function decryptTobeparsedWithEpochFallback(
+  blob: string,
+  materialKeyHex: string | undefined,
+): Promise<string | null> {
+  if (materialKeyHex && materialKeyHex !== ALLMANGA_KEY_HEX) {
+    const withLiveKey = await decryptTobeparsedPlaintext(blob, materialKeyHex);
+    if (withLiveKey !== null) return withLiveKey;
+  }
+  return decryptTobeparsedPlaintext(blob, ALLMANGA_KEY_HEX);
+}
+
+/**
  * Decrypt the API's `tobeparsed` blob (ani-cli `process_tobeparsed`).
  * Layout: base64(0x01 || iv12 || ciphertext || gcmTag16), AES-256-GCM.
  */
@@ -465,7 +483,13 @@ export function resolveAnimeEpisodeString(
   const exact = episodeStrings.find(
     (episodeString) => episodeOrderValue(episodeString) === requestedEpisode,
   );
-  return exact ?? episodeStrings[requestedEpisode - 1] ?? String(requestedEpisode);
+  if (exact) return exact;
+  // Positional fallback must match catalog display order: the UI numbers
+  // episodes after sorting (`fetchAllMangaEpisodeCatalog`), so resolving
+  // against raw upstream order picks a different entry whenever upstream
+  // is not pre-sorted — only visible for non-numeric strings ("SP1", "OVA").
+  const sorted = [...episodeStrings].sort(compareEpisodeStrings);
+  return sorted[requestedEpisode - 1] ?? String(requestedEpisode);
 }
 
 /** listEpisodes + resolveStream both query this; dedupe within a short window to avoid double network per play. */
@@ -741,7 +765,7 @@ export async function resolveEpisodeSources(opts: {
   if (rawText.includes('"tobeparsed"')) {
     const blobMatch = /"tobeparsed"\s*:\s*"([^"]+)"/.exec(rawText);
     const plain = blobMatch?.[1]
-      ? await decryptTobeparsedPlaintext(blobMatch[1], material?.keyHex)
+      ? await decryptTobeparsedWithEpochFallback(blobMatch[1], material?.keyHex)
       : null;
     if (plain) {
       seedAllMangaEpisodeInfoFromPlaintext(showId, mode, plain);
@@ -1007,19 +1031,39 @@ export async function searchAllManga(
   });
 }
 
-async function extractRawSources(
+export async function extractRawSources(
   rawText: string,
 ): Promise<Array<{ sourceUrl: string; sourceName: string }>> {
-  const data = JSON.parse(rawText) as {
-    data: { episode: { sourceUrls?: Array<{ sourceUrl: string; sourceName: string }> } };
-  };
+  let data: {
+    data?: { episode?: { sourceUrls?: Array<{ sourceUrl?: string; sourceName?: string }> } } | null;
+  } | null;
+  try {
+    data = JSON.parse(rawText) as typeof data;
+  } catch {
+    // A non-JSON body (challenge page, truncation) is an empty lane, not a
+    // provider-wide failure — same contract as the fetchStreamLinks/fetchAkLinks
+    // catch-arms, so resolve can move on to the next candidate instead of throw.
+    return [];
+  }
+  // Parsing is only half of it. This is a GraphQL endpoint, so a rate limit or
+  // an auth failure arrives as *valid* JSON with no `data` key, and
+  // `{"data":null}` is spec-legal — both of which are likelier here than an
+  // HTML page. Reaching through them threw a TypeError one line past the guard,
+  // on the one lane (`baseline`) with no `.catch()` above it, which skipped the
+  // ak-only fallback entirely.
   // Hex-encoded `--…` paths (clock.json) and direct https embeds (Mp4 / mp4upload).
-  return (data.data.episode?.sourceUrls ?? []).filter(
-    (source) =>
-      source.sourceUrl.startsWith("--") ||
-      source.sourceUrl.startsWith("http://") ||
-      source.sourceUrl.startsWith("https://"),
-  );
+  return (data?.data?.episode?.sourceUrls ?? []).flatMap((source) => {
+    const sourceUrl = source?.sourceUrl;
+    if (typeof sourceUrl !== "string") return [];
+    if (
+      !sourceUrl.startsWith("--") &&
+      !sourceUrl.startsWith("http://") &&
+      !sourceUrl.startsWith("https://")
+    ) {
+      return [];
+    }
+    return [{ sourceUrl, sourceName: source?.sourceName ?? "" }];
+  });
 }
 
 async function fetchStreamLinks(
