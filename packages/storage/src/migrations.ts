@@ -670,6 +670,17 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE list_items ADD COLUMN content_type TEXT;
     `,
   },
+  {
+    id: "035_data_history_title_index",
+    database: "data",
+    sql: `
+      -- Resume/continue and every per-title history query filter on title_id,
+      -- which previously required a scan-and-filter over the whole table.
+      -- Covering index for WHERE title_id = ? ORDER BY updated_at DESC LIMIT 1.
+      CREATE INDEX IF NOT EXISTS idx_history_progress_title_updated
+        ON history_progress(title_id, updated_at DESC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

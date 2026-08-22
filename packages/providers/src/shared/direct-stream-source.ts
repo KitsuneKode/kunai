@@ -22,6 +22,7 @@ import {
 } from "./source-inventory";
 import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "./stream-health";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
+import { createTimeoutSignal } from "./timeout-signal";
 
 /**
  * Shared engine for "P-Stream-style" direct-stream providers (vidlink, vidrock,
@@ -401,15 +402,9 @@ function normalizeSubtitles(
   return subtitles;
 }
 
-type AbortSignalConstructorWithAny = typeof AbortSignal & {
-  readonly any?: (signals: readonly AbortSignal[]) => AbortSignal;
-};
-
 /** Combine an optional caller signal with a per-request timeout. */
 export function directStreamFetchSignal(signal: AbortSignal | undefined, ms: number): AbortSignal {
-  const ctor = AbortSignal as AbortSignalConstructorWithAny;
-  if (!signal) return AbortSignal.timeout(ms);
-  return ctor.any ? ctor.any([signal, AbortSignal.timeout(ms)]) : signal;
+  return createTimeoutSignal(signal, ms);
 }
 
 function isTimeoutError(error: unknown): boolean {

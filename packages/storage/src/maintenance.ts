@@ -19,6 +19,7 @@ export interface CacheMaintenancePruneCounts {
   readonly recommendationCache: number;
   readonly scheduleCache: number;
   readonly youtubeMetadataCache: number;
+  readonly catalogCrosswalk: number;
   readonly resolveTraces: number;
   readonly providerHealth: number;
   readonly titleProviderHealth: number;
@@ -40,6 +41,7 @@ const EMPTY_PRUNE_COUNTS: CacheMaintenancePruneCounts = {
   recommendationCache: 0,
   scheduleCache: 0,
   youtubeMetadataCache: 0,
+  catalogCrosswalk: 0,
   resolveTraces: 0,
   providerHealth: 0,
   titleProviderHealth: 0,
@@ -120,6 +122,14 @@ function pruneCacheTables(
       "DELETE FROM youtube_metadata_cache WHERE expires_at <= ?",
       nowIso,
     );
+    // The crosswalk treats expired rows as misses on read; without this sweep
+    // they were never deleted anywhere, so the table grew for the life of the
+    // cache DB.
+    const catalogCrosswalk = deleteRows(
+      db,
+      "DELETE FROM catalog_id_crosswalk WHERE expires_at <= ?",
+      nowIso,
+    );
     const resolveTraces = deleteRows(
       db,
       `
@@ -181,6 +191,7 @@ function pruneCacheTables(
       recommendationCache,
       scheduleCache,
       youtubeMetadataCache,
+      catalogCrosswalk,
       resolveTraces,
       providerHealth,
       titleProviderHealth,

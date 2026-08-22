@@ -6,6 +6,7 @@ import {
   streamNeedsHlsRelay,
   toB64Url,
 } from "@/infra/player/hls-relay";
+import { normalizeStreamHttpHeaders } from "@/infra/player/mpv-stream-http-headers";
 
 const RELAY = "http://127.0.0.1:9";
 const BASE = "https://vault-06.uwucdn.top/path/to/index.m3u8?token=abc%2B%2F%3D";
@@ -21,6 +22,24 @@ describe("hls-relay gating", () => {
       false,
     );
     expect(streamNeedsHlsRelay("not-a-url")).toBe(false);
+  });
+});
+
+describe("hls-relay header hygiene", () => {
+  test("provider headers pass through the mpv-path sanitizer before reaching curl argv", () => {
+    // startHlsRelay feeds referer/origin into `curl -H`; values go through the
+    // same normalization as the mpv path (case-insensitive lookup, CR/LF
+    // stripped) so a hostile value can never split into extra header lines.
+    const normalized = normalizeStreamHttpHeaders({
+      referer: "https://kwik.cx/\r\nX-Smuggled: 1",
+      Origin: "https://kwik.cx\r\nEvil: 1",
+      "User-Agent": "ua\r\nInjected: 1",
+    });
+    expect(normalized.referer).toBe("https://kwik.cx/X-Smuggled: 1");
+    expect(normalized.origin).toBe("https://kwik.cxEvil: 1");
+    expect(normalized.userAgent).toBe("uaInjected: 1");
+    expect(JSON.stringify(normalized)).not.toContain("\n");
+    expect(JSON.stringify(normalized)).not.toContain("\r");
   });
 });
 

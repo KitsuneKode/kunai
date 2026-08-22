@@ -28,7 +28,9 @@ import {
   clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
   decryptTobeparsedPlaintext,
+  decryptTobeparsedWithEpochFallback,
   deriveKeyFromPartB,
+  extractRawSources,
   fetchAllMangaEpisodeCatalog,
   getAllMangaCryptoMaterial,
   gqlPost,
@@ -550,6 +552,96 @@ describe("resolveAnimeEpisodeString", () => {
 
   test("falls back to positional lookup when an exact numeric match is unavailable", () => {
     expect(resolveAnimeEpisodeString(["special-a", "special-b"], 2)).toBe("special-b");
+  });
+
+  test("positional fallback follows catalog display order (sorted), not raw upstream order", () => {
+    // The UI numbers episodes after `compareEpisodeStrings` sorting; resolving
+    // against raw upstream order would pick a different entry for non-numeric
+    // strings whenever upstream is not pre-sorted.
+    expect(resolveAnimeEpisodeString(["SP2", "SP1", "OVA"], 1)).toBe("OVA");
+    expect(resolveAnimeEpisodeString(["SP2", "SP1", "OVA"], 2)).toBe("SP1");
+    expect(resolveAnimeEpisodeString(["SP2", "SP1", "OVA"], 3)).toBe("SP2");
+  });
+});
+
+describe("extractRawSources", () => {
+  test("parses a plain sourceUrls payload", async () => {
+    const payload = JSON.stringify({
+      data: {
+        episode: {
+          sourceUrls: [
+            { sourceUrl: "--68656c6c6f", sourceName: "Default" },
+            { sourceUrl: "https://embed.example/page", sourceName: "Mp4" },
+            { sourceUrl: "javascript:void(0)", sourceName: "Junk" },
+          ],
+        },
+      },
+    });
+    await expect(extractRawSources(payload)).resolves.toEqual([
+      { sourceUrl: "--68656c6c6f", sourceName: "Default" },
+      { sourceUrl: "https://embed.example/page", sourceName: "Mp4" },
+    ]);
+  });
+
+  test("returns an empty lane for non-JSON bodies instead of throwing", async () => {
+    await expect(extractRawSources("<html>Just a moment...</html>")).resolves.toEqual([]);
+    await expect(extractRawSources("")).resolves.toEqual([]);
+    await expect(extractRawSources('{"data": {"episode":')).resolves.toEqual([]);
+  });
+
+  /**
+   * Guarding only `JSON.parse` covers the body shape this endpoint is least
+   * likely to send. It is a GraphQL API: a rate limit or an auth failure comes
+   * back as valid JSON with no `data` key, and `{"data":null}` is spec-legal.
+   * Both used to reach `data.data.episode` and throw a TypeError one line past
+   * the guard, on the one lane (`baseline`) that has no `.catch()` above it.
+   */
+  test("returns an empty lane for JSON that carries no episode payload", async () => {
+    await expect(extractRawSources('{"errors":[{"message":"rate limited"}]}')).resolves.toEqual([]);
+    await expect(extractRawSources('{"data":null}')).resolves.toEqual([]);
+    await expect(extractRawSources('{"data":{}}')).resolves.toEqual([]);
+    await expect(extractRawSources('{"data":{"episode":null}}')).resolves.toEqual([]);
+    await expect(extractRawSources("null")).resolves.toEqual([]);
+    await expect(extractRawSources("[]")).resolves.toEqual([]);
+  });
+
+  test("skips malformed source entries rather than throwing on a missing url", async () => {
+    const payload = JSON.stringify({
+      data: {
+        episode: {
+          sourceUrls: [
+            { sourceName: "NoUrl" },
+            { sourceUrl: "https://cdn.example/a.m3u8", sourceName: "Good" },
+          ],
+        },
+      },
+    });
+    await expect(extractRawSources(payload)).resolves.toEqual([
+      { sourceUrl: "https://cdn.example/a.m3u8", sourceName: "Good" },
+    ]);
+  });
+});
+
+describe("decryptTobeparsedWithEpochFallback", () => {
+  const PLAIN = '{"sourceUrl":"--68656c6c6f","sourceName":"Default"}';
+  const LIVE_KEY_HEX = "ab".repeat(32);
+
+  test("decrypts with the live material key when it works", async () => {
+    const blob = buildBlob(PLAIN, LIVE_KEY_HEX);
+    await expect(decryptTobeparsedWithEpochFallback(blob, LIVE_KEY_HEX)).resolves.toBe(PLAIN);
+  });
+
+  test("falls back to the bundled key when the live epoch key fails (rollover grace)", async () => {
+    const blob = buildBlob(PLAIN, ALLMANGA_KEY_HEX);
+    await expect(decryptTobeparsedWithEpochFallback(blob, LIVE_KEY_HEX)).resolves.toBe(PLAIN);
+  });
+
+  test("returns null when neither key decrypts", async () => {
+    const blob = buildBlob(PLAIN, "cd".repeat(32));
+    await expect(decryptTobeparsedWithEpochFallback(blob, LIVE_KEY_HEX)).resolves.toBeNull();
+    await expect(
+      decryptTobeparsedWithEpochFallback("not-a-blob", LIVE_KEY_HEX),
+    ).resolves.toBeNull();
   });
 });
 

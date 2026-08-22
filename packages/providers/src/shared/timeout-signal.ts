@@ -15,17 +15,31 @@ export function createTimeoutSignal(
 ): AbortSignal {
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   if (!signal) return timeoutSignal;
-  const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
-  if (abortSignal.any) return abortSignal.any([signal, timeoutSignal]);
+  return combineAbortSignals([signal, timeoutSignal]);
+}
 
-  // Manual combine fallback so the timeout is never dropped.
+/**
+ * N-way combine. Never degrades to "just the first signal": without
+ * `AbortSignal.any` the manual combiner keeps every member's cancel wired up.
+ */
+export function combineAbortSignals(signals: readonly AbortSignal[]): AbortSignal {
+  const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
+  if (abortSignal.any) return abortSignal.any([...signals]);
+  return combineAbortSignalsManually(signals);
+}
+
+/** Manual combine used when `AbortSignal.any` is unavailable. Exported for tests. */
+export function combineAbortSignalsManually(signals: readonly AbortSignal[]): AbortSignal {
   const controller = new AbortController();
   const abort = (source: AbortSignal) => {
     if (!controller.signal.aborted) controller.abort(source.reason);
   };
-  if (signal.aborted) abort(signal);
-  if (timeoutSignal.aborted) abort(timeoutSignal);
-  signal.addEventListener("abort", () => abort(signal), { once: true });
-  timeoutSignal.addEventListener("abort", () => abort(timeoutSignal), { once: true });
+  for (const signal of signals) {
+    if (signal.aborted) {
+      abort(signal);
+      break;
+    }
+    signal.addEventListener("abort", () => abort(signal), { once: true });
+  }
   return controller.signal;
 }
