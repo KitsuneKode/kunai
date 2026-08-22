@@ -1,6 +1,6 @@
 {
   "name": "@kunai/providers",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Kunai provider modules behind the Provider SDK boundary.",
   "type": "module",
