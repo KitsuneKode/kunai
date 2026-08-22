@@ -62,10 +62,13 @@ Provider catalogs drift. Recovery is normal usage.
 | Action | Keys / command | Effect |
 | --- | --- | --- |
 | Recover stream | `r`, `/recover` | Refresh current provider intent |
-| Fallback provider | `f`, `/fallback` | Next compatible provider |
+| Fallback provider | `⇧F`, `/fallback` | Next compatible provider |
 | Recompute | `/recompute` | Bypass stale cache for current episode |
 | Replay | `/replay` | Start current episode from beginning |
-| Source / quality | `k`, `/source`, `/quality` | Switch within resolved inventory |
+| Source | `o`, `/source` | Switch source / mirror |
+| Quality | `k`, `/quality` | Switch quality |
+| Reset provider health | `/reset-provider-health` | Forget down-provider memory so auto-fallback can retry |
+| Clear cache | `/clear-cache` | Drop cached stream URLs |
 | Diagnostics | `/diagnostics` | Runtime panel with attempt timeline |
 | Export | `/export-diagnostics` | Redacted support bundle |
 
@@ -89,18 +92,25 @@ See [Customization](/docs/users/customization) and [Providers](/docs/users/provi
 | --- | --- |
 | `autoNext` | Advance to next released episode when current ends |
 | `autoplayRecommendations` | When caught up, countdown into top recommendation |
-| `skipIntro`, `skipRecap`, `skipPreview`, `skipCredits` | Auto-skip when IntroDB/AniSkip timing exists |
+| `skipIntro` | Auto-skip intros when timing exists (**default on**) |
+| `skipCredits` | Auto-skip credits when timing exists (**default on**) |
+| `skipRecap` | Auto-skip recaps (**default off**) |
+| `skipPreview` | Auto-skip previews (**default off**) |
 | `/toggle-autoplay` | Toggle autoplay for current session |
 | `/toggle-autoskip` | Toggle auto-skip for current session |
 | `/stop-after-current` | Finish current episode then stop chain |
 
-Autoskip requires timing metadata — not every title has it.
+Autoskip needs IntroDB (TMDB-keyed) and/or AniSkip (MAL-keyed, anime mode). Not every title has timing. Episode numbers in the UI are **1-based**; providers adapt internally.
+
+AniSkip for split-cour anime: when the only MAL mapping is TMDB season-1, Kunai **skips AniSkip for season 2+** rather than applying the wrong show's windows. AniDB stamps MAL at resolve when it can, which avoids that gap for the default anime lane.
 
 ## Audio and subtitles
 
 - Language profiles differ for anime, series, and movies (`animeLanguageProfile`, etc.).
 - Kunai passes preferred subtitle first when launching mpv.
 - Additional subtitle tracks attach when available — switch inside mpv without another lookup.
+- Press `s` during playback to reload subtitles.
+- Late subtitle search uses Wyzie only when you set `wyzieApiKey` in Settings › Language. Kunai ships no key.
 - Source/quality/language variants prefer cached stream inventory to avoid extra network calls.
 
 Use `/source` or `/tracks` during playback for the grouped media panel.
@@ -149,7 +159,7 @@ Queue recovery: if a previous session crashed with pending queue items, Kunai ma
 
 1. Open `/diagnostics` — read provider timeline and mpv/player section.
 2. Press `r` to recover.
-3. Press `f` if recover loops or failure class suggests provider exhaustion.
+3. Press `⇧F` if recover loops or failure class suggests provider exhaustion.
 4. Export evidence: `/export-diagnostics`.
 
 Symptom-specific steps: [Troubleshooting](/docs/users/troubleshooting).

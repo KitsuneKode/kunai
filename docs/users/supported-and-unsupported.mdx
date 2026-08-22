@@ -19,7 +19,7 @@ Use this codegen-backed table as the single product posture source. Narrative se
 Install paths are documented once on [Getting started](/docs/users/getting-started) and [Install and update](/docs/users/install-and-update). In 0.3.0:
 
 - **Native binary** (`install.sh` / `install.ps1`) — preferred; Bun runtime embedded, you do not need Bun
-- **Bun / npm global** — secondary; npm **requires Bun** on `PATH`
+- **Bun / npm global** — secondary; npm needs **Node** on `PATH` (Node launcher). `bun install -g` still needs Bun
 - **Source checkout** — contributor-oriented (`bun run link:global`)
 
 ## Providers
@@ -31,7 +31,7 @@ Production providers are registered in the CLI container. The live table and per
 | Videasy (`videasy`, legacy `vidking` alias) | Movies and series | Active |
 | VidLink | Movies and series | Active |
 | AniDB (`anidb`) | Anime | Active default |
-| AllManga-compatible (`allanime`) | Anime | Active fallback |
+| AllManga-compatible (`allanime`) | Anime | Registered, manual |
 | Rivestream | Movies and series | Candidate — quality varies |
 | Miruro (`miruro`) | Anime | Active, manually selectable |
 | YouTube | Video mode (Invidious + yt-dlp) | Production |
@@ -47,7 +47,7 @@ Provider availability can change without notice. Fallback chains and recovery ar
 | mpv | **Yes** | Playback cannot start |
 | Terminal with reasonable size | **Yes** | Shell may block with resize message |
 | Network (online playback) | **Yes** for streaming | Use offline library for local files |
-| yt-dlp | No (online only) | Downloads disabled; online playback unaffected |
+| yt-dlp | YouTube and downloads | YouTube play/resolve and the download queue need it; other online playback does not |
 | ffprobe | No | Offline duration validation skipped |
 | chafa / ImageMagick | Not used | Retired — posters render in process, half-block is the floor |
 | Kitty graphics | No | Best quality when available; otherwise half-block |
@@ -97,15 +97,20 @@ Exact binary targets and posture:
 
 More: [Platforms](/docs/users/platforms), [Install and update](/docs/users/install-and-update).
 
-## Legal and content boundaries
+## Disclaimer
 
-Kunai does not host, store, mirror, or redistribute video content. All playable media comes from third-party providers. Kunai does not guarantee:
+Kunai is a client-side playback tool. It does not host, upload, mirror, seed, or
+distribute video content. Streams and related assets are served by non-affiliated
+third-party providers. Use responsibly and in accordance with applicable laws and
+service terms.
+
+Kunai does not guarantee:
 
 - Provider uptime or catalog completeness
 - Legal availability in your jurisdiction
 - Subtitle accuracy or language coverage
 
-Copyright notices belong to the hosting provider, not Kunai.
+Copyright notices belong to the third-party provider that serves the stream, not Kunai.
 
 ## What is explicitly not planned for beta CLI
 

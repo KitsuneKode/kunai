@@ -98,16 +98,33 @@ MAINTENANCE
   kunai doctor --json          Print the same report as JSON
   kunai uninstall              Remove kunai (add --purge to also delete user data)
   kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
+  kunai completion <shell>     Print a shell completion script (bash|zsh|fish|powershell)
 
 Inside the app, press / for the command palette and ? for keyboard help.
 `;
 }
 
+/**
+ * Every `kunai <word>` maintenance subcommand dispatched in `runCli` before the
+ * shell boots. Shell completions are generated from this list, so a new
+ * subcommand becomes completable by being added here rather than by editing
+ * four shell scripts by hand.
+ */
+export const CLI_SUBCOMMANDS: readonly string[] = [
+  "install",
+  "upgrade",
+  "rollback",
+  "doctor",
+  "uninstall",
+  "diagnostics",
+  "completion",
+];
+
 // Every recognized flag token. Used so a value-consuming flag (e.g. `-S`) never
 // swallows a following *flag* as its value, and so unknown options surface a
 // warning instead of being silently dropped. Includes `--check`/`--purge`/`--json`/
 // `--list`/`--to` (read by runCli, not here) to avoid false "unknown option" warnings.
-const KNOWN_FLAGS: ReadonlySet<string> = new Set([
+export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "-S",
   "--search",
   "-i",
@@ -158,7 +175,7 @@ const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--to",
 ]);
 
-const VALUE_FLAGS: ReadonlySet<string> = new Set([
+export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "-S",
   "--search",
   "-i",

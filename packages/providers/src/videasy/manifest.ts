@@ -9,7 +9,7 @@ export const videasyManifest = defineProviderManifest({
   id: VIDEOSY_PROVIDER_ID,
   displayName: "Videasy",
   aliases: ["VidKing", "Cineplay", "Cineby", "HDToday", "Bitcine"],
-  description: "Fast direct streams with source selection and subtitles",
+  description: "Registered movies/series adapter; source and subtitle inventory vary by title",
   domain: "videasy.to",
   recommended: true,
   mediaKinds: ["movie", "series"],

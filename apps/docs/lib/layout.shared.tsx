@@ -1,4 +1,5 @@
 import { DocsSidebarBanner } from "@/components/layout/docs-sidebar-banner";
+import { GithubStarCta } from "@/components/layout/github-star-cta";
 import { NavTitle } from "@/components/layout/nav-title";
 import {
   IconBook,
@@ -64,6 +65,12 @@ export function baseOptions(): BaseLayoutProps {
         active: "url",
       },
       {
+        text: "Disclaimer",
+        url: "/docs/users/supported-and-unsupported#disclaimer",
+        icon: <IconFileText className="size-4" stroke={1.5} />,
+        active: "url",
+      },
+      {
         text: "Install",
         url: "/#install",
         icon: <IconTerminal2 className="size-4" stroke={1.5} />,
@@ -76,4 +83,5 @@ export const docsSidebar: NonNullable<DocsLayoutProps["sidebar"]> = {
   collapsible: true,
   defaultOpenLevel: 1,
   banner: <DocsSidebarBanner />,
+  footer: <GithubStarCta />,
 };

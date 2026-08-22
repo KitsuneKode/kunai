@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
 import { docsSiteUrl } from "@/lib/site";
+import { Analytics } from "@vercel/analytics/next";
 import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
@@ -15,7 +16,8 @@ export const metadata: Metadata = {
     default: "Kunai Docs",
     template: "%s | Kunai Docs",
   },
-  description: "Guides for Kunai playback, recovery, offline use, diagnostics, and reliability.",
+  description:
+    "Guides for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
 };
 
 export const viewport: Viewport = {
@@ -49,6 +51,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
         >
           <TooltipProvider>{children}</TooltipProvider>
         </RootProvider>
+        <Analytics />
       </body>
     </html>
   );

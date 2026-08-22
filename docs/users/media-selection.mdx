@@ -55,8 +55,9 @@ Open the grouped panel during playback:
 ```text
 /source
 /tracks
-/k
 ```
+
+Press `k` during playback to change quality. Press `o` (or `/source`) for source. Press `s` to reload subtitles. Late subtitle lookup uses Wyzie only if you set a Wyzie API key in Settings › Language — Kunai ships none.
 
 Jump directly when a section has alternatives:
 
@@ -130,7 +131,7 @@ You can always override before or during playback.
 | Wrong subtitle language | `/source` → subtitle section |
 | Want higher quality | `/quality` if alternatives exist in inventory |
 | Stream stalled | `r` recover first; then `/source` if inventory has alternates |
-| Provider exhausted | `f` fallback — see [Providers](/docs/users/providers) |
+| Provider exhausted | `⇧F` fallback — see [Providers](/docs/users/providers) |
 | Inventory looks stale | `/recompute` bypasses cache for current episode |
 
 <Callout type="info" title="Inventory-bound switching">

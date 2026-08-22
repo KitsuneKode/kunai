@@ -18,7 +18,7 @@ deliberately reduced public reference generated from the keybinding registry.
 - **Up Next** — current playback order (`/up-next`; `/queue` is a compatibility alias)
 - **Downloads** — offline download jobs (`/downloads`)
 - **Follow / Unfollow / Mute** — release attention, not saved-for-later state
-- **Provider** — stable provider switching (`/provider`)
+- **Favourites** — browse `f` stars a row; it is not Watchlist and not Up Next
 
 ## Global Commands
 
@@ -42,8 +42,8 @@ deliberately reduced public reference generated from the keybinding registry.
 - `/watch` parses a `kunai://` URL from the clipboard and launches playback.
 
 `/stats` is on the default browse palette. Tracker sync is experimental and lives under
-`/settings` → Sync. Random and surprise picks use the `kunai --random` launch flag or the
-browse shuffle key — they are not typed slash commands today.
+`/settings` → Sync. Random and surprise picks use the `kunai --random` launch flag —
+they are not on the default browse palette.
 
 ## Playback Commands
 
@@ -87,8 +87,7 @@ support bundle. Use `/report-issue` to open the GitHub issue page.
 
 ## Opening Docs
 
-Use `/docs` to open the documentation website. Development builds can point this
-to a local or preview deployment with `KUNAI_DOCS_URL`.
+Use `/docs` to open documentation. With `KUNAI_DOCS_URL` unset it opens the GitHub `docs/` tree, not the published site. Set `KUNAI_DOCS_URL` to point at a local, preview, or production docs origin.
 
 For the full generated command list, see [Feature tour](/docs/users/feature-tour#shell-commands).
 Launch flags are documented in [CLI reference](/docs/users/cli-reference).

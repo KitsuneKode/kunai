@@ -73,7 +73,10 @@ function listProviderManifests(root: string): string[] {
 }
 
 export function resolveCliSourceRevision(root = DEFAULT_ROOT): string {
-  const envCommit = process.env.SOURCE_COMMIT?.trim();
+  // `SOURCE_COMMIT` is the explicit answer. `VERCEL_GIT_COMMIT_SHA` is supplied
+  // automatically on every Vercel build and is more reliable there than shelling
+  // out to git, which can fail on a shallow or detached deployment clone.
+  const envCommit = process.env.SOURCE_COMMIT?.trim() || process.env.VERCEL_GIT_COMMIT_SHA?.trim();
   if (envCommit) {
     return envCommit.slice(0, 12);
   }

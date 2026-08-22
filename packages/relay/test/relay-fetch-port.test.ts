@@ -77,7 +77,10 @@ test("createRelayFetchPort falls back to direct when relay network fails", async
     registry,
     async fetch(input) {
       calls.push(String(input));
-      if (String(input).startsWith("https://relay.example")) throw new Error("relay down");
+      // `startsWith` would also match https://relay.example.evil.test — compare origins.
+      if (new URL(String(input)).origin === "https://relay.example") {
+        throw new Error("relay down");
+      }
       return Response.json({ direct: true });
     },
   });

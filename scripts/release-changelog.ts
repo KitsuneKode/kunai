@@ -106,8 +106,39 @@ export function parseTopCliChangelogEntry(content: string): ChangelogEntry | nul
   return { version: match[1], body };
 }
 
+/**
+ * Removes one layer of `<!-- ... -->` spans by scanning for delimiters.
+ *
+ * Deliberately not a regex: a regex comment filter trips CodeQL's bad-tag-filter
+ * rule, and an unterminated `<!--` needs to swallow the remainder rather than
+ * be left behind.
+ */
+function removeCommentSpans(text: string): string {
+  let out = "";
+  let index = 0;
+  for (;;) {
+    const start = text.indexOf("<!--", index);
+    if (start === -1) return out + text.slice(index);
+    out += text.slice(index, start);
+
+    const end = text.indexOf("-->", start + 4);
+    // Unterminated comment: everything after the opener is commented out.
+    if (end === -1) return out;
+    index = end + 3;
+  }
+}
+
 function stripHtmlComments(text: string): string {
-  return text.replace(/<!--[\s\S]*?-->/g, "");
+  // One pass is not enough: removing an inner comment can splice surrounding
+  // characters into a fresh `<!--` (e.g. `<!<!-- -->--`). Repeat until the text
+  // stops changing, so no comment opener can survive.
+  let current = text;
+  let previous: string;
+  do {
+    previous = current;
+    current = removeCommentSpans(current);
+  } while (current !== previous);
+  return current;
 }
 
 /** Extracts the content of a single `### <heading>` group up to the next `### ` heading. */

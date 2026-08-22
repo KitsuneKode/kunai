@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-08-18"
 ---
 
 # Feature Map
@@ -14,7 +14,7 @@ answer "where does X live" without grepping the whole tree.
 owning code or the doc in the last column. If a row disagrees with the tree, the
 tree is right — fix the row.
 
-Verified against the tree on 2026-08-14. Paths are checked by
+Verified against the tree on 2026-08-18. Paths are checked by
 `bun run verify:doc-paths`.
 
 ## How a session flows
@@ -126,6 +126,7 @@ Do not reuse these nouns for anything else.
 | Debug logging, tracing                | `apps/cli/src/logger.ts`, `infra/tracer/*`, `infra/diagnostics/*`                               | [diagnostics-guide.md](./diagnostics-guide.md)                                                                   |
 | Usage analytics (opt-in)              | `apps/cli/src/services/analytics/*`, `apps/cli/src/domain/analytics/*`, `apps/analytics-ingest` | [analytics-privacy-contract.md](./analytics-privacy-contract.md)                                                 |
 | Discord Rich Presence                 | `apps/cli/src/services/presence/*`                                                              | [presence-integrations.md](./presence-integrations.md)                                                           |
+| `kunai completion <shell>`            | `apps/cli/src/services/completion/*`                                                            | [repo-infrastructure.md](./repo-infrastructure.md)                                                               |
 | Update check                          | `apps/cli/src/services/update/*`                                                                | [release-reliability-gate.md](./release-reliability-gate.md)                                                     |
 | Installers, binaries, npm packages    | `install.sh`, `install.ps1`, `apps/cli/scripts/build*.ts`, `scripts/publish-npm-release.ts`     | [repo-infrastructure.md](./repo-infrastructure.md), [release-reliability-gate.md](./release-reliability-gate.md) |
 

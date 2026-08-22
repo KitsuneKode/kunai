@@ -22,9 +22,9 @@ export type HomeFlowStep = {
 
 export const homeHero = {
   eyebrow: "Terminal-first playback",
-  title: "Kunai — a calm command shell for playable streams.",
+  title: "Kunai — a terminal client for third-party streams.",
   description:
-    "Search your catalog, resolve a direct stream on your machine, hand playback to mpv, and recover without restarting when something stalls.",
+    "Search a title, resolve a URL a third-party provider already serves, hand playback to mpv, and recover without restarting when something stalls.",
   installCommands: [CANONICAL_INSTALL, CANONICAL_SETUP],
   primaryCta: {
     label: "Get started",
@@ -65,7 +65,7 @@ export const homeFlow: readonly HomeFlowStep[] = [
   {
     title: "Resolve locally",
     description:
-      "Kunai checks provider health, resolves a direct stream, and keeps source inventory in SQLite before mpv starts.",
+      "Kunai asks registered adapters for a stream URL they already serve, then hands that URL to mpv.",
     state: "warn",
   },
   {

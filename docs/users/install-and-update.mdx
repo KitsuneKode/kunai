@@ -3,7 +3,7 @@ title: Install And Update
 description: Install Kunai across platforms and keep source, global, and packaged installs current.
 ---
 
-Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime — you do not need Bun installed to run them. npm/bun/source channels still require Bun for the JS bundle runtime.
+Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime — you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
 
 <ScopeCallout variant="beta" />
 
@@ -74,14 +74,14 @@ kunai --setup
 </Tab>
 <Tab value="npm global">
 
-Requires Bun on your `PATH` (the published entry is `#!/usr/bin/env bun`):
+Requires Node on your `PATH` (the published bin is a Node launcher that spawns a platform binary — you do not need Bun for npm):
 
 ```sh
 npm install -g @kitsunekode/kunai
 kunai --setup
 ```
 
-Global npm installs write `install.json` automatically via bundled `postinstall` so ownership-aware `kunai upgrade` / `kunai uninstall` route correctly. Diagnose PATH shadows with `kunai doctor`.
+Diagnose PATH shadows with `kunai doctor`. `kunai upgrade` / `kunai uninstall` follow install ownership when a manifest exists.
 
 </Tab>
 <Tab value="Source">
@@ -188,24 +188,13 @@ kunai --setup
 
 Do not point a Windows-native Kunai at WSL `mpv`, or a WSL Kunai at Windows PATH entries.
 
-When install, PATH, ownership, checksum, or rollback fails, see [Installer troubleshooting](/docs/users/troubleshooting#installer-and-path-issues).
+When install, PATH, ownership, checksum, or rollback fails, see [Installer troubleshooting](/docs/users/troubleshooting#installer-and-path-issues). Isolated Docker installer smokes are contributor-only — see [Contribute](/docs/developer/contribute).
 
 Override the download mirror for air-gapped or future CDN hosting:
 
 ```sh
 KUNAI_DL_BASE=https://github.com/KitsuneKode/kunai/releases ./install.sh
 ```
-
-### Docker smoke (isolated, no host install)
-
-To verify install/upgrade/uninstall end-to-end without touching `~/.local/bin` or `~/.config/kunai`:
-
-```sh
-bun run test:installer:docker
-# or: bash apps/cli/test/docker/native-installer/run-local.sh
-```
-
-This builds linux-x64 + musl binaries, serves a mock release from a temp directory, and runs the full flow inside Debian (glibc) and Alpine (musl) containers with `HOME=/tmp/kunai-home` only.
 
 ## Release notes and support
 

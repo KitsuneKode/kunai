@@ -39,20 +39,23 @@ mpv --version
 kunai --setup
 ```
 
-Package install alternative (requires Bun):
+Package install alternatives:
 
 ```sh
+# npm — Node launcher, no Bun
+npm install -g @kitsunekode/kunai
+# bun global — needs Bun on PATH
 bun install -g @kitsunekode/kunai
-# or: npm install -g @kitsunekode/kunai
 kunai --setup
 ```
 
 Recommended optional tools:
 
-- `mpv` — playback engine (required for watching; setup/browsing work without it)
+- `mpv` — playback engine (required for watching; setup/browsing work without it). Arch: `sudo pacman -S mpv`. Debian/Ubuntu: `sudo apt install mpv`. Fedora: `sudo dnf install mpv`.
 - `yt-dlp` — offline download jobs and YouTube playback
 - `ffprobe` — optional validation of completed artifacts
 - `xdg-open` — `/docs`, `/report-issue`, folder reveal, and account auth handoffs
+- `curl` — required for the default anime provider (AniDB) on many networks
 
 </Tab>
 <Tab value="Alpine / musl">
@@ -85,7 +88,13 @@ bun install -g @kitsunekode/kunai
 kunai --setup
 ```
 
-Install `mpv` and optional download tools through Homebrew or your preferred package manager. Kunai uses `open` for browser and folder handoffs. Protocol registration is Linux-only — use `kunai --open` for share links. Unsigned binaries may need quarantine cleared — see [Install and update](/docs/users/install-and-update#unsigned-binaries-beta).
+Install `mpv` and optional download tools through Homebrew:
+
+```sh
+brew install mpv yt-dlp ffmpeg
+```
+
+Kunai uses `open` for browser and folder handoffs. Protocol registration is Linux-only — use `kunai --open` for share links. Unsigned binaries may need quarantine cleared — see [Install and update](/docs/users/install-and-update#unsigned-binaries-beta).
 
 </Tab>
 <Tab value="Windows">
@@ -97,7 +106,13 @@ irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
 kunai --setup
 ```
 
-Kunai runs where a capable terminal and **native Windows `mpv.exe`** are available on the **same** PATH as Kunai. Windows Terminal is the most predictable surface.
+Kunai runs where a capable terminal and **native Windows `mpv.exe`** are available on the **same** PATH as Kunai. Windows Terminal is the most predictable surface. Kunai looks for `mpv.exe`, not `mpvnet.exe` — after install, `where.exe mpv` must resolve.
+
+```powershell
+winget install mpv
+where.exe mpv
+kunai doctor
+```
 
 Kunai uses `cmd /c start` for browser handoffs such as `/docs` and `/report-issue`. If an opener is missing, the shell should keep running and explain the limitation. Protocol registration is Linux-only — use `kunai --open` for share links.
 

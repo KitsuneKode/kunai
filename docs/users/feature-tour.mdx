@@ -63,9 +63,8 @@ Live registry — same table as [Providers](/docs/users/providers#active-provide
 ## What works well
 
 - Search by title with TMDB-backed metadata
-- Movie and series playback through Videasy, VidLink, and Rivestream (candidate)
-- Anime playback through AniDB by default, with the AllManga-compatible `allanime`
-  provider as fallback and Miruro manually selectable
+- Movie and series resolve can use the registered Videasy, VidLink, and Rivestream adapters
+- Anime resolve uses AniDB in the automatic lane; AllManga (`allanime`) and Miruro stay registered and manually selectable
 - YouTube mode via Invidious search and yt-dlp playback
 - Watch history with resume support
 - Continue Watching with unfinished/new episode detection
@@ -76,9 +75,7 @@ Live registry — same table as [Providers](/docs/users/providers#active-provide
 - Library browsing from local SQLite
 - Diagnostics panel and redacted support bundle export
 - Discord Rich Presence
-- AniList and TMDB sync for watch progress
-- Cache-first stream resolution with health checks
-- Provider fallback chain and recovery flows
+- AniList and TMDB sync for watch progress (experimental; fail-closed until the promotion gate passes)
 - Optional user-owned provider geo relay for metadata APIs
 
 ## What is experimental / candidate
@@ -104,17 +101,18 @@ Live registry — same table as [Providers](/docs/users/providers#active-provide
 | Context | Keys | Action |
 | --- | --- | --- |
 | Anywhere | `/` | Open command palette |
-| Browse results | `Tab` | Cycle browse filters / content kind |
-| Browse results | `Shift+F` | Open filters |
+| Browse results | `Tab` | Cycle catalog mode (series / anime / YouTube) |
+| Browse results | `Ctrl+F` | Narrow loaded results |
 | Browse results | `Enter` | Open or play selected result |
 | Browse results | `Shift+Enter` / `i` | Open title details |
-| Browse results | `Ctrl+F` | Focus filters |
+| Browse results | `/filters` | Open the filter surface |
 | Browse results | `Ctrl+D` | Queue for download |
 | Browse / pickers | `Esc` | Clear, close, or go back |
 | Playback | `r` | Recover current stream |
-| Playback | `f` | Try next compatible provider |
-| Playback | `d` | Queue for download |
-| Playback | `k` | Open tracks/source/quality |
+| Playback | `⇧F` | Try next compatible provider |
+| Playback | `d` | Open diagnostics |
+| Playback | `o` | Choose source |
+| Playback | `k` | Choose quality |
 | Playback | `n` / `p` | Next / previous episode |
 | Playback | `a` / `u` | Toggle autoplay / autoskip |
 

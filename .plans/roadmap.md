@@ -67,6 +67,12 @@ archive and put only the residue here.
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | Usage analytics redesign | Explicit opt-in implementation is complete; verified Neon/Vercel deployment, secret/firewall/cost controls, and live endpoint smoke remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
 
+### Docs
+
+| Track              | Remaining                                                                                                                            | Plan                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| User docs overhaul | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md) |
+
 ### Structure
 
 | Track                        | Remaining                                                                                                                                                                                                          | Plan                                                                         |

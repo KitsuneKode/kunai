@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-08-18"
 ---
 
 # Kunai — Runtime Architecture
@@ -159,7 +159,7 @@ Contract proof (fake-player / render-capture, no live providers):
 
 Production resolution is browserless by default:
 
-1. `apps/cli/src/container.ts` selects the registered provider modules.
+1. `apps/cli/src/container/bootstrap-providers.ts` (`loadProductionProviderModules()`) selects the registered provider modules.
 2. `apps/cli/src/services/playback/PlaybackResolveService.ts` coordinates cache, inventory, health, and fallback policy.
 3. `packages/core` runs the bounded provider engine.
 4. `packages/providers/src/*/direct.ts` returns stream, subtitle, source, and trace facts.

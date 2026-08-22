@@ -22,10 +22,12 @@ describe("buildMpvRemediation", () => {
     expect(remediation.commands).toContain("brew install mpv");
   });
 
-  test("Windows guidance uses winget mpv.net", () => {
+  test("Windows guidance installs real mpv, not mpv.net", () => {
     const remediation = buildMpvRemediation("win32");
     expect(remediation.platform).toBe("win32");
-    expect(remediation.commands).toContain("winget install --id mpv.net -e");
+    expect(remediation.commands).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+    // mpv.net ships mpvnet.exe; the runtime probe looks for `mpv`.
+    expect(remediation.commands.join(" ")).not.toContain("mpv.net");
   });
 });
 
@@ -62,7 +64,7 @@ describe("gatePlaybackDependencies", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected blocked playback");
     expect(result.problem.cause).toBe("mpv-missing");
-    expect(result.problem.userMessage).toContain("winget install --id mpv.net -e");
+    expect(result.problem.userMessage).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
   });
 
   test("available mpv passes the gate", async () => {

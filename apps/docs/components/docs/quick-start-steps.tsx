@@ -23,19 +23,35 @@ kunai --version`}
           </code>
         </pre>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
-          Bun/npm globals and source checkouts are secondary. See{" "}
-          <Link href="/docs/users/install-and-update">Install and update</Link> for those channels.
+          The Unix installer links <code>~/.local/bin/kunai</code>. If that directory is not on{" "}
+          <code>PATH</code>, the script prints the export to add — it does not rewrite your shell
+          profile. Windows places the launcher under <code>%LOCALAPPDATA%\kunai\bin</code>. Then run{" "}
+          <code>kunai doctor</code>. Bun/npm globals and source checkouts are secondary. See{" "}
+          <Link href="/docs/users/install-and-update">Install and update</Link>.
         </p>
       </Step>
       <Step>
-        <h3 className="text-fd-foreground m-0 text-lg font-medium">Confirm mpv, then run setup</h3>
+        <h3 className="text-fd-foreground m-0 text-lg font-medium">Install mpv, then run setup</h3>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
-          Playback needs <code>mpv</code> on your <code>PATH</code>. Setup and browsing still work
-          when mpv is missing — only committed playback startup requires it.
+          Playback needs an <code>mpv</code> binary on the same <code>PATH</code> as Kunai. Setup
+          and browsing still work when mpv is missing — only committed playback startup requires it.
+          Kunai looks for <code>mpv</code> / <code>mpv.exe</code>, not <code>mpvnet.exe</code>.
         </p>
         <pre className="bg-fd-secondary text-fd-foreground mt-2 overflow-x-auto rounded-lg p-3 text-sm">
           <code>
-            {`mpv --version
+            {`# Linux
+sudo pacman -S mpv        # Arch
+sudo apt install mpv      # Debian/Ubuntu
+sudo dnf install mpv      # Fedora
+
+# macOS
+brew install mpv
+
+# Windows — binary on PATH must be named mpv.exe
+winget install mpv
+
+mpv --version
+kunai doctor
 kunai --setup`}
           </code>
         </pre>
@@ -52,8 +68,8 @@ kunai --setup`}
         <h3 className="text-fd-foreground m-0 text-lg font-medium">Learn recovery early</h3>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
           Press <code>/</code> for the palette. If playback stalls: <code>/recover</code> refreshes
-          the current provider, <code>/fallback</code> tries the next compatible provider,{" "}
-          <code>/diagnostics</code> shows evidence.
+          the current provider, <code>/fallback</code> or <code>⇧F</code> tries the next compatible
+          provider, <code>/diagnostics</code> shows evidence.
         </p>
       </Step>
     </Steps>

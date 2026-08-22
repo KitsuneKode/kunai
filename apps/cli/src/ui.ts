@@ -100,7 +100,7 @@ export async function probeCapabilities(
         "Arch:   sudo pacman -S mpv",
         "Debian: sudo apt install mpv",
         "macOS:  brew install mpv",
-        "Windows: winget install --id mpv.net -e",
+        "Windows: winget install --id mpv-player.mpv-CI.MSVC -e",
       ],
     });
   }

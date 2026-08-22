@@ -2,11 +2,11 @@ import type { HomeCommandMetadata, HomeProviderMetadata } from "@/components/hom
 
 export const FEATURED_COMMAND_IDS = [
   "search",
-  "discover",
+  "recommendation",
   "calendar",
   "setup",
   "history",
-  "queue",
+  "up-next",
   "share",
   "help",
 ] as const;

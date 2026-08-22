@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-08-18"
 ---
 
 # Kunai — Provider Guide
@@ -356,7 +356,7 @@ Quality gate for promotion into the production resolver:
 1. Implement `PlaywrightProvider`
 2. Return a stable embed URL from `buildUrl()`
 3. Set `needsClick: true` only if playback requires user activation
-4. Register the module in `apps/cli/src/container.ts` inside the `providerModules` array passed to `createProviderEngine`
+4. Register the module in `apps/cli/src/container/bootstrap-providers.ts` inside `loadProductionProviderModules()`
 
 Minimal shape:
 
@@ -377,7 +377,7 @@ export const MyProvider: PlaywrightProvider = {
 2. Define the manifest in `packages/providers/src/<provider>/manifest.ts` using `defineProviderManifest`
 3. Implement `CoreProviderModule.resolve(input, context)` returning `ProviderResolveResult`
 4. Export from `packages/providers/src/index.ts`
-5. Register the module in `apps/cli/src/container.ts` via `createProviderEngine({ modules: [...] })`
+5. Register the module in `apps/cli/src/container/bootstrap-providers.ts` via `loadProductionProviderModules()`
 
 Minimal shape (using shared helpers):
 
@@ -570,7 +570,7 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
   AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
   `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.
-- **AllAnime (`allanime`)** — `provider-native`, fallback anime route. AniList-backed discovery
+- **AllAnime (`allanime`)** — `provider-native`, registered and **manually selectable**; not in the automatic anime lane (`animeProviderPriority` is `['anidb']` alone). AniList-backed discovery
   results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is
   preserved on merge. An AllAnime lookup may populate only `providerNativeIds.allanime`.
 - **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
@@ -845,7 +845,7 @@ Default hot path prefers provider-native episode titles:
 - **Miruro** — pipe `episodes` entries (title, description, image, airDate). When ≥80% of catalog episodes have titles after merge, AniList/Jikan enrichment is skipped.
 - **AllAnime** — resolve-time `tobeparsed` `episodeInfo` seeds a per-show cache; `listEpisodes` uses seeded metadata when coverage is sufficient, otherwise falls back to AniList/Jikan via `fetchAnimeEpisodeMetadataByNumber` (deprecated for default hot path, kept for sparse catalogs and filler/recap flags).
 
-All active providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback. Candidate providers can live in `packages/providers` or `.reference/experiments`, but they are not registered in `apps/cli/src/container.ts` until they pass the quality gate.
+All active providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback. Candidate providers can live in `packages/providers` or `.reference/experiments`, but they are not registered in `apps/cli/src/container/bootstrap-providers.ts` until they pass the quality gate.
 
 `vidking` remains accepted as a legacy config/cache alias for `videasy`.
 

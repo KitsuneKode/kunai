@@ -77,6 +77,14 @@ the queue, the offline library, notifications, the mpv window title, and the fil
 Older movie downloads that were saved with a placeholder season 1 / episode 1 keep working
 and are re-labelled on sight — nothing is rewritten or migrated on disk.
 
+## Resume after quit
+
+Quitting Kunai **pauses** in-flight download jobs (not cancel). On the next launch they
+are immediately eligible and auto-resume. Disk-space pauses stay paused until the
+retry time elapses. A job left `running` after a crash is reclaimed only after its
+heartbeat lease expires, so a second Kunai process that still owns the job is not
+stolen. Completed files in `/library` are unaffected.
+
 ## Safety Rules
 
 - Kunai does not silently delete completed artifacts.

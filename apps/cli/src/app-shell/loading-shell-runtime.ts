@@ -199,7 +199,7 @@ export function getProviderResolveWaitPresentation(input: {
   readonly stageDetail?: string;
   readonly dominantPhaseLabel?: string;
 }): ProviderResolveWaitPresentation {
-  const fallbackHint = input.fallbackAvailable ? "f fallback · " : "";
+  const fallbackHint = input.fallbackAvailable ? "⇧F fallback · " : "";
   const issue = normalizeLoadingIssue(input.latestIssue);
 
   // Classify from structured state only. `latestIssue` is advisory copy and is

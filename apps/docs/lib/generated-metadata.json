@@ -1,18 +1,18 @@
 {
-  "syncedAt": "2026-08-21T12:27:27.302Z",
+  "syncedAt": "2026-08-22T04:55:52.082Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "f5da41ee",
-  "cliSourceFingerprint": "54267e2039ebef26110ed9987869c9160a14a20a38a4e897cdf8e68a731e51ea",
-  "docsContentFingerprint": "3bbc65a431a26a397f9d4827926f2f1f0ec04307ec2b860057dd6a96a40ca5f7",
-  "featureStatusRevision": "d4c1e1d0943d18f05bca1a12a5b0ff966754a588f12e4a86a03510d2bc424c1d",
+  "cliSourceRevision": "7275a0eb",
+  "cliSourceFingerprint": "28321811cdfc56fbb55fd3849b6c8aff87dae6208beea87da9cc49d4b8cf8ac6",
+  "docsContentFingerprint": "24861572741b0e7dcd55774fb97a34a13d4c330f65d5596f0b9a6914913c444a",
+  "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
   "providers": [
     {
       "id": "videasy",
       "displayName": "Videasy",
-      "description": "Fast direct streams with source selection and subtitles",
+      "description": "Registered movies/series adapter; source and subtitle inventory vary by title",
       "domain": "videasy.to",
       "recommended": true,
       "mediaKinds": ["movie", "series"],
@@ -47,7 +47,7 @@
     {
       "id": "rivestream",
       "displayName": "Rivestream",
-      "description": "Beta movies/series source — recommended default, quality can vary by title",
+      "description": "Candidate movies/series adapter; quality varies by title",
       "domain": "rivestream.app",
       "recommended": true,
       "mediaKinds": ["movie", "series"],
@@ -58,7 +58,7 @@
     {
       "id": "anidb",
       "displayName": "AniDB",
-      "description": "Anime streams via anidb.app — ani-cli v5 primary source",
+      "description": "Registered default anime adapter; catalog and streams are third-party",
       "domain": "anidb.app",
       "recommended": true,
       "mediaKinds": ["anime"],
@@ -655,6 +655,11 @@
     },
     {
       "short": "",
+      "long": "--continue",
+      "description": "Jump into Continue Watching"
+    },
+    {
+      "short": "",
       "long": "--resume",
       "description": "Jump into Continue Watching"
     },
@@ -794,13 +799,13 @@
       "id": "cli-shell",
       "label": "Terminal shell",
       "status": "shipped",
-      "description": "Persistent Ink shell with search, playback, and recovery workflows."
+      "description": "Persistent terminal shell with search, playback, and recovery workflows."
     },
     {
       "id": "direct-providers",
       "label": "Direct provider resolution",
       "status": "shipped",
-      "description": "HTTP scrapers in packages/providers without browser automation."
+      "description": "HTTP provider adapters in packages/providers, without browser automation."
     },
     {
       "id": "mpv-playback",
@@ -885,18 +890,6 @@
       "label": "install.sh / install.ps1",
       "status": "beta",
       "description": "Preferred native binary installers; Bun/npm secondary; source contributor-oriented."
-    },
-    {
-      "id": "browser-providers",
-      "label": "Browser / Playwright providers",
-      "status": "planned",
-      "description": "Archived reference only; not part of active beta runtime."
-    },
-    {
-      "id": "hosted-streams",
-      "label": "Hosted stream relay",
-      "status": "planned",
-      "description": "No Kunai-operated video proxy or hosted transcoding in beta v1."
     }
   ],
   "runtimeBaseline": {

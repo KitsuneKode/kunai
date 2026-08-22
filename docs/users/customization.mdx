@@ -22,7 +22,7 @@ The main config file is created on first run or after `kunai --setup`. Kunai mer
 
 | Key | What it controls |
 | --- | --- |
-| `defaultMode` | `series` or `anime` startup mode |
+| `defaultMode` | Startup catalog: `series` (default), `anime`, or `youtube` |
 | `provider` | Default movie/series provider for new sessions |
 | `animeProvider` | Default anime provider |
 | `providerPriority` | Fallback order for movie/series providers (empty = registry default) |
@@ -71,18 +71,21 @@ geo-blocked from your network.
 ```
 
 `KUNAI_RELAY_BASE_URL` and `KUNAI_RELAY_TOKEN` override local config for smoke
-tests and temporary sessions. The relay is metadata-only by default; Kunai does
-not proxy video unless a provider explicitly supports and enables video fallback.
+tests and temporary sessions. The relay is metadata-only. Stream URLs stay
+direct; `videoFallback` is persisted in config but has no production reader, so
+turning it on does not proxy video.
 
 ### Language and media profiles
 
 Kunai uses separate profiles for anime, series, and movies:
 
+Example (not the shipped defaults — those use `audio: "original"` and `quality: "best"`):
+
 ```json
 {
-  "animeLanguageProfile": { "audio": "ja", "subtitle": "en", "quality": "1080" },
-  "seriesLanguageProfile": { "audio": "en", "subtitle": "en" },
-  "movieLanguageProfile": { "audio": "en", "subtitle": "en" }
+  "animeLanguageProfile": { "audio": "ja", "subtitle": "en", "quality": "1080p" },
+  "seriesLanguageProfile": { "audio": "en", "subtitle": "en", "quality": "best" },
+  "movieLanguageProfile": { "audio": "en", "subtitle": "en", "quality": "best" }
 }
 ```
 
@@ -139,7 +142,7 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 }
 ```
 
-Tokens are stored separately. Sync never runs unless explicitly enabled.
+Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
 
 ## providers.json overrides
 
@@ -219,15 +222,9 @@ Or use `/settings` and navigate to Presence.
 - Set **Presence privacy** to `full` (title/episode detail) or `private` (generic activity).
 </Step>
 <Step>
-### Provide a Discord application client id
+### Discord desktop, then connect
 
-Enter a numeric Discord application client id in Settings, or set:
-
-```sh
-export KUNAI_DISCORD_CLIENT_ID="your_app_id"
-```
-
-Create an application at [Discord Developer Portal](https://discord.com/developers/applications) if you need a new id.
+The Discord **desktop app** must be running (local IPC). Kunai ships a default application client id; you do not need to create a Discord app for the default path. Override in Settings › Presence or `KUNAI_DISCORD_CLIENT_ID` only if you want your own application. Presence stays **off** until you set the provider to `discord`.
 </Step>
 <Step>
 ### Connect and verify

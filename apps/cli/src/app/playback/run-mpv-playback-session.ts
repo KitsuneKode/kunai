@@ -166,7 +166,7 @@ export async function runMpvPlaybackSession(
         note: [
           `startup-stall: no playback progress within ${STARTUP_STALL_TIMEOUT_MS / 1000}s`,
           route,
-          "auto failover · o source · f fallback",
+          "auto failover · o source · ⇧F fallback",
         ]
           .filter(Boolean)
           .join(" · "),

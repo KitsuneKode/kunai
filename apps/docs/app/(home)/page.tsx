@@ -15,14 +15,14 @@ export const metadata: Metadata = {
     absolute: "Kunai Docs",
   },
   description:
-    "A terminal-first Kunai guide for playable streams, mpv playback, recovery, offline use, and diagnostics.",
+    "A terminal-first guide for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
   alternates: {
     canonical: docsSiteUrl,
   },
   openGraph: {
     title: "Kunai Docs",
     description:
-      "A terminal-first Kunai guide for playable streams, mpv playback, recovery, offline use, and diagnostics.",
+      "A terminal-first guide for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
     url: docsSiteUrl,
     type: "website",
     siteName: "Kunai Docs",
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Kunai Docs",
     description:
-      "A terminal-first Kunai guide for playable streams, mpv playback, recovery, offline use, and diagnostics.",
+      "A terminal-first guide for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
   },
 };
 

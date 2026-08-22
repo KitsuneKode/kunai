@@ -10,7 +10,7 @@ export type { ExternalOpenResult, ExternalOpenRuntime };
 
 /** Default docs target when `KUNAI_DOCS_URL` is unset. Override in prod via env. */
 export function defaultKunaiDocsUrl(): string {
-  return process.env.KUNAI_DOCS_URL ?? "https://github.com/KitsuneKode/kunai/tree/main/docs";
+  return process.env.KUNAI_DOCS_URL ?? "https://kunai.kitsunekode.in/docs";
 }
 
 /** True when external browser/file openers must not run (tests, CI, headless). */

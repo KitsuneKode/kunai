@@ -21,8 +21,9 @@ Launch example:
 
 ```sh
 kunai --debug -S "Title"
-KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Title" --debug-json
 ```
+
+`--debug` writes verbose redacted logs to `./logs.txt` in the working directory. Source-checkout traces (`KUNAI_TRACE`, `bun run dev -- --debug-json`) live in [Debugging workflow](/docs/developer/debugging-workflow).
 
 ## Opening the diagnostics panel
 
@@ -88,33 +89,15 @@ If browser open fails, Kunai shows the issue URL and local bundle path.
 
 For developers contributing fixes, also see [Contribute](/docs/developer/contribute).
 
-## Structured traces (advanced)
+## Structured traces
 
-For reproducible provider or playback bugs, use scoped traces:
+Scoped JSON traces (`KUNAI_TRACE`, `--debug-json`, `--debug-session`) are for source checkouts. See [Debugging workflow](/docs/developer/debugging-workflow).
 
-```sh
-KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Dune" --debug-json
-```
+`--debug` on an installed binary is enough for most bug reports (`./logs.txt` plus `/export-diagnostics`).
 
-Full developer session:
+### Recovery mode vs slow resolve
 
-```sh
-bun run dev -- -S "Dune" --debug-session
-```
-
-Useful trace categories:
-
-| Category | When to include |
-| --- | --- |
-| `provider` | Resolve failures, fallback decisions |
-| `playback` | mpv lifecycle, IPC errors |
-| `cache` | Stale inventory, health checks |
-| `subtitle` | Attachment and track switching |
-| `download` | yt-dlp jobs and validation |
-| `offline` | Local library selection |
-| `network` | Connectivity classification |
-
-`--debug-session` keeps normal playback behavior while recording JSONL. The trace path appears in diagnostics and on stderr.
+Default recovery is **guided**. In Settings you can set `recoveryMode` to `fallback-first`: after a slow primary resolve (~15 seconds) Kunai auto-falls over to the next compatible provider instead of waiting on you. `manual` never auto-falls over.
 
 Developers: [Debugging workflow](/docs/developer/debugging-workflow).
 
@@ -170,18 +153,20 @@ Configure presence in `/settings` — [Customization](/docs/users/customization)
 
 ## Good smoke tests
 
-From a source checkout, exercise major surfaces:
+From an installed `kunai` binary:
 
 ```sh
-bun run dev -- -S "Dune"
-bun run dev -- -S "Attack on Titan" -a
-bun run dev -- -S "Dune" --debug
-bun run dev -- --discover
-bun run dev -- --random
-bun run dev -- --calendar
-bun run dev -- --offline
-bun run dev -- --zen --offline
+kunai -S "Dune"
+kunai -a -S "Attack on Titan"
+kunai --debug -S "Dune"
+kunai --discover
+kunai --random
+kunai --calendar
+kunai --offline
+kunai --zen --offline
 ```
+
+Source-checkout equivalents live in [Debugging workflow](/docs/developer/debugging-workflow).
 
 After each run, spot-check `/diagnostics` or export a bundle if something looked wrong.
 

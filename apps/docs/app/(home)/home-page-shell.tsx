@@ -1,4 +1,5 @@
 import { HomeHeroStatic } from "@/components/home/home-hero-static";
+import { HomeStarCta } from "@/components/home/home-star-cta";
 import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
 import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
 import { StartHereCards } from "@/components/home/start-here-cards";
@@ -80,7 +81,7 @@ export default function HomePageShell({
       </section>
 
       <section className="kunai-home-highlights kunai-band">
-        <h2 className="kunai-display-title">Built for daily playback, not demos.</h2>
+        <h2 className="kunai-display-title">Built for daily client use, not demos.</h2>
         <ul className="kunai-highlight-list mt-6">
           {homeHighlights.map((item) => (
             <li className="kunai-highlight-row" key={item.label}>
@@ -127,6 +128,7 @@ export default function HomePageShell({
             <Link className="kunai-button border-fd-border hover:border-fd-primary" href="/docs">
               Browse docs
             </Link>
+            <HomeStarCta />
           </div>
         </div>
       </section>

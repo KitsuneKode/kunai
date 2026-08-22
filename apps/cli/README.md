@@ -2,21 +2,19 @@
 
 `@kitsunekode/kunai` is the published CLI package for Kunai.
 
-Kunai is a terminal-first media tool that resolves provider streams and launches playback in `mpv`.
+Kunai is a terminal-first client that resolves third-party stream URLs and launches playback in `mpv`. It does not host, upload, mirror, seed, or distribute video content.
 
 ## Requirements
 
-- **Bun** `>=1.3.9` on your `PATH` (required for this npm channel — the package entry is `#!/usr/bin/env bun`)
+- **Node** on your `PATH` (this npm channel ships a Node launcher that spawns a platform binary — you do not need Bun)
 - `mpv` on your `PATH` (required for playback)
-- `yt-dlp` on your `PATH` when offline downloads are enabled (optional feature)
+- `yt-dlp` on your `PATH` for YouTube playback and when offline downloads are enabled
 - `ffprobe` for optional verification of finished downloads only—not the downloader
-- Built-in half-block poster fallback; optional `chafa` for richer previews in non-Kitty terminals
-- Kitty/Ghostty terminal for native Kitty poster previews (optional)
-- ImageMagick (`magick`) for Kitty/Ghostty non-PNG poster conversion (optional)
+- Built-in half-block poster fallback; Kitty/Ghostty/iTerm2/sixel when the terminal supports them
 - Discord desktop app for Rich Presence (optional; local Unix-socket / Windows named-pipe IPC)
 
-Native release binaries embed Bun and do **not** need a separate Bun install. Prefer
-`install.sh` / `install.ps1` when you want zero Bun prerequisites. This npm page is
+Native release binaries embed Bun and do **not** need a separate Bun or Node install. Prefer
+`install.sh` / `install.ps1` when you want zero runtime prerequisites. This npm page is
 for the package-manager channel only.
 
 Poster subsystem and testing: repo root [.docs/poster-image-rendering.md](../../.docs/poster-image-rendering.md).
@@ -25,20 +23,16 @@ Install core tools:
 
 ```bash
 # Linux (Arch)
-sudo pacman -S mpv yt-dlp chafa imagemagick
+sudo pacman -S mpv yt-dlp
 
 # Linux (Debian/Ubuntu)
-sudo apt install mpv yt-dlp chafa imagemagick
+sudo apt install mpv yt-dlp
 
 # macOS (Homebrew)
-brew install mpv yt-dlp chafa imagemagick
+brew install mpv yt-dlp
 ```
 
-Windows options:
-
-- `winget` (recommended): install `mpv`, `yt-dlp`, `chafa` (`winget install hpjansson.Chafa`), and ImageMagick (`winget install ImageMagick.ImageMagick`); add `ffprobe` separately if you want post-download validation
-- Chocolatey: `choco install mpv yt-dlp chafa imagemagick`
-- Scoop: `scoop install mpv yt-dlp chafa imagemagick`
+Windows: `winget install mpv` (the process looks for a command named `mpv` / `mpv.exe`) and `winget install yt-dlp`. Add `ffprobe` (from FFmpeg) only if you want post-download validation.
 
 ## Install
 
@@ -46,8 +40,7 @@ Windows options:
 npm install -g @kitsunekode/kunai
 ```
 
-Postinstall writes ownership into `~/.config/kunai/install.json` (or the Windows
-equivalent) so lifecycle commands know this is an npm-owned install.
+Optional platform binaries ship as optional dependencies. Diagnose PATH with `kunai doctor`.
 
 Run:
 
@@ -152,8 +145,8 @@ Playback recovery shortcuts:
 
 - Use `r` / `/recover` to refresh the current stream and resume.
 - Use `/recompute` when provider/source inventory looks stale and cached provider memory should be bypassed.
-- Use `f` / `/fallback` to try the next compatible provider.
-- Use `k` / `/tracks` to review source, quality, audio, hardsub, and subtitle options.
+- Use `⇧F` / `/fallback` to try the next compatible provider.
+- Use `o` / `/source` for source and `k` for quality.
 
 ## Diagnostics
 
@@ -169,7 +162,14 @@ Playback recovery shortcuts:
 - Provider availability can drift over time
 - Subtitle/source inventories vary by provider and title
 - Kunai prioritizes deterministic recovery and diagnostics over opaque retries
-- This npm channel requires Bun; native binaries do not
+- This npm channel needs Node (launcher) plus the platform optional dependency; native binaries do not
+
+## Disclaimer
+
+Kunai is a client-side playback tool. It does not host, upload, mirror, seed, or
+distribute video content. Streams and related assets are served by non-affiliated
+third-party providers. Use responsibly and in accordance with applicable laws and
+service terms.
 
 ## Project
 

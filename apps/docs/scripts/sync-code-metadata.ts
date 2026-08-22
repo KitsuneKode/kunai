@@ -235,12 +235,17 @@ function parseHelpTextFlags(helpText: string): CliOptionMetadata[] {
     if (!flagMatch) continue;
 
     const [, shortPart, longFlag, description] = flagMatch;
+    const desc = description.trim();
+    // `--continue, --resume  …` is two long flags, not a short+long pair.
+    if (shortPart?.startsWith("--")) {
+      options.push({ short: "", long: shortPart, description: desc });
+    }
     const short = shortPart?.startsWith("-") && !shortPart.startsWith("--") ? shortPart : "";
 
     options.push({
       short,
       long: longFlag,
-      description: description.trim(),
+      description: desc,
     });
   }
 

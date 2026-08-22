@@ -120,7 +120,20 @@ bun run test:live:miruro
 
 Each smoke creates an isolated temp profile under `/tmp/kunai-live-*`. Do not run live smokes in a tight loop while debugging — use unit tests and `--debug-json` traces for iteration, then one live smoke to confirm provider reality.
 
+Relay (opt-in, local server):
+
+```sh
+bun run dev:relay
+KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787 bun run test:live:relay-allanime
+```
+
 Use `KITSUNE_CLEAR_CACHE=1` only when you need a cold-cache proof.
+
+Isolated installer smoke (does not touch host `~/.local/bin`):
+
+```sh
+bun run test:installer:docker
+```
 
 ## Debugging your change
 
