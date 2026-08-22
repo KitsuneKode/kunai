@@ -1,8 +1,8 @@
 {
-  "syncedAt": "2026-08-22T04:55:52.082Z",
+  "syncedAt": "2026-08-22T05:14:20.206Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "7275a0eb",
+  "cliSourceRevision": "be6cf06a",
   "cliSourceFingerprint": "28321811cdfc56fbb55fd3849b6c8aff87dae6208beea87da9cc49d4b8cf8ac6",
   "docsContentFingerprint": "24861572741b0e7dcd55774fb97a34a13d4c330f65d5596f0b9a6914913c444a",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
@@ -893,7 +893,7 @@
     }
   ],
   "runtimeBaseline": {
-    "bun": "1.3.14",
+    "bun": "1.4.0",
     "mpv": "0.38+"
   },
   "shortcuts": [
