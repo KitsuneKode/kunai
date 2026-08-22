@@ -40,7 +40,13 @@ if (!endpoint.startsWith("https://")) failures.push("endpoint-not-https");
 
 let raw: Record<string, unknown> = {
   analytics: "enabled",
-  installId: "",
+  // Seeded rather than left empty. `onSessionStart` fires the ping in the
+  // background on purpose — it must never hold up a session — so the
+  // `installId` it mints lands asynchronously, after `describePayload()` below
+  // has already read the config. With an empty id that read returns the
+  // "not enabled yet" placeholder, and every assertion about the wire value
+  // then describes a payload this run never sent.
+  installId: "6b1a9f2c-58d4-4e77-9c31-0a5b7e2d84f0",
   analyticsEndpoint: endpoint,
 };
 const config = {
