@@ -96,3 +96,8 @@ artifacts/
 # public and this directory holds proprietary source that must never be pushed.
 # Ignored (not merely untracked) so a stray `git add -A` cannot stage it.
 docs/installer-reference/
+
+# Provenance for the generated docs metadata: regenerated on every build, and
+# deliberately not committed — syncedAt and cliSourceRevision change every run,
+# so committing them made any two docs branches conflict on the same file.
+apps/docs/lib/generated-provenance.json

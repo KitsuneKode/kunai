@@ -48,10 +48,8 @@ export type PublicShortcutMetadata = {
 };
 
 export type CodeMetadata = {
-  readonly syncedAt: string;
   readonly version: string;
   readonly cliVersion: string;
-  readonly cliSourceRevision: string;
   readonly cliSourceFingerprint: string;
   readonly docsContentFingerprint: string;
   readonly featureStatusRevision: string;

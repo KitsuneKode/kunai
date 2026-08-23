@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 
+import { provenance } from "@/lib/provenance";
+
 import { codeMetadata } from "../lib/code-metadata";
 import { docNavEntries } from "../lib/doc-navigation";
 import {
@@ -190,8 +192,10 @@ describe("docs codegen drift", () => {
   });
 
   test("cliSourceRevision is a short sha or unknown", () => {
-    expect(codeMetadata.cliSourceRevision.length).toBeGreaterThan(0);
-    expect(/^[0-9a-f]{7,12}$|unknown/.test(codeMetadata.cliSourceRevision)).toBe(true);
+    // Lives in the gitignored provenance sidecar, not the committed metadata:
+    // it moves on every commit and would otherwise conflict between branches.
+    expect(provenance.cliSourceRevision.length).toBeGreaterThan(0);
+    expect(/^[0-9a-f]{7,12}$|unknown/.test(provenance.cliSourceRevision)).toBe(true);
   });
 
   test("feature status has at least fifteen entries", () => {

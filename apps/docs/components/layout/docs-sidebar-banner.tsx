@@ -1,10 +1,11 @@
 import { codeMetadata } from "@/lib/code-metadata";
+import { provenance } from "@/lib/provenance";
 import Link from "next/link";
 
 export function DocsSidebarBanner() {
   const revision =
-    codeMetadata.cliSourceRevision && codeMetadata.cliSourceRevision !== "unknown"
-      ? codeMetadata.cliSourceRevision
+    provenance.cliSourceRevision && provenance.cliSourceRevision !== "unknown"
+      ? provenance.cliSourceRevision
       : null;
   const commitUrl = revision ? `https://github.com/KitsuneKode/kunai/commit/${revision}` : null;
 
