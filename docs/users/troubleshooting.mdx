@@ -263,7 +263,14 @@ More: [Share links](/docs/users/share-links).
 
 ## Installer and PATH issues
 
-**Symptoms:** `kunai: command not found`; wrong binary runs; upgrade/uninstall refuses ownership; install fails checksum or 404; unsigned binary blocked; rollback needed after a bad upgrade.
+**Symptoms:** `kunai: command not found`; wrong binary runs; upgrade/uninstall refuses ownership; install fails checksum or 404; unsigned binary blocked or `killed: 9` on Apple Silicon; rollback needed after a bad upgrade.
+
+<Callout title="Just installed?">
+  The installer writes your shell startup file, but it cannot change the
+  terminal that is already open. Open a new terminal, or run the `source` line
+  the installer printed. If you passed `--skip-path-update`, add the install
+  directory to PATH yourself.
+</Callout>
 
 ### What to try
 
@@ -305,7 +312,21 @@ More: [Share links](/docs/users/share-links).
    kunai rollback --to <version>
    ```
 
-6. **Unsigned binaries (beta):** Windows SmartScreen → `Unblock-File` on `kunai.exe`; macOS Gatekeeper → `xattr -dr com.apple.quarantine` on the install path; Linux → verify against `SHA256SUMS`. Details: [Unsigned binaries](/docs/users/install-and-update#unsigned-binaries-beta).
+6. **Unsigned binaries (beta):**
+
+   - **macOS on Apple Silicon, `killed: 9`:** the binary is unsigned, and arm64 macOS refuses to execute it. There is no Gatekeeper dialog and `xattr` will not fix it — quarantine is not what failed. Ad-hoc sign it:
+
+     ```sh
+     codesign --force --sign - ~/.local/bin/kunai
+     ```
+
+     `install.sh` does this for you; you only need it for a manual download.
+
+   - **macOS Gatekeeper quarantine** (Intel, or a binary downloaded outside the installer): `xattr -dr com.apple.quarantine` on the install path.
+   - **Windows SmartScreen:** `Unblock-File` on `kunai.exe`.
+   - **Linux:** verify against `SHA256SUMS`.
+
+   Details: [Unsigned binaries](/docs/users/install-and-update#unsigned-binaries-beta).
 
 7. **PATH shadowing:** put the intended install directory first (`~/.local/bin` on Unix, `%LOCALAPPDATA%\kunai\bin` on Windows). Remove or rename earlier shadowed copies. Re-check with `type -a` / `which -a` (bash), `whence -a` (zsh), or `Get-Command kunai -All` (PowerShell), then `kunai doctor`.
 
