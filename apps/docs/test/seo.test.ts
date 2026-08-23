@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { codeMetadata } from "../lib/code-metadata";
+import { BUN_GLOBAL_INSTALL } from "../lib/install-commands";
 import { source } from "../lib/source";
 
 const DOCS_APP_ROOT = path.resolve(import.meta.dir, "..");
@@ -115,8 +116,7 @@ describe("docs SEO drift", () => {
     );
     expect(shell).toContain("<h1");
     expect(shell).toContain("CANONICAL_INSTALL");
-    const install = fs.readFileSync(path.join(DOCS_APP_ROOT, "lib/install-commands.ts"), "utf-8");
-    expect(install).toContain("bun install -g @kitsunekode/kunai");
+    expect(BUN_GLOBAL_INSTALL).toBe("bun install -g @kitsunekode/kunai");
   });
 
   test("glossary is registered in users meta.json", () => {

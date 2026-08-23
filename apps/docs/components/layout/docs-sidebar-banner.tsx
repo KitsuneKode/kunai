@@ -34,14 +34,28 @@ export function DocsSidebarBanner() {
           </>
         ) : null}
       </p>
+      {/* Each count links to the page that actually lists it — a number with
+          nowhere to go is the reason this block read as decoration. */}
       <p className="text-fd-muted-foreground m-0 text-xs tabular-nums">
-        {codeMetadata.providerIds.length} providers · {codeMetadata.commandCount} shell commands
+        <Link
+          className="hover:text-fd-foreground underline-offset-4 hover:underline"
+          href="/docs/users/providers"
+        >
+          {codeMetadata.providerIds.length} providers
+        </Link>
+        {" · "}
+        <Link
+          className="hover:text-fd-foreground underline-offset-4 hover:underline"
+          href="/docs/users/commands-and-shortcuts#every-shell-command"
+        >
+          {codeMetadata.commandCount} shell commands
+        </Link>
       </p>
       <Link
         href="/docs/users/cli-reference"
         className="text-fd-primary inline-flex min-h-8 items-center text-xs font-medium transition-[color,transform] duration-150 ease-[var(--ease-out)] hover:underline active:scale-[0.96]"
       >
-        Open CLI reference →
+        Launch flags reference →
       </Link>
     </div>
   );

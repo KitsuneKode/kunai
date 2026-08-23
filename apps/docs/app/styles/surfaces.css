@@ -67,14 +67,6 @@
   transform: scale(0.96) translateY(0) !important;
 }
 
-.kunai-doc-row {
-  border-radius: var(--kunai-radius-outer);
-  border: 1px solid var(--kunai-line);
-  background: color-mix(in oklab, var(--kunai-surface) 78%, transparent);
-  box-shadow: var(--kunai-shadow-sm);
-  padding: clamp(1.25rem, 3vw, 1.75rem);
-}
-
 .kunai-hero-glow {
   position: absolute;
   inset: 0;

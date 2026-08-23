@@ -4,9 +4,11 @@ import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
 import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
 import { StartHereCards } from "@/components/home/start-here-cards";
 import type { HomeCommandMetadata, HomeProviderMetadata } from "@/components/home/types";
+import { CopyButton } from "@/components/ui/copy-button";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { homeFlow, homeHero, homeHighlights, homeStartCards } from "@/lib/home-content";
 import type { ProviderSummary } from "@/lib/home-presenters";
+import { CANONICAL_INSTALL } from "@/lib/install-commands";
 import { IconArrowRight } from "@tabler/icons-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -35,7 +37,7 @@ export default function HomePageShell({
   return (
     <main className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
       <section className="kunai-home-hero grid items-center gap-10 pb-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <HomeHeroStatic />
+        <HomeHeroStatic cliVersion={cliVersion} providerCount={providers.length} />
         <div className="kunai-hero-terminal-plane flex flex-col">
           <HomeTerminalIsland
             providers={providers}
@@ -64,17 +66,12 @@ export default function HomePageShell({
         />
         <div className="kunai-flow">
           {homeFlow.map((step, index) => (
-            <article
-              className={`kunai-flow-card premium-card-hover kunai-state-${step.state} flex flex-col justify-between`}
-              key={step.title}
-            >
-              <div>
-                <div className="flex items-start justify-between">
-                  <span className="kunai-flow-index">{String(index + 1).padStart(2, "0")}</span>
-                </div>
-                <h3 className="kunai-type-title mt-5 text-lg">{step.title}</h3>
-                <p className="kunai-type-body mt-3 text-xs">{step.description}</p>
-              </div>
+            <article className="kunai-flow-card premium-card-hover" key={step.title}>
+              <span className="kunai-flow-index tabular-nums">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <h3 className="kunai-type-title mt-5 text-lg">{step.title}</h3>
+              <p className="kunai-type-body mt-3 text-xs">{step.description}</p>
             </article>
           ))}
         </div>
@@ -117,18 +114,21 @@ export default function HomePageShell({
               you own the relay URL.
             </p>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-4">
-            <Link
-              className="kunai-button kunai-button-primary shadow-lg"
-              href={homeHero.primaryCta.href}
-            >
-              <span>{homeHero.primaryCta.label}</span>
-              <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
-            </Link>
-            <Link className="kunai-button border-fd-border hover:border-fd-primary" href="/docs">
-              Browse docs
-            </Link>
-            <HomeStarCta />
+          <div className="flex shrink-0 flex-col gap-3">
+            <code className="kunai-code-row">
+              <span>{CANONICAL_INSTALL}</span>
+              <CopyButton text={CANONICAL_INSTALL} label="final-install" />
+            </code>
+            <div className="flex flex-wrap gap-3">
+              <Link
+                className="kunai-button kunai-button-primary shadow-lg"
+                href={homeHero.primaryCta.href}
+              >
+                <span>{homeHero.primaryCta.label}</span>
+                <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
+              </Link>
+              <HomeStarCta />
+            </div>
           </div>
         </div>
       </section>

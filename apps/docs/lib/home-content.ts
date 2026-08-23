@@ -17,7 +17,6 @@ export type HomeSection = {
 export type HomeFlowStep = {
   readonly title: string;
   readonly description: string;
-  readonly state: "focus" | "ready" | "warn" | "danger" | "quiet";
 };
 
 export const homeHero = {
@@ -60,19 +59,16 @@ export const homeFlow: readonly HomeFlowStep[] = [
     title: "Search or continue",
     description:
       "Find a title, resume history, or open calendar, recommendations, or your offline library from the shell.",
-    state: "focus",
   },
   {
     title: "Resolve locally",
     description:
       "Kunai asks registered adapters for a stream URL they already serve, then hands that URL to mpv.",
-    state: "warn",
   },
   {
     title: "Play in mpv",
     description:
       "The shell supervises playback, resume offers, auto-skip, and post-play routing when the session ends or stalls.",
-    state: "ready",
   },
 ] as const;
 

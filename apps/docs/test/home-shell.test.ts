@@ -5,6 +5,11 @@ import path from "node:path";
 import { codeMetadata } from "../lib/code-metadata";
 import { homeFlow, homeHero, homeStartCards } from "../lib/home-content";
 import { featuredCommands } from "../lib/home-presenters";
+import {
+  BUN_GLOBAL_INSTALL,
+  NATIVE_INSTALL_PS1,
+  NPM_GLOBAL_INSTALL,
+} from "../lib/install-commands";
 
 const DOCS_APP_ROOT = path.resolve(import.meta.dir, "..");
 
@@ -30,8 +35,12 @@ describe("docs home shell", () => {
     expect(h1Count).toBe(1);
     expect(hero).toContain("CANONICAL_INSTALL");
     expect(hero).toContain("NATIVE_INSTALL_PS1");
-    expect(readSource("lib/install-commands.ts")).toContain("bun install -g @kitsunekode/kunai");
-    expect(readSource("lib/install-commands.ts")).toContain("NATIVE_INSTALL_PS1");
+    // Assert the resolved values, not the source text: these constants are
+    // composed from NPM_PACKAGE_NAME, so a text match tests the spelling of the
+    // implementation rather than the command a visitor actually copies.
+    expect(BUN_GLOBAL_INSTALL).toBe("bun install -g @kitsunekode/kunai");
+    expect(NPM_GLOBAL_INSTALL).toBe("npm install -g @kitsunekode/kunai");
+    expect(NATIVE_INSTALL_PS1).toContain("install.ps1");
   });
 
   test("terminal simulator does not duplicate hero markup", () => {
