@@ -93,7 +93,11 @@
 }
 
 .kunai-terminal-top,
-.kunai-terminal-body,
+.kunai-terminal-body {
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-bg) 95%, transparent);
+}
+
 .kunai-terminal-top {
   display: flex;
   flex-wrap: wrap;
@@ -182,6 +186,17 @@
   padding-top: 0.5rem;
 }
 
+@keyframes log-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* Terminal interactive cursor */
 .kunai-cursor {
   display: inline-block;
@@ -201,14 +216,6 @@
   50% {
     background-color: var(--kunai-accent);
   }
-}
-
-.kunai-install {
-  display: grid;
-  gap: 0.55rem;
-  margin-top: 0.6rem;
-  border-radius: 0.5rem;
-  padding: 0.9rem;
 }
 
 /* Command Palette Overlay */
@@ -344,14 +351,6 @@
   box-shadow: 0 8px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent);
 }
 
-.kunai-flow-card > .kunai-flow-index {
-  color: var(--kunai-accent);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
 .kunai-flow-card p {
   color: var(--color-fd-muted-foreground);
   text-wrap: pretty;
@@ -382,6 +381,13 @@
 .kunai-flow-card:nth-child(3) {
   animation-delay: 120ms;
 }
+.kunai-flow-card:nth-child(4) {
+  animation-delay: 180ms;
+}
+.kunai-flow-card:nth-child(5) {
+  animation-delay: 240ms;
+}
+
 @keyframes card-stagger-in {
   from {
     opacity: 0;
@@ -409,7 +415,14 @@
   color: var(--color-fd-muted-foreground);
 }
 
-.kunai-flow-card h3,
+.kunai-flow-card h3 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.1;
+  font-weight: 800;
+  text-wrap: balance;
+}
+
 .kunai-status-dot {
   height: 0.625rem;
   width: 0.625rem;
@@ -426,6 +439,16 @@
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.625rem;
   color: color-mix(in oklab, var(--color-fd-muted-foreground) 45%, transparent);
+}
+.provider-interactive-tab.is-active {
+  background: linear-gradient(135deg, var(--kunai-accent-deep), #8c2a44);
+  border-color: var(--kunai-accent);
+  color: #fff;
+  box-shadow: 0 4px 12px var(--kunai-accent-glow);
+}
+.flag-checkbox-wrapper.is-checked {
+  border-color: var(--kunai-accent);
+  background: color-mix(in oklab, var(--kunai-accent) 5%, var(--kunai-surface-strong));
 }
 
 .kunai-final {
@@ -450,8 +473,7 @@
   .kunai-button,
   .kunai-flow-card,
   .kunai-final,
-  .palette-item,
-  .os-tab-button {
+  .palette-item {
     transition: none !important;
     transform: none !important;
     animation: none !important;
@@ -523,6 +545,7 @@
 
 /* Preset pills + interactive chips — unified press feedback */
 .kunai-terminal-stage button:active,
+.kunai-flow-card:active,
 .os-tab-button:active,
 .kunai-fd-card:active {
   transform: scale(0.96) !important;
@@ -704,7 +727,10 @@
 
 /* ── Hero: paired install commands ─────────────────────────────────────────
    Both platforms sit in one stack so the choice is made once. The OS label is
-   a fixed-width column so the two commands align on their first character. */
+   a fixed column so the two commands align on their first character.
+
+   The command wraps rather than scrolling: a `curl … | bash` line that is cut
+   off mid-URL asks the reader to trust what they cannot see. */
 .kunai-hero-install {
   display: flex;
   flex-direction: column;
@@ -713,6 +739,7 @@
 }
 
 .kunai-hero-install .kunai-code-row {
+  align-items: flex-start;
   gap: 0.75rem;
   transition:
     border-color var(--kunai-duration-ui) var(--kunai-ease-out),
@@ -727,6 +754,7 @@
 .kunai-hero-install__os {
   flex: 0 0 auto;
   width: 6.5rem;
+  padding-top: 0.1rem;
   color: var(--color-fd-muted-foreground);
   font-size: 0.625rem;
   letter-spacing: 0.04em;
@@ -736,17 +764,17 @@
 .kunai-hero-install__cmd {
   flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
-  white-space: nowrap;
-  scrollbar-width: none;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
 }
 
-.kunai-hero-install__cmd::-webkit-scrollbar {
-  display: none;
+/* The copy control must not shrink when the command wraps to two lines. */
+.kunai-hero-install .kunai-code-row > :last-child {
+  flex: 0 0 auto;
 }
 
 /* ── Hero proof row ────────────────────────────────────────────────────────
-   Four verifiable facts, each one a link to where it can be checked. */
+   Four verifiable facts, each a link to where it can be checked. */
 .kunai-proof-row {
   display: flex;
   flex-wrap: wrap;
@@ -802,8 +830,8 @@
 }
 
 /* ── Secondary install paths ───────────────────────────────────────────────
-   Below the three-step flow and visually quieter, because it is the
-   alternative route rather than a fourth step. */
+   Below the three-step flow and visually quieter: it is the alternative
+   route, not a fourth step. */
 .kunai-other-paths {
   margin-top: 2rem;
   padding-top: 1.75rem;
@@ -822,6 +850,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 1rem;
+}
+
+.kunai-other-paths__commands .kunai-code-row {
+  overflow-wrap: anywhere;
 }
 
 .kunai-other-paths__links {
@@ -856,6 +888,6 @@
   }
 
   .kunai-hero-install__os {
-    width: 5rem;
+    width: 4.5rem;
   }
 }
