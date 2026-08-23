@@ -64,6 +64,16 @@ export function encodeDiscordIpcPacket(op: number, payload: Record<string, unkno
   return packet;
 }
 
+/**
+ * Largest Discord IPC frame we will buffer.
+ *
+ * Frames are small JSON control messages; the header's 32-bit length field can
+ * claim up to 4 GiB. Without a ceiling a desynced or hostile stream declares a
+ * huge frame and `handleData` grows its accumulator until the memory watchdog
+ * kills the process, which is a long way to travel for a rich-presence update.
+ */
+export const MAX_DISCORD_IPC_FRAME_BYTES = 1024 * 1024;
+
 export function decodeDiscordIpcPacket(data: Uint8Array): DiscordIpcFrame {
   if (data.byteLength < 8) {
     throw new Error("Discord IPC frame was shorter than its header");
@@ -77,6 +87,25 @@ export function decodeDiscordIpcPacket(data: Uint8Array): DiscordIpcFrame {
   const body = data.slice(8, 8 + length);
   const payload = JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown>;
   return { op, payload };
+}
+
+/**
+ * Decode without throwing, for the socket data callback.
+ *
+ * `decodeDiscordIpcPacket` runs `JSON.parse` on bytes Discord sent us. A throw
+ * inside a `Bun.connect` data callback is not a rejected promise — it is an
+ * uncaught exception, and `main.ts` escalates those to a *fatal* shutdown. That
+ * put a malformed frame from an optional, cosmetic integration on the path that
+ * ends the user's playback session. Presence is best-effort: a frame we cannot
+ * read is dropped, not fatal. Mirrors `parseMpvIpcLine`, which returns null for
+ * the same reason.
+ */
+export function tryDecodeDiscordIpcPacket(data: Uint8Array): DiscordIpcFrame | null {
+  try {
+    return decodeDiscordIpcPacket(data);
+  } catch {
+    return null;
+  }
 }
 
 export function createDiscordIpcClient(
@@ -147,6 +176,8 @@ export function createDiscordIpcClient(
   };
 
   const handleData = (chunk: Uint8Array) => {
+    // Append. Chunks accumulate only until a whole frame is available, and the
+    // frame cap below bounds how far that can go.
     const next = new Uint8Array(buffer.byteLength + chunk.byteLength);
     next.set(buffer, 0);
     next.set(chunk, buffer.byteLength);
@@ -155,11 +186,32 @@ export function createDiscordIpcClient(
     while (buffer.byteLength >= 8) {
       const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
       const length = view.getUint32(4, true);
+
+      // A length we will never honour means the stream is desynced or hostile.
+      // Waiting for it would buffer without bound, and every later frame would
+      // be misframed anyway, so drop the connection instead of guessing.
+      if (length > MAX_DISCORD_IPC_FRAME_BYTES) {
+        buffer = new Uint8Array(0);
+        ready = false;
+        rejectAll(
+          new Error(
+            `Discord IPC frame claimed ${length} bytes (max ${MAX_DISCORD_IPC_FRAME_BYTES})`,
+          ),
+        );
+        if (socket) {
+          socket.end();
+          socket = null;
+        }
+        return;
+      }
+
       const frameLength = 8 + length;
       if (buffer.byteLength < frameLength) return;
       const packet = buffer.slice(0, frameLength);
       buffer = buffer.slice(frameLength);
-      const frame = decodeDiscordIpcPacket(packet);
+      // Never throws: presence must not be able to reach the fatal path.
+      const frame = tryDecodeDiscordIpcPacket(packet);
+      if (!frame) continue;
       handlePayload(frame.op, frame.payload);
     }
   };
