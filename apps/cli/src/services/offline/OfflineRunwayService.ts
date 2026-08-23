@@ -45,7 +45,7 @@ export class OfflineRunwayService {
         | "getJob"
         | "hasJobForEpisode"
         | "enqueue"
-        | "processQueue"
+        | "kickQueue"
         | "listActive"
         | "estimateAvailableEpisodeSlots"
       >;
@@ -174,7 +174,7 @@ export class OfflineRunwayService {
       }
       throw error;
     }
-    if (enqueued > 0) void this.deps.downloadService.processQueue();
+    if (enqueued > 0) this.deps.downloadService.kickQueue("offline-runway");
     this.deps.diagnostics?.record({
       category: "download",
       operation: "offline-runway.evaluate",

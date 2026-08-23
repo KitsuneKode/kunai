@@ -211,7 +211,7 @@ export async function commitDownloadIntent(
           : `Download failed: ${message}`,
     });
     if (queuedCount > 0) persistSeriesPolicy();
-    void container.downloadService.processQueue();
+    container.downloadService.kickQueue("download-intent");
     return { status: queuedCount > 0 ? "queued" : "none", queuedCount };
   }
 
@@ -247,6 +247,6 @@ export async function commitDownloadIntent(
             count: queuedCount,
           })} · ${title.name}`,
   });
-  void container.downloadService.processQueue();
+  container.downloadService.kickQueue("download-intent");
   return { status: "queued", queuedCount };
 }

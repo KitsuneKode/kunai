@@ -223,7 +223,7 @@ test("anime movie download-more restores its persisted lane before actual enqueu
         return await service.enqueue(input);
       },
       // Persistence is the boundary under test; do not start the worker.
-      processQueue: () => undefined,
+      kickQueue: () => undefined,
     },
     offlineTitlePolicies: { get: () => undefined },
     offlineRunwayService: { enqueueEvaluation: () => undefined },

@@ -87,7 +87,7 @@ describe("enqueueCurrentPlaybackDownload feedback", () => {
             outputPath: "/downloads/out.mp4",
             ...job,
           }) as DownloadJobRecord,
-        processQueue: async () => {},
+        kickQueue: () => {},
       },
     } as unknown as Container;
 

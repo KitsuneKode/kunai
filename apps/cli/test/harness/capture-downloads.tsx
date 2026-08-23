@@ -102,7 +102,7 @@ const container = {
     abort: async () => undefined,
     deleteJob: async () => undefined,
     retry: async () => undefined,
-    processQueue: async () => undefined,
+    kickQueue: () => undefined,
   },
 } as unknown as Container;
 

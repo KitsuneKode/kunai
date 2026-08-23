@@ -84,7 +84,7 @@ test("DownloadOnlyPhase does not contact anime providers before download profile
           enqueues += 1;
           return { id: "job-1" };
         },
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: { upsert: () => {} },
       diagnosticsService: { record: () => {} },
@@ -137,7 +137,7 @@ test("DownloadOnlyPhase schedules a bounded runway evaluation when enrolling kee
       downloadService: {
         getEnqueueEligibility: () => ({ allowed: true }),
         enqueue: async () => ({ id: "job-1" }),
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: {
         get: () => undefined,
@@ -216,7 +216,7 @@ test("DownloadOnlyPhase persists the confirmed title cleanup preference with the
       downloadService: {
         getEnqueueEligibility: () => ({ allowed: true }),
         enqueue: async () => ({ id: "job-1" }),
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: {
         get: () => undefined,
@@ -274,7 +274,7 @@ test("DownloadOnlyPhase stores a one-off series cleanup choice without enrolling
       downloadService: {
         getEnqueueEligibility: () => ({ allowed: true }),
         enqueue: async () => ({ id: "job-1" }),
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: {
         get: () => undefined,
@@ -330,7 +330,7 @@ test("DownloadOnlyPhase keeps an existing offline runway enrollment during a one
       downloadService: {
         getEnqueueEligibility: () => ({ allowed: true }),
         enqueue: async () => ({ id: "job-1" }),
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: {
         get: () => ({
@@ -387,7 +387,7 @@ test("DownloadOnlyPhase persists profile intent after a partially queued series 
           if (enqueueCount === 2) throw new Error("second item rejected");
           return { id: "job-1" };
         },
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: {
         get: () => undefined,
@@ -443,7 +443,7 @@ function titleLevelContext(mode: string, enqueued: Record<string, unknown>[]) {
           enqueued.push(input);
           return { id: `job-${enqueued.length}` };
         },
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: { get: () => undefined, upsert: () => {} },
       offlineRunwayService: { enqueueEvaluation: () => {} },

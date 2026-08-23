@@ -10,6 +10,7 @@ describe("diagnostic operation taxonomy", () => {
   test("keeps high-value runtime operations named and user-actionable", () => {
     expect(isKnownDiagnosticOperation("download.artifact.validated")).toBe(true);
     expect(isKnownDiagnosticOperation("download.artifact.repairable")).toBe(true);
+    expect(isKnownDiagnosticOperation("download.queue.pass.failed")).toBe(true);
     expect(isKnownDiagnosticOperation("source-inventory.cache.hit")).toBe(true);
     expect(isKnownDiagnosticOperation("post-playback.recommendations.seed")).toBe(true);
     expect(isKnownDiagnosticOperation("post-playback.autonext.prefetch-wait")).toBe(true);
@@ -28,6 +29,11 @@ describe("diagnostic operation taxonomy", () => {
       category: "download",
       audience: "both",
       userAction: "Open /downloads or /library if the artifact later disappears.",
+    });
+    expect(getDiagnosticOperation("download.queue.pass.failed")).toMatchObject({
+      category: "download",
+      audience: "both",
+      userAction: "Export diagnostics, then retry the affected download from /downloads.",
     });
     expect(getDiagnosticOperation("provider.selection.decision")).toMatchObject({
       category: "provider",

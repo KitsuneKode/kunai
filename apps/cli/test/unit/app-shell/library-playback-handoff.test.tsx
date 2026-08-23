@@ -68,7 +68,7 @@ test("/library returns the selected offline episode to the session workflow", as
       deleteJob: () => undefined,
       abort: async () => undefined,
       retry: async () => undefined,
-      processQueue: async () => undefined,
+      kickQueue: () => undefined,
       repairRepairableSidecars: async () => ({
         checked: 0,
         repaired: 0,

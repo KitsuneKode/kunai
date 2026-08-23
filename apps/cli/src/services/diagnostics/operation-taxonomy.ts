@@ -445,6 +445,14 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     userAction: "Retry the download; if it repeats, export diagnostics.",
   },
   {
+    operation: "download.queue.pass.failed",
+    category: "download",
+    audience: "both",
+    summary:
+      "An unexpected background queue-pass failure was contained inside the download subsystem.",
+    userAction: "Export diagnostics, then retry the affected download from /downloads.",
+  },
+  {
     operation: "download.artifact.integrity.checked",
     category: "download",
     audience: "both",

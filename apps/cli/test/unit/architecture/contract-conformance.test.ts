@@ -56,6 +56,20 @@ function readerFilesFor(symbol: string, definedIn: readonly string[]): string[] 
 }
 
 describe("contract conformance", () => {
+  test("background download queue kicks use the supervised entry point", () => {
+    const discardedQueuePasses = PRODUCTION_SOURCES.flatMap(({ file, text }) =>
+      file === "apps/cli/src/services/download/DownloadService.ts"
+        ? []
+        : text
+            .split("\n")
+            .flatMap((line, index) =>
+              /\bvoid\b.*\.processQueue\(\)/.test(line) ? [`${file}:${index + 1}`] : [],
+            ),
+    );
+
+    expect(discardedQueuePasses).toEqual([]);
+  });
+
   /**
    * A command the palette never offers is unreachable: `resolveCommands` only
    * surfaces ids listed in a `COMMAND_CONTEXTS` entry or the browse command pool

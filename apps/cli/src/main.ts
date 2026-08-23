@@ -917,7 +917,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
 
   if (!config.offlineMode) {
-    void container.downloadService.processQueue();
+    container.downloadService.kickQueue("startup");
   }
   // Background update: binary channel auto-applies; others notify-only.
   if (!config.offlineMode)

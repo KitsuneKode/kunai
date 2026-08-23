@@ -17,9 +17,9 @@ import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai
  *   - `selectEligibleQueuedJob` skips claimed ids, and `claimedJobIds` is
  *     process-lifetime state, so the job became unstartable until restart while
  *     still displaying as queued.
- *   - every caller is `void downloadService.processQueue()` with no `.catch()`,
- *     so it surfaced as an unhandled rejection, which `main.ts` escalates to a
- *     fatal shutdown.
+ *   - production callers used to discard `downloadService.processQueue()` with
+ *     no catch, so it surfaced as an unhandled rejection, which `main.ts`
+ *     escalates to a fatal shutdown.
  *
  * The unavailable path is simulated with a regular *file* where the download
  * directory should be. `chmod` would be the obvious choice and is the wrong
@@ -90,8 +90,8 @@ test("an unavailable download folder does not strand the job or reject", async (
   rmSync(downloadRoot, { recursive: true, force: true });
   writeFileSync(downloadRoot, "not a directory");
 
-  // Must resolve, not reject: every call site is `void processQueue()`, so a
-  // rejection here reaches the unhandledRejection handler and kills the session.
+  // Must resolve, not reject: this path is a classified per-job condition, not
+  // an unexpected queue-pass failure for the supervisor to contain and report.
   const first = await service.processNextQueued();
   expect(first).toBeNull();
 

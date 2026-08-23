@@ -319,7 +319,7 @@ export async function openOfflineLibraryGroupPicker(
           repairEntries.length === 1 ? "item" : "items"
         }`,
       });
-      void container.downloadService.processQueue();
+      container.downloadService.kickQueue("offline-repair");
       continue;
     }
     if (picked.type === "download-more") {
@@ -604,7 +604,7 @@ export async function openOfflineLibraryGroupPicker(
             ? `Sidecar repair checked: ${formatOfflineJobListingTitle(job)}`
             : `Re-download queued: ${formatOfflineJobListingTitle(job)}`,
       });
-      void container.downloadService.processQueue();
+      container.downloadService.kickQueue("download-manager");
       continue;
     }
     await container.downloadService.deleteJob(job.id, {
@@ -1662,7 +1662,7 @@ export async function enqueueCurrentPlaybackDownload({
         });
       }
     }, 3000);
-    void container.downloadService.processQueue();
+    container.downloadService.kickQueue("shell-download");
     return true;
   } catch (error) {
     const message =
