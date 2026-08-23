@@ -69,22 +69,19 @@ function readExistingMetadata(filePath: string): Record<string, unknown> | null 
 }
 
 /**
- * The metadata's *content* identity, ignoring provenance stamps.
+ * The metadata's content identity.
  *
- * `syncedAt` and `cliSourceRevision` move on every regeneration and every
- * commit respectively, while saying nothing about whether the docs content
- * changed. Comparing them rewrote the file on every commit, so it sat
- * permanently modified in `git status` and added a two-line diff to unrelated
- * commits.
+ * Provenance (`syncedAt`, `cliSourceRevision`) used to live in this file and
+ * moved on every regeneration and every commit while saying nothing about
+ * whether the docs content changed. That guaranteed a conflict between any two
+ * branches that both regenerated, which is exactly what happened on four
+ * consecutive PRs. They now live in a gitignored sidecar, so this file changes
+ * only when its content does and the identity is simply the whole payload.
  *
- * Exported because `check-codegen-freshness.ts` must ask the identical
- * question. It previously kept its own copy that ignored BOTH fields while this
- * one ignored only `syncedAt` — so the writer rewrote for a change the checker
- * declared irrelevant. One definition, no drift.
+ * Exported because `check-codegen-freshness.ts` must ask the identical question.
  */
 export function metadataIdentity(value: Record<string, unknown>): string {
-  const { syncedAt: _syncedAt, cliSourceRevision: _cliSourceRevision, ...payload } = value;
-  return JSON.stringify(payload);
+  return JSON.stringify(value);
 }
 
 function extractString(content: string, prop: string): string | null {
@@ -374,10 +371,8 @@ export function buildMetadata(): Record<string, unknown> {
   const shortcuts = syncShortcuts();
 
   return {
-    syncedAt: new Date().toISOString(),
     version,
     cliVersion: version,
-    cliSourceRevision: resolveCliSourceRevision(ROOT_DIR),
     cliSourceFingerprint: computeCliSourceFingerprint(ROOT_DIR),
     docsContentFingerprint: computeDocsContentFingerprint(ROOT_DIR),
     featureStatusRevision: computeFeatureStatusRevision(ROOT_DIR),
@@ -400,13 +395,38 @@ function main() {
   const existing = readExistingMetadata(outputPath);
   if (existing && metadataIdentity(existing) === metadataIdentity(metadata)) {
     formatGeneratedFile(outputPath);
+    writeProvenance();
     console.log(`Metadata already up to date at: ${outputPath}`);
     return;
   }
 
   fs.writeFileSync(outputPath, JSON.stringify(metadata, null, 2), "utf-8");
   formatGeneratedFile(outputPath);
+  writeProvenance();
   console.log(`Successfully generated metadata at: ${outputPath}`);
+}
+
+/**
+ * When this ran and against which revision — written every time, never committed.
+ *
+ * Kept out of `generated-metadata.json` because both values change on every
+ * regeneration regardless of whether anything about the docs changed, so
+ * committing them made every pair of docs branches conflict on this file.
+ */
+function writeProvenance(): void {
+  const provenancePath = path.join(DOCS_LIB_DIR, "generated-provenance.json");
+  fs.writeFileSync(
+    provenancePath,
+    JSON.stringify(
+      {
+        syncedAt: new Date().toISOString(),
+        cliSourceRevision: resolveCliSourceRevision(ROOT_DIR),
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
 }
 
 if (import.meta.main) {
