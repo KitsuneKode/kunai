@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { resolveBootstrapIntent, type BootstrapArgs } from "@/app/bootstrap/bootstrap-intent";
+import { createInitialState, reduceState } from "@/domain/session/SessionState";
+
+const baseState = () =>
+  createInitialState("videasy", "allanime", {
+    anime: { audio: "original", subtitle: "en" },
+    series: { audio: "original", subtitle: "none" },
+    movie: { audio: "original", subtitle: "en" },
+  });
 
 function args(overrides: Partial<BootstrapArgs> = {}): BootstrapArgs {
   return { anime: false, quick: false, ...overrides };
@@ -55,4 +63,40 @@ describe("resolveBootstrapIntent", () => {
   test("does not auto-pick for quick mode without a query", () => {
     expect(resolveBootstrapIntent(args({ quick: true })).autoPickSearchResultIndex).toBeUndefined();
   });
+});
+
+test("a resolved catalog detail replaces the -i placeholder name", () => {
+  const placeholder = resolveBootstrapIntent(args({ id: "438631", type: "movie" })).directTitle;
+  expect(placeholder?.name).toBe("TMDB 438631");
+
+  const state = reduceState(
+    { ...baseState(), currentTitle: placeholder },
+    {
+      type: "SET_TITLE_DETAIL",
+      titleId: "438631",
+      titleType: "movie",
+      detail: { id: "438631", type: "movie", title: "Dune", year: "2021" },
+    },
+  );
+
+  // The panel used to render "TMDB 438631" as the film's title while year,
+  // runtime, score and synopsis beside it were all correct.
+  expect(state.currentTitle?.name).toBe("Dune");
+});
+
+test("a real title name is never overwritten by a later detail fetch", () => {
+  const state = reduceState(
+    {
+      ...baseState(),
+      currentTitle: { id: "438631", type: "movie", name: "Dune: Part One" },
+    },
+    {
+      type: "SET_TITLE_DETAIL",
+      titleId: "438631",
+      titleType: "movie",
+      detail: { id: "438631", type: "movie", title: "Dune", year: "2021" },
+    },
+  );
+
+  expect(state.currentTitle?.name).toBe("Dune: Part One");
 });

@@ -64,7 +64,15 @@ Compatibility aliases are allowed:
 - `add-to-playlist` must not silently write to Watchlist. A durable playlist add requires a playlist choice.
 - Playlist exports must never contain stream URLs, headers, cookies, auth tokens, or local file paths.
 - `/provider` is a stable command surface, not a diagnostics-only escape hatch.
-- Favorites, Sync, Random, Surprise, and advanced repair commands should stay out of default palettes unless they have a clear stable product role.
+- Favorites, Sync, and advanced repair commands should stay out of default palettes unless they have a clear stable product role.
+- **Amended 2026-08-23:** Random and Surprise now meet that bar and are in the
+  browse palette, grouped with `/trending` rather than as experiments. The
+  condition was never about the commands' existence — they were fully wired —
+  but about whether the tray behaved. It did not: `discoverItemLimit` was
+  advertised in Settings and never read, the tray was hard-clamped to five
+  picks, and a uniform shuffle discarded the 2/2/2 stratification that keeps a
+  tray from being filled by one source. With those fixed the surfaces are
+  predictable enough to promote.
 
 ## Current Implementation Notes
 

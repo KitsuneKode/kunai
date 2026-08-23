@@ -15,6 +15,7 @@ import {
 import { buildErrorRows, type ErrorRow, type ErrorRowTone, rowText } from "./playback-error-rows";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
 import { reducedMotionEnabled, useFrameTick } from "./primitives/SakuraPetal";
+import { SakuraLoader } from "./SakuraLoader";
 import { palette } from "./shell-theme";
 import { useShellDimensions } from "./use-viewport-policy";
 
@@ -22,6 +23,23 @@ export type { ErrorScenario } from "@/domain/playback/playback-problem";
 
 export function RootIdleShell({ state }: { state: SessionState }) {
   const currentTitle = state.currentTitle;
+
+  // A bootstrap `-S` search runs before any browse shell exists, so this idle
+  // surface is what is on screen while it resolves. Without this branch the
+  // root chrome said "searching" over a welcome screen that gave no sign of
+  // work in flight -- the loader lives in the browse shell, which is not
+  // mounted yet. Reuses the shared loader rather than inventing a second one.
+  if (state.searchState === "loading") {
+    const query = state.searchQuery.trim();
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <SakuraLoader
+          label={query.length > 0 ? `Searching ${query}…` : "Searching…"}
+          sublabel="esc to cancel"
+        />
+      </Box>
+    );
+  }
   const hasSession = !!currentTitle;
   const currentEpisode =
     state.currentEpisode && showsEpisodeLabel(currentTitle)
