@@ -30,21 +30,46 @@ describe("hls-relay gating", () => {
    * applied to attacker-influenceable input: base64 path segments on `/p/` and
    * `/s/`, and every URI rewritten out of a provider-supplied playlist.
    *
-   * The patterns were unanchored substring tests (`/\.uwucdn\./i`), so any host
-   * containing `.uwucdn.` as a label matched — an attacker-controlled domain
-   * turned the local relay into a fetcher for arbitrary external hosts.
+   * The original patterns were unanchored substring tests (`/\.uwucdn\./i`).
+   * Matching the registrable-looking shape is still insufficient: a wildcard
+   * TLD accepts attacker-owned `uwucdn.com`, `uwucdn.attacker`, and equivalent
+   * subdomains. Only the two observed `.top` apexes and their real subdomains
+   * belong to this local relay.
    */
-  test("the CDN allowlist is a domain suffix, not a substring", () => {
-    // Attacker-registrable domains that contain the allowlisted label.
-    expect(streamNeedsHlsRelay("https://evil.uwucdn.attacker.com/x.m3u8")).toBe(false);
-    expect(streamNeedsHlsRelay("https://uwucdn.evil.com/x.m3u8")).toBe(false);
-    expect(streamNeedsHlsRelay("https://owocdn.top.evil.net/x.m3u8")).toBe(false);
-    expect(streamNeedsHlsRelay("https://not-uwucdn.top.attacker.io/x.m3u8")).toBe(false);
+  test.each([
+    // Attacker-registrable TLDs and suffixes.
+    "https://uwucdn.com/x.m3u8",
+    "https://uwucdn.attacker/x.m3u8",
+    "https://vault.uwucdn.evil/x.m3u8",
+    "https://owocdn.xyz/x.m3u8",
+    "https://evil.uwucdn.attacker.com/x.m3u8",
+    "https://uwucdn.evil.com/x.m3u8",
+    "https://owocdn.top.evil.net/x.m3u8",
+    // Prefix and label-boundary tricks.
+    "https://not-uwucdn.top/x.m3u8",
+    "https://uwucdn-top.example/x.m3u8",
+    "https://eviluwucdn.top/x.m3u8",
+    // Unicode and its URL-parser punycode representation.
+    "https://uwucԁn.top/x.m3u8",
+    "https://xn--uwucn-1wf.top/x.m3u8",
+    // A trusted-looking userinfo or an explicit port cannot change the host.
+    "https://uwucdn.top@attacker.example/x.m3u8",
+    "https://owocdn.top:443@attacker.example/x.m3u8",
+    "https://vault.uwucdn.evil:8443/x.m3u8",
+  ] as const)("rejects non-allowlisted host %s", (url) => {
+    expect(streamNeedsHlsRelay(url)).toBe(false);
+  });
 
-    // The real hosts still pass, on any TLD and at any subdomain depth.
-    expect(streamNeedsHlsRelay("https://uwucdn.top/x.m3u8")).toBe(true);
-    expect(streamNeedsHlsRelay("https://vault-06.uwucdn.top/x.m3u8")).toBe(true);
-    expect(streamNeedsHlsRelay("https://a.b.c.owocdn.top/x.m3u8")).toBe(true);
+  test.each([
+    "https://uwucdn.top/x.m3u8",
+    "https://owocdn.top/x.m3u8",
+    "https://vault-06.uwucdn.top/x.m3u8",
+    "https://a.b.c.owocdn.top/x.m3u8",
+    // URL.hostname normalizes case and excludes the port before this check.
+    "https://VAULT-06.UWUCDN.TOP:8443/x.m3u8",
+    "https://OWOCDN.TOP:9443/x.m3u8",
+  ] as const)("accepts allowlisted host %s", (url) => {
+    expect(streamNeedsHlsRelay(url)).toBe(true);
   });
 
   test("a hostless URL never matches", () => {

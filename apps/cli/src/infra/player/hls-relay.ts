@@ -6,16 +6,18 @@ import type { Server } from "bun";
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
 
 /**
- * Allowlisted upstream CDNs, anchored to the registrable domain.
+ * Exact upstream CDN apexes. Their real subdomains are allowed; sibling TLDs
+ * and lookalike suffixes are not.
  *
  * These were `/\.uwucdn\./i` and `/\.owocdn\./i` — unanchored substring tests
  * against the hostname, so `evil.uwucdn.attacker.com` matched and the relay
- * would fetch it. `assertRelayUpstreamUrl` is the only gate on what this server
- * will request, and it is applied to attacker-influenceable input: the base64
- * path segments on `/p/` and `/s/`, and every URI rewritten out of a
- * provider-supplied playlist.
+ * would fetch it. A later registrable-domain-shaped regex still accepted any
+ * attacker-registrable TLD, such as `uwucdn.com`. `assertRelayUpstreamUrl` is
+ * the only gate on what this server will request, and it is applied to
+ * attacker-influenceable input: the base64 path segments on `/p/` and `/s/`,
+ * and every URI rewritten out of a provider-supplied playlist.
  */
-const CDN_PATTERNS = [/(?:^|\.)uwucdn\.[a-z]{2,}$/i, /(?:^|\.)owocdn\.[a-z]{2,}$/i] as const;
+const CDN_APEX_HOSTNAMES = ["uwucdn.top", "owocdn.top"] as const;
 
 /** `#EXTM3U`, as bytes — a playlist is identified without decoding the body. */
 const HLS_PLAYLIST_MAGIC = Buffer.from("#EXTM3U", "latin1");
@@ -63,7 +65,7 @@ export function streamNeedsHlsRelay(url: string): boolean {
 }
 
 export function isHlsRelayUpstreamHost(hostname: string): boolean {
-  return CDN_PATTERNS.some((p) => p.test(hostname));
+  return CDN_APEX_HOSTNAMES.some((apex) => hostname === apex || hostname.endsWith(`.${apex}`));
 }
 
 function assertRelayUpstreamUrl(url: string): URL {
