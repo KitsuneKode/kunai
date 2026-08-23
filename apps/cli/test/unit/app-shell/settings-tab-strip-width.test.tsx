@@ -4,6 +4,7 @@ import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import React from "react";
 
 import { render } from "../../harness/render-capture";
+import { renderedWidth } from "../../support/rendered-width";
 
 /** The real Settings sections, in order. */
 const SETTINGS_SECTIONS = [
@@ -44,7 +45,9 @@ describe("Settings tab strip at narrow widths", () => {
     const lines = stripAt(80, 0);
 
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.length).toBeLessThanOrEqual(80);
+    // Display columns, not `.length`: Ink emits colour inline, so counting
+    // characters made this assertion depend on FORCE_COLOR rather than layout.
+    expect(renderedWidth(lines[0] ?? "")).toBeLessThanOrEqual(80);
   });
 
   test("shows the active section name in full at every position", () => {
@@ -64,7 +67,7 @@ describe("Settings tab strip at narrow widths", () => {
     for (const columns of [40, 50, 60, 70]) {
       const lines = stripAt(columns, 5);
       expect(lines).toHaveLength(1);
-      expect(lines[0]?.length).toBeLessThanOrEqual(columns);
+      expect(renderedWidth(lines[0] ?? "")).toBeLessThanOrEqual(columns);
     }
   });
 });

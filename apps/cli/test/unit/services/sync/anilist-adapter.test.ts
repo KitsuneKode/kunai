@@ -6,6 +6,8 @@ import type { SyncTokenStore } from "@/services/persistence/SyncTokenStore";
 import { AniListAdapter } from "@/services/sync/AniListAdapter";
 import type { TrackerOperation } from "@/services/sync/operations";
 
+import { waitUntil } from "../../../support/wait-until";
+
 const connectedTokenStore = {
   load: async () => ({ anilist: { accessToken: "token", userId: 42 } }),
 } as unknown as SyncTokenStore;
@@ -129,9 +131,7 @@ test("AniList Connect sends a non-empty attempt state to the browser", async () 
   const pending = adapter.connect({ signal: controller.signal });
 
   try {
-    for (let attempt = 0; attempt < 50 && opened.length === 0; attempt += 1) {
-      await Bun.sleep(5);
-    }
+    await waitUntil(() => opened.length > 0, { label: "authorize URL opened" });
     expect(opened).toHaveLength(1);
     expect(new URL(opened[0]!).searchParams.get("state")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,

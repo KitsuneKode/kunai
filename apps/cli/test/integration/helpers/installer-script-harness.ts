@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
+import { removeTempDir } from "../../support/remove-temp-dir";
+
 /**
  * Sandbox the directories install.ps1 resolves its defaults from.
  *
@@ -76,7 +78,7 @@ export function createInstallerSandbox(name: string) {
       // to the developer's real User PATH and then delete it during cleanup.
       KUNAI_SKIP_PATH_UPDATE: "1",
     } as NodeJS.ProcessEnv,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
+    cleanup: () => removeTempDir(root),
   };
 }
 

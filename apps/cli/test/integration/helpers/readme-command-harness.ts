@@ -28,6 +28,7 @@ import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/sto
 
 import { buildPtyCommand } from "../../helpers/pty-command";
 import { storageRootEnv } from "../../helpers/storage-env";
+import { removeTempDir } from "../../support/remove-temp-dir";
 
 export type ReadmeCommandMode = "fixture-assets" | "published-assets";
 
@@ -155,7 +156,7 @@ export function prepareReadmeFixtureRelease(options: {
     root,
     assetName,
     version,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
+    cleanup: () => removeTempDir(root),
   };
 }
 
@@ -197,7 +198,7 @@ export function createIsolatedReadmeProfile(label = "readme"): IsolatedReadmePro
     cacheDir: paths.cacheDir,
     paths,
     env,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
+    cleanup: () => removeTempDir(root),
   };
 }
 
