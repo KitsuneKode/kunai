@@ -63,16 +63,19 @@ export function normalizeStreamHttpHeaders(
   };
 }
 
-/**
- * ani-cli plays mp4upload with `--tls-verify=no`. Detect by stream URL or Referer.
- */
+/** ani-cli parity exception for the real mp4upload HTTPS stream host only. */
 export function shouldDisableMpvTlsVerify(
   url: string,
-  headers: Record<string, string> | undefined,
+  _headers: Record<string, string> | undefined,
 ): boolean {
-  if (/mp4upload\.com/i.test(url)) return true;
-  const { referer } = normalizeStreamHttpHeaders(headers);
-  return Boolean(referer && /mp4upload\.com/i.test(referer));
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const hostname = parsed.hostname.toLowerCase();
+    return hostname === "mp4upload.com" || hostname.endsWith(".mp4upload.com");
+  } catch {
+    return false;
+  }
 }
 
 export type PersistentLoadfileOptions = {

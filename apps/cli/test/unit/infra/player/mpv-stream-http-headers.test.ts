@@ -58,14 +58,35 @@ describe("normalizeStreamHttpHeaders", () => {
 });
 
 describe("shouldDisableMpvTlsVerify", () => {
-  test("detects mp4upload by URL or Referer", () => {
+  test("matches only the mp4upload stream hostname", () => {
+    expect(shouldDisableMpvTlsVerify("https://mp4upload.com/d/file.mp4", {})).toBe(true);
     expect(shouldDisableMpvTlsVerify("https://www6.mp4upload.com/d/file.mp4", {})).toBe(true);
+    expect(shouldDisableMpvTlsVerify("https://WWW6.MP4UPLOAD.COM/d/file.mp4", {})).toBe(true);
+  });
+
+  test("does not let provider-controlled Referer text disable TLS verification", () => {
     expect(
       shouldDisableMpvTlsVerify("https://cdn.example/file.mp4", {
         Referer: "https://www.mp4upload.com",
       }),
-    ).toBe(true);
-    expect(shouldDisableMpvTlsVerify("https://cdn.example/file.mp4", {})).toBe(false);
+    ).toBe(false);
+  });
+
+  test("rejects textual lookalikes outside the parsed stream hostname", () => {
+    const unsafeLookalikes = [
+      "https://cdn.example/mp4upload.com/file.mp4",
+      "https://cdn.example/file.mp4?origin=mp4upload.com",
+      "https://mp4upload.com@cdn.example/file.mp4",
+      "https://notmp4upload.com/file.mp4",
+      "https://mp4upload.com.evil.example/file.mp4",
+      "https://mp4upload.com.invalid/file.mp4",
+      "not a url containing mp4upload.com",
+      "https://mp4uplоad.com/file.mp4",
+    ];
+
+    for (const url of unsafeLookalikes) {
+      expect(shouldDisableMpvTlsVerify(url, { Referer: "https://mp4upload.com" })).toBe(false);
+    }
   });
 
   test("leaves other provider streams on default TLS verification", () => {
