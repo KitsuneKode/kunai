@@ -70,10 +70,11 @@ test("a resolved catalog detail replaces the -i placeholder name", () => {
   expect(placeholder?.name).toBe("TMDB 438631");
 
   const state = reduceState(
-    { ...baseState(), currentTitle: placeholder ?? undefined },
+    { ...baseState(), currentTitle: placeholder },
     {
       type: "SET_TITLE_DETAIL",
       titleId: "438631",
+      titleType: "movie",
       detail: { id: "438631", type: "movie", title: "Dune", year: "2021" },
     },
   );
@@ -92,6 +93,7 @@ test("a real title name is never overwritten by a later detail fetch", () => {
     {
       type: "SET_TITLE_DETAIL",
       titleId: "438631",
+      titleType: "movie",
       detail: { id: "438631", type: "movie", title: "Dune", year: "2021" },
     },
   );
