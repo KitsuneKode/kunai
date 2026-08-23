@@ -740,9 +740,13 @@ describe("install.sh consent without a terminal", () => {
       const args =
         process.platform === "darwin"
           ? ["-q", "/dev/null", "bash", probePath]
-          : ["-qfec", `bash ${probePath}`, "/dev/null"];
+          : ["-qfec", 'bash "$KUNAI_ASK_PROBE"', "/dev/null"];
       return spawnSync(scriptBin, args, {
         encoding: "utf8",
+        env: {
+          ...process.env,
+          ...(process.platform === "darwin" ? {} : { KUNAI_ASK_PROBE: probePath }),
+        },
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 2_000,
       });
@@ -774,7 +778,30 @@ describe("install.sh consent without a terminal", () => {
     },
   );
 
-  test.skipIf(!scriptBin)("an explicit --yes is still consent", () => {
+  test.skipIf(!scriptBin)(
+    "requires script(1): TMPDIR shell metacharacters do not change the probe",
+    () => {
+      const parent = mkdtempSync(join(tmpdir(), "kunai-ask-parent-"));
+      const hostileTmpDir = join(parent, "has spaces; false #");
+      const originalTmpDir = process.env.TMPDIR;
+      mkdirSync(hostileTmpDir);
+      process.env.TMPDIR = hostileTmpDir;
+      try {
+        expect(tmpdir()).toBe(hostileTmpDir);
+        const result = runAskWithClosedPtyInput(0);
+        expect(result.error).toBeUndefined();
+        expect(result.signal).toBeNull();
+        expect(result.status).not.toBe(0);
+        expect(`${result.stdout}${result.stderr}`).toContain("No reply for: Install mpv?");
+      } finally {
+        if (originalTmpDir === undefined) delete process.env.TMPDIR;
+        else process.env.TMPDIR = originalTmpDir;
+        rmSync(parent, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.skipIf(!scriptBin)("requires script(1): an explicit --yes is still consent", () => {
     const result = runAskWithClosedPtyInput(1);
     expect(result.error).toBeUndefined();
     expect(result.signal).toBeNull();
