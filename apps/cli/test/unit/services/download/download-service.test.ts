@@ -1828,6 +1828,60 @@ describe("DownloadService", () => {
     markRunningSpy.mockRestore();
   });
 
+  test("attributes a failed second claim after another process wins the first job", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      diagnostics: {
+        record: (event) => events.push(event as unknown as Record<string, unknown>),
+      },
+      configService: {
+        downloadsEnabled: true,
+        downloadPath: tempDir,
+        maxConcurrentDownloads: 1,
+      } as ConfigService,
+    });
+    const firstJob = await service.enqueue({
+      title: { id: "tmdb:claim-a", type: "movie", name: "Claim A" },
+      stream: { url: "https://example.com/a.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    const secondJob = await service.enqueue({
+      title: { id: "tmdb:claim-b", type: "movie", name: "Claim B" },
+      stream: { url: "https://example.com/b.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    const originalMarkRunning = repo.markRunning.bind(repo);
+    const claimedJobIds: string[] = [];
+    const markRunningSpy = spyOn(repo, "markRunning").mockImplementation((jobId, updatedAt) => {
+      claimedJobIds.push(jobId);
+      if (claimedJobIds.length === 1) {
+        // Simulate another Kunai process winning this row between selection and
+        // our compare-and-set. The durable update makes the recursive pass pick B.
+        expect(originalMarkRunning(jobId, updatedAt)).toBe(true);
+        return false;
+      }
+      throw new Error("simulated SQLite claim failure for job B");
+    });
+
+    service.kickQueue("download-manager");
+    await waitUntil(() => events.length === 1);
+
+    expect(claimedJobIds).toEqual([firstJob.id, secondJob.id]);
+    expect(events[0]?.context).toMatchObject({
+      source: "download-manager",
+      stage: "worker",
+      workerIndex: 0,
+      jobId: secondJob.id,
+    });
+    markRunningSpy.mockRestore();
+  });
+
   test("keeps processQueue and drainQueue failures explicit for awaited callers", async () => {
     const service = buildService({
       repo,
@@ -1952,6 +2006,42 @@ describe("DownloadService", () => {
     expect(failure).toBeInstanceOf(AggregateError);
     expect((failure as AggregateError).errors).toHaveLength(2);
     expect((failure as Error).message).not.toContain("sentinel-secret-never-log");
+    expect((failure as Error).message.length).toBeLessThan(500);
+    processNextSpy.mockRestore();
+  });
+
+  test("redacts and bounds hostile error names in an aggregate worker summary", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      configService: {
+        downloadsEnabled: true,
+        downloadPath: tempDir,
+        maxConcurrentDownloads: 2,
+      } as ConfigService,
+    });
+    const namedFailure = new Error("worker A failed");
+    namedFailure.name = "https://x.test/?token=hostile-name-secret";
+    const longNamedFailure = new Error("worker B failed");
+    longNamedFailure.name = "E".repeat(200);
+    const processNextSpy = spyOn(service, "processNextQueued")
+      .mockImplementationOnce(() => Promise.reject(namedFailure))
+      .mockImplementationOnce(() => Promise.reject(longNamedFailure));
+
+    let failure: unknown;
+    try {
+      await service.processQueue();
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([namedFailure, longNamedFailure]);
+    expect((failure as Error).message).not.toContain("hostile-name");
+    expect((failure as Error).message).toContain("token=[redacted]");
+    expect((failure as Error).message).not.toContain("E".repeat(41));
     expect((failure as Error).message.length).toBeLessThan(500);
     processNextSpy.mockRestore();
   });

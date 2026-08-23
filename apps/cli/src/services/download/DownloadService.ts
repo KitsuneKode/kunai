@@ -76,6 +76,9 @@ const FFPROBE_TERMINATION_GRACE_MS = 2_500;
 const FFPROBE_FORCE_WAIT_MS = 2_500;
 const FFPROBE_IO_CLEANUP_MS = 250;
 const YTDLP_HEADER_CRLF_PATTERN = /[\r\n]/g;
+const DOWNLOAD_QUEUE_FAILURE_NAME_MAX_LENGTH = 40;
+const DOWNLOAD_QUEUE_FAILURE_MESSAGE_MAX_LENGTH = 160;
+const DOWNLOAD_QUEUE_AGGREGATE_MESSAGE_MAX_LENGTH = 1_000;
 
 /** Sanitized yt-dlp argv tail: validated stream URL, scrubbed headers, `--` before positional URL. */
 export function buildYtDlpDownloadStreamArgs(
@@ -688,7 +691,7 @@ export class DownloadService {
         this.claimedJobIds.delete(next.id);
         // Another process won the durable claim after our read. Its update makes
         // this row ineligible, so continue with the next queued candidate.
-        return await this.processNextQueued();
+        return await this.processNextQueued(queueContext);
       }
       stopHeartbeat = this.startHeartbeat(next.id);
     } catch (error) {
@@ -2000,12 +2003,28 @@ async function readUtf8Stream(reader: {
 
 function buildDownloadQueueAggregateMessage(failures: readonly unknown[]): string {
   const summaries = failures.map((failure) => {
-    const name = failure instanceof Error ? failure.name : typeof failure;
+    const name = redactDownloadQueueAggregateText(
+      failure instanceof Error ? failure.name : typeof failure,
+      DOWNLOAD_QUEUE_FAILURE_NAME_MAX_LENGTH,
+    );
     const rawMessage = failure instanceof Error ? failure.message : String(failure);
-    const message = redactDiagnosticValue(rawMessage, { maxStringLength: 160 });
-    return `${name.slice(0, 40)}: ${typeof message === "string" ? message : "unknown failure"}`;
+    const message = redactDownloadQueueAggregateText(
+      rawMessage,
+      DOWNLOAD_QUEUE_FAILURE_MESSAGE_MAX_LENGTH,
+    );
+    return `${name}: ${message}`;
   });
-  return `Multiple download queue workers failed (${failures.length}): ${summaries.join("; ")}`;
+  // AggregateError.errors intentionally retains the original reasons for
+  // awaited callers; only its human-readable summary crosses logging/UI seams.
+  return redactDownloadQueueAggregateText(
+    `Multiple download queue workers failed (${failures.length}): ${summaries.join("; ")}`,
+    DOWNLOAD_QUEUE_AGGREGATE_MESSAGE_MAX_LENGTH,
+  );
+}
+
+function redactDownloadQueueAggregateText(value: string, maxStringLength: number): string {
+  const redacted = redactDiagnosticValue(value, { maxStringLength });
+  return typeof redacted === "string" ? redacted : "unknown failure";
 }
 
 export function analyzeDownloadFailure(message: string): DownloadFailureAnalysis {
