@@ -24,14 +24,24 @@
  */
 export async function waitUntil(
   predicate: () => boolean,
-  options: { readonly timeoutMs?: number; readonly label?: string } = {},
+  options: {
+    readonly timeoutMs?: number;
+    readonly label?: string;
+    /**
+     * How to yield between polls. Ink/React suites pass an `act()`-wrapped
+     * sleep, because state updates flushed outside an act boundary make React
+     * warn — and this repo's harness treats that warning as a defect.
+     */
+    readonly tick?: (ms: number) => Promise<void>;
+  } = {},
 ): Promise<void> {
   const timeoutMs = options.timeoutMs ?? 5_000;
+  const tick = options.tick ?? ((ms: number) => Bun.sleep(ms));
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
     if (predicate()) return;
-    await Bun.sleep(5);
+    await tick(5);
   }
 
   // One last check: the loop can exit on the deadline in the same tick the
