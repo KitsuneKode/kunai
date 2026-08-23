@@ -27,7 +27,7 @@ const RELAY_TOKEN = "integration-secret";
 beforeAll(async () => {
   const handler = createRelayRpcHandler({
     readToken: () => RELAY_TOKEN,
-    async fetch() {
+    async transport() {
       upstreamCalls++;
       throw new Error("unexpected upstream fetch");
     },

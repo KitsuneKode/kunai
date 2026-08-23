@@ -34,6 +34,7 @@ export interface ProviderRelayRegistry {
 }
 
 export type RelayFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+export type RelayTransport = RelayFetch;
 
 export type RelayAuthorizationPolicy =
   | { readonly mode: "local-loopback" }
@@ -43,7 +44,7 @@ export interface RelayHandlerOptions {
   readonly providerId: string;
   readonly registry: ProviderRelayRegistry;
   readonly authorization: RelayAuthorizationPolicy;
-  readonly fetch?: RelayFetch;
+  readonly transport?: RelayTransport;
   readonly timeoutMs?: number;
   readonly maxRedirects?: number;
 }

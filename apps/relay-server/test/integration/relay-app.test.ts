@@ -36,7 +36,7 @@ test("relay app forwards allowlisted provider RPC requests", async () => {
     }),
     {
       authorization: { mode: "bearer", token: "secret" },
-      async fetch() {
+      async transport() {
         return Response.json({ data: { ok: true } });
       },
     },

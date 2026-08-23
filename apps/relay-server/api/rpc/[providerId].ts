@@ -5,8 +5,8 @@ import {
   handleRpcRequest,
   relayError,
   type ProviderRelayRegistry,
-  type RelayFetch,
   type RelayHandlerOptions,
+  type RelayTransport,
 } from "@kunai/relay";
 
 import { relayRegistry } from "../../src/provider-registry";
@@ -40,7 +40,7 @@ export interface RelayRpcHandlerDependencies {
   readonly createWebRequest?: RelayRequestAdapter;
   readonly handleRequest?: SharedRelayHandler;
   readonly writeResponse?: RelayResponseAdapter;
-  readonly fetch?: RelayFetch;
+  readonly transport?: RelayTransport;
 }
 
 export function createRelayRpcHandler(dependencies: RelayRpcHandlerDependencies): RelayRpcHandler {
@@ -88,7 +88,7 @@ export function createRelayRpcHandler(dependencies: RelayRpcHandlerDependencies)
       providerId,
       registry,
       authorization: { mode: "bearer", token },
-      fetch: dependencies.fetch,
+      transport: dependencies.transport,
     });
     await writeResponse(res, response);
   };

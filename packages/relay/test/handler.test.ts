@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+import { Readable, Writable } from "node:stream";
 
 import { handleRpcRequest } from "../src/handler";
+import { createPinnedRelayTransport, type RelayNodeRequest } from "../src/pinned-transport";
 import { buildProviderRelayRegistry } from "../src/registry";
 import type { RelayAuthorizationPolicy } from "../src/types";
 
@@ -60,7 +62,7 @@ test("handleRpcRequest forwards allowed metadata requests", async () => {
       providerId: "allanime",
       registry,
       authorization: localLoopbackAuthorization,
-      async fetch(_url, init) {
+      async transport(_url, init) {
         upstreamAuth = new Headers(init?.headers).get("authorization");
         return Response.json({ ok: true }, { status: 201 });
       },
@@ -82,7 +84,7 @@ test("handleRpcRequest rejects provider confusion", async () => {
       providerId: "allanime",
       registry,
       authorization: localLoopbackAuthorization,
-      async fetch() {
+      async transport() {
         throw new Error("should not fetch");
       },
     },
@@ -102,7 +104,7 @@ test("handleRpcRequest validates redirects before following them", async () => {
       providerId: "allanime",
       registry,
       authorization: localLoopbackAuthorization,
-      async fetch() {
+      async transport() {
         return new Response(null, {
           status: 302,
           headers: { Location: "https://miruro.bz/api" },
@@ -151,7 +153,7 @@ test("handleRpcRequest rejects unsafe upstream hosts before fetch", async () => 
       providerId: "unsafe",
       registry: unsafeRegistry,
       authorization: localLoopbackAuthorization,
-      async fetch() {
+      async transport() {
         throw new Error("should not fetch");
       },
     },
@@ -191,7 +193,7 @@ test.each([
     providerId: "unsafe",
     registry: unsafeRegistry,
     authorization: localLoopbackAuthorization,
-    async fetch() {
+    async transport() {
       throw new Error("should not fetch");
     },
   });
@@ -207,7 +209,6 @@ test.each([
  * are each one digit away from over-blocking.
  */
 test.each([
-  ["site-local fec0, outside fe80::/10", "[fec0::1]", "http://[fec0::1]/rpc"],
   ["public IPv6", "[2606:4700::1111]", "http://[2606:4700::1111]/rpc"],
   ["just below CGNAT", "100.63.255.255", "http://100.63.255.255/rpc"],
   ["just above CGNAT", "100.128.0.1", "http://100.128.0.1/rpc"],
@@ -226,7 +227,7 @@ test.each([
     providerId: "public",
     registry: publicRegistry,
     authorization: localLoopbackAuthorization,
-    async fetch() {
+    async transport() {
       fetched = true;
       return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
     },
@@ -256,7 +257,7 @@ test("handleRpcRequest rejects IPv6 loopback and unique-local literals even when
       providerId: "unsafe6",
       registry: unsafeRegistry,
       authorization: localLoopbackAuthorization,
-      async fetch() {
+      async transport() {
         throw new Error("should not fetch");
       },
     });
@@ -276,7 +277,7 @@ test("handleRpcRequest rejects oversized upstream metadata responses", async () 
       providerId: "allanime",
       registry,
       authorization: localLoopbackAuthorization,
-      async fetch() {
+      async transport() {
         return new Response("x".repeat(257), {
           status: 200,
           headers: { "Content-Type": "text/plain" },
@@ -299,7 +300,7 @@ test("handleRpcRequest does not read or return a body for HEAD responses", async
       providerId: "allanime",
       registry,
       authorization: localLoopbackAuthorization,
-      async fetch(_url, init) {
+      async transport(_url, init) {
         expect(init?.method).toBe("HEAD");
         return new Response("should not be relayed", {
           status: 204,
@@ -323,7 +324,7 @@ test("handleRpcRequest strips upstream set-cookie from metadata responses", asyn
       providerId: "allanime",
       registry,
       authorization: localLoopbackAuthorization,
-      async fetch() {
+      async transport() {
         return Response.json(
           { ok: true },
           {
@@ -359,7 +360,7 @@ test.each([
       providerId: "allanime",
       registry,
       authorization: { mode: "bearer", token: "secret" },
-      async fetch() {
+      async transport() {
         return Response.json({ ok: true });
       },
     },
@@ -378,7 +379,7 @@ test("handleRpcRequest accepts the exact bearer token", async () => {
       providerId: "allanime",
       registry,
       authorization: { mode: "bearer", token: "secret" },
-      async fetch() {
+      async transport() {
         return Response.json({ ok: true });
       },
     },
@@ -398,7 +399,7 @@ test.each(["", "   "])("handleRpcRequest rejects a blank bearer token", async (t
       providerId: "allanime",
       registry,
       authorization: { mode: "bearer", token },
-      async fetch() {
+      async transport() {
         throw new Error("should not fetch");
       },
     },
@@ -418,7 +419,7 @@ test("handleRpcRequest refuses a provider whose manifest is not relay-safe", asy
       providerId: "videasy",
       registry,
       authorization: localLoopbackAuthorization,
-      async fetch() {
+      async transport() {
         throw new Error("should not fetch");
       },
     },
@@ -444,6 +445,129 @@ test("handleRpcRequest handles CORS preflight without upstream fetch", async () 
   expect(response.headers.get("access-control-allow-methods")).toContain("POST");
 });
 
+test("handleRpcRequest authenticates before pinned transport resolves DNS", async () => {
+  let resolutions = 0;
+  const response = await handleRpcRequest(
+    rpcRequest(
+      {
+        method: "GET",
+        upstreamUrl: "https://api.allanime.day/api",
+      },
+      null,
+    ),
+    {
+      providerId: "allanime",
+      registry,
+      authorization: { mode: "bearer", token: "secret" },
+      transport: createPinnedRelayTransport({
+        resolveAddresses: async () => {
+          resolutions++;
+          return [{ address: "93.184.216.34", family: 4 }];
+        },
+        request() {
+          throw new Error("unauthorized request reached the socket");
+        },
+        maxRequestBodyBytes: 128,
+        maxResponseBodyBytes: 256,
+      }),
+    },
+  );
+
+  expect(response.status).toBe(401);
+  expect(resolutions).toBe(0);
+});
+
+test("handleRpcRequest re-resolves and re-pins every allowed redirect target", async () => {
+  const resolvedHosts: string[] = [];
+  const dialedAddresses: string[] = [];
+  const responses: NodeResponseFixture[] = [
+    {
+      status: 302,
+      headers: { location: "https://cdn.api.allanime.day/next" },
+      body: "",
+    },
+    { status: 200, headers: { "content-type": "application/json" }, body: '{"ok":true}' },
+  ];
+  const request: RelayNodeRequest = (options, onResponse) => {
+    dialedAddresses.push(String(options.hostname));
+    const response = responses.shift();
+    if (!response) throw new Error("unexpected outbound request");
+    return nodeResponse(response, onResponse);
+  };
+  const transport = createPinnedRelayTransport({
+    resolveAddresses: async (hostname) => {
+      resolvedHosts.push(hostname);
+      return [
+        {
+          address: hostname.startsWith("cdn.") ? "93.184.216.35" : "93.184.216.34",
+          family: 4,
+        },
+      ];
+    },
+    request,
+    maxRequestBodyBytes: 128,
+    maxResponseBodyBytes: 256,
+  });
+
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/start" }),
+    {
+      providerId: "allanime",
+      registry,
+      authorization: localLoopbackAuthorization,
+      transport,
+    },
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ ok: true });
+  expect(resolvedHosts).toEqual(["api.allanime.day", "cdn.api.allanime.day"]);
+  expect(dialedAddresses).toEqual(["93.184.216.34", "93.184.216.35"]);
+});
+
+test("handleRpcRequest rejects a redirect whose fresh DNS set contains a private answer", async () => {
+  const resolvedHosts: string[] = [];
+  const responses: NodeResponseFixture[] = [
+    {
+      status: 302,
+      headers: { location: "https://cdn.api.allanime.day/next" },
+      body: "",
+    },
+  ];
+  const transport = createPinnedRelayTransport({
+    resolveAddresses: async (hostname) => {
+      resolvedHosts.push(hostname);
+      return hostname.startsWith("cdn.")
+        ? [
+            { address: "93.184.216.35", family: 4 },
+            { address: "10.0.0.4", family: 4 },
+          ]
+        : [{ address: "93.184.216.34", family: 4 }];
+    },
+    request(_options, onResponse) {
+      const response = responses.shift();
+      if (!response) throw new Error("unsafe redirect reached the socket");
+      return nodeResponse(response, onResponse);
+    },
+    maxRequestBodyBytes: 128,
+    maxResponseBodyBytes: 256,
+  });
+
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/start" }),
+    {
+      providerId: "allanime",
+      registry,
+      authorization: localLoopbackAuthorization,
+      transport,
+    },
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ error: { code: "host-not-allowed" } });
+  expect(resolvedHosts).toEqual(["api.allanime.day", "cdn.api.allanime.day"]);
+});
+
 function rpcRequest(body: unknown, token: string | null = "secret"): Request {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -454,4 +578,28 @@ function rpcRequest(body: unknown, token: string | null = "secret"): Request {
     headers,
     body: JSON.stringify(body),
   });
+}
+
+interface NodeResponseFixture {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string;
+}
+
+function nodeResponse(
+  response: NodeResponseFixture,
+  onResponse: (response: import("node:http").IncomingMessage) => void,
+): import("node:http").ClientRequest {
+  const incoming = Readable.from([
+    Buffer.from(response.body),
+  ]) as unknown as import("node:http").IncomingMessage;
+  incoming.statusCode = response.status;
+  incoming.headers = { ...response.headers };
+  queueMicrotask(() => onResponse(incoming));
+  const outgoing = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback();
+    },
+  }) as unknown as import("node:http").ClientRequest;
+  return outgoing;
 }

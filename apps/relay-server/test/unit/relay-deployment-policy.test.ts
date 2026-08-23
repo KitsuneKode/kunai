@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import {
   buildProviderRelayRegistry,
   type ProviderRelayRegistry,
-  type RelayFetch,
+  type RelayTransport,
 } from "@kunai/relay";
 
 import handler, { createRelayRpcHandler } from "../../api/rpc/[providerId]";
@@ -97,7 +97,7 @@ test.each([undefined, "", "   "])(
         calls.shared++;
         throw new Error("shared handler was called");
       },
-      async fetch() {
+      async transport() {
         calls.upstream++;
         throw new Error("upstream fetch was called");
       },
@@ -140,7 +140,7 @@ test.each([
     configuredToken: "secret",
     authorization: auth,
     body: JSON.stringify({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
-    async fetch() {
+    async transport() {
       upstreamCalls++;
       return Response.json({ ok: true });
     },
@@ -157,7 +157,7 @@ test("deployment exact bearer reaches the shared relay handler", async () => {
     configuredToken: " secret ",
     authorization: "Bearer secret",
     body: JSON.stringify({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
-    async fetch() {
+    async transport() {
       upstreamCalls++;
       return Response.json({ ok: true });
     },
@@ -200,14 +200,14 @@ async function invokeFactory(input: {
   readonly configuredToken: string;
   readonly authorization?: string;
   readonly body: string;
-  readonly fetch: RelayFetch;
+  readonly transport: RelayTransport;
 }): Promise<Response> {
   let written: Response | undefined;
   const rpcHandler = createRelayRpcHandler({
     readToken: () => input.configuredToken,
     registry,
     readBody: async () => new TextEncoder().encode(input.body),
-    fetch: input.fetch,
+    transport: input.transport,
     async writeResponse(_response, result) {
       written = result;
     },

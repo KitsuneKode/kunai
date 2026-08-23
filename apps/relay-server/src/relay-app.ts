@@ -2,14 +2,14 @@ import {
   handleRpcRequest,
   relayError,
   type RelayAuthorizationPolicy,
-  type RelayFetch,
+  type RelayTransport,
 } from "@kunai/relay";
 
 import { relayRegistry } from "./provider-registry";
 
 export interface RelayAppEnv {
   readonly authorization: RelayAuthorizationPolicy;
-  readonly fetch?: RelayFetch;
+  readonly transport?: RelayTransport;
 }
 
 export async function handleRelayRequest(request: Request, env: RelayAppEnv): Promise<Response> {
@@ -29,7 +29,7 @@ export async function handleRelayRequest(request: Request, env: RelayAppEnv): Pr
       providerId: decodeURIComponent(rpcMatch[1]),
       registry: relayRegistry,
       authorization: env.authorization,
-      fetch: env.fetch,
+      transport: env.transport,
     });
   }
 
