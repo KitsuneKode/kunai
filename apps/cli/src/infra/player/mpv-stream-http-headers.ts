@@ -68,11 +68,19 @@ export function shouldDisableMpvTlsVerify(
   url: string,
   _headers: Record<string, string> | undefined,
 ): boolean {
+  // WHATWG parsing strips controls and repairs a missing slash before exposing the hostname.
+  for (const character of url) {
+    const code = character.charCodeAt(0);
+    if (code <= 0x1f || code === 0x7f) return false;
+  }
+  if (!/^https:\/\//i.test(url)) return false;
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return false;
     const hostname = parsed.hostname.toLowerCase();
-    return hostname === "mp4upload.com" || hostname.endsWith(".mp4upload.com");
+    if (hostname === "mp4upload.com") return true;
+    if (!hostname.endsWith(".mp4upload.com")) return false;
+    return hostname.split(".").every((label) => label.length > 0);
   } catch {
     return false;
   }

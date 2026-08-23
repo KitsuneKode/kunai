@@ -62,6 +62,8 @@ describe("shouldDisableMpvTlsVerify", () => {
     expect(shouldDisableMpvTlsVerify("https://mp4upload.com/d/file.mp4", {})).toBe(true);
     expect(shouldDisableMpvTlsVerify("https://www6.mp4upload.com/d/file.mp4", {})).toBe(true);
     expect(shouldDisableMpvTlsVerify("https://WWW6.MP4UPLOAD.COM/d/file.mp4", {})).toBe(true);
+    expect(shouldDisableMpvTlsVerify("https://bücher.mp4upload.com/d/file.mp4", {})).toBe(true);
+    expect(shouldDisableMpvTlsVerify("https://ｍｐ４ｕｐｌｏａｄ.com/d/file.mp4", {})).toBe(true);
   });
 
   test("does not let provider-controlled Referer text disable TLS verification", () => {
@@ -86,6 +88,20 @@ describe("shouldDisableMpvTlsVerify", () => {
 
     for (const url of unsafeLookalikes) {
       expect(shouldDisableMpvTlsVerify(url, { Referer: "https://mp4upload.com" })).toBe(false);
+    }
+  });
+
+  test("rejects malformed mp4upload hostnames and control characters", () => {
+    const malformedUrls = [
+      "https://.mp4upload.com/file.mp4",
+      "https://bad..mp4upload.com/file.mp4",
+      "https://mp4upload.\ncom/file.mp4",
+      "https:/mp4upload.com/file.mp4",
+      "http://mp4upload.com/file.mp4",
+    ];
+
+    for (const url of malformedUrls) {
+      expect(shouldDisableMpvTlsVerify(url, {})).toBe(false);
     }
   });
 
@@ -183,6 +199,21 @@ describe("buildPersistentLoadfileOptions", () => {
       "user-agent": "kunai",
       "http-header-fields-clr": "",
       "tls-verify": "no",
+      "demuxer-lavf-o-clr": "",
+    });
+  });
+
+  test("keeps TLS verification and HTTP headers for malformed mp4upload-like hosts", () => {
+    expect(
+      buildPersistentLoadfileOptions("https://bad..mp4upload.com/d/file.mp4", 12, {
+        Referer: "https://www.mp4upload.com",
+        "User-Agent": "kunai",
+      }),
+    ).toEqual({
+      start: "12",
+      referrer: "https://www.mp4upload.com",
+      "user-agent": "kunai",
+      "http-header-fields-clr": "",
       "demuxer-lavf-o-clr": "",
     });
   });

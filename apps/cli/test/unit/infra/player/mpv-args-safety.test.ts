@@ -96,6 +96,21 @@ describe("mpv URL safety", () => {
     expect(args).toContain("--referrer=https://www.mp4upload.com");
   });
 
+  test("keeps TLS verification and HTTP headers for malformed mp4upload-like hosts", () => {
+    const args = buildMpvArgs(
+      {
+        url: "https://.mp4upload.com/d/file.mp4",
+        headers: { Referer: "https://www.mp4upload.com", "User-Agent": "kunai" },
+        subtitle: null,
+        displayTitle: "Malformed Mp4Upload host",
+      },
+      null,
+    );
+    expect(args).not.toContain("--tls-verify=no");
+    expect(args).toContain("--referrer=https://www.mp4upload.com");
+    expect(args).toContain("--user-agent=kunai");
+  });
+
   test("skips local subtitle targets on remote playback", () => {
     const args = buildMpvArgs(
       {
