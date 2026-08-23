@@ -133,6 +133,38 @@ describe("mpv IPC socket directory", () => {
     expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc-123.sock");
   });
 
+  test("rejects a regular file where the private directory must be", () => {
+    const fake = directoryOperations((path, kind) =>
+      path.startsWith("/run/user") && kind === "lstat"
+        ? { ...SAFE_DIRECTORY, directory: false, symbolicLink: false }
+        : SAFE_DIRECTORY,
+    );
+
+    const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
+      env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
+      directoryOperations: fake.operations,
+    });
+
+    expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc-123.sock");
+  });
+
+  test("rejects a directory replaced between lstat and stat", () => {
+    for (const replacement of [{ device: 2 }, { inode: 3 }]) {
+      const fake = directoryOperations((path, kind) =>
+        path.startsWith("/run/user") && kind === "stat"
+          ? { ...SAFE_DIRECTORY, ...replacement }
+          : SAFE_DIRECTORY,
+      );
+
+      const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
+        env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
+        directoryOperations: fake.operations,
+      });
+
+      expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc-123.sock");
+    }
+  });
+
   test("rejects a directory owned by another user", () => {
     const fake = directoryOperations((path) =>
       path.startsWith("/run/user") ? { ...SAFE_DIRECTORY, uid: 2000 } : SAFE_DIRECTORY,

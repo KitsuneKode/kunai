@@ -30,15 +30,18 @@ RED was observed before each production slice:
 3. Clean mpv close: 1 failure showed the injected fallback timer was not scheduled/cleared.
 4. Missing close event: 1 failure showed the fallback callback could terminate twice.
 5. Streak dismissal registry: the new behavioral test failed because the extracted registry did not yet exist.
+6. Non-directory discrimination: after adding the regular-file regression, temporarily removing only the `lstat` directory guard failed with the unsafe runtime path selected instead of the private temp fallback.
+7. Replacement-race discrimination: after adding the identity regression, removing the device/inode guard failed on the changed-device fixture; retaining the device check but removing the inode check failed on the changed-inode fixture after the device case passed.
 
 GREEN:
 
 - Focused repair suite: 24 passed, 0 failed, 49 assertions.
 - Earlier combined focused run including the existing streak milestone tests: 26 passed, 0 failed.
+- Follow-up review regressions: 2 passed, 0 failed, 3 assertions. The two behavioral tests cover a non-symlink regular file plus independent device and inode replacement identities.
 
 ## Verification gates
 
-- `bun run --cwd apps/cli test:unit`: 4,637 passed, 0 failed across 675 files.
+- `bun run --cwd apps/cli test:unit`: 4,639 passed, 0 failed, 15,445 assertions across 675 files.
 - `bun run --cwd apps/cli test:integration -- test/integration/mpv-ipc-endpoint-native.test.ts`: the command exercised the complete CLI integration directory; 145 passed, 24 skipped, 0 failed. Both real-mpv endpoint tests passed.
 - `bun run typecheck`: 14/14 tasks succeeded.
 - `bun run lint`: 12/12 tasks succeeded. CLI reported 0 warnings/errors; one pre-existing `packages/relay/test/handler.test.ts` no-shadow warning remains outside this repair.
@@ -52,6 +55,7 @@ GREEN:
 - Lifecycle mutations covered: omitting clean-close cancellation, allowing repeat fallback termination, retaining fired dismissal handles, or clearing only one overlapping dismissal all fail tests.
 - The directory seam is confined to endpoint preparation; no user configuration root is hard-coded and no provider/player layering boundary changed.
 - The timer extraction is non-React and limited to streak dismissals; alert text, durations, refresh cadence, and shell rendering behavior are unchanged.
+- Follow-up mutation review now proves that removing the regular-file guard, device identity guard, or inode identity guard makes the socket-directory suite fail.
 
 ## Remote state and actions
 
