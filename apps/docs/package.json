@@ -4,7 +4,7 @@
   "description": "Fumadocs-powered documentation site for Kunai user and developer docs.",
   "type": "module",
   "scripts": {
-    "generate": "bun run scripts/sync-code-metadata.ts && fumadocs-mdx",
+    "generate": "bun run scripts/sync-code-metadata.ts && bun run scripts/sync-repo-content.ts && fumadocs-mdx",
     "dev": "bun run generate && next dev",
     "build:app": "NEXT_TELEMETRY_DISABLED=1 next build",
     "build": "bun run build:app",

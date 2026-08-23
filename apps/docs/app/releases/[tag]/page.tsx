@@ -1,10 +1,6 @@
 import { ReleaseDetail } from "@/components/releases/release-detail";
 import { buildPageMetadata } from "@/lib/page-metadata";
-import {
-  getReleaseByTag,
-  normalizeReleaseTag,
-  readReleaseNotesArtifacts,
-} from "@/lib/release-notes";
+import { getReleaseByTag, normalizeReleaseTag, releaseNotesArtifacts } from "@/lib/release-notes";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
@@ -15,7 +11,7 @@ type ReleaseTagPageProps = {
 };
 
 export function generateStaticParams() {
-  return readReleaseNotesArtifacts().map((release) => ({
+  return releaseNotesArtifacts.map((release) => ({
     tag: normalizeReleaseTag(release.tag),
   }));
 }

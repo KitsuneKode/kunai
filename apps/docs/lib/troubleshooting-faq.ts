@@ -1,108 +1,16 @@
-import fs from "node:fs";
-import path from "node:path";
+import generated from "./generated-troubleshooting-faq.json";
 
-import { repoRoot } from "./repo-root";
-
-export type TroubleshootingSymptom = {
-  readonly id: string;
+export type TroubleshootingFaqEntry = {
   readonly question: string;
-  readonly anchor: string;
+  readonly answer: string;
 };
 
-// Resolved per call rather than at module load: a module-level constant froze
-// the wrong path when cwd was not apps/docs.
-function docsRoot(): string {
-  return path.join(repoRoot("docs"), "docs");
-}
-
-export function readTroubleshootingSymptoms(
-  yamlPath = path.join(docsRoot(), "troubleshooting-symptoms.yaml"),
-): TroubleshootingSymptom[] {
-  const content = fs.readFileSync(yamlPath, "utf-8");
-  const symptoms: TroubleshootingSymptom[] = [];
-  let current: { id?: string; question?: string; anchor?: string } | null = null;
-
-  for (const rawLine of content.split("\n")) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-
-    const listMatch = line.match(/^- id:\s*(.+)$/);
-    if (listMatch?.[1]) {
-      if (current?.id && current.question && current.anchor) {
-        symptoms.push(current as TroubleshootingSymptom);
-      }
-      current = { id: listMatch[1] };
-      continue;
-    }
-
-    if (!current) continue;
-    const questionMatch = line.match(/^question:\s*(.+)$/);
-    if (questionMatch?.[1]) {
-      current.question = questionMatch[1];
-      continue;
-    }
-    const anchorMatch = line.match(/^anchor:\s*(.+)$/);
-    if (anchorMatch?.[1]) {
-      current.anchor = anchorMatch[1];
-    }
-  }
-
-  if (current?.id && current.question && current.anchor) {
-    symptoms.push(current as TroubleshootingSymptom);
-  }
-
-  return symptoms;
-}
-
-function sectionForAnchor(mdx: string, anchor: string): string | null {
-  const headingPattern = new RegExp(`^## ${escapeRegExp(anchor)}\\s*$`, "im");
-  const match = headingPattern.exec(mdx);
-  if (match === null) return null;
-
-  const start = match.index + match[0].length;
-  const rest = mdx.slice(start);
-  const nextHeading = rest.search(/^## /m);
-  return nextHeading === -1 ? rest.trim() : rest.slice(0, nextHeading).trim();
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function extractFaqAnswer(section: string): string {
-  const symptomsMatch = section.match(/\*\*Symptoms:\*\*\s*(.+)/);
-  const tryBlockMatch = section.match(/### What to try\s+([\s\S]*?)(?=###|More:|$)/);
-  const trySteps = tryBlockMatch?.[1]
-    ? [...tryBlockMatch[1].matchAll(/^\d+\.\s+(.+)$/gm)]
-        .map((step) => (step[1] ?? "").replace(/\[[^\]]+\]\([^)]+\)/g, "").trim())
-        .filter((step) => step.length > 0)
-        .slice(0, 3)
-    : [];
-
-  const parts: string[] = [];
-  if (symptomsMatch?.[1]) {
-    parts.push(symptomsMatch[1].trim());
-  }
-  if (trySteps.length > 0) {
-    parts.push(trySteps.join(" "));
-  }
-
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-}
-
-export function buildTroubleshootingFaqEntries(
-  mdxPath = path.join(docsRoot(), "users/troubleshooting.mdx"),
-): { question: string; answer: string }[] {
-  const mdx = fs.readFileSync(mdxPath, "utf-8");
-  const symptoms = readTroubleshootingSymptoms();
-
-  return symptoms.map((symptom) => {
-    const section = sectionForAnchor(mdx, symptom.anchor);
-    const answer = section ? extractFaqAnswer(section) : "";
-    return {
-      question: symptom.question,
-      answer:
-        answer.length > 0 ? answer : `See the ${symptom.anchor} section in Kunai troubleshooting.`,
-    };
-  });
-}
+/**
+ * The FAQ rendered as JSON-LD on `/docs/users/troubleshooting`.
+ *
+ * Parsed out of `docs/` at build time by `scripts/sync-repo-content.ts` — the
+ * reading and parsing live there, this module is only the typed handle on the
+ * result. See that script's header for why the runtime must not read `docs/`
+ * itself.
+ */
+export const troubleshootingFaqEntries = generated as readonly TroubleshootingFaqEntry[];

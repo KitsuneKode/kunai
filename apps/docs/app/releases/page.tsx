@@ -1,7 +1,7 @@
 import { ReleaseInstallPanel } from "@/components/releases/release-install-panel";
 import { ReleaseTimeline } from "@/components/releases/release-timeline";
 import { buildPageMetadata } from "@/lib/page-metadata";
-import { latestReleaseNotesArtifact, readReleaseNotesArtifacts } from "@/lib/release-notes";
+import { latestReleaseNotesArtifact, releaseNotesArtifacts } from "@/lib/release-notes";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -18,7 +18,7 @@ export const metadata: Metadata = buildPageMetadata({
 });
 
 export default function ReleaseNotesPage() {
-  const releases = readReleaseNotesArtifacts();
+  const releases = releaseNotesArtifacts;
   const latest = latestReleaseNotesArtifact();
 
   return (

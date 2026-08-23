@@ -1,26 +1,18 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { KunaiSocialCard } from "@/lib/brand/social-card";
-import { repoRoot } from "@/lib/repo-root";
+import generatedMascot from "@/lib/generated-mascot.json";
 import { ImageResponse } from "next/og";
 
 export const alt = "Kunai Docs — terminal-first playback guides";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const MASCOT = ".reference/design/brand/kunai-mascot-og.png";
-
-function mascotDataUrl(): string | undefined {
-  try {
-    // repoRoot probes for the marker instead of assuming cwd is apps/docs —
-    // cwd is the app dir during `next build` but not inside a deployed function.
-    const png = readFileSync(join(repoRoot(MASCOT), MASCOT));
-    return `data:image/png;base64,${png.toString("base64")}`;
-  } catch {
-    return undefined;
-  }
-}
+// Inlined at build time by `scripts/sync-repo-content.ts`. Reading the PNG here
+// put a filesystem probe in the runtime bundle, which the Turbopack tracer
+// could not follow — see that script's header. An empty value means the
+// generator could not read the source PNG; the card renders without a mascot
+// rather than failing the route.
+const mascotSrc =
+  generatedMascot.mascotDataUrl.length > 0 ? generatedMascot.mascotDataUrl : undefined;
 
 export default function OpenGraphImage() {
   return new ImageResponse(
@@ -30,7 +22,7 @@ export default function OpenGraphImage() {
       subline="Search · resolve streams · mpv handoff · clean recovery"
       command='kunai -S "Your title"'
       footer="docs · kunai"
-      mascotSrc={mascotDataUrl()}
+      mascotSrc={mascotSrc}
     />,
     { ...size },
   );

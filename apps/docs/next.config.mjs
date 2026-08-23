@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createMDX } from "fumadocs-mdx/next";
 
 const appDir = dirname(fileURLToPath(import.meta.url));
-/** Monorepo root. Pages read `docs/`, `.release/`, and `.reference/` from here. */
+/** Monorepo root. `docs/` MDX is compiled from here at build time. */
 const monorepoRoot = join(appDir, "../..");
 
 /** @type {import('next').NextConfig} */
@@ -15,34 +15,19 @@ const config = {
   serverExternalPackages: ["fumadocs-mdx", "esbuild"],
   // Without this, Next infers the trace root from the nearest lockfile. On a
   // Vercel project whose Root Directory is `apps/docs` that inference can land
-  // on the app instead of the workspace, and the repo files these pages read
-  // (docs/, .release/, .reference/) drop out of the deployed bundle.
+  // on the app instead of the workspace, and the workspace files the build
+  // itself reads (docs/ MDX, the `@kunai/design` workspace package) drop out.
   outputFileTracingRoot: monorepoRoot,
-  outputFileTracingIncludes: {
-    // `.release/*.json` is read with readdirSync, which static tracing cannot
-    // see. ISR revalidation of these routes re-runs on the server, so the
-    // artifacts have to ship with the function.
-    "/releases": ["../../.release/*.json"],
-    "/releases/[tag]": ["../../.release/*.json"],
-    "/sitemap.xml": ["../../.release/*.json"],
-    "/llms.txt": ["../../.release/*.json"],
-  },
-  outputFileTracingExcludes: {
-    // `repo-root.ts` probes the filesystem with a computed path, so the tracer
-    // gives up and pulls the whole workspace into every function (1,618 files
-    // from apps/cli alone, measured on 0.3.0). None of it is reachable from the
-    // docs runtime. `packages/` stays — `@kunai/design` is a real dependency.
-    "**": [
-      "../cli/**",
-      "../analytics-ingest/**",
-      "../relay-server/**",
-      "../../scripts/**",
-      "../../test/**",
-      "../../.archive/**",
-      "../../.plans/**",
-      "../../.prototypes/**",
-    ],
-  },
+  // No outputFileTracingIncludes: nothing is read at request time any more.
+  // `.release/*.json`, `docs/`, and the OG mascot are baked into
+  // `lib/generated-*.json` by `scripts/sync-repo-content.ts`, and every route
+  // that used to read them is `force-static`.
+  //
+  // No outputFileTracingExcludes either. They existed because the removed
+  // `lib/repo-root.ts` probed the filesystem with a computed path, so the
+  // tracer gave up and pulled the whole workspace into every function. With the
+  // probe gone the tracer follows real imports and the excludes have nothing
+  // left to exclude — keeping them would only hide the next regression.
   async redirects() {
     return [
       // `/telemetry` was the old name for this page. In Kunai, "telemetry" means

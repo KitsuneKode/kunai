@@ -8,6 +8,7 @@ import {
   computeFeatureStatusRevision,
   resolveCliSourceRevision,
 } from "../lib/metadata-fingerprints";
+import { formatGeneratedFile } from "./format-generated-file";
 
 const ROOT_DIR = path.resolve(__dirname, "../../..");
 const DOCS_LIB_DIR = path.join(ROOT_DIR, "apps/docs/lib");
@@ -57,19 +58,6 @@ const PROVIDER_ID_CONSTANTS: Record<string, string> = {
   VIDLINK_PROVIDER_ID: "vidlink",
   YOUTUBE_PROVIDER_ID: "youtube",
 };
-
-function formatGeneratedFile(filePath: string) {
-  const result = Bun.spawnSync(["oxfmt", "--write", filePath], {
-    cwd: ROOT_DIR,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  if (result.exitCode !== 0) {
-    const stderr = new TextDecoder().decode(result.stderr).trim();
-    throw new Error(`Failed to format generated metadata${stderr ? `: ${stderr}` : ""}`);
-  }
-}
 
 function readExistingMetadata(filePath: string): Record<string, unknown> | null {
   if (!fs.existsSync(filePath)) return null;
