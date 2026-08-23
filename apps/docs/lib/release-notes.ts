@@ -1,7 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { repoRoot } from "./repo-root";
+import generated from "./generated-release-notes.json";
 
 export type ReleasePublicationStatus = "staged" | "published" | "withdrawn";
 
@@ -31,25 +28,17 @@ export type ReleaseNotesArtifact = {
   readonly assets?: readonly { readonly name: string; readonly sha256: string }[];
 };
 
-function releaseDir(): string {
-  return join(repoRoot(".release"), ".release");
-}
-
-export function readReleaseNotesArtifacts(): readonly ReleaseNotesArtifact[] {
-  const dir = releaseDir();
-  if (!existsSync(dir)) return [];
-
-  return readdirSync(dir)
-    .filter((file) => file.endsWith(".json"))
-    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
-    .map((file) => JSON.parse(readFileSync(join(dir, file), "utf8")) as ReleaseNotesArtifact)
-    .filter(
-      (artifact) => artifact.schemaVersion === 2 && artifact.packageName === "@kitsunekode/kunai",
-    );
-}
+/**
+ * Every release artifact the site renders, newest first.
+ *
+ * Baked from `.release/*.json` at build time by `scripts/sync-repo-content.ts`.
+ * This module used to `readdirSync` that directory at request time, which
+ * static tracing cannot follow — see that script's header.
+ */
+export const releaseNotesArtifacts = generated as readonly ReleaseNotesArtifact[];
 
 export function publishedReleaseNotesArtifacts(): readonly ReleaseNotesArtifact[] {
-  return readReleaseNotesArtifacts().filter((artifact) => artifact.status === "published");
+  return releaseNotesArtifacts.filter((artifact) => artifact.status === "published");
 }
 
 export function latestReleaseNotesArtifact(): ReleaseNotesArtifact | null {
@@ -70,9 +59,7 @@ export function releasePath(tag: string): string {
 export function getReleaseByTag(tag: string): ReleaseNotesArtifact | null {
   const normalized = normalizeReleaseTag(tag);
   return (
-    readReleaseNotesArtifacts().find(
-      (release) => normalizeReleaseTag(release.tag) === normalized,
-    ) ?? null
+    releaseNotesArtifacts.find((release) => normalizeReleaseTag(release.tag) === normalized) ?? null
   );
 }
 

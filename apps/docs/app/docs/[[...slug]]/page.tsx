@@ -6,7 +6,7 @@ import { breadcrumbListJsonLd, faqPageJsonLd, techArticleJsonLd } from "@/lib/js
 import { buildPageMetadata } from "@/lib/page-metadata";
 import { docsCanonicalUrl } from "@/lib/site";
 import { source } from "@/lib/source";
-import { buildTroubleshootingFaqEntries } from "@/lib/troubleshooting-faq";
+import { troubleshootingFaqEntries } from "@/lib/troubleshooting-faq";
 import { useMDXComponents } from "@/mdx-components";
 import {
   DocsBody,
@@ -71,7 +71,7 @@ export default async function Page({ params }: PageProps) {
   ]);
   const faqJsonLd =
     page.data.info.path === "users/troubleshooting.mdx"
-      ? faqPageJsonLd(buildTroubleshootingFaqEntries())
+      ? faqPageJsonLd(troubleshootingFaqEntries)
       : null;
 
   return (

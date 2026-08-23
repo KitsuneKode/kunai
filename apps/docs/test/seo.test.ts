@@ -97,7 +97,7 @@ describe("docs SEO drift", () => {
       "utf-8",
     );
     expect(pageFile).toContain("faqPageJsonLd");
-    expect(pageFile).toContain("buildTroubleshootingFaqEntries");
+    expect(pageFile).toContain("troubleshootingFaqEntries");
   });
 
   test("troubleshooting FAQ anchors exist in MDX", () => {

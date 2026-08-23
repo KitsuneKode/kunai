@@ -8,7 +8,7 @@ import {
   latestReleaseNotesArtifact,
   normalizeReleaseTag,
   publishedReleaseNotesArtifacts,
-  readReleaseNotesArtifacts,
+  releaseNotesArtifacts,
   releaseAssetsForDisplay,
   releasePath,
   type ReleaseNotesArtifact,
@@ -16,7 +16,7 @@ import {
 
 describe("release notes artifacts", () => {
   test("loads docs release notes from tracked release artifacts", () => {
-    const releases = readReleaseNotesArtifacts();
+    const releases = releaseNotesArtifacts;
     const latest = latestReleaseNotesArtifact();
 
     expect(releases.length).toBeGreaterThan(0);
@@ -46,7 +46,7 @@ describe("release notes artifacts", () => {
   });
 
   test("looks up releases by tag and builds detail paths", () => {
-    const releases = readReleaseNotesArtifacts();
+    const releases = releaseNotesArtifacts;
     const sample = releases[0];
     expect(sample).toBeDefined();
     if (!sample) return;
@@ -86,7 +86,7 @@ describe("release notes artifacts", () => {
   });
 
   test("keeps explicit sections when present", () => {
-    const withSections = readReleaseNotesArtifacts().find((release) => release.sections.length > 0);
+    const withSections = releaseNotesArtifacts.find((release) => release.sections.length > 0);
     expect(withSections).toBeDefined();
     if (!withSections) return;
 

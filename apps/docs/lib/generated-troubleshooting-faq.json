@@ -1,0 +1,26 @@
+[
+  {
+    "question": "Why does provider resolve fail?",
+    "answer": "Search works but playback never starts; resolve spinner stops with a provider error; `/diagnostics` shows failed resolve stages. Open `/diagnostics` and read the **provider attempt timeline**. Note the failure class (timeout, empty inventory, HTTP error, offline/network). Press `⇧F` (`Shift+F`) or `/fallback` to try the next provider in your priority list."
+  },
+  {
+    "question": "What if the network is offline during playback?",
+    "answer": "Diagnostics shows offline or unreachable network; provider errors mention connectivity; downloads stall. Confirm general connectivity outside Kunai (browser, ping). Open `/diagnostics` and check the **network snapshot**. Do **not** assume every provider is down — Kunai avoids marking providers unhealthy from local network evidence alone."
+  },
+  {
+    "question": "Why is my offline library empty or invalid?",
+    "answer": "Completed download missing from library; playback fails for local file; artifact marked invalid; wrong duration or resume position. Open `/library` or `/offline` and check artifact status: **ready**, **missing**, or **invalid**. Use **reveal folder** to confirm the file exists on disk. Run **repair** or **re-download** from the title group — Kunai uses saved download intent when available."
+  },
+  {
+    "question": "Why does Kunai say mpv is missing?",
+    "answer": "Setup warns mpv is missing; playback never launches; diagnostics shows player unavailable. Run `kunai --setup` again to refresh capability detection. Launch with `--debug` and confirm mpv appears in startup capabilities. Test a simple file: `mpv /path/to/local/file.mkv` to isolate Kunai from player issues."
+  },
+  {
+    "question": "Why does a share link or protocol handler fail?",
+    "answer": "`/watch` says clipboard is empty or invalid; `kunai --open` fails to resolve; OS does not offer Kunai for `kunai://` links. Copy a fresh link with `/share` from an active session — links need `cat=` or `q=` query params. For clipboard open, run `/watch` immediately after copying (some terminals clear clipboard on focus change). Trusted terminal launch: `kunai --open \"kunai://play?...\"` works without OS registration."
+  },
+  {
+    "question": "Why is kunai missing, shadowed, or failing install health?",
+    "answer": "`kunai: command not found`; wrong binary runs; upgrade/uninstall refuses ownership; install fails checksum or 404; unsigned binary blocked or `killed: 9` on Apple Silicon; rollback needed after a bad upgrade. List every `kunai` on PATH (shadowing is the most common failure): Run read-only install health: **Ownership mismatch:** use the owner channel. Binary installs → `kunai upgrade` / `kunai uninstall`. npm → `npm uninstall -g @kitsunekode/kunai` or ownership-aware `kunai uninstall`. Do not delete a package-manager install with a raw `rm` of another channel's launcher."
+  }
+]
