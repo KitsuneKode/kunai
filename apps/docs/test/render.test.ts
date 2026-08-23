@@ -11,7 +11,12 @@ describe("docs shell", () => {
 
     expect(isValidElement(options.nav?.title)).toBe(true);
     expect(options.nav?.url).toBe("/");
-    expect(options.githubUrl).toBe("https://github.com/KitsuneKode/kunai");
+    // `githubUrl` must stay unset. fumadocs expands it into an icon link item
+    // that renders in the docs sidebar, where GithubStarCta already lives — the
+    // two stacked as a bare unlabelled pill above a labelled one. The star CTAs
+    // are the GitHub entry points now, and they carry the count.
+    expect(options.githubUrl).toBeUndefined();
+    expect(links.some((link) => "url" in link && link.url?.includes("github.com"))).toBe(false);
 
     expect(links).toEqual(
       expect.arrayContaining([

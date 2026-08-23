@@ -26,7 +26,11 @@ export function baseOptions(): BaseLayoutProps {
     searchToggle: {
       enabled: true,
     },
-    githubUrl: "https://github.com/KitsuneKode/kunai",
+    // No `githubUrl`: fumadocs turns it into an icon link item that renders in
+    // the docs sidebar, where `GithubStarCta` already lives — the two stacked as
+    // a bare unlabelled pill above a labelled one. Each surface now carries
+    // exactly one GitHub control: `HomeStarCta` in the hero, `GithubStarCta` in
+    // the sidebar footer, both labelled and both showing the star count.
     links: [
       {
         text: "Overview",
