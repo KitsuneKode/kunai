@@ -28,6 +28,8 @@ The main config file is created on first run or after `kunai --setup`. Kunai mer
 | `providerPriority` | Fallback order for movie/series providers (empty = registry default) |
 | `animeProviderPriority` | Fallback order for anime providers |
 | `titleProviderPreferences` | Per-title provider override chosen explicitly by the user |
+| `youtubeProvider` | Default YouTube-mode provider (default `youtube`) |
+| `youtubeProviderPriority` | Fallback order for YouTube-mode providers (default `["youtube"]`) |
 
 Unknown provider ids in priority arrays are ignored. Providers not listed remain available after configured entries.
 
@@ -107,6 +109,8 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `recoveryMode` | `guided`, `fallback-first`, or `manual` |
 | `resumeStartChoicePrompt` | Resume vs start-over overlay when resuming mid-episode |
 | `quitNearEndBehavior` | What happens when you quit mpv near the natural end |
+| `quitNearEndThresholdMode` | When "near the end" starts: `credits-or-90-percent` (default), or a fixed percentage |
+| `continueSourcePreference` | Where Continue Watching resumes from: `auto` (default), `local`, `stream`, or `ask` |
 
 ### Shell density and chrome
 
@@ -116,7 +120,11 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `minimalMode` / `--minimal` | Collapse companion pane and dim header status |
 | `footerHints` | `detailed` or `minimal` footer guidance |
 | `discoverShowOnStartup` | Faint discover hint in browse footer when history exists |
+| `discoverMode` | What `/discover` mixes: `auto` (default), `unified`, `anime-only`, or `series-only` |
+| `discoverItemLimit` | Rows the Discover tray shows (default `24`) |
 | `powerSaverMode` | Suppress background network and speculative work |
+| `powerSaverAllowManualArtwork` | Still fetch artwork you ask for by hand while power saver is on (default `true`) |
+| `recommendationRailEnabled` | Show the recommendation rail after playback (default `true`) |
 
 Kunai ships with the Sakura design system baked into the terminal UI. There is no separate theme picker today — density modes (`zen`, `minimal`) are how you reduce visual chrome.
 
@@ -131,6 +139,10 @@ Kunai ships with the Sakura design system baked into the terminal UI. There is n
 | `defaultDownloadQuality` | Shared quality floor for new download jobs |
 | `offlineMode` | Persistent local-only shell posture (separate from `--offline` launch) |
 | `autoCleanupWatched` | Surface watched downloads as cleanup candidates |
+| `autoCleanupGraceDays` | Days a watched download is kept before it becomes a cleanup candidate (default `7`) |
+| `autoDownload` | Download ahead automatically: `off` (default), `next`, or `season` |
+| `autoDownloadNextCount` | How many episodes ahead `autoDownload: "next"` fetches (default `1`) |
+| `offlineArtworkCacheEnabled` | Cache poster artwork alongside downloads for offline browsing (default `true`) |
 
 See [Downloads and offline](/docs/users/downloads-and-offline).
 
