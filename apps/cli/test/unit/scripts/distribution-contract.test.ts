@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 
+import rootPackage from "../../../../../package.json";
 import {
   REQUIRED_RELEASE_ASSET_NAMES,
   assertCompleteReleaseAssetSet,
@@ -106,9 +107,6 @@ function extractWorkflowJob(yaml: string, jobId: string): string {
 describe("release workflow candidate-before-publication contract", () => {
   const release = readFileSync(join(REPO_ROOT, ".github/workflows/release.yml"), "utf8");
   const publisher = readFileSync(join(REPO_ROOT, "scripts/publish-npm-release.ts"), "utf8");
-  const rootPackage = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
-    scripts: Record<string, string>;
-  };
   const versionPr = () => extractWorkflowJob(release, "version-pr");
   const candidate = () => extractWorkflowJob(release, "candidate");
   const confirmation = () => extractWorkflowJob(release, "confirmation");
@@ -246,6 +244,24 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(cand).toContain(".release-candidate/npm-platform");
   });
 
+  test("the exact launcher tarball is checked before upload and again before publication", () => {
+    const cand = candidate();
+    const pub = publish();
+    const candidatePack = cand.indexOf("bun run release:pack");
+    const candidateExactCheck = cand.indexOf("verify-npm-pack.ts --tarball");
+    const candidateUpload = cand.indexOf("Upload candidate artifacts");
+    const publishDownload = pub.indexOf("Download candidate artifacts");
+    const publishExactCheck = pub.indexOf("verify-npm-pack.ts --tarball");
+    const npmPublish = pub.search(PUBLISH_STEP);
+
+    expect(candidatePack).toBeGreaterThanOrEqual(0);
+    expect(candidateExactCheck).toBeGreaterThan(candidatePack);
+    expect(candidateUpload).toBeGreaterThan(candidateExactCheck);
+    expect(publishDownload).toBeGreaterThanOrEqual(0);
+    expect(publishExactCheck).toBeGreaterThan(publishDownload);
+    expect(npmPublish).toBeGreaterThan(publishExactCheck);
+  });
+
   test("trusted publication pins compatible Node and npm and prints both versions", () => {
     expect(release).toContain('RELEASE_NODE_VERSION: "22.14.0"');
     expect(release).toContain('RELEASE_NPM_VERSION: "11.5.1"');
@@ -264,7 +280,7 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(release).not.toContain("NODE_AUTH_TOKEN");
     expect(release).not.toContain("bun publish");
     expect(Object.values(rootPackage.scripts).join("\n")).not.toContain("bun publish");
-    expect(rootPackage.scripts["release:publish-tarball"]).toBeUndefined();
+    expect("release:publish-tarball" in rootPackage.scripts).toBe(false);
   });
 
   test("pins every third-party release action to a full commit with its major comment", () => {
@@ -281,9 +297,6 @@ describe("release workflow candidate-before-publication contract", () => {
 });
 
 describe("release:pack script contract", () => {
-  const rootPackage = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
-    scripts: Record<string, string>;
-  };
   const releasePack = rootPackage.scripts["release:pack"] ?? "";
   test("buildNpmPublishManifest returns the public launcher manifest without filesystem work", () => {
     const source = {

@@ -194,6 +194,11 @@ jobs:
       - name: Create preserved npm launcher tarball
         run: bun run release:pack
 
+      - name: Verify exact preserved npm launcher tarball
+        run: |
+          set -euo pipefail
+          bun run apps/cli/scripts/verify-npm-pack.ts --tarball .release-candidate/kunai-npm.tgz --expected-version "${{ steps.ver.outputs.version }}" 2>&1 | tee -a artifacts/gates/package.log
+
       - name: Create preserved npm platform tarballs
         run: bun run release:prepare
 
@@ -860,6 +865,12 @@ jobs:
           test -f .release-candidate/kunai-npm.tgz
           test -f apps/cli/dist/bin/SHA256SUMS
           test -d .release-candidate/npm-platform
+
+      - name: Reverify exact preserved npm launcher tarball
+        run: >-
+          bun run apps/cli/scripts/verify-npm-pack.ts --tarball
+          .release-candidate/kunai-npm.tgz --expected-version
+          "${{ needs.confirmation.outputs.version }}"
 
       - name: Reverify preserved binaries
         run: |
