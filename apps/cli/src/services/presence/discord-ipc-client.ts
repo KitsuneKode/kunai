@@ -488,14 +488,25 @@ export function createDiscordIpcClient(
 
   return {
     async login(input) {
+      if (destroyed) throw new Error("Discord IPC client was destroyed");
       const readyAttempt = activeAttempt;
+      const readySocket = readyAttempt?.socket ?? null;
       if (
         readyAttempt?.ready &&
-        readyAttempt.socket &&
+        readySocket &&
         !readyAttempt.terminalCause &&
         isActiveAttempt(readyAttempt)
       ) {
-        return;
+        await Promise.resolve();
+        if (destroyed) throw new Error("Discord IPC client was destroyed");
+        if (
+          isActiveAttempt(readyAttempt) &&
+          readyAttempt.socket === readySocket &&
+          readyAttempt.ready &&
+          !readyAttempt.terminalCause
+        ) {
+          return;
+        }
       }
       if (destroyed) throw new Error("Discord IPC client was destroyed");
 
@@ -637,17 +648,20 @@ export function createDiscordIpcClient(
       destroyed = true;
       loginGeneration += 1;
       const attempt = activeAttempt;
-      if (attempt?.socket) {
+      const targetSocket = attempt?.socket ?? null;
+      const destroyedError = new Error("Discord IPC client was destroyed");
+      if (attempt) {
+        terminalizeAttempt(attempt, destroyedError, false);
+      } else {
+        rejectAll(destroyedError);
+      }
+      if (targetSocket) {
         try {
-          attempt.socket.write(encodeDiscordIpcPacket(2, {}));
+          targetSocket.write(encodeDiscordIpcPacket(2, {}));
         } catch {
           // Ignore close-frame failures; socket teardown is best effort.
         }
-      }
-      if (attempt) {
-        terminalizeAttempt(attempt, new Error("Discord IPC client was destroyed"), true);
-      } else {
-        rejectAll(new Error("Discord IPC client was destroyed"));
+        endSocketBestEffort(targetSocket);
       }
     },
     on(event, callback) {

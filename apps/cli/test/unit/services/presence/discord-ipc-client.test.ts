@@ -14,6 +14,7 @@ import {
 
 type FakeConnectorOptions = {
   readonly firstAttemptDataBeforeReject?: Uint8Array;
+  readonly onWrite?: (writeNumber: number, data: Uint8Array) => void;
   readonly readyThenThrowOnWriteNumber?: number;
   readonly throwOnWriteNumber?: number;
   readonly throwOnEnd?: boolean;
@@ -91,6 +92,7 @@ function createFakeConnector(options: FakeConnectorOptions = {}): {
         throw new Error("fake Discord write failed");
       }
       writes.push(data);
+      options.onWrite?.(writeNumber, data);
       if (writeNumber === options.readyThenThrowOnWriteNumber) {
         activeCallbacks?.onData(encodeDiscordIpcPacket(1, { cmd: "DISPATCH", evt: "READY" }));
         throw new Error("fake Discord write failed after READY");
@@ -110,7 +112,11 @@ function createFakeConnector(options: FakeConnectorOptions = {}): {
   return state;
 }
 
-function createDistinctSocketConnector(): {
+function createDistinctSocketConnector(
+  options: {
+    readonly onWrite?: (attempt: number, data: Uint8Array) => void;
+  } = {},
+): {
   readonly connector: DiscordIpcConnector;
   readonly callbacks: Parameters<DiscordIpcConnector>[1][];
   readonly writes: Array<{ readonly attempt: number; readonly data: Uint8Array }>;
@@ -131,6 +137,7 @@ function createDistinctSocketConnector(): {
       return {
         write(data) {
           writes.push({ attempt, data });
+          options.onWrite?.(attempt, data);
         },
         end() {
           ended[attempt] = (ended[attempt] ?? 0) + 1;
@@ -371,6 +378,143 @@ describe("discord-ipc-client malformed input containment", () => {
     expect(activityError).toEqual(
       expect.objectContaining({ message: "Discord IPC is not connected" }),
     );
+    expect(fake.ended).toBe(true);
+  });
+
+  test("ready fast-path rechecks ownership after hostile error classification", async () => {
+    const fake = createDistinctSocketConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 20,
+    });
+    const firstLogin = client.login({ clientId: "client-1" });
+    for (let turn = 0; turn < 8 && fake.writes.length === 0; turn += 1) {
+      await Promise.resolve();
+    }
+    fake.pushPacket(0, { cmd: "DISPATCH", evt: "READY" });
+    await firstLogin;
+
+    let reentrantLogin: Promise<void> | null = null;
+    let reentrantOutcome: "resolved" | "rejected" | null = null;
+    const hostileError = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          reentrantLogin ??= client.login({ clientId: "client-1" });
+          void reentrantLogin.then(
+            () => {
+              reentrantOutcome = "resolved";
+              return undefined;
+            },
+            () => {
+              reentrantOutcome = "rejected";
+              return undefined;
+            },
+          );
+          return Object.prototype;
+        },
+      },
+    );
+
+    expect(() => fake.callbacks[0]?.onError(hostileError)).not.toThrow();
+    for (let turn = 0; turn < 8 && !fake.writes.some((write) => write.attempt === 1); turn += 1) {
+      await Promise.resolve();
+    }
+
+    expect(reentrantOutcome).toBeNull();
+    expect(fake.writes.filter((write) => write.attempt === 1)).toHaveLength(1);
+    fake.pushPacket(1, { cmd: "DISPATCH", evt: "READY" });
+    await expect(reentrantLogin).resolves.toBeUndefined();
+    expect(fake.ended).toEqual([1, 0]);
+  });
+
+  test("a command write that re-enters login and throws cannot satisfy login from stale READY", async () => {
+    let client: ReturnType<typeof createDiscordIpcClient>;
+    let reentrantLogin: Promise<void> | null = null;
+    let reentrantOutcome: "resolved" | "rejected" | null = null;
+    const fake = createDistinctSocketConnector({
+      onWrite(attempt, data) {
+        const op = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0, true);
+        if (attempt !== 0 || op !== 1) return;
+        reentrantLogin = client.login({ clientId: "client-1" });
+        void reentrantLogin.then(
+          () => {
+            reentrantOutcome = "resolved";
+            return undefined;
+          },
+          () => {
+            reentrantOutcome = "rejected";
+            return undefined;
+          },
+        );
+        throw new Error("fake activity write failed after reentrant login");
+      },
+    });
+    client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 20,
+    });
+    const firstLogin = client.login({ clientId: "client-1" });
+    for (let turn = 0; turn < 8 && fake.writes.length === 0; turn += 1) {
+      await Promise.resolve();
+    }
+    fake.pushPacket(0, { cmd: "DISPATCH", evt: "READY" });
+    await firstLogin;
+
+    const activity = client.setActivity({ details: "Must fail with its socket" });
+    await expect(activity).rejects.toThrow("fake activity write failed after reentrant login");
+    for (let turn = 0; turn < 8 && !fake.writes.some((write) => write.attempt === 1); turn += 1) {
+      await Promise.resolve();
+    }
+
+    expect(reentrantOutcome).toBeNull();
+    expect(fake.writes.filter((write) => write.attempt === 1)).toHaveLength(1);
+    fake.pushPacket(1, { cmd: "DISPATCH", evt: "READY" });
+    await expect(reentrantLogin).resolves.toBeUndefined();
+    expect(fake.ended).toEqual([1, 0]);
+  });
+
+  test("destroy detaches before CLOSE can synchronously deliver READY", async () => {
+    let client: ReturnType<typeof createDiscordIpcClient>;
+    let fake: ReturnType<typeof createFakeConnector>;
+    let destroying = false;
+    let closingReadyObserverCalls = 0;
+    let observerLogin: Promise<void> | null = null;
+    let observerActivity: Promise<void> | null = null;
+    fake = createFakeConnector({
+      onWrite(writeNumber) {
+        if (writeNumber === 2) {
+          fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+        }
+      },
+    });
+    client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 20,
+    });
+    client.on("ready", () => {
+      if (!destroying) return;
+      closingReadyObserverCalls += 1;
+      observerLogin = client.login({ clientId: "client-1" });
+      observerActivity = client.setActivity({ details: "Must not follow CLOSE" });
+      void observerLogin.catch(() => undefined);
+      void observerActivity.catch(() => undefined);
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    destroying = true;
+    await expect(client.destroy()).resolves.toBeUndefined();
+
+    expect(closingReadyObserverCalls).toBe(0);
+    expect(observerLogin).toBeNull();
+    expect(observerActivity).toBeNull();
+    expect(fake.writes.map((packet) => decodeDiscordIpcPacket(packet).op)).toEqual([0, 2]);
     expect(fake.ended).toBe(true);
   });
 

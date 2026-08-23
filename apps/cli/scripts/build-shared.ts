@@ -232,11 +232,12 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * Raised from 2_880 on 2026-08-23 for bounded Discord IPC framing and callback
  * containment. The base development bundle was 2,948,034 bytes; the first
  * reviewed repair was 2,950,409 bytes (+2,375) and exceeded the old 2,949,120
- * byte budget by 1,289. After connection-attempt ownership was added, the final
- * bundle was 2,950,823 bytes, leaving 6,489 bytes below the new limit. This 8
- * KiB step is 0.28%, while the installed host binary stayed exactly 85,775,560
- * bytes and its gzip -9 output shrank from 37,526,838 to 37,526,445 bytes. The
- * ratchet remains specific to the unpublished development bundle.
+ * byte budget by 1,289. After the final connection-attempt lifecycle repair,
+ * the bundle was 2,952,116 bytes: 4,082 above the base, 2,996 above the old
+ * budget, and 5,196 below the new limit. This 8 KiB step is 0.28%; the installed
+ * host binary was 85,779,656 bytes (+4,096), and its gzip -9 output was
+ * 37,526,929 bytes (+91). The ratchet remains specific to the unpublished
+ * development bundle.
  */
 export const NPM_BUNDLE_BUDGET_KB = 2_888;
 
