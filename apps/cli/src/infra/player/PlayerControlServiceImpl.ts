@@ -21,6 +21,16 @@ type ActiveWait = {
   finish: (value: ActivePlayerControl | null) => void;
 };
 
+type PlaybackIntentPayload = {
+  readonly streamSelection?: PlaybackStreamSelection;
+  readonly episodeSelection?: EpisodeInfo;
+  readonly episodeSourceOverride?: EpisodePlaybackSourceKind;
+};
+
+type StopBackedIntentOptions = PlaybackIntentPayload & {
+  readonly stopCurrentFile?: boolean;
+};
+
 function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | null {
   switch (action) {
     case "next":
@@ -59,6 +69,8 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   private pickerRequestListeners = new Set<(action: PlaybackPickerAction) => void>();
   private episodeNavigationAvailability: EpisodeNavigationAvailability | null = null;
   private stoppingCurrentFileForActiveId: string | null = null;
+  private stoppingCurrentFileDelivery: Promise<void> | null = null;
+  private playbackIntentGeneration = 0;
 
   constructor(
     private readonly deps: {
@@ -122,7 +134,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       this.notifyPickerRequest(action);
       return;
     }
-    this.lastAction = action;
+    this.beginPlaybackIntent(action);
   }
 
   setEpisodeNavigationAvailability(state: EpisodeNavigationAvailability): void {
@@ -162,10 +174,9 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     selection: PlaybackStreamSelection,
     reason = "user-requested",
   ): Promise<boolean> {
-    this.pendingStreamSelection = selection;
-    this.lastAction = action;
     const active = this.active;
     if (!active) {
+      this.beginPlaybackIntent(action, { streamSelection: selection });
       this.deps.diagnostics.record({
         category: "playback",
         message: "Queued stream selection before active player",
@@ -173,58 +184,50 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       });
       return true;
     }
-    const stopped = await this.stopWithAction(action, reason, true);
-    if (!stopped) {
-      this.pendingStreamSelection = null;
-    }
-    return stopped;
+    return await this.deliverStopBackedIntent(action, reason, {
+      stopCurrentFile: true,
+      streamSelection: selection,
+    });
   }
 
   async selectCurrentPlaybackEpisode(
     episode: EpisodeInfo,
     reason = "user-requested",
   ): Promise<boolean> {
-    this.pendingEpisodeSelection = episode;
-    this.lastAction = "pick-episode";
-    const stopped = await this.stopWithAction("pick-episode", reason, true);
-    if (!stopped) {
-      this.pendingEpisodeSelection = null;
-    }
-    return stopped;
+    return await this.deliverStopBackedIntent("pick-episode", reason, {
+      stopCurrentFile: true,
+      episodeSelection: episode,
+    });
   }
 
   async stopCurrentPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "stop";
-    return this.stopWithAction("stop", reason);
+    return await this.deliverStopBackedIntent("stop", reason);
   }
 
   async refreshCurrentPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "refresh";
-    return this.stopWithAction("refresh", reason, true);
+    return await this.deliverStopBackedIntent("refresh", reason, { stopCurrentFile: true });
   }
 
   async recoverCurrentPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "recover";
-    return this.stopWithAction("recover", reason, true);
+    return await this.deliverStopBackedIntent("recover", reason, { stopCurrentFile: true });
   }
 
   async recomputeCurrentPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "recompute";
-    return this.stopWithAction("recompute", reason, true);
+    return await this.deliverStopBackedIntent("recompute", reason, { stopCurrentFile: true });
   }
 
   async fallbackCurrentPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "fallback";
-    return this.stopWithAction("fallback", reason, true);
+    return await this.deliverStopBackedIntent("fallback", reason, { stopCurrentFile: true });
   }
 
   async switchEpisodePlaybackSource(
     kind: EpisodePlaybackSourceKind,
     reason = "user-requested",
   ): Promise<boolean> {
-    this.pendingEpisodeSourceOverride = kind;
-    this.lastAction = "recover";
-    return this.stopWithAction("recover", reason, true);
+    return await this.deliverStopBackedIntent("recover", reason, {
+      stopCurrentFile: true,
+      episodeSourceOverride: kind,
+    });
   }
 
   async reloadCurrentSubtitles(reason = "user-requested"): Promise<boolean> {
@@ -247,7 +250,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       return false;
     }
 
-    this.lastAction = "reload-subtitles";
+    this.beginPlaybackIntent("reload-subtitles");
     this.deps.logger.info("Reloading active playback subtitles", { id: active.id, reason });
     this.deps.diagnostics.record({
       category: "playback",
@@ -291,7 +294,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       async () => await active.selectSubtitle?.(selection),
     );
     if (!selected) return false;
-    this.lastAction = "select-subtitle";
+    this.beginPlaybackIntent("select-subtitle");
     this.deps.logger.info("Selected active playback subtitle", {
       id: active.id,
       reason,
@@ -435,8 +438,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
 
   async nextCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     if (!(await this.ensureEpisodeNavigationAllowed("next", reason))) return false;
-    this.lastAction = "next";
-    return this.stopWithAction("next", reason, true);
+    return await this.deliverStopBackedIntent("next", reason, { stopCurrentFile: true });
   }
 
   async pickSourceCurrentPlayback(reason = "user-requested"): Promise<boolean> {
@@ -453,13 +455,11 @@ export class PlayerControlServiceImpl implements PlayerControlService {
 
   async previousCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     if (!(await this.ensureEpisodeNavigationAllowed("previous", reason))) return false;
-    this.lastAction = "previous";
-    return this.stopWithAction("previous", reason, true);
+    return await this.deliverStopBackedIntent("previous", reason, { stopCurrentFile: true });
   }
 
   async returnToSearchFromPlayback(reason = "user-requested"): Promise<boolean> {
-    this.lastAction = "back-to-search";
-    return this.stopWithAction("back-to-search", reason);
+    return await this.deliverStopBackedIntent("back-to-search", reason);
   }
 
   updateCurrentPlaybackTiming(
@@ -491,6 +491,42 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     return this.active?.getStatsSnapshot?.() ?? null;
   }
 
+  private beginPlaybackIntent(
+    action: PlaybackControlAction,
+    payload: PlaybackIntentPayload = {},
+  ): number {
+    this.playbackIntentGeneration += 1;
+    this.lastAction = action;
+    this.pendingStreamSelection = payload.streamSelection ?? null;
+    this.pendingEpisodeSelection = payload.episodeSelection ?? null;
+    this.pendingEpisodeSourceOverride = payload.episodeSourceOverride ?? null;
+    return this.playbackIntentGeneration;
+  }
+
+  private clearPlaybackIntent(generation: number): void {
+    if (generation !== this.playbackIntentGeneration) return;
+    this.lastAction = null;
+    this.pendingStreamSelection = null;
+    this.pendingEpisodeSelection = null;
+    this.pendingEpisodeSourceOverride = null;
+  }
+
+  private async deliverStopBackedIntent(
+    action: PlaybackControlAction,
+    reason: string,
+    options: StopBackedIntentOptions = {},
+  ): Promise<boolean> {
+    const generation = this.beginPlaybackIntent(action, options);
+    try {
+      const delivered = await this.stopWithAction(action, reason, options.stopCurrentFile);
+      if (!delivered) this.clearPlaybackIntent(generation);
+      return delivered;
+    } catch (error) {
+      this.clearPlaybackIntent(generation);
+      throw error;
+    }
+  }
+
   private async stopWithAction(
     action: PlaybackControlAction,
     reason: string,
@@ -513,22 +549,27 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       context: { id: active.id, action, reason, stopCurrentFile },
     });
     if (stopCurrentFile && active.stopCurrentFile) {
-      if (this.stoppingCurrentFileForActiveId === active.id) {
+      if (this.stoppingCurrentFileForActiveId === active.id && this.stoppingCurrentFileDelivery) {
+        const delivery = this.stoppingCurrentFileDelivery;
         await this.showStopCurrentFileOverlay(active, action);
         this.deps.diagnostics.record({
           category: "playback",
           message: "Coalesced playback file-stop request",
           context: { id: active.id, action, reason },
         });
+        await delivery;
         return true;
       }
       this.stoppingCurrentFileForActiveId = active.id;
-      await this.runPriorityCommand(action, reason, async () => {
+      const delivery = this.runPriorityCommand(action, reason, async () => {
         await this.showStopCurrentFileOverlay(active, action);
         await active.stopCurrentFile?.(reason);
-      }).finally(() => {
-        if (this.stoppingCurrentFileForActiveId === active.id) {
+      });
+      this.stoppingCurrentFileDelivery = delivery;
+      await delivery.finally(() => {
+        if (this.stoppingCurrentFileDelivery === delivery) {
           this.stoppingCurrentFileForActiveId = null;
+          this.stoppingCurrentFileDelivery = null;
         }
       });
       return true;
