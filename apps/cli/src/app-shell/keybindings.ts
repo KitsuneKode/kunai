@@ -1025,15 +1025,18 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "In the library",
     footerPriority: 25,
   },
-  {
-    id: "library-title-control-menu",
-    chord: { input: "m" },
-    label: "Open title control menu",
-    hintLabel: "menu",
-    scope: "library",
-    group: "In the library",
-    footerPriority: 30,
-  },
+  // `library-title-control-menu` (`m`) used to be declared here with a
+  // `hintLabel`, so the library footer advertised it as an available action.
+  // Nothing read it: `library-shell.tsx` handles tab/`2`, backspace, escape,
+  // `x`/delete and `p`/`P`, and every other single character falls through to
+  // the filter text input, so `m` was typed into the filter box.
+  //
+  // Removed rather than wired: `openTitleControlMenu` drives its own
+  // interactive picker and is called from phases, not from inside a mounted Ink
+  // tree, so reaching it from the library overlay needs a phase/shell bridge
+  // and a decision about what the menu offers for an offline entry. That is a
+  // feature, not a binding fix. Tracked separately; re-add this entry in the
+  // same change that adds its reader.
 ];
 
 /** First binding linked to a slash-command id (if any). */
