@@ -93,6 +93,33 @@ describe("mpv IPC socket directory", () => {
     expect(Buffer.byteLength(endpoint.path, "utf8")).toBeLessThan(100);
   });
 
+  /**
+   * A Unix domain socket path is POSIX by definition, but `path.join` follows
+   * the *host* platform — on a Windows runner it emits backslashes. Production
+   * never reaches this branch on win32 (named pipes return earlier), so the
+   * only place it surfaced was CI, where these tests ran on Windows and every
+   * expected path came back separator-flipped.
+   *
+   * Asserting the shape here catches it on any host, rather than waiting for
+   * the Windows job to notice.
+   */
+  test("socket paths are POSIX-shaped regardless of the host platform", () => {
+    const candidates = mpvIpcSocketDirCandidates({
+      XDG_RUNTIME_DIR: "/run/user/1000",
+      TMPDIR: "/tmp",
+    });
+    for (const dir of candidates) {
+      expect(dir).not.toContain("\\");
+    }
+
+    const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
+      env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
+      makeDir: () => {},
+    });
+    expect(endpoint.path).not.toContain("\\");
+    expect(endpoint.path.startsWith("/")).toBe(true);
+  });
+
   test("Windows is untouched — named pipes, and the backslash spelling mpv needs", () => {
     const endpoint = createMpvIpcEndpoint("abc-123", "win32", {
       env: { TMPDIR: "C:\\Temp" },

@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { posix as posixPath } from "node:path";
 
 /** Where Bun connects for mpv JSON IPC (`--input-ipc-server` value). */
 export type MpvIpcEndpoint =
@@ -44,7 +44,17 @@ export function mpvIpcSocketDirCandidates(
 ): readonly string[] {
   const tempDir = env.TMPDIR ?? env.TMP ?? "/tmp";
   const runtimeDir = env.XDG_RUNTIME_DIR?.trim();
-  return [...(runtimeDir ? [join(runtimeDir, "kunai")] : []), join(tempDir, "kunai-ipc"), tempDir];
+  // `posix.join`, not `join`: a Unix domain socket path is POSIX by definition,
+  // and plain `join` follows the *host* platform. On a Windows host it emits
+  // backslashes, which is meaningless for a UDS. Production never reaches here
+  // on win32 (named pipes return earlier), but building a POSIX path with a
+  // platform-dependent joiner is wrong regardless of who calls it — and it is
+  // what made these tests fail on the Windows runner.
+  return [
+    ...(runtimeDir ? [posixPath.join(runtimeDir, "kunai")] : []),
+    posixPath.join(tempDir, "kunai-ipc"),
+    tempDir,
+  ];
 }
 
 /**
@@ -65,7 +75,7 @@ function resolveUnixSocketPath(
   const candidates = mpvIpcSocketDirCandidates(env);
 
   for (const [index, dir] of candidates.entries()) {
-    const candidate = join(dir, fileName);
+    const candidate = posixPath.join(dir, fileName);
     if (Buffer.byteLength(candidate, "utf8") >= MAX_UNIX_SOCKET_PATH_BYTES) continue;
     // The final candidate is the plain temp dir, which already exists.
     if (index < candidates.length - 1) {
@@ -80,7 +90,7 @@ function resolveUnixSocketPath(
 
   // Every candidate was too long or unusable. Fall back to the shortest path
   // that can still bind rather than returning something that cannot.
-  return join("/tmp", fileName);
+  return posixPath.join("/tmp", fileName);
 }
 
 function randomHex(byteCount: number): string {
