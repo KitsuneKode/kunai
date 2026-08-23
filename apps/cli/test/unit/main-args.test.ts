@@ -106,10 +106,30 @@ test("parseArgs supports developer debug session mode", () => {
   expect(args.search).toBe("Dune");
 });
 
-test("parseArgs supports zen startup as minimal quick playback", () => {
+/**
+ * Deliberate behaviour change: `--zen` no longer implies `--quick`.
+ *
+ * This test previously asserted `args.quick === true`. `--quick` is not a
+ * layout flag — `bootstrap-intent` reads it as "auto-pick result #1" — so zen
+ * silently skipped the result list and played the top hit, while both `--help`
+ * ("Zen mode (bare, ani-cli-style)") and `docs/users/cli-reference.mdx`
+ * describe zen as layout and list only `--jump`/`--quick` as auto-playing.
+ *
+ * Zen now sets chrome only. `--zen --quick` still composes for anyone who
+ * wants both.
+ */
+test("parseArgs treats zen as layout only, not auto-selection", () => {
   const args = parseArgs(["--zen", "-S", "Dune"]);
 
   expect(args.zen).toBe(true);
+  expect(args.minimal).toBe(true);
+  expect(args.quick).toBe(false);
+  expect(args.shellChrome).toBe("minimal");
+});
+
+test("parseArgs still composes zen with an explicit --quick", () => {
+  const args = parseArgs(["--zen", "--quick", "-S", "Dune"]);
+
   expect(args.minimal).toBe(true);
   expect(args.quick).toBe(true);
   expect(args.shellChrome).toBe("minimal");

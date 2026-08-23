@@ -7,6 +7,7 @@
 
 import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import type { SearchPhaseInput } from "@/app/search/SearchPhase";
+import { createPendingBootstrap, spendBootstrapIntent } from "@/app/session/pending-bootstrap";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { abortOrphanDownloadResolve, type Container } from "@/container";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
@@ -75,12 +76,10 @@ export class SessionController {
 
   async run(bootstrap: SessionBootstrap = {}): Promise<void> {
     const { logger, tracer, stateManager, diagnosticsService } = this.container;
-    let pendingInitialTitle = bootstrap.initialTitle ?? null;
-    let pendingInitialEpisode = bootstrap.initialEpisode ?? null;
-    let pendingInitialQuery = bootstrap.initialQuery;
-    let pendingInitialRoute = bootstrap.initialRoute;
-    let preserveExistingSearch = bootstrap.preserveExistingSearch ?? false;
-    let pendingAutoPick = bootstrap.autoPickSearchResultIndex;
+    // One object, spent in one call. These were six independent locals cleared
+    // per-branch, and the direct-title branch cleared only two of them — see
+    // `spendBootstrapIntent`.
+    const pending = createPendingBootstrap(bootstrap);
 
     await tracer.span("session", async () => {
       try {
@@ -101,29 +100,25 @@ export class SessionController {
         );
         while (true) {
           let title: TitleInfo;
-          if (pendingInitialTitle) {
-            title = pendingInitialTitle;
-            pendingInitialTitle = null;
+          if (pending.initialTitle) {
+            title = pending.initialTitle;
             stateManager.dispatch({ type: "SELECT_TITLE", title });
-            if (pendingInitialEpisode) {
-              stateManager.dispatch({ type: "SELECT_EPISODE", episode: pendingInitialEpisode });
-              pendingInitialEpisode = null;
+            if (pending.initialEpisode) {
+              stateManager.dispatch({ type: "SELECT_EPISODE", episode: pending.initialEpisode });
             }
+            spendBootstrapIntent(pending);
           } else {
             // Phase 1: Search
             const searchResult = await this.executePhase(
               {
-                initialQuery: pendingInitialQuery,
-                initialRoute: pendingInitialRoute,
-                preserveExistingSearch,
-                autoPickSearchResultIndex: pendingAutoPick,
+                initialQuery: pending.initialQuery,
+                initialRoute: pending.initialRoute,
+                preserveExistingSearch: pending.preserveExistingSearch,
+                autoPickSearchResultIndex: pending.autoPickSearchResultIndex,
               } satisfies SearchPhaseInput,
               new (await import("@/app/search/SearchPhase")).SearchPhase(),
             );
-            pendingInitialQuery = undefined;
-            pendingInitialRoute = undefined;
-            pendingAutoPick = undefined;
-            preserveExistingSearch = false;
+            spendBootstrapIntent(pending);
 
             if (this.abortController.signal.aborted) break;
 
@@ -188,21 +183,21 @@ export class SessionController {
           const outcome = playbackResult.value;
           if (outcome === "quit") break;
           if (typeof outcome === "object" && outcome.type === "history_entry") {
-            pendingInitialTitle = outcome.title;
-            pendingInitialEpisode = outcome.episode ?? null;
+            pending.initialTitle = outcome.title;
+            pending.initialEpisode = outcome.episode ?? null;
             primeShareBootstrapStartSeconds(outcome.startSeconds);
-            preserveExistingSearch = false;
+            pending.preserveExistingSearch = false;
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;
           }
           if (typeof outcome === "object" && outcome.type === "browse_route") {
-            pendingInitialRoute = outcome.route;
-            preserveExistingSearch = false;
+            pending.initialRoute = outcome.route;
+            pending.preserveExistingSearch = false;
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;
           }
           if (typeof outcome === "object" && outcome.type === "playlist-advance") {
-            pendingInitialTitle = outcome.titleInfo;
+            pending.initialTitle = outcome.titleInfo;
             const targetMode = outcome.mode;
             if (targetMode !== stateManager.getState().mode) {
               stateManager.dispatch({
@@ -217,18 +212,18 @@ export class SessionController {
                 episode: { season: outcome.season ?? 1, episode: outcome.episode },
               });
             }
-            preserveExistingSearch = false;
+            pending.preserveExistingSearch = false;
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;
           }
           if (outcome === "back_to_results") {
             stateManager.dispatch({ type: "RESET_CONTENT" });
-            preserveExistingSearch = true;
+            pending.preserveExistingSearch = true;
           }
           if (outcome === "back_to_history") {
-            pendingInitialRoute = "history";
+            pending.initialRoute = "history";
             stateManager.dispatch({ type: "RESET_CONTENT" });
-            preserveExistingSearch = false;
+            pending.preserveExistingSearch = false;
           }
           if (outcome === "back_to_search") {
             // Returning to a fresh search must drop the finished session's
@@ -236,7 +231,7 @@ export class SessionController {
             // gone) and reset the autoplay/autoskip pause flags (so the
             // "autoplay paused" banner does not bleed into the new search).
             stateManager.dispatch({ type: "RESET_CONTENT" });
-            preserveExistingSearch = false;
+            pending.preserveExistingSearch = false;
           }
           // "mode_switch" falls through to next iteration
         }

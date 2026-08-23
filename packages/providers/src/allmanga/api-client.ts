@@ -594,6 +594,15 @@ export async function loadShowCatalogInfo(
     thumbnail: normalizeShowThumbnail(show?.thumbnail),
   };
 
+  // Both attempts came back without a show: a timeout, 429, 5xx, or an upstream
+  // rotation, not a catalog that is genuinely empty. Caching the synthesised
+  // `{}` pinned an empty episode list for the full TTL, so a transient failure
+  // kept showing "no episodes" long after AllAnime recovered.
+  //
+  // The empty info is still returned for *this* call — the callers already
+  // handle an empty detail — it simply is not remembered as fact.
+  if (!show?.availableEpisodesDetail) return info;
+
   showCatalogCache.set(cacheKey, info);
   return info;
 }
@@ -921,7 +930,7 @@ export async function searchAllManga(
   query: string,
   animeLang: "sub" | "dub",
   signal?: AbortSignal,
-): Promise<AllMangaSearchResult[]> {
+): Promise<AllMangaSearchResult[] | null> {
   const gqlQuery = `query($search:SearchInput $limit:Int $page:Int $translationType:VaildTranslationTypeEnumType $countryOrigin:VaildCountryOriginEnumType){
     shows(search:$search limit:$limit page:$page translationType:$translationType countryOrigin:$countryOrigin){
       edges{
@@ -988,7 +997,19 @@ export async function searchAllManga(
     };
   } | null;
 
-  const edges = data?.data?.shows?.edges ?? [];
+  // `gqlPost` returns null for a timeout, 429, 5xx, DNS failure, or an upstream
+  // rotation. This used to coalesce to `[]`, which is the same value a healthy
+  // search with no matches produces — so transport failure rendered as
+  // "No results", invisible to provider health and diagnostics. Empty stays
+  // empty; unreachable becomes null.
+  // `gqlPost` returns null for a timeout, 429, 5xx, DNS failure, or an upstream
+  // rotation. This used to coalesce to `[]`, which is the same value a healthy
+  // search with no matches produces — so transport failure rendered as
+  // "No results", invisible to provider health and diagnostics. Empty stays
+  // empty; unreachable becomes null.
+  if (data === null) return null;
+
+  const edges = data.data?.shows?.edges ?? [];
   return edges.map((edge): AllMangaSearchResult => {
     const epRaw = edge.availableEpisodes[animeLang];
     const epCount =

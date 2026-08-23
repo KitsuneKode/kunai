@@ -5,6 +5,7 @@ import {
   clearAnimeMetadataCacheForTest,
   enrichEpisodeOptionsWithAnimeMetadata,
   episodeMetadataTitleCoverage,
+  fetchAnimeEpisodeMetadataByNumber,
   formatAnimeEpisodeLabel,
   getSeededEpisodeMetadata,
   mergeMiruroPipeEpisodeMetadata,
@@ -102,5 +103,106 @@ describe("anime metadata helpers", () => {
         { number: 3 },
       ]),
     ).toBeCloseTo(2 / 3);
+  });
+});
+
+/**
+ * A failed page must not be cached as a complete catalog.
+ *
+ * `fetchJson` returns null for a non-OK response *or* a thrown request, so a
+ * transient 429 mid-pagination used to fall through to `rows = []`, set
+ * `hasNext` false, and return the pages gathered so far as though pagination
+ * had finished. The caller then wrote that under the full-pass key with a
+ * **30-day** TTL, freezing incomplete titles, air dates and filler flags for a
+ * month.
+ */
+describe("episode metadata pagination completeness", () => {
+  const MAL_ID = "5678";
+
+  function jikanPage(episodes: readonly number[], hasNext: boolean): Response {
+    return new Response(
+      JSON.stringify({
+        data: episodes.map((n) => ({ mal_id: n, title: `Episode ${n}`, filler: false })),
+        pagination: { has_next_page: hasNext },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  test("a page failure is not remembered as a finished catalog", async () => {
+    const originalFetch = globalThis.fetch;
+    let jikanCalls = 0;
+    try {
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (!url.includes("jikan")) {
+          return new Response(JSON.stringify({ data: { Media: { streamingEpisodes: [] } } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        jikanCalls += 1;
+        // Page 1 succeeds and promises more; page 2 is rate limited.
+        if (url.includes("page=1")) return jikanPage([1, 2], true);
+        return new Response("rate limited", { status: 429 });
+      }) as unknown as typeof fetch;
+
+      const first = await fetchAnimeEpisodeMetadataByNumber({ malId: MAL_ID });
+      // The partial data is still useful for this call.
+      expect(first.get(1)?.title).toBe("Episode 1");
+      expect(first.get(3)).toBeUndefined();
+      const callsAfterFirst = jikanCalls;
+
+      // The registry recovers. A second call must go back to the network
+      // rather than serving the truncated catalog from a 30-day cache.
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (!url.includes("jikan")) {
+          return new Response(JSON.stringify({ data: { Media: { streamingEpisodes: [] } } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        jikanCalls += 1;
+        if (url.includes("page=1")) return jikanPage([1, 2], true);
+        return jikanPage([3, 4], false);
+      }) as unknown as typeof fetch;
+
+      const second = await fetchAnimeEpisodeMetadataByNumber({ malId: MAL_ID });
+      expect(jikanCalls).toBeGreaterThan(callsAfterFirst);
+      expect(second.get(3)?.title).toBe("Episode 3");
+      expect(second.get(4)?.title).toBe("Episode 4");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a catalog that really did finish is cached and not refetched", async () => {
+    const originalFetch = globalThis.fetch;
+    let jikanCalls = 0;
+    try {
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (!url.includes("jikan")) {
+          return new Response(JSON.stringify({ data: { Media: { streamingEpisodes: [] } } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        jikanCalls += 1;
+        return jikanPage([1, 2], false);
+      }) as unknown as typeof fetch;
+
+      const first = await fetchAnimeEpisodeMetadataByNumber({ malId: "9999" });
+      expect(first.get(2)?.title).toBe("Episode 2");
+      const callsAfterFirst = jikanCalls;
+
+      // Completeness still earns the cache — this fix must not disable it.
+      const second = await fetchAnimeEpisodeMetadataByNumber({ malId: "9999" });
+      expect(jikanCalls).toBe(callsAfterFirst);
+      expect(second.get(2)?.title).toBe("Episode 2");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

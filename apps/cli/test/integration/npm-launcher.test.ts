@@ -13,6 +13,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { removeTempDir } from "../support/remove-temp-dir";
+
 /**
  * The npm `bin` launcher must run under plain Node.
  *
@@ -126,7 +128,7 @@ setTimeout(() => {}, 30000);
 });
 
 afterAll(() => {
-  if (workDir) rmSync(workDir, { recursive: true, force: true });
+  removeTempDir(workDir);
 });
 
 function runLauncher(args: readonly string[]) {
@@ -238,7 +240,7 @@ windowsNativeLauncherTest(
       expect(help.exitCode).toBe(0);
       expect(help.stdout.toString().trim()).not.toBe("");
     } finally {
-      rmSync(fixture.packageRoot, { recursive: true, force: true });
+      removeTempDir(fixture.packageRoot);
     }
   },
 );
@@ -305,7 +307,7 @@ nodeTest("reports an actionable error when the platform binary is missing", () =
   expect(stderr).toMatch(/install -g|add -g/);
   expect(stderr).toContain("install.sh");
 
-  rmSync(empty, { recursive: true, force: true });
+  removeTempDir(empty);
 });
 
 // Signal semantics are POSIX-only.

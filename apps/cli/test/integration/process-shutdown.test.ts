@@ -9,6 +9,7 @@ import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/sto
 import { describePosixOnly as describe } from "../helpers/platform-gates";
 import { buildPtyCommand } from "../helpers/pty-command";
 import { storageRootEnv } from "../helpers/storage-env";
+import { removeTempDir } from "../support/remove-temp-dir";
 
 // Real-process shutdown coverage: spawn the CLI against an isolated shadow
 // profile, deliver a signal, and assert the conventional exit status plus a
@@ -42,7 +43,7 @@ afterEach(() => {
     }
   }
   for (const dir of tempRoots.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   }
 });
 

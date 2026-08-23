@@ -14,6 +14,7 @@ import { ConfigStoreImpl } from "@/services/persistence/ConfigStoreImpl";
 import React, { act } from "react";
 
 import { render } from "../harness/render-capture";
+import { waitUntil as sharedWaitUntil } from "../support/wait-until";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -71,19 +72,34 @@ function createSettingsContainer(config: ConfigService): Container {
   } as unknown as Container;
 }
 
+/**
+ * Poll inside an `act()` boundary, with a budget that is not a bet on the host.
+ *
+ * This was a 100 x 10ms loop -- one second of wall clock for work that writes
+ * config to disk atomically. On a loaded Windows agent under `--parallel` that
+ * is not enough, and it failed as `message` rather than as anything about
+ * analytics. Scheduling shifts whenever unrelated tests are added elsewhere,
+ * which is exactly how it surfaced.
+ */
 async function waitUntil(predicate: () => boolean, message: string): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (predicate()) return;
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-  }
-  throw new Error(message);
+  await sharedWaitUntil(predicate, {
+    label: message,
+    tick: async (ms) => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+      });
+    },
+  });
 }
 
+/**
+ * The settings save is debounced, so this waits out the debounce rather than
+ * polling a condition. Kept as a sleep for that reason, but sized above the
+ * debounce with headroom instead of sitting just past it.
+ */
 async function waitForDelayedSettingsSave(): Promise<void> {
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
   });
 }
 

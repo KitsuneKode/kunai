@@ -101,7 +101,13 @@ async function bridgeAllMangaShowIdFromAnilist(
       query,
       animeLang,
       context.signal,
-    ).catch(() => []);
+    ).catch(() => null);
+
+    // null is "this query could not be checked", not "this query has no match".
+    // Treating the two the same made a timeout look like a confirmed miss and
+    // sent the caller on to the next query -- or out of the loop -- as though
+    // the catalog had answered.
+    if (matches === null) continue;
 
     const idMatch = matches.find((result) => String(result.aniListId) === anilistId);
     if (idMatch?.id) return idMatch.id;

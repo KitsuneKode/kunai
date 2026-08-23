@@ -25,7 +25,12 @@
 import { existsSync } from "node:fs";
 
 import { applyShareRefLaunch } from "@/app/bootstrap/apply-resolved-share-target";
-import { resolveBootstrapIntent } from "@/app/bootstrap/bootstrap-intent";
+import {
+  formatBootstrapPlan,
+  resolveAutoPickIndex,
+  resolveBootstrapIntent,
+  resolveLaunchSurfaceName,
+} from "@/app/bootstrap/bootstrap-intent";
 import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
 import {
   applyHistorySelectionProvider,
@@ -418,7 +423,7 @@ async function maybeRunDownloadMode(
       ).SearchPhase().execute(
         {
           initialQuery: args.search,
-          autoPickSearchResultIndex: args.jump ?? (args.quick && args.search ? 1 : undefined),
+          autoPickSearchResultIndex: resolveAutoPickIndex(args),
           deferAnimeProviderMapping: true,
         },
         { container, signal: new AbortController().signal },
@@ -659,19 +664,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
 
-  // Versioned binary: hold lifetime lock and prune old versions (binary channel).
-  // The acquisition promise is tracked so coordinated shutdown can await it
-  // before releasing — a late lock must never survive the process.
-  lifetimeLockReady = (async () => {
-    const { lockCurrentVersion, cleanupOldVersions } =
-      await import("./services/update/native-installer");
-    const { readInstallManifest } = await import("./services/update/install-manifest");
-    const manifest = await readInstallManifest();
-    if (manifest?.method === "binary" || manifest?.versionedPath) {
-      await lockCurrentVersion().catch(() => {});
-      void cleanupOldVersions().catch(() => {});
-    }
-  })().catch(() => {});
+  // Share/handoff URLs are parsed before the version lock below. Parsing is
+  // pure and rejects invalid input, so doing it first means a bad URL exits
+  // without having taken a lock or pruned anything — and it lets `--dry-run`
+  // report the share action while still returning before any state changes.
   let pendingShareLaunch: PendingShareLaunch | null = null;
   if (args.openUrl) {
     const parsed = parseKunaiShareUrl(args.openUrl);
@@ -697,6 +693,38 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         requiresConfirmation: true,
       }
     : null;
+
+  // `--dry-run` on the launch path. Placed here deliberately: the share URL is
+  // parsed and validated above, so the plan is accurate, but nothing has been
+  // created or mutated yet — no version lock, no version pruning, no container,
+  // no database, no terminal probe, no dependency check. That is what
+  // "without changing state" has to mean.
+  if (args.dryRun) {
+    const plan = formatBootstrapPlan({
+      intent: resolveBootstrapIntent(args),
+      mode: args.anime ? "anime" : args.youtube ? "youtube" : "movie/series",
+      route: resolveLaunchSurfaceName(args),
+      shareAction: pendingShareLaunch?.action,
+      download: args.download,
+      setup: args.setup,
+    });
+    process.stdout.write(`${plan.join("\n")}\n`);
+    return;
+  }
+
+  // Versioned binary: hold lifetime lock and prune old versions (binary channel).
+  // The acquisition promise is tracked so coordinated shutdown can await it
+  // before releasing — a late lock must never survive the process.
+  lifetimeLockReady = (async () => {
+    const { lockCurrentVersion, cleanupOldVersions } =
+      await import("./services/update/native-installer");
+    const { readInstallManifest } = await import("./services/update/install-manifest");
+    const manifest = await readInstallManifest();
+    if (manifest?.method === "binary" || manifest?.versionedPath) {
+      await lockCurrentVersion().catch(() => {});
+      void cleanupOldVersions().catch(() => {});
+    }
+  })().catch(() => {});
 
   // Guard: verify required system dependencies before touching the shell.
   // Silence pre-TUI console output when onboarding will run — the system

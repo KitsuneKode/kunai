@@ -21,6 +21,8 @@ import {
 import { openKunaiDatabase, runMigrations, SyncOutboxRepository } from "@kunai/storage";
 import type { HistoryProgress } from "@kunai/storage";
 
+import { waitUntil } from "../../../support/wait-until";
+
 const dirs: string[] = [];
 const openDatabases: { close(): void }[] = [];
 
@@ -147,9 +149,7 @@ describe("SyncService drain", () => {
 
     const first = await service.drain(25);
     expect(first.claimed).toBe(100);
-    for (let attempt = 0; attempt < 100 && repo.counts().pending > 0; attempt += 1) {
-      await Bun.sleep(10);
-    }
+    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
 
     expect(anilist.calls).toHaveLength(103);
     expect(repo.counts().pending).toBe(0);
@@ -174,9 +174,7 @@ describe("SyncService drain", () => {
     }
 
     service.deliverSoon();
-    for (let attempt = 0; attempt < 100 && repo.counts().pending > 0; attempt += 1) {
-      await Bun.sleep(10);
-    }
+    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
 
     expect(anilist.calls).toHaveLength(103);
     expect(repo.counts().pending).toBe(0);
@@ -207,7 +205,7 @@ describe("SyncService drain", () => {
       present: true,
     });
     service.deliverSoon();
-    while (anilist.calls.length === 0) await Bun.sleep(1);
+    await waitUntil(() => anilist.calls.length > 0, { label: "first anilist call" });
 
     seedOperation(repo, {
       version: 1,
@@ -218,9 +216,7 @@ describe("SyncService drain", () => {
     service.deliverSoon();
     release();
 
-    for (let attempt = 0; attempt < 100 && repo.counts().pending > 0; attempt += 1) {
-      await Bun.sleep(10);
-    }
+    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
     expect(anilist.calls).toHaveLength(2);
     expect(repo.counts().pending).toBe(0);
   });
@@ -436,9 +432,7 @@ describe("SyncService drain", () => {
     expect(scheduled[0]?.delayMs).toBeGreaterThan(0);
     now = new Date(now.getTime() + 60_000);
     scheduled[0]?.task();
-    for (let attempt = 0; attempt < 20 && repo.counts().pending > 0; attempt += 1) {
-      await Bun.sleep(1);
-    }
+    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
     expect(anilist.calls).toHaveLength(2);
     expect(repo.counts().pending).toBe(0);
 

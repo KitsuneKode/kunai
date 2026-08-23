@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
@@ -711,35 +712,101 @@ describe("install.sh package activeVersion", () => {
  *     default, so a prompt nobody could answer became consent.
  */
 describe("install.sh consent without a terminal", () => {
-  function runAsk(yes: 0 | 1): { status: number | null; stderr: string } {
+  const setsid = Bun.which("setsid");
+  const scriptBin = Bun.which("script");
+
+  function askProbeSource(yes: 0 | 1): string {
     const source = readFileSync(INSTALL_SH, "utf8");
     const fn = /^ask\(\) \{[\s\S]*?^\}/m.exec(source)?.[0];
     if (!fn) throw new Error("could not extract ask() from install.sh");
-    const script = [
-      `warn() { echo "WARN: $*" >&2; }`,
-      `YES=${yes}`,
-      fn,
-      `ask "Install mpv?" y`,
-    ].join("\n");
-    // stdin closed and no controlling terminal — the `curl … | bash` in CI shape.
-    return spawnSync("bash", ["-c", script], {
+    return [`warn() { echo "WARN: $*" >&2; }`, `YES=${yes}`, fn, `ask "Install mpv?" y`].join("\n");
+  }
+
+  function runAskWithoutControllingTerminal(yes: 0 | 1) {
+    if (!setsid) throw new Error("setsid is unavailable");
+    return spawnSync(setsid, ["bash", "-c", askProbeSource(yes)], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      timeout: 2_000,
     });
   }
 
-  test("declines rather than assuming yes, and says which step it skipped", () => {
-    const result = runAsk(0);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("No terminal for: Install mpv?");
-    expect(result.stderr).toContain("--yes");
-    // bash's own redirect error would mean stderr is silenced after the failing
-    // open rather than before it.
-    expect(result.stderr).not.toContain("No such device");
-  });
+  function runAskWithClosedPtyInput(yes: 0 | 1) {
+    if (!scriptBin) throw new Error("script(1) is unavailable");
+    const root = mkdtempSync(join(tmpdir(), "kunai-ask-"));
+    const probePath = join(root, "ask-probe.sh");
+    try {
+      writeFileSync(probePath, askProbeSource(yes), { mode: 0o700 });
+      const args =
+        process.platform === "darwin"
+          ? ["-q", "/dev/null", "bash", probePath]
+          : ["-qfec", 'bash "$KUNAI_ASK_PROBE"', "/dev/null"];
+      return spawnSync(scriptBin, args, {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          ...(process.platform === "darwin" ? {} : { KUNAI_ASK_PROBE: probePath }),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 2_000,
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
 
-  test("an explicit --yes is still consent", () => {
-    expect(runAsk(1).status).toBe(0);
+  test.skipIf(!setsid)(
+    "requires setsid: no controlling terminal declines and explains --yes",
+    () => {
+      const result = runAskWithoutControllingTerminal(0);
+      expect(result.error).toBeUndefined();
+      expect(result.signal).toBeNull();
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("No terminal for: Install mpv?");
+      expect(result.stderr).toContain("--yes");
+    },
+  );
+
+  test.skipIf(!scriptBin)(
+    "requires script(1): closed PTY input declines instead of defaulting to yes",
+    () => {
+      const result = runAskWithClosedPtyInput(0);
+      expect(result.error).toBeUndefined();
+      expect(result.signal).toBeNull();
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("No reply for: Install mpv?");
+    },
+  );
+
+  test.skipIf(!scriptBin)(
+    "requires script(1): TMPDIR shell metacharacters do not change the probe",
+    () => {
+      const parent = mkdtempSync(join(tmpdir(), "kunai-ask-parent-"));
+      let originalTmpDir: string | undefined;
+      try {
+        const hostileTmpDir = join(parent, "has spaces; false #");
+        originalTmpDir = process.env.TMPDIR;
+        mkdirSync(hostileTmpDir);
+        process.env.TMPDIR = hostileTmpDir;
+        expect(tmpdir()).toBe(hostileTmpDir);
+        const result = runAskWithClosedPtyInput(0);
+        expect(result.error).toBeUndefined();
+        expect(result.signal).toBeNull();
+        expect(result.status).not.toBe(0);
+        expect(`${result.stdout}${result.stderr}`).toContain("No reply for: Install mpv?");
+      } finally {
+        if (originalTmpDir === undefined) delete process.env.TMPDIR;
+        else process.env.TMPDIR = originalTmpDir;
+        rmSync(parent, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.skipIf(!scriptBin)("requires script(1): an explicit --yes is still consent", () => {
+    const result = runAskWithClosedPtyInput(1);
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status).toBe(0);
   });
 });
 

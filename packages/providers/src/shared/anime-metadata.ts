@@ -176,20 +176,41 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T | null
   }
 }
 
+/**
+ * Episode metadata plus whether the network pass that produced it finished.
+ *
+ * Without the flag there is no way to tell "this anime has 12 episodes" from
+ * "page 2 of 6 failed", because both arrive as a Map. The caller caches under a
+ * 30-day TTL, so conflating them freezes an incomplete catalog for a month.
+ */
+type EpisodeMetadataFetch = {
+  readonly episodes: Map<number, AnimeEpisodeMetadata>;
+  readonly complete: boolean;
+};
+
+/** Guard against an unbounded catalog; also a reason a pass is incomplete. */
+const JIKAN_MAX_PAGES = 50;
+
 async function fetchJikanEpisodes(
   malId: number,
   signal?: AbortSignal,
-): Promise<Map<number, AnimeEpisodeMetadata>> {
+): Promise<EpisodeMetadataFetch> {
   const episodes = new Map<number, AnimeEpisodeMetadata>();
   let page = 1;
-  let hasNext = true;
 
-  while (hasNext) {
+  for (;;) {
     const payload = await fetchJson<{
       readonly data?: readonly JikanEpisode[];
       readonly pagination?: { readonly has_next_page?: boolean };
     }>(`${JIKAN_BASE}/anime/${malId}/episodes?page=${page}`, signal);
-    const rows = payload?.data ?? [];
+
+    // `fetchJson` returns null for a non-OK response *or* a thrown request, so
+    // null here is a transport failure — not an empty page. It used to fall
+    // through to `rows = []`, which set `hasNext` false and returned the pages
+    // gathered so far as though pagination had completed.
+    if (payload === null) return { episodes, complete: false };
+
+    const rows = payload.data ?? [];
     for (const row of rows) {
       const number = row.mal_id;
       if (!number || number < 1) continue;
@@ -201,18 +222,21 @@ async function fetchJikanEpisodes(
         source: "jikan",
       });
     }
-    hasNext = payload?.pagination?.has_next_page === true && rows.length > 0;
-    page += 1;
-    if (page > 50) break;
-  }
 
-  return episodes;
+    if (payload.pagination?.has_next_page !== true || rows.length === 0) {
+      return { episodes, complete: true };
+    }
+
+    page += 1;
+    // Stopping at the ceiling is a truncated catalog, not a finished one.
+    if (page > JIKAN_MAX_PAGES) return { episodes, complete: false };
+  }
 }
 
 async function fetchAniListStreamingEpisodes(
   anilistId: string,
   signal?: AbortSignal,
-): Promise<Map<number, AnimeEpisodeMetadata>> {
+): Promise<EpisodeMetadataFetch> {
   const episodes = new Map<number, AnimeEpisodeMetadata>();
   try {
     const response = await fetch(ANILIST_GRAPHQL, {
@@ -229,7 +253,7 @@ async function fetchAniListStreamingEpisodes(
         variables: { id: Number(anilistId) },
       }),
     });
-    if (!response.ok) return episodes;
+    if (!response.ok) return { episodes, complete: false };
     const payload = (await response.json()) as {
       readonly data?: {
         readonly Media?: {
@@ -248,9 +272,10 @@ async function fetchAniListStreamingEpisodes(
       });
     });
   } catch {
-    return episodes;
+    // Timeout, DNS, abort — none of which mean the anime has no episodes.
+    return { episodes, complete: false };
   }
-  return episodes;
+  return { episodes, complete: true };
 }
 
 export function mergeMiruroPipeEpisodeMetadata(
@@ -308,22 +333,34 @@ export async function fetchAnimeEpisodeMetadataByNumber(
 
   const merged = new Map<number, AnimeEpisodeMetadata>();
   const malId = ids.malId ? Number.parseInt(ids.malId, 10) : Number.NaN;
+  let complete = true;
 
   if (ids.anilistId) {
-    const anilistEpisodes = await fetchAniListStreamingEpisodes(ids.anilistId, signal);
-    for (const [number, meta] of anilistEpisodes) {
+    const anilist = await fetchAniListStreamingEpisodes(ids.anilistId, signal);
+    for (const [number, meta] of anilist.episodes) {
       mergeEpisodeMetadata(merged, number, meta);
     }
+    complete &&= anilist.complete;
   }
 
   if (pass === "full" && Number.isFinite(malId) && malId > 0) {
-    const jikanEpisodes = await fetchJikanEpisodes(malId, signal);
-    for (const [number, meta] of jikanEpisodes) {
+    const jikan = await fetchJikanEpisodes(malId, signal);
+    for (const [number, meta] of jikan.episodes) {
       mergeEpisodeMetadata(merged, number, meta);
     }
+    complete &&= jikan.complete;
   }
 
-  metadataCache.set(metadataCacheKey(ids, pass), merged);
+  // Return what was gathered — partial metadata is still better than none for
+  // *this* call — but only freeze it for 30 days when every source that ran
+  // finished. A single transient 429 used to pin an incomplete episode list,
+  // with missing titles, air dates and filler flags, for a month.
+  //
+  // An aborted request is incomplete by the same rule: the caller cancelled, so
+  // what arrived is not evidence about the catalog.
+  if (complete && !signal?.aborted) {
+    metadataCache.set(metadataCacheKey(ids, pass), merged);
+  }
   return merged;
 }
 

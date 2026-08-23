@@ -8,8 +8,36 @@ export type ExternalOpenFailureReason =
   | "disabled"
   | "unsupported-platform"
   | "opener-not-found"
+  | "rejected-url"
   | "spawn-failed"
   | "non-zero-exit";
+
+/** Schemes Kunai will hand to the desktop opener. */
+const ALLOWED_URL_SCHEMES = new Set(["http:", "https:", "kunai:"]);
+
+/**
+ * Is this URL safe to hand to `xdg-open` / `open` / `explorer.exe`?
+ *
+ * There is no shell injection here — `Bun.spawn` takes an argv array, not a
+ * command string — and that is worth stating so it is not re-raised as one.
+ * Two real issues remain:
+ *
+ *   - **Option injection.** A value starting with `-` is read by the opener as
+ *     a flag rather than a target.
+ *   - **Scheme.** Every scheme was forwarded, including `file://` and whatever
+ *     else the desktop has registered a handler for.
+ *
+ * The URLs reaching here are not all ours: title metadata carries AniList,
+ * IMDb and trailer links that originate from external APIs.
+ */
+export function isAllowedExternalUrl(url: string): boolean {
+  if (url.startsWith("-")) return false;
+  try {
+    return ALLOWED_URL_SCHEMES.has(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
 
 export type ExternalOpenResult =
   | { readonly ok: true; readonly command: readonly string[]; readonly target: ExternalOpenTarget }
@@ -106,6 +134,16 @@ export async function openExternal(
 
   if (target.kind === "url" && !target.url) {
     return { ok: false, reason: "opener-not-found", target, detail: "empty url" };
+  }
+  if (target.kind === "url" && !isAllowedExternalUrl(target.url)) {
+    // Same rule on every platform: an opener that treats `--foo` as a flag or
+    // follows an arbitrary scheme is not something to vary by OS.
+    return {
+      ok: false,
+      reason: "rejected-url",
+      target,
+      detail: "only http, https and kunai URLs can be opened",
+    };
   }
   if (target.kind === "path" && !target.path) {
     return { ok: false, reason: "opener-not-found", target, detail: "empty path" };

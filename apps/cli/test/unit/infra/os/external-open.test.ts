@@ -210,3 +210,91 @@ describe("external-open", () => {
     });
   });
 });
+
+/**
+ * The URLs reaching `openExternal` are not all ours: title metadata carries
+ * AniList, IMDb and trailer links that came from external APIs
+ * (`root-overlay-shell.tsx`, `SearchPhase.ts`).
+ *
+ * There is no shell injection here — `Bun.spawn` takes an argv array, not a
+ * command string — which is worth pinning so it is not re-raised as one. What
+ * did apply: a value starting with `-` is read by the opener as a flag, and
+ * every scheme was forwarded, `file://` included.
+ */
+describe("external-open URL validation", () => {
+  const spawnMustNotRun: ExternalOpenRuntime["spawn"] = () => {
+    throw new Error("the opener must not be spawned for a rejected URL");
+  };
+
+  const rejecting = (platform: NodeJS.Platform) =>
+    runtime({
+      platform,
+      which: () => "/usr/bin/xdg-open",
+      spawn: spawnMustNotRun,
+    });
+
+  test("refuses option-prefixed values before reaching the opener", async () => {
+    for (const url of ["--version", "-e", "--bogus=1"]) {
+      const result = await openExternal({ kind: "url", url }, rejecting("linux"));
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason).toBe("rejected-url");
+    }
+  });
+
+  test("refuses schemes Kunai never means to open", async () => {
+    for (const url of [
+      "file:///etc/passwd",
+      "javascript:alert(1)",
+      "data:text/html,<script>1</script>",
+      "smb://server/share",
+      "not a url at all",
+    ]) {
+      const result = await openExternal({ kind: "url", url }, rejecting("linux"));
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason).toBe("rejected-url");
+    }
+  });
+
+  test("still opens the schemes it is for", async () => {
+    const commands: string[][] = [];
+    const allow = runtime({
+      platform: "linux",
+      which: () => "/usr/bin/xdg-open",
+      spawn: succeedingSpawn(commands),
+    });
+
+    for (const url of [
+      "https://anilist.co/anime/1",
+      "http://example.test/x",
+      "kunai://play?cat=tmdb%3A438631&kind=movie",
+    ]) {
+      const result = await openExternal({ kind: "url", url }, allow);
+      expect(result.ok).toBe(true);
+    }
+    expect(commands).toHaveLength(3);
+  });
+
+  test("the rule is identical on macOS and Windows", async () => {
+    for (const platform of ["darwin", "win32"] as const) {
+      const result = await openExternal(
+        { kind: "url", url: "file:///etc/passwd" },
+        rejecting(platform),
+      );
+      expect(result.ok === false && result.reason).toBe("rejected-url");
+    }
+  });
+
+  test("revealing a path is unaffected", async () => {
+    const commands: string[][] = [];
+    const result = await openExternal(
+      { kind: "path", path: "/home/u/Videos/ep.mkv" },
+      runtime({
+        platform: "linux",
+        which: () => "/usr/bin/xdg-open",
+        spawn: succeedingSpawn(commands),
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(commands[0]).toEqual(["/usr/bin/xdg-open", dirname("/home/u/Videos/ep.mkv")]);
+  });
+});

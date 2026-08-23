@@ -282,7 +282,47 @@ function mergeDetails(
       ? (anilist?.synopsis ?? tmdb?.synopsis)
       : (tmdb?.synopsis ?? anilist?.synopsis);
 
-  const genres = dedupe([...(tmdb?.genres ?? []), ...(anilist?.genres ?? [])]);
+  // Do the two records describe the same work?
+  //
+  // Nothing upstream guarantees it. `tmdbId` can arrive from a caller hint or
+  // the AniList->TMDB crosswalk, and a wrong mapping still fetches a perfectly
+  // valid TMDB record — for a different film. The merge then took identity from
+  // one catalog and facts from the other, which is how a panel showed the right
+  // title and synopsis beside another title's year, runtime and genre, and
+  // disagreed with the player's own progress bar about the runtime.
+  //
+  // A release-year gap is the cheapest reliable signal: the same work does not
+  // move by years between catalogs, while two different works usually do. One
+  // year of slack absorbs the real cause of small differences — festival vs
+  // wide release, and JST/UTC boundaries.
+  const yearsDisagree =
+    tmdb?.year !== undefined &&
+    anilist?.year !== undefined &&
+    Math.abs(Number(tmdb.year) - Number(anilist.year)) > 1;
+  const trustTmdbFacts = !yearsDisagree;
+
+  /**
+   * For anime, facts follow the record that supplied the title.
+   *
+   * Title and synopsis already prefer AniList here. Taking year, runtime and
+   * genre from TMDB instead made the panel a blend of two catalogs, so a bad
+   * crosswalk corrupted the visible facts while leaving the name intact —
+   * which reads as a data bug rather than a lookup bug and is much harder to
+   * notice. TMDB still fills anything AniList does not carry.
+   */
+  const factsPreferAniList = artworkKind === "anime";
+  const preferredYear = factsPreferAniList
+    ? (anilist?.year ?? (trustTmdbFacts ? tmdb?.year : undefined))
+    : (tmdb?.year ?? anilist?.year);
+  const preferredRuntime = factsPreferAniList
+    ? (anilist?.runtimeMinutes ?? (trustTmdbFacts ? tmdb?.runtimeMinutes : undefined))
+    : (tmdb?.runtimeMinutes ?? anilist?.runtimeMinutes);
+
+  // A record we do not trust contributes no genres either — a wrong film's
+  // "Comedy" is what surfaces first in the panel's single-genre slot.
+  const genres = factsPreferAniList
+    ? dedupe([...(anilist?.genres ?? []), ...(trustTmdbFacts ? (tmdb?.genres ?? []) : [])])
+    : dedupe([...(tmdb?.genres ?? []), ...(anilist?.genres ?? [])]);
   const studios = dedupe([...(tmdb?.studios ?? []), ...(anilist?.studios ?? [])]);
 
   // Cast: prefer voice cast from AniList for anime, actor cast from TMDB otherwise
@@ -301,11 +341,11 @@ function mergeDetails(
     id,
     type: resolvedType,
     title,
-    year: tmdb?.year ?? anilist?.year ?? undefined,
+    year: preferredYear ?? undefined,
     synopsis,
     genres: genres.length ? genres : undefined,
     studios: studios.length ? studios : undefined,
-    runtimeMinutes: tmdb?.runtimeMinutes ?? anilist?.runtimeMinutes ?? undefined,
+    runtimeMinutes: preferredRuntime ?? undefined,
     contentRating: tmdb?.contentRating ?? undefined,
     releaseDate: tmdb?.releaseDate ?? anilist?.releaseDate ?? undefined,
     status,

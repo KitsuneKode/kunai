@@ -37,6 +37,106 @@ export interface BootstrapArgs {
   readonly jump?: number;
 }
 
+/**
+ * The single auto-pick rule: `--jump N` wins, otherwise quick-mode with a query
+ * takes the top hit.
+ *
+ * Exported because the download path in `main.ts` restated this expression
+ * verbatim. Two copies of a selection policy is how they drift — and the
+ * behaviour they encode (silently playing result #1) is exactly the kind that
+ * must not diverge between surfaces.
+ */
+export function resolveAutoPickIndex(args: {
+  readonly jump?: number;
+  readonly quick: boolean;
+  readonly search?: string;
+}): number | undefined {
+  if (args.jump !== undefined) return args.jump;
+  return args.quick && args.search?.trim() ? 1 : undefined;
+}
+
+/** Named launch surfaces, in the precedence the launch path applies them. */
+export function resolveLaunchSurfaceName(args: {
+  readonly offline: boolean;
+  readonly history: boolean;
+  readonly continuePlayback: boolean;
+  readonly download: boolean;
+  readonly setup: boolean;
+  readonly initialRoute?: string;
+}): string | undefined {
+  if (args.setup) return "setup";
+  if (args.offline) return "offline library";
+  if (args.history) return "watch history";
+  if (args.continuePlayback) return "continue watching";
+  if (args.initialRoute) return args.initialRoute;
+  if (args.download) return "download";
+  return undefined;
+}
+
+/** What `--dry-run` reports about a launch, before anything is created. */
+export interface BootstrapPlanInput {
+  readonly intent: BootstrapIntent;
+  readonly mode: string;
+  readonly route?: string;
+  readonly shareAction?: string;
+  readonly download: boolean;
+  readonly setup: boolean;
+}
+
+/**
+ * Render the planned bootstrap as human-readable lines.
+ *
+ * `docs/users/cli-reference.mdx` promises `--dry-run` "prints the planned
+ * bootstrap without changing state", and `--help` lists it as a general flag.
+ * It was read in exactly two places -- `--install-protocol-handler` and
+ * `rollback` -- so on the launch path it parsed and did nothing, and
+ * `kunai -S "Dune" --dry-run` started the very session it promised not to.
+ *
+ * Pure so the plan can be asserted without booting the shell, and so the caller
+ * can print it before any container, database, or probe exists.
+ */
+export function formatBootstrapPlan(input: BootstrapPlanInput): readonly string[] {
+  const { intent } = input;
+  const lines = ["kunai --dry-run: planned bootstrap (nothing was changed)"];
+
+  lines.push(`  mode:        ${input.mode}`);
+  lines.push(`  surface:     ${input.route ?? (input.setup ? "setup" : "search")}`);
+
+  if (intent.directTitle) {
+    lines.push(`  title:       ${intent.directTitle.id} (${intent.directTitle.type})`);
+  } else if (intent.query) {
+    lines.push(`  query:       ${intent.query}`);
+  } else {
+    lines.push("  query:       (none — opens the shell)");
+  }
+
+  lines.push(
+    `  auto-pick:   ${
+      intent.autoPickSearchResultIndex === undefined
+        ? "no (results are shown)"
+        : `result #${intent.autoPickSearchResultIndex}`
+    }`,
+  );
+  lines.push(`  action:      ${input.download ? "download only (no playback)" : "play"}`);
+
+  if (input.shareAction) {
+    lines.push(`  share link:  ${input.shareAction}`);
+  }
+
+  // Surface the same drops the launch path reports, so a dry run explains why a
+  // flag will be ignored instead of leaving the user to discover it at runtime.
+  for (const entry of intent.logs) {
+    if (entry.kind === "anime-id-unsupported") {
+      lines.push(`  warning:     -i/--id is ignored in anime mode (${entry.id})`);
+    }
+    if (entry.kind === "id-without-type") {
+      lines.push(`  warning:     -i/--id needs -t movie|series, so ${entry.id} is ignored`);
+    }
+  }
+
+  return lines;
+}
+
 export function resolveBootstrapIntent(args: BootstrapArgs): BootstrapIntent {
   const logs: BootstrapLog[] = [];
 
@@ -48,12 +148,12 @@ export function resolveBootstrapIntent(args: BootstrapArgs): BootstrapIntent {
 
   const directTitle = resolveDirectTitle(args, logs);
 
-  // `--jump N` wins; otherwise quick-mode with a query auto-picks the top hit.
   // A direct title never needs a search auto-pick (there is no result list).
-  let autoPickSearchResultIndex = args.jump;
-  if (autoPickSearchResultIndex === undefined && args.quick && query) {
-    autoPickSearchResultIndex = 1;
-  }
+  const autoPickSearchResultIndex = resolveAutoPickIndex({
+    jump: args.jump,
+    quick: args.quick,
+    search: query,
+  });
 
   return { query, directTitle, autoPickSearchResultIndex, logs };
 }

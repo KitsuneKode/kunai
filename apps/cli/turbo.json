@@ -24,8 +24,14 @@
       ],
       "outputs": []
     },
+    // Depends on `build` because two integration tests spawn a real build into
+    // the shared `dist/`: release-build.test.ts and npm-pack-guard.test.ts.
+    // Without the edge, Turbo may run the build task -- or restore its cached
+    // dist/ outputs -- at the same time, and a test asserting on empty stderr
+    // or a file's contents sees torn state. It then fails naming a test
+    // unrelated to the change under review.
     "test:integration": {
-      "dependsOn": ["transit"],
+      "dependsOn": ["transit", "build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "!docs/**",

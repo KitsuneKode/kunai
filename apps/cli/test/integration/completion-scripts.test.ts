@@ -6,6 +6,8 @@ import { join } from "node:path";
 
 import { COMPLETION_SHELLS, renderCompletionScript } from "@/services/completion/completion-script";
 
+import { removeTempDir } from "../support/remove-temp-dir";
+
 /**
  * Unit tests assert what the generated scripts *contain*. Only a real parser
  * catches a script that is syntactically broken — an unbalanced `case` arm or a
@@ -21,7 +23,7 @@ function writeScript(contents: string, extension: string): { path: string; clean
   const dir = mkdtempSync(join(tmpdir(), "kunai-completion-"));
   const path = join(dir, `kunai.${extension}`);
   writeFileSync(path, contents, "utf8");
-  return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { path, cleanup: () => removeTempDir(dir) };
 }
 
 const describeBash = shellAvailable("bash", ["-c", "exit 0"]) ? describe : describe.skip;

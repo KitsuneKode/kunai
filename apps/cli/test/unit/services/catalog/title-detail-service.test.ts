@@ -674,3 +674,130 @@ describe("TitleDetailService — id format compat", () => {
     clearTitleDetailCache();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cross-catalog coherence
+// ---------------------------------------------------------------------------
+
+/**
+ * An anime panel must not take its identity from one catalog and its facts from
+ * another.
+ *
+ * Observed on *Road to Ninja: Naruto the Movie*: the panel read
+ * "1985 · 1h 37m · Comedy" beside the correct title and synopsis, and
+ * contradicted the player's own progress bar, which showed 1:49:56.
+ *
+ * Nothing upstream guarantees the two records describe the same work. `tmdbId`
+ * can arrive from a caller hint or the AniList→TMDB crosswalk, and a wrong
+ * mapping still returns a perfectly valid TMDB record — for a different film.
+ * Title and synopsis preferred AniList while year, runtime and genre preferred
+ * TMDB, so a bad crosswalk corrupted exactly the visible facts and left the
+ * name intact, which reads as a data bug rather than a lookup bug.
+ */
+describe("anime detail stays coherent across catalogs", () => {
+  const ANIME_HINTS = { isAnime: true, externalIds: { anilistId: "16870", tmdbId: "99999" } };
+
+  function serveMismatch(): () => void {
+    return mockFetch((url) => {
+      if (url.includes("graphql") || url.includes("anilist")) {
+        return jsonResponse({
+          data: {
+            Media: anilistMediaPayload({
+              id: 16870,
+              title: {
+                romaji: "Road to Ninja: Naruto the Movie",
+                english: "Road to Ninja: Naruto the Movie",
+                native: "",
+              },
+              description: "Naruto and Sakura are sent to an alternate world.",
+              format: "MOVIE",
+              episodes: 1,
+              duration: 109,
+              genres: ["Action", "Adventure"],
+              startDate: { year: 2012, month: 7, day: 28 },
+            }),
+          },
+        });
+      }
+      // A different film entirely, which is what a bad crosswalk returns.
+      return jsonResponse(
+        tmdbMoviePayload({
+          id: 99999,
+          title: "Some Unrelated 1985 Comedy",
+          overview: "Not this film.",
+          release_date: "1985-06-01",
+          runtime: 97,
+          genres: [{ id: 35, name: "Comedy" }],
+        }),
+      );
+    });
+  }
+
+  test("a mismatched TMDB record cannot supply year, runtime or genre", async () => {
+    const restore = serveMismatch();
+    try {
+      const detail = await fetchTitleDetail("anilist:16870", "movie", undefined, ANIME_HINTS);
+
+      // Identity was already correct — that is what made this hard to spot.
+      expect(detail.title).toBe("Road to Ninja: Naruto the Movie");
+
+      // The facts must now come from the same record as the identity.
+      expect(detail.year).toBe("2012");
+      expect(detail.runtimeMinutes).toBe(109);
+      expect(detail.genres?.[0]).not.toBe("Comedy");
+    } finally {
+      restore();
+    }
+  });
+
+  test("the panel no longer contradicts the player's runtime", async () => {
+    const restore = serveMismatch();
+    try {
+      const detail = await fetchTitleDetail("anilist:16870", "movie", undefined, ANIME_HINTS);
+      // 1:49:56 on the progress bar; the panel claimed 1h 37m.
+      expect(detail.runtimeMinutes).toBeGreaterThan(100);
+    } finally {
+      restore();
+    }
+  });
+
+  test("an agreeing TMDB record still contributes — this is not TMDB removal", async () => {
+    const restore = mockFetch((url) => {
+      if (url.includes("graphql") || url.includes("anilist")) {
+        return jsonResponse({
+          data: {
+            Media: anilistMediaPayload({
+              id: 16870,
+              title: { romaji: "Agreeing Film", english: "Agreeing Film", native: "" },
+              format: "MOVIE",
+              episodes: 1,
+              duration: undefined,
+              genres: [],
+              startDate: { year: 2012, month: 7, day: 28 },
+            }),
+          },
+        });
+      }
+      return jsonResponse(
+        tmdbMoviePayload({
+          id: 4242,
+          title: "Agreeing Film",
+          release_date: "2012-08-01",
+          runtime: 109,
+          genres: [{ id: 28, name: "Action" }],
+        }),
+      );
+    });
+    try {
+      const detail = await fetchTitleDetail("anilist:16870", "movie", undefined, {
+        isAnime: true,
+        externalIds: { anilistId: "16870", tmdbId: "4242" },
+      });
+      // Same year, so the record is trusted and fills what AniList lacks.
+      expect(detail.runtimeMinutes).toBe(109);
+      expect(detail.genres).toContain("Action");
+    } finally {
+      restore();
+    }
+  });
+});
