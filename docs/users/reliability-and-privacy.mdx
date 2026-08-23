@@ -80,18 +80,26 @@ enable it, in a non-interactive terminal, or when `DO_NOT_TRACK=1` or `CI=true`.
 When on, Kunai sends at most one tiny ping per day:
 
 ```json
-{ "installId": "<uuid>", "version": "<semver>", "os": "<platform>", "arch": "<arch>", "ts": 0 }
+{ "installId": "<sha256-hex>", "version": "<semver>", "os": "<platform>", "arch": "<arch>", "ts": 0 }
 ```
 
+- `installId` on the wire is **`sha256` of your local install id**, not the id
+  itself. The id is generated on your machine, stored only in your config, and
+  never transmitted — so the value above is a 64-character hex digest, never a
+  UUID
 - Never titles, queries, providers, stream URLs, or file paths
 - Turning it off **deletes the install id from disk**. The id exists only while
   analytics is enabled
+- **Settings → General → Rotate install id** replaces the id with a fresh random
+  one while you stay opted in. Earlier pings cannot be linked to the new id. The
+  entry appears only while analytics is enabled, because disabling already
+  clears the id
 - `DO_NOT_TRACK=1` and `CI=true` block sends regardless of the setting. A value
   of `0`, `false`, or `no` does not block
 - Without an interactive terminal — piped or scripted output — analytics stays
   off, because the notice could not be shown
-- The ingest stores HMAC-hashed install ids with your platform, architecture,
-  and version, and never a raw UUID. It does not read your IP address at all
+- The ingest re-hashes that digest with an HMAC before storing it, alongside your
+  platform, architecture, and version. It does not read your IP address at all
 - Raw rows are deleted after 35 days. A permanent table keeps one hashed row per
   install with a first-seen date, which is what an exact lifetime count costs
 - Public docs show yesterday's active installs, a lifetime total, and version /
