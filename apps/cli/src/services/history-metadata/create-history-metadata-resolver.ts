@@ -8,7 +8,10 @@
 // or contains (a sequel-suffix tolerance) the history title.
 // =============================================================================
 
+import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
+import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { SearchResult } from "@/domain/types";
+import { isPlaceholderTitleName } from "@kunai/core";
 import type { MediaKind } from "@kunai/types";
 
 import type { HistoryMetadataResolver, ResolvedHistoryMetadata } from "./HistoryMetadataHealer";
@@ -74,11 +77,51 @@ function pickSearchMatch(
   return results.find((result) => result.id === target.titleId);
 }
 
+/**
+ * Metadata for a row whose stored title is a placeholder, resolved by id.
+ *
+ * Text search is useless here — the query would literally be "TMDB 438631" —
+ * and worse than useless: the id fallback in {@link pickSearchMatch} could
+ * accept an unrelated row that happens to share the number. The id the row was
+ * launched with addresses the catalog entry directly, so ask for that.
+ */
+function resolvedMetadataFromDetail(detail: TitleDetail): ResolvedHistoryMetadata | null {
+  const title = detail.title.trim();
+  // A catalog that answers with a placeholder of its own has told us nothing.
+  if (!title || isPlaceholderTitleName(title, detail.id)) return null;
+  const posterUrl = resolveCatalogPosterUrl(detail.artwork?.poster) ?? undefined;
+  const episodeCount =
+    typeof detail.episodeCount === "number" && detail.episodeCount > 0
+      ? detail.episodeCount
+      : undefined;
+  return {
+    title,
+    ...(posterUrl ? { posterUrl } : {}),
+    ...(detail.externalIds ? { externalIds: detail.externalIds } : {}),
+    ...(episodeCount ? { episodeCount } : {}),
+  };
+}
+
 export function createHistoryMetadataResolver(deps: {
   readonly search: (title: string, mediaKind: MediaKind) => Promise<readonly SearchResult[]>;
+  /** Catalog lookup by id, for rows whose title is a placeholder. Optional: without it those rows are left alone. */
+  readonly fetchDetail?: (
+    titleId: string,
+    mediaKind: MediaKind,
+    signal?: AbortSignal,
+  ) => Promise<TitleDetail | null>;
 }): HistoryMetadataResolver {
   return {
-    async resolve(target: HistoryHealTarget): Promise<ResolvedHistoryMetadata | null> {
+    async resolve(
+      target: HistoryHealTarget,
+      signal?: AbortSignal,
+    ): Promise<ResolvedHistoryMetadata | null> {
+      if (target.needsTitle) {
+        if (!deps.fetchDetail) return null;
+        const detail = await deps.fetchDetail(target.titleId, target.mediaKind, signal);
+        return detail ? resolvedMetadataFromDetail(detail) : null;
+      }
+
       const searchKinds: MediaKind[] =
         target.mediaKind === "anime" ? ["anime", "series"] : [target.mediaKind];
 

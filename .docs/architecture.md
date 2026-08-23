@@ -193,6 +193,12 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
 
+**History writes are additive on identity (2026-08):** a write carries whatever metadata its launching lane happened to have, and a lane that knows less than the stored row must never subtract from it. `HistoryRepository.upsertProgress` takes progress fields (position, duration, completion, provider) from the newest write, but protects identity: `poster_url` is `COALESCE`d, `external_ids_json` is merged (stored ids win per key), and a title that is a placeholder for its own id — `TMDB <id>` from `-i/--id`, or a share ref that named a title after itself — never replaces a real stored name. Placeholder names are minted and recognised in one place, `@kunai/core` `directIdTitleName` / `isPlaceholderTitleName`, because both the CLI and storage have to agree on the shape.
+
+This matters beyond rendering: with `external_ids_json` erased and a bare title id, `resolveTmdbIdentity` (`services/sync/sync-identity.ts`) returns `null` and the row silently stops mirroring to the user's tracker.
+
+A session upgrades its own working `TitleInfo` the moment the catalog answers, through `domain/catalog/apply-title-detail.ts` — used by both `PlaybackPhase` and the `SET_TITLE_DETAIL` reducer, so the rendered title and the persisted one cannot disagree. Rows written before that (their title still a placeholder) are repaired at startup by `HistoryMetadataHealer`, which resolves them by **id** rather than by searching their own text; a placeholder over an opaque provider-native id is left alone, because nothing could resolve it and a wrong repair is unrecoverable.
+
 The SQLite storage model is described in [.plans/storage-hardening.md](../.archive/plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
 
 Automatic storage maintenance is conservative:

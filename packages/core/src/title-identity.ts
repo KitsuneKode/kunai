@@ -245,3 +245,34 @@ function compactProviderNativeIds(
   }
   return Object.keys(compact).length > 0 ? compact : undefined;
 }
+
+/**
+ * Stand-in name for a title launched by `-i/--id` before the catalog answers.
+ *
+ * `-i 438631 -t movie` has an id and nothing else, so the session needs *some*
+ * name to render. Kept here, beside its recogniser, because both the CLI (which
+ * mints it) and storage (which must refuse to persist it over a real name) have
+ * to agree on the exact shape.
+ */
+export function directIdTitleName(id: string): string {
+  return `TMDB ${id}`;
+}
+
+/** True while a title still carries the `-i` placeholder rather than a real name. */
+export function isDirectIdTitleName(name: string, id: string): boolean {
+  return name.trim() === directIdTitleName(id);
+}
+
+/**
+ * True while a name is a stand-in for the id rather than something a catalog or
+ * a user supplied — safe to replace the moment real detail arrives, and never
+ * worth persisting over a name already stored.
+ *
+ * Two lanes produce one: `-i/--id` writes {@link directIdTitleName}, and a share
+ * ref with no title falls back to the id itself (`tmdb:438631`). Both are the id
+ * wearing a name.
+ */
+export function isPlaceholderTitleName(name: string, id: string): boolean {
+  const trimmed = name.trim();
+  return trimmed === directIdTitleName(id) || trimmed === id.trim();
+}
