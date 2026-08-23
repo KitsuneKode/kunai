@@ -3,27 +3,18 @@ import type {
   ProviderFetchPort,
   ProviderId,
   ProviderRelayConfig,
-  RelayErrorCode as SharedRelayErrorCode,
   RelayProfile,
 } from "@kunai/types";
 
 export type {
   ProviderRelayConfig,
   ProviderRelayProviderConfig,
+  RelayErrorCode,
   RelayMethod,
   RelayProfile,
+  RelayRpcErrorBody,
   RelayRpcRequest,
 } from "@kunai/types";
-
-export type RelayErrorCode = SharedRelayErrorCode | "relay-not-configured";
-
-export interface RelayRpcErrorBody {
-  readonly error: {
-    readonly code: RelayErrorCode;
-    readonly providerId?: string;
-    readonly message: string;
-  };
-}
 
 export type RelayableProviderManifest = CoreProviderManifest & {
   readonly relayProfile?: RelayProfile;

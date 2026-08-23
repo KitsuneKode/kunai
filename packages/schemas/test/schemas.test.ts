@@ -54,6 +54,18 @@ test("relay schemas validate config rpc requests and structured errors", () => {
   expect(error.error.code).toBe("host-not-allowed");
 });
 
+test("relay error schema accepts an unconfigured relay response", () => {
+  const error = relayRpcErrorSchema.parse({
+    error: {
+      code: "relay-not-configured",
+      providerId: "allanime",
+      message: "Relay authorization is not configured",
+    },
+  });
+
+  expect(error.error.code).toBe("relay-not-configured");
+});
+
 test("stream candidate schema accepts serialized cache-safe shape", () => {
   const parsed = streamCandidateSchema.parse({
     id: "stream-1",

@@ -491,6 +491,7 @@ export type RelayErrorCode =
   | "body-too-large"
   | "response-too-large"
   | "redirect-not-allowed"
+  | "relay-not-configured"
   | "unauthorized"
   | "upstream-timeout"
   | "upstream-error"
