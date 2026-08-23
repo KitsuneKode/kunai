@@ -44,6 +44,43 @@ async function runInstallShAsync(
   return { status, stdout, stderr };
 }
 
+type DarwinSysctlFixture = "missing" | "failing" | "0" | "1" | "unexpected";
+
+function runInstallShForDarwin(
+  machine: "arm64" | "x86_64",
+  sysctlFixture?: DarwinSysctlFixture,
+): { status: number | null; stdout: string; stderr: string } {
+  const sandbox = createInstallerSandbox(`install-sh-darwin-${machine}`);
+  try {
+    const shimDir = join(sandbox.root, "shims");
+    mkdirSync(shimDir, { recursive: true });
+    installCommandShim(
+      shimDir,
+      "uname",
+      `#!/bin/sh\nif [ "$1" = "-s" ]; then echo Darwin; else echo ${machine}; fi\n`,
+    );
+    if (sysctlFixture === "failing") {
+      installCommandShim(shimDir, "sysctl", "#!/bin/sh\nexit 2\n");
+    } else if (sysctlFixture !== undefined && sysctlFixture !== "missing") {
+      installCommandShim(shimDir, "sysctl", `#!/bin/sh\necho ${sysctlFixture}\n`);
+    }
+
+    let path = `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`;
+    if (sysctlFixture === "missing") {
+      installCommandShim(shimDir, "bash", '#!/bin/sh\nexec /bin/bash "$@"\n');
+      installCommandShim(shimDir, "cat", '#!/bin/sh\nexec /bin/cat "$@"\n');
+      path = shimDir;
+    }
+
+    return runInstallSh(["--dry-run", "--yes", "--skip-deps", "--version", "9.8.7"], {
+      ...sandbox.env,
+      PATH: path,
+    });
+  } finally {
+    sandbox.cleanup();
+  }
+}
+
 describe("install.sh dry-run", () => {
   test("prints the binary install plan without downloading", () => {
     const result = spawnSync("bash", [INSTALL_SH, "--dry-run", "--yes"], {
@@ -112,6 +149,42 @@ describe("install.sh dry-run", () => {
     } finally {
       sandbox.cleanup();
     }
+  });
+
+  test("macOS arm64 selects and reports the darwin-arm64 target", () => {
+    const result = runInstallShForDarwin("arm64");
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Detected native target: darwin-arm64");
+    expect(result.stdout).toContain("Downloading kunai-darwin-arm64");
+  });
+
+  test("Intel macOS selects and reports the darwin-x64 target", () => {
+    const result = runInstallShForDarwin("x86_64", "0");
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Detected native target: darwin-x64");
+    expect(result.stdout).toContain("Downloading kunai-darwin-x64");
+  });
+
+  test("Rosetta-translated macOS selects the native darwin-arm64 target", () => {
+    const result = runInstallShForDarwin("x86_64", "1");
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Detected native target: darwin-arm64");
+    expect(result.stdout).toContain("Downloading kunai-darwin-arm64");
+  });
+
+  test.each<readonly [string, DarwinSysctlFixture]>([
+    ["missing", "missing"],
+    ["failing", "failing"],
+    ["non-1", "unexpected"],
+  ])("%s Rosetta sysctl output safely retains darwin-x64", (_case, sysctlFixture) => {
+    const result = runInstallShForDarwin("x86_64", sysctlFixture);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Detected native target: darwin-x64");
+    expect(result.stdout).toContain("Downloading kunai-darwin-x64");
   });
 
   test("rejects lifecycle flags — use kunai upgrade / kunai uninstall instead", () => {
