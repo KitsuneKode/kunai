@@ -21,9 +21,12 @@ describe("resolveCommandsForPaletteSurface", () => {
     expect(commands).toContain("up-next");
     expect(commands).toContain("stats");
     expect(commands).not.toContain("sync");
-    expect(commands).not.toContain("random");
-    expect(commands).not.toContain("surprise");
     expect(commands).not.toContain("favorites");
+    // /random and /surprise are discovery surfaces, not experiments -- they now
+    // sit in the browse palette next to /trending. ADR 0001 gated them on having
+    // a stable product role, which the tray fixes deliver.
+    expect(commands).toContain("random");
+    expect(commands).toContain("surprise");
   });
 
   test("post-play palette excludes Experimental command group by default", () => {

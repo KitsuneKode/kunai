@@ -408,9 +408,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
         }
 
+        // Read fresh: a bootstrap search above has already dispatched its results,
+        // and `currentState` is the pre-search snapshot. Deciding the view from
+        // that snapshot pinned `-S` to the empty search surface forever, because
+        // `shouldRunBootstrapSearch` only runs when the snapshot has no results.
         stateManager.dispatch({
           type: "SET_VIEW",
-          view: currentState.searchResults.length > 0 ? "results" : "search",
+          view: stateManager.getState().searchResults.length > 0 ? "results" : "search",
         });
 
         const jumpIndex =
@@ -506,7 +510,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingCalendarType = undefined;
         const openedCalendarRoute = pendingCalendarRoute;
         pendingCalendarRoute = undefined;
-        const browseState = currentState;
+        // Fresh, not the loop-top snapshot: a bootstrap search dispatched its
+        // results after that snapshot was taken, so reading it here handed the
+        // shell an empty list while the state already held the hits.
+        const browseState = stateManager.getState();
         ensureSessionProviderMatchesLane(stateManager, providerRegistry);
         const syncedState = stateManager.getState();
 

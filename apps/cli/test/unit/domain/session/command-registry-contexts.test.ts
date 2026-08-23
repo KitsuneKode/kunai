@@ -36,6 +36,7 @@ describe("command registry contexts", () => {
       "mark-up-to-episode",
       "pick-episode",
       "download",
+      "up-next",
       "next",
       "previous",
       "toggle-autoplay",

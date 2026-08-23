@@ -228,8 +228,18 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * guard, strict catalog-id parsing, captcha classification that replaces a
  * silent empty result, and TTL cache size bounds. The step restores real
  * headroom rather than clearing one change.
+ *
+ * Raised from 2_880 on 2026-08-23 for the launch-flag and discovery fixes:
+ * a loading branch on the idle surface (a bootstrap `-S` search renders before
+ * any browse shell exists, so it had no loader), the `not-applicable` update
+ * status that stops telling package-manager installs their updates are
+ * "disabled", adoption of the resolved catalog name over the `-i` placeholder,
+ * and `discoverItemLimit` finally reaching the `/random` tray. `main` had 1.3
+ * KiB of headroom, so any one of these would have tripped it. Deleting the dead
+ * `mixRandomCandidatePools` export paid some of it back. The step restores real
+ * headroom rather than clearing one change.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_880;
+export const NPM_BUNDLE_BUDGET_KB = 2_920;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

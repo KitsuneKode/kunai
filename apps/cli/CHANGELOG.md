@@ -4,6 +4,26 @@
 
 Security, honesty, and platform fixes from a full codebase review.
 
+Launch flags, discovery, and the queue.
+
+- **`-S <query>` shows its results.** The search ran, but the view and the shell
+  were both chosen from a state snapshot taken before it finished — and that
+  snapshot is empty by construction — so a successful search landed on the empty
+  search surface and looked like the query had merely been typed for you.
+- **A search on launch now shows a loader.** The idle surface rendered the
+  welcome screen regardless of search state, so the header said "searching" over
+  a screen with no sign of work in flight.
+- **`-i/--id` says when it is ignored.** An id without a usable `-t`, or under
+  `-a`, was dropped with a debug-only warning, so the run looked normal and the
+  flag silently did nothing.
+- **`/random` and `/surprise` honour your Discover tray size** and are on the
+  browse palette next to `/trending`. The tray was clamped to five picks while
+  the setting's smallest option is twelve, so no configured value could ever
+  take effect; a uniform shuffle also discarded the stratification that keeps
+  one source from filling the tray.
+- **`/up-next` opens during playback.** The queue was reachable everywhere
+  except the one activity that consumes it.
+
 Privacy hardening, and a consent bug in the installer.
 
 - **Diagnostics no longer leak signed-CDN tokens or your IP address.**
@@ -59,7 +79,7 @@ Privacy hardening, and a consent bug in the installer.
 - **AniSkip:** the TMDB to MAL fallback is refused beyond season 1, so
   split-cour anime no longer risk wrong auto-skip windows.
 - **Docs:** the command-honesty gate counts the browse palette; user docs stop
-  promising `/sync`, `/random`, and `/surprise` as typed commands; the
+  promising `/sync` as a typed command; the
   keybindings doc's post-playback table matches the code; provider descriptions
   state adapter roles instead of speed or "recommended" claims.
 
