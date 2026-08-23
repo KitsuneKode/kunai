@@ -60,6 +60,9 @@ Layering rule: UI asks services for capability/state; services do not render UI.
   after that validation. An invalid candidate never replaces an existing playable output.
 - Queue ownership is a SQLite compare-and-set from `queued` to `running`. Heartbeats form a
   bounded lease across Kunai processes; recovery never touches a freshly heartbeating owner.
+- Blocking download intent is unique in SQLite by canonical title and exact nullable
+  season/episode coordinates. Concurrent surfaces or Kunai processes therefore admit one job;
+  the loser receives the ordinary duplicate-intent result instead of sharing an output path.
 - Once an interrupted lease expires, recovery validates any already-published output. A valid
   artifact is adopted without another network request; an invalid regular file is removed before
   bounded retry. This closes the unavoidable filesystem-rename/SQLite-commit crash window.

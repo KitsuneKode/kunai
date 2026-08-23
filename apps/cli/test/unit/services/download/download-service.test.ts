@@ -297,6 +297,48 @@ describe("DownloadService", () => {
     expect(repo.listQueued(10)).toHaveLength(1);
   });
 
+  test("maps concurrent durable admission conflicts to one duplicate-intent result", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const input = {
+      title: { id: "tmdb:1", type: "series" as const, name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      providerId: "vidking",
+    };
+
+    const results = await Promise.allSettled([service.enqueue(input), service.enqueue(input)]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({
+      reason: { code: "duplicate-intent" },
+    });
+    expect(repo.listQueued(10)).toHaveLength(1);
+  });
+
+  test("maps retry admission conflicts without exposing a SQLite constraint", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const input = {
+      title: { id: "tmdb:1", type: "series" as const, name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      providerId: "vidking",
+    };
+    const failed = await service.enqueue(input);
+    repo.fail(failed.id, "terminal", false, new Date().toISOString(), "terminal");
+    await service.enqueue(input);
+
+    await expect(service.retry(failed.id)).rejects.toMatchObject({ code: "duplicate-intent" });
+  });
+
   test("processes successful queue entries", async () => {
     const service = buildService({
       repo,

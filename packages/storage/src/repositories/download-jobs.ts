@@ -1,3 +1,5 @@
+import { SQLiteError } from "bun:sqlite";
+
 import type { MediaKind, ProviderExternalIds, ProviderId } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
@@ -122,6 +124,17 @@ interface DownloadJobRow {
   readonly last_validated_at: string | null;
 }
 
+export class DownloadJobAdmissionConflictError extends Error {
+  readonly code = "duplicate-intent";
+
+  constructor() {
+    super("A blocking download intent already exists");
+    this.name = "DownloadJobAdmissionConflictError";
+  }
+}
+
+const DOWNLOAD_INTENT_UNIQUE_INDEX = "idx_download_jobs_blocking_intent";
+
 export class DownloadJobsRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
@@ -148,9 +161,10 @@ export class DownloadJobsRepository {
       | "lastResolvedProviderId"
     >,
   ): void {
-    this.db
-      .query(
-        `
+    try {
+      this.db
+        .query(
+          `
           INSERT INTO download_jobs (
             id, title_id, external_ids_json, title_name, media_kind, content_type, season, episode, provider_id,
             mode, sub_lang, anime_lang, selected_source_id, selected_stream_id, selected_quality_label,
@@ -161,31 +175,41 @@ export class DownloadJobsRepository {
             created_at, updated_at, completed_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
         `,
-      )
-      .run(
-        input.id,
-        input.titleId,
-        input.externalIds ? JSON.stringify(input.externalIds) : null,
-        input.titleName,
-        input.mediaKind,
-        input.contentType ?? null,
-        input.season ?? null,
-        input.episode ?? null,
-        input.providerId,
-        input.mode ?? null,
-        input.subLang ?? null,
-        input.animeLang ?? null,
-        input.selectedSourceId ?? null,
-        input.selectedStreamId ?? null,
-        input.selectedQualityLabel ?? null,
-        input.streamUrl,
-        JSON.stringify(input.headers),
-        input.outputPath,
-        input.tempPath,
-        input.posterUrl ?? null,
-        input.createdAt,
-        input.updatedAt,
-      );
+        )
+        .run(
+          input.id,
+          input.titleId,
+          input.externalIds ? JSON.stringify(input.externalIds) : null,
+          input.titleName,
+          input.mediaKind,
+          input.contentType ?? null,
+          input.season ?? null,
+          input.episode ?? null,
+          input.providerId,
+          input.mode ?? null,
+          input.subLang ?? null,
+          input.animeLang ?? null,
+          input.selectedSourceId ?? null,
+          input.selectedStreamId ?? null,
+          input.selectedQualityLabel ?? null,
+          input.streamUrl,
+          JSON.stringify(input.headers),
+          input.outputPath,
+          input.tempPath,
+          input.posterUrl ?? null,
+          input.createdAt,
+          input.updatedAt,
+        );
+    } catch (error) {
+      if (
+        error instanceof SQLiteError &&
+        error.code === "SQLITE_CONSTRAINT_UNIQUE" &&
+        error.message.includes(`index '${DOWNLOAD_INTENT_UNIQUE_INDEX}'`)
+      ) {
+        throw new DownloadJobAdmissionConflictError();
+      }
+      throw error;
+    }
   }
 
   updateOfflineMetadata(
@@ -477,9 +501,10 @@ export class DownloadJobsRepository {
   }
 
   requeue(id: string, updatedAt: string): void {
-    this.db
-      .query(
-        `
+    try {
+      this.db
+        .query(
+          `
           UPDATE download_jobs
           SET status = 'queued',
               error_message = NULL,
@@ -489,8 +514,18 @@ export class DownloadJobsRepository {
               updated_at = ?
           WHERE id = ?
         `,
-      )
-      .run(updatedAt, id);
+        )
+        .run(updatedAt, id);
+    } catch (error) {
+      if (
+        error instanceof SQLiteError &&
+        error.code === "SQLITE_CONSTRAINT_UNIQUE" &&
+        error.message.includes(`index '${DOWNLOAD_INTENT_UNIQUE_INDEX}'`)
+      ) {
+        throw new DownloadJobAdmissionConflictError();
+      }
+      throw error;
+    }
   }
 
   abort(id: string, updatedAt: string): void {
@@ -526,24 +561,18 @@ export class DownloadJobsRepository {
     readonly episode?: number;
   }): DownloadJobRecord | undefined {
     const row = this.db
-      .query<DownloadJobRow, [string, number | null, number | null, number | null, number | null]>(
+      .query<DownloadJobRow, [string, number | null, number | null]>(
         `
           SELECT * FROM download_jobs
           WHERE title_id = ?
-            AND (? IS NULL OR season = ?)
-            AND (? IS NULL OR episode = ?)
+            AND season IS ?
+            AND episode IS ?
             AND status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable')
           ORDER BY updated_at DESC
           LIMIT 1
         `,
       )
-      .get(
-        input.titleId,
-        input.season ?? null,
-        input.season ?? null,
-        input.episode ?? null,
-        input.episode ?? null,
-      );
+      .get(input.titleId, input.season ?? null, input.episode ?? null);
     return row === null ? undefined : mapRow(row);
   }
 

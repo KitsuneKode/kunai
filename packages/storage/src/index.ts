@@ -62,7 +62,10 @@ export type {
   WatchStatsTotalsRow,
   WatchStatsWeekRow,
 } from "./repositories/watch-stats";
-export { DownloadJobsRepository } from "./repositories/download-jobs";
+export {
+  DownloadJobAdmissionConflictError,
+  DownloadJobsRepository,
+} from "./repositories/download-jobs";
 export type {
   DownloadArtifactStatus,
   DownloadJobRecord,
