@@ -1,6 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { DEFAULT_MAX_REQUEST_BODY_BYTES, handleRpcRequest } from "@kunai/relay";
+import {
+  DEFAULT_MAX_REQUEST_BODY_BYTES,
+  handleRpcRequest,
+  relayError,
+  type ProviderRelayRegistry,
+  type RelayFetch,
+  type RelayHandlerOptions,
+} from "@kunai/relay";
 
 import { relayRegistry } from "../../src/provider-registry";
 
@@ -17,38 +24,79 @@ interface VercelLikeRequest extends IncomingMessage {
   readonly query?: Readonly<Record<string, string | readonly string[]>>;
 }
 
-export default async function handler(req: VercelLikeRequest, res: ServerResponse): Promise<void> {
-  const providerId = firstQueryValue(req.query?.providerId);
-  if (!providerId) {
-    await writeWebResponse(res, Response.json({ error: { code: "bad-request" } }, { status: 400 }));
-    return;
-  }
+type RelayRpcHandler = (req: VercelLikeRequest, res: ServerResponse) => Promise<void>;
+type RelayBodyReader = (
+  req: IncomingMessage,
+  maxBytes: number,
+) => Promise<Uint8Array | "too-large">;
+type RelayRequestAdapter = (req: IncomingMessage, providerId: string, body: Uint8Array) => Request;
+type RelayResponseAdapter = (res: ServerResponse, response: Response) => Promise<void>;
+type SharedRelayHandler = (request: Request, options: RelayHandlerOptions) => Promise<Response>;
 
-  const body = await readNodeBody(req, MAX_BODY_BYTES);
-  if (body === "too-large") {
-    // Matches the shared handler's own refusal, so both entry points answer a
-    // caller the same way.
-    res.setHeader("Connection", "close");
-    await writeWebResponse(
-      res,
-      Response.json(
-        { error: { code: "body-too-large", message: "Relay envelope is too large" } },
-        { status: 413 },
-      ),
-    );
-    // Only after the reply is written: destroying first strands the response.
-    req.destroy();
-    return;
-  }
-
-  const request = nodeRequestToWebRequest(req, providerId, body);
-  const response = await handleRpcRequest(request, {
-    providerId,
-    registry: relayRegistry,
-    authorization: { mode: "bearer", token: process.env.RELAY_TOKEN ?? "" },
-  });
-  await writeWebResponse(res, response);
+export interface RelayRpcHandlerDependencies {
+  readonly readToken: () => string | undefined;
+  readonly registry?: ProviderRelayRegistry;
+  readonly readBody?: RelayBodyReader;
+  readonly createWebRequest?: RelayRequestAdapter;
+  readonly handleRequest?: SharedRelayHandler;
+  readonly writeResponse?: RelayResponseAdapter;
+  readonly fetch?: RelayFetch;
 }
+
+export function createRelayRpcHandler(dependencies: RelayRpcHandlerDependencies): RelayRpcHandler {
+  const registry = dependencies.registry ?? relayRegistry;
+  const readBody = dependencies.readBody ?? readNodeBody;
+  const createWebRequest = dependencies.createWebRequest ?? nodeRequestToWebRequest;
+  const handleRequest = dependencies.handleRequest ?? handleRpcRequest;
+  const writeResponse = dependencies.writeResponse ?? writeWebResponse;
+
+  return async (req, res) => {
+    const token = dependencies.readToken()?.trim();
+    if (!token) {
+      await writeResponse(
+        res,
+        relayError("relay-not-configured", undefined, "Relay authorization is not configured", 503),
+      );
+      return;
+    }
+
+    const providerId = firstQueryValue(req.query?.providerId);
+    if (!providerId) {
+      await writeResponse(res, Response.json({ error: { code: "bad-request" } }, { status: 400 }));
+      return;
+    }
+
+    const body = req.method === "OPTIONS" ? new Uint8Array() : await readBody(req, MAX_BODY_BYTES);
+    if (body === "too-large") {
+      // Matches the shared handler's own refusal, so both entry points answer a
+      // caller the same way.
+      res.setHeader("Connection", "close");
+      await writeResponse(
+        res,
+        Response.json(
+          { error: { code: "body-too-large", message: "Relay envelope is too large" } },
+          { status: 413 },
+        ),
+      );
+      // Only after the reply is written: destroying first strands the response.
+      req.destroy();
+      return;
+    }
+
+    const request = createWebRequest(req, providerId, body);
+    const response = await handleRequest(request, {
+      providerId,
+      registry,
+      authorization: { mode: "bearer", token },
+      fetch: dependencies.fetch,
+    });
+    await writeResponse(res, response);
+  };
+}
+
+export default createRelayRpcHandler({
+  readToken: () => process.env.RELAY_TOKEN,
+});
 
 function firstQueryValue(value: string | readonly string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];
