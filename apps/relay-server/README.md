@@ -123,8 +123,9 @@ the provider manifest and tests instead of adding a server-side exception route.
 Relay use is controlled by client config, not a server default:
 
 - Empty `providerRelay.baseUrl` means direct provider fetches only.
-- `fallbackToDirect: true` lets a broken user relay degrade back to direct
-  fetches in non-geo-blocked regions.
+- `fallbackToDirect: true` degrades to direct fetches after relay network or
+  relay authorization-policy failures in non-geo-blocked regions. Arbitrary
+  upstream HTTP failures are returned unchanged rather than replayed directly.
 - Per-provider `providerRelay.providers[providerId].enabled = false` disables
   relay routing for one provider without changing the relay deployment.
 - Clearing `providerRelay.baseUrl` or unsetting `KUNAI_RELAY_BASE_URL` is the
@@ -145,6 +146,8 @@ For a Vercel preview, also verify `/health`, an unauthorized RPC when
 ## Post-Deploy Smoke
 
 1. `GET /health` returns `200`.
-2. Unauthorized RPC returns `401` when `RELAY_TOKEN` is set.
+2. Unauthorized RPC returns `401`; an internet deployment without `RELAY_TOKEN`
+   returns `503 relay-not-configured`.
 3. Disallowed hosts return `403 host-not-allowed`.
-4. `KUNAI_RELAY_BASE_URL=<preview-url> bun run test:live:relay-allanime` resolves a stream.
+4. `KUNAI_RELAY_BASE_URL=<preview-url> KUNAI_RELAY_TOKEN=<same-token> bun run test:live:relay-allanime`
+   resolves a stream.

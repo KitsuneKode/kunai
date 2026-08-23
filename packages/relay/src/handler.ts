@@ -12,6 +12,7 @@ import {
   DEFAULT_MAX_REQUEST_BODY_BYTES,
   DEFAULT_MAX_RESPONSE_BODY_BYTES,
   DEFAULT_RELAY_TIMEOUT_MS,
+  RELAY_ERROR_CODE_HEADER,
   type RelayErrorCode,
   type RelayHandlerOptions,
   type RelayRpcErrorBody,
@@ -27,6 +28,13 @@ const CROSS_ORIGIN_SENSITIVE_HEADERS = [
   "proxy-authorization",
   "x-aa-boot",
   "x-session-token",
+] as const;
+const REQUEST_BODY_HEADERS = [
+  "content-encoding",
+  "content-language",
+  "content-length",
+  "content-location",
+  "content-type",
 ] as const;
 const RELAY_RESPONSE_HEADERS = [
   "content-type",
@@ -231,11 +239,11 @@ async function fetchWithValidatedRedirects(input: {
   let method = input.init.method ?? "GET";
   let body = input.init.body;
   const headers = new Headers(input.init.headers);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort("relay upstream timeout"), input.timeoutMs);
 
-  for (let redirectCount = 0; redirectCount <= input.maxRedirects; redirectCount++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort("relay upstream timeout"), input.timeoutMs);
-    try {
+  try {
+    for (let redirectCount = 0; redirectCount <= input.maxRedirects; redirectCount++) {
       const response = await input.fetchImpl(currentUrl, {
         ...input.init,
         method,
@@ -276,16 +284,24 @@ async function fetchWithValidatedRedirects(input: {
         for (const name of CROSS_ORIGIN_SENSITIVE_HEADERS) headers.delete(name);
       }
       currentUrl = redirectUrl;
-      if (response.status === 303) {
+      if (redirectRewritesToGet(response.status, method)) {
         method = "GET";
         body = undefined;
+        for (const name of REQUEST_BODY_HEADERS) headers.delete(name);
       }
-    } finally {
-      clearTimeout(timeout);
     }
-  }
 
-  throw new RelayValidationError("redirect-not-allowed", "Too many upstream redirects", 502);
+    throw new RelayValidationError("redirect-not-allowed", "Too many upstream redirects", 502);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function redirectRewritesToGet(status: number, method: string): boolean {
+  return (
+    ((status === 301 || status === 302) && method === "POST") ||
+    (status === 303 && method !== "GET" && method !== "HEAD")
+  );
 }
 
 async function relayUpstreamResponse(
@@ -353,6 +369,7 @@ export function relayError(
     status,
     headers: {
       "Access-Control-Allow-Origin": "*",
+      [RELAY_ERROR_CODE_HEADER]: code,
     },
   });
 }
@@ -395,13 +412,13 @@ function isIPLiteral(hostname: string): boolean {
   return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) || hostname.includes(":");
 }
 
-function isAbortLike(error: unknown): boolean {
-  const candidate = error as { readonly code?: unknown; readonly name?: unknown } | null;
+function isAbortLike(cause: unknown): boolean {
+  if (!(cause instanceof Error)) return String(cause).toLowerCase().includes("timeout");
+  const code = "code" in cause ? String(cause.code) : "";
   return (
-    (error instanceof DOMException && error.name === "AbortError") ||
-    candidate?.name === "AbortError" ||
-    candidate?.code === "ABORT_ERR" ||
-    String(error).toLowerCase().includes("timeout")
+    cause.name === "AbortError" ||
+    code === "ABORT_ERR" ||
+    cause.message.toLowerCase().includes("timeout")
   );
 }
 

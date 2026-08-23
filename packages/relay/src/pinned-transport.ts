@@ -17,14 +17,6 @@ import type {
   RelayTransportDiagnostic,
 } from "./types";
 
-const RETRYABLE_CONNECTION_CODES = new Set<RelayConnectionDiagnosticCode>([
-  "ECONNREFUSED",
-  "ECONNRESET",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "ETIMEDOUT",
-]);
-
 export interface RelayResolvedAddress {
   readonly address: string;
   readonly family: 4 | 6;
@@ -32,7 +24,7 @@ export interface RelayResolvedAddress {
 
 export type RelayAddressResolver = (hostname: string) => Promise<readonly RelayResolvedAddress[]>;
 
-export type RelayNodeRequestOptions = RequestOptions & { readonly servername?: string };
+export type RelayNodeRequestOptions = RequestOptions & { servername?: string };
 
 export type RelayNodeRequest = (
   options: RelayNodeRequestOptions,
@@ -46,6 +38,10 @@ export interface PinnedRelayTransportOptions {
   readonly request?: RelayNodeRequest;
   readonly maxRequestBodyBytes: number;
   readonly maxResponseBodyBytes: number;
+}
+
+interface DiagnosticProviderContext {
+  providerId?: string;
 }
 
 /**
@@ -77,13 +73,15 @@ export function createPinnedRelayTransport(options: PinnedRelayTransportOptions)
     const diagnosticHostname = literalFamily === 0 ? originalHostname : "ip-literal";
     let answers: readonly RelayResolvedAddress[];
     try {
-      answers = literalFamily
-        ? [{ address: originalHostname, family: literalFamily as 4 | 6 }]
-        : await abortable(resolveAddresses(originalHostname), init.signal);
+      if (literalFamily === 4 || literalFamily === 6) {
+        answers = [{ address: originalHostname, family: literalFamily }];
+      } else {
+        answers = await abortable(resolveAddresses(originalHostname), init.signal);
+      }
     } catch (error) {
       emitDiagnostic(options.diagnostics, {
         event: "dns-failed",
-        ...(options.providerId ? { providerId: options.providerId } : {}),
+        ...diagnosticProviderContext(options.providerId),
         hostname: diagnosticHostname,
         code: dnsDiagnosticCode(error),
       });
@@ -92,7 +90,7 @@ export function createPinnedRelayTransport(options: PinnedRelayTransportOptions)
     if (answers.length === 0) {
       emitDiagnostic(options.diagnostics, {
         event: "dns-failed",
-        ...(options.providerId ? { providerId: options.providerId } : {}),
+        ...diagnosticProviderContext(options.providerId),
         hostname: diagnosticHostname,
         code: "NO_ADDRESSES",
       });
@@ -105,7 +103,7 @@ export function createPinnedRelayTransport(options: PinnedRelayTransportOptions)
     ) {
       emitDiagnostic(options.diagnostics, {
         event: "dns-rejected",
-        ...(options.providerId ? { providerId: options.providerId } : {}),
+        ...diagnosticProviderContext(options.providerId),
         hostname: diagnosticHostname,
         answerCount: answers.length,
         families: [...new Set(answers.map((answer) => answer.family))].sort(),
@@ -135,10 +133,10 @@ export function createPinnedRelayTransport(options: PinnedRelayTransportOptions)
         headers,
         agent: false,
         signal: init.signal ?? undefined,
-        ...(url.protocol === "https:" && literalFamily === 0
-          ? { servername: originalHostname }
-          : {}),
       };
+      if (url.protocol === "https:" && literalFamily === 0) {
+        requestOptions.servername = originalHostname;
+      }
 
       try {
         return await sendBoundedRequest(
@@ -151,7 +149,7 @@ export function createPinnedRelayTransport(options: PinnedRelayTransportOptions)
         if (error instanceof RelayRequestAttemptError && !error.responseStarted) {
           emitDiagnostic(options.diagnostics, {
             event: "connection-failed",
-            ...(options.providerId ? { providerId: options.providerId } : {}),
+            ...diagnosticProviderContext(options.providerId),
             hostname: diagnosticHostname,
             family: selected.family,
             attempt: index + 1,
@@ -224,10 +222,10 @@ function sendBoundedRequest(
   return new Promise((resolve, reject) => {
     let settled = false;
     let responseStarted = false;
-    const settleReject = (error: unknown): void => {
+    const settleReject = (cause: unknown): void => {
       if (settled) return;
       settled = true;
-      reject(new RelayRequestAttemptError(error, responseStarted));
+      reject(new RelayRequestAttemptError(cause, responseStarted));
     };
 
     let outbound: ClientRequest;
@@ -247,7 +245,7 @@ function sendBoundedRequest(
         let total = 0;
         upstream.on("data", (chunk: Buffer | string) => {
           if (settled) return;
-          const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+          const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
           total += bytes.byteLength;
           if (total > maxResponseBodyBytes) {
             const error = responseTooLargeError();
@@ -286,50 +284,61 @@ function sendBoundedRequest(
 
 class RelayRequestAttemptError extends Error {
   override readonly name = "RelayRequestAttemptError";
+  readonly attemptCause: Error;
 
   constructor(
-    readonly attemptCause: unknown,
+    cause: unknown,
     readonly responseStarted: boolean,
   ) {
-    super(
-      attemptCause instanceof Error ? attemptCause.message : "Relay connection attempt failed",
-      {
-        cause: attemptCause,
-      },
-    );
+    const attemptCause = normalizeRelayError(cause);
+    super(attemptCause.message, { cause: attemptCause });
+    this.attemptCause = attemptCause;
   }
 }
 
 function shouldRetryAddress(
-  error: unknown,
+  cause: unknown,
   method: string,
   index: number,
   answerCount: number,
   signal: AbortSignal | null | undefined,
 ): boolean {
-  if (!(error instanceof RelayRequestAttemptError) || error.responseStarted) return false;
+  if (!(cause instanceof RelayRequestAttemptError) || cause.responseStarted) return false;
   if (index + 1 >= answerCount || signal?.aborted) return false;
   const normalizedMethod = method.toUpperCase();
   if (normalizedMethod !== "GET" && normalizedMethod !== "HEAD") return false;
-  return isRetryableConnectionError(error.attemptCause);
+  return isRetryableConnectionError(cause.attemptCause);
 }
 
-function isRetryableConnectionError(error: unknown): boolean {
-  return connectionDiagnosticCode(error) !== "CONNECTION_FAILED";
+function isRetryableConnectionError(cause: Error): boolean {
+  return connectionDiagnosticCode(cause) !== "CONNECTION_FAILED";
 }
 
-function connectionDiagnosticCode(error: unknown): RelayConnectionDiagnosticCode {
-  const code = (error as { readonly code?: unknown } | null)?.code;
-  return typeof code === "string" &&
-    RETRYABLE_CONNECTION_CODES.has(code as RelayConnectionDiagnosticCode)
-    ? (code as RelayConnectionDiagnosticCode)
-    : "CONNECTION_FAILED";
+function connectionDiagnosticCode(cause: Error): RelayConnectionDiagnosticCode {
+  const code = "code" in cause ? String(cause.code) : "";
+  switch (code) {
+    case "ECONNREFUSED":
+    case "ECONNRESET":
+    case "EHOSTUNREACH":
+    case "ENETUNREACH":
+    case "ETIMEDOUT":
+      return code;
+    default:
+      return "CONNECTION_FAILED";
+  }
 }
 
-function dnsDiagnosticCode(error: unknown): RelayDnsDiagnosticCode {
-  const code = (error as { readonly code?: unknown } | null)?.code;
-  if (code === "ABORT_ERR" || code === "EAI_AGAIN" || code === "ENOTFOUND") return code;
-  return "DNS_LOOKUP_FAILED";
+function dnsDiagnosticCode(cause: unknown): RelayDnsDiagnosticCode {
+  const error = normalizeRelayError(cause);
+  const code = "code" in error ? String(error.code) : "";
+  switch (code) {
+    case "ABORT_ERR":
+    case "EAI_AGAIN":
+    case "ENOTFOUND":
+      return code;
+    default:
+      return "DNS_LOOKUP_FAILED";
+  }
 }
 
 function emitDiagnostic(
@@ -339,8 +348,20 @@ function emitDiagnostic(
   sink?.(diagnostic);
 }
 
-function unwrapAttemptError(error: unknown): unknown {
-  return error instanceof RelayRequestAttemptError ? error.attemptCause : error;
+function diagnosticProviderContext(providerId: string | undefined): DiagnosticProviderContext {
+  const context: DiagnosticProviderContext = {};
+  if (providerId) context.providerId = providerId;
+  return context;
+}
+
+function unwrapAttemptError(cause: unknown): Error {
+  return cause instanceof RelayRequestAttemptError
+    ? cause.attemptCause
+    : normalizeRelayError(cause);
+}
+
+function normalizeRelayError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause));
 }
 
 function requestUrl(input: string | URL): URL {
@@ -370,16 +391,16 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal | null | undefine
         cleanup();
         return resolve(value);
       },
-      (error: unknown) => {
+      (cause: unknown) => {
         cleanup();
-        return reject(error);
+        return reject(cause);
       },
     );
   });
 }
 
-function relayAbortError(reason: unknown): Error {
-  return Object.assign(new Error("The operation was aborted", { cause: reason }), {
+function relayAbortError(cause: unknown): Error {
+  return Object.assign(new Error("The operation was aborted", { cause }), {
     name: "AbortError",
     code: "ABORT_ERR",
   });
@@ -387,7 +408,7 @@ function relayAbortError(reason: unknown): Error {
 
 async function requestBodyBytes(body: RequestInit["body"]): Promise<Uint8Array> {
   if (body === undefined || body === null) return new Uint8Array();
-  if (typeof body === "string") return Buffer.from(body);
+  if (body.constructor === String) return Buffer.from(String(body));
   if (body instanceof URLSearchParams) return Buffer.from(body.toString());
   if (body instanceof ArrayBuffer) return new Uint8Array(body);
   if (ArrayBuffer.isView(body)) {

@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { Readable, Writable } from "node:stream";
 
+import type { CoreProviderManifest } from "@kunai/core";
+
 import { handleRpcRequest } from "../src/handler";
 import { createPinnedRelayTransport, type RelayNodeRequest } from "../src/pinned-transport";
 import { buildProviderRelayRegistry } from "../src/registry";
@@ -41,6 +43,39 @@ const providerRegistry = buildProviderRelayRegistry([
     },
   },
 ] as never);
+
+const redirectProbeManifest = {
+  id: "redirect-probe",
+  displayName: "Redirect probe",
+  description: "Exercises relay redirect semantics",
+  domain: "redirect.example",
+  recommended: false,
+  mediaKinds: ["movie"],
+  capabilities: [],
+  runtimePorts: [],
+  cachePolicy: {
+    ttlClass: "provider-metadata",
+    scope: "memory",
+    keyParts: ["redirect-probe"],
+  },
+  browserSafe: false,
+  relaySafe: true,
+  relayProfile: {
+    upstreamHosts: ["redirect.example"],
+    defaultHeaders: {
+      "Content-Encoding": "identity",
+      "Content-Language": "en",
+      "Content-Length": "11",
+      "Content-Location": "/payload",
+      "Content-Type": "application/json",
+    },
+  },
+  status: "experimental",
+} satisfies CoreProviderManifest;
+
+const redirectRegistry = buildProviderRelayRegistry([
+  { providerId: redirectProbeManifest.id, manifest: redirectProbeManifest },
+]);
 
 test("handleRpcRequest forwards allowed metadata requests", async () => {
   let upstreamAuth: string | null = null;
@@ -641,6 +676,215 @@ test("handleRpcRequest retains provider credentials on a same-origin redirect", 
   expect(seenTokens).toEqual(["session-secret", "session-secret"]);
 });
 
+test.each([301, 302])(
+  "handleRpcRequest rewrites same-origin POST %s redirects to bodyless GET",
+  async (status) => {
+    const seen: Array<{
+      body: BodyInit | null | undefined;
+      contentType: string | null;
+      method: string | undefined;
+    }> = [];
+    let attempt = 0;
+    const response = await handleRpcRequest(
+      rpcRequest({
+        method: "POST",
+        upstreamUrl: "https://api.allanime.day/start",
+        headers: { "Content-Type": "application/json" },
+        body: "secret-body",
+      }),
+      {
+        providerId: "allanime",
+        registry: providerRegistry,
+        authorization: localLoopbackAuthorization,
+        async transport(_url, init) {
+          seen.push({
+            body: init?.body,
+            contentType: new Headers(init?.headers).get("content-type"),
+            method: init?.method,
+          });
+          if (attempt++ === 0) {
+            return new Response(null, {
+              status,
+              headers: { location: "https://api.allanime.day/next" },
+            });
+          }
+          return Response.json({ ok: true });
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(seen).toEqual([
+      { body: "secret-body", contentType: "application/json", method: "POST" },
+      { body: undefined, contentType: null, method: "GET" },
+    ]);
+  },
+);
+
+test("handleRpcRequest does not forward a POST body or credentials across a 302 origin change", async () => {
+  const seen: Array<{
+    body: BodyInit | null | undefined;
+    contentType: string | null;
+    method: string | undefined;
+    sessionToken: string | null;
+  }> = [];
+  let attempt = 0;
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "POST",
+      upstreamUrl: "https://api.allanime.day/start",
+      headers: {
+        "Content-Type": "application/json",
+        "x-session-token": "header-secret",
+      },
+      body: "body-secret",
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport(_url, init) {
+        const headers = new Headers(init?.headers);
+        seen.push({
+          body: init?.body,
+          contentType: headers.get("content-type"),
+          method: init?.method,
+          sessionToken: headers.get("x-session-token"),
+        });
+        if (attempt++ === 0) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://cdn.api.allanime.day/next" },
+          });
+        }
+        return Response.json({ ok: true });
+      },
+    },
+  );
+
+  expect(response.status).toBe(200);
+  expect(seen).toEqual([
+    {
+      body: "body-secret",
+      contentType: "application/json",
+      method: "POST",
+      sessionToken: "header-secret",
+    },
+    { body: undefined, contentType: null, method: "GET", sessionToken: null },
+  ]);
+});
+
+test("handleRpcRequest strips every body header when a 303 rewrites POST to GET", async () => {
+  const seen: Array<{ body: BodyInit | null | undefined; headers: Headers; method?: string }> = [];
+  let attempt = 0;
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "POST",
+      upstreamUrl: "https://redirect.example/start",
+      body: "secret-body",
+    }),
+    {
+      providerId: "redirect-probe",
+      registry: redirectRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport(_url, init) {
+        seen.push({ body: init?.body, headers: new Headers(init?.headers), method: init?.method });
+        if (attempt++ === 0) {
+          return new Response(null, {
+            status: 303,
+            headers: { location: "https://redirect.example/next" },
+          });
+        }
+        return Response.json({ ok: true });
+      },
+    },
+  );
+
+  expect(response.status).toBe(200);
+  expect(seen[1]?.method).toBe("GET");
+  expect(seen[1]?.body).toBeUndefined();
+  for (const header of [
+    "content-encoding",
+    "content-language",
+    "content-length",
+    "content-location",
+    "content-type",
+  ]) {
+    expect(seen[1]?.headers.get(header)).toBeNull();
+  }
+});
+
+test("handleRpcRequest preserves HEAD across a 303 redirect", async () => {
+  const methods: Array<string | undefined> = [];
+  let attempt = 0;
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "HEAD", upstreamUrl: "https://api.allanime.day/start" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport(_url, init) {
+        methods.push(init?.method);
+        if (attempt++ === 0) {
+          return new Response(null, {
+            status: 303,
+            headers: { location: "https://api.allanime.day/next" },
+          });
+        }
+        return new Response(null, { status: 204 });
+      },
+    },
+  );
+
+  expect(response.status).toBe(204);
+  expect(methods).toEqual(["HEAD", "HEAD"]);
+});
+
+test.each([307, 308])(
+  "handleRpcRequest preserves POST body and headers across a %s redirect",
+  async (status) => {
+    const seen: Array<{
+      body: BodyInit | null | undefined;
+      contentType: string | null;
+      method: string | undefined;
+    }> = [];
+    let attempt = 0;
+    const response = await handleRpcRequest(
+      rpcRequest({
+        method: "POST",
+        upstreamUrl: "https://api.allanime.day/start",
+        headers: { "Content-Type": "application/json" },
+        body: "request-body",
+      }),
+      {
+        providerId: "allanime",
+        registry: providerRegistry,
+        authorization: localLoopbackAuthorization,
+        async transport(_url, init) {
+          seen.push({
+            body: init?.body,
+            contentType: new Headers(init?.headers).get("content-type"),
+            method: init?.method,
+          });
+          if (attempt++ === 0) {
+            return new Response(null, {
+              status,
+              headers: { location: "https://api.allanime.day/next" },
+            });
+          }
+          return Response.json({ ok: true });
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(seen).toEqual([
+      { body: "request-body", contentType: "application/json", method: "POST" },
+      { body: "request-body", contentType: "application/json", method: "POST" },
+    ]);
+  },
+);
+
 test("handleRpcRequest strips standard credentials injected by defaults on origin change", async () => {
   const credentialRegistry = buildProviderRelayRegistry([
     {
@@ -739,6 +983,50 @@ test("handleRpcRequest maps Bun node:http AbortError to an upstream timeout", as
   );
 
   expect(response.status).toBe(504);
+  expect(await response.json()).toMatchObject({ error: { code: "upstream-timeout" } });
+});
+
+test("handleRpcRequest applies one deadline to the complete redirect chain", async () => {
+  let attempts = 0;
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/start" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      timeoutMs: 60,
+      async transport(_url, init) {
+        attempts++;
+        if (attempts === 1) {
+          await Bun.sleep(40);
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://api.allanime.day/next" },
+          });
+        }
+
+        return new Promise((_resolve, reject) => {
+          const timer = setTimeout(() => _resolve(Response.json({ ok: true })), 40);
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              reject(
+                Object.assign(new Error("The operation was aborted"), {
+                  name: "AbortError",
+                  code: "ABORT_ERR",
+                }),
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    },
+  );
+
+  expect(response.status).toBe(504);
+  expect(attempts).toBe(2);
   expect(await response.json()).toMatchObject({ error: { code: "upstream-timeout" } });
 });
 

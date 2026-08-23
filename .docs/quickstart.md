@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-08-24"
 ---
 
 # Kunai — Quickstart
@@ -165,7 +165,7 @@ Filters stack in one structured state. Unsupported filters are reported as local
 | `KUNAI_DISCORD_CLIENT_ID`     | Discord application id for optional `presenceProvider: "discord"` |
 | `KUNAI_VIDEASY_SESSION_TOKEN` | Optional user-provided Videasy browser session token for VidKing  |
 | `KUNAI_RELAY_BASE_URL`        | Optional user-owned provider RPC relay base URL for metadata APIs |
-| `KUNAI_RELAY_TOKEN`           | Optional bearer token for the user-owned provider relay           |
+| `KUNAI_RELAY_TOKEN`           | Bearer token required for an internet-hosted provider relay       |
 
 VidKing may report `Videasy requires a valid browser session` when Videasy's
 guarded API requires a session created by the website. Kunai can use a token you
@@ -215,8 +215,11 @@ export KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787
 bun run test:live:relay-allanime
 ```
 
-For internet deployments, see `apps/relay-server/README.md`. Leave
-`providerRelay.baseUrl` empty to use direct provider fetches only.
+For internet deployments, configure the same required bearer token on the relay
+server and in `KUNAI_RELAY_TOKEN` (or `providerRelay.token`); see
+`apps/relay-server/README.md`. Only the numeric-loopback development server may
+run tokenless. Leave `providerRelay.baseUrl` empty to use direct provider fetches
+only.
 
 ## Common Issues
 

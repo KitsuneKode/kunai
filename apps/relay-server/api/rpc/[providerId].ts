@@ -111,7 +111,7 @@ export default createRelayRpcHandler({
 });
 
 function firstQueryValue(value: string | readonly string[] | undefined): string | undefined {
-  return typeof value === "string" ? value : value?.[0];
+  return Array.isArray(value) ? value[0] : value?.toString();
 }
 
 function singleAuthorizationValue(req: VercelLikeRequest): string | undefined {
@@ -133,7 +133,7 @@ function singleAuthorizationValue(req: VercelLikeRequest): string | undefined {
   }
 
   const value = req.headers.authorization;
-  return typeof value === "string" ? value : undefined;
+  return value;
 }
 
 function nodeRequestToWebRequest(
@@ -178,7 +178,7 @@ function readNodeBody(req: IncomingMessage, maxBytes: number): Promise<Uint8Arra
     };
 
     req.on("data", (chunk: Buffer | string) => {
-      const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk;
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       total += bytes.length;
       if (total > maxBytes) {
         req.pause();

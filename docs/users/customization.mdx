@@ -61,7 +61,7 @@ geo-blocked from your network.
 {
   "providerRelay": {
     "baseUrl": "https://your-relay.example",
-    "token": "",
+    "token": "same-secret-as-the-relay-server",
     "fallbackToDirect": true,
     "providers": {
       "allanime": { "enabled": true }
@@ -69,6 +69,10 @@ geo-blocked from your network.
   }
 }
 ```
+
+Internet relay deployments require a bearer token configured on both the relay
+server and Kunai. A token is optional only for the local development server when
+it is bound to numeric loopback (`127.0.0.1` or `::1`).
 
 `KUNAI_RELAY_BASE_URL` and `KUNAI_RELAY_TOKEN` override local config for smoke
 tests and temporary sessions. The relay is metadata-only. Stream URLs always
