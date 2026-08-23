@@ -50,7 +50,7 @@ import {
   searchAllManga,
 } from "./api-client";
 import { allanimeManifest, ALLANIME_PROVIDER_ID } from "./manifest";
-import { resolveAllMangaShowId } from "./resolve-show-id";
+import { AllMangaBridgeTransportError, resolveAllMangaShowId } from "./resolve-show-id";
 
 export { ALLANIME_PROVIDER_ID };
 
@@ -214,7 +214,14 @@ export const allmangaProviderModule: CoreProviderModule = {
   },
   async listEpisodes(input, context): Promise<readonly ProviderEpisodeOption[] | null> {
     const mode = resolveAnimeAudioIntent(input.preferredAudioLanguage ?? "original").catalogMode;
-    const showId = await resolveAllMangaShowId(input, context);
+    let showId: string | null;
+    try {
+      showId = await resolveAllMangaShowId(input, context);
+    } catch (error) {
+      if (error instanceof AllMangaBridgeTransportError) return null;
+      throw error;
+    }
+    if (!showId) return null;
     return fetchAllMangaEpisodeCatalog({
       context,
       apiUrl: ALLANIME_API_URL,
@@ -243,11 +250,36 @@ export const allmangaProviderModule: CoreProviderModule = {
     }
 
     // Provider-native opaque id; catalog ids (e.g. AniList) are bridged in resolveAllMangaShowId.
-    const showId = await resolveAllMangaShowId(input, context);
+    let showId: string | null;
+    try {
+      showId = await resolveAllMangaShowId(input, context);
+    } catch (error) {
+      if (context.signal?.aborted) {
+        return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
+          code: "cancelled",
+          message: "AllManga title bridge was cancelled",
+          retryable: false,
+        });
+      }
+      if (error instanceof AllMangaBridgeTransportError) {
+        return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
+          code: "network-error",
+          message: error.message,
+          retryable: true,
+        });
+      }
+      throw error;
+    }
     if (!showId) {
+      const rawId = input.title.id.replace(/^allanime:/, "").trim();
+      const anilistId = input.title.externalIds?.anilistId ?? input.title.anilistId;
       return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
         code: "unsupported-title",
-        message: "AllManga requires an internal show ID",
+        message: anilistId
+          ? `AllManga title bridge found no provider-native show for AniList ID ${anilistId}`
+          : /^\d+$/.test(rawId)
+            ? `AllManga title bridge requires an AniList ID for numeric catalog ID ${rawId}`
+            : "AllManga requires an internal show ID",
         retryable: false,
       });
     }

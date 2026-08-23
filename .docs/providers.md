@@ -853,7 +853,7 @@ History and continuation use **canonical catalog ids** as the merge key (`anilis
 
 - **`externalIds.providerNativeIds`** — per-provider opaque show ids (e.g. AllAnime `bxCKT…`) stored in `history_progress.external_ids_json`. Written on playback upsert and backfilled immediately after anime remap (`persistProviderNativeMapping`).
 - **Read path** — `HistoryRepository.getLatestForTitleIdentity()` tries the canonical id first, then falls back to the session opaque id for legacy rows.
-- **AllAnime bridge** — `resolveAllMangaShowId` reads `providerNativeIds.allanime`, then the durable SQLite `provider_title_bridge` cache (TTL class `provider-metadata`), then in-process search bridge. Bridge results are persisted to both history metadata and the cache adapter injected through `ProviderRuntimeContext.titleBridge`.
+- **AllAnime bridge** — `resolveAllMangaShowId` reads `providerNativeIds.allanime`, then the durable SQLite `provider_title_bridge` cache (TTL class `provider-metadata`), then in-process search bridge. Bridge results are persisted to both history metadata and the cache adapter injected through `ProviderRuntimeContext.titleBridge`. Numeric catalog ids fail closed when no native mapping is available: a confirmed miss is `unsupported-title`, while an unchecked bridge caused by search transport failure stays a retryable `network-error`; neither value is sent to the provider-native show catalog.
 - **Legacy repair** — `HistoryIdentityConsolidator` runs once at CLI bootstrap (catalog-proof rows only; set `KUNAI_HISTORY_IDENTITY_DRY_RUN=1` to log without writing). Continue-watching dedupes display rows by catalog id without DB writes.
 
 ### Videasy identity, route caching and Wings transport
