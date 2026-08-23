@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   assertNoForbiddenReleaseInputs,
   assertNpmBundleBudget,
+  NPM_BUNDLE_BUDGET_KB,
   forbiddenReleaseInputs,
   formatBuildSize,
   mapWithConcurrency,
@@ -126,7 +127,8 @@ describe("release build shared options", () => {
   });
 
   test("enforces npm bundle budget", () => {
-    expect(() => assertNpmBundleBudget(1024)).not.toThrow();
-    expect(() => assertNpmBundleBudget(3_000_000)).toThrow("budget");
+    expect(NPM_BUNDLE_BUDGET_KB).toBe(2_888);
+    expect(() => assertNpmBundleBudget(2_957_312)).not.toThrow();
+    expect(() => assertNpmBundleBudget(2_957_313)).toThrow("budget 2888 KiB");
   });
 });

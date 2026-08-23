@@ -228,8 +228,17 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * guard, strict catalog-id parsing, captcha classification that replaces a
  * silent empty result, and TTL cache size bounds. The step restores real
  * headroom rather than clearing one change.
+ *
+ * Raised from 2_880 on 2026-08-23 for bounded Discord IPC framing and callback
+ * containment. The base development bundle was 2,948,034 bytes; the first
+ * reviewed repair was 2,950,409 bytes (+2,375) and exceeded the old 2,949,120
+ * byte budget by 1,289. After connection-attempt ownership was added, the final
+ * bundle was 2,950,823 bytes, leaving 6,489 bytes below the new limit. This 8
+ * KiB step is 0.28%, while the installed host binary stayed exactly 85,775,560
+ * bytes and its gzip -9 output shrank from 37,526,838 to 37,526,445 bytes. The
+ * ratchet remains specific to the unpublished development bundle.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_880;
+export const NPM_BUNDLE_BUDGET_KB = 2_888;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
