@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-14
+Last updated: 2026-08-23
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -40,6 +40,7 @@ archive and put only the residue here.
 | Persistent shell            | Full back-stack, root-owned footer                    | [persistent-shell-implementation.md](./persistent-shell-implementation.md)             |
 | Fullscreen root shell       | Flatten remaining nested chrome                       | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)               |
 | Sakura theme rollout        | Remaining surfaces after the token foundation         | [sakura-rollout.md](./sakura-rollout.md)                                               |
+| Share web fallback + QR     | `https` landing page, short codes, terminal QR        | [share-links-web-fallback-and-qr.md](./share-links-web-fallback-and-qr.md)             |
 | Terminal image protocol     | Flicker hardening and `ink-shell` split               | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
 
 ### Playback and providers
