@@ -36,12 +36,15 @@ import {
   getAllMangaCryptoMaterial,
   gqlPost,
   hashBuildId,
+  registerAllMangaAkDeferredDescriptor,
+  releaseAllMangaAkDeferredLocator,
   resolveAllMangaAkDeferredLocator,
   resolveAnimeEpisodeString,
   resolveEpisodeSources,
   searchAllManga,
   collectAllMangaLinksForStartup,
   setAllMangaCryptoMaterialForTest,
+  setAllMangaProviderCacheClockForTest,
   setAllMangaRetrySleepForTest,
 } from "../src/index";
 
@@ -1188,6 +1191,94 @@ describe("AllManga provider evidence fixtures", () => {
     expect(descriptor?.video.url).toContain("redacted-video-1080");
     expect(descriptor?.audio.url).toContain("redacted-audio");
     expect(descriptor?.duration).toBe(1440);
+  });
+
+  test("released Ak locators are refreshed instead of replayed from source cache", async () => {
+    using fetchMock = await mockAllMangaFetch({ subSourceFixture: "ak-episode-response" });
+
+    const first = await resolveEvidenceEpisode({
+      intent: "play",
+      preferredSourceId: "source:allanime:ak",
+    });
+    const firstLocator = first.streams[0]?.deferredLocator ?? "";
+    releaseAllMangaAkDeferredLocator(firstLocator);
+
+    const second = await resolveEvidenceEpisode({
+      intent: "play",
+      preferredSourceId: "source:allanime:ak",
+    });
+    const secondLocator = second.streams[0]?.deferredLocator ?? "";
+
+    expect(firstLocator).toStartWith("allmanga-ak:");
+    expect(secondLocator).toStartWith("allmanga-ak:");
+    expect(secondLocator).not.toBe(firstLocator);
+    expect(resolveAllMangaAkDeferredLocator(firstLocator)).toBeNull();
+    expect(resolveAllMangaAkDeferredLocator(secondLocator)).not.toBeNull();
+    expect(fetchMock.calls.filter((url) => url.includes("/ak-source"))).toHaveLength(2);
+  });
+
+  test("unplayed Ak descriptors expire and remain bounded", () => {
+    let now = 10_000;
+    setAllMangaProviderCacheClockForTest(() => now);
+    const descriptor = {
+      video: { url: "https://cdn.example/video.mp4" },
+      audio: { url: "https://cdn.example/audio.m4a" },
+    };
+
+    try {
+      const locators = Array.from({ length: 129 }, () =>
+        registerAllMangaAkDeferredDescriptor(descriptor),
+      );
+      expect(resolveAllMangaAkDeferredLocator(locators[0] ?? "")).toBeNull();
+      expect(resolveAllMangaAkDeferredLocator(locators.at(-1) ?? "")).toEqual(descriptor);
+
+      now += 5 * 60_000;
+      expect(resolveAllMangaAkDeferredLocator(locators.at(-1) ?? "")).toBeNull();
+    } finally {
+      clearAllMangaProviderCachesForTest();
+    }
+  });
+
+  test("releasing one Ak consumer does not invalidate another", () => {
+    const first = registerAllMangaAkDeferredDescriptor({
+      video: { url: "https://cdn.example/first-video.mp4" },
+      audio: { url: "https://cdn.example/first-audio.m4a" },
+    });
+    const secondDescriptor = {
+      video: { url: "https://cdn.example/second-video.mp4" },
+      audio: { url: "https://cdn.example/second-audio.m4a" },
+    };
+    const second = registerAllMangaAkDeferredDescriptor(secondDescriptor);
+
+    releaseAllMangaAkDeferredLocator(first);
+
+    expect(resolveAllMangaAkDeferredLocator(first)).toBeNull();
+    expect(resolveAllMangaAkDeferredLocator(second)).toEqual(secondDescriptor);
+  });
+
+  test("ordinary direct sources retain the five-minute source cache", async () => {
+    using fetchMock = await mockAllMangaFetch({ subSourceFixture: "sub-source-response" });
+
+    await resolveEpisodeSources({
+      context: TEST_CONTEXT,
+      apiUrl: "https://api.allanime.day/api",
+      referer: "https://youtu-chan.com",
+      ua: "test-agent",
+      showId: "show-allmanga-evidence",
+      epStr: "1",
+      mode: "sub",
+    });
+    await resolveEpisodeSources({
+      context: TEST_CONTEXT,
+      apiUrl: "https://api.allanime.day/api",
+      referer: "https://youtu-chan.com",
+      ua: "test-agent",
+      showId: "show-allmanga-evidence",
+      epStr: "1",
+      mode: "sub",
+    });
+
+    expect(fetchMock.calls.filter((url) => url.includes("variables="))).toHaveLength(1);
   });
 
   test("source cycle candidates preserve native labels separately from normalized language", () => {
