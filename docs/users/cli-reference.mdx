@@ -41,6 +41,22 @@ From a repo clone (contributor-oriented), use `bun run dev -- <flags>` so Bun fo
 | `kunai doctor --json`       | Same report as JSON                              |
 | `kunai uninstall`           | Ownership-aware removal                          |
 | `kunai uninstall --purge`   | Also delete config/history/cache                 |
+| `kunai diagnostics recent`  | Print recent redacted diagnostics from the cache DB |
+
+### `kunai diagnostics recent`
+
+Prints the most recent diagnostic events Kunai recorded locally, already
+redacted, without launching the shell. Useful when attaching evidence to an
+issue.
+
+```bash
+kunai diagnostics recent                        # JSONL, most recent first
+kunai diagnostics recent --format markdown      # human-readable table
+kunai diagnostics recent --limit 50             # cap how many events print
+```
+
+`--format` accepts `jsonl` (default) or `markdown`. Events come from the local
+cache database; nothing is uploaded.
 
 ## Shell completions
 

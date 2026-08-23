@@ -23,6 +23,29 @@ Launch flags, discovery, and the queue.
   one source from filling the tray.
 - **`/up-next` opens during playback.** The queue was reachable everywhere
   except the one activity that consumes it.
+- **`--dry-run` prints the plan instead of starting a session.** The flag was
+  documented as a general launch flag and read in exactly two places
+  (`--install-protocol-handler` and `rollback`), so `kunai -S "Dune" --dry-run`
+  parsed it, discarded it, and mounted the full interactive shell — starting the
+  session it had just promised not to. It now prints the resolved mode, surface,
+  query or title, auto-pick, and any flag it will ignore, and exits before
+  anything is created: no version lock, no version pruning, no database, no
+  terminal probe.
+- **`--zen` no longer plays a title you did not pick.** Zen is documented as a
+  bare layout, but it set `--quick`, which is not a layout flag at all — it means
+  "auto-pick result #1". `kunai -S "Dune" --zen` skipped the result list and
+  started playing the top hit. Zen now changes chrome only; use `--zen --quick`
+  for the old behaviour.
+- **Finishing a title no longer triggers a search you did not ask for.**
+  Launching with both a query and a direct target (`-S "Dune" --history`, a
+  share link, `-i` with `-t`) left the query armed after the chosen title
+  played, so the session bounced into a stale search when playback ended — and
+  with the auto-pick index still set, under `--quick` that search immediately
+  played its first hit, writing a history row and a tracker sync for a title
+  nobody selected.
+- **The library footer stops advertising a key that did nothing.** `m` was
+  registered for a title-control menu and shown as available; no handler read
+  it, so the keystroke was typed into the filter box instead.
 
 Privacy hardening, and a consent bug in the installer.
 
@@ -59,6 +82,41 @@ Privacy hardening, and a consent bug in the installer.
 - **AllAnime survives a bad response** instead of failing the provider, and the
   relay's private-host guard covers IPv4-mapped IPv6 such as
   `::ffff:169.254.169.254`.
+- **Discord Rich Presence can no longer end your session.** A malformed frame
+  from Discord reached `JSON.parse` inside the socket callback, and a throw
+  there is an uncaught exception rather than a rejected promise — which Kunai
+  escalates to a fatal shutdown. A cosmetic, optional integration was able to
+  print a stack trace over the UI and stop playback. Unreadable frames are now
+  dropped, and a frame claiming an implausible size drops the connection instead
+  of buffering toward it.
+- **An unplugged drive no longer kills the session or strands the download.**
+  When the download folder became unwritable or disappeared mid-session,
+  preparing the output directory threw past the point where the job was claimed:
+  the job stayed claimed for the rest of the run — displayed as queued, never
+  startable again — and the error surfaced as an unhandled rejection, which is
+  also a fatal shutdown. The job is now paused with a readable reason and picked
+  up on a later attempt.
+- **Reordering Up Next is all-or-nothing.** Positions were written one row at a
+  time outside a transaction, so an interruption part-way left the queue with
+  duplicate positions rather than a stale-but-valid order.
+- **Anime playback stops stalling the interface between segments.** The relay
+  decoded every video segment into a JavaScript string twice — once to find a
+  status trailer, once to check whether the bytes were a playlist — which for a
+  6 MiB segment cost about 50 ms of blocked main thread and 60 MiB of garbage,
+  on the same thread that reads your keystrokes. Both checks now work on bytes.
+- **The relay's CDN allowlist is a domain check again.** The patterns matched
+  any hostname _containing_ the allowed name, so a crafted stream URL could
+  point the local relay at an attacker's host.
+- **The mpv control socket lives in a private directory.** It sat in the shared
+  temp directory; on systems with a group-writable umask that left mpv's
+  command interface reachable by another process running as the same group.
+  It now uses `$XDG_RUNTIME_DIR/kunai`, falling back to an owner-only temp
+  subdirectory (macOS sets no runtime dir). Windows is unaffected — it uses a
+  named pipe.
+- **Links open only if they are links.** External URLs went straight to
+  `xdg-open`/`open`/`explorer.exe` whatever their scheme, and a value beginning
+  with `-` was read by the opener as a flag. Only `http`, `https`, and `kunai`
+  URLs are opened now; anything else is still shown and copyable.
 
 - **Downloads:** provider stream URLs and headers are guarded before reaching
   yt-dlp (scheme check, leading-dash rejection, `--` terminator, CRLF-stripped

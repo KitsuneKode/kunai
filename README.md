@@ -6,7 +6,7 @@
 One fullscreen, keyboard-driven terminal session.
 
 [![npm](https://img.shields.io/npm/v/@kitsunekode/kunai?color=ff8fb0&label=kunai&logo=npm)](https://www.npmjs.com/package/@kitsunekode/kunai)
-&nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.3.14-ff8fb0)
+&nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.4.0-ff8fb0)
 &nbsp;![player](https://img.shields.io/badge/player-mpv-4fd1c5)
 &nbsp;![kinds](https://img.shields.io/badge/anime%20%C2%B7%20series%20%C2%B7%20movies-c98bff)
 &nbsp;[![license](https://img.shields.io/badge/license-MIT-968a98)](LICENSE)
@@ -257,14 +257,14 @@ Inside the shell, `/` opens the command palette from anywhere.
 
 ### What you need up front
 
-| Tool            | Required?            | Why                                                                                                  |
-| --------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Bun** ≥1.3.14 | bun/source           | Runtime for Bun-global and source installs. The default binary embeds it. The npm channel uses Node. |
-| **mpv**         | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                                          |
-| **yt-dlp**      | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp`              |
-| **ffprobe**     | Optional             | Post-download integrity checks (ships with FFmpeg)                                                   |
-| **curl**        | Anime mode           | AniDB, the default anime provider, is behind Cloudflare. `sudo pacman -S curl`                       |
-| **Discord**     | Optional             | Rich Presence via local Unix-socket / Windows named-pipe IPC                                         |
+| Tool           | Required?            | Why                                                                                                  |
+| -------------- | -------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Bun** ≥1.4.0 | bun/source           | Runtime for Bun-global and source installs. The default binary embeds it. The npm channel uses Node. |
+| **mpv**        | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                                          |
+| **yt-dlp**     | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp`              |
+| **ffprobe**    | Optional             | Post-download integrity checks (ships with FFmpeg)                                                   |
+| **curl**       | Anime mode           | AniDB, the default anime provider, is behind Cloudflare. `sudo pacman -S curl`                       |
+| **Discord**    | Optional             | Rich Presence via local Unix-socket / Windows named-pipe IPC                                         |
 
 ### Poster quality
 
@@ -488,10 +488,10 @@ Kunai ships a default Discord application client id; override it in Settings or
 
 ### Required
 
-| Dependency         | Purpose        | Install                                     |
-| ------------------ | -------------- | ------------------------------------------- |
-| **Bun** `>=1.3.14` | Runtime        | `curl -fsSL https://bun.sh/install \| bash` |
-| **mpv**            | Video playback | `sudo pacman -S mpv` / `brew install mpv`   |
+| Dependency        | Purpose        | Install                                     |
+| ----------------- | -------------- | ------------------------------------------- |
+| **Bun** `>=1.4.0` | Runtime        | `curl -fsSL https://bun.sh/install \| bash` |
+| **mpv**           | Video playback | `sudo pacman -S mpv` / `brew install mpv`   |
 
 ### Optional — what each enables
 
