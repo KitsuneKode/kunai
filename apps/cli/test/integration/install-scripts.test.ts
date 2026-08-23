@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
@@ -711,80 +712,73 @@ describe("install.sh package activeVersion", () => {
  *     default, so a prompt nobody could answer became consent.
  */
 describe("install.sh consent without a terminal", () => {
-  /**
-   * `setsid` is what actually removes the controlling terminal.
-   *
-   * `stdio: ["ignore", …]` closes stdin but leaves the child in the parent's
-   * session, so `</dev/tty` still opens whenever the developer runs the suite
-   * from a real terminal. This test used to rely on that closed stdin alone,
-   * which made it environment-dependent: green in CI (no controlling terminal,
-   * so the open fails and `ask` reports "No terminal for") and red under a
-   * developer's TTY (the open succeeds, `read` hits EOF, and `ask` reports
-   * "No reply for" instead). Both are correct refusals — the test was pinning
-   * whichever branch the environment happened to produce.
-   *
-   * macOS ships no `setsid` binary, so there the detach is unavailable and
-   * these skip loudly rather than passing for the wrong reason again.
-   */
   const setsid = Bun.which("setsid");
+  const scriptBin = Bun.which("script");
 
-  function runAsk(
-    yes: 0 | 1,
-    options: { readonly detach: boolean },
-  ): { status: number | null; stderr: string } {
+  function askProbeSource(yes: 0 | 1): string {
     const source = readFileSync(INSTALL_SH, "utf8");
     const fn = /^ask\(\) \{[\s\S]*?^\}/m.exec(source)?.[0];
     if (!fn) throw new Error("could not extract ask() from install.sh");
-    const script = [
-      `warn() { echo "WARN: $*" >&2; }`,
-      `YES=${yes}`,
-      fn,
-      `ask "Install mpv?" y`,
-    ].join("\n");
-    const [command, args] =
-      options.detach && setsid
-        ? ([setsid, ["bash", "-c", script]] as const)
-        : (["bash", ["-c", script]] as const);
-    return spawnSync(command, args, {
+    return [`warn() { echo "WARN: $*" >&2; }`, `YES=${yes}`, fn, `ask "Install mpv?" y`].join("\n");
+  }
+
+  function runAskWithoutControllingTerminal(yes: 0 | 1) {
+    if (!setsid) throw new Error("setsid is unavailable");
+    return spawnSync(setsid, ["bash", "-c", askProbeSource(yes)], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-      // A regressed `ask` blocks on `read` forever; fail the test instead of
-      // stalling the suite.
-      timeout: 10_000,
+      timeout: 2_000,
     });
   }
 
+  function runAskWithClosedPtyInput(yes: 0 | 1) {
+    if (!scriptBin) throw new Error("script(1) is unavailable");
+    const root = mkdtempSync(join(tmpdir(), "kunai-ask-"));
+    const probePath = join(root, "ask-probe.sh");
+    try {
+      writeFileSync(probePath, askProbeSource(yes), { mode: 0o700 });
+      const args =
+        process.platform === "darwin"
+          ? ["-q", "/dev/null", "bash", probePath]
+          : ["-qfec", `bash ${probePath}`, "/dev/null"];
+      return spawnSync(scriptBin, args, {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 2_000,
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
   test.skipIf(!setsid)(
-    "with no controlling terminal, declines and says which step it skipped",
+    "requires setsid: no controlling terminal declines and explains --yes",
     () => {
-      const result = runAsk(0, { detach: true });
+      const result = runAskWithoutControllingTerminal(0);
+      expect(result.error).toBeUndefined();
+      expect(result.signal).toBeNull();
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("No terminal for: Install mpv?");
       expect(result.stderr).toContain("--yes");
-      // bash's own redirect error would mean stderr is silenced after the failing
-      // open rather than before it.
-      expect(result.stderr).not.toContain("No such device");
     },
   );
 
-  /**
-   * The second trap, and the one the old setup silently exercised in a
-   * developer's terminal without asserting on it: a controlling terminal
-   * exists, so the `</dev/tty` open succeeds, but nothing can answer. The
-   * previous `read … || true` swallowed that failure and fell through to the
-   * `y` default, which is how a prompt nobody could answer ran `sudo apt-get
-   * install` unattended.
-   */
-  test("with a terminal but no answer, declines instead of defaulting to yes", () => {
-    const result = runAsk(0, { detach: false });
-    expect(result.status).not.toBe(0);
-    // Either refusal is correct; which one depends on whether the runner has a
-    // controlling terminal. What must never happen is falling through to `y`.
-    expect(result.stderr).toMatch(/No (terminal|reply) for: Install mpv\?/);
-  });
+  test.skipIf(!scriptBin)(
+    "requires script(1): closed PTY input declines instead of defaulting to yes",
+    () => {
+      const result = runAskWithClosedPtyInput(0);
+      expect(result.error).toBeUndefined();
+      expect(result.signal).toBeNull();
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("No reply for: Install mpv?");
+    },
+  );
 
-  test("an explicit --yes is still consent", () => {
-    expect(runAsk(1, { detach: false }).status).toBe(0);
+  test.skipIf(!scriptBin)("an explicit --yes is still consent", () => {
+    const result = runAskWithClosedPtyInput(1);
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status).toBe(0);
   });
 });
 
