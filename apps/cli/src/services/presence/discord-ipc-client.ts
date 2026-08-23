@@ -294,7 +294,6 @@ function decodeDiscordIpcSocketPacket(data: Uint8Array): {
 }
 
 type DiscordIpcConnectionAttempt = {
-  readonly generation: number;
   readonly loginGeneration: number;
   readonly accumulator: DiscordIpcFrameAccumulator;
   socket: DiscordIpcSocket | null;
@@ -320,7 +319,6 @@ export function createDiscordIpcClient(
 
   let activeAttempt: DiscordIpcConnectionAttempt | null = null;
   let destroyed = false;
-  let nextAttemptGeneration = 0;
   let loginGeneration = 0;
   let nonceCounter = 0;
   const readyCallbacks = new Set<() => void>();
@@ -524,7 +522,6 @@ export function createDiscordIpcClient(
         }
 
         const attempt: DiscordIpcConnectionAttempt = {
-          generation: ++nextAttemptGeneration,
           loginGeneration: ownedLoginGeneration,
           accumulator: new DiscordIpcFrameAccumulator(),
           socket: null,
