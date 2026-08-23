@@ -2374,7 +2374,34 @@ async function enrichVideasyResolveInput(
   };
 }
 
-function buildQueryVariants(opts: {
+/**
+ * Does this episode carry coordinates Videasy can be asked about?
+ *
+ * The guard was `!opts.episode?.season || !opts.episode.episode`, which is a
+ * truthiness test on a field where zero is meaningful: **season 0 is the
+ * catalog identity for specials and OVAs**. `!0` is true, so every special
+ * returned an empty variant list and the provider was never called — no
+ * request, no failure, no trace. The lane simply reported nothing to play.
+ *
+ * Season and episode are checked differently on purpose:
+ *
+ * - **Season** may be 0. It must be a non-negative integer, so a missing,
+ *   negative, or fractional season still fails here rather than sending a
+ *   nonsense `seasonId` upstream.
+ * - **Episode** may not be 0. Episode numbers are 1-based across Kunai, so a
+ *   zero episode is a bug in the caller, not a special. It stays rejected
+ *   until something proves otherwise for this provider specifically.
+ */
+export function hasResolvableSeriesCoordinates(
+  episode: EpisodeIdentity | undefined,
+): episode is EpisodeIdentity & { readonly season: number; readonly episode: number } {
+  const { season, episode: number } = episode ?? {};
+  if (typeof season !== "number" || !Number.isInteger(season) || season < 0) return false;
+  if (typeof number !== "number" || !Number.isInteger(number) || number < 1) return false;
+  return true;
+}
+
+export function buildQueryVariants(opts: {
   readonly title: TitleIdentity;
   readonly mediaKind: "movie" | "series";
   readonly tmdbId: number;
@@ -2401,7 +2428,7 @@ function buildQueryVariants(opts: {
   }
 
   if (opts.mediaKind === "series") {
-    if (!opts.episode?.season || !opts.episode.episode) {
+    if (!hasResolvableSeriesCoordinates(opts.episode)) {
       return [];
     }
     base.set("seasonId", String(opts.episode.season));
