@@ -66,7 +66,12 @@ export async function mapAnimeDiscoveryResultToProviderNative(
         query,
         animeLang,
         context.signal,
-      ).catch(() => []);
+      ).catch(() => null);
+      // null is an unreachable catalog, not a confirmed miss. Skipping keeps a
+      // transient AllAnime failure from silently downgrading this title to a
+      // title-based match, or to no provider mapping at all.
+      if (matches === null) continue;
+
       const match =
         matches.find((candidate) => candidate.aniListId === discoveryAniListId) ??
         chooseProviderSearchMatch(result, matches);

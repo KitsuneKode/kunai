@@ -104,3 +104,74 @@ describe("invidious instance pool", () => {
     }
   });
 });
+
+/**
+ * A 200 that selects zero reachable instances is a degraded registry, a changed
+ * response shape, or a list where nothing is usable — not a healthy pool.
+ *
+ * It was cached for the full 15-minute TTL, so `pickInvidiousInstance` threw
+ * "No healthy Invidious instances available" from a *cached* empty pool on
+ * every attempt until expiry, keeping YouTube broken long after the registry
+ * recovered. Thrown requests and non-OK responses were already left uncached;
+ * this was the third path to the same state.
+ */
+describe("an empty selection is not a healthy pool", () => {
+  function serve(body: string, status = 200) {
+    globalThis.fetch = (async () =>
+      new Response(body, {
+        status,
+        headers: { "Content-Type": "application/json" },
+      })) as unknown as typeof fetch;
+  }
+
+  test("an empty selection does not replace a pool that already worked", async () => {
+    const originalFetch = globalThis.fetch;
+    const url = "https://fixtures.test/instances-empty-selection.json";
+    try {
+      // A healthy pass populates the cache.
+      serve(JSON.stringify([["good.example", { api: false, uri: "https://good.example" }]]));
+      const healthy = await fetchHealthyInvidiousInstances({
+        instancesUrl: url,
+        now: () => 1_900_000_000_000,
+      });
+      expect(healthy).toEqual(["https://good.example"]);
+
+      // Past the TTL, the registry answers 200 with nothing selectable.
+      serve(JSON.stringify([["only.onion", { api: null, uri: "http://only.onion" }]]));
+      const afterDegraded = await fetchHealthyInvidiousInstances({
+        instancesUrl: url,
+        now: () => 1_900_000_000_000 + 16 * 60 * 1000,
+      });
+
+      // The previous non-empty pool is better evidence than an empty one.
+      expect(afterDegraded).toEqual(["https://good.example"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a recovered registry is picked up immediately, not after a stale TTL", async () => {
+    const originalFetch = globalThis.fetch;
+    const url = "https://fixtures.test/instances-recovery.json";
+    try {
+      // First contact is degraded, so there is no previous pool to fall back to.
+      serve(JSON.stringify([["only.i2p", { api: null, uri: "http://only.i2p" }]]));
+      const degraded = await fetchHealthyInvidiousInstances({
+        instancesUrl: url,
+        now: () => 2_000_000_000_000,
+      });
+      expect(degraded).toEqual([]);
+
+      // One second later the registry is healthy again. Before the fix the
+      // empty pool was cached, so this still returned nothing for 15 minutes.
+      serve(JSON.stringify([["back.example", { api: false, uri: "https://back.example" }]]));
+      const recovered = await fetchHealthyInvidiousInstances({
+        instancesUrl: url,
+        now: () => 2_000_000_000_000 + 1_000,
+      });
+      expect(recovered).toEqual(["https://back.example"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

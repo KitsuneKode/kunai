@@ -1352,3 +1352,81 @@ function jsonResponse(value: unknown): Response {
 function nowFixture(): string {
   return "2026-05-19T00:00:00.000Z";
 }
+
+/**
+ * Transport failure must not render as a healthy empty catalog.
+ *
+ * `gqlPost` returns null for a timeout, 429, 5xx, DNS failure, or an upstream
+ * rotation. The search path used to coalesce that to `[]` — the same value a
+ * healthy search with no matches produces — so an unreachable AllAnime showed
+ * "No results" and was invisible to provider health and diagnostics.
+ */
+describe("AllManga transport failure is preserved, not flattened", () => {
+  const API = "https://api.example/graphql";
+
+  function serve(handler: () => Response) {
+    globalThis.fetch = (async () => handler()) as unknown as typeof fetch;
+  }
+
+  test("a 5xx is null, while a genuinely empty result stays an empty array", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      serve(() => new Response("upstream exploded", { status: 503 }));
+      const failed = await searchAllManga(
+        TEST_CONTEXT,
+        API,
+        "https://referer.example",
+        "ua",
+        "Example",
+        "sub",
+      );
+      expect(failed).toBeNull();
+
+      serve(
+        () =>
+          new Response(JSON.stringify({ data: { shows: { edges: [] } } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      );
+      const empty = await searchAllManga(
+        TEST_CONTEXT,
+        API,
+        "https://referer.example",
+        "ua",
+        "Nothing Matches This",
+        "sub",
+      );
+      // A catalog that answered and had nothing is not a failure.
+      expect(empty).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a rate limit is null, not an empty catalog", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      serve(() => new Response("slow down", { status: 429 }));
+      expect(
+        await searchAllManga(TEST_CONTEXT, API, "https://referer.example", "ua", "Example", "sub"),
+      ).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a thrown request is null, not an empty catalog", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () => {
+        throw new Error("ENOTFOUND api.example");
+      }) as unknown as typeof fetch;
+      expect(
+        await searchAllManga(TEST_CONTEXT, API, "https://referer.example", "ua", "Example", "sub"),
+      ).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

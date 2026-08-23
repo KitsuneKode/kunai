@@ -11,7 +11,15 @@ type CachedInstances = {
   readonly instances: readonly string[];
 };
 
-let cachedInstances: CachedInstances | null = null;
+/**
+ * Keyed by registry URL, not a single slot.
+ *
+ * Production uses one URL, so a bare variable worked — but it meant any change
+ * of `instancesUrl` silently answered from the previous registry's pool, and it
+ * made every test in a file share one cache entry regardless of the URL each
+ * one served.
+ */
+const cachedInstancesByUrl = new Map<string, CachedInstances>();
 const cooldownUntil = new Map<string, number>();
 
 export type InvidiousInstancePoolOptions = {
@@ -33,11 +41,13 @@ export async function fetchHealthyInvidiousInstances(
     }
   }
 
+  const instancesUrl = options.instancesUrl ?? DEFAULT_INSTANCES_URL;
+  const cachedInstances = cachedInstancesByUrl.get(instancesUrl);
   if (cachedInstances && now - cachedInstances.fetchedAt < 15 * 60 * 1000) {
     return filterAvailableInstances(cachedInstances.instances, now);
   }
 
-  const response = await fetch(options.instancesUrl ?? DEFAULT_INSTANCES_URL, {
+  const response = await fetch(instancesUrl, {
     headers: { Accept: "application/json" },
     signal: options.signal,
   });
@@ -51,7 +61,24 @@ export async function fetchHealthyInvidiousInstances(
   ])[];
   const instances = selectReachableInstances(payload);
 
-  cachedInstances = { fetchedAt: now, instances };
+  // An empty selection is not a healthy pool.
+  //
+  // A 200 that yields zero reachable API instances means the registry is
+  // degraded, or its shape changed, or everything it listed is unusable — none
+  // of which is knowledge worth holding for the full TTL. Caching it made
+  // `pickInvidiousInstance` throw "No healthy Invidious instances available"
+  // from a *cached* empty pool for 15 minutes, so YouTube stayed broken long
+  // after the registry recovered.
+  //
+  // Thrown requests and non-OK responses were already left uncached; this
+  // closes the third path to the same state.
+  if (instances.length === 0) {
+    // A previous non-empty pool is better evidence than an empty one. Keep it
+    // and let its own TTL expire rather than replacing it with nothing.
+    return cachedInstances ? filterAvailableInstances(cachedInstances.instances, now) : [];
+  }
+
+  cachedInstancesByUrl.set(instancesUrl, { fetchedAt: now, instances });
   return filterAvailableInstances(instances, now);
 }
 
