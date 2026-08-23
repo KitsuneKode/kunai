@@ -97,6 +97,21 @@ export type CoreInfra = {
   readonly logger: Logger;
   readonly tracer: Tracer;
   readonly sessionId: string;
+  readonly debugCapabilities: DebugCapabilities;
+};
+
+export type DebugCapabilities = {
+  readonly enabled: boolean;
+  readonly file: boolean;
+  readonly tracerOutputs: ("console" | "file")[];
+};
+
+export type CoreInfraRuntime = {
+  readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly workingDirectory?: string;
+  readonly write?: (line: string) => unknown;
+  readonly isInteractiveShellMounted?: () => boolean;
+  readonly stderrIsTTY?: boolean;
 };
 
 export type PersistenceBootstrap = {
@@ -151,30 +166,54 @@ export type PersistenceBootstrap = {
   readonly debugSessionInstructions?: readonly string[];
 };
 
-export function bootstrapCoreInfra(options?: ContainerOptions): CoreInfra {
-  const debug = options?.debug ?? false;
+export function resolveDebugCapabilities(
+  cliDebug: boolean,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): DebugCapabilities {
+  const environmentDebug = environment.KITSUNE_DEBUG === "1";
+  const enabled = cliDebug || environmentDebug;
+  return {
+    enabled,
+    file: cliDebug,
+    tracerOutputs: cliDebug ? ["console", "file"] : environmentDebug ? ["console"] : [],
+  };
+}
+
+export function bootstrapCoreInfra(
+  options?: ContainerOptions,
+  runtime: CoreInfraRuntime = {},
+): CoreInfra {
+  const debugCapabilities = resolveDebugCapabilities(
+    options?.debug ?? false,
+    runtime.environment ?? process.env,
+  );
+  const shellMounted = runtime.isInteractiveShellMounted ?? isInteractiveShellMounted;
+  const stderrIsTTY = runtime.stderrIsTTY ?? process.stderr.isTTY === true;
   const logger = new StructuredLogger({
-    debug,
-    console: () => !isInteractiveShellMounted(),
-    file: debug ? join(process.cwd(), "logs.txt") : undefined,
+    debug: debugCapabilities.enabled,
+    console: () => !shellMounted() || !stderrIsTTY,
+    file: debugCapabilities.file
+      ? join(runtime.workingDirectory ?? process.cwd(), "logs.txt")
+      : undefined,
+    write: runtime.write,
     sanitize: (value) => redactDiagnosticValue(value, { homeDir: resolveRedactionHomeDir() }),
   });
-  initLogger(debug || process.env.KITSUNE_DEBUG === "1", logger);
+  initLogger(debugCapabilities.enabled, logger);
   const sessionId = createCorrelationId("session");
   const tracer = new TracerImpl({
     logger,
-    outputs: debug ? ["console", "file"] : [],
+    outputs: debugCapabilities.tracerOutputs,
   });
 
-  return { logger, tracer, sessionId };
+  return { logger, tracer, sessionId, debugCapabilities };
 }
 
 export async function bootstrapPersistence(
   options: ContainerOptions | undefined,
   core: CoreInfra,
 ): Promise<PersistenceBootstrap> {
-  const { logger, sessionId } = core;
-  const debug = options?.debug ?? false;
+  const { logger, sessionId, debugCapabilities } = core;
+  const debug = debugCapabilities.enabled;
 
   const storage = new FileStorage(undefined, (message, context) => logger.warn(message, context));
   const paths = getKunaiPaths();
