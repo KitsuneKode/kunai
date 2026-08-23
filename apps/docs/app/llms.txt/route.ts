@@ -1,4 +1,5 @@
 import { codeMetadata } from "@/lib/code-metadata";
+import { provenance } from "@/lib/provenance";
 import { publishedReleaseNotesArtifacts, releasePath } from "@/lib/release-notes";
 import { docsSiteUrl } from "@/lib/site";
 import { source } from "@/lib/source";
@@ -12,8 +13,8 @@ export async function GET() {
     "# Kunai Docs",
     "",
     `@doc-version: ${codeMetadata.cliVersion}`,
-    `@cli-source-revision: ${codeMetadata.cliSourceRevision}`,
-    `@synced-at: ${codeMetadata.syncedAt}`,
+    `@cli-source-revision: ${provenance.cliSourceRevision}`,
+    `@synced-at: ${provenance.syncedAt}`,
     "",
     "> Terminal-first guides for Kunai playback, recovery, offline use, and diagnostics.",
     "",
