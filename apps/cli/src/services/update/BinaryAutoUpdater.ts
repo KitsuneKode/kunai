@@ -1,12 +1,21 @@
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { isVersionedBinaryManifest, readInstallManifest } from "./install-manifest";
+import type { InstallMethodKind } from "./install-method";
 import { installLatest, type InstallLatestResult } from "./native-installer/install-latest";
 import { resolveLatestVersion } from "./resolve-latest-version";
 import { shouldRunUpdateCheck, updateCheckCachePatch } from "./update-check-cache";
 
 export type BinaryAutoUpdateResult =
   | { readonly status: "disabled" }
+  /**
+   * This install cannot self-apply — a package manager owns the binary.
+   *
+   * Distinct from "disabled", which means the user switched auto-updates off.
+   * Collapsing the two told an npm user "Update did not apply (disabled)" when
+   * nothing was disabled and `npm i -g` was the right answer all along.
+   */
+  | { readonly status: "not-applicable"; readonly channel: InstallMethodKind }
   | { readonly status: "snoozed" }
   | { readonly status: "fresh" }
   | { readonly status: "up-to-date" }
@@ -75,7 +84,10 @@ export class BinaryAutoUpdater {
 
     const manifest = await (this.deps.readInstallManifest ?? readInstallManifest)();
     if (!manifest || !isVersionedBinaryManifest(manifest)) {
-      return { status: "disabled" };
+      // Not a failure and not a preference: this channel simply cannot replace
+      // its own binary. The caller can name the owning package manager instead
+      // of reporting a switch the user never touched.
+      return { status: "not-applicable", channel: manifest?.method ?? "unknown" };
     }
 
     const pending = await (this.deps.getPendingRestartVersion ?? getPendingRestartVersion)(

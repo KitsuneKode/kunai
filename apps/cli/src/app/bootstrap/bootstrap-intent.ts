@@ -1,3 +1,4 @@
+import { directIdTitleName } from "@/domain/types";
 import type { TitleInfo } from "@/domain/types";
 
 /**
@@ -68,7 +69,7 @@ function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInf
     return {
       id: args.id,
       type: args.type,
-      name: `TMDB ${args.id}`,
+      name: directIdTitleName(args.id),
     };
   }
   logs.push({ kind: "id-without-type", id: args.id, type: args.type });

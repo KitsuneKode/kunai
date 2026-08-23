@@ -55,6 +55,22 @@ export interface VideoMeta {
   readonly paid?: boolean;
 }
 
+/**
+ * Stand-in name for a title launched by `-i/--id` before the catalog answers.
+ *
+ * `-i 438631 -t movie` has an id and nothing else, so the session needs *some*
+ * name to render. Kept in one place, with its recogniser below, because the
+ * placeholder is only correct until real detail arrives.
+ */
+export function directIdTitleName(id: string): string {
+  return `TMDB ${id}`;
+}
+
+/** True while a title still carries the `-i` placeholder rather than a real name. */
+export function isDirectIdTitleName(name: string, id: string): boolean {
+  return name.trim() === directIdTitleName(id);
+}
+
 export interface TitleInfo {
   readonly id: string;
   readonly type: ContentType;

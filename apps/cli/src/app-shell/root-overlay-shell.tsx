@@ -41,6 +41,7 @@ import {
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import type { InstallMethodKind } from "@/services/update/install-method";
 import { resolveNotificationUpdateAction } from "@/services/update/notification-update-action";
 import { appReleasePageUrl } from "@/services/update/release-url";
 import { Box, Text, useInput } from "ink";
@@ -198,6 +199,28 @@ const HELP_SECTION_BY_GROUP = new Map<string, HelpSection>(
  * `HelpShell` calls this directly and the help-overlay test asserts the
  * overlay's content matches the registry.
  */
+
+/**
+ * What to tell someone whose install cannot update itself.
+ *
+ * Reuses the notification's own routing so the manual action and the inbox
+ * never disagree about how this channel upgrades.
+ */
+function describeUnmanagedUpdate(
+  channel: InstallMethodKind,
+  currentVersion: string,
+  latestVersion: string | null,
+): string {
+  const action = resolveNotificationUpdateAction({
+    channel,
+    currentVersion,
+    latestVersion,
+  });
+  if (action.kind === "run-command") return action.message;
+  if (action.kind === "open-release-page") return action.message;
+  return "This install is managed elsewhere — update through the tool that installed Kunai.";
+}
+
 export function helpTabRows(tab: string): readonly { key: string; desc: string }[] {
   return (HELP_SECTION_BY_GROUP.get(tab)?.items ?? []).map((hint) => ({
     key: hint.keys,
@@ -1205,8 +1228,20 @@ export function RootOverlayShell({
               setOverlayStatus("Already up to date.");
               return { status: "applied" };
             }
+            // A package-manager install cannot self-replace. Saying "disabled"
+            // there blamed a setting the user never touched; name the real
+            // upgrade command instead, which is what the notification for this
+            // channel already offers.
             const reason =
-              result.status === "error" ? result.error : `Update did not apply (${result.status}).`;
+              result.status === "error"
+                ? result.error
+                : result.status === "not-applicable"
+                  ? describeUnmanagedUpdate(
+                      result.channel,
+                      container.updateService.currentVersion,
+                      latestVersion,
+                    )
+                  : `Update did not apply (${result.status}).`;
             setOverlayStatus(reason);
             return { status: "unsupported", reason };
           }
