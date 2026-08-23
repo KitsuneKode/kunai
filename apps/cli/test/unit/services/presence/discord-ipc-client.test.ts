@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { StructuredLogger } from "@/infra/logger/StructuredLogger";
+import { initLogger } from "@/logger";
 import {
   createDiscordIpcClient,
   decodeDiscordIpcPacket,
@@ -9,6 +11,7 @@ import {
   MAX_DISCORD_IPC_BUFFER_BYTES,
   MAX_DISCORD_IPC_FRAME_BYTES,
   type DiscordIpcConnector,
+  type DiscordIpcProtocolFault,
   type DiscordIpcSocket,
 } from "@/services/presence/discord-ipc-client";
 
@@ -173,6 +176,8 @@ function joinBytes(...chunks: readonly Uint8Array[]): Uint8Array {
   }
   return joined;
 }
+
+const PROTOCOL_SECRET_SENTINEL = "sentinel-secret-never-log";
 
 /**
  * Presence is best-effort and optional. A throw inside the `Bun.connect` data
@@ -923,6 +928,160 @@ describe("discord-ipc-client malformed input containment", () => {
     const packet = decodeDiscordIpcPacket(fake.writes.at(-1) ?? new Uint8Array());
     fake.pushPacket({ cmd: "SET_ACTIVITY", nonce: packet.payload.nonce as string });
     await update;
+  });
+
+  test("protocol faults report exact metadata without serializing frame contents", async () => {
+    const fake = createFakeConnector();
+    const events: DiscordIpcProtocolFault[] = [];
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+      onProtocolFault: (fault) => events.push(fault),
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    const invalidBody = new TextEncoder().encode(`{${PROTOCOL_SECRET_SENTINEL}`);
+    fake.pushRaw(framedBytes(1, invalidBody));
+    expect(fake.ended).toBe(false);
+
+    const pending = client.setActivity({ details: "Pending" });
+    const rejection = pending.then(
+      () => null,
+      (error) => error as Error,
+    );
+    const oversized = new Uint8Array(8);
+    new DataView(oversized.buffer).setUint32(4, MAX_DISCORD_IPC_FRAME_BYTES + 1, true);
+    fake.pushRaw(oversized);
+
+    expect(events).toEqual([
+      {
+        reason: "invalid-json",
+        opcode: 1,
+        declaredBytes: invalidBody.byteLength,
+        bufferedBytes: invalidBody.byteLength + 8,
+      },
+      {
+        reason: "declared-frame-too-large",
+        opcode: 0,
+        declaredBytes: 1_048_577,
+        bufferedBytes: 8,
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toContain(PROTOCOL_SECRET_SENTINEL);
+    expect(fake.ended).toBe(true);
+    expect(await rejection).toEqual(
+      expect.objectContaining({ message: expect.stringMatching(/declared-frame-too-large/) }),
+    );
+  });
+
+  test("a throwing protocol reporter cannot terminate healthy invalid-frame drops", async () => {
+    const fake = createFakeConnector();
+    const reasons: string[] = [];
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+      onProtocolFault: (fault) => {
+        reasons.push(fault.reason);
+        throw new Error("hostile protocol reporter");
+      },
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    expect(() => {
+      fake.pushRaw(framedBytes(1, new TextEncoder().encode(`{${PROTOCOL_SECRET_SENTINEL}`)));
+      fake.pushRaw(framedBytes(1, new TextEncoder().encode("null")));
+    }).not.toThrow();
+    expect(reasons).toEqual(["invalid-json", "invalid-payload-root"]);
+    expect(fake.ended).toBe(false);
+
+    const update = client.setActivity({ details: "Reporter failure contained" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1) ?? new Uint8Array());
+    fake.pushPacket({ cmd: "SET_ACTIVITY", nonce: command.payload.nonce as string });
+    await expect(update).resolves.toBeUndefined();
+  });
+
+  test("the default reporter emits one metadata-only structured debug event", async () => {
+    const lines: string[] = [];
+    initLogger(
+      true,
+      new StructuredLogger({
+        debug: true,
+        write: (line) => lines.push(line),
+      }),
+    );
+    try {
+      const fake = createFakeConnector();
+      const client = createDiscordIpcClient({
+        connector: fake.connector,
+        endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+        timeoutMs: 500,
+      });
+      const login = client.login({ clientId: "client-1" });
+      await Promise.resolve();
+      fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+      await login;
+
+      fake.pushRaw(framedBytes(1, new TextEncoder().encode(`{${PROTOCOL_SECRET_SENTINEL}`)));
+
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("Discord IPC protocol fault");
+      expect(lines[0]).toContain('"module":"presence.discord-ipc"');
+      expect(lines[0]).toContain('"reason":"invalid-json"');
+      expect(lines[0]).not.toContain(PROTOCOL_SECRET_SENTINEL);
+      expect(fake.ended).toBe(false);
+    } finally {
+      initLogger(false);
+    }
+  });
+
+  test("a reentrant framing reporter cannot terminalize its replacement attempt", async () => {
+    const fake = createDistinctSocketConnector();
+    let client: ReturnType<typeof createDiscordIpcClient>;
+    let replacementLogin: Promise<void> | null = null;
+    client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+      onProtocolFault: () => {
+        replacementLogin ??= client.login({ clientId: "client-2" });
+      },
+    });
+    const firstLogin = client.login({ clientId: "client-1" });
+    const firstOutcome = firstLogin.then(
+      () => null,
+      (error) => error as Error,
+    );
+    for (let turn = 0; turn < 8 && fake.writes.length === 0; turn += 1) {
+      await Promise.resolve();
+    }
+
+    const oversized = new Uint8Array(8);
+    new DataView(oversized.buffer).setUint32(4, MAX_DISCORD_IPC_FRAME_BYTES + 1, true);
+    expect(() => fake.callbacks[0]?.onData(oversized)).not.toThrow();
+    for (let turn = 0; turn < 8 && !fake.writes.some((write) => write.attempt === 1); turn += 1) {
+      await Promise.resolve();
+    }
+
+    expect(await firstOutcome).toEqual(
+      expect.objectContaining({ message: expect.stringMatching(/superseded/i) }),
+    );
+    expect(fake.ended).toEqual([1, 0]);
+    fake.pushPacket(1, { cmd: "DISPATCH", evt: "READY" });
+    await expect(replacementLogin).resolves.toBeUndefined();
+
+    const update = client.setActivity({ details: "Replacement remains active" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1)?.data ?? new Uint8Array());
+    fake.pushPacket(1, { cmd: "SET_ACTIVITY", nonce: command.payload.nonce as string });
+    await expect(update).resolves.toBeUndefined();
+    expect(fake.ended).toEqual([1, 0]);
   });
 
   test("a truncated frame is buffered, never thrown", async () => {

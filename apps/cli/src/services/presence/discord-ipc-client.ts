@@ -1,3 +1,5 @@
+import { dbg } from "@/logger";
+
 const DISCORD_IPC_VERSION = 1;
 const DEFAULT_DISCORD_IPC_TIMEOUT_MS = 10_000;
 
@@ -34,7 +36,7 @@ type DiscordIpcFrame = {
   readonly payload: Record<string, unknown>;
 };
 
-type DiscordIpcProtocolFault = {
+export type DiscordIpcProtocolFault = {
   readonly reason:
     | "invalid-json"
     | "invalid-payload-root"
@@ -309,6 +311,7 @@ export function createDiscordIpcClient(
     readonly endpointCandidates?: () => readonly string[];
     readonly timeoutMs?: number;
     readonly pid?: number;
+    readonly onProtocolFault?: (fault: DiscordIpcProtocolFault) => void;
   } = {},
 ): DiscordPresenceClient {
   const timeoutMs = options.timeoutMs ?? DEFAULT_DISCORD_IPC_TIMEOUT_MS;
@@ -316,6 +319,11 @@ export function createDiscordIpcClient(
   const connector = options.connector ?? bunDiscordIpcConnector;
   const endpointCandidates =
     options.endpointCandidates ?? (() => resolveDiscordIpcEndpointCandidates({}));
+  const onProtocolFault =
+    options.onProtocolFault ??
+    ((fault: DiscordIpcProtocolFault) => {
+      dbg("presence.discord-ipc", "Discord IPC protocol fault", { ...fault });
+    });
 
   let activeAttempt: DiscordIpcConnectionAttempt | null = null;
   let destroyed = false;
@@ -377,6 +385,14 @@ export function createDiscordIpcClient(
     }
   };
 
+  const reportProtocolFaultBestEffort = (fault: DiscordIpcProtocolFault) => {
+    try {
+      onProtocolFault({ ...fault });
+    } catch {
+      // Protocol diagnostics cannot affect the optional transport.
+    }
+  };
+
   const handlePayload = (
     attempt: DiscordIpcConnectionAttempt,
     op: number,
@@ -431,6 +447,8 @@ export function createDiscordIpcClient(
       return;
     }
     if (batch.fault) {
+      reportProtocolFaultBestEffort(batch.fault);
+      if (!isActiveAttempt(attempt)) return;
       handleFramingFault(attempt, batch.fault);
       return;
     }
@@ -438,6 +456,11 @@ export function createDiscordIpcClient(
       if (!isActiveAttempt(attempt)) return;
       const decoded = decodeDiscordIpcSocketPacket(packet);
       if (!isActiveAttempt(attempt)) return;
+      if (decoded.fault) {
+        reportProtocolFaultBestEffort(decoded.fault);
+        if (!isActiveAttempt(attempt)) return;
+        continue;
+      }
       if (!decoded.frame) continue;
       if (decoded.frame.op === 3) {
         new DataView(packet.buffer, packet.byteOffset, packet.byteLength).setUint32(0, 4, true);

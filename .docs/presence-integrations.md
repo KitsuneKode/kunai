@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-08-23"
 ---
 
 # Kunai — Presence Integrations
@@ -41,6 +41,24 @@ Discord presence is optional and local-only:
 If any requirement is missing, Kunai records a diagnostics event and disables automatic retry until
 the user reconnects from Settings or changes the presence configuration. Duplicate activity payloads
 are skipped to avoid unnecessary Discord IPC churn.
+
+## IPC Protocol Containment
+
+Discord IPC is untrusted input inside an optional integration. Kunai accepts at most a 1,048,576-byte
+JSON body and retains at most 1,048,584 unresolved bytes including the eight-byte frame header. Parsed
+JSON must have a non-null, non-array object root before the client reads any Discord fields.
+
+Invalid JSON and invalid payload roots report the fault and drop only that completed frame; the same
+connection remains usable. A declared-frame or retained-buffer limit violation clears the accumulator,
+rejects pending Discord commands, marks only the owning presence attempt not ready, and ends only that
+attempt's local Discord socket. Playback and the rest of the Kunai session continue, and a later
+explicit reconnect can create a fresh presence attempt.
+
+Under `--debug`, each protocol fault emits `presence.discord-ipc` / `Discord IPC protocol fault` with
+bounded metadata only: reason, opcode, declared byte length, and buffered byte length when available.
+Payload bytes, activity data, ids, URLs, and headers are never included in this event. Reporting is
+best effort, so a logging or observer failure cannot escape the socket callback or change attempt
+ownership.
 
 ## Lifecycle
 
