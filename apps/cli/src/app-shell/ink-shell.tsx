@@ -436,6 +436,8 @@ function AppRoot({ container }: { container: Container }) {
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
 
   useEffect(() => {
+    /** Auto-dismiss handles for the streak alerts, cleared on unmount. */
+    const dismissTimers = new Set<ReturnType<typeof setTimeout>>();
     const refresh = () => {
       let currentStreak: number | undefined;
       try {
@@ -464,7 +466,7 @@ function AppRoot({ container }: { container: Container }) {
             .update({ lastStreakMilestoneDays: nextMilestone })
             .then(() => container.config.save())
             .catch(() => undefined);
-          setTimeout(() => setStreakMilestoneAlert(null), 6_000);
+          dismissTimers.add(setTimeout(() => setStreakMilestoneAlert(null), 6_000));
         }
 
         // Streak-at-risk: after 20:00 local time, if user hasn't watched today
@@ -474,7 +476,7 @@ function AppRoot({ container }: { container: Container }) {
             const watchedToday = container.statsService.watchedToday();
             if (!watchedToday) {
               setStreakAtRiskAlert(`🔥 ${days}d streak at risk — watch something tonight`);
-              setTimeout(() => setStreakAtRiskAlert(null), 10_000);
+              dismissTimers.add(setTimeout(() => setStreakAtRiskAlert(null), 10_000));
             }
           } catch {
             // best-effort
@@ -484,7 +486,16 @@ function AppRoot({ container }: { container: Container }) {
     };
     refresh();
     const timer = setInterval(refresh, 60_000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      // The two alert auto-dismiss timers were never cleared. `refresh` runs on
+      // a 60s interval and the shell unmounts and remounts across phase
+      // transitions, so each mount could leave timers firing against a stale
+      // setter. A set, not a single handle: overlapping refreshes can schedule
+      // more than one.
+      for (const dismiss of dismissTimers) clearTimeout(dismiss);
+      dismissTimers.clear();
+    };
   }, [container.statsService, container.syncService, container.queueService, container.config]);
 
   // Live notification queue. Seed the seen-set on mount so pre-existing

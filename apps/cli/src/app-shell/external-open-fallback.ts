@@ -14,6 +14,12 @@ function explanationFor(reason: ExternalOpenFailureReason, detail?: string): str
       return "No opener is configured for this platform.";
     case "opener-not-found":
       return "Could not find a system opener (xdg-open / open / cmd).";
+    case "rejected-url":
+      // The link is still shown and copyable below; only handing it to the
+      // desktop opener is refused.
+      return detail?.trim()
+        ? `That link was not opened (${detail.trim()}).`
+        : "That link was not opened because its address is not a supported web link.";
     case "spawn-failed":
       return detail?.trim()
         ? `Failed to launch the system opener (${detail.trim()}).`
