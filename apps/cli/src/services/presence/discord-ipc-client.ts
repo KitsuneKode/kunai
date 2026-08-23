@@ -312,6 +312,7 @@ export function createDiscordIpcClient(
   let ready = false;
   let destroyed = false;
   let connectionGeneration = 0;
+  let loginGeneration = 0;
   let nonceCounter = 0;
   let readyResolver: (() => void) | null = null;
   let readyRejecter: ((error: Error) => void) | null = null;
@@ -348,6 +349,17 @@ export function createDiscordIpcClient(
     if (endSocket) endSocketBestEffort(terminalSocket);
   };
 
+  const currentLoginError = () =>
+    new Error(destroyed ? "Discord IPC client was destroyed" : "Discord IPC login was superseded");
+
+  const notifyReadyBestEffort = (callback: () => void) => {
+    try {
+      callback();
+    } catch {
+      // Presence observers cannot affect the optional transport.
+    }
+  };
+
   const handlePayload = (op: number, payload: Record<string, unknown>) => {
     if (op === 2) {
       transitionToTerminal(
@@ -364,7 +376,7 @@ export function createDiscordIpcClient(
       readyResolver?.();
       readyResolver = null;
       readyRejecter = null;
-      for (const callback of readyCallbacks) callback();
+      for (const callback of readyCallbacks) notifyReadyBestEffort(callback);
       return;
     }
     if (!nonce) return;
@@ -431,9 +443,19 @@ export function createDiscordIpcClient(
       if (ready) return;
       if (destroyed) throw new Error("Discord IPC client was destroyed");
 
+      const ownedLoginGeneration = ++loginGeneration;
+      if (socket) {
+        transitionToTerminal(new Error("Discord IPC login was superseded"), true);
+      }
+
       let lastError: unknown = null;
+      let activeSocket: DiscordIpcSocket | null = null;
       let connectedGeneration: number | null = null;
       for (const endpoint of endpointCandidates()) {
+        if (destroyed || ownedLoginGeneration !== loginGeneration) {
+          throw currentLoginError();
+        }
+        accumulator.clear();
         const generation = ++connectionGeneration;
         try {
           const connectedSocket = await connector(endpoint, {
@@ -449,20 +471,31 @@ export function createDiscordIpcClient(
               transitionToTerminal(toError(error), true);
             },
           });
+          if (destroyed || ownedLoginGeneration !== loginGeneration) {
+            endSocketBestEffort(connectedSocket);
+            throw currentLoginError();
+          }
           if (generation !== connectionGeneration) {
             lastError = new Error("Discord IPC connection ended while connecting");
             endSocketBestEffort(connectedSocket);
             continue;
           }
           socket = connectedSocket;
+          activeSocket = connectedSocket;
           connectedGeneration = generation;
           break;
         } catch (error) {
+          if (destroyed || ownedLoginGeneration !== loginGeneration) {
+            throw currentLoginError();
+          }
+          if (generation === connectionGeneration) {
+            accumulator.clear();
+            connectionGeneration += 1;
+          }
           lastError = error;
-          socket = null;
         }
       }
-      if (!socket) {
+      if (!activeSocket) {
         throw new Error(
           `Could not connect to Discord IPC${lastError ? `: ${normalizeErrorMessage(lastError)}` : ""}`,
         );
@@ -484,7 +517,7 @@ export function createDiscordIpcClient(
         };
       });
       try {
-        socket.write(
+        activeSocket.write(
           encodeDiscordIpcPacket(0, {
             v: DISCORD_IPC_VERSION,
             client_id: input.clientId,
@@ -496,10 +529,16 @@ export function createDiscordIpcClient(
       try {
         await readyPromise;
       } catch (error) {
+        if (destroyed || ownedLoginGeneration !== loginGeneration) {
+          throw currentLoginError();
+        }
         if (connectedGeneration === connectionGeneration) {
           transitionToTerminal(toError(error), true);
         }
         throw error;
+      }
+      if (destroyed || ownedLoginGeneration !== loginGeneration) {
+        throw currentLoginError();
       }
     },
     setActivity(activity) {
@@ -516,6 +555,7 @@ export function createDiscordIpcClient(
     },
     async destroy() {
       destroyed = true;
+      loginGeneration += 1;
       if (socket) {
         try {
           socket.write(encodeDiscordIpcPacket(2, {}));
@@ -523,12 +563,12 @@ export function createDiscordIpcClient(
           // Ignore close-frame failures; socket teardown is best effort.
         }
       }
-      transitionToTerminal(new Error("Discord IPC client destroyed"), true);
+      transitionToTerminal(new Error("Discord IPC client was destroyed"), true);
     },
     on(event, callback) {
       if (event !== "ready") return;
       readyCallbacks.add(callback);
-      if (ready) callback();
+      if (ready) notifyReadyBestEffort(callback);
     },
   };
 }
@@ -581,7 +621,11 @@ function describeDiscordErrorPayload(payload: Record<string, unknown>): string |
 }
 
 function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(normalizeErrorMessage(error));
+  try {
+    return error instanceof Error ? error : new Error(normalizeErrorMessage(error));
+  } catch {
+    return new Error("Unknown Discord IPC error");
+  }
 }
 
 function normalizeErrorMessage(error: unknown): string {
