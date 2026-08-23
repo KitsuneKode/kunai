@@ -10,8 +10,12 @@ export const NATIVE_INSTALL_SH =
 export const NATIVE_INSTALL_PS1 =
   "irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex" as const;
 
-export const BUN_GLOBAL_INSTALL = "bun install -g @kitsunekode/kunai" as const;
-export const NPM_GLOBAL_INSTALL = "npm install -g @kitsunekode/kunai" as const;
+export const NPM_PACKAGE_NAME = "@kitsunekode/kunai" as const;
+export const NPM_PACKAGE_URL = `https://www.npmjs.com/package/${NPM_PACKAGE_NAME}` as const;
+export const GITHUB_RELEASES_URL = "https://github.com/KitsuneKode/kunai/releases/latest" as const;
+
+export const BUN_GLOBAL_INSTALL = `bun install -g ${NPM_PACKAGE_NAME}` as const;
+export const NPM_GLOBAL_INSTALL = `npm install -g ${NPM_PACKAGE_NAME}` as const;
 
 /** Preferred public install command for 0.3.0 (native binary bootstrap). */
 export const PREFERRED_INSTALL = NATIVE_INSTALL_SH;

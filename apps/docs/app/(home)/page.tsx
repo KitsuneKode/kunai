@@ -3,37 +3,22 @@ import { UsageLine } from "@/components/home/usage-line";
 import { codeMetadata } from "@/lib/code-metadata";
 import { featuredCommands, summarizeProviders } from "@/lib/home-presenters";
 import { websiteJsonLd } from "@/lib/json-ld";
-import { docsSiteUrl } from "@/lib/site";
+import { buildPageMetadata } from "@/lib/page-metadata";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 /** Allow hourly refresh of the quiet usage metrics line without a full rebuild. */
 export const revalidate = 3600;
 
-export const metadata: Metadata = {
-  title: {
-    absolute: "Kunai Docs",
-  },
+export const metadata: Metadata = buildPageMetadata({
+  title: "Kunai — terminal client for third-party streams & mpv",
+  absoluteTitle: true,
   description:
-    "A terminal-first guide for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
-  alternates: {
-    canonical: docsSiteUrl,
-  },
-  openGraph: {
-    title: "Kunai Docs",
-    description:
-      "A terminal-first guide for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
-    url: docsSiteUrl,
-    type: "website",
-    siteName: "Kunai Docs",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Kunai Docs",
-    description:
-      "A terminal-first guide for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
-  },
-};
+    "A terminal client that searches a title, resolves a stream a third-party provider already serves, hands playback to mpv, and recovers without a restart.",
+  socialDescription:
+    "Search a title, resolve a third-party stream, hand playback to mpv, and recover without restarting.",
+  path: "/",
+});
 
 export default function HomePage() {
   const jsonLd = websiteJsonLd();

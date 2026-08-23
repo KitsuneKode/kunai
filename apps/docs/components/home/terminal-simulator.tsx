@@ -1,14 +1,8 @@
 "use client";
 
 import { commandsForPalette } from "@/lib/home-presenters";
-import {
-  motion,
-  AnimatePresence,
-  useMotionValue,
-  useMotionTemplate,
-  useSpring,
-} from "motion/react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import type { HomeCommandMetadata, HomeLogEntry, HomeProviderMetadata } from "./types";
 
@@ -31,9 +25,9 @@ const TerminalSimulator = memo(function TerminalSimulator({
     { id: "welcome-1", text: `▌ Kunai Shell v${cliVersion}` },
     {
       id: "welcome-2",
-      text: `System verified. Dependencies: mpv ${runtimeBaseline.mpv}, bun ${runtimeBaseline.bun}`,
+      text: `Requires mpv ${runtimeBaseline.mpv}. The binary install embeds bun ${runtimeBaseline.bun}.`,
     },
-    { id: "welcome-3", text: "Ready. Type '/' or click a preset below to try." },
+    { id: "welcome-3", text: "Simulated shell. Type '/' or pick a command below to try one." },
   ]);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,29 +40,10 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const paletteInputRef = useRef<HTMLInputElement>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
 
-  const rotateXValue = useMotionValue(0);
-  const rotateYValue = useMotionValue(0);
-  const glareX = useMotionValue(50);
-  const glareY = useMotionValue(50);
-  const rotateX = useSpring(rotateXValue, { stiffness: 350, damping: 28 });
-  const rotateY = useSpring(rotateYValue, { stiffness: 350, damping: 28 });
-  const glareBackground = useMotionTemplate`radial-gradient(350px circle at ${glareX}% ${glareY}%, var(--kunai-mesh-a), transparent 80%)`;
-
   const filteredCommands = useMemo(
     () => commandsForPalette(paletteCommands, allCommands, searchQuery),
     [allCommands, paletteCommands, searchQuery],
   );
-
-  const handleMouseMove = useCallback((_e: React.MouseEvent<HTMLDivElement>) => {
-    // Keep the terminal calm — no 3D tilt on the docs home.
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    rotateXValue.set(0);
-    rotateYValue.set(0);
-    glareX.set(50);
-    glareY.set(50);
-  }, [glareX, glareY, rotateXValue, rotateYValue]);
 
   useEffect(() => {
     if (terminalBodyRef.current) {
@@ -311,34 +286,24 @@ const TerminalSimulator = memo(function TerminalSimulator({
   };
 
   return (
-    <div className="relative flex w-full items-center justify-center" style={{ perspective: 1200 }}>
+    <div className="relative flex w-full items-center justify-center">
       <div className="kunai-hero-glow" aria-hidden="true" />
 
-      <motion.aside
+      <aside
         ref={terminalStageRef}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        className={`kunai-terminal-stage group relative w-full overflow-hidden select-none ${
+        className={`kunai-terminal-stage relative w-full overflow-hidden ${
           commandPaletteOpen ? "is-focused" : ""
         }`}
-        style={{ transformStyle: "preserve-3d", rotateX, rotateY }}
         aria-label="Kunai terminal preview"
       >
-        <motion.div
-          className="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-          style={{ background: glareBackground }}
-        />
-
         <div className="kunai-terminal-top">
           <span className="text-fd-muted-foreground flex items-center gap-1.5 text-xs">
             <span className="kunai-status-dot kunai-status-dot--focus" />
             kunai shell
           </span>
           <span className="kunai-terminal-badges">
-            <span className="kunai-text-accent text-[10px] font-semibold tracking-wide">
-              cli active
-            </span>
-            <span className="kunai-step-meta">mpv verified</span>
+            <span className="kunai-step-meta tabular-nums">v{cliVersion}</span>
+            <span className="kunai-step-meta">simulated</span>
           </span>
         </div>
 
@@ -376,7 +341,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
                 initial={{ opacity: 0, y: 10, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                transition={{ type: "spring", duration: 0.3, bounce: 0.1 }}
+                transition={{ type: "spring", duration: 0.3, bounce: 0 }}
                 className="kunai-command-palette"
                 onClick={(e) => e.stopPropagation()}
                 role="presentation"
@@ -427,7 +392,8 @@ const TerminalSimulator = memo(function TerminalSimulator({
           </AnimatePresence>
         </div>
 
-        <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+        <div className="kunai-terminal-presets mt-4">
+          <span className="kunai-step-meta shrink-0">Try one</span>
           {["/search Dune", "/discover", "/calendar", "/setup"].map((cmd) => (
             <button
               type="button"
@@ -439,7 +405,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
             </button>
           ))}
         </div>
-      </motion.aside>
+      </aside>
     </div>
   );
 });

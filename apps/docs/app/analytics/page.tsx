@@ -1,26 +1,19 @@
 import { UsagePanel } from "@/components/analytics/usage-panel";
 import { fetchDocsAnalyticsMetrics } from "@/lib/analytics-metrics";
-import { docsSiteUrl } from "@/lib/site";
+import { buildPageMetadata } from "@/lib/page-metadata";
 import type { Metadata } from "next";
 
 export const revalidate = 3600;
 
-export const metadata: Metadata = {
-  title: "Usage analytics",
+export const metadata: Metadata = buildPageMetadata({
+  title: "Kunai usage analytics — public install pulse by version and OS",
+  absoluteTitle: true,
   description:
-    "See Kunai’s public usage pulse, the exact optional ping payload, and its privacy limits.",
-  alternates: {
-    canonical: `${docsSiteUrl}/analytics`,
-  },
-  openGraph: {
-    title: "Kunai usage analytics",
-    description:
-      "Public aggregate counts only — never titles, queries, or install UUIDs on this page.",
-    url: `${docsSiteUrl}/analytics`,
-    type: "website",
-    siteName: "Kunai Docs",
-  },
-};
+    "Kunai’s public usage pulse: aggregate install counts by version, OS, and architecture, the exact opt-in ping payload, and the privacy limits that bound it.",
+  socialDescription:
+    "Public aggregate counts only — never titles, queries, or install UUIDs on this page.",
+  path: "/analytics",
+});
 
 export default async function AnalyticsPage() {
   const metrics = await fetchDocsAnalyticsMetrics();

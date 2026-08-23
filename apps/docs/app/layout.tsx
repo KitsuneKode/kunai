@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(docsSiteUrl),
   title: {
     default: "Kunai Docs",
-    template: "%s | Kunai Docs",
+    template: "%s | Kunai — terminal streaming client",
   },
   description:
     "Guides for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",

@@ -1,6 +1,6 @@
 ---
 title: Commands And Shortcuts
-description: Shell commands, playback shortcuts, overlays, and safe actions available across Kunai.
+description: Every Kunai shell command, playback shortcut, overlay, and safe action, plus the full searchable command registry generated straight from the CLI itself.
 ---
 
 Kunai keeps the command palette context-aware. Press `/` in the shell to open the
@@ -68,6 +68,13 @@ they are not on the default browse palette.
 Help, diagnostics, settings, notifications, history, downloads, and provider
 pickers are overlays. They should not destroy the underlying playback or browse
 context. Close the overlay to return where you were.
+
+## Every shell command
+
+The full command registry, searchable. Generated from the CLI — it updates when
+you run `bun run --cwd apps/docs generate`.
+
+<CommandReference />
 
 ## Stable Hotkeys
 

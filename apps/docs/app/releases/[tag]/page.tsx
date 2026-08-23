@@ -1,10 +1,10 @@
 import { ReleaseDetail } from "@/components/releases/release-detail";
+import { buildPageMetadata } from "@/lib/page-metadata";
 import {
   getReleaseByTag,
   normalizeReleaseTag,
   readReleaseNotesArtifacts,
 } from "@/lib/release-notes";
-import { docsSiteUrl } from "@/lib/site";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
@@ -27,21 +27,20 @@ export async function generateMetadata({ params }: ReleaseTagPageProps): Promise
     return { title: "Release not found" };
   }
 
-  const path = `/releases/${normalizeReleaseTag(release.tag)}`;
-  return {
+  // A staged artifact can carry an empty summary (v0.2.6 does), which rendered
+  // the page with a blank meta description. Fall back to a real sentence rather
+  // than shipping an empty tag.
+  const summary = release.summary.replace(/\s+/g, " ").trim();
+  const description = summary
+    ? summary.slice(0, 160)
+    : `Release notes for Kunai ${release.tag}: what changed in this version of the terminal streaming client, and the exact command to install or upgrade to it.`;
+
+  return buildPageMetadata({
     title: release.title,
-    description: release.summary.slice(0, 160).replace(/\s+/g, " ").trim(),
-    alternates: {
-      canonical: `${docsSiteUrl}${path}`,
-    },
-    openGraph: {
-      title: release.title,
-      description: release.summary.slice(0, 160).replace(/\s+/g, " ").trim(),
-      url: `${docsSiteUrl}${path}`,
-      type: "article",
-      siteName: "Kunai Docs",
-    },
-  };
+    description,
+    path: `/releases/${normalizeReleaseTag(release.tag)}`,
+    type: "article",
+  });
 }
 
 export default async function ReleaseTagPage({ params }: ReleaseTagPageProps) {

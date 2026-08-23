@@ -1,33 +1,21 @@
 import { ReleaseInstallPanel } from "@/components/releases/release-install-panel";
 import { ReleaseTimeline } from "@/components/releases/release-timeline";
+import { buildPageMetadata } from "@/lib/page-metadata";
 import { latestReleaseNotesArtifact, readReleaseNotesArtifacts } from "@/lib/release-notes";
-import { docsSiteUrl } from "@/lib/site";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 export const dynamic = "force-static";
 
-export const metadata: Metadata = {
-  title: "Release Notes",
-  description: "Kunai changelog generated from the same tracked release artifacts used for GitHub.",
-  alternates: {
-    canonical: `${docsSiteUrl}/releases`,
-  },
-  openGraph: {
-    title: "Kunai Release Notes",
-    description:
-      "Kunai changelog generated from the same tracked release artifacts used for GitHub.",
-    url: `${docsSiteUrl}/releases`,
-    type: "website",
-    siteName: "Kunai Docs",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Kunai Release Notes",
-    description:
-      "Kunai changelog generated from the same tracked release artifacts used for GitHub.",
-  },
-};
+export const metadata: Metadata = buildPageMetadata({
+  title: "Kunai release notes — changelog and install commands",
+  absoluteTitle: true,
+  description:
+    "Every Kunai release, generated from the same tracked artifacts that produce the GitHub releases: what changed, the version tag, and the install command for it.",
+  socialDescription:
+    "Kunai changelog generated from the same tracked release artifacts used for GitHub.",
+  path: "/releases",
+});
 
 export default function ReleaseNotesPage() {
   const releases = readReleaseNotesArtifacts();
