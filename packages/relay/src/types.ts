@@ -34,7 +34,49 @@ export interface ProviderRelayRegistry {
 }
 
 export type RelayFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-export type RelayTransport = RelayFetch;
+export type RelayTransport = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+export type RelayConnectionDiagnosticCode =
+  | "ECONNREFUSED"
+  | "ECONNRESET"
+  | "EHOSTUNREACH"
+  | "ENETUNREACH"
+  | "ETIMEDOUT"
+  | "CONNECTION_FAILED";
+
+export type RelayDnsDiagnosticCode =
+  | "ABORT_ERR"
+  | "EAI_AGAIN"
+  | "ENOTFOUND"
+  | "DNS_LOOKUP_FAILED"
+  | "NO_ADDRESSES";
+
+export type RelayTransportDiagnostic =
+  | {
+      readonly event: "dns-failed";
+      readonly providerId?: string;
+      readonly hostname: string;
+      readonly code: RelayDnsDiagnosticCode;
+    }
+  | {
+      readonly event: "dns-rejected";
+      readonly providerId?: string;
+      readonly hostname: string;
+      readonly answerCount: number;
+      readonly families: readonly (4 | 6)[];
+      readonly code: "NON_PUBLIC_ADDRESS";
+    }
+  | {
+      readonly event: "connection-failed";
+      readonly providerId?: string;
+      readonly hostname: string;
+      readonly family: 4 | 6;
+      readonly attempt: number;
+      readonly answerCount: number;
+      readonly code: RelayConnectionDiagnosticCode;
+    };
+
+export type RelayDiagnosticSink = (diagnostic: RelayTransportDiagnostic) => void;
 
 export type RelayAuthorizationPolicy =
   | { readonly mode: "local-loopback" }
@@ -45,6 +87,7 @@ export interface RelayHandlerOptions {
   readonly registry: ProviderRelayRegistry;
   readonly authorization: RelayAuthorizationPolicy;
   readonly transport?: RelayTransport;
+  readonly diagnostics?: RelayDiagnosticSink;
   readonly timeoutMs?: number;
   readonly maxRedirects?: number;
 }

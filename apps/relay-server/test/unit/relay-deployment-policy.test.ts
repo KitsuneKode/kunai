@@ -151,6 +151,87 @@ test.each([
   expect(await result.clone().text()).not.toContain("secret");
 });
 
+test.each([
+  ["missing", undefined],
+  ["wrong", "Bearer secres"],
+])(
+  "deployment rejects a %s request bearer before reading its body",
+  async (_label, authorization) => {
+    let bodyReads = 0;
+    let written: Response | undefined;
+    const rpcHandler = createRelayRpcHandler({
+      readToken: () => "secret",
+      registry,
+      async readBody() {
+        bodyReads++;
+        return new TextEncoder().encode(
+          JSON.stringify({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
+        );
+      },
+      async writeResponse(_response, result) {
+        written = result;
+      },
+    });
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (authorization) headers.authorization = authorization;
+
+    await rpcHandler(
+      {
+        method: "POST",
+        headers,
+        query: { providerId: "allanime" },
+      } as unknown as Parameters<typeof rpcHandler>[0],
+      {} as Parameters<typeof rpcHandler>[1],
+    );
+
+    expect(written?.status).toBe(401);
+    expect(bodyReads).toBe(0);
+  },
+);
+
+test.each([
+  [
+    "headersDistinct",
+    {
+      headers: { authorization: "Bearer secret" },
+      headersDistinct: { authorization: ["Bearer secret", "Bearer wrong"] },
+    },
+  ],
+  [
+    "rawHeaders",
+    {
+      headers: { authorization: "Bearer secret" },
+      rawHeaders: ["Authorization", "Bearer secret", "Authorization", "Bearer wrong"],
+    },
+  ],
+])("deployment rejects duplicate Authorization preserved by %s", async (_label, rawRequest) => {
+  let bodyReads = 0;
+  let written: Response | undefined;
+  const rpcHandler = createRelayRpcHandler({
+    readToken: () => "secret",
+    registry,
+    async readBody() {
+      bodyReads++;
+      return new Uint8Array();
+    },
+    async writeResponse(_response, result) {
+      written = result;
+    },
+  });
+
+  await rpcHandler(
+    {
+      method: "POST",
+      ...rawRequest,
+      query: { providerId: "allanime" },
+    } as unknown as Parameters<typeof rpcHandler>[0],
+    {} as Parameters<typeof rpcHandler>[1],
+  );
+
+  expect(written?.status).toBe(401);
+  expect(bodyReads).toBe(0);
+});
+
 test("deployment exact bearer reaches the shared relay handler", async () => {
   let upstreamCalls = 0;
   const result = await invokeFactory({

@@ -1,22 +1,33 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { filterForwardHeaders, mergeRelayHeaders, RelayValidationError } from "./forward-headers";
-import { createPinnedRelayTransport, isPublicRelayAddress } from "./pinned-transport";
+import {
+  createPinnedRelayTransport,
+  isPublicRelayAddress,
+  writeRelayDiagnostic,
+} from "./pinned-transport";
 import { parseHttpUrl } from "./registry";
 import {
   DEFAULT_MAX_REDIRECTS,
   DEFAULT_MAX_REQUEST_BODY_BYTES,
   DEFAULT_MAX_RESPONSE_BODY_BYTES,
   DEFAULT_RELAY_TIMEOUT_MS,
-  type RelayFetch,
   type RelayErrorCode,
   type RelayHandlerOptions,
   type RelayRpcErrorBody,
   type RelayRpcRequest,
   type RelayMethod,
+  type RelayTransport,
 } from "./types";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const CROSS_ORIGIN_SENSITIVE_HEADERS = [
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+  "x-aa-boot",
+  "x-session-token",
+] as const;
 const RELAY_RESPONSE_HEADERS = [
   "content-type",
   "content-length",
@@ -43,7 +54,7 @@ export async function handleRpcRequest(
         503,
       );
     }
-    if (!isAuthorized(request, token)) {
+    if (!isRelayBearerAuthorized(request.headers.get("authorization"), token)) {
       return relayError("unauthorized", options.providerId, "Relay token is required", 401);
     }
   }
@@ -126,6 +137,8 @@ export async function handleRpcRequest(
       fetchImpl:
         options.transport ??
         createPinnedRelayTransport({
+          providerId: options.providerId,
+          diagnostics: options.diagnostics ?? writeRelayDiagnostic,
           maxRequestBodyBytes: maxBodyBytes,
           maxResponseBodyBytes,
         }),
@@ -206,7 +219,7 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 }
 
 async function fetchWithValidatedRedirects(input: {
-  readonly fetchImpl: RelayFetch;
+  readonly fetchImpl: RelayTransport;
   readonly providerId: string;
   readonly registry: RelayHandlerOptions["registry"];
   readonly url: URL;
@@ -217,6 +230,7 @@ async function fetchWithValidatedRedirects(input: {
   let currentUrl = input.url;
   let method = input.init.method ?? "GET";
   let body = input.init.body;
+  const headers = new Headers(input.init.headers);
 
   for (let redirectCount = 0; redirectCount <= input.maxRedirects; redirectCount++) {
     const controller = new AbortController();
@@ -226,6 +240,7 @@ async function fetchWithValidatedRedirects(input: {
         ...input.init,
         method,
         body,
+        headers,
         redirect: "manual",
         signal: controller.signal,
       });
@@ -239,10 +254,17 @@ async function fetchWithValidatedRedirects(input: {
           502,
         );
       }
-      currentUrl = new URL(location, currentUrl);
+      const redirectUrl = new URL(location, currentUrl);
+      if (currentUrl.protocol === "https:" && redirectUrl.protocol === "http:") {
+        throw new RelayValidationError(
+          "redirect-not-allowed",
+          "HTTPS upstream cannot redirect to HTTP",
+          502,
+        );
+      }
       if (
-        isUnsafeHostname(currentUrl.hostname) ||
-        !input.registry.isHostAllowed(input.providerId, currentUrl, "metadata")
+        isUnsafeHostname(redirectUrl.hostname) ||
+        !input.registry.isHostAllowed(input.providerId, redirectUrl, "metadata")
       ) {
         throw new RelayValidationError(
           "redirect-not-allowed",
@@ -250,6 +272,10 @@ async function fetchWithValidatedRedirects(input: {
           502,
         );
       }
+      if (redirectUrl.origin !== currentUrl.origin) {
+        for (const name of CROSS_ORIGIN_SENSITIVE_HEADERS) headers.delete(name);
+      }
+      currentUrl = redirectUrl;
       if (response.status === 303) {
         method = "GET";
         body = undefined;
@@ -343,8 +369,10 @@ function corsPreflightResponse(): Response {
   });
 }
 
-function isAuthorized(request: Request, token: string): boolean {
-  const authorization = request.headers.get("authorization");
+export function isRelayBearerAuthorized(
+  authorization: string | null | undefined,
+  token: string,
+): boolean {
   if (!authorization) return false;
   const expected = `Bearer ${token}`;
   const given = Buffer.from(authorization, "utf8");
@@ -368,8 +396,11 @@ function isIPLiteral(hostname: string): boolean {
 }
 
 function isAbortLike(error: unknown): boolean {
+  const candidate = error as { readonly code?: unknown; readonly name?: unknown } | null;
   return (
     (error instanceof DOMException && error.name === "AbortError") ||
+    candidate?.name === "AbortError" ||
+    candidate?.code === "ABORT_ERR" ||
     String(error).toLowerCase().includes("timeout")
   );
 }

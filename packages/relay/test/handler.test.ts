@@ -10,7 +10,7 @@ const localLoopbackAuthorization = {
   mode: "local-loopback",
 } satisfies RelayAuthorizationPolicy;
 
-const registry = buildProviderRelayRegistry([
+const providerRegistry = buildProviderRelayRegistry([
   {
     providerId: "allanime",
     manifest: {
@@ -60,7 +60,7 @@ test("handleRpcRequest forwards allowed metadata requests", async () => {
     ),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       async transport(_url, init) {
         upstreamAuth = new Headers(init?.headers).get("authorization");
@@ -82,7 +82,7 @@ test("handleRpcRequest rejects provider confusion", async () => {
     }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       async transport() {
         throw new Error("should not fetch");
@@ -102,7 +102,7 @@ test("handleRpcRequest validates redirects before following them", async () => {
     }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       async transport() {
         return new Response(null, {
@@ -124,7 +124,11 @@ test("handleRpcRequest rejects oversized upstream request bodies", async () => {
       upstreamUrl: "https://api.allanime.day/api",
       body: "x".repeat(129),
     }),
-    { providerId: "allanime", registry, authorization: localLoopbackAuthorization },
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+    },
   );
 
   expect(response.status).toBe(413);
@@ -275,7 +279,7 @@ test("handleRpcRequest rejects oversized upstream metadata responses", async () 
     }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       async transport() {
         return new Response("x".repeat(257), {
@@ -298,7 +302,7 @@ test("handleRpcRequest does not read or return a body for HEAD responses", async
     }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       async transport(_url, init) {
         expect(init?.method).toBe("HEAD");
@@ -322,7 +326,7 @@ test("handleRpcRequest strips upstream set-cookie from metadata responses", asyn
     }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       async transport() {
         return Response.json(
@@ -358,7 +362,7 @@ test.each([
     ),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: { mode: "bearer", token: "secret" },
       async transport() {
         return Response.json({ ok: true });
@@ -377,7 +381,7 @@ test("handleRpcRequest accepts the exact bearer token", async () => {
     }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: { mode: "bearer", token: "secret" },
       async transport() {
         return Response.json({ ok: true });
@@ -397,7 +401,7 @@ test.each(["", "   "])("handleRpcRequest rejects a blank bearer token", async (t
     }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: { mode: "bearer", token },
       async transport() {
         throw new Error("should not fetch");
@@ -417,7 +421,7 @@ test("handleRpcRequest refuses a provider whose manifest is not relay-safe", asy
     }),
     {
       providerId: "videasy",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       async transport() {
         throw new Error("should not fetch");
@@ -436,7 +440,7 @@ test("handleRpcRequest handles CORS preflight without upstream fetch", async () 
     }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
     },
   );
@@ -457,7 +461,7 @@ test("handleRpcRequest authenticates before pinned transport resolves DNS", asyn
     ),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: { mode: "bearer", token: "secret" },
       transport: createPinnedRelayTransport({
         resolveAddresses: async () => {
@@ -513,7 +517,7 @@ test("handleRpcRequest re-resolves and re-pins every allowed redirect target", a
     rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/start" }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       transport,
     },
@@ -557,7 +561,7 @@ test("handleRpcRequest rejects a redirect whose fresh DNS set contains a private
     rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/start" }),
     {
       providerId: "allanime",
-      registry,
+      registry: providerRegistry,
       authorization: localLoopbackAuthorization,
       transport,
     },
@@ -566,6 +570,176 @@ test("handleRpcRequest rejects a redirect whose fresh DNS set contains a private
   expect(response.status).toBe(403);
   expect(await response.json()).toMatchObject({ error: { code: "host-not-allowed" } });
   expect(resolvedHosts).toEqual(["api.allanime.day", "cdn.api.allanime.day"]);
+});
+
+test("handleRpcRequest strips provider credentials from a cross-origin redirect", async () => {
+  const seenHeaders: Headers[] = [];
+  let attempt = 0;
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "GET",
+      upstreamUrl: "https://api.allanime.day/start",
+      headers: {
+        "x-aa-boot": "boot-secret",
+        "x-build-id": "119",
+        "x-session-token": "session-secret",
+      },
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport(_url, init) {
+        seenHeaders.push(new Headers(init?.headers));
+        if (attempt++ === 0) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://cdn.api.allanime.day/next" },
+          });
+        }
+        return Response.json({ ok: true });
+      },
+    },
+  );
+
+  expect(response.status).toBe(200);
+  expect(seenHeaders).toHaveLength(2);
+  expect(seenHeaders[0]?.get("x-aa-boot")).toBe("boot-secret");
+  expect(seenHeaders[0]?.get("x-session-token")).toBe("session-secret");
+  expect(seenHeaders[1]?.get("x-aa-boot")).toBeNull();
+  expect(seenHeaders[1]?.get("x-session-token")).toBeNull();
+  expect(seenHeaders[1]?.get("x-build-id")).toBe("119");
+});
+
+test("handleRpcRequest retains provider credentials on a same-origin redirect", async () => {
+  const seenTokens: Array<string | null> = [];
+  let attempt = 0;
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "GET",
+      upstreamUrl: "https://api.allanime.day/start",
+      headers: { "x-session-token": "session-secret" },
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport(_url, init) {
+        seenTokens.push(new Headers(init?.headers).get("x-session-token"));
+        if (attempt++ === 0) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://api.allanime.day/next" },
+          });
+        }
+        return Response.json({ ok: true });
+      },
+    },
+  );
+
+  expect(response.status).toBe(200);
+  expect(seenTokens).toEqual(["session-secret", "session-secret"]);
+});
+
+test("handleRpcRequest strips standard credentials injected by defaults on origin change", async () => {
+  const credentialRegistry = buildProviderRelayRegistry([
+    {
+      providerId: "credential-probe",
+      manifest: {
+        relaySafe: true,
+        relayProfile: {
+          upstreamHosts: ["a.example", "b.example"],
+          defaultHeaders: {
+            Authorization: "Bearer provider-secret",
+            Cookie: "session=cookie-secret",
+            "Proxy-Authorization": "Basic proxy-secret",
+          },
+        },
+      },
+    },
+  ] as never);
+  const seenHeaders: Headers[] = [];
+  let attempt = 0;
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://a.example/start" }),
+    {
+      providerId: "credential-probe",
+      registry: credentialRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport(_url, init) {
+        seenHeaders.push(new Headers(init?.headers));
+        if (attempt++ === 0) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://b.example/next" },
+          });
+        }
+        return Response.json({ ok: true });
+      },
+    },
+  );
+
+  expect(response.status).toBe(200);
+  expect(seenHeaders[0]?.get("authorization")).toBe("Bearer provider-secret");
+  expect(seenHeaders[0]?.get("cookie")).toBe("session=cookie-secret");
+  expect(seenHeaders[0]?.get("proxy-authorization")).toBe("Basic proxy-secret");
+  expect(seenHeaders[1]?.get("authorization")).toBeNull();
+  expect(seenHeaders[1]?.get("cookie")).toBeNull();
+  expect(seenHeaders[1]?.get("proxy-authorization")).toBeNull();
+});
+
+test("handleRpcRequest rejects an HTTPS to HTTP redirect before another request", async () => {
+  let attempts = 0;
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/start" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport() {
+        attempts++;
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://api.allanime.day/next" },
+        });
+      },
+    },
+  );
+
+  expect(response.status).toBe(502);
+  expect(await response.json()).toMatchObject({ error: { code: "redirect-not-allowed" } });
+  expect(attempts).toBe(1);
+});
+
+test("handleRpcRequest maps Bun node:http AbortError to an upstream timeout", async () => {
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/start" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      timeoutMs: 1,
+      async transport(_url, init) {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(
+                Object.assign(new Error("The operation was aborted"), {
+                  name: "AbortError",
+                  code: "ABORT_ERR",
+                }),
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    },
+  );
+
+  expect(response.status).toBe(504);
+  expect(await response.json()).toMatchObject({ error: { code: "upstream-timeout" } });
 });
 
 function rpcRequest(body: unknown, token: string | null = "secret"): Request {

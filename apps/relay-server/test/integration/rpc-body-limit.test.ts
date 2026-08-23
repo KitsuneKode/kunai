@@ -126,6 +126,34 @@ describe("relay rpc body limit", () => {
     expect(upstreamCalls).toBe(0);
   });
 
+  test("missing bearer is rejected from headers without waiting for its body", async () => {
+    const { port } = server.address() as { port: number };
+    const status = await readStatusFromIncompleteRequest(
+      port,
+      "POST /rpc/allanime HTTP/1.1\r\n" +
+        "Host: 127.0.0.1\r\n" +
+        "Content-Type: application/json\r\n" +
+        "Content-Length: 10000000\r\n\r\n",
+    );
+
+    expect(status).toContain("401");
+  }, 20000);
+
+  test("duplicate bearer headers are rejected without waiting for the body", async () => {
+    const { port } = server.address() as { port: number };
+    const status = await readStatusFromIncompleteRequest(
+      port,
+      "POST /rpc/allanime HTTP/1.1\r\n" +
+        "Host: 127.0.0.1\r\n" +
+        `Authorization: Bearer ${RELAY_TOKEN}\r\n` +
+        "Authorization: Bearer attacker\r\n" +
+        "Content-Type: application/json\r\n" +
+        "Content-Length: 10000000\r\n\r\n",
+    );
+
+    expect(status).toContain("401");
+  }, 20000);
+
   test("an exact bearer under the ceiling reaches normal envelope validation", async () => {
     // Malformed on purpose: the point is that it is judged on its contents
     // rather than rejected for its size, so the fix did not simply refuse
@@ -136,3 +164,19 @@ describe("relay rpc body limit", () => {
     await expect(response.json()).resolves.toMatchObject({ error: { code: "bad-request" } });
   });
 });
+
+async function readStatusFromIncompleteRequest(port: number, requestHead: string): Promise<string> {
+  const { connect } = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, "127.0.0.1", () => socket.write(requestHead));
+    socket.on("data", (chunk) => {
+      resolve(chunk.toString("utf8").split("\r\n")[0] ?? "");
+      socket.destroy();
+    });
+    socket.on("error", reject);
+    socket.setTimeout(5000, () => {
+      socket.destroy();
+      reject(new Error("no response before the unfinished request body"));
+    });
+  });
+}

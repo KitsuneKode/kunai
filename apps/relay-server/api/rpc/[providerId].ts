@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   DEFAULT_MAX_REQUEST_BODY_BYTES,
   handleRpcRequest,
+  isRelayBearerAuthorized,
   relayError,
   type ProviderRelayRegistry,
   type RelayHandlerOptions,
@@ -60,6 +61,17 @@ export function createRelayRpcHandler(dependencies: RelayRpcHandlerDependencies)
       return;
     }
 
+    if (
+      req.method !== "OPTIONS" &&
+      !isRelayBearerAuthorized(singleAuthorizationValue(req), token)
+    ) {
+      await writeResponse(
+        res,
+        relayError("unauthorized", undefined, "Relay token is required", 401),
+      );
+      return;
+    }
+
     const providerId = firstQueryValue(req.query?.providerId);
     if (!providerId) {
       await writeResponse(res, Response.json({ error: { code: "bad-request" } }, { status: 400 }));
@@ -100,6 +112,28 @@ export default createRelayRpcHandler({
 
 function firstQueryValue(value: string | readonly string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];
+}
+
+function singleAuthorizationValue(req: VercelLikeRequest): string | undefined {
+  const distinctValues = req.headersDistinct?.authorization;
+  if (distinctValues !== undefined) {
+    return distinctValues.length === 1 ? distinctValues[0] : undefined;
+  }
+
+  const rawHeaders = req.rawHeaders;
+  if (Array.isArray(rawHeaders) && rawHeaders.length > 0) {
+    const rawValues: string[] = [];
+    for (let index = 0; index < rawHeaders.length; index += 2) {
+      if (rawHeaders[index]?.toLowerCase() === "authorization") {
+        const value = rawHeaders[index + 1];
+        if (value !== undefined) rawValues.push(value);
+      }
+    }
+    return rawValues.length === 1 ? rawValues[0] : undefined;
+  }
+
+  const value = req.headers.authorization;
+  return typeof value === "string" ? value : undefined;
 }
 
 function nodeRequestToWebRequest(

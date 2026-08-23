@@ -9,7 +9,21 @@ import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 
 import { RelayValidationError } from "./forward-headers";
-import type { RelayFetch } from "./types";
+import type {
+  RelayConnectionDiagnosticCode,
+  RelayDiagnosticSink,
+  RelayDnsDiagnosticCode,
+  RelayTransport,
+  RelayTransportDiagnostic,
+} from "./types";
+
+const RETRYABLE_CONNECTION_CODES = new Set<RelayConnectionDiagnosticCode>([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ETIMEDOUT",
+]);
 
 export interface RelayResolvedAddress {
   readonly address: string;
@@ -26,6 +40,8 @@ export type RelayNodeRequest = (
 ) => ClientRequest;
 
 export interface PinnedRelayTransportOptions {
+  readonly providerId?: string;
+  readonly diagnostics?: RelayDiagnosticSink;
   readonly resolveAddresses?: RelayAddressResolver;
   readonly request?: RelayNodeRequest;
   readonly maxRequestBodyBytes: number;
@@ -37,7 +53,7 @@ export interface PinnedRelayTransportOptions {
  * exact DNS answer set that was validated for this request. Redirects call the
  * transport again, so each hop receives a fresh all-address validation.
  */
-export function createPinnedRelayTransport(options: PinnedRelayTransportOptions): RelayFetch {
+export function createPinnedRelayTransport(options: PinnedRelayTransportOptions): RelayTransport {
   const resolveAddresses = options.resolveAddresses ?? resolveAllAddresses;
   const request = options.request ?? dispatchNodeRequest;
 
@@ -58,10 +74,28 @@ export function createPinnedRelayTransport(options: PinnedRelayTransportOptions)
 
     const originalHostname = stripIpv6Brackets(url.hostname);
     const literalFamily = isIP(originalHostname);
-    const answers = literalFamily
-      ? [{ address: originalHostname, family: literalFamily as 4 | 6 }]
-      : await resolveAddresses(originalHostname);
+    const diagnosticHostname = literalFamily === 0 ? originalHostname : "ip-literal";
+    let answers: readonly RelayResolvedAddress[];
+    try {
+      answers = literalFamily
+        ? [{ address: originalHostname, family: literalFamily as 4 | 6 }]
+        : await abortable(resolveAddresses(originalHostname), init.signal);
+    } catch (error) {
+      emitDiagnostic(options.diagnostics, {
+        event: "dns-failed",
+        ...(options.providerId ? { providerId: options.providerId } : {}),
+        hostname: diagnosticHostname,
+        code: dnsDiagnosticCode(error),
+      });
+      throw error;
+    }
     if (answers.length === 0) {
+      emitDiagnostic(options.diagnostics, {
+        event: "dns-failed",
+        ...(options.providerId ? { providerId: options.providerId } : {}),
+        hostname: diagnosticHostname,
+        code: "NO_ADDRESSES",
+      });
       throw new RelayValidationError("upstream-error", "Upstream host did not resolve", 502);
     }
     if (
@@ -69,6 +103,14 @@ export function createPinnedRelayTransport(options: PinnedRelayTransportOptions)
         (answer) => isIP(answer.address) !== answer.family || !isPublicRelayAddress(answer.address),
       )
     ) {
+      emitDiagnostic(options.diagnostics, {
+        event: "dns-rejected",
+        ...(options.providerId ? { providerId: options.providerId } : {}),
+        hostname: diagnosticHostname,
+        answerCount: answers.length,
+        families: [...new Set(answers.map((answer) => answer.family))].sort(),
+        code: "NON_PUBLIC_ADDRESS",
+      });
       throw new RelayValidationError(
         "host-not-allowed",
         "Upstream DNS returned a non-public address",
@@ -76,31 +118,59 @@ export function createPinnedRelayTransport(options: PinnedRelayTransportOptions)
       );
     }
 
-    const selected = answers[0];
-    if (!selected) {
-      throw new RelayValidationError("upstream-error", "Upstream host did not resolve", 502);
-    }
-
     const headers: Record<string, string> = {};
     new Headers(init.headers).forEach((value, name) => {
       headers[name] = value;
     });
     headers.host = url.host;
-    const requestOptions: RelayNodeRequestOptions = {
-      protocol: url.protocol,
-      hostname: selected.address,
-      family: selected.family,
-      port: url.port || undefined,
-      path: `${url.pathname}${url.search}`,
-      method: init.method ?? "GET",
-      headers,
-      agent: false,
-      signal: init.signal ?? undefined,
-      ...(url.protocol === "https:" && literalFamily === 0 ? { servername: originalHostname } : {}),
-    };
+    const method = init.method ?? "GET";
+    for (const [index, selected] of answers.entries()) {
+      const requestOptions: RelayNodeRequestOptions = {
+        protocol: url.protocol,
+        hostname: selected.address,
+        family: selected.family,
+        port: url.port || undefined,
+        path: `${url.pathname}${url.search}`,
+        method,
+        headers,
+        agent: false,
+        signal: init.signal ?? undefined,
+        ...(url.protocol === "https:" && literalFamily === 0
+          ? { servername: originalHostname }
+          : {}),
+      };
 
-    return sendBoundedRequest(request, requestOptions, body, options.maxResponseBodyBytes);
+      try {
+        return await sendBoundedRequest(
+          request,
+          requestOptions,
+          body,
+          options.maxResponseBodyBytes,
+        );
+      } catch (error) {
+        if (error instanceof RelayRequestAttemptError && !error.responseStarted) {
+          emitDiagnostic(options.diagnostics, {
+            event: "connection-failed",
+            ...(options.providerId ? { providerId: options.providerId } : {}),
+            hostname: diagnosticHostname,
+            family: selected.family,
+            attempt: index + 1,
+            answerCount: answers.length,
+            code: connectionDiagnosticCode(error.attemptCause),
+          });
+        }
+        if (!shouldRetryAddress(error, method, index, answers.length, init.signal)) {
+          throw unwrapAttemptError(error);
+        }
+      }
+    }
+
+    throw new RelayValidationError("upstream-error", "Upstream host did not resolve", 502);
   };
+}
+
+export function writeRelayDiagnostic(diagnostic: RelayTransportDiagnostic): void {
+  console.warn(JSON.stringify({ scope: "kunai-relay", ...diagnostic }));
 }
 
 export function isPublicRelayAddress(address: string): boolean {
@@ -153,15 +223,17 @@ function sendBoundedRequest(
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let responseStarted = false;
     const settleReject = (error: unknown): void => {
       if (settled) return;
       settled = true;
-      reject(error);
+      reject(new RelayRequestAttemptError(error, responseStarted));
     };
 
     let outbound: ClientRequest;
     try {
       outbound = dispatch(requestOptions, (upstream) => {
+        responseStarted = true;
         const declaredLength = parseContentLength(upstream.headers["content-length"]);
         if (declaredLength !== null && declaredLength > maxResponseBodyBytes) {
           const error = responseTooLargeError();
@@ -212,8 +284,105 @@ function sendBoundedRequest(
   });
 }
 
-function requestUrl(input: string | URL | Request): URL {
-  return input instanceof Request ? new URL(input.url) : new URL(input);
+class RelayRequestAttemptError extends Error {
+  override readonly name = "RelayRequestAttemptError";
+
+  constructor(
+    readonly attemptCause: unknown,
+    readonly responseStarted: boolean,
+  ) {
+    super(
+      attemptCause instanceof Error ? attemptCause.message : "Relay connection attempt failed",
+      {
+        cause: attemptCause,
+      },
+    );
+  }
+}
+
+function shouldRetryAddress(
+  error: unknown,
+  method: string,
+  index: number,
+  answerCount: number,
+  signal: AbortSignal | null | undefined,
+): boolean {
+  if (!(error instanceof RelayRequestAttemptError) || error.responseStarted) return false;
+  if (index + 1 >= answerCount || signal?.aborted) return false;
+  const normalizedMethod = method.toUpperCase();
+  if (normalizedMethod !== "GET" && normalizedMethod !== "HEAD") return false;
+  return isRetryableConnectionError(error.attemptCause);
+}
+
+function isRetryableConnectionError(error: unknown): boolean {
+  return connectionDiagnosticCode(error) !== "CONNECTION_FAILED";
+}
+
+function connectionDiagnosticCode(error: unknown): RelayConnectionDiagnosticCode {
+  const code = (error as { readonly code?: unknown } | null)?.code;
+  return typeof code === "string" &&
+    RETRYABLE_CONNECTION_CODES.has(code as RelayConnectionDiagnosticCode)
+    ? (code as RelayConnectionDiagnosticCode)
+    : "CONNECTION_FAILED";
+}
+
+function dnsDiagnosticCode(error: unknown): RelayDnsDiagnosticCode {
+  const code = (error as { readonly code?: unknown } | null)?.code;
+  if (code === "ABORT_ERR" || code === "EAI_AGAIN" || code === "ENOTFOUND") return code;
+  return "DNS_LOOKUP_FAILED";
+}
+
+function emitDiagnostic(
+  sink: RelayDiagnosticSink | undefined,
+  diagnostic: RelayTransportDiagnostic,
+): void {
+  sink?.(diagnostic);
+}
+
+function unwrapAttemptError(error: unknown): unknown {
+  return error instanceof RelayRequestAttemptError ? error.attemptCause : error;
+}
+
+function requestUrl(input: string | URL): URL {
+  if (input instanceof Request) {
+    throw new RelayValidationError(
+      "bad-request",
+      "Relay transport accepts only an explicit URL and request init",
+      400,
+    );
+  }
+  return new URL(input);
+}
+
+function abortable<T>(promise: Promise<T>, signal: AbortSignal | null | undefined): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(relayAbortError(signal.reason));
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      cleanup();
+      reject(relayAbortError(signal.reason));
+    };
+    const cleanup = (): void => signal.removeEventListener("abort", onAbort);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        cleanup();
+        return resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        return reject(error);
+      },
+    );
+  });
+}
+
+function relayAbortError(reason: unknown): Error {
+  return Object.assign(new Error("The operation was aborted", { cause: reason }), {
+    name: "AbortError",
+    code: "ABORT_ERR",
+  });
 }
 
 async function requestBodyBytes(body: RequestInit["body"]): Promise<Uint8Array> {

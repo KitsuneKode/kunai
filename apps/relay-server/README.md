@@ -92,13 +92,27 @@ export KUNAI_RELAY_TOKEN=...
 ## Safety Model
 
 - Only `POST /rpc/:providerId` and `GET /health` are implemented in v1.
+- Internet deployments reject missing, duplicate, or incorrect bearer credentials
+  before reading the RPC request body. `OPTIONS` remains a body-free CORS preflight.
 - Upstream URLs must match the selected provider manifest `relayProfile`.
-- Private, loopback, link-local, localhost, and non-HTTP(S) upstreams are rejected before fetch.
-- Unsafe headers such as `Authorization`, `Cookie`, `Host`, and `X-Forwarded-*` are never forwarded upstream.
-- Redirects are followed only after each target is validated against the same provider allowlist.
+- Private, loopback, link-local, localhost, and non-HTTP(S) upstreams are rejected
+  before a socket opens. DNS names are resolved once per hop, the complete answer
+  set is rejected if any address is non-public, and the connection is pinned to a
+  vetted address while retaining the original HTTP `Host` and TLS SNI.
+- Client relay credentials, cookies, `Host`, and `X-Forwarded-*` headers are never
+  forwarded upstream. Provider credentials required by an initial request are
+  stripped if a redirect changes origin.
+- Redirects are followed only after each target is validated against the same
+  provider allowlist and receives a fresh pinned DNS lookup. HTTPS-to-HTTP
+  redirects are rejected.
+- GET and HEAD may try another already-vetted DNS address after a connection-level
+  failure before any response. POST is never replayed after an ambiguous attempt.
 - Metadata request bodies default to 64 KiB max; metadata responses default to 2 MiB max.
+- The upstream deadline covers DNS resolution and socket/response work.
 - Relay-generated errors are structured JSON with stable `error.code` values for CLI diagnostics.
-- Upstream response cookies and bodies are not logged or exposed beyond the filtered RPC response.
+- Server diagnostics contain only stable provider/hostname/phase/family/count/error
+  fields. URL paths, queries, addresses, headers, bodies, tokens, and raw errors are
+  never logged. Upstream response cookies remain filtered from the RPC response.
 - Stream/video relaying is intentionally not active by default. mpv receives the final CDN URL and fetches directly.
 
 This app is fail-closed. If a provider host is missing from `relayProfile`, update
