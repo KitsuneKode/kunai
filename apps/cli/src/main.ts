@@ -40,6 +40,7 @@ import {
   prepareReplayTitleForProvider,
   titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
+import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
 import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
@@ -821,9 +822,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (Object.keys(sessionOverrides).length > 0) {
     config.applySessionOverrides(sessionOverrides);
   }
-  await maybeRunAutoCleanupDownloads(container);
-
   if (args.supportBundle) {
+    await maybeRunAutoCleanupDownloads(container);
     const { exportLocalSupportBundle } = await import("./app-shell/export-local-support-bundle");
     const written = await exportLocalSupportBundle(container);
     process.stdout.write(`${written.path}\n`);
@@ -986,14 +986,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
   }
 
-  runBackgroundTask({
-    task: "storage.maintenance.startup",
-    category: "cache",
-    diagnostics: container.diagnosticsService,
-    logger,
-    run: () => container.storageMaintenance.runStartupMaintenance(),
-  });
-
   if (args.debug) {
     logger.info("Kunai started", {
       version: KUNAI_VERSION,
@@ -1046,8 +1038,30 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       lazyImportMs: Math.round(performance.now() - shellLoadStartedAt),
     });
   }
-  launchSessionApp(container);
-  recordCliStartupMilestone(container.diagnosticsService, "shell-mounted");
+  runBackgroundTask({
+    task: "startup.post-paint-maintenance",
+    category: "cache",
+    diagnostics: container.diagnosticsService,
+    logger,
+    run: launchShellWithPostPaintStartupWork({
+      scheduler: container.backgroundWorkScheduler,
+      launchShell: () => {
+        void launchSessionApp(container);
+      },
+      recordShellMounted: () =>
+        recordCliStartupMilestone(container.diagnosticsService, "shell-mounted"),
+      tasks: [
+        {
+          id: "storage-maintenance",
+          run: () => container.storageMaintenance.runStartupMaintenance().then(() => undefined),
+        },
+        {
+          id: "download-cleanup-scan",
+          run: () => maybeRunAutoCleanupDownloads(container),
+        },
+      ],
+    }),
+  });
   // Must stay after first paint: the enrich loop and the consolidator it can
   // trigger run synchronous SQLite work that would starve the awaited shell
   // import and delay the first render.

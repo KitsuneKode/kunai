@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-08-24"
 ---
 
 # Kunai — Runtime Architecture
@@ -206,7 +206,10 @@ Automatic storage maintenance is conservative:
 - it may prune expired `stream_cache`, `source_inventory`, `recommendation_cache`, and `schedule_cache` rows
 - it may cap `resolve_traces` and age out stale provider-health cache
 - it may run `PRAGMA optimize` and an explicit passive WAL checkpoint
-- it runs as best-effort startup background work and must not block playback or shell startup
+- it is admitted through the owned background-work scheduler only after the
+  persistent shell mounts, then yields an event-loop turn before synchronous
+  SQLite begins; shutdown cancels admission and drains active work before the
+  database handles close
 - it must not run automatic `VACUUM`
 - it must not delete user-owned facts such as `history_progress`, lists, config, sync tokens, or completed download records
 
