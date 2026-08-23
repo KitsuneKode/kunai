@@ -352,8 +352,13 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.zen = Boolean(options.zen);
   args.quick = Boolean(options.quick);
   if (args.zen) {
+    // Zen is a *layout*: bare chrome, ani-cli-style. It used to also set
+    // `quick`, which is not a layout flag at all — `bootstrap-intent` reads it
+    // as "auto-pick result #1", so `-S "Dune" --zen` skipped the result list
+    // and started playing the top hit. `cli-reference.mdx` even enumerates the
+    // flags that auto-play and does not list `--zen`. Compose them explicitly
+    // (`--zen --quick`) to get both.
     args.minimal = true;
-    args.quick = true;
   }
 
   const parsedJump = options.jump ? Number.parseInt(options.jump, 10) : Number.NaN;
