@@ -27,7 +27,6 @@ import {
   buildYoutubeYtdlProfile,
   getYoutubeProviderConfig,
   runYtDlpProcess,
-  type YtDlpProcess,
 } from "@kunai/providers/youtube";
 import {
   externalIdsToAliases,
@@ -69,6 +68,10 @@ const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
+const FFPROBE_DEADLINE_MS = 30_000;
+const FFPROBE_TERMINATION_GRACE_MS = 2_500;
+const FFPROBE_FORCE_WAIT_MS = 2_500;
+const FFPROBE_IO_CLEANUP_MS = 250;
 const YTDLP_HEADER_CRLF_PATTERN = /[\r\n]/g;
 
 /** Sanitized yt-dlp argv tail: validated stream URL, scrubbed headers, `--` before positional URL. */
@@ -171,9 +174,15 @@ export type DownloadEvent =
 
 type DownloadEventListener = (event: DownloadEvent) => void;
 
+type ManagedProcess = {
+  readonly exited: Promise<number>;
+  kill(signal?: NodeJS.Signals | number): void;
+};
+
 type ActiveDownloadProcess = {
-  readonly process: YtDlpProcess;
+  readonly process: ManagedProcess;
   readonly cancel?: (reason?: string) => void;
+  readonly releaseIo?: () => void;
   cancelRequested: boolean;
   cancelMode: "abort" | "pause";
   cancelReason?: string;
@@ -183,6 +192,25 @@ type ArtifactValidationResult = {
   readonly fileSize: number;
   readonly durationMs?: number;
 };
+
+export type DownloadFailureAnalysis = {
+  readonly failureKind: string;
+  readonly retryable: boolean;
+};
+
+class ArtifactValidationTimeoutError extends Error {
+  constructor() {
+    super(`artifact-validation-timeout: ffprobe exceeded ${FFPROBE_DEADLINE_MS}ms deadline`);
+    this.name = "ArtifactValidationTimeoutError";
+  }
+}
+
+type Deadline = {
+  readonly expired: Promise<void>;
+  cancel(): void;
+};
+
+type DeadlineFactory = (milliseconds: number) => Deadline;
 
 type DownloadSidecarResult = {
   readonly artifact: "subtitle" | "artwork";
@@ -237,6 +265,7 @@ export class DownloadService {
         intent: DownloadResolveIntent,
       ) => Promise<DownloadResolveResult | null>;
       readonly ffprobeAvailable?: boolean;
+      readonly ffprobeDeadline?: DeadlineFactory;
       readonly abortGraceMs?: number;
       readonly diagnostics?: Pick<DiagnosticsService, "record">;
       readonly onCompletedArtifact?: (job: DownloadJobRecord) => Promise<void> | void;
@@ -749,6 +778,7 @@ export class DownloadService {
       active.cancelRequested = true;
       active.cancelMode = "abort";
       active.cancelReason = "download aborted by user";
+      active.releaseIo?.();
       await this.terminateProcess(active.process, active.cancel);
       return;
     }
@@ -766,6 +796,7 @@ export class DownloadService {
   killActiveProcessesSync(): void {
     for (const active of this.activeProcesses.values()) {
       try {
+        active.releaseIo?.();
         active.process.kill("SIGKILL");
       } catch {
         // best effort — process may already be gone
@@ -794,6 +825,7 @@ export class DownloadService {
       active.cancelRequested = true;
       active.cancelMode = "pause";
       active.cancelReason = reason;
+      active.releaseIo?.();
     }
     await Promise.all(
       activeEntries.map(([, active]) =>
@@ -1011,7 +1043,7 @@ export class DownloadService {
     // The temp file is the only artifact yt-dlp owns. Validate it before
     // publication so an empty/invalid result can never replace a playable
     // last-known-good output at the stable path.
-    const validation = await this.validateCompletedArtifact(job.tempPath);
+    const validation = await this.validateCompletedArtifact(job.tempPath, job.id);
     await rename(job.tempPath, job.outputPath);
     this.persistValidatedArtifactMetadata(job.id, validation);
     return this.deps.repo.get(job.id) ?? job;
@@ -1092,16 +1124,22 @@ export class DownloadService {
   }
 
   private async terminateProcess(
-    proc: YtDlpProcess,
+    proc: ManagedProcess,
     cancel?: (reason?: string) => void,
-    waits: { readonly gracefulWaitMs?: number; readonly forceWaitMs?: number } = {},
+    waits: {
+      readonly gracefulWaitMs?: number;
+      readonly forceWaitMs?: number;
+      readonly deadline?: DeadlineFactory;
+    } = {},
   ): Promise<void> {
     const graceMs = this.deps.abortGraceMs ?? DEFAULT_ABORT_GRACE_MS;
     const gracefulWaitMs = waits.gracefulWaitMs ?? graceMs;
     const forceWaitMs = waits.forceWaitMs ?? graceMs;
     if (cancel) {
       cancel("download terminated");
-      await waitForExit(proc.exited, waits.gracefulWaitMs ?? graceMs + 2_500).catch(() => {});
+      await waitForExit(proc.exited, waits.gracefulWaitMs ?? graceMs + 2_500, waits.deadline).catch(
+        () => {},
+      );
       return;
     }
     try {
@@ -1110,7 +1148,7 @@ export class DownloadService {
       return;
     }
 
-    const exitedAfterTerm = await waitForExit(proc.exited, gracefulWaitMs);
+    const exitedAfterTerm = await waitForExit(proc.exited, gracefulWaitMs, waits.deadline);
     if (exitedAfterTerm) {
       return;
     }
@@ -1120,7 +1158,7 @@ export class DownloadService {
     } catch {
       return;
     }
-    await waitForExit(proc.exited, forceWaitMs).catch(() => {});
+    await waitForExit(proc.exited, forceWaitMs, waits.deadline).catch(() => {});
   }
 
   private async waitForInactive(jobIds: readonly string[], timeoutMs: number): Promise<void> {
@@ -1154,7 +1192,10 @@ export class DownloadService {
     });
   }
 
-  private async validateCompletedArtifact(outputPath: string): Promise<ArtifactValidationResult> {
+  private async validateCompletedArtifact(
+    outputPath: string,
+    ownedJobId?: string,
+  ): Promise<ArtifactValidationResult> {
     const fileStat = await stat(outputPath);
     if (!fileStat.isFile() || fileStat.size <= 0) {
       throw new Error("artifact-invalid: downloaded file is empty or not a regular file");
@@ -1175,7 +1216,58 @@ export class DownloadService {
       ],
       { stdin: "ignore", stdout: "pipe", stderr: "ignore" },
     );
-    const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    const deadline = this.deps.ffprobeDeadline ?? startDeadline;
+    const stdoutReader = proc.stdout.getReader();
+    const stdoutPromise = readUtf8Stream(stdoutReader);
+    const completion = Promise.all([proc.exited, stdoutPromise]);
+    let inheritedCancellation = false;
+    if (ownedJobId) {
+      const cancellation = this.cancellationRequests.get(ownedJobId);
+      this.activeProcesses.set(ownedJobId, {
+        process: proc,
+        releaseIo: () => {
+          void stdoutReader.cancel().catch(() => undefined);
+        },
+        cancelRequested: cancellation !== undefined,
+        cancelMode: cancellation?.mode ?? "abort",
+        cancelReason: cancellation?.reason,
+      });
+      inheritedCancellation = cancellation !== undefined;
+    }
+
+    let result: readonly [number, string] | undefined;
+    try {
+      if (inheritedCancellation) {
+        void completion.catch(() => undefined);
+        void stdoutReader.cancel().catch(() => undefined);
+        await this.terminateProcess(proc, undefined, {
+          gracefulWaitMs: FFPROBE_TERMINATION_GRACE_MS,
+          forceWaitMs: FFPROBE_FORCE_WAIT_MS,
+          deadline,
+        });
+        throw new Error("download aborted");
+      }
+      result = await settleBefore(completion, FFPROBE_DEADLINE_MS, deadline);
+      if (!result) {
+        await this.terminateProcess(proc, undefined, {
+          gracefulWaitMs: FFPROBE_TERMINATION_GRACE_MS,
+          forceWaitMs: FFPROBE_FORCE_WAIT_MS,
+          deadline,
+        });
+        await settleBefore(
+          stdoutReader.cancel().catch(() => undefined),
+          FFPROBE_IO_CLEANUP_MS,
+          deadline,
+        );
+        void completion.catch(() => undefined);
+        throw new ArtifactValidationTimeoutError();
+      }
+    } finally {
+      if (ownedJobId && this.activeProcesses.get(ownedJobId)?.process === proc) {
+        this.activeProcesses.delete(ownedJobId);
+      }
+    }
+    const [exitCode, stdout] = result;
     if (exitCode !== 0) {
       throw new Error("artifact-invalid: ffprobe could not inspect downloaded file");
     }
@@ -1448,8 +1540,28 @@ export class DownloadService {
       if (publishedOutput) {
         let validation: ArtifactValidationResult;
         try {
-          validation = await this.validateCompletedArtifact(runningJob.outputPath);
+          validation = await this.validateCompletedArtifact(runningJob.outputPath, runningJob.id);
         } catch (error) {
+          const cancellation = this.cancellationRequests.get(runningJob.id);
+          if (cancellation) {
+            if (cancellation.mode === "pause") {
+              this.deps.repo.pause(runningJob.id, cancellation.reason, now, now);
+            } else {
+              this.deps.repo.abort(runningJob.id, now);
+              this.emit({ type: "aborted", jobId: runningJob.id });
+            }
+            this.cancellationRequests.delete(runningJob.id);
+            continue;
+          }
+          if (error instanceof ArtifactValidationTimeoutError) {
+            this.deps.repo.fail(runningJob.id, error.message, false, now, "artifact-timeout");
+            this.emit({ type: "failed", jobId: runningJob.id, error: error.message });
+            this.deps.logger.warn("Interrupted download artifact validation timed out", {
+              jobId: runningJob.id,
+              error: error.message,
+            });
+            continue;
+          }
           if (publishedOutput.isFile()) {
             await rm(runningJob.outputPath, { force: true }).catch(() => {});
           } else {
@@ -1674,17 +1786,68 @@ function retryDelayMs(retryCount: number): number {
   return table[Math.min(retryCount, table.length - 1)] ?? 30_000;
 }
 
-async function waitForExit(exited: Promise<number>, timeoutMs: number): Promise<boolean> {
-  const marker = Symbol("timeout");
-  const result = await Promise.race([exited, Bun.sleep(timeoutMs).then(() => marker)]);
-  return result !== marker;
+async function settleBefore<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  deadlineFactory: DeadlineFactory = startDeadline,
+): Promise<T | undefined> {
+  const deadline = deadlineFactory(timeoutMs);
+  try {
+    const result = await Promise.race([
+      promise.then((value) => ({ settled: true as const, value })),
+      deadline.expired.then(() => ({ settled: false as const })),
+    ]);
+    return result.settled ? result.value : undefined;
+  } finally {
+    deadline.cancel();
+  }
 }
 
-export function analyzeDownloadFailure(message: string): {
-  failureKind: string;
-  retryable: boolean;
-} {
+async function waitForExit(
+  exited: Promise<number>,
+  timeoutMs: number,
+  deadline?: DeadlineFactory,
+): Promise<boolean> {
+  return (await settleBefore(exited, timeoutMs, deadline)) !== undefined;
+}
+
+function startDeadline(milliseconds: number): Deadline {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, milliseconds);
+    timer.unref?.();
+  });
+  return {
+    expired,
+    cancel() {
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+async function readUtf8Stream(reader: {
+  read(): Promise<{ readonly done: boolean; readonly value?: Uint8Array }>;
+  releaseLock(): void;
+}): Promise<string> {
+  const decoder = new TextDecoder();
+  let output = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      output += decoder.decode(value, { stream: true });
+    }
+    return output + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export function analyzeDownloadFailure(message: string): DownloadFailureAnalysis {
   const normalized = message.toLowerCase();
+  if (normalized.includes("artifact-validation-timeout")) {
+    return { failureKind: "artifact-timeout", retryable: false };
+  }
   if (normalized.includes("artifact-invalid")) {
     return { failureKind: "artifact-invalid", retryable: false };
   }

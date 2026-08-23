@@ -423,6 +423,7 @@ describe("DownloadService", () => {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf(""),
         exited: Promise.resolve(0),
+        // SAFETY: Bun.spawn is intercepted; this fixture implements every process member the service reads.
       } as never;
     });
 
@@ -449,6 +450,181 @@ describe("DownloadService", () => {
         }),
       }),
     );
+  });
+
+  test("bounds ffprobe and releases queue ownership after forced termination", async () => {
+    const waits: number[] = [];
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      ffprobeAvailable: true,
+      downloadPath: tempDir,
+      ffprobeDeadline: (milliseconds) => {
+        waits.push(milliseconds);
+        return { expired: Promise.resolve(), cancel() {} };
+      },
+    });
+    whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
+
+    let markProbeStarted!: () => void;
+    const probeStarted = new Promise<void>((resolve) => {
+      markProbeStarted = resolve;
+    });
+    const probe = createHangingProbe("SIGKILL");
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] === "ffprobe") {
+        markProbeStarted();
+        return probe.process;
+      }
+      const outputIndex = command.indexOf("-o");
+      const outputPath = outputIndex >= 0 ? command[outputIndex + 1] : undefined;
+      if (outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: Bun.spawn is intercepted; this fixture implements every process member the service reads.
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Deadline" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://secret.example/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const processing = service.processQueue();
+    await probeStarted;
+    await processing;
+
+    const reloaded = repo.get(job.id);
+    expect(waits).toEqual([30_000, 2_500, 2_500, 250]);
+    expect(probe.killSignals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(probe.stdoutCancelled).toBe(true);
+    expect(repo.listRunning(10)).toEqual([]);
+    expect(reloaded?.status).toBe("failed");
+    expect(reloaded?.failureKind).toBe("artifact-timeout");
+    expect(reloaded?.errorMessage).toBe(
+      "artifact-validation-timeout: ffprobe exceeded 30000ms deadline",
+    );
+    expect(reloaded?.errorMessage).not.toContain(job.tempPath);
+    expect(reloaded?.errorMessage).not.toContain("secret.example");
+  });
+
+  test("cancels ffprobe stdout so abort can release the running lease", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      ffprobeAvailable: true,
+      downloadPath: tempDir,
+      ffprobeDeadline: () => ({
+        expired: new Promise<never>(() => {}),
+        cancel() {},
+      }),
+    });
+    whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
+
+    let markProbeStarted!: () => void;
+    const probeStarted = new Promise<void>((resolve) => {
+      markProbeStarted = resolve;
+    });
+    const probe = createHangingProbe("SIGTERM");
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] === "ffprobe") {
+        markProbeStarted();
+        return probe.process;
+      }
+      const outputIndex = command.indexOf("-o");
+      const outputPath = outputIndex >= 0 ? command[outputIndex + 1] : undefined;
+      if (outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: Bun.spawn is intercepted; this fixture implements every process member the service reads.
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:2", type: "series", name: "Cancelled Probe" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const processing = service.processQueue();
+    await probeStarted;
+
+    await service.abort(job.id);
+    await processing;
+
+    expect(probe.stdoutCancelled).toBe(true);
+    expect(probe.killSignals).toEqual(["SIGTERM"]);
+    expect(repo.listRunning(10)).toEqual([]);
+    expect(repo.get(job.id)?.status).toBe("aborted");
+  });
+
+  test("terminates ffprobe immediately when abort wins before process registration", async () => {
+    const waits: number[] = [];
+    let service!: DownloadService;
+    let aborting: Promise<void> | undefined;
+    service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      ffprobeAvailable: true,
+      downloadPath: tempDir,
+      ffprobeDeadline: (milliseconds) => {
+        waits.push(milliseconds);
+        return { expired: Promise.resolve(), cancel() {} };
+      },
+    });
+    whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
+
+    let releaseStdoutCancel!: () => void;
+    const stdoutCancel = new Promise<void>((resolve) => {
+      releaseStdoutCancel = resolve;
+    });
+    const probe = createHangingProbe("SIGKILL", { stdoutCancel });
+    let jobId = "";
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] === "ffprobe") {
+        aborting = service.abort(jobId);
+        return probe.process;
+      }
+      const outputIndex = command.indexOf("-o");
+      const outputPath = outputIndex >= 0 ? command[outputIndex + 1] : undefined;
+      if (outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: Bun.spawn is intercepted; this fixture implements every process member the service reads.
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+        kill() {},
+      } as never;
+    });
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:3", type: "series", name: "Pre-registration Abort" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    jobId = job.id;
+
+    const processing = service.processQueue();
+    await probe.stdoutCancelStarted;
+    const killedBeforeStdoutSettled = probe.killSignals.length > 0;
+    releaseStdoutCancel();
+    await processing;
+    await aborting;
+
+    expect(killedBeforeStdoutSettled).toBe(true);
+    expect(waits).not.toContain(30_000);
+    expect(probe.stdoutCancelled).toBe(true);
+    expect(probe.killSignals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(repo.get(job.id)?.status).toBe("aborted");
   });
 
   test("carries poster metadata and caches poster artwork without ffmpeg", async () => {
@@ -1328,6 +1504,115 @@ describe("DownloadService", () => {
     updateFileSizeSpy.mockRestore();
   });
 
+  test("preserves a published artifact when recovery ffprobe reaches its deadline", async () => {
+    const enqueueService = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await enqueueService.enqueue({
+      title: { id: "tmdb:7", type: "movie", name: "Probe Timeout" },
+      stream: { url: "https://secret.example/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    writeFileSync(job.outputPath, "published-media-that-must-survive");
+
+    const probe = createHangingProbe("SIGKILL");
+    whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
+    spawnSpy.mockImplementation(() => probe.process);
+    const recoveryService = buildService({
+      repo,
+      downloadsEnabled: false,
+      ytDlpAvailable: false,
+      ffprobeAvailable: true,
+      downloadPath: tempDir,
+      ffprobeDeadline: () => ({ expired: Promise.resolve(), cancel() {} }),
+    });
+
+    await recoveryService.processQueue();
+
+    const recovered = repo.get(job.id);
+    expect(probe.killSignals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(existsSync(job.outputPath)).toBe(true);
+    expect(await Bun.file(job.outputPath).text()).toBe("published-media-that-must-survive");
+    expect(recovered?.status).toBe("failed");
+    expect(recovered?.failureKind).toBe("artifact-timeout");
+    expect(recovered?.errorMessage).toBe(
+      "artifact-validation-timeout: ffprobe exceeded 30000ms deadline",
+    );
+    expect(recovered?.errorMessage).not.toContain(job.outputPath);
+    expect(recovered?.errorMessage).not.toContain("secret.example");
+  });
+
+  test("shutdown owns a recovery ffprobe and preserves its published artifact", async () => {
+    const enqueueService = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await enqueueService.enqueue({
+      title: { id: "tmdb:8", type: "movie", name: "Recovery Shutdown" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    writeFileSync(job.outputPath, "published-media-that-must-survive-shutdown");
+
+    let expireProbe!: () => void;
+    let deadlineCount = 0;
+    const probeDeadline = new Promise<void>((resolve) => {
+      expireProbe = resolve;
+    });
+    const probe = createHangingProbe("SIGTERM");
+    whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
+    let markProbeStarted!: () => void;
+    const probeStarted = new Promise<void>((resolve) => {
+      markProbeStarted = resolve;
+    });
+    spawnSpy.mockImplementation(() => {
+      markProbeStarted();
+      return probe.process;
+    });
+    const recoveryService = buildService({
+      repo,
+      downloadsEnabled: false,
+      ytDlpAvailable: false,
+      ffprobeAvailable: true,
+      downloadPath: tempDir,
+      ffprobeDeadline: () => {
+        deadlineCount += 1;
+        return {
+          expired: deadlineCount === 1 ? probeDeadline : Promise.resolve(),
+          cancel() {},
+        };
+      },
+    });
+
+    const processing = recoveryService.processQueue();
+    await probeStarted;
+    await recoveryService.pauseActiveJobsForShutdown("download paused by recovery shutdown");
+    const killedBeforeDeadline = probe.killSignals.length > 0;
+    expireProbe();
+    await processing;
+
+    const recovered = repo.get(job.id);
+    expect(killedBeforeDeadline).toBe(true);
+    expect(probe.stdoutCancelled).toBe(true);
+    expect(probe.killSignals).toEqual(["SIGTERM"]);
+    expect(existsSync(job.outputPath)).toBe(true);
+    expect(await Bun.file(job.outputPath).text()).toBe(
+      "published-media-that-must-survive-shutdown",
+    );
+    expect(recovered?.status).toBe("queued");
+    expect(recovered?.failureKind).toBe("interrupted");
+    expect(recovered?.errorMessage).toBe("download paused by recovery shutdown");
+  });
+
   test("does not recover a freshly heartbeating job owned by another process", async () => {
     const enqueueService = buildService({
       repo,
@@ -1479,6 +1764,7 @@ function buildService({
   resolveDownloadStream,
   abortGraceMs,
   ffprobeAvailable = false,
+  ffprobeDeadline,
   diagnostics,
   configService,
   titleAliases = { upsertAliases() {} },
@@ -1490,6 +1776,7 @@ function buildService({
   resolveDownloadStream?: ConstructorParameters<typeof DownloadService>[0]["resolveDownloadStream"];
   abortGraceMs?: number;
   ffprobeAvailable?: boolean;
+  ffprobeDeadline?: ConstructorParameters<typeof DownloadService>[0]["ffprobeDeadline"];
   diagnostics?: ConstructorParameters<typeof DownloadService>[0]["diagnostics"];
   configService?: ConfigService;
   titleAliases?: ConstructorParameters<typeof DownloadService>[0]["titleAliases"];
@@ -1520,6 +1807,7 @@ function buildService({
     },
     resolveDownloadStream,
     abortGraceMs,
+    ffprobeDeadline,
   });
 }
 
@@ -1530,6 +1818,46 @@ function streamOf(text: string): ReadableStream<Uint8Array> {
       controller.close();
     },
   });
+}
+
+function createHangingProbe(
+  exitOn: "SIGTERM" | "SIGKILL",
+  options: { readonly stdoutCancel?: Promise<void> } = {},
+) {
+  let resolveExit!: (code: number) => void;
+  let markStdoutCancelStarted!: () => void;
+  let stdoutCancelled = false;
+  const killSignals: Array<NodeJS.Signals | number | undefined> = [];
+  const exited = new Promise<number>((resolve) => {
+    resolveExit = resolve;
+  });
+  const stdoutCancelStarted = new Promise<void>((resolve) => {
+    markStdoutCancelStarted = resolve;
+  });
+  // SAFETY: Bun.spawn is intercepted; this fixture implements stdout, stderr, exited, and kill used here.
+  const process = {
+    stdout: new ReadableStream<Uint8Array>({
+      cancel() {
+        stdoutCancelled = true;
+        markStdoutCancelStarted();
+        return options.stdoutCancel;
+      },
+    }),
+    stderr: streamOf(""),
+    exited,
+    kill(signal?: NodeJS.Signals | number) {
+      killSignals.push(signal);
+      if (signal === exitOn) resolveExit(signal === "SIGTERM" ? 143 : 137);
+    },
+  } as never;
+  return {
+    process,
+    killSignals,
+    stdoutCancelStarted,
+    get stdoutCancelled() {
+      return stdoutCancelled;
+    },
+  };
 }
 
 /** Local signature kept so existing call sites read unchanged. */

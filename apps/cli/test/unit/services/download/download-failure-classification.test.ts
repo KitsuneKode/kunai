@@ -3,6 +3,15 @@ import { describe, expect, test } from "bun:test";
 import { analyzeDownloadFailure } from "@/services/download/DownloadService";
 
 describe("download failure classification", () => {
+  test("classifies an artifact probe deadline separately from corrupt media", () => {
+    expect(
+      analyzeDownloadFailure("artifact-validation-timeout: ffprobe exceeded 30000ms deadline"),
+    ).toEqual({
+      failureKind: "artifact-timeout",
+      retryable: false,
+    });
+  });
+
   test("retries rate limits and request timeouts", () => {
     expect(analyzeDownloadFailure("HTTP Error 429: Too Many Requests")).toEqual({
       failureKind: "http-client",
