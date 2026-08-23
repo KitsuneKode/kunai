@@ -34,6 +34,22 @@ type DiscordIpcFrame = {
   readonly payload: Record<string, unknown>;
 };
 
+type DiscordIpcProtocolFault = {
+  readonly reason:
+    | "invalid-json"
+    | "invalid-payload-root"
+    | "declared-frame-too-large"
+    | "buffer-limit-exceeded";
+  readonly opcode?: number;
+  readonly declaredBytes?: number;
+  readonly bufferedBytes: number;
+};
+
+type DiscordIpcFrameBatch = {
+  readonly packets: readonly Uint8Array[];
+  readonly fault?: DiscordIpcProtocolFault;
+};
+
 export function resolveDiscordIpcEndpointCandidates(input: {
   readonly platform?: NodeJS.Platform;
   readonly env?: Record<string, string | undefined>;
@@ -72,7 +88,131 @@ export function encodeDiscordIpcPacket(op: number, payload: Record<string, unkno
  * huge frame and `handleData` grows its accumulator until the memory watchdog
  * kills the process, which is a long way to travel for a rich-presence update.
  */
-export const MAX_DISCORD_IPC_FRAME_BYTES = 1024 * 1024;
+export const MAX_DISCORD_IPC_FRAME_BYTES = 1_048_576;
+export const MAX_DISCORD_IPC_BUFFER_BYTES = 1_048_584;
+
+class DiscordIpcFrameAccumulator {
+  private chunks: Uint8Array[] = [];
+  private headChunk = 0;
+  private headOffset = 0;
+  private bufferedBytes = 0;
+
+  push(chunk: Uint8Array): DiscordIpcFrameBatch {
+    if (chunk.byteLength > 0) {
+      this.chunks.push(chunk);
+      this.bufferedBytes += chunk.byteLength;
+    }
+
+    if (this.bufferedBytes > MAX_DISCORD_IPC_BUFFER_BYTES) {
+      const fault: DiscordIpcProtocolFault = {
+        reason: "buffer-limit-exceeded",
+        ...(this.bufferedBytes >= 8
+          ? {
+              opcode: this.peekUint32(0),
+              declaredBytes: this.peekUint32(4),
+            }
+          : {}),
+        bufferedBytes: this.bufferedBytes,
+      };
+      this.clear();
+      return { packets: [], fault };
+    }
+
+    const packets: Uint8Array[] = [];
+    while (this.bufferedBytes >= 8) {
+      const opcode = this.peekUint32(0);
+      const declaredBytes = this.peekUint32(4);
+      if (declaredBytes > MAX_DISCORD_IPC_FRAME_BYTES) {
+        const fault: DiscordIpcProtocolFault = {
+          reason: "declared-frame-too-large",
+          opcode,
+          declaredBytes,
+          bufferedBytes: this.bufferedBytes,
+        };
+        this.clear();
+        return { packets, fault };
+      }
+
+      const frameBytes = 8 + declaredBytes;
+      if (this.bufferedBytes < frameBytes) break;
+
+      const packet = new Uint8Array(frameBytes);
+      this.copyFromHead(packet);
+      this.consume(frameBytes);
+      packets.push(packet);
+    }
+
+    return { packets };
+  }
+
+  clear(): void {
+    this.chunks = [];
+    this.headChunk = 0;
+    this.headOffset = 0;
+    this.bufferedBytes = 0;
+  }
+
+  private peekUint32(relativeOffset: number): number {
+    let value = 0;
+    for (let index = 0; index < 4; index += 1) {
+      value |= this.byteAt(relativeOffset + index) << (index * 8);
+    }
+    return value >>> 0;
+  }
+
+  private byteAt(relativeOffset: number): number {
+    let chunkIndex = this.headChunk;
+    let offset = this.headOffset + relativeOffset;
+    while (chunkIndex < this.chunks.length) {
+      const chunk = this.chunks[chunkIndex];
+      if (!chunk) break;
+      if (offset < chunk.byteLength) return chunk[offset] ?? 0;
+      offset -= chunk.byteLength;
+      chunkIndex += 1;
+    }
+    throw new Error("Discord IPC accumulator read beyond buffered data");
+  }
+
+  private copyFromHead(target: Uint8Array): void {
+    let targetOffset = 0;
+    let chunkIndex = this.headChunk;
+    let chunkOffset = this.headOffset;
+    while (targetOffset < target.byteLength) {
+      const chunk = this.chunks[chunkIndex];
+      if (!chunk) throw new Error("Discord IPC accumulator lost buffered data");
+      const copyBytes = Math.min(chunk.byteLength - chunkOffset, target.byteLength - targetOffset);
+      target.set(chunk.subarray(chunkOffset, chunkOffset + copyBytes), targetOffset);
+      targetOffset += copyBytes;
+      chunkIndex += 1;
+      chunkOffset = 0;
+    }
+  }
+
+  private consume(bytes: number): void {
+    let remaining = bytes;
+    while (remaining > 0) {
+      const chunk = this.chunks[this.headChunk];
+      if (!chunk) throw new Error("Discord IPC accumulator lost buffered data");
+      const available = chunk.byteLength - this.headOffset;
+      if (remaining < available) {
+        this.headOffset += remaining;
+        remaining = 0;
+      } else {
+        remaining -= available;
+        this.headChunk += 1;
+        this.headOffset = 0;
+      }
+    }
+    this.bufferedBytes -= bytes;
+
+    if (this.bufferedBytes === 0) {
+      this.clear();
+    } else if (this.headChunk >= 64 && this.headChunk * 2 >= this.chunks.length) {
+      this.chunks = this.chunks.slice(this.headChunk);
+      this.headChunk = 0;
+    }
+  }
+}
 
 export function decodeDiscordIpcPacket(data: Uint8Array): DiscordIpcFrame {
   if (data.byteLength < 8) {
@@ -85,7 +225,10 @@ export function decodeDiscordIpcPacket(data: Uint8Array): DiscordIpcFrame {
     throw new Error("Discord IPC frame body was incomplete");
   }
   const body = data.slice(8, 8 + length);
-  const payload = JSON.parse(new TextDecoder().decode(body)) as Record<string, unknown>;
+  const payload: unknown = JSON.parse(new TextDecoder().decode(body));
+  if (!isDiscordIpcPayload(payload)) {
+    throw new Error("Discord IPC payload root was not an object");
+  }
   return { op, payload };
 }
 
@@ -108,6 +251,42 @@ export function tryDecodeDiscordIpcPacket(data: Uint8Array): DiscordIpcFrame | n
   }
 }
 
+function decodeDiscordIpcSocketPacket(data: Uint8Array): {
+  readonly frame: DiscordIpcFrame | null;
+  readonly fault?: DiscordIpcProtocolFault;
+} {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const op = view.getUint32(0, true);
+  const declaredBytes = view.getUint32(4, true);
+  const body = data.subarray(8, 8 + declaredBytes);
+  let payload: unknown;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return {
+      frame: null,
+      fault: {
+        reason: "invalid-json",
+        opcode: op,
+        declaredBytes,
+        bufferedBytes: data.byteLength,
+      },
+    };
+  }
+  if (!isDiscordIpcPayload(payload)) {
+    return {
+      frame: null,
+      fault: {
+        reason: "invalid-payload-root",
+        opcode: op,
+        declaredBytes,
+        bufferedBytes: data.byteLength,
+      },
+    };
+  }
+  return { frame: { op, payload } };
+}
+
 export function createDiscordIpcClient(
   options: {
     readonly connector?: DiscordIpcConnector;
@@ -123,9 +302,10 @@ export function createDiscordIpcClient(
     options.endpointCandidates ?? (() => resolveDiscordIpcEndpointCandidates({}));
 
   let socket: DiscordIpcSocket | null = null;
-  let buffer = new Uint8Array(0);
+  const accumulator = new DiscordIpcFrameAccumulator();
   let ready = false;
   let destroyed = false;
+  let connectionGeneration = 0;
   let nonceCounter = 0;
   let readyResolver: (() => void) | null = null;
   let readyRejecter: ((error: Error) => void) | null = null;
@@ -175,44 +355,25 @@ export function createDiscordIpcClient(
     }
   };
 
+  const handleFramingFault = (fault: DiscordIpcProtocolFault) => {
+    ready = false;
+    rejectAll(new Error(`Discord IPC protocol fault: ${fault.reason}`));
+    const failedSocket = socket;
+    socket = null;
+    connectionGeneration += 1;
+    failedSocket?.end();
+  };
+
   const handleData = (chunk: Uint8Array) => {
-    // Append. Chunks accumulate only until a whole frame is available, and the
-    // frame cap below bounds how far that can go.
-    const next = new Uint8Array(buffer.byteLength + chunk.byteLength);
-    next.set(buffer, 0);
-    next.set(chunk, buffer.byteLength);
-    buffer = next;
-
-    while (buffer.byteLength >= 8) {
-      const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-      const length = view.getUint32(4, true);
-
-      // A length we will never honour means the stream is desynced or hostile.
-      // Waiting for it would buffer without bound, and every later frame would
-      // be misframed anyway, so drop the connection instead of guessing.
-      if (length > MAX_DISCORD_IPC_FRAME_BYTES) {
-        buffer = new Uint8Array(0);
-        ready = false;
-        rejectAll(
-          new Error(
-            `Discord IPC frame claimed ${length} bytes (max ${MAX_DISCORD_IPC_FRAME_BYTES})`,
-          ),
-        );
-        if (socket) {
-          socket.end();
-          socket = null;
-        }
-        return;
-      }
-
-      const frameLength = 8 + length;
-      if (buffer.byteLength < frameLength) return;
-      const packet = buffer.slice(0, frameLength);
-      buffer = buffer.slice(frameLength);
-      // Never throws: presence must not be able to reach the fatal path.
-      const frame = tryDecodeDiscordIpcPacket(packet);
-      if (!frame) continue;
-      handlePayload(frame.op, frame.payload);
+    const batch = accumulator.push(chunk);
+    if (batch.fault) {
+      handleFramingFault(batch.fault);
+      return;
+    }
+    for (const packet of batch.packets) {
+      const decoded = decodeDiscordIpcSocketPacket(packet);
+      if (!decoded.frame) continue;
+      handlePayload(decoded.frame.op, decoded.frame.payload);
     }
   };
 
@@ -237,11 +398,26 @@ export function createDiscordIpcClient(
 
       let lastError: unknown = null;
       for (const endpoint of endpointCandidates()) {
+        const generation = ++connectionGeneration;
         try {
           socket = await connector(endpoint, {
-            onData: handleData,
-            onClose: () => rejectAll(new Error("Discord IPC connection closed")),
-            onError: (error) => rejectAll(toError(error)),
+            onData: (data) => {
+              if (generation === connectionGeneration) handleData(data);
+            },
+            onClose: () => {
+              if (generation !== connectionGeneration) return;
+              accumulator.clear();
+              ready = false;
+              socket = null;
+              rejectAll(new Error("Discord IPC connection closed"));
+            },
+            onError: (error) => {
+              if (generation !== connectionGeneration) return;
+              accumulator.clear();
+              ready = false;
+              socket = null;
+              rejectAll(toError(error));
+            },
           });
           break;
         } catch (error) {
@@ -299,6 +475,7 @@ export function createDiscordIpcClient(
     async destroy() {
       destroyed = true;
       ready = false;
+      accumulator.clear();
       rejectAll(new Error("Discord IPC client destroyed"));
       if (socket) {
         try {
@@ -306,8 +483,10 @@ export function createDiscordIpcClient(
         } catch {
           // Ignore close-frame failures; socket teardown is best effort.
         }
-        socket.end();
+        const closingSocket = socket;
         socket = null;
+        connectionGeneration += 1;
+        closingSocket.end();
       }
     },
     on(event, callback) {
@@ -316,6 +495,10 @@ export function createDiscordIpcClient(
       if (ready) callback();
     },
   };
+}
+
+function isDiscordIpcPayload(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function bunDiscordIpcConnector(
