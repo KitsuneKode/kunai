@@ -4,6 +4,21 @@ import { isValidElement } from "react";
 
 import { baseOptions } from "../lib/layout.shared";
 
+/**
+ * Exact host match, not a substring. `url.includes("github.com")` also matches
+ * `https://github.com.evil.test/` and `https://evil.test/?q=github.com`, which
+ * is why CodeQL flags that shape. Relative nav URLs like `/docs` are not links
+ * off-site at all, so a parse failure is a legitimate `false`.
+ */
+function isGithubUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    return new URL(url).hostname === "github.com";
+  } catch {
+    return false;
+  }
+}
+
 describe("docs shell", () => {
   test("keeps stable product navigation for the generated docs app", () => {
     const options = baseOptions();
@@ -16,7 +31,7 @@ describe("docs shell", () => {
     // two stacked as a bare unlabelled pill above a labelled one. The star CTAs
     // are the GitHub entry points now, and they carry the count.
     expect(options.githubUrl).toBeUndefined();
-    expect(links.some((link) => "url" in link && link.url?.includes("github.com"))).toBe(false);
+    expect(links.some((link) => "url" in link && isGithubUrl(link.url))).toBe(false);
 
     expect(links).toEqual(
       expect.arrayContaining([
