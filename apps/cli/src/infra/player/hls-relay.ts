@@ -5,7 +5,35 @@ import type { Server } from "bun";
 
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
 
-const CDN_PATTERNS = [/\.uwucdn\./i, /\.owocdn\./i] as const;
+/**
+ * Exact upstream CDN apexes. Their real subdomains are allowed; sibling TLDs
+ * and lookalike suffixes are not.
+ *
+ * These were `/\.uwucdn\./i` and `/\.owocdn\./i` — unanchored substring tests
+ * against the hostname, so `evil.uwucdn.attacker.com` matched and the relay
+ * would fetch it. A later registrable-domain-shaped regex still accepted any
+ * attacker-registrable TLD, such as `uwucdn.com`. `assertRelayUpstreamUrl` is
+ * the only gate on what this server will request, and it is applied to
+ * attacker-influenceable input: the base64 path segments on `/p/` and `/s/`,
+ * and every URI rewritten out of a provider-supplied playlist.
+ */
+const CDN_APEX_HOSTNAMES = ["uwucdn.top", "owocdn.top"] as const;
+
+/** `#EXTM3U`, as bytes — a playlist is identified without decoding the body. */
+const HLS_PLAYLIST_MAGIC = Buffer.from("#EXTM3U", "latin1");
+
+/**
+ * Is this response an HLS playlist?
+ *
+ * Both handlers used to answer this with `body.toString("utf-8").startsWith(…)`,
+ * which decodes the entire response to test seven bytes. For a binary MPEG-TS
+ * segment that is the worst case: the bytes are not valid UTF-8, so V8 builds a
+ * two-byte string and runs replacement-character substitution over several
+ * megabytes, every segment, to answer a question about the first seven.
+ */
+export function looksLikeHlsPlaylist(body: Buffer): boolean {
+  return body.subarray(0, HLS_PLAYLIST_MAGIC.length).equals(HLS_PLAYLIST_MAGIC);
+}
 /** Safety-net only; playback owns stop() for the real lifetime. */
 const IDLE_TIMEOUT_MS = 15 * 60_000;
 const CURL_META_MARKER = "__KUNAI_CURL_META__";
@@ -37,7 +65,7 @@ export function streamNeedsHlsRelay(url: string): boolean {
 }
 
 export function isHlsRelayUpstreamHost(hostname: string): boolean {
-  return CDN_PATTERNS.some((p) => p.test(hostname));
+  return CDN_APEX_HOSTNAMES.some((apex) => hostname === apex || hostname.endsWith(`.${apex}`));
 }
 
 function assertRelayUpstreamUrl(url: string): URL {
@@ -136,15 +164,24 @@ function curlFetch(
         reject(new Error(`curl exit ${code}: ${stderr.slice(0, 120)}`));
         return;
       }
-      const raw = buf.toString("binary");
-      const marker = `\n${CURL_META_MARKER}`;
-      const metaAt = raw.lastIndexOf(marker);
+      // Find the trailer in the bytes. This used to decode the whole response
+      // to a latin1 string, slice it, and re-encode the slice into a new
+      // Buffer — three full-size allocations per response, on a path that
+      // carries multi-megabyte video segments. `Buffer.lastIndexOf` and
+      // `subarray` do the same work with no copies at all: `subarray` is a view
+      // over the existing memory, not a duplicate.
+      const marker = Buffer.from(`\n${CURL_META_MARKER}`, "latin1");
+      const metaAt = buf.lastIndexOf(marker);
       if (metaAt === -1) {
         reject(new Error("curl response missing status trailer"));
         return;
       }
-      const body = Buffer.from(raw.slice(0, metaAt), "binary");
-      const metaLines = raw.slice(metaAt + marker.length).split("\n");
+      const body = buf.subarray(0, metaAt);
+      // Only the trailer becomes a string; it is a status code and a MIME type.
+      const metaLines = buf
+        .subarray(metaAt + marker.length)
+        .toString("utf-8")
+        .split("\n");
       const status = Number.parseInt(metaLines[0] ?? "0", 10);
       const contentType =
         (metaLines[1] ?? "application/octet-stream").split(";")[0]?.trim() ||
@@ -286,9 +323,12 @@ export function startHlsRelay(
             });
             return new Response(`upstream ${r.status}`, { status: r.status });
           }
-          const body = r.body.toString("utf-8");
-          if (body.startsWith("#EXTM3U")) {
-            const rewritten = rewriteHlsPlaylistForRelay(body, srcUrl, relayOrigin);
+          if (looksLikeHlsPlaylist(r.body)) {
+            const rewritten = rewriteHlsPlaylistForRelay(
+              r.body.toString("utf-8"),
+              srcUrl,
+              relayOrigin,
+            );
             return new Response(rewritten, {
               headers: { "Content-Type": "application/vnd.apple.mpegurl" },
             });
@@ -324,9 +364,14 @@ export function startHlsRelay(
               message: `upstream ${r.status}`,
             });
           }
-          const bodyText = r.body.toString("utf-8");
-          if (r.status === 200 && bodyText.startsWith("#EXTM3U")) {
-            const rewritten = rewriteHlsPlaylistForRelay(bodyText, srcUrl, relayOrigin);
+          // A variant playlist can arrive on the segment route when the URL did
+          // not look like a playlist, so the check stays — but on bytes.
+          if (r.status === 200 && looksLikeHlsPlaylist(r.body)) {
+            const rewritten = rewriteHlsPlaylistForRelay(
+              r.body.toString("utf-8"),
+              srcUrl,
+              relayOrigin,
+            );
             return new Response(rewritten, {
               headers: { "Content-Type": "application/vnd.apple.mpegurl" },
             });

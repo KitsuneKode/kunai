@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   fromB64Url,
+  looksLikeHlsPlaylist,
   rewriteHlsPlaylistForRelay,
   streamNeedsHlsRelay,
   toB64Url,
@@ -22,6 +23,111 @@ describe("hls-relay gating", () => {
       false,
     );
     expect(streamNeedsHlsRelay("not-a-url")).toBe(false);
+  });
+
+  /**
+   * The allowlist is the only gate on what the relay will fetch, and it is
+   * applied to attacker-influenceable input: base64 path segments on `/p/` and
+   * `/s/`, and every URI rewritten out of a provider-supplied playlist.
+   *
+   * The original patterns were unanchored substring tests (`/\.uwucdn\./i`).
+   * Matching the registrable-looking shape is still insufficient: a wildcard
+   * TLD accepts attacker-owned `uwucdn.com`, `uwucdn.attacker`, and equivalent
+   * subdomains. Only the two observed `.top` apexes and their real subdomains
+   * belong to this local relay.
+   */
+  test.each([
+    // Attacker-registrable TLDs and suffixes.
+    "https://uwucdn.com/x.m3u8",
+    "https://uwucdn.attacker/x.m3u8",
+    "https://vault.uwucdn.evil/x.m3u8",
+    "https://owocdn.xyz/x.m3u8",
+    "https://evil.uwucdn.attacker.com/x.m3u8",
+    "https://uwucdn.evil.com/x.m3u8",
+    "https://owocdn.top.evil.net/x.m3u8",
+    // Prefix and label-boundary tricks.
+    "https://not-uwucdn.top/x.m3u8",
+    "https://uwucdn-top.example/x.m3u8",
+    "https://eviluwucdn.top/x.m3u8",
+    // Unicode and its URL-parser punycode representation.
+    "https://uwucԁn.top/x.m3u8",
+    "https://xn--uwucn-1wf.top/x.m3u8",
+    // A trusted-looking userinfo or an explicit port cannot change the host.
+    "https://uwucdn.top@attacker.example/x.m3u8",
+    "https://owocdn.top:443@attacker.example/x.m3u8",
+    "https://vault.uwucdn.evil:8443/x.m3u8",
+  ] as const)("rejects non-allowlisted host %s", (url) => {
+    expect(streamNeedsHlsRelay(url)).toBe(false);
+  });
+
+  test.each([
+    "https://uwucdn.top/x.m3u8",
+    "https://owocdn.top/x.m3u8",
+    "https://vault-06.uwucdn.top/x.m3u8",
+    "https://a.b.c.owocdn.top/x.m3u8",
+    // URL.hostname normalizes case and excludes the port before this check.
+    "https://VAULT-06.UWUCDN.TOP:8443/x.m3u8",
+    "https://OWOCDN.TOP:9443/x.m3u8",
+  ] as const)("accepts allowlisted host %s", (url) => {
+    expect(streamNeedsHlsRelay(url)).toBe(true);
+  });
+
+  test("a hostless URL never matches", () => {
+    // `streamNeedsHlsRelay` answers "should this stream go through the relay",
+    // which is a host question — the scheme is enforced later and separately by
+    // `assertRelayUpstreamUrl`, which every fetch goes through and which
+    // rejects anything that is not http(s). Pinning the host contract here so
+    // the split stays deliberate rather than looking like a gap.
+    expect(streamNeedsHlsRelay("file:///etc/passwd")).toBe(false);
+    expect(streamNeedsHlsRelay("")).toBe(false);
+  });
+});
+
+/**
+ * Both handlers used to identify a playlist with
+ * `body.toString("utf-8").startsWith("#EXTM3U")` — decoding the entire
+ * response to test seven bytes. On a binary MPEG-TS segment that is the worst
+ * case: the bytes are not valid UTF-8, so V8 builds a two-byte string and runs
+ * replacement-character substitution over several megabytes, per segment.
+ *
+ * The byte comparison must answer identically for every case the string form
+ * did, which is what these pin.
+ */
+describe("hls-relay playlist detection on bytes", () => {
+  const utf8Says = (body: Buffer) => body.toString("utf-8").startsWith("#EXTM3U");
+
+  test("agrees with the old string check on playlists", () => {
+    for (const text of [
+      "#EXTM3U\n#EXT-X-VERSION:3\n",
+      "#EXTM3U",
+      "#EXTM3U\n",
+      "#EXTM3U\n#EXTINF:9.009,\nseg.ts\n",
+    ]) {
+      const body = Buffer.from(text, "utf-8");
+      expect(looksLikeHlsPlaylist(body)).toBe(true);
+      expect(looksLikeHlsPlaylist(body)).toBe(utf8Says(body));
+    }
+  });
+
+  test("agrees with the old string check on non-playlists", () => {
+    for (const text of ["#EXTM3", "", "EXTM3U", " #EXTM3U", "#EXT-X-VERSION:3"]) {
+      const body = Buffer.from(text, "utf-8");
+      expect(looksLikeHlsPlaylist(body)).toBe(false);
+      expect(looksLikeHlsPlaylist(body)).toBe(utf8Says(body));
+    }
+  });
+
+  test("a binary segment is not a playlist, and is never decoded to find out", () => {
+    // MPEG-TS: 0x47 sync byte, then bytes that are invalid UTF-8 sequences.
+    const segment = Buffer.from([0x47, 0x40, 0x11, 0x10, 0xff, 0xfe, 0x80, 0x81, 0x00, 0xc0]);
+    expect(looksLikeHlsPlaylist(segment)).toBe(false);
+    expect(looksLikeHlsPlaylist(segment)).toBe(utf8Says(segment));
+  });
+
+  test("a body shorter than the magic does not over-read", () => {
+    expect(looksLikeHlsPlaylist(Buffer.alloc(0))).toBe(false);
+    expect(looksLikeHlsPlaylist(Buffer.from([0x23]))).toBe(false);
+    expect(looksLikeHlsPlaylist(Buffer.from("#EXTM3", "latin1"))).toBe(false);
   });
 });
 
