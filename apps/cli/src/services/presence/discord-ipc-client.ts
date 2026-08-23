@@ -293,6 +293,17 @@ function decodeDiscordIpcSocketPacket(data: Uint8Array): {
   return { frame: { op, payload } };
 }
 
+type DiscordIpcConnectionAttempt = {
+  readonly generation: number;
+  readonly loginGeneration: number;
+  readonly accumulator: DiscordIpcFrameAccumulator;
+  socket: DiscordIpcSocket | null;
+  terminalCause: Error | null;
+  ready: boolean;
+  readyResolver: (() => void) | null;
+  readyRejecter: ((error: Error) => void) | null;
+};
+
 export function createDiscordIpcClient(
   options: {
     readonly connector?: DiscordIpcConnector;
@@ -307,22 +318,15 @@ export function createDiscordIpcClient(
   const endpointCandidates =
     options.endpointCandidates ?? (() => resolveDiscordIpcEndpointCandidates({}));
 
-  let socket: DiscordIpcSocket | null = null;
-  const accumulator = new DiscordIpcFrameAccumulator();
-  let ready = false;
+  let activeAttempt: DiscordIpcConnectionAttempt | null = null;
   let destroyed = false;
-  let connectionGeneration = 0;
+  let nextAttemptGeneration = 0;
   let loginGeneration = 0;
   let nonceCounter = 0;
-  let readyResolver: (() => void) | null = null;
-  let readyRejecter: ((error: Error) => void) | null = null;
   const readyCallbacks = new Set<() => void>();
   const pending = new Map<string, PendingFrame>();
 
   const rejectAll = (error: Error) => {
-    readyRejecter?.(error);
-    readyResolver = null;
-    readyRejecter = null;
     for (const [nonce, frame] of pending) {
       clearTimeout(frame.timeout);
       frame.reject(error);
@@ -339,14 +343,29 @@ export function createDiscordIpcClient(
     }
   };
 
-  const transitionToTerminal = (error: Error, endSocket: boolean) => {
-    const terminalSocket = socket;
-    socket = null;
-    ready = false;
-    accumulator.clear();
-    connectionGeneration += 1;
-    rejectAll(error);
+  const isActiveAttempt = (attempt: DiscordIpcConnectionAttempt) => activeAttempt === attempt;
+
+  const terminalizeAttempt = (
+    attempt: DiscordIpcConnectionAttempt,
+    error: Error,
+    endSocket: boolean,
+  ): Error => {
+    const cause = attempt.terminalCause ?? error;
+    const terminalSocket = attempt.socket;
+    const wasActive = isActiveAttempt(attempt);
+    attempt.terminalCause = cause;
+    attempt.socket = null;
+    attempt.ready = false;
+    attempt.accumulator.clear();
+    attempt.readyRejecter?.(cause);
+    attempt.readyResolver = null;
+    attempt.readyRejecter = null;
+    if (wasActive) {
+      activeAttempt = null;
+      rejectAll(cause);
+    }
     if (endSocket) endSocketBestEffort(terminalSocket);
+    return cause;
   };
 
   const currentLoginError = () =>
@@ -360,9 +379,15 @@ export function createDiscordIpcClient(
     }
   };
 
-  const handlePayload = (op: number, payload: Record<string, unknown>) => {
+  const handlePayload = (
+    attempt: DiscordIpcConnectionAttempt,
+    op: number,
+    payload: Record<string, unknown>,
+  ) => {
+    if (!isActiveAttempt(attempt)) return;
     if (op === 2) {
-      transitionToTerminal(
+      terminalizeAttempt(
+        attempt,
         new Error(describeDiscordErrorPayload(payload) ?? "Discord IPC closed"),
         true,
       );
@@ -372,11 +397,14 @@ export function createDiscordIpcClient(
 
     const nonce = typeof payload.nonce === "string" ? payload.nonce : null;
     if (payload.evt === "READY") {
-      ready = true;
-      readyResolver?.();
-      readyResolver = null;
-      readyRejecter = null;
-      for (const callback of readyCallbacks) notifyReadyBestEffort(callback);
+      attempt.ready = true;
+      attempt.readyResolver?.();
+      attempt.readyResolver = null;
+      attempt.readyRejecter = null;
+      for (const callback of readyCallbacks) {
+        notifyReadyBestEffort(callback);
+        if (!isActiveAttempt(attempt)) return;
+      }
       return;
     }
     if (!nonce) return;
@@ -391,41 +419,57 @@ export function createDiscordIpcClient(
     }
   };
 
-  const handleFramingFault = (fault: DiscordIpcProtocolFault) => {
-    transitionToTerminal(new Error(`Discord IPC protocol fault: ${fault.reason}`), true);
+  const handleFramingFault = (
+    attempt: DiscordIpcConnectionAttempt,
+    fault: DiscordIpcProtocolFault,
+  ) => {
+    terminalizeAttempt(attempt, new Error(`Discord IPC protocol fault: ${fault.reason}`), true);
   };
 
-  const handleData = (chunk: Uint8Array, generation: number) => {
-    const batch = accumulator.push(chunk);
+  const handleData = (attempt: DiscordIpcConnectionAttempt, chunk: Uint8Array) => {
+    const batch = attempt.accumulator.push(chunk);
+    if (!isActiveAttempt(attempt)) {
+      attempt.accumulator.clear();
+      return;
+    }
     if (batch.fault) {
-      handleFramingFault(batch.fault);
+      handleFramingFault(attempt, batch.fault);
       return;
     }
     for (const packet of batch.packets) {
-      if (generation !== connectionGeneration) return;
+      if (!isActiveAttempt(attempt)) return;
       const decoded = decodeDiscordIpcSocketPacket(packet);
+      if (!isActiveAttempt(attempt)) return;
       if (!decoded.frame) continue;
       if (decoded.frame.op === 3) {
         new DataView(packet.buffer, packet.byteOffset, packet.byteLength).setUint32(0, 4, true);
-        socket?.write(packet);
+        const targetSocket = attempt.socket;
+        if (!targetSocket) {
+          terminalizeAttempt(attempt, new Error("Discord IPC socket was unavailable"), true);
+          return;
+        }
+        targetSocket.write(packet);
+        if (!isActiveAttempt(attempt) || attempt.socket !== targetSocket) return;
         continue;
       }
-      handlePayload(decoded.frame.op, decoded.frame.payload);
+      handlePayload(attempt, decoded.frame.op, decoded.frame.payload);
     }
   };
 
-  const handleDataSafely = (chunk: Uint8Array, generation: number) => {
+  const handleDataSafely = (attempt: DiscordIpcConnectionAttempt, chunk: Uint8Array) => {
     try {
-      handleData(chunk, generation);
+      handleData(attempt, chunk);
     } catch {
-      if (generation === connectionGeneration) {
-        transitionToTerminal(new Error("Discord IPC callback failed"), true);
-      }
+      terminalizeAttempt(attempt, new Error("Discord IPC callback failed"), true);
     }
   };
 
   const sendFrame = (payload: Record<string, unknown>): Promise<void> => {
-    if (!socket || !ready) return Promise.reject(new Error("Discord IPC is not connected"));
+    const attempt = activeAttempt;
+    const targetSocket = attempt?.socket ?? null;
+    if (!attempt || !targetSocket || !attempt.ready || attempt.terminalCause) {
+      return Promise.reject(new Error("Discord IPC is not connected"));
+    }
     const nonce = `kunai-${Date.now().toString(36)}-${++nonceCounter}`;
     const frame = { ...payload, nonce };
     return new Promise<void>((resolve, reject) => {
@@ -434,111 +478,147 @@ export function createDiscordIpcClient(
         reject(new Error("Discord IPC command timed out"));
       }, timeoutMs);
       pending.set(nonce, { timeout, resolve, reject });
-      socket?.write(encodeDiscordIpcPacket(1, frame));
+      try {
+        targetSocket.write(encodeDiscordIpcPacket(1, frame));
+      } catch (error) {
+        terminalizeAttempt(attempt, toError(error), true);
+      }
     });
   };
 
   return {
     async login(input) {
-      if (ready) return;
+      const readyAttempt = activeAttempt;
+      if (
+        readyAttempt?.ready &&
+        readyAttempt.socket &&
+        !readyAttempt.terminalCause &&
+        isActiveAttempt(readyAttempt)
+      ) {
+        return;
+      }
       if (destroyed) throw new Error("Discord IPC client was destroyed");
 
       const ownedLoginGeneration = ++loginGeneration;
-      if (socket) {
-        transitionToTerminal(new Error("Discord IPC login was superseded"), true);
+      const previousAttempt = activeAttempt;
+      if (previousAttempt) {
+        terminalizeAttempt(previousAttempt, new Error("Discord IPC login was superseded"), true);
       }
 
-      let lastError: unknown = null;
-      let activeSocket: DiscordIpcSocket | null = null;
-      let connectedGeneration: number | null = null;
+      let lastError: Error | null = null;
+      let connectedAttempt: DiscordIpcConnectionAttempt | null = null;
       for (const endpoint of endpointCandidates()) {
         if (destroyed || ownedLoginGeneration !== loginGeneration) {
           throw currentLoginError();
         }
-        accumulator.clear();
-        const generation = ++connectionGeneration;
+
+        const attempt: DiscordIpcConnectionAttempt = {
+          generation: ++nextAttemptGeneration,
+          loginGeneration: ownedLoginGeneration,
+          accumulator: new DiscordIpcFrameAccumulator(),
+          socket: null,
+          terminalCause: null,
+          ready: false,
+          readyResolver: null,
+          readyRejecter: null,
+        };
+        activeAttempt = attempt;
         try {
           const connectedSocket = await connector(endpoint, {
             onData: (data) => {
-              if (generation === connectionGeneration) handleDataSafely(data, generation);
+              if (isActiveAttempt(attempt)) handleDataSafely(attempt, data);
             },
             onClose: () => {
-              if (generation !== connectionGeneration) return;
-              transitionToTerminal(new Error("Discord IPC connection closed"), false);
+              terminalizeAttempt(attempt, new Error("Discord IPC connection closed"), false);
             },
             onError: (error) => {
-              if (generation !== connectionGeneration) return;
-              transitionToTerminal(toError(error), true);
+              if (!isActiveAttempt(attempt)) return;
+              const cause = toError(error);
+              terminalizeAttempt(attempt, cause, true);
             },
           });
+          attempt.socket = connectedSocket;
           if (destroyed || ownedLoginGeneration !== loginGeneration) {
-            endSocketBestEffort(connectedSocket);
+            terminalizeAttempt(attempt, currentLoginError(), true);
             throw currentLoginError();
           }
-          if (generation !== connectionGeneration) {
-            lastError = new Error("Discord IPC connection ended while connecting");
-            endSocketBestEffort(connectedSocket);
+          if (!isActiveAttempt(attempt) || attempt.terminalCause) {
+            lastError = terminalizeAttempt(
+              attempt,
+              new Error("Discord IPC connection ended while connecting"),
+              true,
+            );
             continue;
           }
-          socket = connectedSocket;
-          activeSocket = connectedSocket;
-          connectedGeneration = generation;
+          connectedAttempt = attempt;
           break;
         } catch (error) {
+          const cause = toError(error);
           if (destroyed || ownedLoginGeneration !== loginGeneration) {
+            terminalizeAttempt(attempt, cause, true);
             throw currentLoginError();
           }
-          if (generation === connectionGeneration) {
-            accumulator.clear();
-            connectionGeneration += 1;
+          if (!isActiveAttempt(attempt) || attempt.terminalCause) {
+            lastError = terminalizeAttempt(attempt, cause, true);
+            continue;
           }
-          lastError = error;
+          lastError = terminalizeAttempt(attempt, cause, false);
         }
       }
-      if (!activeSocket) {
+      if (!connectedAttempt?.socket) {
         throw new Error(
           `Could not connect to Discord IPC${lastError ? `: ${normalizeErrorMessage(lastError)}` : ""}`,
         );
       }
 
+      const attempt = connectedAttempt;
+      const connectedSocket = attempt.socket;
+      if (!connectedSocket) throw new Error("Discord IPC connection ended while connecting");
       const readyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
-          readyResolver = null;
-          readyRejecter = null;
+          attempt.readyResolver = null;
+          attempt.readyRejecter = null;
           reject(new Error("Discord IPC ready timed out"));
         }, timeoutMs);
-        readyResolver = () => {
+        attempt.readyResolver = () => {
           clearTimeout(timeout);
           resolve();
         };
-        readyRejecter = (error) => {
+        attempt.readyRejecter = (error) => {
           clearTimeout(timeout);
           reject(error);
         };
+        if (attempt.ready) attempt.readyResolver();
       });
       try {
-        activeSocket.write(
+        connectedSocket.write(
           encodeDiscordIpcPacket(0, {
             v: DISCORD_IPC_VERSION,
             client_id: input.clientId,
           }),
         );
       } catch (error) {
-        readyRejecter?.(toError(error));
+        terminalizeAttempt(attempt, toError(error), true);
       }
       try {
         await readyPromise;
       } catch (error) {
-        if (destroyed || ownedLoginGeneration !== loginGeneration) {
-          throw currentLoginError();
-        }
-        if (connectedGeneration === connectionGeneration) {
-          transitionToTerminal(toError(error), true);
-        }
-        throw error;
+        const cause = attempt.terminalCause ?? toError(error);
+        terminalizeAttempt(attempt, cause, true);
+        throw cause;
       }
-      if (destroyed || ownedLoginGeneration !== loginGeneration) {
-        throw currentLoginError();
+      if (attempt.terminalCause) throw attempt.terminalCause;
+      if (
+        destroyed ||
+        ownedLoginGeneration !== loginGeneration ||
+        attempt.loginGeneration !== ownedLoginGeneration ||
+        !isActiveAttempt(attempt) ||
+        attempt.socket !== connectedSocket ||
+        !attempt.ready
+      ) {
+        const cause = currentLoginError();
+        terminalizeAttempt(attempt, cause, true);
+        throw cause;
       }
     },
     setActivity(activity) {
@@ -556,19 +636,25 @@ export function createDiscordIpcClient(
     async destroy() {
       destroyed = true;
       loginGeneration += 1;
-      if (socket) {
+      const attempt = activeAttempt;
+      if (attempt?.socket) {
         try {
-          socket.write(encodeDiscordIpcPacket(2, {}));
+          attempt.socket.write(encodeDiscordIpcPacket(2, {}));
         } catch {
           // Ignore close-frame failures; socket teardown is best effort.
         }
       }
-      transitionToTerminal(new Error("Discord IPC client was destroyed"), true);
+      if (attempt) {
+        terminalizeAttempt(attempt, new Error("Discord IPC client was destroyed"), true);
+      } else {
+        rejectAll(new Error("Discord IPC client was destroyed"));
+      }
     },
     on(event, callback) {
       if (event !== "ready") return;
       readyCallbacks.add(callback);
-      if (ready) notifyReadyBestEffort(callback);
+      const attempt = activeAttempt;
+      if (attempt?.ready && !attempt.terminalCause) notifyReadyBestEffort(callback);
     },
   };
 }

@@ -14,6 +14,7 @@ import {
 
 type FakeConnectorOptions = {
   readonly firstAttemptDataBeforeReject?: Uint8Array;
+  readonly readyThenThrowOnWriteNumber?: number;
   readonly throwOnWriteNumber?: number;
   readonly throwOnEnd?: boolean;
   readonly terminalBeforeResolve?: "close" | "error";
@@ -90,6 +91,10 @@ function createFakeConnector(options: FakeConnectorOptions = {}): {
         throw new Error("fake Discord write failed");
       }
       writes.push(data);
+      if (writeNumber === options.readyThenThrowOnWriteNumber) {
+        activeCallbacks?.onData(encodeDiscordIpcPacket(1, { cmd: "DISPATCH", evt: "READY" }));
+        throw new Error("fake Discord write failed after READY");
+      }
       if (writeNumber === options.terminalOnWrite?.number) {
         if (options.terminalOnWrite.event === "close") activeCallbacks?.onClose();
         else activeCallbacks?.onError(new Error("fake synchronous Discord write error"));
@@ -103,6 +108,39 @@ function createFakeConnector(options: FakeConnectorOptions = {}): {
   };
 
   return state;
+}
+
+function createDistinctSocketConnector(): {
+  readonly connector: DiscordIpcConnector;
+  readonly callbacks: Parameters<DiscordIpcConnector>[1][];
+  readonly writes: Array<{ readonly attempt: number; readonly data: Uint8Array }>;
+  readonly ended: number[];
+  pushPacket(attempt: number, packet: Record<string, unknown>, op?: number): void;
+} {
+  const callbacks: Parameters<DiscordIpcConnector>[1][] = [];
+  const writes: Array<{ readonly attempt: number; readonly data: Uint8Array }> = [];
+  const ended: number[] = [];
+  return {
+    callbacks,
+    writes,
+    ended,
+    connector: (async (_endpoint, attemptCallbacks) => {
+      const attempt = callbacks.length;
+      callbacks.push(attemptCallbacks);
+      ended[attempt] = 0;
+      return {
+        write(data) {
+          writes.push({ attempt, data });
+        },
+        end() {
+          ended[attempt] = (ended[attempt] ?? 0) + 1;
+        },
+      };
+    }) as DiscordIpcConnector,
+    pushPacket(attempt, packet, op = 1) {
+      callbacks[attempt]?.onData(encodeDiscordIpcPacket(op, packet));
+    },
+  };
 }
 
 /** A well-formed 8-byte header whose body is whatever bytes you pass. */
@@ -276,6 +314,64 @@ describe("discord-ipc-client malformed input containment", () => {
     fake.pushPacket({ cmd: "SET_ACTIVITY", nonce: command.payload.nonce as string });
     expect(await updateOutcome).toBeNull();
     expect(fake.ended).toBe(false);
+  });
+
+  test("READY followed by protocol CLOSE in one callback rejects login truthfully", async () => {
+    const fake = createFakeConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 20,
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    const batch = joinBytes(
+      encodeDiscordIpcPacket(1, { cmd: "DISPATCH", evt: "READY" }),
+      encodeDiscordIpcPacket(2, { message: "Discord closed after READY" }),
+    );
+
+    expect(() => fake.pushRaw(batch)).not.toThrow();
+    const loginError = await login.then(
+      () => null,
+      (error) => error as Error,
+    );
+    const activityError = await client.setActivity({ details: "Must not send" }).then(
+      () => null,
+      (error) => error as Error,
+    );
+
+    expect(loginError).toEqual(
+      expect.objectContaining({ message: expect.stringContaining("Discord closed after READY") }),
+    );
+    expect(activityError).toEqual(
+      expect.objectContaining({ message: "Discord IPC is not connected" }),
+    );
+  });
+
+  test("a handshake write that delivers READY and then throws cannot resolve login", async () => {
+    const fake = createFakeConnector({ readyThenThrowOnWriteNumber: 1 });
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 20,
+    });
+
+    const loginError = await client.login({ clientId: "client-1" }).then(
+      () => null,
+      (error) => error as Error,
+    );
+    const activityError = await client.setActivity({ details: "Must not send" }).then(
+      () => null,
+      (error) => error as Error,
+    );
+
+    expect(loginError).toEqual(
+      expect.objectContaining({ message: "fake Discord write failed after READY" }),
+    );
+    expect(activityError).toEqual(
+      expect.objectContaining({ message: "Discord IPC is not connected" }),
+    );
+    expect(fake.ended).toBe(true);
   });
 
   test("close and error invalidate their generation before a late READY", async () => {
@@ -474,6 +570,83 @@ describe("discord-ipc-client malformed input containment", () => {
         nonce: command.payload.nonce as string,
       }),
     );
+    await expect(update).resolves.toBeUndefined();
+  });
+
+  test("reentrant hostile error classification cannot terminalize a newer attempt", async () => {
+    const fake = createDistinctSocketConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 20,
+    });
+    const firstLogin = client.login({ clientId: "client-1" });
+    for (let turn = 0; turn < 8 && fake.writes.length === 0; turn += 1) {
+      await Promise.resolve();
+    }
+    let secondLogin: Promise<void> | null = null;
+    const hostileError = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          secondLogin ??= client.login({ clientId: "client-1" });
+          return Object.prototype;
+        },
+      },
+    );
+
+    expect(() => fake.callbacks[0]?.onError(hostileError)).not.toThrow();
+    for (let turn = 0; turn < 8 && !fake.writes.some((write) => write.attempt === 1); turn += 1) {
+      await Promise.resolve();
+    }
+    fake.pushPacket(1, { cmd: "DISPATCH", evt: "READY" });
+
+    await expect(firstLogin).rejects.toThrow("Discord IPC login was superseded");
+    await expect(secondLogin).resolves.toBeUndefined();
+    expect(fake.ended).toEqual([1, 0]);
+
+    const update = client.setActivity({ details: "New attempt survived hostile error" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1)?.data ?? new Uint8Array());
+    fake.pushPacket(1, { cmd: "SET_ACTIVITY", nonce: command.payload.nonce as string });
+    await expect(update).resolves.toBeUndefined();
+  });
+
+  test("reentrant hostile chunk access cannot contaminate a newer accumulator", async () => {
+    const fake = createDistinctSocketConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 20,
+    });
+    const firstLogin = client.login({ clientId: "client-1" });
+    for (let turn = 0; turn < 8 && fake.writes.length === 0; turn += 1) {
+      await Promise.resolve();
+    }
+    let secondLogin: Promise<void> | null = null;
+    let reentered = false;
+    const hostileChunk = new Proxy(new Uint8Array([0]), {
+      get(target, property) {
+        if (property === "byteLength" && !reentered) {
+          reentered = true;
+          secondLogin = client.login({ clientId: "client-1" });
+        }
+        return Reflect.get(target, property, target) as unknown;
+      },
+    });
+
+    expect(() => fake.callbacks[0]?.onData(hostileChunk)).not.toThrow();
+    for (let turn = 0; turn < 8 && !fake.writes.some((write) => write.attempt === 1); turn += 1) {
+      await Promise.resolve();
+    }
+    fake.pushPacket(1, { cmd: "DISPATCH", evt: "READY" });
+
+    await expect(firstLogin).rejects.toThrow("Discord IPC login was superseded");
+    await expect(secondLogin).resolves.toBeUndefined();
+    expect(fake.ended).toEqual([1, 0]);
+
+    const update = client.setActivity({ details: "New accumulator stayed isolated" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1)?.data ?? new Uint8Array());
+    fake.pushPacket(1, { cmd: "SET_ACTIVITY", nonce: command.payload.nonce as string });
     await expect(update).resolves.toBeUndefined();
   });
 
