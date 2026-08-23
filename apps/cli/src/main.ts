@@ -429,6 +429,16 @@ async function maybeRunDownloadMode(
     return true;
   }
 
+  // Download mode never reaches PlaybackPhase, so nothing here would otherwise
+  // resolve the catalog: a `-i/--id` launch wrote its placeholder into the job,
+  // the offline library, and the file name on disk. Only a placeholder pays for
+  // the lookup, and a failure leaves the title as it was.
+  const { fetchTitleDetail } = await import("@/services/catalog/TitleDetailService");
+  const { resolvePlaceholderTitle } = await import("@/app/bootstrap/resolve-placeholder-title");
+  const downloadTitle = await resolvePlaceholderTitle(searchResult.value, {
+    fetchDetail: fetchTitleDetail,
+  });
+
   const { DownloadOnlyPhase } = await import("@/app/playback/DownloadOnlyPhase");
   const result = await new DownloadOnlyPhase({
     prepareConfirmedTitle: async (title, context) => {
@@ -454,7 +464,7 @@ async function maybeRunDownloadMode(
       );
     },
   }).execute(
-    { title: searchResult.value, outputDirectory: args.downloadPath },
+    { title: downloadTitle, outputDirectory: args.downloadPath },
     { container, signal: new AbortController().signal },
   );
   if (result.status === "error") {

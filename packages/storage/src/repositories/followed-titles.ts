@@ -1,3 +1,5 @@
+import { isPlaceholderTitleName } from "@kunai/core";
+
 import type { KunaiDatabase } from "../sqlite";
 
 export type FollowedTitlePreference = "implicit" | "following" | "muted";
@@ -32,6 +34,15 @@ export class FollowedTitleRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
   upsert(input: FollowedTitleRecord): FollowedTitleRecord {
+    // Following or muting a title must not rename it. A caller holding only an
+    // id passes a stand-in name; the preference is the thing it means to change.
+    const existing = this.get(input.titleId);
+    const title =
+      existing?.title &&
+      isPlaceholderTitleName(input.title, input.titleId) &&
+      !isPlaceholderTitleName(existing.title, existing.titleId)
+        ? existing.title
+        : input.title;
     this.db
       .query(
         `INSERT INTO followed_titles (title_id, media_kind, title, preference, updated_at)
@@ -42,7 +53,7 @@ export class FollowedTitleRepository {
            preference = excluded.preference,
            updated_at = excluded.updated_at`,
       )
-      .run(input.titleId, input.mediaKind, input.title, input.preference, input.updatedAt);
+      .run(input.titleId, input.mediaKind, title, input.preference, input.updatedAt);
     const row = this.get(input.titleId);
     if (!row) throw new Error(`Followed title not found after upsert: ${input.titleId}`);
     return row;
