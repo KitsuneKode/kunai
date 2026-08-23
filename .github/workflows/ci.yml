@@ -508,8 +508,15 @@ jobs:
         run: |
           bun run verify:doc-paths
           bun run verify:doc-frontmatter
-          bun run --cwd apps/docs generate
+          # Freshness is checked BEFORE generate, deliberately. The script reads
+          # the committed generated-metadata.json from disk and compares it to
+          # freshly built metadata, so running generate first made it compare a
+          # file the previous line had just rewritten -- it passed
+          # unconditionally and could never fail. Nothing above needs the
+          # generated output, and buildMetadata() reads source, so checking here
+          # is valid; everything below still needs generate to have run.
           bun run --cwd apps/docs scripts/check-codegen-freshness.ts
+          bun run --cwd apps/docs generate
           bun run --cwd apps/docs typecheck:app
           bun run --cwd apps/docs lint
           bun run --cwd apps/docs test
