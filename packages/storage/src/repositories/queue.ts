@@ -358,10 +358,23 @@ export class QueueRepository {
     this.db.query("DELETE FROM playlist_queue WHERE session_id = ?").run(sessionId);
   }
 
-  /** Persist an explicit ordering — assigns queue_position = index for each id in order. */
+  /**
+   * Persist an explicit ordering — assigns queue_position = index for each id in order.
+   *
+   * Transactional because `queue_position` is a total ordering across rows: a
+   * half-applied batch is not a stale queue, it is an invalid one, with
+   * duplicate or missing positions. The loop can be interrupted by a crash, the
+   * memory watchdog's SIGKILL, or the shutdown coordinator's force-exit
+   * deadline, so all-or-nothing is the only safe shape.
+   *
+   * Safe to call from inside another transaction — `restoreQueueSession` does.
+   * bun:sqlite nests via SAVEPOINT, so an outer rollback still undoes this.
+   */
   setQueuePositions(orderedIds: readonly string[]): void {
     const stmt = this.db.query("UPDATE playlist_queue SET queue_position = ? WHERE id = ?");
-    orderedIds.forEach((id, index) => stmt.run(index, id));
+    this.db.transaction(() => {
+      orderedIds.forEach((id, index) => stmt.run(index, id));
+    })();
   }
 
   clearPlayed(sessionId: string): void {

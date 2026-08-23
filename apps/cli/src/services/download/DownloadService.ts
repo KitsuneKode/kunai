@@ -544,11 +544,42 @@ export class DownloadService {
     // Claim synchronously (no await before this) so a concurrent worker's
     // selectEligibleQueuedJob skips this job until it is markRunning or released.
     this.claimedJobIds.add(next.id);
-    const storage = await this.evaluateStorageForPath(
-      next.outputPath,
-      next.id,
-      next.selectedQualityLabel,
-    );
+
+    // `evaluateStorageForPath` runs mkdir + statfs, which throw when the output
+    // path is unwritable, unmounted, or not a directory — an unplugged external
+    // drive or a dropped network share. That throw used to escape past the
+    // claim: `claimedJobIds` still held the id, `selectEligibleQueuedJob` skips
+    // claimed ids forever, and the job became unstartable for the rest of the
+    // session while still showing as queued. It also reached every
+    // `void processQueue()` call site as an unhandled rejection, which
+    // `main.ts` escalates to a fatal shutdown.
+    let storage: Awaited<ReturnType<DownloadService["evaluateStorageForPath"]>>;
+    try {
+      storage = await this.evaluateStorageForPath(
+        next.outputPath,
+        next.id,
+        next.selectedQualityLabel,
+      );
+    } catch (error) {
+      this.claimedJobIds.delete(next.id);
+      const detail = error instanceof Error ? error.message : String(error);
+      const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      this.deps.repo.pause(
+        next.id,
+        `Download paused because the download folder is unavailable: ${detail}`,
+        retryAt,
+        now,
+      );
+      this.deps.diagnostics?.record({
+        category: "download",
+        level: "warn",
+        operation: "download.path.unavailable",
+        message: "Download start failed because the output path could not be prepared",
+        context: { jobId: next.id, error: detail },
+      });
+      return null;
+    }
+
     if (!storage.allowed) {
       this.claimedJobIds.delete(next.id);
       const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
@@ -570,13 +601,21 @@ export class DownloadService {
       });
       return null;
     }
-    if (!this.deps.repo.markRunning(next.id, now)) {
+    // Anything between the claim and the try/finally below must release the
+    // claim on the way out, or the job is stranded exactly as above.
+    let stopHeartbeat: () => void;
+    try {
+      if (!this.deps.repo.markRunning(next.id, now)) {
+        this.claimedJobIds.delete(next.id);
+        // Another process won the durable claim after our read. Its update makes
+        // this row ineligible, so continue with the next queued candidate.
+        return await this.processNextQueued();
+      }
+      stopHeartbeat = this.startHeartbeat(next.id);
+    } catch (error) {
       this.claimedJobIds.delete(next.id);
-      // Another process won the durable claim after our read. Its update makes
-      // this row ineligible, so continue with the next queued candidate.
-      return this.processNextQueued();
+      throw error;
     }
-    const stopHeartbeat = this.startHeartbeat(next.id);
 
     try {
       const downloaded = await this.executeYtDlpDownload(next);
