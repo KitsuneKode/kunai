@@ -11,6 +11,7 @@ import {
 import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
 
 import { storageRootEnv } from "../../helpers/storage-env";
+import { removeTempDir } from "../../support/remove-temp-dir";
 
 const CLI_ROOT = resolve(import.meta.dirname, "../../..");
 const REPO_ROOT = resolve(CLI_ROOT, "../..");
@@ -112,7 +113,7 @@ exec ${JSON.stringify(GLIBC_BIN)} "$@"
     paths,
     env,
     evidencePath,
-    cleanup: () => rmSync(root, { recursive: true, force: true }),
+    cleanup: () => removeTempDir(root),
   };
 }
 

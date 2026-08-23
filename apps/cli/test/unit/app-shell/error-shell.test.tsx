@@ -4,6 +4,7 @@ import { ErrorShell } from "@/app-shell/root-status-shells";
 import React, { act } from "react";
 
 import { CAPTURE_WIDTHS, captureFrame, render } from "../../harness/render-capture";
+import { frameWidth, renderedWidth } from "../../support/rendered-width";
 
 /**
  * Let the petal-fall interval run for real, with its state updates flushed
@@ -30,10 +31,6 @@ const props = {
   onResolve: () => {},
   onRetry: () => {},
 };
-
-/** Longest line in the frame — the panel's outer width as actually rendered. */
-const frameWidth = (frame: string) =>
-  Math.max(...frame.split("\n").map((line) => [...line.trimEnd()].length));
 
 describe("ErrorShell", () => {
   test("renders the headline, scenario detail and waterfall", () => {
@@ -80,7 +77,9 @@ describe("ErrorShell", () => {
       const frame = captureFrame(<ErrorShell {...props} />, { columns });
       expect(frame).toContain("Playback failed");
       for (const line of frame.split("\n")) {
-        expect([...line.trimEnd()].length).toBeLessThanOrEqual(columns);
+        // Display columns, not character count — Ink's inline colour codes are
+        // not glyphs, and a wide glyph is not one column.
+        expect(renderedWidth(line)).toBeLessThanOrEqual(columns);
       }
     }
   });

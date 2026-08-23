@@ -7,6 +7,8 @@ import { DownloadEnqueueRejectedError, DownloadService } from "@/services/downlo
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
+import { waitUntil as sharedWaitUntil } from "../../../support/wait-until";
+
 const encoder = new TextEncoder();
 const originalFetch = globalThis.fetch;
 
@@ -1530,21 +1532,7 @@ function streamOf(text: string): ReadableStream<Uint8Array> {
   });
 }
 
-/**
- * Wait for a condition, with a budget generous enough not to assert machine speed.
- *
- * The old 250ms default was a bet on how fast the runner is, not on behaviour:
- * on a loaded Windows agent these download tests take seconds end to end, so
- * adding unrelated tests elsewhere reshuffled `--parallel` scheduling and tipped
- * three of them over. The predicate still returns the instant it is true, so a
- * larger ceiling costs nothing when the code works and a genuinely broken
- * condition still fails — just after a wait that no longer depends on the host.
- */
+/** Local signature kept so existing call sites read unchanged. */
 async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await Bun.sleep(5);
-  }
-  throw new Error(`waitUntil timed out after ${timeoutMs}ms`);
+  await sharedWaitUntil(predicate, { timeoutMs });
 }

@@ -6,6 +6,8 @@ import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-h
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 
+import { waitUntil } from "../../../support/wait-until";
+
 type CapturedCallbacks = Parameters<PersistentMpvSessionRuntime["openIpcSession"]>[0];
 
 function createStream(overrides: Partial<StreamInfo> = {}): StreamInfo {
@@ -109,13 +111,15 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error("Timed out waiting for fake mpv lifecycle condition");
 }
 
-/** Bootstrap teardown does real filesystem work, so poll on timer ticks. */
+/**
+ * Bootstrap teardown does real filesystem work, so poll rather than sleep.
+ *
+ * The budget was 200ms, which is a bet on disk speed: the same work on a loaded
+ * Windows agent takes longer, and the failure surfaced as this generic message
+ * rather than as whatever was actually still pending.
+ */
 async function waitForSettled(predicate: () => boolean): Promise<void> {
-  for (let i = 0; i < 200; i++) {
-    if (predicate()) return;
-    await Bun.sleep(1);
-  }
-  throw new Error("Timed out waiting for mpv bootstrap teardown");
+  await waitUntil(predicate, { label: "mpv bootstrap teardown" });
 }
 
 describe("PersistentMpvSession single pending load owner", () => {
