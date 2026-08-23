@@ -2,6 +2,47 @@ import { describe, expect, test } from "bun:test";
 
 import { createMpvIpcEndpoint, mpvIpcSocketDirCandidates } from "@/infra/player/mpv-ipc-endpoint";
 
+type DirectoryFacts = {
+  readonly directory: boolean;
+  readonly symbolicLink: boolean;
+  readonly mode: number;
+  readonly uid?: number;
+  readonly device: number;
+  readonly inode: number;
+};
+
+const SAFE_DIRECTORY: DirectoryFacts = {
+  directory: true,
+  symbolicLink: false,
+  mode: 0o700,
+  uid: 1000,
+  device: 1,
+  inode: 2,
+};
+
+function directoryOperations(
+  factsFor: (path: string, kind: "lstat" | "stat") => DirectoryFacts = () => SAFE_DIRECTORY,
+) {
+  const made: Array<{ path: string; mode: number }> = [];
+  return {
+    made,
+    operations: {
+      makeDirectory(path: string, mode: number) {
+        made.push({ path, mode });
+      },
+      lstat(path: string) {
+        return factsFor(path, "lstat");
+      },
+      stat(path: string) {
+        return factsFor(path, "stat");
+      },
+      currentUid() {
+        return 1000;
+      },
+    },
+  };
+}
+
 /**
  * The socket used to sit directly in the shared temp dir.
  *
@@ -16,10 +57,10 @@ import { createMpvIpcEndpoint, mpvIpcSocketDirCandidates } from "@/infra/player/
  * directory closes it for free.
  */
 describe("mpv IPC socket directory", () => {
-  test("prefers XDG_RUNTIME_DIR, then a private temp subdir, then bare temp", () => {
+  test("prefers XDG_RUNTIME_DIR, then a private temp subdir, never bare temp", () => {
     expect(
       mpvIpcSocketDirCandidates({ XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" }),
-    ).toEqual(["/run/user/1000/kunai", "/tmp/kunai-ipc", "/tmp"]);
+    ).toEqual(["/run/user/1000/kunai", "/tmp/kunai-ipc"]);
   });
 
   test("macOS has no XDG_RUNTIME_DIR, so the private temp subdir leads", () => {
@@ -27,25 +68,31 @@ describe("mpv IPC socket directory", () => {
     // exists is how a Linux-shaped fix regresses every Mac.
     expect(mpvIpcSocketDirCandidates({ TMPDIR: "/var/folders/ab/xyz/T/" })).toEqual([
       "/var/folders/ab/xyz/T/kunai-ipc",
-      "/var/folders/ab/xyz/T/",
     ]);
+
+    const fake = directoryOperations();
+    const endpoint = createMpvIpcEndpoint("abc-123", "darwin", {
+      env: { TMPDIR: "/var/folders/ab/xyz/T/" },
+      directoryOperations: fake.operations,
+    });
+    expect(fake.made).toEqual([{ path: "/var/folders/ab/xyz/T/kunai-ipc", mode: 0o700 }]);
+    expect(endpoint.path).toBe("/var/folders/ab/xyz/T/kunai-ipc/kunai-mpv-abc-123.sock");
   });
 
   test("an empty XDG_RUNTIME_DIR is ignored rather than producing a bare path", () => {
     expect(mpvIpcSocketDirCandidates({ XDG_RUNTIME_DIR: "   ", TMPDIR: "/tmp" })).toEqual([
       "/tmp/kunai-ipc",
-      "/tmp",
     ]);
   });
 
   test("creates the chosen directory owner-only and puts the socket in it", () => {
-    const made: Array<string> = [];
+    const fake = directoryOperations();
     const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
       env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
-      makeDir: (path) => made.push(path),
+      directoryOperations: fake.operations,
     });
 
-    expect(made).toEqual(["/run/user/1000/kunai"]);
+    expect(fake.made).toEqual([{ path: "/run/user/1000/kunai", mode: 0o700 }]);
     expect(endpoint).toEqual({
       kind: "unix_socket",
       path: "/run/user/1000/kunai/kunai-mpv-abc-123.sock",
@@ -53,28 +100,78 @@ describe("mpv IPC socket directory", () => {
   });
 
   test("falls through when the runtime dir cannot be created", () => {
-    const made: Array<string> = [];
+    const fake = directoryOperations();
+    const makeDirectory = fake.operations.makeDirectory;
+    fake.operations.makeDirectory = (path, mode) => {
+      makeDirectory(path, mode);
+      if (path.startsWith("/run/user")) throw new Error("EACCES");
+    };
     const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
       env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
-      makeDir: (path) => {
-        made.push(path);
-        if (path.startsWith("/run/user")) throw new Error("EACCES");
-      },
+      directoryOperations: fake.operations,
     });
 
-    expect(made).toEqual(["/run/user/1000/kunai", "/tmp/kunai-ipc"]);
+    expect(fake.made).toEqual([
+      { path: "/run/user/1000/kunai", mode: 0o700 },
+      { path: "/tmp/kunai-ipc", mode: 0o700 },
+    ]);
     expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc-123.sock");
   });
 
-  test("falls back to bare temp when every private directory fails", () => {
+  test("rejects an existing symlink and falls through to a verified private directory", () => {
+    const fake = directoryOperations((path, kind) =>
+      path.startsWith("/run/user") && kind === "lstat"
+        ? { ...SAFE_DIRECTORY, directory: false, symbolicLink: true }
+        : SAFE_DIRECTORY,
+    );
+
     const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
       env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
-      makeDir: () => {
-        throw new Error("EROFS");
-      },
+      directoryOperations: fake.operations,
     });
-    // The previous behaviour, so a locked-down box still plays.
-    expect(endpoint.path).toBe("/tmp/kunai-mpv-abc-123.sock");
+
+    expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc-123.sock");
+  });
+
+  test("rejects a directory owned by another user", () => {
+    const fake = directoryOperations((path) =>
+      path.startsWith("/run/user") ? { ...SAFE_DIRECTORY, uid: 2000 } : SAFE_DIRECTORY,
+    );
+
+    const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
+      env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
+      directoryOperations: fake.operations,
+    });
+
+    expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc-123.sock");
+  });
+
+  test("rejects a group- or world-accessible directory", () => {
+    for (const mode of [0o710, 0o701]) {
+      const fake = directoryOperations((path) =>
+        path.startsWith("/run/user") ? { ...SAFE_DIRECTORY, mode } : SAFE_DIRECTORY,
+      );
+
+      const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
+        env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
+        directoryOperations: fake.operations,
+      });
+
+      expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc-123.sock");
+    }
+  });
+
+  test("fails closed when every private directory cannot be created", () => {
+    const fake = directoryOperations();
+    fake.operations.makeDirectory = () => {
+      throw new Error("EROFS");
+    };
+    expect(() =>
+      createMpvIpcEndpoint("abc-123", "linux", {
+        env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
+        directoryOperations: fake.operations,
+      }),
+    ).toThrow("Unable to prepare a private mpv IPC directory");
   });
 
   /**
@@ -84,13 +181,32 @@ describe("mpv IPC socket directory", () => {
    */
   test("skips candidates that would exceed the sun_path limit", () => {
     const long = `/run/user/1000/${"d".repeat(90)}`;
+    const fake = directoryOperations();
     const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
       env: { XDG_RUNTIME_DIR: long, TMPDIR: "/tmp" },
-      makeDir: () => {},
+      directoryOperations: fake.operations,
     });
 
     expect(endpoint.path.startsWith(long)).toBe(false);
     expect(Buffer.byteLength(endpoint.path, "utf8")).toBeLessThan(100);
+  });
+
+  test("fails closed when every private candidate exceeds the sun_path limit", () => {
+    const tooLong = `/private/${"d".repeat(110)}`;
+    const fake = directoryOperations();
+    let filesystemCalls = 0;
+    fake.operations.makeDirectory = () => {
+      filesystemCalls++;
+      throw new Error("overlong candidates must not touch the filesystem");
+    };
+
+    expect(() =>
+      createMpvIpcEndpoint("abc-123", "darwin", {
+        env: { TMPDIR: tooLong },
+        directoryOperations: fake.operations,
+      }),
+    ).toThrow("Unable to prepare a private mpv IPC directory");
+    expect(filesystemCalls).toBe(0);
   });
 
   /**
@@ -114,7 +230,7 @@ describe("mpv IPC socket directory", () => {
 
     const endpoint = createMpvIpcEndpoint("abc-123", "linux", {
       env: { XDG_RUNTIME_DIR: "/run/user/1000", TMPDIR: "/tmp" },
-      makeDir: () => {},
+      directoryOperations: directoryOperations().operations,
     });
     expect(endpoint.path).not.toContain("\\");
     expect(endpoint.path.startsWith("/")).toBe(true);
@@ -123,8 +239,19 @@ describe("mpv IPC socket directory", () => {
   test("Windows is untouched — named pipes, and the backslash spelling mpv needs", () => {
     const endpoint = createMpvIpcEndpoint("abc-123", "win32", {
       env: { TMPDIR: "C:\\Temp" },
-      makeDir: () => {
-        throw new Error("must not be called on win32");
+      directoryOperations: {
+        makeDirectory() {
+          throw new Error("must not make directories on win32");
+        },
+        lstat() {
+          throw new Error("must not lstat on win32");
+        },
+        stat() {
+          throw new Error("must not stat on win32");
+        },
+        currentUid() {
+          throw new Error("must not read uid on win32");
+        },
       },
     });
 

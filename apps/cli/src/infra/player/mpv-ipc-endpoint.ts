@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { lstatSync, mkdirSync, statSync } from "node:fs";
 import { posix as posixPath } from "node:path";
 
 /** Where Bun connects for mpv JSON IPC (`--input-ipc-server` value). */
@@ -19,6 +19,76 @@ function ipcPipeSuffix(sessionId: string): string {
  * long `XDG_RUNTIME_DIR` plus a session id can genuinely reach it.
  */
 const MAX_UNIX_SOCKET_PATH_BYTES = 100;
+
+export type MpvIpcDirectoryFacts = {
+  readonly directory: boolean;
+  readonly symbolicLink: boolean;
+  readonly mode: number;
+  readonly uid?: number;
+  readonly device: number;
+  readonly inode: number;
+};
+
+export type MpvIpcDirectoryOperations = {
+  readonly makeDirectory: (path: string, mode: number) => void;
+  readonly lstat: (path: string) => MpvIpcDirectoryFacts;
+  readonly stat: (path: string) => MpvIpcDirectoryFacts;
+  readonly currentUid: () => number | undefined;
+};
+
+function directoryFacts(path: string, followSymbolicLinks: boolean): MpvIpcDirectoryFacts {
+  const facts = followSymbolicLinks ? statSync(path) : lstatSync(path);
+  return {
+    directory: facts.isDirectory(),
+    symbolicLink: facts.isSymbolicLink(),
+    mode: facts.mode,
+    uid: facts.uid,
+    device: facts.dev,
+    inode: facts.ino,
+  };
+}
+
+const nodeDirectoryOperations: MpvIpcDirectoryOperations = {
+  makeDirectory(path, mode) {
+    mkdirSync(path, { recursive: true, mode });
+  },
+  lstat(path) {
+    return directoryFacts(path, false);
+  },
+  stat(path) {
+    return directoryFacts(path, true);
+  },
+  currentUid() {
+    return typeof process.getuid === "function" ? process.getuid() : undefined;
+  },
+};
+
+function isVerifiedPrivateDirectory(
+  linkFacts: MpvIpcDirectoryFacts,
+  targetFacts: MpvIpcDirectoryFacts,
+  currentUid: number | undefined,
+): boolean {
+  if (linkFacts.symbolicLink || !linkFacts.directory || !targetFacts.directory) return false;
+  if (linkFacts.device !== targetFacts.device || linkFacts.inode !== targetFacts.inode)
+    return false;
+  if ((targetFacts.mode & 0o777) !== 0o700) return false;
+  if (currentUid === undefined) return true;
+  if (linkFacts.uid !== undefined && linkFacts.uid !== currentUid) return false;
+  return targetFacts.uid === undefined || targetFacts.uid === currentUid;
+}
+
+function preparePrivateDirectory(path: string, operations: MpvIpcDirectoryOperations): boolean {
+  try {
+    operations.makeDirectory(path, 0o700);
+    return isVerifiedPrivateDirectory(
+      operations.lstat(path),
+      operations.stat(path),
+      operations.currentUid(),
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Directory for the mpv IPC socket, most private first.
@@ -53,44 +123,36 @@ export function mpvIpcSocketDirCandidates(
   return [
     ...(runtimeDir ? [posixPath.join(runtimeDir, "kunai")] : []),
     posixPath.join(tempDir, "kunai-ipc"),
-    tempDir,
   ];
 }
 
 /**
- * First candidate directory that exists at 0700 and yields a bindable path.
+ * First candidate directory verified as a real, owner-only 0700 directory that
+ * yields a bindable path.
  *
  * Creating the directory is a deliberate side effect of resolving the endpoint:
- * mpv binds the socket itself, so the parent has to be there first. Each step
- * is best-effort — an unwritable `XDG_RUNTIME_DIR` falls through rather than
- * failing the launch, and the last candidate is the bare temp dir, which is
- * where this lived before, so the worst case is the old behaviour.
+ * mpv binds the socket itself, so the parent has to be there first. Each private
+ * candidate is best-effort, but resolution fails closed if none can be created
+ * and verified; a shared bare temp directory is never returned.
  */
 function resolveUnixSocketPath(
   sessionId: string,
   env: Record<string, string | undefined>,
-  makeDir: (path: string) => void,
+  directoryOperations: MpvIpcDirectoryOperations,
 ): string {
   const fileName = `kunai-mpv-${sessionId}.sock`;
   const candidates = mpvIpcSocketDirCandidates(env);
 
-  for (const [index, dir] of candidates.entries()) {
+  for (const dir of candidates) {
     const candidate = posixPath.join(dir, fileName);
     if (Buffer.byteLength(candidate, "utf8") >= MAX_UNIX_SOCKET_PATH_BYTES) continue;
-    // The final candidate is the plain temp dir, which already exists.
-    if (index < candidates.length - 1) {
-      try {
-        makeDir(dir);
-      } catch {
-        continue;
-      }
-    }
+    if (!preparePrivateDirectory(dir, directoryOperations)) continue;
     return candidate;
   }
 
-  // Every candidate was too long or unusable. Fall back to the shortest path
-  // that can still bind rather than returning something that cannot.
-  return posixPath.join("/tmp", fileName);
+  throw new Error(
+    "Unable to prepare a private mpv IPC directory. Check XDG_RUNTIME_DIR/TMPDIR permissions and path lengths.",
+  );
 }
 
 function randomHex(byteCount: number): string {
@@ -122,8 +184,8 @@ export function createMpvIpcEndpoint(
   platform: NodeJS.Platform = process.platform,
   options: {
     readonly env?: Record<string, string | undefined>;
-    /** Injectable for tests; creates the directory owner-only. */
-    readonly makeDir?: (path: string) => void;
+    /** Injectable filesystem boundary for deterministic directory trust checks. */
+    readonly directoryOperations?: MpvIpcDirectoryOperations;
   } = {},
 ): MpvIpcEndpoint {
   if (platform === "win32") {
@@ -134,11 +196,13 @@ export function createMpvIpcEndpoint(
       path: `\\\\.\\pipe\\kunai-mpv-${ipcPipeSuffix(sessionId)}`,
     };
   }
-  const makeDir =
-    options.makeDir ?? ((path: string) => mkdirSync(path, { recursive: true, mode: 0o700 }));
   return {
     kind: "unix_socket",
-    path: resolveUnixSocketPath(sessionId, options.env ?? Bun.env, makeDir),
+    path: resolveUnixSocketPath(
+      sessionId,
+      options.env ?? Bun.env,
+      options.directoryOperations ?? nodeDirectoryOperations,
+    ),
   };
 }
 

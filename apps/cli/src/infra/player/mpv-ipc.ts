@@ -54,6 +54,21 @@ export type MpvIpcSessionOptions = {
   onEndFile: EndFileHandler;
   onFileLoaded?: FileLoadedHandler;
   onCommandResult?: (result: MpvIpcCommandResult) => void;
+  closeTimers?: MpvIpcCloseTimers;
+};
+
+export type MpvIpcCloseTimers = {
+  readonly setTimeout: (callback: () => void, delayMs: number) => unknown;
+  readonly clearTimeout: (handle: unknown) => void;
+};
+
+const defaultCloseTimers: MpvIpcCloseTimers = {
+  setTimeout(callback, delayMs) {
+    return setTimeout(callback, delayMs);
+  },
+  clearTimeout(handle) {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
 };
 
 export type MpvIpcSessionState =
@@ -146,6 +161,7 @@ export interface MpvIpcSession {
 }
 
 export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<MpvIpcSession> {
+  const closeTimers = options.closeTimers ?? defaultCloseTimers;
   const requestIds = new Map<number, string>();
   const pendingCommands = new Map<number, PendingCommand>();
   let nextRequestId = 1;
@@ -290,25 +306,26 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
         markClosed("session closed");
         if (socket.readyState !== 1) return;
         await new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return false;
+            settled = true;
+            socket.data.onClose = null;
+            resolve();
+            return true;
+          };
           // The fallback has to be cleared when the socket closes cleanly.
           // Uncleared it fires 200ms later against an already-closed socket,
           // and `close()` runs on every session release, not only at exit — so
           // each released mpv session left one behind.
-          let settled = false;
-          const finish = () => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(fallback);
-            socket.data.onClose = null;
-            // The guard above makes the clean-close/timeout race single-shot.
-            // eslint-disable-next-line promise/no-multiple-resolved
-            resolve();
-          };
-          const fallback = setTimeout(() => {
+          const fallback = closeTimers.setTimeout(() => {
+            if (!finish()) return;
             socket.terminate();
-            finish();
           }, 200);
-          socket.data.onClose = finish;
+          socket.data.onClose = () => {
+            closeTimers.clearTimeout(fallback);
+            finish();
+          };
           socket.end();
         });
       })();

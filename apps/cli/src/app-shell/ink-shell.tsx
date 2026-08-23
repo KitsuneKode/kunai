@@ -36,6 +36,7 @@ import { useBrowseDestinationLabel } from "./browse-destination";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
 import { recordRender } from "./diagnostics/render-trace";
+import { createDismissTimerRegistry } from "./dismiss-timer-registry";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
 import { ExitShell } from "./exit-shell";
 import { useSettledValue } from "./hooks/use-settled-value";
@@ -438,7 +439,7 @@ function AppRoot({ container }: { container: Container }) {
 
   useEffect(() => {
     /** Auto-dismiss handles for the streak alerts, cleared on unmount. */
-    const dismissTimers = new Set<ReturnType<typeof setTimeout>>();
+    const dismissTimers = createDismissTimerRegistry();
     const refresh = () => {
       let currentStreak: number | undefined;
       try {
@@ -467,7 +468,7 @@ function AppRoot({ container }: { container: Container }) {
             .update({ lastStreakMilestoneDays: nextMilestone })
             .then(() => container.config.save())
             .catch(() => undefined);
-          dismissTimers.add(setTimeout(() => setStreakMilestoneAlert(null), 6_000));
+          dismissTimers.schedule(() => setStreakMilestoneAlert(null), 6_000);
         }
 
         // Streak-at-risk: after 20:00 local time, if user hasn't watched today
@@ -477,7 +478,7 @@ function AppRoot({ container }: { container: Container }) {
             const watchedToday = container.statsService.watchedToday();
             if (!watchedToday) {
               setStreakAtRiskAlert(`🔥 ${days}d streak at risk — watch something tonight`);
-              dismissTimers.add(setTimeout(() => setStreakAtRiskAlert(null), 10_000));
+              dismissTimers.schedule(() => setStreakAtRiskAlert(null), 10_000);
             }
           } catch {
             // best-effort
@@ -494,8 +495,7 @@ function AppRoot({ container }: { container: Container }) {
       // transitions, so each mount could leave timers firing against a stale
       // setter. A set, not a single handle: overlapping refreshes can schedule
       // more than one.
-      for (const dismiss of dismissTimers) clearTimeout(dismiss);
-      dismissTimers.clear();
+      dismissTimers.dispose();
     };
   }, [container.statsService, container.syncService, container.queueService, container.config]);
 
