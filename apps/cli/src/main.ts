@@ -834,14 +834,28 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       case "direct-title":
         logger.info("Bootstrap title requested", { id: entry.id, type: entry.type });
         break;
+      // These two drop the flag entirely. `logger.warn` writes nowhere without
+      // `--debug`, so the run looked like a normal launch and the id vanished --
+      // the "flag parsed and dropped" failure this codebase treats as a bug.
+      // Say so on stderr, then continue into the shell rather than exiting: the
+      // session is still usable, only the shortcut is not.
       case "anime-id-unsupported":
         logger.warn("Direct ID bootstrap is not supported for anime mode yet", { id: entry.id });
+        process.stderr.write(
+          `kunai: -i/--id is not supported in anime mode yet, so ${entry.id} was ignored.\n` +
+            `Search by name instead, or drop -a to open the id as a TMDB title.\n`,
+        );
         break;
       case "id-without-type":
         logger.warn("Ignoring direct ID without a supported --type", {
           id: entry.id,
           type: entry.type,
         });
+        process.stderr.write(
+          `kunai: -i/--id ${entry.id} needs -t movie or -t series` +
+            `${entry.type ? ` (got: ${entry.type})` : ""}, so it was ignored.\n` +
+            `Try: kunai -i ${entry.id} -t movie\n`,
+        );
         break;
     }
   }

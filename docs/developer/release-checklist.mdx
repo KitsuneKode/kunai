@@ -33,10 +33,12 @@ Merge the feature PR. Push to `main` opens or updates the Changesets version PR 
 
 ```sh
 bun run --cwd apps/docs generate
-git add apps/docs/lib/generated-metadata.json
+git add apps/docs/lib/generated-metadata.json apps/docs/lib/generated-release-notes.json
 ```
 
 Confirm `cliSourceRevision` and fingerprints updated in the committed JSON.
+
+`lib/generated-release-notes.json` is the docs site's only copy of `.release/*.json` — the pages no longer read that directory at runtime, so a new release artifact reaches the site only through this step. `scripts/check-codegen-freshness.ts` fails CI if you skip it.
 
 </Step>
 <Step>

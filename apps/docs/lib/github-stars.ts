@@ -11,9 +11,20 @@ const REPO_API = "https://api.github.com/repos/KitsuneKode/kunai";
  * Callers render the plain "Star on GitHub" link when this is `null`.
  */
 export async function fetchGithubStarCount(): Promise<number | null> {
+  // The anonymous API allows ~60 requests/hour per IP, and a CI or Vercel build
+  // shares that IP with everything else on the runner — which is why the badge
+  // rendered on one build and vanished on the next. A token, when the
+  // deployment has one, raises the ceiling to 5,000/hour. It stays optional:
+  // absent means anonymous, exactly as before, and never an error.
+  const token = process.env.GITHUB_TOKEN?.trim();
+
   try {
     const response = await fetch(REPO_API, {
-      headers: { Accept: "application/vnd.github+json" },
+      headers: {
+        Accept: "application/vnd.github+json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: AbortSignal.timeout(5000),
       next: { revalidate: 3600 },
     });
     if (!response.ok) return null;

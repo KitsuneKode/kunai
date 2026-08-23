@@ -127,8 +127,8 @@ describe("release build shared options", () => {
   });
 
   test("enforces npm bundle budget", () => {
-    expect(NPM_BUNDLE_BUDGET_KB).toBe(2_888);
-    expect(() => assertNpmBundleBudget(2_957_312)).not.toThrow();
-    expect(() => assertNpmBundleBudget(2_957_313)).toThrow("budget 2888 KiB");
+    expect(NPM_BUNDLE_BUDGET_KB).toBe(2_920);
+    expect(() => assertNpmBundleBudget(2_990_080)).not.toThrow();
+    expect(() => assertNpmBundleBudget(2_990_081)).toThrow("budget 2920 KiB");
   });
 });

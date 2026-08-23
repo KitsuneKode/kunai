@@ -21,6 +21,8 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "setup",
   "settings",
   "trending",
+  "random",
+  "surprise",
   "toggle-mode",
   "series-mode",
   "anime-mode",

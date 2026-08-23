@@ -229,17 +229,25 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * silent empty result, and TTL cache size bounds. The step restores real
  * headroom rather than clearing one change.
  *
- * Raised from 2_880 on 2026-08-23 for bounded Discord IPC framing and callback
- * containment. The base development bundle was 2,948,034 bytes; the first
- * reviewed repair was 2,950,409 bytes (+2,375) and exceeded the old 2,949,120
- * byte budget by 1,289. After the final connection-attempt lifecycle repair,
- * the bundle was 2,952,099 bytes: 4,065 above the base, 2,979 above the old
- * budget, and 5,213 below the new limit. This 8 KiB step is 0.28%; the installed
- * host binary was 85,779,656 bytes (+4,096), and its gzip -9 output was
- * 37,526,932 bytes (+94). The ratchet remains specific to the unpublished
- * development bundle.
+ * Raised from 2_880 on 2026-08-23 for the launch-flag and discovery fixes:
+ * a loading branch on the idle surface (a bootstrap `-S` search renders before
+ * any browse shell exists, so it had no loader), the `not-applicable` update
+ * status that stops telling package-manager installs their updates are
+ * "disabled", adoption of the resolved catalog name over the `-i` placeholder,
+ * and `discoverItemLimit` finally reaching the `/random` tray. `main` had 1.3
+ * KiB of headroom, so any one of these would have tripped it. Deleting the dead
+ * `mixRandomCandidatePools` export paid some of it back. The step restores real
+ * headroom rather than clearing one change.
+ *
+ * The Discord IPC containment branch originally needed a proposed 2_888 KiB
+ * step before those launch fixes landed: it measured 2,952,099 bytes, 4,065
+ * above its 2,948,034-byte base. The host binary grew by 4,096 bytes and gzip
+ * -9 by 94 bytes. After integrating the current main branch, the combined
+ * development bundle is 2,953,713 bytes, 36,367 below main's existing 2_920
+ * KiB cap. Discord containment therefore does not raise the final ratchet.
+ * This budget still applies only to the unpublished development bundle.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_888;
+export const NPM_BUNDLE_BUDGET_KB = 2_920;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

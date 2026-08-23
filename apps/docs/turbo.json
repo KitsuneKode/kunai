@@ -3,7 +3,13 @@
   "extends": ["//"],
   "tasks": {
     "generate": {
-      "outputs": ["lib/generated-metadata.json", ".source/**"]
+      "outputs": [
+        "lib/generated-metadata.json",
+        "lib/generated-release-notes.json",
+        "lib/generated-troubleshooting-faq.json",
+        "lib/generated-mascot.json",
+        ".source/**"
+      ]
     },
     "typecheck:app": {
       "dependsOn": ["generate"],

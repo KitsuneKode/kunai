@@ -118,7 +118,14 @@ describe("BinaryAutoUpdater.runOnce", () => {
       },
     });
 
-    await expect(instance.runOnce()).resolves.toEqual({ status: "disabled" });
+    // Still refuses to auto-apply and still never reaches the network -- only
+    // the label changed. "disabled" blamed a setting the user never touched;
+    // this channel simply cannot replace its own binary, and the caller uses
+    // the channel to name the right upgrade command instead.
+    await expect(instance.runOnce()).resolves.toEqual({
+      status: "not-applicable",
+      channel: "npm-global",
+    });
     expect(resolvedLatest).toBe(false);
   });
 });

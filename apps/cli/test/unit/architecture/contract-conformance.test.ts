@@ -71,8 +71,6 @@ describe("contract conformance", () => {
       "image-pane",
       "playlist-add",
       "queue-season",
-      "random",
-      "surprise",
       "sync",
       "sync-connect-anilist",
       "sync-connect-tmdb",
@@ -140,12 +138,7 @@ describe("contract conformance", () => {
     // its entry.
     const KNOWN_DEAD_INSTRUCTIONS = new Set<string>([
       'apps/cli/src/app-shell/details-panel.ts: "/playlist-add" -> playlist-add',
-      'apps/cli/src/app-shell/settings/registry/discover.ts: "/random" -> random',
-      'apps/cli/src/app-shell/settings/registry/discover.ts: "/surprise" -> surprise',
-      'apps/cli/src/app-shell/setup-shell.tsx: "/random" -> random',
       'apps/cli/src/app-shell/workflows/shell-workflows.ts: "/playlist-add" -> playlist-add',
-      'apps/cli/src/app/discover/random-results.ts: "/random" -> random',
-      'apps/cli/src/app/discover/random-results.ts: "/surprise" -> surprise',
     ]);
 
     expect(
