@@ -782,11 +782,12 @@ describe("install.sh consent without a terminal", () => {
     "requires script(1): TMPDIR shell metacharacters do not change the probe",
     () => {
       const parent = mkdtempSync(join(tmpdir(), "kunai-ask-parent-"));
-      const hostileTmpDir = join(parent, "has spaces; false #");
-      const originalTmpDir = process.env.TMPDIR;
-      mkdirSync(hostileTmpDir);
-      process.env.TMPDIR = hostileTmpDir;
+      let originalTmpDir: string | undefined;
       try {
+        const hostileTmpDir = join(parent, "has spaces; false #");
+        originalTmpDir = process.env.TMPDIR;
+        mkdirSync(hostileTmpDir);
+        process.env.TMPDIR = hostileTmpDir;
         expect(tmpdir()).toBe(hostileTmpDir);
         const result = runAskWithClosedPtyInput(0);
         expect(result.error).toBeUndefined();
