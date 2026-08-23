@@ -91,6 +91,8 @@ export interface SyncServiceDeps {
   readonly outbox: SyncOutboxRepository;
   readonly config: SyncConfigPort;
   readonly diagnostics?: Pick<DiagnosticsService, "record">;
+  /** Injectable so operation-budget continuations can be advanced without real timers in tests. */
+  readonly scheduleContinuation?: (task: () => void) => void;
   /** Injectable only so due-time and shutdown behavior are deterministic in tests. */
   readonly scheduleWake?: (task: () => void, delayMs: number) => () => void;
   readonly now?: () => Date;
@@ -208,6 +210,7 @@ export class SyncService {
   private readonly outbox: SyncOutboxRepository;
   private readonly config: SyncConfigPort;
   private readonly diagnostics?: Pick<DiagnosticsService, "record">;
+  private readonly scheduleContinuation: (task: () => void) => void;
   private readonly scheduleWake: (task: () => void, delayMs: number) => () => void;
   private readonly now: () => Date;
   private readonly shutdownController = new AbortController();
@@ -225,6 +228,7 @@ export class SyncService {
     this.config = deps.config;
     this.diagnostics = deps.diagnostics;
     this.now = deps.now ?? (() => new Date());
+    this.scheduleContinuation = deps.scheduleContinuation ?? ((task) => setTimeout(task, 0));
     this.scheduleWake =
       deps.scheduleWake ??
       ((task, delayMs) => {
@@ -479,10 +483,10 @@ export class SyncService {
           !this.shutdownController.signal.aborted
         ) {
           this.continuationScheduled = true;
-          setTimeout(() => {
+          this.scheduleContinuation(() => {
             this.continuationScheduled = false;
             if (!this.shutdownController.signal.aborted) this.deliverSoon();
-          }, 0);
+          });
         }
         return undefined;
       })

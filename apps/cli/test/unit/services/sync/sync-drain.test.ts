@@ -132,10 +132,15 @@ describe("SyncService drain", () => {
   test("a direct startup drain schedules continuation beyond its operation budget", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
+    const scheduled: Array<() => void> = [];
     const service = new SyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
+      scheduleWake: (task) => {
+        scheduled.push(task);
+        return () => {};
+      },
     });
 
     for (let id = 1; id <= 103; id += 1) {
@@ -149,7 +154,11 @@ describe("SyncService drain", () => {
 
     const first = await service.drain(25);
     expect(first.claimed).toBe(100);
-    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
+    expect(anilist.calls).toHaveLength(100);
+    expect(scheduled).toHaveLength(1);
+
+    scheduled.shift()!();
+    await service.drain();
 
     expect(anilist.calls).toHaveLength(103);
     expect(repo.counts().pending).toBe(0);
@@ -158,10 +167,14 @@ describe("SyncService drain", () => {
   test("deliverSoon continues after its operation budget until every due row is attempted", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
+    const continuations: Array<() => void> = [];
     const service = new SyncService({
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
+      scheduleContinuation: (task) => {
+        continuations.push(task);
+      },
     });
 
     for (let id = 1; id <= 103; id += 1) {
@@ -174,7 +187,13 @@ describe("SyncService drain", () => {
     }
 
     service.deliverSoon();
-    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
+    const first = await service.drain();
+    expect(first.claimed).toBe(100);
+    expect(anilist.calls).toHaveLength(100);
+    expect(continuations).toHaveLength(1);
+
+    continuations.shift()!();
+    await service.drain();
 
     expect(anilist.calls).toHaveLength(103);
     expect(repo.counts().pending).toBe(0);
