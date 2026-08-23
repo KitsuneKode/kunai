@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-05-04"
+lastReviewed: "2026-08-24"
 ---
 
 # Lint policy (beta)
@@ -11,23 +11,34 @@ lastReviewed: "2026-05-04"
 - **Budget:** no per-warning budget file — fix new warnings in the same PR that introduces them; burn down existing warnings in focused batches when touching a file anyway.
 - **Rationale:** keeps signal high for agents and humans without blocking unrelated refactors on legacy debt.
 
-## anti-slop (advisory, not yet a gate)
+## anti-slop (changed-file advisory)
 
 `bun run lint:anti-slop` runs the vendored plugin in
 `tools/oxlint/anti-slop/` via `.oxlintrc.anti-slop.json`. All fifteen generic
 rules are set to **error** in that config — the severity is not weakened.
 
-It is a **separate** command on purpose. The rules report **4,675 findings**
-(≈2.5k in source, ≈2.1k in tests), so wiring them into `.oxlintrc.json` would
-turn `bun run lint`, the lint-staged pre-commit hook, and CI red on the first
-run and block every unrelated commit. Severity is not the thing to compromise
-there; scope is.
+It is a **separate** command on purpose. The rules still report thousands of
+historical findings, so wiring them into `.oxlintrc.json` would turn
+`bun run lint` and the lint-staged pre-commit hook red on the first run and
+block every unrelated commit. Severity is not the thing to compromise there;
+scope is.
+
+On pull requests, CI runs `bun run lint:anti-slop:changed` against only the
+added, copied, modified, or renamed JavaScript and TypeScript files in the PR.
+Findings appear as source annotations but do not fail the job. Tooling failures
+still fail: an advisory that silently stopped running would be worse than no
+advisory. This avoids a large legacy baseline and gives new work useful feedback
+without turning opinionated design prompts into release blockers.
+
+Locally, the command compares against `origin/main` by default. Pass a commit or
+branch as its first argument to inspect a different stack boundary.
 
 The findings are real, not false positives — mostly unjustified type
 assertions, `typeof` narrowing at non-boundaries, and `Record<string, unknown>`
 dictionaries. Burn them down the way warnings are handled above: in focused
 batches, when touching a file anyway. Promote the plugin into `.oxlintrc.json`
-once the count reaches zero, and delete this section when that happens.
+once the count reaches zero, then make the full command blocking and delete this
+section.
 
 The Effect rule group is deliberately **not** installed: nothing here declares
 `effect` as a direct dependency.

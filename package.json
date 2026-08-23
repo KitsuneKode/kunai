@@ -67,6 +67,7 @@
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "lint:anti-slop": "oxlint --config .oxlintrc.anti-slop.json .",
+    "lint:anti-slop:changed": "bun run scripts/anti-slop-changed.ts",
     "fmt": "turbo run fmt",
     "fmt:check": "turbo run fmt:check",
     "test": "turbo run test",
