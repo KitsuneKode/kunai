@@ -45,7 +45,7 @@ export default async function handler(req: VercelLikeRequest, res: ServerRespons
   const response = await handleRpcRequest(request, {
     providerId,
     registry: relayRegistry,
-    token: process.env.RELAY_TOKEN,
+    authorization: { mode: "bearer", token: process.env.RELAY_TOKEN ?? "" },
   });
   await writeWebResponse(res, response);
 }

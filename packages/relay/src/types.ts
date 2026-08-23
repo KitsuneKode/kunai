@@ -3,18 +3,27 @@ import type {
   ProviderFetchPort,
   ProviderId,
   ProviderRelayConfig,
+  RelayErrorCode as SharedRelayErrorCode,
   RelayProfile,
 } from "@kunai/types";
 
 export type {
   ProviderRelayConfig,
   ProviderRelayProviderConfig,
-  RelayErrorCode,
   RelayMethod,
   RelayProfile,
-  RelayRpcErrorBody,
   RelayRpcRequest,
 } from "@kunai/types";
+
+export type RelayErrorCode = SharedRelayErrorCode | "relay-not-configured";
+
+export interface RelayRpcErrorBody {
+  readonly error: {
+    readonly code: RelayErrorCode;
+    readonly providerId?: string;
+    readonly message: string;
+  };
+}
 
 export type RelayableProviderManifest = CoreProviderManifest & {
   readonly relayProfile?: RelayProfile;
@@ -35,11 +44,15 @@ export interface ProviderRelayRegistry {
 
 export type RelayFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+export type RelayAuthorizationPolicy =
+  | { readonly mode: "local-loopback" }
+  | { readonly mode: "bearer"; readonly token: string };
+
 export interface RelayHandlerOptions {
   readonly providerId: string;
   readonly registry: ProviderRelayRegistry;
+  readonly authorization: RelayAuthorizationPolicy;
   readonly fetch?: RelayFetch;
-  readonly token?: string;
   readonly timeoutMs?: number;
   readonly maxRedirects?: number;
 }

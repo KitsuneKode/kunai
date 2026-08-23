@@ -1,9 +1,17 @@
 import { expect, test } from "bun:test";
 
+import type { RelayAuthorizationPolicy } from "@kunai/relay";
+
 import { handleRelayRequest } from "../../src/relay-app";
 
+const localLoopbackAuthorization = {
+  mode: "local-loopback",
+} satisfies RelayAuthorizationPolicy;
+
 test("relay app health route reports configured providers", async () => {
-  const response = await handleRelayRequest(new Request("https://relay.test/health"));
+  const response = await handleRelayRequest(new Request("https://relay.test/health"), {
+    authorization: localLoopbackAuthorization,
+  });
   const body = await response.json();
 
   expect(response.status).toBe(200);
@@ -27,7 +35,7 @@ test("relay app forwards allowlisted provider RPC requests", async () => {
       }),
     }),
     {
-      relayToken: "secret",
+      authorization: { mode: "bearer", token: "secret" },
       async fetch() {
         return Response.json({ data: { ok: true } });
       },
@@ -47,6 +55,7 @@ test("relay app rejects disallowed provider host", async () => {
         upstreamUrl: "https://miruro.bz/api",
       }),
     }),
+    { authorization: localLoopbackAuthorization },
   );
 
   expect(response.status).toBe(403);
@@ -62,7 +71,7 @@ test("relay app enforces token when configured", async () => {
         upstreamUrl: "https://api.allanime.day/api",
       }),
     }),
-    { relayToken: "secret" },
+    { authorization: { mode: "bearer", token: "secret" } },
   );
 
   expect(response.status).toBe(401);

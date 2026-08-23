@@ -32,8 +32,19 @@ export async function handleRpcRequest(
     return relayError("method-not-allowed", options.providerId, "RPC route requires POST", 405);
   }
 
-  if (options.token && !isAuthorized(request, options.token)) {
-    return relayError("unauthorized", options.providerId, "Relay token is required", 401);
+  if (options.authorization.mode === "bearer") {
+    const token = options.authorization.token.trim();
+    if (!token) {
+      return relayError(
+        "relay-not-configured",
+        options.providerId,
+        "Relay authorization is not configured",
+        503,
+      );
+    }
+    if (!isAuthorized(request, token)) {
+      return relayError("unauthorized", options.providerId, "Relay token is required", 401);
+    }
   }
 
   const provider = options.registry.get(options.providerId);

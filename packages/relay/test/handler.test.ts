@@ -2,6 +2,11 @@ import { expect, test } from "bun:test";
 
 import { handleRpcRequest } from "../src/handler";
 import { buildProviderRelayRegistry } from "../src/registry";
+import type { RelayAuthorizationPolicy } from "../src/types";
+
+const localLoopbackAuthorization = {
+  mode: "local-loopback",
+} satisfies RelayAuthorizationPolicy;
 
 const registry = buildProviderRelayRegistry([
   {
@@ -38,20 +43,23 @@ const registry = buildProviderRelayRegistry([
 test("handleRpcRequest forwards allowed metadata requests", async () => {
   let upstreamAuth: string | null = null;
   const response = await handleRpcRequest(
-    rpcRequest({
-      method: "POST",
-      upstreamUrl: "https://api.allanime.day/api?x=1",
-      headers: {
-        Authorization: "Bearer should-not-forward",
-        "Content-Type": "application/json",
-        Referer: "https://youtu-chan.com",
+    rpcRequest(
+      {
+        method: "POST",
+        upstreamUrl: "https://api.allanime.day/api?x=1",
+        headers: {
+          Authorization: "Bearer should-not-forward",
+          "Content-Type": "application/json",
+          Referer: "https://youtu-chan.com",
+        },
+        body: '{"ok":true}',
       },
-      body: '{"ok":true}',
-    }),
+      null,
+    ),
     {
       providerId: "allanime",
       registry,
-      token: "secret",
+      authorization: localLoopbackAuthorization,
       async fetch(_url, init) {
         upstreamAuth = new Headers(init?.headers).get("authorization");
         return Response.json({ ok: true }, { status: 201 });
@@ -73,6 +81,7 @@ test("handleRpcRequest rejects provider confusion", async () => {
     {
       providerId: "allanime",
       registry,
+      authorization: localLoopbackAuthorization,
       async fetch() {
         throw new Error("should not fetch");
       },
@@ -92,6 +101,7 @@ test("handleRpcRequest validates redirects before following them", async () => {
     {
       providerId: "allanime",
       registry,
+      authorization: localLoopbackAuthorization,
       async fetch() {
         return new Response(null, {
           status: 302,
@@ -112,7 +122,7 @@ test("handleRpcRequest rejects oversized upstream request bodies", async () => {
       upstreamUrl: "https://api.allanime.day/api",
       body: "x".repeat(129),
     }),
-    { providerId: "allanime", registry },
+    { providerId: "allanime", registry, authorization: localLoopbackAuthorization },
   );
 
   expect(response.status).toBe(413);
@@ -140,6 +150,7 @@ test("handleRpcRequest rejects unsafe upstream hosts before fetch", async () => 
     {
       providerId: "unsafe",
       registry: unsafeRegistry,
+      authorization: localLoopbackAuthorization,
       async fetch() {
         throw new Error("should not fetch");
       },
@@ -179,6 +190,7 @@ test.each([
   const response = await handleRpcRequest(rpcRequest({ method: "GET", upstreamUrl }), {
     providerId: "unsafe",
     registry: unsafeRegistry,
+    authorization: localLoopbackAuthorization,
     async fetch() {
       throw new Error("should not fetch");
     },
@@ -213,6 +225,7 @@ test.each([
   const response = await handleRpcRequest(rpcRequest({ method: "GET", upstreamUrl }), {
     providerId: "public",
     registry: publicRegistry,
+    authorization: localLoopbackAuthorization,
     async fetch() {
       fetched = true;
       return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
@@ -242,6 +255,7 @@ test("handleRpcRequest rejects IPv6 loopback and unique-local literals even when
     const response = await handleRpcRequest(rpcRequest({ method: "GET", upstreamUrl }), {
       providerId: "unsafe6",
       registry: unsafeRegistry,
+      authorization: localLoopbackAuthorization,
       async fetch() {
         throw new Error("should not fetch");
       },
@@ -261,6 +275,7 @@ test("handleRpcRequest rejects oversized upstream metadata responses", async () 
     {
       providerId: "allanime",
       registry,
+      authorization: localLoopbackAuthorization,
       async fetch() {
         return new Response("x".repeat(257), {
           status: 200,
@@ -283,6 +298,7 @@ test("handleRpcRequest does not read or return a body for HEAD responses", async
     {
       providerId: "allanime",
       registry,
+      authorization: localLoopbackAuthorization,
       async fetch(_url, init) {
         expect(init?.method).toBe("HEAD");
         return new Response("should not be relayed", {
@@ -306,6 +322,7 @@ test("handleRpcRequest strips upstream set-cookie from metadata responses", asyn
     {
       providerId: "allanime",
       registry,
+      authorization: localLoopbackAuthorization,
       async fetch() {
         return Response.json(
           { ok: true },
@@ -326,19 +343,69 @@ test("handleRpcRequest strips upstream set-cookie from metadata responses", asyn
   expect(await response.json()).toEqual({ ok: true });
 });
 
-test("handleRpcRequest enforces bearer token when configured", async () => {
+test.each([
+  ["missing", null],
+  ["wrong equal-length", "secres"],
+])("handleRpcRequest rejects a %s bearer token", async (_label, token) => {
   const response = await handleRpcRequest(
     rpcRequest(
       {
         method: "GET",
         upstreamUrl: "https://api.allanime.day/api",
       },
-      null,
+      token,
     ),
-    { providerId: "allanime", registry, token: "secret" },
+    {
+      providerId: "allanime",
+      registry,
+      authorization: { mode: "bearer", token: "secret" },
+      async fetch() {
+        return Response.json({ ok: true });
+      },
+    },
   );
 
   expect(response.status).toBe(401);
+});
+
+test("handleRpcRequest accepts the exact bearer token", async () => {
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "GET",
+      upstreamUrl: "https://api.allanime.day/api",
+    }),
+    {
+      providerId: "allanime",
+      registry,
+      authorization: { mode: "bearer", token: "secret" },
+      async fetch() {
+        return Response.json({ ok: true });
+      },
+    },
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ ok: true });
+});
+
+test.each(["", "   "])("handleRpcRequest rejects a blank bearer token", async (token) => {
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "GET",
+      upstreamUrl: "https://api.allanime.day/api",
+    }),
+    {
+      providerId: "allanime",
+      registry,
+      authorization: { mode: "bearer", token },
+      async fetch() {
+        throw new Error("should not fetch");
+      },
+    },
+  );
+
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ error: { code: "relay-not-configured" } });
 });
 
 test("handleRpcRequest refuses a provider whose manifest is not relay-safe", async () => {
@@ -350,6 +417,7 @@ test("handleRpcRequest refuses a provider whose manifest is not relay-safe", asy
     {
       providerId: "videasy",
       registry,
+      authorization: localLoopbackAuthorization,
       async fetch() {
         throw new Error("should not fetch");
       },
@@ -368,6 +436,7 @@ test("handleRpcRequest handles CORS preflight without upstream fetch", async () 
     {
       providerId: "allanime",
       registry,
+      authorization: localLoopbackAuthorization,
     },
   );
 
