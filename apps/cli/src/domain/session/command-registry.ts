@@ -149,6 +149,10 @@ export const COMMAND_CONTEXTS = {
     "mark-up-to-episode",
     "pick-episode",
     "download",
+    // Reachable from browse, rootOverlay, and postPlayback but not here, so the
+    // queue could not be seen or edited during the one activity that consumes
+    // it. `openRootQueueSelection` already handles being opened over playback.
+    "up-next",
     "next",
     "previous",
     "toggle-autoplay",
@@ -864,9 +868,14 @@ export function commandGroupFor(id: AppCommandId): AppCommandGroup {
     case "sync-connect-tmdb":
     case "sync-disconnect":
     case "favorites":
+      return "Experimental";
+    // Discovery surfaces, not experiments: they sit alongside /trending and
+    // /recommendation. ADR 0001 kept them out of the palettes until they had a
+    // stable product role; the tray now honours discoverItemLimit and preserves
+    // its stratified quota, so that condition is met.
     case "random":
     case "surprise":
-      return "Experimental";
+      return "Attention";
     default:
       return "Advanced";
   }
