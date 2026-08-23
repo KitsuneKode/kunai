@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   fromB64Url,
+  looksLikeHlsPlaylist,
   rewriteHlsPlaylistForRelay,
   streamNeedsHlsRelay,
   toB64Url,
@@ -22,6 +23,86 @@ describe("hls-relay gating", () => {
       false,
     );
     expect(streamNeedsHlsRelay("not-a-url")).toBe(false);
+  });
+
+  /**
+   * The allowlist is the only gate on what the relay will fetch, and it is
+   * applied to attacker-influenceable input: base64 path segments on `/p/` and
+   * `/s/`, and every URI rewritten out of a provider-supplied playlist.
+   *
+   * The patterns were unanchored substring tests (`/\.uwucdn\./i`), so any host
+   * containing `.uwucdn.` as a label matched — an attacker-controlled domain
+   * turned the local relay into a fetcher for arbitrary external hosts.
+   */
+  test("the CDN allowlist is a domain suffix, not a substring", () => {
+    // Attacker-registrable domains that contain the allowlisted label.
+    expect(streamNeedsHlsRelay("https://evil.uwucdn.attacker.com/x.m3u8")).toBe(false);
+    expect(streamNeedsHlsRelay("https://uwucdn.evil.com/x.m3u8")).toBe(false);
+    expect(streamNeedsHlsRelay("https://owocdn.top.evil.net/x.m3u8")).toBe(false);
+    expect(streamNeedsHlsRelay("https://not-uwucdn.top.attacker.io/x.m3u8")).toBe(false);
+
+    // The real hosts still pass, on any TLD and at any subdomain depth.
+    expect(streamNeedsHlsRelay("https://uwucdn.top/x.m3u8")).toBe(true);
+    expect(streamNeedsHlsRelay("https://vault-06.uwucdn.top/x.m3u8")).toBe(true);
+    expect(streamNeedsHlsRelay("https://a.b.c.owocdn.top/x.m3u8")).toBe(true);
+  });
+
+  test("a hostless URL never matches", () => {
+    // `streamNeedsHlsRelay` answers "should this stream go through the relay",
+    // which is a host question — the scheme is enforced later and separately by
+    // `assertRelayUpstreamUrl`, which every fetch goes through and which
+    // rejects anything that is not http(s). Pinning the host contract here so
+    // the split stays deliberate rather than looking like a gap.
+    expect(streamNeedsHlsRelay("file:///etc/passwd")).toBe(false);
+    expect(streamNeedsHlsRelay("")).toBe(false);
+  });
+});
+
+/**
+ * Both handlers used to identify a playlist with
+ * `body.toString("utf-8").startsWith("#EXTM3U")` — decoding the entire
+ * response to test seven bytes. On a binary MPEG-TS segment that is the worst
+ * case: the bytes are not valid UTF-8, so V8 builds a two-byte string and runs
+ * replacement-character substitution over several megabytes, per segment.
+ *
+ * The byte comparison must answer identically for every case the string form
+ * did, which is what these pin.
+ */
+describe("hls-relay playlist detection on bytes", () => {
+  const utf8Says = (body: Buffer) => body.toString("utf-8").startsWith("#EXTM3U");
+
+  test("agrees with the old string check on playlists", () => {
+    for (const text of [
+      "#EXTM3U\n#EXT-X-VERSION:3\n",
+      "#EXTM3U",
+      "#EXTM3U\n",
+      "#EXTM3U\n#EXTINF:9.009,\nseg.ts\n",
+    ]) {
+      const body = Buffer.from(text, "utf-8");
+      expect(looksLikeHlsPlaylist(body)).toBe(true);
+      expect(looksLikeHlsPlaylist(body)).toBe(utf8Says(body));
+    }
+  });
+
+  test("agrees with the old string check on non-playlists", () => {
+    for (const text of ["#EXTM3", "", "EXTM3U", " #EXTM3U", "#EXT-X-VERSION:3"]) {
+      const body = Buffer.from(text, "utf-8");
+      expect(looksLikeHlsPlaylist(body)).toBe(false);
+      expect(looksLikeHlsPlaylist(body)).toBe(utf8Says(body));
+    }
+  });
+
+  test("a binary segment is not a playlist, and is never decoded to find out", () => {
+    // MPEG-TS: 0x47 sync byte, then bytes that are invalid UTF-8 sequences.
+    const segment = Buffer.from([0x47, 0x40, 0x11, 0x10, 0xff, 0xfe, 0x80, 0x81, 0x00, 0xc0]);
+    expect(looksLikeHlsPlaylist(segment)).toBe(false);
+    expect(looksLikeHlsPlaylist(segment)).toBe(utf8Says(segment));
+  });
+
+  test("a body shorter than the magic does not over-read", () => {
+    expect(looksLikeHlsPlaylist(Buffer.alloc(0))).toBe(false);
+    expect(looksLikeHlsPlaylist(Buffer.from([0x23]))).toBe(false);
+    expect(looksLikeHlsPlaylist(Buffer.from("#EXTM3", "latin1"))).toBe(false);
   });
 });
 
