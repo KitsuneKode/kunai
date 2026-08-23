@@ -3,7 +3,7 @@ import {
   docsGithubIssueTemplateUrl,
   docsGithubIssuesUrl,
 } from "@/lib/docs-github";
-import { docsSiteUrl } from "@/lib/site";
+import { buildPageMetadata } from "@/lib/page-metadata";
 import {
   IconBug,
   IconMessageCircle,
@@ -16,22 +16,15 @@ import Link from "next/link";
 
 export const dynamic = "force-static";
 
-export const metadata: Metadata = {
-  title: "Feedback",
+export const metadata: Metadata = buildPageMetadata({
+  title: "Kunai feedback — report a bug, provider issue, or idea",
+  absoluteTitle: true,
   description:
+    "Report a Kunai bug, a broken third-party provider, or a feature idea through the GitHub issue templates, and see what to attach so the report can be acted on.",
+  socialDescription:
     "Report bugs, provider issues, or feature ideas for Kunai via GitHub issue templates.",
-  alternates: {
-    canonical: `${docsSiteUrl}/feedback`,
-  },
-  openGraph: {
-    title: "Kunai Feedback",
-    description:
-      "Report bugs, provider issues, or feature ideas for Kunai via GitHub issue templates.",
-    url: `${docsSiteUrl}/feedback`,
-    type: "website",
-    siteName: "Kunai Docs",
-  },
-};
+  path: "/feedback",
+});
 
 const ACTIONS = [
   {

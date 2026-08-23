@@ -3,6 +3,7 @@ import { RelatedDocLinks } from "@/components/docs/related-doc-links";
 import { navGroupForHref } from "@/lib/doc-page-nav";
 import { docsEditUrl } from "@/lib/docs-github";
 import { breadcrumbListJsonLd, faqPageJsonLd, techArticleJsonLd } from "@/lib/json-ld";
+import { buildPageMetadata } from "@/lib/page-metadata";
 import { docsCanonicalUrl } from "@/lib/site";
 import { source } from "@/lib/source";
 import { buildTroubleshootingFaqEntries } from "@/lib/troubleshooting-faq";
@@ -34,25 +35,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const page = source.getPage((await params).slug);
   if (!page) notFound();
 
-  return {
+  return buildPageMetadata({
     title: page.data.title,
-    description: page.data.description,
-    alternates: {
-      canonical: docsCanonicalUrl(page.url),
-    },
-    openGraph: {
-      title: page.data.title,
-      description: page.data.description,
-      url: docsCanonicalUrl(page.url),
-      type: "article",
-      siteName: "Kunai Docs",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: page.data.title,
-      description: page.data.description,
-    },
-  };
+    description: page.data.description ?? "",
+    path: page.url,
+    type: "article",
+  });
 }
 
 function readLastModified(pageData: { readonly lastModified?: Date }): Date | undefined {

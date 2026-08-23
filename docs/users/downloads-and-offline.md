@@ -1,6 +1,6 @@
 ---
 title: Downloads And Offline
-description: Manage download queues, local playback, cleanup, and offline diagnostics safely.
+description: Queue Kunai downloads, play local files, manage the offline library, clean up finished jobs, and diagnose a download that stalled or failed to resume.
 status: beta
 ---
 
