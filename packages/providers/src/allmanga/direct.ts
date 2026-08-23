@@ -150,6 +150,12 @@ export const allmangaProviderModule: CoreProviderModule = {
       animeLang,
       context.signal,
     );
+    // The provider contract already has a null channel for failure — this
+    // method's own return type is `| null`. Passing transport failure straight
+    // through means ProviderRegistry sees it, provider health records it, and
+    // the shell can say the provider is unreachable instead of "No results".
+    if (results === null) return null;
+
     return results.map((result) => ({
       id: result.id,
       type: result.type,
