@@ -202,7 +202,7 @@ test.each([
   ["just outside 172.16/12", "172.32.0.1", "http://172.32.0.1/rpc"],
   ["ipv4-mapped public", "[::ffff:808:808]", "http://[::ffff:8.8.8.8]/rpc"],
 ])("handleRpcRequest still reaches %s", async (_label, host, upstreamUrl) => {
-  const registry = buildProviderRelayRegistry([
+  const publicRegistry = buildProviderRelayRegistry([
     {
       providerId: "public",
       manifest: { relaySafe: true, relayProfile: { upstreamHosts: [host] } },
@@ -212,7 +212,7 @@ test.each([
   let fetched = false;
   const response = await handleRpcRequest(rpcRequest({ method: "GET", upstreamUrl }), {
     providerId: "public",
-    registry,
+    registry: publicRegistry,
     async fetch() {
       fetched = true;
       return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
