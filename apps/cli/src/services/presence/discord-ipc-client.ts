@@ -92,7 +92,7 @@ export const MAX_DISCORD_IPC_FRAME_BYTES = 1_048_576;
 export const MAX_DISCORD_IPC_BUFFER_BYTES = 1_048_584;
 
 class DiscordIpcFrameAccumulator {
-  private chunks: Uint8Array[] = [];
+  private chunks: Array<Uint8Array | undefined> = [];
   private headChunk = 0;
   private headOffset = 0;
   private bufferedBytes = 0;
@@ -101,21 +101,6 @@ class DiscordIpcFrameAccumulator {
     if (chunk.byteLength > 0) {
       this.chunks.push(chunk);
       this.bufferedBytes += chunk.byteLength;
-    }
-
-    if (this.bufferedBytes > MAX_DISCORD_IPC_BUFFER_BYTES) {
-      const fault: DiscordIpcProtocolFault = {
-        reason: "buffer-limit-exceeded",
-        ...(this.bufferedBytes >= 8
-          ? {
-              opcode: this.peekUint32(0),
-              declaredBytes: this.peekUint32(4),
-            }
-          : {}),
-        bufferedBytes: this.bufferedBytes,
-      };
-      this.clear();
-      return { packets: [], fault };
     }
 
     const packets: Uint8Array[] = [];
@@ -140,6 +125,18 @@ class DiscordIpcFrameAccumulator {
       this.copyFromHead(packet);
       this.consume(frameBytes);
       packets.push(packet);
+    }
+
+    if (this.bufferedBytes > MAX_DISCORD_IPC_BUFFER_BYTES) {
+      const fault: DiscordIpcProtocolFault = {
+        reason: "buffer-limit-exceeded",
+        bufferedBytes: this.bufferedBytes,
+      };
+      this.clear();
+      return { packets, fault };
+    }
+    if (chunk.byteLength > MAX_DISCORD_IPC_BUFFER_BYTES && this.bufferedBytes > 0) {
+      this.detachRetainedSuffix();
     }
 
     return { packets };
@@ -188,6 +185,14 @@ class DiscordIpcFrameAccumulator {
     }
   }
 
+  private detachRetainedSuffix(): void {
+    const retained = new Uint8Array(this.bufferedBytes);
+    this.copyFromHead(retained);
+    this.clear();
+    this.chunks.push(retained);
+    this.bufferedBytes = retained.byteLength;
+  }
+
   private consume(bytes: number): void {
     let remaining = bytes;
     while (remaining > 0) {
@@ -199,6 +204,7 @@ class DiscordIpcFrameAccumulator {
         remaining = 0;
       } else {
         remaining -= available;
+        this.chunks[this.headChunk] = undefined;
         this.headChunk += 1;
         this.headOffset = 0;
       }
@@ -323,13 +329,31 @@ export function createDiscordIpcClient(
     }
   };
 
-  const handlePayload = (op: number, payload: Record<string, unknown>) => {
-    if (op === 3) {
-      socket?.write(encodeDiscordIpcPacket(4, payload));
-      return;
+  const endSocketBestEffort = (target: DiscordIpcSocket | null) => {
+    if (!target) return;
+    try {
+      target.end();
+    } catch {
+      // Discord teardown is best effort and must stay inside the optional integration.
     }
+  };
+
+  const transitionToTerminal = (error: Error, endSocket: boolean) => {
+    const terminalSocket = socket;
+    socket = null;
+    ready = false;
+    accumulator.clear();
+    connectionGeneration += 1;
+    rejectAll(error);
+    if (endSocket) endSocketBestEffort(terminalSocket);
+  };
+
+  const handlePayload = (op: number, payload: Record<string, unknown>) => {
     if (op === 2) {
-      rejectAll(new Error(describeDiscordErrorPayload(payload) ?? "Discord IPC closed"));
+      transitionToTerminal(
+        new Error(describeDiscordErrorPayload(payload) ?? "Discord IPC closed"),
+        true,
+      );
       return;
     }
     if (op !== 1) return;
@@ -356,24 +380,35 @@ export function createDiscordIpcClient(
   };
 
   const handleFramingFault = (fault: DiscordIpcProtocolFault) => {
-    ready = false;
-    rejectAll(new Error(`Discord IPC protocol fault: ${fault.reason}`));
-    const failedSocket = socket;
-    socket = null;
-    connectionGeneration += 1;
-    failedSocket?.end();
+    transitionToTerminal(new Error(`Discord IPC protocol fault: ${fault.reason}`), true);
   };
 
-  const handleData = (chunk: Uint8Array) => {
+  const handleData = (chunk: Uint8Array, generation: number) => {
     const batch = accumulator.push(chunk);
     if (batch.fault) {
       handleFramingFault(batch.fault);
       return;
     }
     for (const packet of batch.packets) {
+      if (generation !== connectionGeneration) return;
       const decoded = decodeDiscordIpcSocketPacket(packet);
       if (!decoded.frame) continue;
+      if (decoded.frame.op === 3) {
+        new DataView(packet.buffer, packet.byteOffset, packet.byteLength).setUint32(0, 4, true);
+        socket?.write(packet);
+        continue;
+      }
       handlePayload(decoded.frame.op, decoded.frame.payload);
+    }
+  };
+
+  const handleDataSafely = (chunk: Uint8Array, generation: number) => {
+    try {
+      handleData(chunk, generation);
+    } catch {
+      if (generation === connectionGeneration) {
+        transitionToTerminal(new Error("Discord IPC callback failed"), true);
+      }
     }
   };
 
@@ -397,28 +432,30 @@ export function createDiscordIpcClient(
       if (destroyed) throw new Error("Discord IPC client was destroyed");
 
       let lastError: unknown = null;
+      let connectedGeneration: number | null = null;
       for (const endpoint of endpointCandidates()) {
         const generation = ++connectionGeneration;
         try {
-          socket = await connector(endpoint, {
+          const connectedSocket = await connector(endpoint, {
             onData: (data) => {
-              if (generation === connectionGeneration) handleData(data);
+              if (generation === connectionGeneration) handleDataSafely(data, generation);
             },
             onClose: () => {
               if (generation !== connectionGeneration) return;
-              accumulator.clear();
-              ready = false;
-              socket = null;
-              rejectAll(new Error("Discord IPC connection closed"));
+              transitionToTerminal(new Error("Discord IPC connection closed"), false);
             },
             onError: (error) => {
               if (generation !== connectionGeneration) return;
-              accumulator.clear();
-              ready = false;
-              socket = null;
-              rejectAll(toError(error));
+              transitionToTerminal(toError(error), true);
             },
           });
+          if (generation !== connectionGeneration) {
+            lastError = new Error("Discord IPC connection ended while connecting");
+            endSocketBestEffort(connectedSocket);
+            continue;
+          }
+          socket = connectedSocket;
+          connectedGeneration = generation;
           break;
         } catch (error) {
           lastError = error;
@@ -446,17 +483,22 @@ export function createDiscordIpcClient(
           reject(error);
         };
       });
-      socket.write(
-        encodeDiscordIpcPacket(0, {
-          v: DISCORD_IPC_VERSION,
-          client_id: input.clientId,
-        }),
-      );
+      try {
+        socket.write(
+          encodeDiscordIpcPacket(0, {
+            v: DISCORD_IPC_VERSION,
+            client_id: input.clientId,
+          }),
+        );
+      } catch (error) {
+        readyRejecter?.(toError(error));
+      }
       try {
         await readyPromise;
       } catch (error) {
-        socket?.end();
-        socket = null;
+        if (connectedGeneration === connectionGeneration) {
+          transitionToTerminal(toError(error), true);
+        }
         throw error;
       }
     },
@@ -474,20 +516,14 @@ export function createDiscordIpcClient(
     },
     async destroy() {
       destroyed = true;
-      ready = false;
-      accumulator.clear();
-      rejectAll(new Error("Discord IPC client destroyed"));
       if (socket) {
         try {
           socket.write(encodeDiscordIpcPacket(2, {}));
         } catch {
           // Ignore close-frame failures; socket teardown is best effort.
         }
-        const closingSocket = socket;
-        socket = null;
-        connectionGeneration += 1;
-        closingSocket.end();
       }
+      transitionToTerminal(new Error("Discord IPC client destroyed"), true);
     },
     on(event, callback) {
       if (event !== "ready") return;
@@ -549,6 +585,11 @@ function toError(error: unknown): Error {
 }
 
 function normalizeErrorMessage(error: unknown): string {
-  const raw = String(error).trim();
+  let raw: string;
+  try {
+    raw = String(error).trim();
+  } catch {
+    return "Unknown Discord IPC error";
+  }
   return raw.startsWith("Error: ") ? raw.slice("Error: ".length) : raw;
 }

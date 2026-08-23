@@ -6,24 +6,38 @@ import {
   encodeDiscordIpcPacket,
   resolveDiscordIpcEndpointCandidates,
   tryDecodeDiscordIpcPacket,
+  MAX_DISCORD_IPC_BUFFER_BYTES,
   MAX_DISCORD_IPC_FRAME_BYTES,
   type DiscordIpcConnector,
   type DiscordIpcSocket,
 } from "@/services/presence/discord-ipc-client";
 
-const MAX_BUFFER_BYTES_FIXTURE = 1_048_584;
+type FakeConnectorOptions = {
+  readonly throwOnWriteNumber?: number;
+  readonly throwOnEnd?: boolean;
+  readonly terminalBeforeResolve?: "close" | "error";
+  readonly terminalOnWrite?: {
+    readonly number: number;
+    readonly event: "close" | "error";
+  };
+};
 
-function createFakeConnector(): {
+function createFakeConnector(options: FakeConnectorOptions = {}): {
   connector: DiscordIpcConnector;
   writes: Uint8Array[];
   endpointAttempts: string[];
   ended: boolean;
   pushPacket(packet: Record<string, unknown>, op?: number): void;
   pushRaw(data: Uint8Array): void;
+  pushPacketFromAttempt(attempt: number, packet: Record<string, unknown>, op?: number): void;
+  pushRawFromAttempt(attempt: number, data: Uint8Array): void;
+  closeAttempt(attempt: number): void;
+  errorAttempt(attempt: number, error: unknown): void;
   close(): void;
 } {
   const writes: Uint8Array[] = [];
   const endpointAttempts: string[] = [];
+  const callbackAttempts: Parameters<DiscordIpcConnector>[1][] = [];
   let activeCallbacks: Parameters<DiscordIpcConnector>[1] | null = null;
 
   const state = {
@@ -32,7 +46,12 @@ function createFakeConnector(): {
     ended: false,
     connector: (async (endpoint, callbacks) => {
       endpointAttempts.push(endpoint);
+      callbackAttempts.push(callbacks);
       activeCallbacks = callbacks;
+      if (options.terminalBeforeResolve === "close") callbacks.onClose();
+      if (options.terminalBeforeResolve === "error") {
+        callbacks.onError(new Error("fake Discord error before connect resolved"));
+      }
       return socket;
     }) as DiscordIpcConnector,
     pushPacket(packet: Record<string, unknown>, op = 1) {
@@ -42,6 +61,18 @@ function createFakeConnector(): {
     pushRaw(data: Uint8Array) {
       activeCallbacks?.onData(data);
     },
+    pushPacketFromAttempt(attempt: number, packet: Record<string, unknown>, op = 1) {
+      callbackAttempts[attempt]?.onData(encodeDiscordIpcPacket(op, packet));
+    },
+    pushRawFromAttempt(attempt: number, data: Uint8Array) {
+      callbackAttempts[attempt]?.onData(data);
+    },
+    closeAttempt(attempt: number) {
+      callbackAttempts[attempt]?.onClose();
+    },
+    errorAttempt(attempt: number, error: unknown) {
+      callbackAttempts[attempt]?.onError(error);
+    },
     close() {
       activeCallbacks?.onClose();
     },
@@ -49,10 +80,19 @@ function createFakeConnector(): {
 
   const socket: DiscordIpcSocket = {
     write(data) {
+      const writeNumber = writes.length + 1;
+      if (writeNumber === options.throwOnWriteNumber) {
+        throw new Error("fake Discord write failed");
+      }
       writes.push(data);
+      if (writeNumber === options.terminalOnWrite?.number) {
+        if (options.terminalOnWrite.event === "close") activeCallbacks?.onClose();
+        else activeCallbacks?.onError(new Error("fake synchronous Discord write error"));
+      }
     },
     end() {
       state.ended = true;
+      if (options.throwOnEnd) throw new Error("fake Discord end failed");
       activeCallbacks?.onClose();
     },
   };
@@ -68,6 +108,10 @@ function framedBytes(op: number, body: Uint8Array): Uint8Array {
   view.setUint32(4, body.byteLength, true);
   packet.set(body, 8);
   return packet;
+}
+
+function jsonObjectBody(byteLength: number): Uint8Array {
+  return new TextEncoder().encode(`{"x":"${"x".repeat(byteLength - 8)}"}`);
 }
 
 function joinBytes(...chunks: readonly Uint8Array[]): Uint8Array {
@@ -87,6 +131,248 @@ function joinBytes(...chunks: readonly Uint8Array[]): Uint8Array {
  * the user's playback session. These pin that it cannot.
  */
 describe("discord-ipc-client malformed input containment", () => {
+  test("a deeply nested PING is echoed without re-serializing attacker-controlled JSON", async () => {
+    const fake = createFakeConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    const update = client.setActivity({ details: "Still connected" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1) ?? new Uint8Array());
+    const nesting = 450_000;
+    const bodyText = `{"x":${"[".repeat(nesting)}0${"]".repeat(nesting)}}`;
+    const body = new TextEncoder().encode(bodyText);
+    expect(body.byteLength).toBe(900_007);
+
+    expect(() => fake.pushRaw(framedBytes(3, body))).not.toThrow();
+    expect(fake.ended).toBe(false);
+    const pong = fake.writes.at(-1) ?? new Uint8Array();
+    expect(new DataView(pong.buffer, pong.byteOffset, pong.byteLength).getUint32(0, true)).toBe(4);
+    expect(new TextDecoder().decode(pong.subarray(8))).toBe(bodyText);
+
+    fake.pushPacket({ cmd: "SET_ACTIVITY", nonce: command.payload.nonce as string });
+    await expect(update).resolves.toBeUndefined();
+  });
+
+  test("throwing callback-path write and teardown stay contained inside Discord", async () => {
+    const fake = createFakeConnector({ throwOnWriteNumber: 3, throwOnEnd: true });
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    const pending = client.setActivity({ details: "Pending" });
+    const rejection = pending.then(
+      () => null,
+      (error) => error as Error,
+    );
+
+    expect(() => fake.pushPacket({ heartbeat: 1 }, 3)).not.toThrow();
+    expect(fake.ended).toBe(true);
+    expect(await rejection).toEqual(
+      expect.objectContaining({ message: expect.stringMatching(/Discord IPC/i) }),
+    );
+  });
+
+  test("an unstringifiable socket error cannot escape its callback", async () => {
+    const fake = createFakeConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacketFromAttempt(0, { cmd: "DISPATCH", evt: "READY" });
+    await login;
+    const hostileError = {
+      [Symbol.toPrimitive]() {
+        throw new Error("hostile conversion escaped");
+      },
+    };
+
+    expect(() => fake.errorAttempt(0, hostileError)).not.toThrow();
+
+    const secondLogin = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    expect(fake.endpointAttempts).toHaveLength(2);
+    fake.pushPacketFromAttempt(1, { cmd: "DISPATCH", evt: "READY" });
+    await expect(secondLogin).resolves.toBeUndefined();
+  });
+
+  test("close and error invalidate their generation before a late READY", async () => {
+    for (const terminalEvent of ["close", "error"] as const) {
+      const fake = createFakeConnector();
+      const client = createDiscordIpcClient({
+        connector: fake.connector,
+        endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+        timeoutMs: 500,
+      });
+      const firstLogin = client.login({ clientId: `client-${terminalEvent}` });
+      await Promise.resolve();
+      fake.pushPacketFromAttempt(0, { cmd: "DISPATCH", evt: "READY" });
+      await firstLogin;
+
+      if (terminalEvent === "close") {
+        fake.closeAttempt(0);
+      } else {
+        fake.errorAttempt(0, new Error("fake Discord error"));
+      }
+      fake.pushPacketFromAttempt(0, { cmd: "DISPATCH", evt: "READY" });
+
+      const secondLogin = client.login({ clientId: `client-${terminalEvent}` });
+      await Promise.resolve();
+      expect(fake.endpointAttempts).toHaveLength(2);
+      fake.pushPacketFromAttempt(1, { cmd: "DISPATCH", evt: "READY" });
+      await expect(secondLogin).resolves.toBeUndefined();
+    }
+  });
+
+  test("every callback from a dead attempt is inert after reconnect", async () => {
+    const fake = createFakeConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const firstLogin = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacketFromAttempt(0, { cmd: "DISPATCH", evt: "READY" });
+    await firstLogin;
+    fake.errorAttempt(0, new Error("first attempt ended"));
+
+    const secondLogin = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacketFromAttempt(1, { cmd: "DISPATCH", evt: "READY" });
+    await secondLogin;
+
+    const update = client.setActivity({ details: "Current connection" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1) ?? new Uint8Array());
+    fake.pushRawFromAttempt(0, new Uint8Array([1, 2, 3, 4]));
+    fake.pushPacketFromAttempt(0, { cmd: "DISPATCH", evt: "READY" });
+    fake.closeAttempt(0);
+    fake.errorAttempt(0, new Error("late stale error"));
+    fake.pushPacketFromAttempt(1, {
+      cmd: "SET_ACTIVITY",
+      nonce: command.payload.nonce as string,
+    });
+
+    await expect(update).resolves.toBeUndefined();
+    expect(fake.endpointAttempts).toHaveLength(2);
+  });
+
+  test("a socket returned after its attempt terminated is never installed", async () => {
+    for (const terminalEvent of ["close", "error"] as const) {
+      const fake = createFakeConnector({ terminalBeforeResolve: terminalEvent });
+      const client = createDiscordIpcClient({
+        connector: fake.connector,
+        endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+        timeoutMs: 20,
+      });
+
+      await expect(client.login({ clientId: `client-${terminalEvent}` })).rejects.toThrow(
+        /Could not connect to Discord IPC/,
+      );
+      expect(fake.writes).toHaveLength(0);
+      expect(fake.ended).toBe(true);
+    }
+  });
+
+  test("a synchronous terminal callback during PING stops the rest of its batch", async () => {
+    for (const terminalEvent of ["close", "error"] as const) {
+      const fake = createFakeConnector({
+        terminalOnWrite: { number: 2, event: terminalEvent },
+      });
+      const client = createDiscordIpcClient({
+        connector: fake.connector,
+        endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+        timeoutMs: 500,
+      });
+      const firstLogin = client.login({ clientId: `client-${terminalEvent}` });
+      await Promise.resolve();
+      const batch = joinBytes(
+        encodeDiscordIpcPacket(3, { heartbeat: 1 }),
+        encodeDiscordIpcPacket(1, { cmd: "DISPATCH", evt: "READY" }),
+      );
+
+      expect(() => fake.pushRawFromAttempt(0, batch)).not.toThrow();
+      await expect(firstLogin).rejects.toThrow(/Discord IPC|fake synchronous Discord/);
+
+      const secondLogin = client.login({ clientId: `client-${terminalEvent}` });
+      await Promise.resolve();
+      expect(fake.endpointAttempts).toHaveLength(2);
+      fake.pushPacketFromAttempt(1, { cmd: "DISPATCH", evt: "READY" });
+      await expect(secondLogin).resolves.toBeUndefined();
+    }
+  });
+
+  test("a protocol CLOSE invalidates the generation before a late READY", async () => {
+    const fake = createFakeConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const firstLogin = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacketFromAttempt(0, { cmd: "DISPATCH", evt: "READY" });
+    await firstLogin;
+
+    const pending = client.setActivity({ details: "Pending" });
+    const rejection = pending.then(
+      () => null,
+      (error) => error as Error,
+    );
+    expect(() => fake.pushPacketFromAttempt(0, { message: "Discord closed" }, 2)).not.toThrow();
+    fake.pushPacketFromAttempt(0, { cmd: "DISPATCH", evt: "READY" });
+    expect(await rejection).toEqual(expect.objectContaining({ message: "Discord closed" }));
+
+    const secondLogin = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    expect(fake.endpointAttempts).toHaveLength(2);
+    fake.pushPacketFromAttempt(1, { cmd: "DISPATCH", evt: "READY" });
+    await expect(secondLogin).resolves.toBeUndefined();
+  });
+
+  test("handshake and destroy teardown failures remain contained", async () => {
+    const handshakeFake = createFakeConnector({ throwOnWriteNumber: 1, throwOnEnd: true });
+    const handshakeClient = createDiscordIpcClient({
+      connector: handshakeFake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 20,
+    });
+
+    await expect(handshakeClient.login({ clientId: "client-1" })).rejects.toThrow(
+      "fake Discord write failed",
+    );
+    expect(handshakeFake.ended).toBe(true);
+
+    const destroyFake = createFakeConnector({ throwOnEnd: true });
+    const destroyClient = createDiscordIpcClient({
+      connector: destroyFake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const login = destroyClient.login({ clientId: "client-1" });
+    await Promise.resolve();
+    destroyFake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    await expect(destroyClient.destroy()).resolves.toBeUndefined();
+    expect(destroyFake.ended).toBe(true);
+  });
+
   test("non-object JSON roots are dropped without breaking the connection", async () => {
     const fake = createFakeConnector();
     const client = createDiscordIpcClient({
@@ -152,8 +438,57 @@ describe("discord-ipc-client malformed input containment", () => {
     expect(() => fake.pushRaw(header)).not.toThrow();
   });
 
-  test("an oversized frame length drops the connection instead of buffering", async () => {
+  test("a valid frame at the exact declared-body and retained-buffer boundary is accepted", async () => {
     const fake = createFakeConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    const body = jsonObjectBody(1_048_576);
+    const boundaryFrame = framedBytes(1, body);
+    expect(body.byteLength).toBe(1_048_576);
+    expect(boundaryFrame.byteLength).toBe(1_048_584);
+    expect(() => fake.pushRaw(boundaryFrame)).not.toThrow();
+    expect(fake.ended).toBe(false);
+
+    const update = client.setActivity({ details: "Boundary accepted" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1) ?? new Uint8Array());
+    fake.pushPacket({ cmd: "SET_ACTIVITY", nonce: command.payload.nonce as string });
+    await expect(update).resolves.toBeUndefined();
+  });
+
+  test("a chunk above the retained-buffer cap is accepted when it contains only complete frames", async () => {
+    const fake = createFakeConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    const body = jsonObjectBody(525_000);
+    const coalesced = joinBytes(framedBytes(1, body), framedBytes(1, body));
+    expect(coalesced.byteLength).toBe(1_050_016);
+    expect(() => fake.pushRaw(coalesced)).not.toThrow();
+    expect(fake.ended).toBe(false);
+
+    const update = client.setActivity({ details: "Coalesced frames accepted" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1) ?? new Uint8Array());
+    fake.pushPacket({ cmd: "SET_ACTIVITY", nonce: command.payload.nonce as string });
+    await expect(update).resolves.toBeUndefined();
+  });
+
+  test("an oversized frame length drops the connection instead of buffering", async () => {
+    const fake = createFakeConnector({ throwOnEnd: true });
     const client = createDiscordIpcClient({
       connector: fake.connector,
       endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
@@ -182,7 +517,7 @@ describe("discord-ipc-client malformed input containment", () => {
     );
   });
 
-  test("an unresolved chunk above the total buffer cap ends only Discord and rejects pending commands", async () => {
+  test("complete frames above the cap can retain and later complete a small suffix", async () => {
     const fake = createFakeConnector();
     const client = createDiscordIpcClient({
       connector: fake.connector,
@@ -195,17 +530,45 @@ describe("discord-ipc-client malformed input containment", () => {
     await login;
 
     const pending = client.setActivity({ details: "Pending" });
+    const command = decodeDiscordIpcPacket(fake.writes.at(-1) ?? new Uint8Array());
+    const reply = encodeDiscordIpcPacket(1, {
+      cmd: "SET_ACTIVITY",
+      nonce: command.payload.nonce as string,
+    });
+    const body = jsonObjectBody(525_000);
+    const withSuffix = joinBytes(framedBytes(1, body), framedBytes(1, body), reply.subarray(0, 1));
+    expect(withSuffix.byteLength).toBe(1_050_017);
+
+    expect(() => fake.pushRaw(withSuffix)).not.toThrow();
+    expect(fake.ended).toBe(false);
+    fake.pushRaw(reply.subarray(1));
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  test("a declared-body violation wins when total input also exceeds the buffer cap", async () => {
+    const fake = createFakeConnector();
+    const client = createDiscordIpcClient({
+      connector: fake.connector,
+      endpointCandidates: () => ["/run/user/1000/discord-ipc-0"],
+      timeoutMs: 500,
+    });
+    const login = client.login({ clientId: "client-1" });
+    await Promise.resolve();
+    fake.pushPacket({ cmd: "DISPATCH", evt: "READY" });
+    await login;
+
+    const pending = client.setActivity({ details: "Pending" });
     const rejection = pending.then(
       () => null,
       (error) => error as Error,
     );
-    const unresolved = new Uint8Array(MAX_BUFFER_BYTES_FIXTURE + 1);
-    new DataView(unresolved.buffer).setUint32(4, MAX_DISCORD_IPC_FRAME_BYTES, true);
+    const dualViolation = new Uint8Array(MAX_DISCORD_IPC_BUFFER_BYTES + 1);
+    new DataView(dualViolation.buffer).setUint32(4, MAX_DISCORD_IPC_FRAME_BYTES + 1, true);
 
-    expect(() => fake.pushRaw(unresolved)).not.toThrow();
+    expect(() => fake.pushRaw(dualViolation)).not.toThrow();
     expect(fake.ended).toBe(true);
     expect(await rejection).toEqual(
-      expect.objectContaining({ message: expect.stringMatching(/Discord IPC protocol/i) }),
+      expect.objectContaining({ message: expect.stringMatching(/declared-frame-too-large/) }),
     );
   });
 
