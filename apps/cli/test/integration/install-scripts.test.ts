@@ -711,7 +711,27 @@ describe("install.sh package activeVersion", () => {
  *     default, so a prompt nobody could answer became consent.
  */
 describe("install.sh consent without a terminal", () => {
-  function runAsk(yes: 0 | 1): { status: number | null; stderr: string } {
+  /**
+   * `setsid` is what actually removes the controlling terminal.
+   *
+   * `stdio: ["ignore", …]` closes stdin but leaves the child in the parent's
+   * session, so `</dev/tty` still opens whenever the developer runs the suite
+   * from a real terminal. This test used to rely on that closed stdin alone,
+   * which made it environment-dependent: green in CI (no controlling terminal,
+   * so the open fails and `ask` reports "No terminal for") and red under a
+   * developer's TTY (the open succeeds, `read` hits EOF, and `ask` reports
+   * "No reply for" instead). Both are correct refusals — the test was pinning
+   * whichever branch the environment happened to produce.
+   *
+   * macOS ships no `setsid` binary, so there the detach is unavailable and
+   * these skip loudly rather than passing for the wrong reason again.
+   */
+  const setsid = Bun.which("setsid");
+
+  function runAsk(
+    yes: 0 | 1,
+    options: { readonly detach: boolean },
+  ): { status: number | null; stderr: string } {
     const source = readFileSync(INSTALL_SH, "utf8");
     const fn = /^ask\(\) \{[\s\S]*?^\}/m.exec(source)?.[0];
     if (!fn) throw new Error("could not extract ask() from install.sh");
@@ -721,25 +741,50 @@ describe("install.sh consent without a terminal", () => {
       fn,
       `ask "Install mpv?" y`,
     ].join("\n");
-    // stdin closed and no controlling terminal — the `curl … | bash` in CI shape.
-    return spawnSync("bash", ["-c", script], {
+    const [command, args] =
+      options.detach && setsid
+        ? ([setsid, ["bash", "-c", script]] as const)
+        : (["bash", ["-c", script]] as const);
+    return spawnSync(command, args, {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      // A regressed `ask` blocks on `read` forever; fail the test instead of
+      // stalling the suite.
+      timeout: 10_000,
     });
   }
 
-  test("declines rather than assuming yes, and says which step it skipped", () => {
-    const result = runAsk(0);
+  test.skipIf(!setsid)(
+    "with no controlling terminal, declines and says which step it skipped",
+    () => {
+      const result = runAsk(0, { detach: true });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("No terminal for: Install mpv?");
+      expect(result.stderr).toContain("--yes");
+      // bash's own redirect error would mean stderr is silenced after the failing
+      // open rather than before it.
+      expect(result.stderr).not.toContain("No such device");
+    },
+  );
+
+  /**
+   * The second trap, and the one the old setup silently exercised in a
+   * developer's terminal without asserting on it: a controlling terminal
+   * exists, so the `</dev/tty` open succeeds, but nothing can answer. The
+   * previous `read … || true` swallowed that failure and fell through to the
+   * `y` default, which is how a prompt nobody could answer ran `sudo apt-get
+   * install` unattended.
+   */
+  test("with a terminal but no answer, declines instead of defaulting to yes", () => {
+    const result = runAsk(0, { detach: false });
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("No terminal for: Install mpv?");
-    expect(result.stderr).toContain("--yes");
-    // bash's own redirect error would mean stderr is silenced after the failing
-    // open rather than before it.
-    expect(result.stderr).not.toContain("No such device");
+    // Either refusal is correct; which one depends on whether the runner has a
+    // controlling terminal. What must never happen is falling through to `y`.
+    expect(result.stderr).toMatch(/No (terminal|reply) for: Install mpv\?/);
   });
 
   test("an explicit --yes is still consent", () => {
-    expect(runAsk(1).status).toBe(0);
+    expect(runAsk(1, { detach: false }).status).toBe(0);
   });
 });
 
