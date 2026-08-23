@@ -290,12 +290,19 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
         markClosed("session closed");
         if (socket.readyState !== 1) return;
         await new Promise<void>((resolve) => {
-          socket.data.onClose = resolve;
-          socket.end();
-          setTimeout(() => {
+          // The fallback has to be cleared when the socket closes cleanly.
+          // Uncleared it fires 200ms later against an already-closed socket,
+          // and `close()` runs on every session release, not only at exit — so
+          // each released mpv session left one behind.
+          const fallback = setTimeout(() => {
             socket.terminate();
             resolve();
           }, 200);
+          socket.data.onClose = () => {
+            clearTimeout(fallback);
+            resolve();
+          };
+          socket.end();
         });
       })();
 
