@@ -5,6 +5,7 @@ import {
   createTraceStep,
   runProviderCycle,
   type CoreProviderModule,
+  providerCycleCandidateTimeoutMs,
 } from "@kunai/core";
 import type {
   CachePolicy,
@@ -88,6 +89,12 @@ const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+/**
+ * One Cloudflare-gated pipe call. Short on purpose: when a mirror is blocked it
+ * fails fast enough that the next mirror is still reachable inside the attempt
+ * budget, which is what turned a dub request into a ~24s wait.
+ */
+const MIRURO_CANDIDATE_TIMEOUT_MS = 5_000;
 const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
 
 let curlSupportsHttp2: boolean | null = null;
@@ -1743,7 +1750,10 @@ export const miruroProviderModule: CoreProviderModule = {
         now: context.now,
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
-        candidateTimeoutMs: 20_000,
+        candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+          input.startupPriority ?? "balanced",
+          MIRURO_CANDIDATE_TIMEOUT_MS,
+        ),
         // Every candidate goes through the same two pipe hosts — one region-wide
         // Cloudflare block means the rest will fail identically, so stop early.
         shouldStopAfterFailure: (failure) =>

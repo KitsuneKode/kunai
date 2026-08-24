@@ -6,6 +6,7 @@ export * from "./known-catalog";
 export * from "./hls-manifest";
 export * from "./hls-ladder";
 export * from "./direct-stream-source";
+export * from "./series-coordinates";
 export * from "./provider-cycle";
 export * from "./provider-episode-number";
 export * from "./resolve-helpers";

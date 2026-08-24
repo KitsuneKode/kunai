@@ -187,6 +187,45 @@ describe("stream reachability", () => {
     expect(shouldAbortPlaybackForPreflight(probe, false)).toBe(true);
   });
 
+  test("rate-limited probes are not definitive and survive the resolve gate", async () => {
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/rate-limited.m3u8",
+      fetchImpl: async () => response(429, "slow down"),
+      timeoutMs: 50,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    // A CDN throttling a CLI probe says nothing about whether the stream plays.
+    expect(isStreamReachableForResolve(probe)).toBe(true);
+    expect(shouldAbortPlaybackForPreflight(probe, false)).toBe(false);
+  });
+
+  test("429 on HEAD falls through to a ranged GET instead of blocking", async () => {
+    const methods: string[] = [];
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/video.mp4",
+      fetchImpl: async (_url, init) => {
+        methods.push(String(init.method));
+        return init.method === "HEAD" ? response(429, "slow down") : response(206, "partial");
+      },
+      timeoutMs: 500,
+    });
+
+    expect(methods).toEqual(["HEAD", "GET"]);
+    expect(probe.status).toBe("reachable");
+  });
+
+  test("404 stays definitive", async () => {
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/missing.m3u8",
+      fetchImpl: async () => response(404, "gone"),
+      timeoutMs: 50,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    expect(isStreamReachableForResolve(probe)).toBe(false);
+  });
+
   test("playback preflight stays lenient on timeout", async () => {
     const probe = { status: "timeout" } as const;
     expect(isStreamReachableForResolve(probe)).toBe(true);

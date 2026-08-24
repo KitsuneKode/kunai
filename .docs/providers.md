@@ -138,6 +138,29 @@ Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endp
 
 `runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
 
+**"Definitive" excludes transient 4xx.** HTTP 408, 425 and 429 are temporary by
+definition, so `isDefinitiveHttpStatus` in
+`packages/providers/src/shared/stream-reachability.ts` keeps them out of the
+definitive set. Treating a 429 as definitive is what made VidLink fail outright:
+its CDN rate-limits CLI range probes, so every resolve was discarded at the gate
+even though the stream played. A throttled probe is not a verdict about the
+stream.
+
+**The gate walks candidates, it does not judge one.** `resolveDirectStreamSource`
+probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
+answers, so one dead or hotlink-protected URL no longer condemns its working
+siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
+keeps its selection rather than recording a stream failure.
+
+**Per-candidate timeouts are clamped to the attempt budget.**
+`providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
+holds a provider's chosen `candidateTimeoutMs` below the attempt timeout it runs
+inside. Miruro and Videasy both requested 20s inside a 12s `balanced` attempt, so
+the bound was unreachable and one hung mirror consumed the whole attempt with
+nothing attributable in the trace. Providers still pick their own value: Miruro
+wants a short bound so it can walk past a blocked mirror, Videasy wants a slow
+flavor to finish.
+
 Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.

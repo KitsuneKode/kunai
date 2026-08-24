@@ -179,7 +179,7 @@ async function fetchPlaylistText(
       signal: controller.signal,
     });
     if (response.status < 200 || response.status >= 300) {
-      const definitive = response.status >= 400 && response.status < 500;
+      const definitive = isDefinitiveHttpStatus(response.status);
       return {
         status: "fail",
         result: { status: "unreachable", reason: `HTTP ${response.status}`, definitive },
@@ -230,7 +230,7 @@ async function probeHlsMediaSegment(
     });
     const healthyStatus = (status: number) => (status >= 200 && status < 300) || status === 206;
     if (!healthyStatus(response.status)) {
-      const definitive = response.status >= 400 && response.status < 500;
+      const definitive = isDefinitiveHttpStatus(response.status);
       return {
         status: "unreachable",
         reason: `HLS segment unreachable: HTTP ${response.status}`,
@@ -309,7 +309,7 @@ async function probeHttpStatus(
     if (options.method === "HEAD" && (response.status === 403 || response.status === 405)) {
       throw new Error(`HEAD ${response.status}`);
     }
-    const definitive = response.status >= 400 && response.status < 500;
+    const definitive = isDefinitiveHttpStatus(response.status);
     return { status: "unreachable", reason: `HTTP ${response.status}`, definitive };
   } catch (error) {
     if (controller.signal.aborted) {
@@ -325,6 +325,23 @@ async function probeHttpStatus(
     clearTimeout(timeout);
     options.parentSignal?.removeEventListener("abort", onParentAbort);
   }
+}
+
+/**
+ * Statuses in the 4xx range that are explicitly temporary rather than a verdict
+ * about the resource. A CDN rate-limiting a CLI range probe (429) says nothing
+ * about whether the stream plays, so treating these as definitive discards
+ * working sources — see `isStreamReachableForResolve`, which only blocks on
+ * definitive failures.
+ */
+const TRANSIENT_HTTP_STATUSES: ReadonlySet<number> = new Set([
+  408, // Request Timeout
+  425, // Too Early
+  429, // Too Many Requests
+]);
+
+function isDefinitiveHttpStatus(status: number): boolean {
+  return status >= 400 && status < 500 && !TRANSIENT_HTTP_STATUSES.has(status);
 }
 
 function isDefinitiveNetworkError(message: string): boolean {

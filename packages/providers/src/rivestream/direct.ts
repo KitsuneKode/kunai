@@ -316,7 +316,11 @@ export const rivestreamProviderModule: CoreProviderModule = {
 
       const providers = await getRivestreamProviderServices(context);
 
-      const cycleCandidates = buildRivestreamCycleCandidates(providers, input.preferredSourceId);
+      const cycleCandidates = buildRivestreamCycleCandidates(
+        providers,
+        input.preferredSourceId,
+        input.preferredAudioLanguage,
+      );
       const sourceInventorySeeds = buildRivestreamSourceInventoryCandidates(
         cycleCandidates,
         cachePolicy,
@@ -554,10 +558,26 @@ export const rivestreamProviderModule: CoreProviderModule = {
   },
 };
 
-function buildRivestreamCycleCandidates(
+/**
+ * Order the service cycle so a requested audio language is actually reached.
+ *
+ * Rivestream ships language-specific mirrors (hindicast for Hindi, and so on),
+ * but the cycle used to walk them in discovery order and simply *label* whatever
+ * came back with the requested language. An `hi` request therefore resolved the
+ * English mirror and stamped "HI" on it. Ordering is the whole fix: every
+ * candidate is prefetched in parallel regardless, so promoting the matching
+ * mirror costs no extra request — it only changes which settled result the
+ * sequential cycle accepts first.
+ *
+ * An explicitly pinned source still outranks the language heuristic: the user
+ * choosing a source by hand is evidence, a language guess is inference.
+ */
+export function buildRivestreamCycleCandidates(
   providers: readonly string[],
   preferredSourceId?: string,
+  preferredAudioLanguage?: string,
 ): readonly ProviderCycleCandidate[] {
+  const requestedLanguage = normalizeIsoLanguageCode(preferredAudioLanguage);
   return providers.map((provider, index) => {
     const displayLabel = displayRivestreamSourceLabel(provider);
     const audioSubtitle = inferRivestreamAudioSubtitle(provider);
@@ -569,7 +589,13 @@ function buildRivestreamCycleCandidates(
       serverId: provider,
       label: displayLabel,
       nativeLabel: provider,
-      priority: sourceId === preferredSourceId ? index - 10_000 : index,
+      priority:
+        sourceId === preferredSourceId
+          ? index - 10_000
+          : requestedLanguage !== undefined &&
+              inferRivestreamAudioLanguage(provider, undefined) === requestedLanguage
+            ? index - 1_000
+            : index,
       metadata: {
         provider,
         sourceHost: "rivestream.app",

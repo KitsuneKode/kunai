@@ -1,3 +1,4 @@
+import { providerAttemptTimeoutMs } from "@kunai/core";
 import type { StartupPriority } from "@kunai/types";
 
 // These caps bound sequential provider fan-out. They are intentionally centralized so
@@ -9,14 +10,7 @@ const TOTAL_RESOLVE_DEADLINE_MS: Record<StartupPriority, number> = {
 };
 
 export function resolveProviderAttemptTimeoutMs(startupPriority: StartupPriority): number {
-  switch (startupPriority) {
-    case "fast":
-      return 6_000;
-    case "balanced":
-      return 12_000;
-    case "quality-first":
-      return 30_000;
-  }
+  return providerAttemptTimeoutMs(startupPriority);
 }
 
 export function resolveProviderMaxAttempts(startupPriority: StartupPriority): number {
