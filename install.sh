@@ -448,11 +448,12 @@ extract_release_tar_gz() {
 
 	tar_budget=$((512 + ((EXTRACTED_BINARY_MAX_BYTES + 511) / 512) * 512 + 1024))
 	# macOS /usr/bin/head does not provide GNU `head -c`. Read one 512-byte
-	# block beyond the budget with POSIX dd instead; tar streams are themselves
-	# block-aligned, so any oversized container still crosses the exact bound.
+	# block beyond the budget with dd instead; fullblock is required because
+	# count otherwise measures short pipe reads rather than complete blocks.
+	# Tar streams are block-aligned, so an oversized container crosses the bound.
 	read_blocks=$(((tar_budget + 512) / 512))
 	set +o pipefail
-	gzip -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" 2>/dev/null
+	gzip -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" iflag=fullblock 2>/dev/null
 	pipeline_status=("${PIPESTATUS[@]}")
 	gzip_status="${pipeline_status[0]}"
 	dd_status="${pipeline_status[1]}"

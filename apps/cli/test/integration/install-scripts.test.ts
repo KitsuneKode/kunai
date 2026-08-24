@@ -328,6 +328,22 @@ describe("install.sh release asset failures", () => {
         "head",
         '#!/bin/sh\n[ "${1:-}" != "-c" ] || exit 64\nexec /usr/bin/head "$@"\n',
       );
+      installCommandShim(
+        shimDir,
+        "dd",
+        `#!/bin/sh
+bounded=0
+fullblock=0
+for arg in "$@"; do
+  case "$arg" in
+    of=*) bounded=1 ;;
+    iflag=fullblock) fullblock=1 ;;
+  esac
+done
+[ "$bounded" != 1 ] || [ "$fullblock" = 1 ] || exit 64
+exec /usr/bin/dd "$@"
+`,
+      );
       await withReleaseFixture(
         {
           [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
