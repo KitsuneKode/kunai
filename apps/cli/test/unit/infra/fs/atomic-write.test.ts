@@ -4,7 +4,15 @@ import { lstat, mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from "
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { __testing } from "@/infra/fs/atomic-write";
+import {
+  __testing,
+  writeAtomicBytes,
+  writeAtomicJson,
+  writeAtomicSecretJson,
+} from "@/infra/fs/atomic-write";
+
+/** POSIX-only: NTFS ignores mode bits, so asserting them there proves nothing. */
+const testPosixMode = process.platform === "win32" ? test.skip : test;
 
 const roots: string[] = [];
 
@@ -162,5 +170,81 @@ describe("atomicMove", () => {
     expect(existsSync(target)).toBe(false);
     expect(existsSync(tmp)).toBe(false);
     expect(await readFile(backup, "utf8")).toBe("old");
+  });
+});
+
+describe("secret and durable writes", () => {
+  async function makeRoot(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "kunai-atomic-secret-"));
+    roots.push(root);
+    return root;
+  }
+
+  testPosixMode("a secret write is owner-only before it is ever visible", async () => {
+    const root = await makeRoot();
+    const target = join(root, "sync-tokens.json");
+    await writeAtomicSecretJson(target, { anilist: { accessToken: "t", userId: 1 } });
+
+    const stats = await lstat(target);
+    expect(stats.mode & 0o777).toBe(0o600);
+  });
+
+  testPosixMode(
+    "a secret rewrite stays owner-only when the previous file was wide open",
+    async () => {
+      const root = await makeRoot();
+      const target = join(root, "config.json");
+      await writeFile(target, "{}", { mode: 0o666 });
+
+      await writeAtomicSecretJson(target, { videasySessionToken: "s" });
+
+      const stats = await lstat(target);
+      expect(stats.mode & 0o777).toBe(0o600);
+    },
+  );
+
+  testPosixMode("an ordinary write is not silently narrowed to owner-only", async () => {
+    const root = await makeRoot();
+    const target = join(root, "plain.json");
+    await writeAtomicJson(target, { ok: true });
+
+    const stats = await lstat(target);
+    expect(stats.mode & 0o600).toBe(0o600);
+    expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ ok: true });
+  });
+
+  test("writeAtomicBytes round-trips every accepted payload shape", async () => {
+    const root = await makeRoot();
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+
+    for (const [name, payload] of [
+      ["uint8array", bytes],
+      ["arraybuffer", bytes.buffer.slice(0)],
+      ["blob", new Blob([bytes])],
+    ] as const) {
+      const target = join(root, `${name}.bin`);
+      await writeAtomicBytes(target, payload);
+      expect(new Uint8Array(await readFile(target))).toEqual(bytes);
+    }
+  });
+
+  test("a directory flush never fails a write that already landed", async () => {
+    const root = await makeRoot();
+    await expect(__testing.flushDirectory(join(root, "does-not-exist"))).resolves.toBeUndefined();
+  });
+
+  test("Windows ACL hardening is skipped rather than guessed when the user is unknown", async () => {
+    const root = await makeRoot();
+    const target = join(root, "secret.json");
+    await writeFile(target, "{}");
+
+    const previousUser = process.env.USERNAME;
+    delete process.env.USERNAME;
+    try {
+      await expect(__testing.restrictWindowsSecretAcl(target)).resolves.toBeUndefined();
+      expect(await readFile(target, "utf8")).toBe("{}");
+    } finally {
+      if (previousUser !== undefined) process.env.USERNAME = previousUser;
+    }
   });
 });
