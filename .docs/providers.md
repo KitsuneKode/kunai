@@ -293,6 +293,22 @@ Active beta providers resolve through direct modules in `packages/providers`.
 
 ### YouTube (`packages/providers/src/youtube`)
 
+**The quality ceiling reaches mpv only if three things are right.** Verified
+against mpv 0.41 over the real IPC socket:
+
+- `ytdl` is a yes/no flag, `ytdl-format` is the selector. The persistent loadfile
+  path assigned the selector to the flag; mpv answered `error: "success"` and
+  ignored it, so a `height<=144` request played 720p.
+- `script-opts` cannot be set per file. With `mpv-ytdlautoformat` installed it
+  overrides Kunai's `ytdl-format` unless `ytdlautoformat-domains=` is in the
+  launch args, so a persistent session always carries that guard — it may be
+  handed a YouTube URL over IPC long after launch.
+- `--ytdl=no` is process-wide and a later per-file `ytdl: "yes"` cannot lift it.
+  A persistent session launched on an HLS stream therefore could not play
+  YouTube at all afterwards; mpv reported the load as successful and produced no
+  video. That flag is now one-shot only, and the persistent path disables ytdl
+  per file instead.
+
 **A failed metadata probe is classified, not swallowed.**
 `classifyYoutubeMetadataFailure` (`youtube/metadata-failure.ts`) splits yt-dlp
 stderr into terminal and transient. Terminal — private, deleted, members-only,

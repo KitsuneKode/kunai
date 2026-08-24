@@ -55,7 +55,9 @@ export type PersistentLoadfileOptions = {
   readonly "http-header-fields"?: string;
   readonly "http-header-fields-clr"?: string;
   readonly "tls-verify"?: string;
+  /** mpv's `--ytdl` is a yes/no flag: whether ytdl_hook runs at all. */
   readonly ytdl?: string;
+  /** mpv's `--ytdl-format` is the format selector string. */
   readonly "ytdl-format"?: string;
   readonly "ytdl-raw-options"?: string;
   readonly "demuxer-lavf-o"?: string;
@@ -94,10 +96,13 @@ export function buildPersistentLoadfileOptions(
   }
 
   if (isYoutubeWatchUrl(url) || ytdlOptions?.requiresYtdl) {
-    // `ytdl` is a yes/no flag; the format belongs in `ytdl-format`. Passing the
-    // format here made mpv answer "unsupported format for accessing property"
-    // and drop the option, so the quality ceiling silently never applied on the
-    // persistent path while the spawn path in mpv.ts got it right.
+    // `ytdl` is a yes/no flag and `ytdl-format` is the selector, so assigning
+    // the format to `ytdl` silently discarded the user's quality ceiling on the
+    // persistent session: a loadfile carrying a `height<=144` selector still
+    // played 720p. Probing the live IPC socket on mpv 0.41,
+    // `set_property ytdl "bv*+ba/b"` answers `unsupported format for accessing
+    // property` while `ytdl-format` accepts it. Setting the flag explicitly
+    // also survives a user config that turned ytdl off.
     loadOptions.ytdl = "yes";
     loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? "bv*+ba/b";
     if (ytdlOptions?.ytdlRawOptions?.trim()) {

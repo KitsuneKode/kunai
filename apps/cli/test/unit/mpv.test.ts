@@ -332,3 +332,44 @@ test("describeSubtitleTrackForMpv names selected subtitle tracks from inventory"
     ]),
   ).toEqual({ title: "English SDH", language: "en" });
 });
+
+test("a persistent HLS launch does not disable ytdl process-wide", () => {
+  // `--ytdl=no` cannot be lifted by a later per-file `ytdl: "yes"`, so a
+  // persistent session launched on HLS could never play YouTube afterwards.
+  const args = buildMpvArgs(
+    { url: "https://cdn.example/episode.m3u8", headers: {}, subtitle: null, displayTitle: "Ep 1" },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+  expect(args).not.toContain("--ytdl=no");
+});
+
+test("a one-shot HLS launch still disables ytdl", () => {
+  const args = buildMpvArgs(
+    { url: "https://cdn.example/episode.m3u8", headers: {}, subtitle: null, displayTitle: "Ep 1" },
+    "/tmp/kunai-test.sock",
+    {},
+  );
+  expect(args).toContain("--ytdl=no");
+});
+
+test("a persistent session carries the ytdl guard even when it launches on a direct stream", () => {
+  // script-opts cannot be set per-file, and a persistent session is handed later
+  // episodes over IPC — including YouTube. Without the guard at launch,
+  // mpv-ytdlautoformat overrides Kunai's ytdl-format for the whole session.
+  const args = buildMpvArgs(
+    { url: "https://cdn.example/episode.m3u8", headers: {}, subtitle: null, displayTitle: "Ep 1" },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+  expect(args).toContain("--script-opts=ytdlautoformat-domains=");
+});
+
+test("a one-shot direct stream does not get the ytdl guard", () => {
+  const args = buildMpvArgs(
+    { url: "https://cdn.example/episode.m3u8", headers: {}, subtitle: null, displayTitle: "Ep 1" },
+    "/tmp/kunai-test.sock",
+    {},
+  );
+  expect(args.some((arg) => arg.startsWith("--script-opts="))).toBe(false);
+});

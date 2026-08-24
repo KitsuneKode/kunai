@@ -539,7 +539,13 @@ export function buildMpvArgs(
     if (opts.ytdlRawOptions?.trim()) {
       args.push(`--ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
     }
-  } else if (opts.url.toLowerCase().includes(".m3u8")) {
+  } else if (opts.url.toLowerCase().includes(".m3u8") && config?.persistent !== true) {
+    // One-shot only. `--ytdl=no` is process-wide and a later per-file
+    // `ytdl: "yes"` cannot lift it, so a persistent session launched on an HLS
+    // stream could never play a YouTube URL handed to it over IPC afterwards —
+    // mpv reported the loadfile as successful and then produced no video at all.
+    // The persistent path already disables ytdl per file for remote HLS in
+    // `buildPersistentLoadfileOptions`, which is the correct scope.
     args.push("--ytdl=no");
   }
 
@@ -638,10 +644,17 @@ export function buildMpvArgs(
   }
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
   if (config?.scriptPath) args.push(`--script=${config.scriptPath}`);
-  if (config?.scriptOpts || isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
+  // A persistent session always carries the ytdl guard, even when it launches on
+  // a non-YouTube URL: it can be handed a YouTube watch URL later over IPC, and
+  // `script-opts` cannot be set per-file. Verified against mpv 0.41 with
+  // mpv-ytdlautoformat installed — a loadfile carrying `ytdl-format=…height<=144`
+  // still played 720p unless the guard was present in the launch args.
+  const needsYoutubeScriptOpts =
+    isYoutubeWatchUrl(opts.url) || opts.requiresYtdl || config?.persistent === true;
+  if (config?.scriptOpts || needsYoutubeScriptOpts) {
     const scriptOpts = joinMpvScriptOpts(
       config?.scriptOpts,
-      isYoutubeWatchUrl(opts.url) || opts.requiresYtdl ? buildYoutubeMpvScriptOpts() : undefined,
+      needsYoutubeScriptOpts ? buildYoutubeMpvScriptOpts() : undefined,
     );
     if (scriptOpts) args.push(`--script-opts=${scriptOpts}`);
   }

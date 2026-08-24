@@ -233,6 +233,41 @@ describe("buildPersistentLoadfileCommand", () => {
     ]);
   });
 
+  test("a ytdl quality ceiling goes to ytdl-format, not the ytdl flag", () => {
+    // mpv's `--ytdl` is a yes/no flag and `--ytdl-format` is the selector.
+    // Assigning the selector to `ytdl` was accepted by mpv and then ignored, so
+    // the persistent session silently played 720p for a `height<=144` request.
+    const options = buildPersistentLoadfileOptions(
+      "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      0,
+      undefined,
+      { requiresYtdl: true, ytdlFormat: "bestvideo[height<=144]+bestaudio/bv*+ba/b" },
+    );
+
+    expect(options["ytdl-format"]).toBe("bestvideo[height<=144]+bestaudio/bv*+ba/b");
+    expect(options.ytdl).toBe("yes");
+  });
+
+  test("a YouTube watch URL enables ytdl even without an explicit format", () => {
+    const options = buildPersistentLoadfileOptions(
+      "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      0,
+      undefined,
+    );
+    expect(options.ytdl).toBe("yes");
+    expect(options["ytdl-format"]).toBe("bv*+ba/b");
+  });
+
+  test("a remote HLS manifest still turns ytdl off and sets no format", () => {
+    const options = buildPersistentLoadfileOptions(
+      "https://cdn.example/episode.m3u8",
+      0,
+      undefined,
+    );
+    expect(options.ytdl).toBe("no");
+    expect(options["ytdl-format"]).toBeUndefined();
+  });
+
   test("rejects unsafe remote loadfile targets", () => {
     expect(() => buildPersistentLoadfileCommand("--script=evil.lua")).toThrow("unsafe stream URL");
     expect(() => buildPersistentLoadfileCommand("file:///etc/passwd")).toThrow("unsafe stream URL");
