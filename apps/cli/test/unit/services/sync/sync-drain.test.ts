@@ -7,6 +7,7 @@ import { trackerOperationDedupeKey, type TrackerOperation } from "@/services/syn
 import type { SyncAdapter } from "@/services/sync/SyncAdapter";
 import {
   buildProgressUpdates,
+  DRAIN_MAX_OPERATIONS,
   SyncAdmissionAbortedError,
   SyncService,
   type SyncConfigPort,
@@ -128,6 +129,20 @@ function historyProgress(episode: number, updatedAt: string): HistoryProgress {
   };
 }
 
+/**
+ * Production drain shape, kept in proportion rather than in size.
+ *
+ * Production is 100 rows per pass in batches of 25 — four batches, then a
+ * continuation for whatever is left. What these tests exercise is that
+ * structure, not the row count, so the numbers below hold the same shape:
+ * BATCH_SIZE x 4 == BUDGET, with OVER_BUDGET spilling into a continuation.
+ * Shrinking the budget alone would have collapsed each pass to a single batch
+ * and stopped testing the batch loop entirely.
+ */
+const BATCH_SIZE = 2;
+const BUDGET = BATCH_SIZE * 4;
+const OVER_BUDGET = BUDGET + BATCH_SIZE;
+
 describe("SyncService drain", () => {
   test("a direct startup drain schedules continuation beyond its operation budget", async () => {
     const repo = outbox();
@@ -136,9 +151,15 @@ describe("SyncService drain", () => {
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
+      // The property is "the pass stops at its budget and a continuation picks
+      // up the rest", which only needs the queue to out-run the budget. Proving
+      // it against the production 100 meant 103 real SQLite rows per test for
+      // no extra coverage.
+      maxOperationsPerPass: BUDGET,
+      batchSize: BATCH_SIZE,
     });
 
-    for (let id = 1; id <= 103; id += 1) {
+    for (let id = 1; id <= OVER_BUDGET; id += 1) {
       seedOperation(repo, {
         version: 1,
         kind: "favorite-membership:set",
@@ -147,11 +168,74 @@ describe("SyncService drain", () => {
       });
     }
 
-    const first = await service.drain(25);
-    expect(first.claimed).toBe(100);
+    const first = await service.drain();
+    expect(first.claimed).toBe(BUDGET);
     await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
 
-    expect(anilist.calls).toHaveLength(103);
+    expect(anilist.calls).toHaveLength(OVER_BUDGET);
+    expect(repo.counts().pending).toBe(0);
+  });
+
+  test("a zero or negative drain limit cannot wedge the queue", async () => {
+    // Both limits spin at 0, and differently: batchSize 0 makes
+    // `claimed < batchSize` false forever inside drainBatches, while a pass
+    // budget of 0 makes `claimed >= budget` true forever in deliverSoon's
+    // continuation check. Clamping to 1 keeps both terminating.
+    for (const limits of [
+      { batchSize: 0, maxOperationsPerPass: 0 },
+      { batchSize: -5, maxOperationsPerPass: -5 },
+    ]) {
+      const repo = outbox();
+      const anilist = adapter("anilist");
+      const service = new SyncService({
+        adapters: [anilist.adapter],
+        outbox: repo,
+        config: configPort(),
+        ...limits,
+      });
+
+      for (let id = 1; id <= 3; id += 1) {
+        seedOperation(repo, {
+          version: 1,
+          kind: "favorite-membership:set",
+          target: { tracker: "anilist", anilistId: id, mediaKind: "anime" },
+          present: true,
+        });
+      }
+
+      // Terminating at all is the assertion: unclamped, this never resolves.
+      const summary = await service.drain();
+      expect(summary.claimed).toBe(1);
+      service.deliverSoon();
+      await waitUntil(() => repo.counts().pending === 0, { label: "clamped drain drained" });
+      expect(anilist.calls).toHaveLength(3);
+    }
+  });
+
+  test("an uninjected service uses the production drain budget, not a test-sized one", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    // No `maxOperationsPerPass`: this is the wiring the app actually gets.
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    for (let id = 1; id <= OVER_BUDGET; id += 1) {
+      seedOperation(repo, {
+        version: 1,
+        kind: "favorite-membership:set",
+        target: { tracker: "anilist", anilistId: id, mediaKind: "anime" },
+        present: true,
+      });
+    }
+
+    // OVER_BUDGET is far below the production budget, so one pass takes them
+    // all. A default wired to the injected test value, or to zero, fails here.
+    const summary = await service.drain();
+    expect(DRAIN_MAX_OPERATIONS).toBe(100);
+    expect(summary.claimed).toBe(OVER_BUDGET);
     expect(repo.counts().pending).toBe(0);
   });
 
@@ -162,9 +246,15 @@ describe("SyncService drain", () => {
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
+      // The property is "the pass stops at its budget and a continuation picks
+      // up the rest", which only needs the queue to out-run the budget. Proving
+      // it against the production 100 meant 103 real SQLite rows per test for
+      // no extra coverage.
+      maxOperationsPerPass: BUDGET,
+      batchSize: BATCH_SIZE,
     });
 
-    for (let id = 1; id <= 103; id += 1) {
+    for (let id = 1; id <= OVER_BUDGET; id += 1) {
       seedOperation(repo, {
         version: 1,
         kind: "favorite-membership:set",
@@ -176,7 +266,7 @@ describe("SyncService drain", () => {
     service.deliverSoon();
     await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
 
-    expect(anilist.calls).toHaveLength(103);
+    expect(anilist.calls).toHaveLength(OVER_BUDGET);
     expect(repo.counts().pending).toBe(0);
   });
 
