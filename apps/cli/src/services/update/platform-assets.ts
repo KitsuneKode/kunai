@@ -10,6 +10,10 @@
 export type PlatformOs = "linux" | "darwin" | "windows";
 export type PlatformArch = "x64" | "arm64";
 export type PlatformLibc = "gnu" | "musl";
+export type ReleaseArchiveFormat = "tar.gz" | "zip";
+
+const MAX_RELEASE_BINARY_BYTES = 128 * 1024 * 1024;
+const MAX_RELEASE_ARCHIVE_BYTES = 64 * 1024 * 1024;
 
 export type ReleaseBinaryTarget = {
   readonly id: string;
@@ -18,62 +22,98 @@ export type ReleaseBinaryTarget = {
   readonly os: PlatformOs;
   readonly arch: PlatformArch;
   readonly libc?: PlatformLibc;
+  readonly archiveName: string;
+  readonly archiveFormat: ReleaseArchiveFormat;
+  readonly archiveEntryName: string;
+  readonly archiveMode: number;
+  readonly maxBinaryBytes: number;
+  readonly maxArchiveBytes: number;
 };
+
+type ReleaseBinaryTargetInput = Omit<
+  ReleaseBinaryTarget,
+  | "archiveName"
+  | "archiveFormat"
+  | "archiveEntryName"
+  | "archiveMode"
+  | "maxBinaryBytes"
+  | "maxArchiveBytes"
+>;
+
+function releaseBinaryTarget(input: ReleaseBinaryTargetInput): ReleaseBinaryTarget {
+  const archiveFormat: ReleaseArchiveFormat = input.os === "windows" ? "zip" : "tar.gz";
+  const archiveStem = input.out.endsWith(".exe") ? input.out.slice(0, -4) : input.out;
+  return {
+    ...input,
+    archiveName: `${archiveStem}.${archiveFormat}`,
+    archiveFormat,
+    archiveEntryName: input.out,
+    archiveMode: 0o755,
+    maxBinaryBytes: MAX_RELEASE_BINARY_BYTES,
+    maxArchiveBytes: MAX_RELEASE_ARCHIVE_BYTES,
+  };
+}
 
 /** Cross-compile targets published on every GitHub Release (grouped: Linux → macOS → Windows). */
 export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
-  { id: "linux-x64", triple: "bun-linux-x64", out: "kunai-linux-x64", os: "linux", arch: "x64" },
-  {
+  releaseBinaryTarget({
+    id: "linux-x64",
+    triple: "bun-linux-x64",
+    out: "kunai-linux-x64",
+    os: "linux",
+    arch: "x64",
+  }),
+  releaseBinaryTarget({
     id: "linux-x64-musl",
     triple: "bun-linux-x64-musl",
     out: "kunai-linux-x64-musl",
     os: "linux",
     arch: "x64",
     libc: "musl",
-  },
-  {
+  }),
+  releaseBinaryTarget({
     id: "linux-arm64",
     triple: "bun-linux-arm64",
     out: "kunai-linux-arm64",
     os: "linux",
     arch: "arm64",
-  },
-  {
+  }),
+  releaseBinaryTarget({
     id: "linux-arm64-musl",
     triple: "bun-linux-arm64-musl",
     out: "kunai-linux-arm64-musl",
     os: "linux",
     arch: "arm64",
     libc: "musl",
-  },
-  {
+  }),
+  releaseBinaryTarget({
     id: "darwin-x64",
     triple: "bun-darwin-x64",
     out: "kunai-darwin-x64",
     os: "darwin",
     arch: "x64",
-  },
-  {
+  }),
+  releaseBinaryTarget({
     id: "darwin-arm64",
     triple: "bun-darwin-arm64",
     out: "kunai-darwin-arm64",
     os: "darwin",
     arch: "arm64",
-  },
-  {
+  }),
+  releaseBinaryTarget({
     id: "windows-x64",
     triple: "bun-windows-x64",
     out: "kunai-windows-x64.exe",
     os: "windows",
     arch: "x64",
-  },
-  {
+  }),
+  releaseBinaryTarget({
     id: "windows-arm64",
     triple: "bun-windows-arm64",
     out: "kunai-windows-arm64.exe",
     os: "windows",
     arch: "arm64",
-  },
+  }),
 ];
 
 export type DetectedPlatform = {

@@ -36,6 +36,8 @@ Expected result:
 - unit and integration tests report 0 failures
 - typecheck exits 0
 - build writes `apps/cli/dist/kunai.js` and the host compiled binary under `apps/cli/dist/bin/`
+- an all-target release build writes exactly eight deterministic archives,
+  eight preserved raw binaries, `SHA256SUMS`, and `SHA256SUMS.archives`
 - package check rejects `dist/bin/**`, source/maps, analyze metafiles, lifecycle scripts, dependency drift, and oversized launcher tarballs
 - release dry-run completes build, checks, and packability without publishing
 
@@ -44,6 +46,19 @@ The release workflow additionally opens the exact preserved
 upload and after protected-job download. It must contain only `package.json`,
 `LICENSE`, `README.md`, and `dist/npm-launcher.mjs` under `package/`; publication
 uses those same verified bytes rather than repacking them.
+
+For native release assets, the legacy `SHA256SUMS` name continues to cover the
+eight raw compatibility binaries because already-published installers and
+updaters request it. `SHA256SUMS.archives` separately covers the eight
+archives. Verification rejects
+missing, duplicate, unexpected, empty, oversized, hash-mismatched, or
+non-canonical assets. A canonical archive has one entry whose name is the raw
+asset name and no directory prefix; tar metadata is normalized with executable
+mode `0755`, while zip records that Unix mode but Windows extraction does not
+promise to restore it. Archive consumers are intentionally outside the first
+creation/verification slice. This builder slice does not close issue #132 and
+does not yet reduce user downloads: 0.3.0 release dispatch remains blocked until
+the installer/updater archive-consumption stack lands and is verified.
 
 ## Changelog Gate
 

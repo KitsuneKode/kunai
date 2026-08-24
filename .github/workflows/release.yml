@@ -27,6 +27,9 @@ on:
       - "scripts/release-changelog.ts"
       - "scripts/generate-release-notes.ts"
       - "scripts/release-binary-checksums.ts"
+      - "scripts/release-asset-contract.ts"
+      - "scripts/verify-release-artifact-directory.ts"
+      - "scripts/verify-github-release-assets.ts"
       - "scripts/release-guard.ts"
       - "scripts/release-confirmation-gate.ts"
       - "scripts/set-release-status.ts"
@@ -214,14 +217,23 @@ jobs:
           cp ".release-candidate/${NPM_TARBALL_NAME}" .candidate-upload/
           cp -R .release-candidate/npm-platform .candidate-upload/npm-platform
           cp apps/cli/dist/bin/kunai-linux-x64 \
+            apps/cli/dist/bin/kunai-linux-x64.tar.gz \
             apps/cli/dist/bin/kunai-linux-arm64 \
+            apps/cli/dist/bin/kunai-linux-arm64.tar.gz \
             apps/cli/dist/bin/kunai-linux-x64-musl \
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz \
             apps/cli/dist/bin/kunai-linux-arm64-musl \
+            apps/cli/dist/bin/kunai-linux-arm64-musl.tar.gz \
             apps/cli/dist/bin/kunai-darwin-x64 \
+            apps/cli/dist/bin/kunai-darwin-x64.tar.gz \
             apps/cli/dist/bin/kunai-darwin-arm64 \
+            apps/cli/dist/bin/kunai-darwin-arm64.tar.gz \
             apps/cli/dist/bin/kunai-windows-x64.exe \
+            apps/cli/dist/bin/kunai-windows-x64.zip \
             apps/cli/dist/bin/kunai-windows-arm64.exe \
+            apps/cli/dist/bin/kunai-windows-arm64.zip \
             apps/cli/dist/bin/SHA256SUMS \
+            apps/cli/dist/bin/SHA256SUMS.archives \
             .candidate-upload/
 
       - name: Emit candidate gate evidence
@@ -726,15 +738,32 @@ jobs:
           set -euo pipefail
           mkdir -p apps/cli/dist/bin
           cp .release-download/kunai-linux-x64 \
+            .release-download/kunai-linux-x64.tar.gz \
             .release-download/kunai-linux-arm64 \
+            .release-download/kunai-linux-arm64.tar.gz \
             .release-download/kunai-linux-x64-musl \
+            .release-download/kunai-linux-x64-musl.tar.gz \
             .release-download/kunai-linux-arm64-musl \
+            .release-download/kunai-linux-arm64-musl.tar.gz \
             .release-download/kunai-darwin-x64 \
+            .release-download/kunai-darwin-x64.tar.gz \
             .release-download/kunai-darwin-arm64 \
+            .release-download/kunai-darwin-arm64.tar.gz \
             .release-download/kunai-windows-x64.exe \
+            .release-download/kunai-windows-x64.zip \
             .release-download/kunai-windows-arm64.exe \
+            .release-download/kunai-windows-arm64.zip \
             .release-download/SHA256SUMS \
+            .release-download/SHA256SUMS.archives \
             apps/cli/dist/bin/
+
+      - name: Reverify preserved release artifacts
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.candidate.outputs.version }}"
+          bun run scripts/verify-release-artifact-directory.ts \
+            apps/cli/dist/bin \
+            --expected-version "${VERSION}"
 
       - name: Download every gate evidence document and hashed artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
@@ -851,14 +880,23 @@ jobs:
           set -euo pipefail
           mkdir -p apps/cli/dist/bin .release-candidate
           cp .release-download/kunai-linux-x64 \
+            .release-download/kunai-linux-x64.tar.gz \
             .release-download/kunai-linux-arm64 \
+            .release-download/kunai-linux-arm64.tar.gz \
             .release-download/kunai-linux-x64-musl \
+            .release-download/kunai-linux-x64-musl.tar.gz \
             .release-download/kunai-linux-arm64-musl \
+            .release-download/kunai-linux-arm64-musl.tar.gz \
             .release-download/kunai-darwin-x64 \
+            .release-download/kunai-darwin-x64.tar.gz \
             .release-download/kunai-darwin-arm64 \
+            .release-download/kunai-darwin-arm64.tar.gz \
             .release-download/kunai-windows-x64.exe \
+            .release-download/kunai-windows-x64.zip \
             .release-download/kunai-windows-arm64.exe \
+            .release-download/kunai-windows-arm64.zip \
             .release-download/SHA256SUMS \
+            .release-download/SHA256SUMS.archives \
             apps/cli/dist/bin/
           cp .release-download/kunai-npm.tgz .release-candidate/kunai-npm.tgz
           cp -R .release-download/npm-platform .release-candidate/npm-platform
@@ -974,14 +1012,23 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-x64.tar.gz
             apps/cli/dist/bin/kunai-linux-arm64
+            apps/cli/dist/bin/kunai-linux-arm64.tar.gz
             apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
             apps/cli/dist/bin/kunai-linux-arm64-musl
+            apps/cli/dist/bin/kunai-linux-arm64-musl.tar.gz
             apps/cli/dist/bin/kunai-darwin-x64
+            apps/cli/dist/bin/kunai-darwin-x64.tar.gz
             apps/cli/dist/bin/kunai-darwin-arm64
+            apps/cli/dist/bin/kunai-darwin-arm64.tar.gz
             apps/cli/dist/bin/kunai-windows-x64.exe
+            apps/cli/dist/bin/kunai-windows-x64.zip
             apps/cli/dist/bin/kunai-windows-arm64.exe
+            apps/cli/dist/bin/kunai-windows-arm64.zip
             apps/cli/dist/bin/SHA256SUMS
+            apps/cli/dist/bin/SHA256SUMS.archives
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

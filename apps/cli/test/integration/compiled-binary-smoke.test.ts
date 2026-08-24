@@ -80,7 +80,7 @@ describeBinary("compiled linux binary smoke", () => {
     expect(result.stdout.toString().trim()).toMatch(/^kunai \d+\.\d+\.\d+/);
   });
 
-  test("dist/bin satisfies the exact nine-file release asset contract", async () => {
+  test("dist/bin satisfies the exact 18-file release asset contract", async () => {
     await verifyReleaseArtifactDirectory({
       directory: BIN_DIR,
       expectedVersion: packageVersion(),

@@ -13,17 +13,18 @@
 //   bun run scripts/build-binaries.ts
 //   bun run scripts/build-binaries.ts --only linux-x64 --only linux-x64-musl
 //   bun run scripts/build-binaries.ts --jobs 4 --analyze
+//   bun run scripts/build-binaries.ts --output-directory /tmp/kunai-binaries
 
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import {
   mergeReleaseNotesChecksums,
   shouldWriteReleaseChecksums,
 } from "../../../scripts/release-binary-checksums.ts";
 import { RELEASE_BINARY_TARGETS } from "../src/services/update/platform-assets";
+import { buildReleaseArchives } from "./build-release-archives";
 import {
   assertNoForbiddenReleaseInputs,
   compileBinaryBuildOptions,
@@ -38,12 +39,16 @@ import {
 
 const ROOT = join(import.meta.dirname, "..");
 const REPO_ROOT = join(ROOT, "../..");
-const OUT = join(ROOT, "dist/bin");
+const DEFAULT_OUT = join(ROOT, "dist/bin");
 
-async function sha256(path: string): Promise<string> {
-  return createHash("sha256")
-    .update(await readFile(path))
-    .digest("hex");
+function resolveOutputDirectory(): string {
+  for (let index = 0; index < process.argv.length; index++) {
+    if (process.argv[index] !== "--output-directory") continue;
+    const value = process.argv[index + 1];
+    if (!value) throw new Error("[binaries] --output-directory requires a path");
+    return resolve(value);
+  }
+  return DEFAULT_OUT;
 }
 
 function selectedTargets() {
@@ -68,17 +73,6 @@ function selectedTargets() {
   return match;
 }
 
-async function rewriteChecksums(): Promise<void> {
-  const sums: string[] = [];
-  for (const target of RELEASE_BINARY_TARGETS) {
-    const outfile = join(OUT, target.out);
-    if (existsSync(outfile)) {
-      sums.push(`${await sha256(outfile)}  ${target.out}`);
-    }
-  }
-  await writeFile(join(OUT, "SHA256SUMS"), sums.length ? `${sums.join("\n")}\n` : "");
-}
-
 type CompileResult = {
   readonly target: (typeof RELEASE_BINARY_TARGETS)[number];
   readonly bytes: number;
@@ -88,8 +82,9 @@ type CompileResult = {
 async function compileTarget(
   target: (typeof RELEASE_BINARY_TARGETS)[number],
   analyze: boolean,
+  outputDirectory: string,
 ): Promise<CompileResult> {
-  const outfile = join(OUT, target.out);
+  const outfile = join(outputDirectory, target.out);
   console.log(`[binaries] compiling ${target.out} (${target.triple}) ...`);
 
   const result = await Bun.build(
@@ -105,7 +100,7 @@ async function compileTarget(
   assertNoForbiddenReleaseInputs(metafile);
 
   if (analyze) {
-    const metaPath = join(OUT, `${target.out}.meta.json`);
+    const metaPath = join(outputDirectory, `${target.out}.meta.json`);
     await writeFile(metaPath, `${JSON.stringify(metafile, null, 2)}\n`);
     console.log(`[binaries] wrote ${metaPath}`);
     for (const input of topReleaseInputs(metafile, 8)) {
@@ -130,20 +125,27 @@ async function main(): Promise<void> {
   const incremental = process.argv.includes("--only");
   const analyze = process.argv.includes("--analyze") || process.env.KUNAI_BUILD_ANALYZE === "1";
   const jobs = resolveBuildConcurrency(process.argv);
+  const out = resolveOutputDirectory();
 
   if (!incremental) {
-    await rm(OUT, { recursive: true, force: true });
+    if (out === DEFAULT_OUT) {
+      await rm(out, { recursive: true, force: true });
+    } else if (existsSync(out)) {
+      throw new Error(
+        `[binaries] custom --output-directory must not exist before an all-target build: ${out}`,
+      );
+    }
   }
-  await mkdir(OUT, { recursive: true });
+  await mkdir(out, { recursive: true });
 
   const results = await mapWithConcurrency(targets, jobs, (target) =>
-    compileTarget(target, analyze),
+    compileTarget(target, analyze, out),
   );
 
-  await rewriteChecksums();
+  const retainedTargets = buildReleaseArchives(out, targets);
 
   const builtAllTargets = targets.length === RELEASE_BINARY_TARGETS.length;
-  if (builtAllTargets && existsSync(join(OUT, "SHA256SUMS"))) {
+  if (builtAllTargets && existsSync(join(out, "SHA256SUMS"))) {
     if (!shouldWriteReleaseChecksums()) {
       console.log(
         "[binaries] skipped release-notes checksum merge: local build " +
@@ -158,7 +160,7 @@ async function main(): Promise<void> {
           mergeReleaseNotesChecksums({
             repoRoot: REPO_ROOT,
             version: version.version,
-            checksumsPath: join(OUT, "SHA256SUMS"),
+            checksumsPath: join(out, "SHA256SUMS"),
           });
           console.log(`[binaries] merged SHA256SUMS into .release/kunai-v${version.version}.json`);
         } catch (error) {
@@ -180,11 +182,10 @@ async function main(): Promise<void> {
     `[binaries] bundled app graph ~${graphKiB} KiB total across targets; remainder of each file is the embedded Bun runtime.`,
   );
 
-  const built = (await readdir(OUT).catch(() => [])).filter(
-    (f) => f !== "SHA256SUMS" && !f.endsWith(".meta.json"),
-  ).length;
   const ms = Date.now() - start;
-  console.log(`[binaries] wrote ${built} binaries + SHA256SUMS to ${OUT} (${ms}ms)`);
+  console.log(
+    `[binaries] wrote ${results.length} binaries; reconciled ${retainedTargets.length} archive/raw target pairs + 2 manifests in ${out} (${ms}ms)`,
+  );
 }
 
 await main();

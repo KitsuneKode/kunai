@@ -14,27 +14,38 @@ import {
 } from "../../../../../scripts/release-asset-contract";
 import { shouldWriteReleaseChecksums } from "../../../../../scripts/release-binary-checksums";
 import { verifyReleaseArtifactDirectory } from "../../../../../scripts/verify-release-artifact-directory";
+import { buildReleaseArchives } from "../../../scripts/build-release-archives";
 import { buildNpmPublishManifest } from "../../../scripts/write-npm-publish-manifest";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../../..");
 const requiredAssetNames = REQUIRED_RELEASE_ASSET_NAMES;
 const requiredBinaryNames = RELEASE_BINARY_TARGETS.map((t) => t.out).sort();
+const requiredArchiveNames = RELEASE_BINARY_TARGETS.map((t) => t.archiveName).sort();
+
+function writeCompleteReleaseFixture(directory: string): void {
+  for (const name of requiredBinaryNames) {
+    writeFileSync(join(directory, name), `payload:${name}\n`);
+  }
+  buildReleaseArchives(directory);
+}
 
 function completeSizedAssets(size = 1) {
   return requiredAssetNames.map((name) => ({ name, size }));
 }
 
 describe("distribution release-asset contract", () => {
-  test("required assets are RELEASE_BINARY_TARGETS outs plus SHA256SUMS", () => {
+  test("requires the exact 0.3.0 bridge set of archives, raw binaries, and manifests", () => {
     expect([...REQUIRED_RELEASE_ASSET_NAMES]).toEqual(
-      [...RELEASE_BINARY_TARGETS.map((t) => t.out), "SHA256SUMS"].sort(),
+      [...requiredBinaryNames, ...requiredArchiveNames, "SHA256SUMS", "SHA256SUMS.archives"].sort(),
     );
-    expect(REQUIRED_RELEASE_ASSET_NAMES).toHaveLength(RELEASE_BINARY_TARGETS.length + 1);
+    expect(REQUIRED_RELEASE_ASSET_NAMES).toHaveLength(18);
   });
 
   test("assertRequiredReleaseAssets accepts a complete set and rejects gaps", () => {
     expect(() => assertRequiredReleaseAssets(REQUIRED_RELEASE_ASSET_NAMES)).not.toThrow();
-    expect(() => assertRequiredReleaseAssets(["SHA256SUMS"])).toThrow(/missing/);
+    expect(() => assertRequiredReleaseAssets(["SHA256SUMS", "SHA256SUMS.archives"])).toThrow(
+      /missing/,
+    );
   });
 
   test("assertCompleteReleaseAssetSet accepts a complete non-empty set", () => {
@@ -47,6 +58,26 @@ describe("distribution release-asset contract", () => {
         requiredAssetNames.map((name) => ({ name, size: name === "kunai-linux-x64" ? 0 : 1 })),
       ),
     ).toThrow("kunai-linux-x64");
+  });
+
+  test("rejects required assets that exceed their target size budgets", () => {
+    const archive = RELEASE_BINARY_TARGETS[0]!;
+    expect(() =>
+      assertCompleteReleaseAssetSet(
+        completeSizedAssets().map((asset) =>
+          asset.name === archive.archiveName
+            ? { ...asset, size: archive.maxArchiveBytes + 1 }
+            : asset,
+        ),
+      ),
+    ).toThrow(/size budget.*kunai-linux-x64\.tar\.gz/i);
+    expect(() =>
+      assertCompleteReleaseAssetSet(
+        completeSizedAssets().map((asset) =>
+          asset.name === archive.out ? { ...asset, size: archive.maxBinaryBytes + 1 } : asset,
+        ),
+      ),
+    ).toThrow(/size budget.*kunai-linux-x64/i);
   });
 
   test("rejects a missing required asset", () => {
@@ -87,6 +118,20 @@ describe("distribution release-asset contract", () => {
     for (const name of REQUIRED_RELEASE_ASSET_NAMES) {
       expect(workflow).toContain(`apps/cli/dist/bin/${name}`);
     }
+  });
+
+  test("host and installer-matrix raw-binary checks preserve SHA256SUMS compatibility", () => {
+    const verifier = readFileSync(
+      join(REPO_ROOT, "apps/cli/scripts/verify-host-binary.sh"),
+      "utf8",
+    );
+    const installerMatrix = readFileSync(
+      join(REPO_ROOT, ".github/workflows/installer-matrix.yml"),
+      "utf8",
+    );
+    expect(verifier).toContain("verify_checksums SHA256SUMS >/dev/null");
+    expect(verifier).not.toContain("verify_checksums SHA256SUMS.archives");
+    expect(installerMatrix).toContain("apps/cli/dist/bin/SHA256SUMS");
   });
 });
 
@@ -224,6 +269,18 @@ describe("release workflow candidate-before-publication contract", () => {
       expect(job).toContain("git rev-parse HEAD");
       expect(job).toContain("git rev-parse origin/main");
     }
+  });
+
+  test("confirmation reconstructs and verifies the preserved native archives", () => {
+    const confirm = confirmation();
+    const stage = confirm.indexOf("Stage binaries for confirmation");
+    const verify = confirm.indexOf("verify-release-artifact-directory.ts");
+    const gate = confirm.indexOf("Run confirmation gate");
+
+    expect(stage).toBeGreaterThanOrEqual(0);
+    expect(verify).toBeGreaterThan(stage);
+    expect(gate).toBeGreaterThan(verify);
+    expect(confirm).toContain('--expected-version "${VERSION}"');
   });
 
   test("candidate install gate consumes preserved local tarballs after they are created", () => {
@@ -364,16 +421,10 @@ describe("release:pack script contract", () => {
 });
 
 describe("verifyReleaseArtifactDirectory", () => {
-  test("accepts a fixture with eight checksum rows and matching hashes", async () => {
+  test("accepts eight canonical archives, eight raw binaries, and two manifests", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
-      const sums: string[] = [];
-      for (const name of requiredBinaryNames) {
-        const body = `payload:${name}\n`;
-        writeFileSync(join(dir, name), body);
-        sums.push(`${createHash("sha256").update(body).digest("hex")}  ${name}`);
-      }
-      writeFileSync(join(dir, "SHA256SUMS"), `${sums.join("\n")}\n`);
+      writeCompleteReleaseFixture(dir);
 
       await expect(
         verifyReleaseArtifactDirectory({
@@ -390,12 +441,9 @@ describe("verifyReleaseArtifactDirectory", () => {
   test("rejects checksum mismatch", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
-      const sums: string[] = [];
-      for (const name of requiredBinaryNames) {
-        writeFileSync(join(dir, name), `payload:${name}\n`);
-        sums.push(`${"a".repeat(64)}  ${name}`);
-      }
-      writeFileSync(join(dir, "SHA256SUMS"), `${sums.join("\n")}\n`);
+      writeCompleteReleaseFixture(dir);
+      const archiveName = requiredArchiveNames[0]!;
+      writeFileSync(join(dir, archiveName), "tampered archive");
 
       await expect(
         verifyReleaseArtifactDirectory({
@@ -412,9 +460,7 @@ describe("verifyReleaseArtifactDirectory", () => {
   test("rejects SHA256SUMS with the wrong row count", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
-      for (const name of requiredBinaryNames) {
-        writeFileSync(join(dir, name), `payload:${name}\n`);
-      }
+      writeCompleteReleaseFixture(dir);
       writeFileSync(join(dir, "SHA256SUMS"), `${"a".repeat(64)}  kunai-linux-x64\n`);
 
       await expect(
@@ -424,6 +470,56 @@ describe("verifyReleaseArtifactDirectory", () => {
           skipVersionSmoke: true,
         }),
       ).rejects.toThrow(/8/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a legacy raw SHA256SUMS checksum mismatch", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
+    try {
+      writeCompleteReleaseFixture(dir);
+      const rows = readFileSync(join(dir, "SHA256SUMS"), "utf8").split("\n");
+      rows[0] = `${"a".repeat(64)}  ${requiredBinaryNames[0]}`;
+      writeFileSync(join(dir, "SHA256SUMS"), rows.join("\n"));
+
+      await expect(
+        verifyReleaseArtifactDirectory({
+          directory: dir,
+          expectedVersion: "9.9.9",
+          skipVersionSmoke: true,
+        }),
+      ).rejects.toThrow(/SHA256SUMS|checksum|sha256/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a non-canonical archive even when its manifest hash matches", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
+    try {
+      writeCompleteReleaseFixture(dir);
+      const archiveName = requiredArchiveNames[0]!;
+      const archivePath = join(dir, archiveName);
+      const tampered = Buffer.concat([readFileSync(archivePath), Buffer.from("extra-entry")]);
+      writeFileSync(archivePath, tampered);
+      const rows = readFileSync(join(dir, "SHA256SUMS.archives"), "utf8")
+        .trim()
+        .split("\n")
+        .map((row) =>
+          row.endsWith(`  ${archiveName}`)
+            ? `${createHash("sha256").update(tampered).digest("hex")}  ${archiveName}`
+            : row,
+        );
+      writeFileSync(join(dir, "SHA256SUMS.archives"), `${rows.join("\n")}\n`);
+
+      await expect(
+        verifyReleaseArtifactDirectory({
+          directory: dir,
+          expectedVersion: "9.9.9",
+          skipVersionSmoke: true,
+        }),
+      ).rejects.toThrow(/canonical|member|archive/i);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Verify a local directory holds the exact nine-file release asset set:
- * eight binaries + SHA256SUMS, with matching checksums and optional linux-x64 smoke.
+ * Verify a local directory holds the exact 0.3.0 bridge set:
+ * eight archives, eight raw binaries, and two matching checksum manifests.
  *
  * Usage:
  *   bun run scripts/verify-release-artifact-directory.ts <dir> --expected-version 0.3.0
@@ -13,7 +13,9 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { verifyBuiltReleaseArchives } from "../apps/cli/scripts/build-release-archives";
 import {
+  REQUIRED_ARCHIVE_ASSET_NAMES,
   REQUIRED_BINARY_ASSET_NAMES,
   assertCompleteReleaseAssetSet,
 } from "./release-asset-contract";
@@ -99,40 +101,50 @@ export async function verifyReleaseArtifactDirectory(
   const files = listReleaseFiles(input.directory);
   assertCompleteReleaseAssetSet(files);
 
-  const sumsPath = join(input.directory, "SHA256SUMS");
-  const checksums = parseSha256sums(readFileSync(sumsPath, "utf8"));
-  if (checksums.length !== REQUIRED_BINARY_ASSET_NAMES.length) {
+  verifyChecksumManifest(input.directory, "SHA256SUMS", REQUIRED_BINARY_ASSET_NAMES);
+  verifyChecksumManifest(input.directory, "SHA256SUMS.archives", REQUIRED_ARCHIVE_ASSET_NAMES);
+  verifyBuiltReleaseArchives(input.directory);
+
+  if (!input.skipVersionSmoke) {
+    smokeLinuxX64(join(input.directory, "kunai-linux-x64"), input.expectedVersion);
+  }
+}
+
+function verifyChecksumManifest(
+  directory: string,
+  manifestName: string,
+  requiredNames: readonly string[],
+): void {
+  const checksums = parseSha256sums(readFileSync(join(directory, manifestName), "utf8"));
+  if (checksums.length !== requiredNames.length) {
     throw new Error(
-      `[release-assets] SHA256SUMS must have exactly ${REQUIRED_BINARY_ASSET_NAMES.length} rows, got ${checksums.length}`,
+      `[release-assets] ${manifestName} must have exactly ${requiredNames.length} rows, got ${checksums.length}`,
     );
   }
-
   const byName = new Map(checksums.map((row) => [row.name, row.sha256]));
   if (byName.size !== checksums.length) {
-    throw new Error("[release-assets] SHA256SUMS contains duplicate filenames");
+    throw new Error(`[release-assets] ${manifestName} contains duplicate filenames`);
   }
-
-  for (const name of REQUIRED_BINARY_ASSET_NAMES) {
+  const sortedNames = [...requiredNames].sort();
+  if (checksums.some((row, index) => row.name !== sortedNames[index])) {
+    throw new Error(`[release-assets] ${manifestName} rows must use exact sorted filenames`);
+  }
+  for (const name of sortedNames) {
     const expected = byName.get(name);
     if (!expected) {
-      throw new Error(`[release-assets] SHA256SUMS missing entry for ${name}`);
+      throw new Error(`[release-assets] ${manifestName} missing entry for ${name}`);
     }
-    const actual = fileSha256(join(input.directory, name));
+    const actual = fileSha256(join(directory, name));
     if (actual !== expected) {
       throw new Error(
         `[release-assets] sha256 checksum mismatch for ${name}: expected ${expected}, got ${actual}`,
       );
     }
   }
-
   for (const name of byName.keys()) {
-    if (!(REQUIRED_BINARY_ASSET_NAMES as readonly string[]).includes(name)) {
-      throw new Error(`[release-assets] SHA256SUMS has unexpected entry: ${name}`);
+    if (!requiredNames.includes(name)) {
+      throw new Error(`[release-assets] ${manifestName} has unexpected entry: ${name}`);
     }
-  }
-
-  if (!input.skipVersionSmoke) {
-    smokeLinuxX64(join(input.directory, "kunai-linux-x64"), input.expectedVersion);
   }
 }
 
@@ -181,7 +193,7 @@ if (import.meta.main) {
     const args = parseCliArgs(process.argv.slice(2));
     await verifyReleaseArtifactDirectory(args);
     console.log(
-      `[release-assets] OK — verified ${REQUIRED_BINARY_ASSET_NAMES.length} binaries + SHA256SUMS in ${args.directory}`,
+      `[release-assets] OK — verified 8 archives + 8 raw binaries + 2 manifests in ${args.directory}`,
     );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

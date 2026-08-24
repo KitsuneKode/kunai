@@ -1,9 +1,9 @@
 /**
- * Pure required-release-asset contract derived from RELEASE_BINARY_TARGETS + SHA256SUMS.
+ * Pure required-release-asset contract for the 0.3.0 compatibility bridge.
  *
  * Shared by:
  *   - scripts/verify-github-release-assets.ts (live gh release view / download)
- *   - scripts/verify-release-artifact-directory.ts (local nine-file verification)
+ *   - scripts/verify-release-artifact-directory.ts (local 18-file verification)
  *   - apps/cli/test/unit/scripts/distribution-contract.test.ts (workflow lock)
  */
 
@@ -18,8 +18,17 @@ export const REQUIRED_BINARY_ASSET_NAMES = Object.freeze(
   RELEASE_BINARY_TARGETS.map((target) => target.out).sort(),
 );
 
+export const REQUIRED_ARCHIVE_ASSET_NAMES = Object.freeze(
+  RELEASE_BINARY_TARGETS.map((target) => target.archiveName).sort(),
+);
+
 export const REQUIRED_RELEASE_ASSET_NAMES = Object.freeze(
-  [...REQUIRED_BINARY_ASSET_NAMES, "SHA256SUMS"].sort(),
+  [
+    ...REQUIRED_ARCHIVE_ASSET_NAMES,
+    ...REQUIRED_BINARY_ASSET_NAMES,
+    "SHA256SUMS",
+    "SHA256SUMS.archives",
+  ].sort(),
 );
 
 /** Alias used by contract tests / brief wording. */
@@ -36,7 +45,7 @@ export function assertRequiredReleaseAssets(actualNames: readonly string[]): voi
 }
 
 /**
- * Exact nine-file set: eight binaries + SHA256SUMS.
+ * Exact 18-file bridge set: eight archives + eight raw binaries + two manifests.
  * Rejects missing, duplicate, unexpected, and zero-byte assets.
  */
 export function assertCompleteReleaseAssetSet(assets: readonly ReleaseAssetDescriptor[]): void {
@@ -66,6 +75,20 @@ export function assertCompleteReleaseAssetSet(assets: readonly ReleaseAssetDescr
   for (const asset of assets) {
     if (asset.size <= 0) {
       throw new Error(`[release-assets] zero-byte required asset: ${asset.name}`);
+    }
+    const target = RELEASE_BINARY_TARGETS.find(
+      (entry) => entry.out === asset.name || entry.archiveName === asset.name,
+    );
+    const maxBytes =
+      target?.out === asset.name
+        ? target.maxBinaryBytes
+        : target?.archiveName === asset.name
+          ? target.maxArchiveBytes
+          : 64 * 1024;
+    if (asset.size > maxBytes) {
+      throw new Error(
+        `[release-assets] size budget exceeded for ${asset.name}: ${asset.size} > ${maxBytes}`,
+      );
     }
   }
 }

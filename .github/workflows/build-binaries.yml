@@ -10,8 +10,13 @@ on:
     branches: [main]
     paths:
       - "apps/cli/scripts/build-binaries.ts"
+      - "apps/cli/scripts/build-release-archives.ts"
       - "apps/cli/scripts/build-shared.ts"
       - "apps/cli/scripts/verify-release-binaries.sh"
+      - "apps/cli/src/services/update/platform-assets.ts"
+      - "scripts/release-asset-contract.ts"
+      - "scripts/verify-release-artifact-directory.ts"
+      - "turbo.json"
       - ".github/workflows/build-binaries.yml"
 
 concurrency:
@@ -54,11 +59,20 @@ jobs:
           if-no-files-found: error
           path: |
             apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-x64.tar.gz
             apps/cli/dist/bin/kunai-linux-arm64
+            apps/cli/dist/bin/kunai-linux-arm64.tar.gz
             apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
             apps/cli/dist/bin/kunai-linux-arm64-musl
+            apps/cli/dist/bin/kunai-linux-arm64-musl.tar.gz
             apps/cli/dist/bin/kunai-darwin-x64
+            apps/cli/dist/bin/kunai-darwin-x64.tar.gz
             apps/cli/dist/bin/kunai-darwin-arm64
+            apps/cli/dist/bin/kunai-darwin-arm64.tar.gz
             apps/cli/dist/bin/kunai-windows-x64.exe
+            apps/cli/dist/bin/kunai-windows-x64.zip
             apps/cli/dist/bin/kunai-windows-arm64.exe
+            apps/cli/dist/bin/kunai-windows-arm64.zip
             apps/cli/dist/bin/SHA256SUMS
+            apps/cli/dist/bin/SHA256SUMS.archives

@@ -132,10 +132,28 @@ Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` cov
 
 - `build` — npm bundle (`dist/kunai.js`, `dist/assets/**`)
 - `build:binary:host` — host compiled binary (`dist/bin/kunai-*`)
-- `build:binaries` — release cross-compiles (`dist/bin/**`)
+- `build:binaries` — release cross-compiles plus deterministic archives
+  (`dist/bin/**`): `.tar.gz` for Linux/macOS, `.zip` for Windows
 
 `bun run build` at the repo root runs `build` + `build:binary:host` in parallel.
 Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size budget.
+
+The 0.3.0 GitHub Release compatibility bridge is an exact 18-file set: eight
+canonical archives, the same eight raw standalone binaries, legacy
+`SHA256SUMS` for raw binaries, and `SHA256SUMS.archives` for archives. Keeping
+raw hashes under the legacy name preserves already-published installer/updater
+compatibility. Each archive contains exactly
+one member named after its raw asset. Tar members have normalized uid/gid/mtime
+and mode `0755`; zip members carry normalized DOS timestamps and Unix mode
+metadata, although Windows zip extraction does not restore POSIX executable
+bits. The build reconstructs and byte-compares each archive after preservation,
+then release confirmation and publication reverify the same bytes without a
+rebuild.
+
+Installer/updater archive consumption is a separate stacked change. Until that
+lands, they still follow the functional legacy raw-asset path. This builder
+slice does not close issue #132 or reduce end-user downloads; do not dispatch
+0.3.0 from the archive-creation slice alone.
 
 ### Windows parity
 

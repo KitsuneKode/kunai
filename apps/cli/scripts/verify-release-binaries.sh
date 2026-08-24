@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Verify all release binary targets exist, checksums match, and linux-x64 boots as Kunai.
+# Verify release archives/raw binaries, both manifests, and linux-x64 boots as Kunai.
 #
 # Usage:
 #   bash apps/cli/scripts/verify-release-binaries.sh
-#   bash apps/cli/scripts/verify-release-binaries.sh --partial   # only entries in SHA256SUMS
+#   bash apps/cli/scripts/verify-release-binaries.sh --partial   # only built target pairs
 #   bash apps/cli/scripts/verify-release-binaries.sh --skip-version-smoke
 set -euo pipefail
 
@@ -38,8 +38,8 @@ ASSETS=(
 )
 
 if [[ "$PARTIAL" -eq 1 ]]; then
-  if [[ ! -f "$BIN_DIR/SHA256SUMS" ]]; then
-    echo "✗ missing $BIN_DIR/SHA256SUMS" >&2
+  if [[ ! -f "$BIN_DIR/SHA256SUMS" || ! -f "$BIN_DIR/SHA256SUMS.archives" ]]; then
+    echo "✗ missing release checksum manifest in $BIN_DIR" >&2
     exit 1
   fi
   ASSETS=()
@@ -61,6 +61,7 @@ if [[ "$PARTIAL" -eq 1 ]]; then
   (
     cd "$BIN_DIR"
     verify_checksums SHA256SUMS
+    verify_checksums SHA256SUMS.archives
   )
 
   if [[ "$SKIP_VERSION" -eq 0 && -f "$BIN_DIR/kunai-linux-x64" ]]; then
@@ -73,7 +74,7 @@ if [[ "$PARTIAL" -eq 1 ]]; then
     "$BIN_DIR/kunai-linux-x64" --help >/dev/null
   fi
 
-  echo "✓ release binaries verified (${#ASSETS[@]} targets + SHA256SUMS, partial)"
+  echo "✓ release assets verified (${#ASSETS[@]} archive/raw target pairs + 2 manifests, partial)"
   exit 0
 fi
 
@@ -87,4 +88,4 @@ if [[ "$SKIP_VERSION" -eq 1 ]]; then
 fi
 
 bun "$REPO_ROOT/scripts/verify-release-artifact-directory.ts" "${VERIFY_ARGS[@]}"
-echo "✓ release binaries verified (8 targets + SHA256SUMS)"
+echo "✓ release assets verified (8 archives + 8 raw binaries + 2 manifests)"

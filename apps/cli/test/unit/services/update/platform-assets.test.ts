@@ -27,6 +27,90 @@ describe("platform release assets", () => {
     }
   });
 
+  test("freezes one canonical archive contract for every raw release binary", () => {
+    expect(
+      RELEASE_BINARY_TARGETS.map((target) => ({
+        id: target.id,
+        raw: target.out,
+        archive: target.archiveName,
+        format: target.archiveFormat,
+        entry: target.archiveEntryName,
+        mode: target.archiveMode,
+      })),
+    ).toEqual([
+      {
+        id: "linux-x64",
+        raw: "kunai-linux-x64",
+        archive: "kunai-linux-x64.tar.gz",
+        format: "tar.gz",
+        entry: "kunai-linux-x64",
+        mode: 0o755,
+      },
+      {
+        id: "linux-x64-musl",
+        raw: "kunai-linux-x64-musl",
+        archive: "kunai-linux-x64-musl.tar.gz",
+        format: "tar.gz",
+        entry: "kunai-linux-x64-musl",
+        mode: 0o755,
+      },
+      {
+        id: "linux-arm64",
+        raw: "kunai-linux-arm64",
+        archive: "kunai-linux-arm64.tar.gz",
+        format: "tar.gz",
+        entry: "kunai-linux-arm64",
+        mode: 0o755,
+      },
+      {
+        id: "linux-arm64-musl",
+        raw: "kunai-linux-arm64-musl",
+        archive: "kunai-linux-arm64-musl.tar.gz",
+        format: "tar.gz",
+        entry: "kunai-linux-arm64-musl",
+        mode: 0o755,
+      },
+      {
+        id: "darwin-x64",
+        raw: "kunai-darwin-x64",
+        archive: "kunai-darwin-x64.tar.gz",
+        format: "tar.gz",
+        entry: "kunai-darwin-x64",
+        mode: 0o755,
+      },
+      {
+        id: "darwin-arm64",
+        raw: "kunai-darwin-arm64",
+        archive: "kunai-darwin-arm64.tar.gz",
+        format: "tar.gz",
+        entry: "kunai-darwin-arm64",
+        mode: 0o755,
+      },
+      {
+        id: "windows-x64",
+        raw: "kunai-windows-x64.exe",
+        archive: "kunai-windows-x64.zip",
+        format: "zip",
+        entry: "kunai-windows-x64.exe",
+        mode: 0o755,
+      },
+      {
+        id: "windows-arm64",
+        raw: "kunai-windows-arm64.exe",
+        archive: "kunai-windows-arm64.zip",
+        format: "zip",
+        entry: "kunai-windows-arm64.exe",
+        mode: 0o755,
+      },
+    ]);
+
+    for (const target of RELEASE_BINARY_TARGETS) {
+      expect(target.maxBinaryBytes).toBeGreaterThan(0);
+      expect(target.maxArchiveBytes).toBeGreaterThan(0);
+      expect(target.archiveEntryName).not.toMatch(/[\\/]/);
+    }
+  });
+
   test("detects the current runtime platform when supported", () => {
     const detected = detectPlatform();
     if (detected.os && detected.arch) {

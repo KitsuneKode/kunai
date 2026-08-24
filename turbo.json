@@ -57,7 +57,7 @@
     },
     "build:binary:host": {
       "dependsOn": ["^typecheck", "typecheck"],
-      "outputs": ["dist/bin/kunai-*", "dist/bin/SHA256SUMS", "dist/bin/*.meta.json"],
+      "outputs": ["dist/bin/kunai-*", "dist/bin/SHA256SUMS", "dist/bin/SHA256SUMS.archives", "dist/bin/*.meta.json"],
       "env": ["KUNAI_BUILD_ANALYZE"]
     },
     "build:binaries": {
