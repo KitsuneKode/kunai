@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { createResolveTraceStub, finalizeResolveTrace } from "@/app/playback/resolve-trace";
+import {
+  audioFallbackNoticeFromTrace,
+  createResolveTraceStub,
+  finalizeResolveTrace,
+} from "@/app/playback/resolve-trace";
 import type { TitleInfo } from "@/domain/types";
 import type { ProviderFailure } from "@kunai/types";
 
@@ -84,5 +88,45 @@ describe("finalizeResolveTrace", () => {
 
     expect(finished.steps).toHaveLength(1);
     expect(finished.startedAt).toBeTruthy();
+  });
+});
+
+describe("audioFallbackNoticeFromTrace", () => {
+  const at = new Date().toISOString();
+
+  test("a dub->sub downgrade produces a user-facing notice", () => {
+    const note = audioFallbackNoticeFromTrace([
+      {
+        type: "audio:fallback",
+        providerId: "miruro",
+        at,
+        message: "requested dub, resolved sub",
+        attributes: { requested: "dub", resolved: "sub" },
+      },
+    ]);
+    expect(note).toBe("Dub unavailable — playing Sub");
+  });
+
+  test("no audio:fallback event means no notice", () => {
+    expect(
+      audioFallbackNoticeFromTrace([
+        { type: "provider:success", providerId: "miruro", at, message: "ok" },
+      ]),
+    ).toBeNull();
+    expect(audioFallbackNoticeFromTrace(undefined)).toBeNull();
+  });
+
+  test("an event with unknown presentations is ignored, not mislabelled", () => {
+    expect(
+      audioFallbackNoticeFromTrace([
+        {
+          type: "audio:fallback",
+          providerId: "miruro",
+          at,
+          message: "weird",
+          attributes: { requested: "external", resolved: "sub" },
+        },
+      ]),
+    ).toBeNull();
   });
 });
