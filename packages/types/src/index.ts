@@ -349,7 +349,12 @@ export type ProviderTraceEventType =
   | "runtime:released"
   | "retry:scheduled"
   | "retry:aborted"
-  | "inventory:audio-modes";
+  | "inventory:audio-modes"
+  // Emitted when a provider resolved a different audio presentation than the one
+  // requested (e.g. a dub was asked for but only a sub server answered). The
+  // downgrade is otherwise silent, so the shell cannot tell the user their
+  // language intent was not honoured.
+  | "audio:fallback";
 
 export interface ProviderTraceEvent {
   readonly type: ProviderTraceEventType;
