@@ -1418,6 +1418,41 @@ test("miruro episode lookup preserves network failures as provider evidence", as
   ).rejects.toThrow("Miruro pipe network request failed: ConnectionRefused");
 });
 
+test("miruro resolve times the episodes stage even when it fails", async () => {
+  // The ~10s success-path latency was undiagnosable because no stage was timed.
+  // The episodes fetch is where the time was proven to go, and a Cloudflare
+  // block throws there — so that failure path must still emit a timed stage.
+  const events: { readonly sourceId?: string; readonly durationMs?: number }[] = [];
+  const result = await miruroProviderModule.resolve!(
+    {
+      title: { id: "anilist:999", anilistId: "999", kind: "anime", title: "Evidence Fox" },
+      episode: { episode: 1 },
+      mediaKind: "anime",
+      startupPriority: "balanced",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+      preferredAudioLanguage: "original",
+    } as never,
+    {
+      providerId: "miruro",
+      now: () => new Date().toISOString(),
+      emit: (event: { readonly sourceId?: string; readonly durationMs?: number }) =>
+        events.push(event),
+      fetch: {
+        runtime: "direct-http",
+        fetch: async () => {
+          throw new TypeError("ConnectionRefused");
+        },
+      },
+    } as never,
+  );
+
+  expect(result.status).toBe("exhausted");
+  const episodeStage = events.find((event) => event.sourceId === "source:miruro:episodes");
+  expect(episodeStage).toBeDefined();
+  expect(typeof episodeStage?.durationMs).toBe("number");
+});
+
 test("negative fixture maps blocked vidking host to structured failure", async () => {
   const blocked = await readFixture<{ readonly status: number; readonly body: unknown }>(
     "negative/vidking-blocked.json",
