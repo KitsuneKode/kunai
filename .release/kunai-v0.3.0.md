@@ -11,12 +11,15 @@ Provider source reliability and lower cold-start waiting.
   selectable source.
 - **AllAnime:** the mkissa build-140 crypto rotation is locked with independent
   known-answer vectors and exact bootstrap-header tests. Cold episode-catalog
-  and crypto preparation now overlap without widening any timeout or retry
-  budget.
+  and crypto preparation now overlap, and baseline source adapters share a 1.5
+  second inventory window so a dead mirror cannot hold already-playable peers.
+  The production cold smoke kept four candidates while dropping from 12.257 to
+  2.573 seconds; request retries and their individual deadlines are unchanged.
 - **Relay diagnostics:** `bun run test:relay` reads the user's existing relay
-  config without modifying it, runs the AllAnime smoke in an isolated profile,
-  and reports only the relay origin and token presence. Full URLs, URL queries,
-  fragments, embedded credentials, and tokens are not logged.
+  config without modifying it, preflights `/health` through Bun itself, then
+  runs the AllAnime smoke in an isolated profile. It reports only the relay
+  origin, token presence, provider count, and bounded failure code; full URLs,
+  URL queries, fragments, embedded credentials, and tokens are not logged.
 - **Provider ordering:** the default remains `animeProviderPriority: ["anidb"]`.
   The field is documented as ordering rather than an allowlist; registered
   AllAnime and Miruro providers remain available behind AniDB.

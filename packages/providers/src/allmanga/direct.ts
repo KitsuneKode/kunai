@@ -321,6 +321,7 @@ export const allmangaProviderModule: CoreProviderModule = {
 
       const epStr = resolveAnimeEpisodeString(episodes, episodeNum);
       const startupPriority = input.startupPriority ?? "balanced";
+      const sourcePreparationStartedAt = performance.now();
       const linkResult = await collectAllMangaLinksForStartup(input, {
         context,
         apiUrl: ALLANIME_API_URL,
@@ -330,6 +331,17 @@ export const allmangaProviderModule: CoreProviderModule = {
         epStr,
         mode,
         signal: context.signal,
+      });
+      emitTraceEvent(events, context, {
+        type: linkResult.links.length > 0 ? "source:success" : "source:failed",
+        providerId: ALLANIME_PROVIDER_ID,
+        sourceId: "source:allanime:source-preparation",
+        message: "Prepared bounded AllManga source inventory",
+        durationMs: performance.now() - sourcePreparationStartedAt,
+        attributes: {
+          linkCount: linkResult.links.length,
+          requiredAkFallback: linkResult.requiredAkFallback,
+        },
       });
       let links = linkResult.links;
       let triedAk = isExplicitAkSelection(input) || linkResult.requiredAkFallback;

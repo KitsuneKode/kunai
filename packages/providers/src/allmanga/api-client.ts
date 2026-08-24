@@ -212,6 +212,7 @@ const HEX: Record<string, string> = {
 // removed upstream in b8032b7 and no longer ships a compatible payload.
 const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Mp4", "Luf-Mp4", "Ak"]);
 const MP4UPLOAD_REFERER = "https://www.mp4upload.com";
+export const ALLMANGA_BASELINE_ADAPTER_WAIT_BUDGET_MS = 1_500;
 const akDeferredRegistry = new Map<string, AllMangaAkDeferredDescriptor>();
 let akDeferredCounter = 0;
 
@@ -691,6 +692,7 @@ export async function resolveEpisodeSources(opts: {
   readonly epStr: string;
   readonly mode: "sub" | "dub";
   readonly sourceLane?: AllMangaSourceLane;
+  readonly adapterWaitBudgetMs?: number;
   readonly signal?: AbortSignal;
 }): Promise<StreamLink[]> {
   const { context, apiUrl, referer, ua, showId, epStr, mode, signal } = opts;
@@ -785,6 +787,13 @@ export async function resolveEpisodeSources(opts: {
   }
   const direct: StreamLink[] = [];
   const apiJobs: Promise<StreamLink[]>[] = [];
+  const adapterController = new AbortController();
+  const abortAdapters = () => adapterController.abort(signal?.reason);
+  if (signal?.aborted) {
+    abortAdapters();
+  } else {
+    signal?.addEventListener("abort", abortAdapters, { once: true });
+  }
 
   for (const source of rawSources) {
     if (!acceptsSourceForLane(source.sourceName, sourceLane)) {
@@ -818,7 +827,7 @@ export async function resolveEpisodeSources(opts: {
     if (isMp4UploadSource(source.sourceName, decoded)) {
       const sourceName = source.sourceName;
       apiJobs.push(
-        fetchMp4UploadLinks(decoded, referer, ua, context, signal)
+        fetchMp4UploadLinks(decoded, referer, ua, context, adapterController.signal)
           .then((links) =>
             links.map((link) => ({
               ...link,
@@ -838,7 +847,7 @@ export async function resolveEpisodeSources(opts: {
     const sourceName = source.sourceName;
     const fetcher = sourceName === "Ak" ? fetchAkLinks : fetchStreamLinks;
     apiJobs.push(
-      fetcher(decoded, referer, ua, context, signal)
+      fetcher(decoded, referer, ua, context, adapterController.signal)
         .then((links) =>
           links.map((link) => ({
             ...link,
@@ -850,7 +859,16 @@ export async function resolveEpisodeSources(opts: {
     );
   }
 
-  const settled = await Promise.allSettled(apiJobs);
+  const adapterWaitBudgetMs =
+    sourceLane === "baseline"
+      ? Math.max(0, opts.adapterWaitBudgetMs ?? ALLMANGA_BASELINE_ADAPTER_WAIT_BUDGET_MS)
+      : undefined;
+  const settled = await settleAllMangaAdapterJobs({
+    jobs: apiJobs,
+    controller: adapterController,
+    waitBudgetMs: adapterWaitBudgetMs,
+  });
+  signal?.removeEventListener("abort", abortAdapters);
   const apiLinks = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 
   const result = [...direct, ...apiLinks].sort(
@@ -858,6 +876,36 @@ export async function resolveEpisodeSources(opts: {
   );
   if (result.length > 0) sourceCache.set(cacheKey, result);
   return result;
+}
+
+async function settleAllMangaAdapterJobs({
+  jobs,
+  controller,
+  waitBudgetMs,
+}: {
+  readonly jobs: readonly Promise<StreamLink[]>[];
+  readonly controller: AbortController;
+  readonly waitBudgetMs?: number;
+}): Promise<PromiseSettledResult<StreamLink[]>[]> {
+  if (jobs.length === 0) return [];
+
+  const settled = Promise.allSettled(jobs);
+  if (waitBudgetMs === 0) {
+    controller.abort("baseline adapter wait budget elapsed");
+    return settled;
+  }
+  if (waitBudgetMs === undefined) return settled;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budgetElapsed = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), waitBudgetMs);
+  });
+  const outcome = await Promise.race([settled, budgetElapsed]);
+  if (timer) clearTimeout(timer);
+  if (outcome !== null) return outcome;
+
+  controller.abort("baseline adapter wait budget elapsed");
+  return settled;
 }
 
 function acceptsSourceForLane(sourceName: string, lane: AllMangaSourceLane): boolean {

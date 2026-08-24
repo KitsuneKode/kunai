@@ -11,6 +11,8 @@ import { getKunaiPaths } from "@kunai/storage";
 
 import {
   relayAllAnimeSmokePath,
+  relayHealthFailureCode,
+  relayHealthUrl,
   resolveRelayDiagnosticConfig,
   type RawRelayDiagnosticConfig,
 } from "./relay-config";
@@ -57,6 +59,37 @@ console.log(
     2,
   ),
 );
+
+try {
+  const response = await fetch(relayHealthUrl(resolution.baseUrl), {
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) {
+    fail(`relay health at ${resolution.displayOrigin} returned HTTP ${response.status}`);
+  }
+  const health = (await response.json()) as {
+    readonly ok?: boolean;
+    readonly service?: string;
+    readonly providers?: number;
+  };
+  if (!health.ok || health.service !== "kunai-relay") {
+    fail(`relay health at ${resolution.displayOrigin} returned an unexpected response`);
+  }
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        stage: "relay-health",
+        relayOrigin: resolution.displayOrigin,
+        providerCount: typeof health.providers === "number" ? health.providers : null,
+      },
+      null,
+      2,
+    ),
+  );
+} catch (error) {
+  fail(`relay health at ${resolution.displayOrigin} failed (${relayHealthFailureCode(error)})`);
+}
 
 const child = Bun.spawn({
   cmd: [process.execPath, relayAllAnimeSmokePath(import.meta.url), ...process.argv.slice(2)],

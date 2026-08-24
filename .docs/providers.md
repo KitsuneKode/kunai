@@ -121,9 +121,10 @@ bun run test:live:relay-allanime
 
 To test the relay already stored in the real Kunai config without copying its
 credentials into the shell, run `bun run test:relay`. The wrapper reads the
-config without modifying it, launches the same isolated AllAnime smoke profile,
-and logs only the relay origin and whether a token is present. Explicit
-`KUNAI_RELAY_*` values still override stored values.
+config without modifying it, preflights `/health` with Bun's own fetch path, and
+then launches the same isolated AllAnime smoke profile. It logs only the relay
+origin, token presence, health provider count, and a bounded network failure
+code. Explicit `KUNAI_RELAY_*` values still override stored values.
 
 Use `apps/relay-server/README.md` for Vercel deployment and security notes.
 
@@ -561,10 +562,16 @@ Recovery procedure (worked end-to-end against live bootstrap + episode sources):
 3. Verify: computed `x-aa-boot` must return HTTP 200 partB from bootstrap, then
    decrypt a real `tobeparsed` blob with the derived key before shipping.
 
-On a cold resolve, the episode catalog and crypto bootstrap start concurrently;
-the existing per-request timeouts and stale-material retry policy are unchanged.
-Trace output records only the combined preparation duration and readiness, never
-the bootstrap material, attestation, token, or source URLs.
+On a cold resolve, the episode catalog and crypto bootstrap start concurrently.
+Baseline source adapters then share a 1.5-second foreground inventory window:
+prompt peers are retained, but a dead adapter is aborted instead of holding
+already-playable streams until its own request deadline. The individual request
+timeouts and stale-material retry policy are unchanged. On 2026-08-24 the same
+production cold smoke retained four stream candidates and fell from 12.257 to
+2.573 seconds after a dead `Luf-Mp4` adapter was isolated as the 11-second wait.
+Trace output records only preparation duration, readiness, link count, and
+whether Ak was required—never bootstrap material, attestation, token, or source
+URLs.
 
 Note: ani-cli v5 (2026-08-01) left AllAnime/mkissa for **anidb.app** and deleted its AllAnime code
 entirely, so **there is no upstream parity reference left** for this provider — the "compare against

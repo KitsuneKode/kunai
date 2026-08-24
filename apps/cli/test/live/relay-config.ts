@@ -94,3 +94,13 @@ export function resolveRelayDiagnosticConfig(input: {
 export function relayAllAnimeSmokePath(metaUrl: string): string {
   return fileURLToPath(new URL("./relay-allanime.smoke.ts", metaUrl));
 }
+
+export function relayHealthUrl(baseUrl: string): string {
+  return new URL("/health", relayDisplayOrigin(baseUrl)).toString();
+}
+
+export function relayHealthFailureCode(error: unknown): string {
+  if (!error || typeof error !== "object" || !("code" in error)) return "network-error";
+  const code = (error as { readonly code?: unknown }).code;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_-]{1,31}$/.test(code) ? code : "network-error";
+}

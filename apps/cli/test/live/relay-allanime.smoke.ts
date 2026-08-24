@@ -67,6 +67,7 @@ await container.config.update({
 });
 
 const { searchRegistry, providerRegistry, config } = container;
+let searchError: unknown = null;
 const search = await searchTitles(query, {
   mode: "anime",
   providerId: "allanime",
@@ -74,58 +75,33 @@ const search = await searchTitles(query, {
   searchRegistry,
   providerRegistry,
 }).catch((error) => {
-  console.error(
-    JSON.stringify(
-      {
-        ok: false,
-        stage: "search",
-        query,
-        provider: "allanime",
-        relayOrigin,
-        ...providerSmokeProfilePayload(profile),
-        ...providerSmokeError(error),
-      },
-      null,
-      2,
-    ),
-  );
-  process.exit(1);
+  searchError = error;
+  return null;
 });
 
 const selected =
-  search.results.find((result) => result.id === fixtureTitleId) ??
-  search.results.find((result) => result.type === "series" && (result.episodeCount ?? 0) > 1) ??
-  search.results.find((result) => result.type === "series") ??
-  search.results[0];
-
-if (!selected) {
-  console.error(
-    JSON.stringify(
-      {
-        ok: false,
-        stage: "search",
-        query,
-        relayOrigin,
-        reason: "no_results",
-        ...providerSmokeProfilePayload(profile),
-      },
-      null,
-      2,
-    ),
-  );
-  process.exit(1);
-}
-
-const title = {
-  id: selected.id,
-  type: selected.type,
-  name: selected.title,
-  year: selected.year,
-  overview: selected.overview,
-  posterUrl: selected.posterPath ?? undefined,
-  episodeCount: selected.episodeCount,
-  isAnime: true,
-};
+  search?.results.find((result) => result.id === fixtureTitleId) ??
+  search?.results.find((result) => result.type === "series" && (result.episodeCount ?? 0) > 1) ??
+  search?.results.find((result) => result.type === "series") ??
+  search?.results[0];
+const usedFixtureFallback = !selected;
+const title = selected
+  ? {
+      id: selected.id,
+      type: selected.type,
+      name: selected.title,
+      year: selected.year,
+      overview: selected.overview,
+      posterUrl: selected.posterPath ?? undefined,
+      episodeCount: selected.episodeCount,
+      isAnime: true,
+    }
+  : {
+      id: fixtureTitleId,
+      type: "series" as const,
+      name: query,
+      isAnime: true,
+    };
 
 let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
@@ -165,7 +141,13 @@ const payload = {
   query,
   fixtureTitleId,
   relayOrigin,
-  sourceName: search.sourceName,
+  sourceName: search?.sourceName ?? null,
+  usedFixtureFallback,
+  searchError: searchError
+    ? providerSmokeError(searchError).error
+    : usedFixtureFallback
+      ? "no_results"
+      : null,
   ...(resolveError ? providerSmokeError(resolveError) : {}),
   failureCodes,
   failureMessages,

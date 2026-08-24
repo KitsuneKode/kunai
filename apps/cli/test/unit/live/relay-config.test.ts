@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   relayAllAnimeSmokePath,
   relayDisplayOrigin,
+  relayHealthFailureCode,
+  relayHealthUrl,
   resolveRelayDiagnosticConfig,
 } from "../../live/relay-config";
 
@@ -121,4 +123,12 @@ test("relayAllAnimeSmokePath decodes filesystem URLs", () => {
   expect(relayAllAnimeSmokePath("file:///tmp/kunai%20repo/relay-from-config.ts")).toBe(
     "/tmp/kunai repo/relay-allanime.smoke.ts",
   );
+});
+
+test("relay health diagnostics discard paths and redact arbitrary error messages", () => {
+  expect(relayHealthUrl("https://relay.example/rpc?token=hidden#fragment")).toBe(
+    "https://relay.example/health",
+  );
+  expect(relayHealthFailureCode({ code: "ETIMEOUT", message: "secret-value" })).toBe("ETIMEOUT");
+  expect(relayHealthFailureCode(new Error("secret-value"))).toBe("network-error");
 });
