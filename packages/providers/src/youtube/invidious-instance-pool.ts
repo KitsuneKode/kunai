@@ -59,7 +59,7 @@ export async function fetchHealthyInvidiousInstances(
     return filterAvailableInstances(cachedInstances.instances, now);
   }
 
-  let payload: readonly (readonly [string, InvidiousInstanceRecord])[];
+  let instances: readonly string[];
   try {
     const response = await fetch(instancesUrl, {
       headers: { Accept: "application/json" },
@@ -68,7 +68,17 @@ export async function fetchHealthyInvidiousInstances(
     if (!response.ok) {
       throw new Error(`Invidious instance list failed (${response.status})`);
     }
-    payload = (await response.json()) as readonly (readonly [string, InvidiousInstanceRecord])[];
+    const payload = await response.json();
+    // A 200 carrying the wrong shape (`{}`, an object, a string) is as useless
+    // as a failed fetch, and `selectReachableInstances` throwing on it outside
+    // this block would skip the stale-cache fallback entirely. Parse and select
+    // inside the try so malformed data takes the same recovery path.
+    if (!Array.isArray(payload)) {
+      throw new Error("Invidious instance list returned an unexpected shape");
+    }
+    instances = selectReachableInstances(
+      payload as readonly (readonly [string, InvidiousInstanceRecord])[],
+    );
   } catch (error) {
     // The registry is a directory, not the service. An expired directory still
     // names instances that very likely still work, so a slow or broken registry
@@ -79,7 +89,6 @@ export async function fetchHealthyInvidiousInstances(
     if (stale.length > 0) return stale;
     throw error;
   }
-  const instances = selectReachableInstances(payload);
 
   // An empty selection is not a healthy pool.
   //

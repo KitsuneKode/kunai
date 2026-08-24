@@ -132,3 +132,15 @@ describe("youtube resolve on metadata failure", () => {
     expect(selected?.qualityLabel).toBe("480p");
   });
 });
+
+test("resolving without any metadata service flags the streams as unverified", async () => {
+  if (!Bun.which("yt-dlp")) return;
+  // No metadataService configured: loadYtDlpVideoInfo returns null without
+  // throwing, so nothing else would mark the ladder unverified.
+  configureYoutubeProvider({});
+
+  const result = await resolveYoutube(buildInput());
+  expect(result.status).toBe("resolved");
+  const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+  expect(selected?.metadata?.metadataUnavailable).toBe(true);
+});

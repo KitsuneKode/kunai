@@ -205,6 +205,14 @@ export async function resolveDirectStreamSource(
           signal: context.signal,
         });
 
+        // The abort may have landed while this probe was in flight. Its result
+        // is then meaningless — the caller is gone — so it must not become a
+        // stream failure or a verified selection.
+        if (context.signal?.aborted) {
+          cancelled = true;
+          break;
+        }
+
         if (health.healthy) {
           selectedStream = candidate;
           streamReachabilityVerified = true;
@@ -238,20 +246,11 @@ export async function resolveDirectStreamSource(
         });
       }
 
-      if (gateFailure) {
-        failures.push(gateFailure);
-        return createExhaustedResult(input, context, providerId, gateFailure, {
-          cachePolicy,
-          events,
-          failures,
-          startedAt,
-        });
-      }
-
-      // Nothing was verified because the caller cancelled. Returning the
-      // selected stream anyway would let playback start on a resolve the user
-      // already abandoned, so report the cancellation instead. `cancelled` is
-      // health-neutral, so this costs the provider nothing.
+      // Cancellation outranks a partial gate failure. If the caller aborted, any
+      // rejection collected before the abort describes a probe the user no
+      // longer cares about, and `not-found` is not health-neutral — reporting it
+      // would penalise the provider for the user backing out. `cancelled` does
+      // not, so it is the honest outcome.
       if (cancelled && !streamReachabilityVerified) {
         return createExhaustedResult(
           input,
@@ -264,6 +263,16 @@ export async function resolveDirectStreamSource(
           },
           { cachePolicy, events, failures, startedAt },
         );
+      }
+
+      if (gateFailure) {
+        failures.push(gateFailure);
+        return createExhaustedResult(input, context, providerId, gateFailure, {
+          cachePolicy,
+          events,
+          failures,
+          startedAt,
+        });
       }
     }
 

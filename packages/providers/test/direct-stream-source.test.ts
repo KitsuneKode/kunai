@@ -140,6 +140,35 @@ describe("direct stream resolve gate", () => {
     expect(result.healthDelta).toBeUndefined();
   });
 
+  test("an abort DURING a probe is a cancellation, not a stream failure", async () => {
+    // The pre-probe guard only catches an abort before the first probe. This
+    // aborts while the probe promise is in flight — its result must not become a
+    // `not-found` failure that penalises provider health.
+    const controller = new AbortController();
+    let probes = 0;
+
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput(),
+      context: createContext(async () => {
+        probes += 1;
+        controller.abort();
+        return new Response("gone", { status: 404 });
+      }, controller.signal),
+      // A single candidate, so there is no next loop iteration to catch the
+      // abort — only the post-probe guard can, which is the path under test.
+      fetchPayload: async () => ({ streams: [{ url: "https://cdn.example/only.mp4" }] }),
+      resolveGateProbe: true,
+    });
+
+    expect(probes).toBe(1);
+    expect(result.status).toBe("exhausted");
+    expect(result.failures.at(-1)?.code).toBe("cancelled");
+    expect(result.healthDelta).toBeUndefined();
+  });
+
   test("season 0 specials are resolvable, and a missing episode still fails closed", async () => {
     const special = await resolveDirectStreamSource({
       providerId: "vidlink",

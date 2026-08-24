@@ -320,6 +320,10 @@ async function resolveYoutube(
     let metadataUnavailable = false;
     try {
       ytInfo = await loadYtDlpVideoInfo(videoId, watchUrl, context);
+      // A null result (no metadata service configured, or nothing cached and no
+      // fetch) is not a failure, but the quality ladder, duration and subtitles
+      // are still unverified — mark it so the streams do not claim otherwise.
+      if (!ytInfo) metadataUnavailable = true;
     } catch (error) {
       const classified = classifyYoutubeMetadataFailure(error);
       const failure: ProviderFailure = {
