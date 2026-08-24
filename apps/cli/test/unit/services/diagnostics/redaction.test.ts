@@ -134,6 +134,15 @@ describe("opaque query values", () => {
     expect(redactDiagnosticValue(url)).toBe("https://cdn.example/video.m3u8?q=[redacted]");
   });
 
+  test("redacts a standalone opaque token carried under an unrecognized field", () => {
+    const token = "UDdMMzNubjBnVTJYNWRWMkllNy1xdzpfWXp1eHVUSWk3LUhkMGp1";
+
+    expect(redactDiagnosticValue({ providerDetail: token })).toEqual({
+      providerDetail: "[redacted]",
+    });
+    expect(redactDiagnosticValue(token)).toBe("[redacted]");
+  });
+
   test("redacts signed-HLS hash and the viewer's IP", () => {
     const url = "https://cdn.example/hls/master.m3u8?md5=9f8e7d6c5b4a39281706&ip=203.0.113.7";
     expect(redactDiagnosticValue(url)).toBe(

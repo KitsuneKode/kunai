@@ -82,6 +82,7 @@ export function redactDiagnosticValue(value: unknown, options: RedactionOptions 
 
 function redactString(value: string, options: RedactionOptions): string {
   const redacted = redactEmbeddedUrls(redactPath(value, options));
+  if (isOpaqueQueryValue(redacted.trim())) return "[redacted]";
   return truncate(redacted, options.maxStringLength ?? DEFAULT_MAX_STRING_LENGTH);
 }
 
