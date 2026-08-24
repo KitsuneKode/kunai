@@ -39,6 +39,7 @@ test("suite scripts that touch SQLite or spawn shells carry an explicit per-test
   const storage = await scriptsOf("../../../../../packages/storage/package.json");
 
   const budgeted: ReadonlyArray<readonly [string, string | undefined]> = [
+    ["apps/cli test:file", cli["test:file"]],
     ["apps/cli test:unit", cli["test:unit"]],
     ["apps/cli test:integration", cli["test:integration"]],
     ["packages/storage test", storage.test],
