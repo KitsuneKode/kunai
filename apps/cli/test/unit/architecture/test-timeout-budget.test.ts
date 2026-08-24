@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import { resolve } from "node:path";
 
 /**
- * Bun's default per-test timeout is 5000ms. That is ample on Linux and wrong on
- * the Windows runner, where the SQLite-backed suites open a fresh database per
- * test and the temp-store registry forces a synchronous full GC per teardown so
- * Windows actually releases the file handles. Under full-suite load a single
- * test drifts past 5s and *which* test loses varies run to run — one storage
- * test was measured at 6428ms on one run and 16549ms on the next.
+ * Bun's default per-test timeout is 5000ms. That is too low for the docs
+ * idempotence test, which runs code generation twice under parallel Turbo load,
+ * and for the Windows runner, where the SQLite-backed suites open a fresh
+ * database per test and the temp-store registry forces a synchronous full GC
+ * per teardown so Windows actually releases the file handles. One storage test
+ * was measured at 6428ms on one run and 16549ms on the next.
  *
  * The budget therefore has to live on the suite scripts, because that is the one
  * place every caller shares: Turborepo runs `test:unit` / `test:integration`
@@ -36,11 +36,13 @@ function timeoutOf(script: string): number | null {
 
 test("suite scripts that touch SQLite or spawn shells carry an explicit per-test timeout", async () => {
   const cli = await scriptsOf("../../../package.json");
+  const docs = await scriptsOf("../../../../docs/package.json");
   const storage = await scriptsOf("../../../../../packages/storage/package.json");
 
   const budgeted: ReadonlyArray<readonly [string, string | undefined]> = [
     ["apps/cli test:unit", cli["test:unit"]],
     ["apps/cli test:integration", cli["test:integration"]],
+    ["apps/docs test", docs.test],
     ["packages/storage test", storage.test],
   ];
 
