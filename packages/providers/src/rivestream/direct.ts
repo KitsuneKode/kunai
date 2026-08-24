@@ -23,6 +23,7 @@ import type {
 
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { TTLCache } from "../shared/provider-cache";
 import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
@@ -55,8 +56,23 @@ export const RIVESTREAM_API_BASE = "https://www.rivestream.app/api/backendfetch"
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-/** Memoize secretKey per tmdbId — deterministic, expensive to recompute. */
-const secretKeyCache = new Map<string, string>();
+/**
+ * Failure sentinels from `generateSecretKey`. They must never be cached: a
+ * single transient generation error would otherwise pin a bad key for a title
+ * for the life of the process.
+ */
+const RIVESTREAM_SECRET_KEY_SENTINELS = new Set(["rive", "topSecret"]);
+
+/**
+ * Memoize secretKey per tmdbId — deterministic and expensive to recompute, but
+ * previously an unbounded Map that grew one entry per title for the whole
+ * session. A day-long TTL with a hard ceiling keeps it bounded without
+ * recomputing on every resolve.
+ */
+export const RIVESTREAM_SECRET_KEY_CACHE_LIMIT = 512;
+const secretKeyCache = new TTLCache<string, string>(24 * 60 * 60 * 1000, {
+  maxEntries: RIVESTREAM_SECRET_KEY_CACHE_LIMIT,
+});
 const RIVESTREAM_PROVIDER_SERVICES_TTL_MS = 24 * 60 * 60 * 1000;
 /**
  * Last-resort list for when service discovery is unreachable.
@@ -337,7 +353,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
         secretKeyCache.get(tmdbId) ??
         (() => {
           const key = generateSecretKey(tmdbId);
-          secretKeyCache.set(tmdbId, key);
+          // A sentinel means generation fell back, not that this is the real
+          // key — caching it would serve a broken key until process exit.
+          if (!RIVESTREAM_SECRET_KEY_SENTINELS.has(key)) secretKeyCache.set(tmdbId, key);
           return key;
         })();
       const typeStr = input.mediaKind === "series" ? "tv" : "movie";
