@@ -11,6 +11,7 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -858,6 +859,42 @@ describe("install.sh lifecycle contract", () => {
           });
           expect(result.status).toBe(0);
           expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("does not elect an orphaned reclaim temp as an activation claim", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho orphan-reclaim-temp\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-orphan-reclaim-temp");
+    const orphanPath = join(
+      sandbox.dataDir,
+      "locks",
+      "activation.lock.reclaim.crashed-owner.tmp.orphan",
+    );
+    mkdirSync(join(sandbox.dataDir, "locks"), { recursive: true });
+    writeFileSync(orphanPath, "{partial");
+    const abandoned = new Date(Date.now() - 5_000);
+    utimesSync(orphanPath, abandoned, abandoned);
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "60",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "2",
+          });
+          expect(result.status).toBe(0);
+          expect(existsSync(orphanPath)).toBe(false);
         },
       );
     } finally {

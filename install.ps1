@@ -573,7 +573,8 @@ function Read-ActivationLockState([string]$LockPath) {
     if (
       ($candidate.schemaVersion -is [int] -or $candidate.schemaVersion -is [long]) -and
       [int64]$candidate.schemaVersion -eq 1 -and
-      $candidate.scope -is [string] -and [string]$candidate.scope -eq 'activation' -and
+      $candidate.scope -is [string] -and
+      [string]::Equals([string]$candidate.scope, 'activation', [StringComparison]::Ordinal) -and
       ($candidate.pid -is [int] -or $candidate.pid -is [long]) -and
       [int64]$candidate.pid -gt 0 -and
       $candidate.version -is [string] -and (Test-CanonicalVersion ([string]$candidate.version)) -and
@@ -605,7 +606,11 @@ function Test-ActivationOwnerStale($Content) {
     else {
       Get-ActivationProcessStartId ([int]$Content.pid)
     }
-    if ($currentStart -and $currentStart -ne [string]$Content.processStartId) { return $true }
+    if ($currentStart -and -not [string]::Equals(
+        [string]$currentStart,
+        [string]$Content.processStartId,
+        [StringComparison]::Ordinal
+      )) { return $true }
   }
   return $false
 }
@@ -614,6 +619,22 @@ function Get-ActivationReclaimClaims([string]$LockPath) {
   $directory = Split-Path $LockPath
   $leaf = Split-Path $LockPath -Leaf
   $claims = [System.Collections.Generic.List[string]]::new()
+  foreach ($filter in @("$leaf.reclaim-tmp.*", "$leaf.reclaim.*.tmp.*")) {
+    foreach ($temp in @(Get-ChildItem -LiteralPath $directory -Filter $filter -File -ErrorAction SilentlyContinue)) {
+      # Temp publications never participate in election. The second pattern
+      # recovers crash residue written by older installers inside `.reclaim.*`.
+      $tempState = Read-ActivationLockState $temp.FullName
+      $reclaimable = if ($null -ne $tempState -and $null -ne $tempState.Content) {
+        Test-ActivationOwnerStale $tempState.Content
+      }
+      else {
+        ([DateTime]::UtcNow - $temp.LastWriteTimeUtc).TotalMilliseconds -ge $ActivationLockCorruptGraceMs
+      }
+      if ($reclaimable) {
+        Remove-Item -LiteralPath $temp.FullName -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
   foreach ($item in @(Get-ChildItem -LiteralPath $directory -Filter "$leaf.reclaim.*" -File -ErrorAction SilentlyContinue)) {
     $state = Read-ActivationLockState $item.FullName
     if ($null -ne $state -and $null -ne $state.Content -and
@@ -633,7 +654,7 @@ function Get-ActivationReclaimClaims([string]$LockPath) {
 
 function New-ActivationReclaimClaim([string]$LockPath, [string]$OwnerId, [byte[]]$Bytes) {
   $claimPath = "$LockPath.reclaim.$OwnerId"
-  $tempPath = "$claimPath.tmp.$([Guid]::NewGuid().ToString('N'))"
+  $tempPath = "$LockPath.reclaim-tmp.$OwnerId.$([Guid]::NewGuid().ToString('N'))"
   [System.IO.File]::WriteAllBytes($tempPath, $Bytes)
   try { [System.IO.File]::Move($tempPath, $claimPath) }
   catch {
@@ -667,14 +688,20 @@ function Move-ActivationLockToQuarantine(
   [string]$ObservedRaw,
   [bool]$AllowCorrupt,
   [string]$OwnerId,
-  [byte[]]$SuccessorBytes
+  [byte[]]$SuccessorBytes,
+  [System.Diagnostics.Stopwatch]$Timer
 ) {
+  if ($Timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) { return $false }
   $quarantinePath = "$LockPath.quarantine.$OwnerId.$([Guid]::NewGuid().ToString('N'))"
   try { [System.IO.File]::Move($LockPath, $quarantinePath) }
   catch [System.IO.IOException] { return $false }
 
   $quarantined = Read-ActivationLockState $quarantinePath
-  if ($null -eq $quarantined -or [string]$quarantined.Raw -ne $ObservedRaw) {
+  if ($null -eq $quarantined -or -not [string]::Equals(
+      [string]$quarantined.Raw,
+      $ObservedRaw,
+      [StringComparison]::Ordinal
+    )) {
     Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
     return $false
   }
@@ -688,8 +715,15 @@ function Move-ActivationLockToQuarantine(
     Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
     return $false
   }
-  Remove-Item -LiteralPath $quarantinePath -Force -ErrorAction Stop
+  if ($Timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
+    Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
+    return $false
+  }
   for ($attempt = 0; $attempt -lt 20; $attempt++) {
+    if ($Timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
+      Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
+      return $false
+    }
     $stream = $null
     try {
       $stream = [System.IO.File]::Open(
@@ -701,13 +735,20 @@ function Move-ActivationLockToQuarantine(
       $stream.Write($SuccessorBytes, 0, $SuccessorBytes.Length)
       $stream.Flush()
       $stream.Dispose()
+      Remove-Item -LiteralPath $quarantinePath -Force -ErrorAction Stop
       return $true
     }
     catch [System.IO.IOException] {
       if ($null -ne $stream) { $stream.Dispose() }
-      Start-Sleep -Milliseconds 1
+      $remaining = $ActivationLockTimeoutMs - $Timer.ElapsedMilliseconds
+      if ($remaining -le 0) {
+        Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
+        return $false
+      }
+      Start-Sleep -Milliseconds ([Math]::Min(1, $remaining))
     }
   }
+  Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
   return $false
 }
 
@@ -716,8 +757,10 @@ function Invoke-ActivationReclaim(
   [string]$ObservedRaw,
   [bool]$AllowCorrupt,
   [string]$OwnerId,
-  [byte[]]$SuccessorBytes
+  [byte[]]$SuccessorBytes,
+  [System.Diagnostics.Stopwatch]$Timer
 ) {
+  if ($Timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) { return $false }
   $claimPath = New-ActivationReclaimClaim $LockPath $OwnerId $SuccessorBytes
   try {
     $claims = @(Get-ActivationReclaimClaims $LockPath)
@@ -728,8 +771,12 @@ function Invoke-ActivationReclaim(
     $claimLeaf = [System.IO.Path]::GetFileName($claimPath)
     if (-not [string]::Equals($electedLeaf, $claimLeaf, [StringComparison]::Ordinal)) { return $false }
     $current = Read-ActivationLockState $LockPath
-    if ($null -eq $current -or [string]$current.Raw -ne $ObservedRaw) { return $false }
-    return Move-ActivationLockToQuarantine $LockPath $ObservedRaw $AllowCorrupt $OwnerId $SuccessorBytes
+    if ($null -eq $current -or -not [string]::Equals(
+        [string]$current.Raw,
+        $ObservedRaw,
+        [StringComparison]::Ordinal
+      )) { return $false }
+    return Move-ActivationLockToQuarantine $LockPath $ObservedRaw $AllowCorrupt $OwnerId $SuccessorBytes $Timer
   }
   finally {
     Remove-Item -LiteralPath $claimPath -Force -ErrorAction SilentlyContinue
@@ -816,20 +863,24 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
       $corruptSinceMs = 0L
       $holder = [int]$content.pid
       if (Test-ActivationOwnerStale $content) {
-        if (Invoke-ActivationReclaim $LockPath ([string]$observed.Raw) $false $ownerId $bytes) {
+        if (Invoke-ActivationReclaim $LockPath ([string]$observed.Raw) $false $ownerId $bytes $timer) {
           return $ownerId
         }
       }
     }
     else {
       $raw = [string]$observed.Raw
-      if ($null -eq $corruptRaw -or $raw -ne $corruptRaw) {
+      if ($null -eq $corruptRaw -or -not [string]::Equals(
+          $raw,
+          [string]$corruptRaw,
+          [StringComparison]::Ordinal
+        )) {
         $corruptRaw = $raw
         $corruptSinceMs = $timer.ElapsedMilliseconds
         $holder = $null
       }
       elseif (($timer.ElapsedMilliseconds - $corruptSinceMs) -ge $ActivationLockCorruptGraceMs) {
-        if (Invoke-ActivationReclaim $LockPath $raw $true $ownerId $bytes) { return $ownerId }
+        if (Invoke-ActivationReclaim $LockPath $raw $true $ownerId $bytes $timer) { return $ownerId }
         $corruptRaw = $null
         $corruptSinceMs = 0L
       }
@@ -849,7 +900,11 @@ function Release-ActivationLock([string]$LockPath, [string]$OwnerId) {
   try { [System.IO.File]::Move($LockPath, $quarantinePath) }
   catch [System.IO.IOException] { return }
   $moved = Read-ActivationLock $quarantinePath
-  if ($null -ne $moved -and [string]$moved.ownerId -eq $OwnerId) {
+  if ($null -ne $moved -and [string]::Equals(
+      [string]$moved.ownerId,
+      $OwnerId,
+      [StringComparison]::Ordinal
+    )) {
     Remove-Item -LiteralPath $quarantinePath -Force -ErrorAction SilentlyContinue
   }
   else {

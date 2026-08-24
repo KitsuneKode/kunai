@@ -702,8 +702,31 @@ activation_lock_owner_is_stale() {
 	return 0
 }
 
+activation_reclaim_temp_is_stale() {
+	local temp_path="$1" raw modified now
+	raw="$(cat "$temp_path" 2>/dev/null || true)"
+	if read_activation_lock "$raw"; then
+		activation_lock_owner_is_stale
+		return
+	fi
+	# Invalid partial writes have no usable owner identity. Give an active writer
+	# at least the corrupt grace before treating the uniquely named temp as
+	# abandoned. Preserve it when this platform cannot report modification time.
+	modified="$(stat -c %Y "$temp_path" 2>/dev/null || stat -f %m "$temp_path" 2>/dev/null || true)"
+	[[ "$modified" =~ ^[0-9]+$ ]] || return 1
+	now="$(date +%s)"
+	((now * 1000 - modified * 1000 >= ACTIVATION_LOCK_CORRUPT_GRACE_MS))
+}
+
 first_activation_reclaim_claim() {
-	local lock_path="$1" claim raw
+	local lock_path="$1" claim temp raw
+	# Temp publications are never election claims. Clean both the current
+	# out-of-namespace form and the legacy in-prefix form whose crash residue
+	# otherwise blocked every future activation.
+	for temp in "${lock_path}.reclaim-tmp."* "${lock_path}.reclaim."*.tmp.*; do
+		[[ -f "$temp" ]] || continue
+		activation_reclaim_temp_is_stale "$temp" && rm -f "$temp"
+	done
 	for claim in "${lock_path}.reclaim."*; do
 		[[ -f "$claim" ]] || continue
 		raw="$(cat "$claim" 2>/dev/null || true)"
@@ -719,7 +742,7 @@ first_activation_reclaim_claim() {
 create_activation_reclaim_claim() {
 	local lock_path="$1" owner_id="$2" record="$3" claim_path temp_path
 	claim_path="${lock_path}.reclaim.${owner_id}"
-	temp_path="${claim_path}.tmp.$$.$RANDOM"
+	temp_path="${lock_path}.reclaim-tmp.${owner_id}.$$.$RANDOM"
 	(
 		umask 077
 		printf '%s\n' "$record" >"$temp_path"

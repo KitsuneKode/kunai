@@ -85,6 +85,12 @@ and atomically renames the canonical file to quarantine for validation. It
 publishes its successor lock before removing the claim, so the canonical path
 never becomes an acquisition window and no contender can delete a newer owner
 through a read/delete race. Release uses the same token-owned quarantine rule.
+Claims publish through uniquely named `.reclaim-tmp.*` files outside the
+`.reclaim.*` election namespace. Current and legacy temp names never enter
+election; dead-owner or aged-corrupt temp residue is cleaned without removing a
+live writer. PowerShell compares raw observations, process-start identities,
+and owner tokens with ordinal case-sensitive equality, and its successor-create
+retry checks the same acquisition stopwatch before each create and sleep.
 TypeScript release cleanup and Bash quarantine restoration report failures and
 leave the evidence in place; neither path treats failed cleanup as a successful
 release or reclaim.

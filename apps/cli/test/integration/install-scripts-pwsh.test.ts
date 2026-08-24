@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -70,6 +71,30 @@ function runInstallPs1(
     encoding: "utf8",
     env,
   });
+}
+
+function runActivationProtocolProbe(body: string): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+} {
+  const root = mkdtempSync(join(tmpdir(), "kunai-pwsh-activation-probe-"));
+  const probePath = join(root, "probe.ps1");
+  const source = readFileSync(INSTALL_PS1, "utf8");
+  const protocolEnd = source.indexOf("function New-LauncherSnapshot");
+  if (protocolEnd < 0) throw new Error("Could not isolate install.ps1 activation protocol");
+  writeFileSync(probePath, `${source.slice(0, protocolEnd)}\n${body}\n`);
+  try {
+    return spawnSync("pwsh", ["-NoProfile", "-File", probePath], {
+      encoding: "utf8",
+      env: {
+        ...DEFAULT_SHELL_ENV,
+        KUNAI_DATA_DIR: join(root, "data"),
+      },
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function installPwshCommandShim(
@@ -173,6 +198,69 @@ describePwsh("install.ps1 dry-run", () => {
     } finally {
       sandbox.cleanup();
     }
+  });
+});
+
+describePwsh("install.ps1 activation identity", () => {
+  test("treats a case-only raw successor as changed during reclaim", () => {
+    const result = runActivationProtocolProbe(String.raw`
+      $lockPath = Join-Path $env:KUNAI_DATA_DIR 'locks/activation.lock'
+      New-Item -ItemType Directory -Force -Path (Split-Path $lockPath) | Out-Null
+      $record = [ordered]@{
+        schemaVersion = 1
+        scope = 'activation'
+        pid = 2147483646
+        version = '1.0.0'
+        execPath = 'old-installer'
+        ownerId = 'case-owner'
+        acquiredAt = '2020-01-01T00:00:00.000Z'
+        hostname = (Get-ActivationLockHostname)
+        processStartId = $null
+      }
+      $observedRaw = (($record | ConvertTo-Json -Compress) + [Environment]::NewLine)
+      $actualRaw = $observedRaw.Replace('case-owner', 'CASE-OWNER')
+      [System.IO.File]::WriteAllText($lockPath, $actualRaw, (New-Object System.Text.UTF8Encoding $false))
+      $successorBytes = (New-Object System.Text.UTF8Encoding $false).GetBytes(
+        $observedRaw.Replace('case-owner', 'successor-owner')
+      )
+      $timer = [System.Diagnostics.Stopwatch]::StartNew()
+      $reclaimed = Move-ActivationLockToQuarantine $lockPath $observedRaw $false 'probe-owner' $successorBytes $timer
+      $remaining = [System.IO.File]::ReadAllText($lockPath)
+      Write-Output ("{0}|{1}" -f $reclaimed, $remaining.Contains('CASE-OWNER'))
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("False|True");
+  });
+
+  test("does not release a case-only different owner token", () => {
+    const result = runActivationProtocolProbe(String.raw`
+      $lockPath = Join-Path $env:KUNAI_DATA_DIR 'locks/activation.lock'
+      New-Item -ItemType Directory -Force -Path (Split-Path $lockPath) | Out-Null
+      $record = [ordered]@{
+        schemaVersion = 1
+        scope = 'activation'
+        pid = $PID
+        version = '1.0.0'
+        execPath = 'current-installer'
+        ownerId = 'CaseOwner'
+        acquiredAt = '2020-01-01T00:00:00.000Z'
+        hostname = (Get-ActivationLockHostname)
+        processStartId = $null
+      }
+      [System.IO.File]::WriteAllText(
+        $lockPath,
+        (($record | ConvertTo-Json -Compress) + [Environment]::NewLine),
+        (New-Object System.Text.UTF8Encoding $false)
+      )
+      Release-ActivationLock $lockPath 'caseowner'
+      $remaining = Read-ActivationLock $lockPath
+      $owner = if ($null -eq $remaining) { 'missing' } else { [string]$remaining.ownerId }
+      Write-Output ("{0}|{1}" -f (Test-Path -LiteralPath $lockPath), $owner)
+    `);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("True|CaseOwner");
   });
 });
 
@@ -756,6 +844,79 @@ describePwsh("install.ps1 lifecycle contract", () => {
           );
           expect(result.status).toBe(0);
           expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("does not elect an orphaned reclaim temp as an activation claim", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-orphan-reclaim-temp";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-orphan-reclaim-temp");
+    const orphanPath = join(
+      sandbox.dataDir,
+      "locks",
+      "activation.lock.reclaim.crashed-owner.tmp.orphan",
+    );
+    mkdirSync(join(sandbox.dataDir, "locks"), { recursive: true });
+    writeFileSync(orphanPath, "{partial");
+    const abandoned = new Date(Date.now() - 5_000);
+    utimesSync(orphanPath, abandoned, abandoned);
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "60",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "2",
+          });
+          expect(result.status).toBe(0);
+          expect(existsSync(orphanPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("timeout zero does not enter reclaim retry for a dead owner", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-zero-timeout-reclaim";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-zero-timeout-reclaim");
+    const activationPath = seedActivationLock(sandbox.dataDir, {
+      pid: 2_147_483_646,
+      ownerId: "dead-owner-must-remain",
+    });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const install = runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "0",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "1",
+          });
+          await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
+          const activationStartedAt = performance.now();
+          const result = await install;
+          expect(result.status).not.toBe(0);
+          expect(performance.now() - activationStartedAt).toBeLessThan(300);
+          expect(JSON.parse(readFileSync(activationPath, "utf8")).ownerId).toBe(
+            "dead-owner-must-remain",
+          );
         },
       );
     } finally {

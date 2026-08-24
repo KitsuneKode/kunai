@@ -290,6 +290,24 @@ describe("activation lock", () => {
     if (aged.acquired) await aged.release();
   });
 
+  test("ignores and cleans a crashed reclaim temp without electing it as a claim", async () => {
+    const layout = await makeLayout();
+    const path = activationLockPath(layout);
+    const orphanTempPath = `${path}.reclaim.crashed-owner.tmp.orphan`;
+    await writeFile(orphanTempPath, "{partial");
+    const abandoned = new Date(Date.now() - 5_000);
+    await utimes(orphanTempPath, abandoned, abandoned);
+
+    const lock = await tryAcquireActivationLock(layout, "2.1.0", {
+      timeoutMs: 40,
+      pollMs: 5,
+    });
+
+    expect(lock.acquired).toBe(true);
+    expect(existsSync(orphanTempPath)).toBe(false);
+    if (lock.acquired) await lock.release();
+  });
+
   test("never reclaims a valid lock owned by another hostname", async () => {
     const layout = await makeLayout();
     const path = activationLockPath(layout);

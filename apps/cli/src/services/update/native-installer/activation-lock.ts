@@ -234,12 +234,31 @@ function reclaimClaimPrefix(path: string): string {
   return `${path}.reclaim.`;
 }
 
+function reclaimClaimTempPrefix(path: string): string {
+  return `${path}.reclaim-tmp.`;
+}
+
 async function listReclaimClaims(path: string): Promise<string[]> {
   const prefix = reclaimClaimPrefix(path);
+  const tempPrefix = reclaimClaimTempPrefix(path);
   const names = await readdir(dirname(path)).catch(() => [] as string[]);
   const claims: string[] = [];
   for (const name of names) {
     const claimPath = join(dirname(path), name);
+    const isLegacyTemp = claimPath.startsWith(prefix) && claimPath.includes(".tmp.");
+    if (claimPath.startsWith(tempPrefix) || isLegacyTemp) {
+      // Temp records never participate in election. Old releases wrote them
+      // below `.reclaim.*`; a crash during that write otherwise left an
+      // invalid, permanently blocking claim. Preserve live/fresh writers, but
+      // clean dead-owner records and invalid residue after corrupt grace.
+      const temp = await readActivationLock(claimPath);
+      const tempStat = await stat(claimPath).catch(() => null);
+      const reclaimable = temp.content
+        ? (await reclaimClaimOwnerState(claimPath, temp.content)) === "stale"
+        : tempStat !== null && Date.now() - tempStat.mtimeMs >= DEFAULT_CORRUPT_GRACE_MS;
+      if (reclaimable) await rm(claimPath, { force: true }).catch(() => {});
+      continue;
+    }
     if (!claimPath.startsWith(prefix)) continue;
     const claim = await readActivationLock(claimPath);
     if (claim.content && (await reclaimClaimOwnerState(claimPath, claim.content)) === "stale") {
@@ -255,7 +274,7 @@ async function listReclaimClaims(path: string): Promise<string[]> {
 
 async function createReclaimClaim(path: string, ownerId: string, raw: string): Promise<string> {
   const claimPath = `${reclaimClaimPrefix(path)}${ownerId}`;
-  const tempPath = `${claimPath}.tmp.${randomUUID()}`;
+  const tempPath = `${reclaimClaimTempPrefix(path)}${ownerId}.${randomUUID()}`;
   await writeFile(tempPath, raw, { flag: "wx", mode: 0o600 });
   try {
     await rename(tempPath, claimPath);
