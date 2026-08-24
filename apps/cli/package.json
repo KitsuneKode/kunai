@@ -49,7 +49,7 @@
     "test": "bun run scripts/run-default-tests.ts",
     "test:coverage": "bun test test/unit test/integration --coverage",
     "test:coverage:report": "bun test test/unit test/integration --coverage --coverage-reporter=text",
-    "test:file": "bun test",
+    "test:file": "bun test --timeout=20000",
     "test:unit": "bun test test/unit --timeout=20000 --parallel",
     "test:future": "bun test --preload ./test/support/future-clock.preload.ts test/unit --timeout=20000",
     "test:integration": "bun test test/integration --timeout=20000",
