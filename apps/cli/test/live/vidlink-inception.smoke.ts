@@ -7,6 +7,7 @@
  * It covers a movie by default; pass season/episode to exercise the series path.
  */
 import type { TitleInfo } from "@/domain/types";
+import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -70,6 +71,24 @@ const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
     return { stream: null, resolveDurationMs: null };
   });
 
+// Resolving a URL and serving bytes are separate claims, and for VidLink they
+// have diverged: the CDN rate-limits CLI probes, so a resolve can now succeed
+// while playback still answers 429. Measure it and put it in the payload so the
+// distinction is visible, rather than letting `streamResolved` imply playback.
+//
+// Reported, not enforced: the exit code deliberately still turns on resolution
+// alone. A single probe is exactly the transient signal this chain decided must
+// not condemn a live source, so failing the smoke on it would re-introduce the
+// behaviour that was just removed.
+const streamProbe = stream?.url
+  ? await probeStreamReachability({
+      url: stream.url,
+      headers: stream.headers,
+      timeoutMs: 5_000,
+    })
+  : null;
+const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : null;
+
 const payload = {
   ...buildProviderSmokePayload({
     provider: "vidlink",
@@ -82,6 +101,8 @@ const payload = {
   failureCodes,
   failureMessages,
   streamCandidates,
+  streamProbe,
+  streamReachable,
   // Last on purpose: on a rejected resolve the locals above are still empty and
   // would otherwise blank out the real failure codes this carries.
   ...(resolveError ? providerSmokeError(resolveError) : {}),
