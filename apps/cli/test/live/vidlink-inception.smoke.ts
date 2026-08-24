@@ -7,7 +7,7 @@
  * It covers a movie by default; pass season/episode to exercise the series path.
  */
 import type { TitleInfo } from "@/domain/types";
-import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
+import { probeStreamReachability } from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -15,6 +15,7 @@ import {
   providerSmokeError,
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
+  smokeStreamReachable,
 } from "./provider-smoke";
 import { directSmokeArgs } from "./smoke-argv";
 
@@ -87,7 +88,7 @@ const streamProbe = stream?.url
       timeoutMs: 5_000,
     })
   : null;
-const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : null;
+const streamReachable = streamProbe ? smokeStreamReachable(streamProbe) : null;
 
 const payload = {
   ...buildProviderSmokePayload({

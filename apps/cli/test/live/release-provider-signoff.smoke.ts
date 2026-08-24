@@ -17,12 +17,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
+import { probeStreamReachability } from "@kunai/providers";
 
 import {
   createProviderSmokeProfile,
   providerSmokeError,
   resolveProviderSmokeStream,
+  smokeStreamReachable,
 } from "./provider-smoke";
 import {
   buildReleaseProviderRouteCases,
@@ -148,7 +149,7 @@ async function resolveRoute(
       })
     : null;
   const streamReachable = streamProbe
-    ? isStreamReachableForResolve(streamProbe)
+    ? smokeStreamReachable(streamProbe)
     : streamUrl
       ? false
       : null;
