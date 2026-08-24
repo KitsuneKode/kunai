@@ -796,7 +796,7 @@ reclaim_activation_lock() {
 	rm -f "$quarantine_path"
 	local attempt=0
 	while ((attempt < 20)); do
-		(( $(activation_lock_now_ms) < deadline )) || return 1
+		(($(activation_lock_now_ms) < deadline)) || return 1
 		if (
 			set -o noclobber
 			umask 077
@@ -836,7 +836,7 @@ acquire_activation_lock() {
 	local version="$1" lock_path="$2"
 	local deadline corrupt_since=0 holder="" raw local_hostname process_start process_start_json activation_record reclaim_result attempted=0
 
-	deadline=$(( $(activation_lock_now_ms) + ACTIVATION_LOCK_TIMEOUT_MS ))
+	deadline=$(($(activation_lock_now_ms) + ACTIVATION_LOCK_TIMEOUT_MS))
 	mkdir -p "$(dirname "$lock_path")"
 	ACTIVATION_LOCK_OWNER_ID="$$-$(date +%s)-$RANDOM"
 	local_hostname="$(activation_lock_hostname)"
@@ -860,7 +860,7 @@ acquire_activation_lock() {
 		fi
 		attempted=1
 		if [[ -n "$(first_activation_reclaim_claim "$lock_path")" ]]; then
-			if (( $(activation_lock_now_ms) >= deadline )); then
+			if (($(activation_lock_now_ms) >= deadline)); then
 				err "Activation reclamation is already in progress for version $version"
 				return 1
 			fi
@@ -879,7 +879,7 @@ acquire_activation_lock() {
 			continue
 		fi
 		if [[ ! -e "$lock_path" ]]; then
-			if (( $(activation_lock_now_ms) >= deadline )); then
+			if (($(activation_lock_now_ms) >= deadline)); then
 				err "Could not create activation lock at $lock_path"
 				return 1
 			fi
@@ -907,7 +907,7 @@ acquire_activation_lock() {
 			holder=""
 			if ((corrupt_since == 0)); then
 				corrupt_since="$(activation_lock_now_ms)"
-			elif (( $(activation_lock_now_ms) - corrupt_since >= ACTIVATION_LOCK_CORRUPT_GRACE_MS )); then
+			elif (($(activation_lock_now_ms) - corrupt_since >= ACTIVATION_LOCK_CORRUPT_GRACE_MS)); then
 				if claim_and_reclaim_activation_lock "$lock_path" "$raw" 1 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" "$deadline"; then
 					return 0
 				else
@@ -921,7 +921,7 @@ acquire_activation_lock() {
 			fi
 		fi
 
-		if (( $(activation_lock_now_ms) >= deadline )); then
+		if (($(activation_lock_now_ms) >= deadline)); then
 			if [[ -n "$holder" ]]; then
 				err "Activation lock held by pid $holder while activating version $version"
 			else

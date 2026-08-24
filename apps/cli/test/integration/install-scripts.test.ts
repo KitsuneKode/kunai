@@ -1135,7 +1135,7 @@ describe("install.sh lifecycle contract", () => {
     installCommandShim(
       shimDir,
       "mv",
-      `#!/bin/sh\n"${realMv}" "$@" || exit $?\ncase "\${2:-}" in *.release.*) "${realSed}" -i 's/"ownerId":"[^"]*"/"ownerId":"injected-other-owner"/' "\${2}" ;; esac\n`,
+      `#!/bin/sh\n"${realMv}" "$@" || exit $?\ncase "\${2:-}" in *.release.*) mutated="\${2}.mutated"; "${realSed}" 's/"ownerId":"[^"]*"/"ownerId":"injected-other-owner"/' "\${2}" >"$mutated" || exit $?; "${realMv}" "$mutated" "\${2}" ;; esac\n`,
     );
     installCommandShim(
       shimDir,
