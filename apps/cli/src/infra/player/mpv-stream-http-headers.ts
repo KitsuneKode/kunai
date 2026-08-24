@@ -14,7 +14,21 @@ export type NormalizedStreamHttpHeaders = {
   readonly referer?: string;
   readonly userAgent?: string;
   readonly origin?: string;
+  /**
+   * Every other header the provider attached, already formatted as
+   * `Name: Value` for mpv's `http-header-fields` list.
+   *
+   * mpv has dedicated options for referer and user-agent and nothing else, so
+   * anything a provider adds beyond those has to ride this list or it is simply
+   * dropped. VidLink is why this exists: its DASH manifests are CloudFront
+   * signed and answer 403 without their `Cookie`, so a resolve that carried the
+   * cookie still failed at the player.
+   */
+  readonly extraFields: readonly string[];
 };
+
+/** Headers mpv sets through dedicated options rather than the header list. */
+const DEDICATED_HEADER_NAMES = new Set(["referer", "user-agent", "origin"]);
 
 /** Canonical HTTP header fields used for mpv launch args and persistent loadfile options. */
 export function normalizeStreamHttpHeaders(
@@ -29,10 +43,23 @@ export function normalizeStreamHttpHeaders(
     const sanitized = value.trim().replace(pattern, "");
     return sanitized.length > 0 ? sanitized : undefined;
   };
+  const extraFields: string[] = [];
+  for (const [name, value] of Object.entries(source)) {
+    if (DEDICATED_HEADER_NAMES.has(name.toLowerCase())) continue;
+    const cleaned = sanitize(value, /[\r\n]/g);
+    if (!cleaned) continue;
+    // mpv separates this list on commas and offers no escape, so a value
+    // containing one cannot be represented. Dropping the header is honest;
+    // stripping the comma would corrupt a signature or cookie silently.
+    if (cleaned.includes(",")) continue;
+    extraFields.push(`${name}: ${cleaned}`);
+  }
+
   return {
     referer: sanitize(referer, /[\r\n]/g),
     userAgent: sanitize(userAgent, /[\r\n]/g),
     origin: sanitize(origin, /[\r\n,]/g),
+    extraFields,
   };
 }
 
@@ -75,7 +102,7 @@ export function buildPersistentLoadfileOptions(
     readonly urlKind?: MpvUrlKind;
   },
 ): PersistentLoadfileOptions {
-  const { referer, userAgent, origin } = normalizeStreamHttpHeaders(headers);
+  const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(headers);
   const loadOptions: Record<string, string> = {
     start: shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
   };
@@ -86,8 +113,9 @@ export function buildPersistentLoadfileOptions(
   if (userAgent) {
     loadOptions["user-agent"] = userAgent;
   }
-  if (origin) {
-    loadOptions["http-header-fields"] = `Origin: ${origin}`;
+  const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
+  if (headerFields.length > 0) {
+    loadOptions["http-header-fields"] = headerFields.join(",");
   } else {
     loadOptions["http-header-fields-clr"] = "";
   }

@@ -20,11 +20,40 @@ describe("normalizeStreamHttpHeaders", () => {
       referer: "https://cineplay.to/tv/1/1/1",
       userAgent: "kunai-test",
       origin: "https://www.cineplay.to",
+      extraFields: [],
     });
   });
 
+  test("forwards provider headers mpv has no dedicated option for", () => {
+    // VidLink's DASH manifests are CloudFront signed and 403 without their
+    // Cookie, so a resolve that carried it still failed at the player.
+    const normalized = normalizeStreamHttpHeaders({
+      referer: "https://vidlink.pro/",
+      "user-agent": "kunai-test",
+      origin: "https://vidlink.pro",
+      Cookie: "CloudFront-Policy=abc;CloudFront-Signature=def",
+    });
+    expect(normalized.extraFields).toEqual([
+      "Cookie: CloudFront-Policy=abc;CloudFront-Signature=def",
+    ]);
+
+    const options = buildPersistentLoadfileOptions("https://cdn.example/x.mpd", 0, {
+      origin: "https://vidlink.pro",
+      Cookie: "CloudFront-Policy=abc",
+    });
+    expect(options["http-header-fields"]).toBe(
+      "Origin: https://vidlink.pro,Cookie: CloudFront-Policy=abc",
+    );
+  });
+
+  test("drops a header value containing mpv's list separator", () => {
+    // mpv splits this list on commas and offers no escape. Stripping the comma
+    // would silently corrupt a signature, so the header is dropped instead.
+    expect(normalizeStreamHttpHeaders({ Cookie: "a=1,b=2" }).extraFields).toEqual([]);
+  });
+
   test("drops empty header values", () => {
-    expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({});
+    expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({ extraFields: [] });
   });
 });
 

@@ -549,10 +549,11 @@ export function buildMpvArgs(
     args.push("--ytdl=no");
   }
 
-  const { referer, userAgent, origin } = normalizeStreamHttpHeaders(opts.headers);
+  const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(opts.headers);
   if (referer) args.push(`--referrer=${referer}`);
   if (userAgent) args.push(`--user-agent=${userAgent}`);
-  if (origin) args.push(`--http-header-fields=Origin: ${origin}`);
+  const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
+  if (headerFields.length > 0) args.push(`--http-header-fields=${headerFields.join(",")}`);
   // ani-cli plays mp4upload with --tls-verify=no; without it mpv rejects some hosts.
   if (shouldDisableMpvTlsVerify(opts.url, opts.headers)) {
     args.push("--tls-verify=no");

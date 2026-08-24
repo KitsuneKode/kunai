@@ -153,12 +153,21 @@ answers, so one dead or hotlink-protected URL no longer condemns its working
 siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
 keeps its selection rather than recording a stream failure.
 
-**VidLink is CDN-blocked for CLI clients (2026-08-24).** `vidlink.pro` still
-returns a payload, but every signed URL it hands back carries a stale `t` and
-`bcdn.hakunaymatata.com` answers 429 to any request from a non-browser client
-(403 without referer/origin). The lane therefore resolves and then fails the
-gate, which is the correct outcome: the provider is skipped and another one
-serves the title. Do not "fix" this by loosening the gate.
+**VidLink needs the browser playback environment (2026-08-24).** Without an
+`x-playback-environment` header, `vidlink.pro/api/b` answers with
+`deliveryType: "file"` — direct MP4s on `bcdn.hakunaymatata.com` flagged
+`requiresProxy`, which return 429 to every non-browser client and 403 with no
+referer. Sending `webkit` switches delivery to a DASH manifest on
+`sacdn.hakunaymatata.com`, and the CloudFront cookies that authorise it arrive
+in `stream.playlistHeaders`. That cookie has to reach the manifest fetch, the
+segment fetches, and the resolve-gate probe; without it the host answers 403.
+Verified end to end with mpv decoding frames for both a movie and an episode.
+
+Two consequences worth keeping in mind. The signed cookie carries `TTL: 3600`,
+so a cached resolve older than an hour will 403 on replay. And mpv only has
+dedicated options for referer and user-agent — everything else a provider
+attaches has to ride `http-header-fields`, which is why
+`normalizeStreamHttpHeaders` forwards unknown headers instead of dropping them.
 
 **Per-candidate timeouts are clamped to the attempt budget.**
 `providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
