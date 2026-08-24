@@ -1,4 +1,5 @@
 import type { TitleInfo } from "@/domain/types";
+import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -60,6 +61,15 @@ const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
     return { stream: null, resolveDurationMs: null };
   });
 
+const streamProbe = stream?.url
+  ? await probeStreamReachability({
+      url: stream.url,
+      headers: stream.headers,
+      timeoutMs: 5_000,
+    })
+  : null;
+const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : null;
+
 const payload = {
   ...buildProviderSmokePayload({
     provider: "rivestream",
@@ -73,12 +83,18 @@ const payload = {
   failureCodes,
   failureMessages,
   streamCandidates,
+  streamProbe,
+  streamReachable,
   ...providerSmokeProfilePayload(profile),
   cacheCleared: clearCache,
 };
 
 console.log(JSON.stringify(payload, null, 2));
 
-if (!stream?.url) {
+// A resolved URL that does not serve bytes is the false green this probe
+// exists to catch, so a *measured* failure fails the smoke. `null` means the
+// probe never ran (nothing resolved), which the line above already covers --
+// only `false` is evidence of an unplayable stream.
+if (!stream?.url || streamReachable === false) {
   process.exit(1);
 }
