@@ -4,7 +4,11 @@ import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
+import {
+  activationLockPath,
+  getInstallLayoutPaths,
+  lifecycleGuardPath,
+} from "@/services/update/native-installer/install-layout";
 import {
   inspectVersionLock,
   lifecycleLockPath,
@@ -322,6 +326,102 @@ describe("version lock", () => {
     if (recovered.acquired) await recovered.release();
 
     await rm(root, { recursive: true, force: true });
+  });
+
+  test("two contenders serialize reclaim of an aged corrupt lifecycle guard", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-lock-racing-lifecycle-reclaim-"));
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      configDir: join(root, "config"),
+      launcherPath: join(root, "bin", "kunai"),
+      platform: "linux",
+    });
+    const guardPath = lifecycleGuardPath(layout);
+    await mkdir(root, { recursive: true });
+    await writeFile(guardPath, "");
+    const abandoned = new Date(Date.now() - 1_000);
+    await utimes(guardPath, abandoned, abandoned);
+
+    const contentionOptions = {
+      force: true,
+      activationLockTimeoutMs: 40,
+    };
+    const contenders = await Promise.all([
+      tryAcquireLifecycleLock(layout, contentionOptions),
+      tryAcquireLifecycleLock(layout, contentionOptions),
+    ]);
+    const winners = contenders.filter((result) => result.acquired);
+
+    try {
+      expect(winners).toHaveLength(1);
+      expect(existsSync(activationLockPath(layout))).toBe(true);
+      expect(existsSync(guardPath)).toBe(true);
+      const external = JSON.parse(await readFile(guardPath, "utf8")) as { ownerId?: string };
+      const internal = JSON.parse(await readFile(lifecycleLockPath(layout), "utf8")) as {
+        ownerId?: string;
+      };
+      expect(external.ownerId).toBeString();
+      expect(internal.ownerId).toBe(external.ownerId);
+    } finally {
+      await Promise.all(
+        contenders.map(async (result) => {
+          if (result.acquired) await result.release();
+        }),
+      );
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("backout surfaces lifecycle guard cleanup failure before releasing activation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-lock-lifecycle-backout-failure-"));
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      configDir: join(root, "config"),
+      launcherPath: join(root, "bin", "kunai"),
+      platform: "linux",
+    });
+    const guardPath = lifecycleGuardPath(layout);
+    await mkdir(layout.locksDir, { recursive: true });
+    await writeFile(
+      lifecycleLockPath(layout),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        scope: "lifecycle",
+        pid: process.pid,
+        version: "0.0.0",
+        execPath: process.execPath,
+        ownerId: "existing-owner",
+        acquiredAt: new Date().toISOString(),
+        hostname: hostname().trim().toLowerCase(),
+        processStartId: null,
+      })}\n`,
+    );
+
+    let activationHeldDuringBackout = false;
+    const injectedRm: typeof rm = async (path, options) => {
+      if (path === guardPath) {
+        activationHeldDuringBackout = existsSync(activationLockPath(layout));
+        throw new Error("injected lifecycle guard removal failure");
+      }
+      return await rm(path, options);
+    };
+    const acquisitionOptions = {
+      activationLockTimeoutMs: 40,
+      rmImpl: injectedRm,
+    };
+
+    try {
+      await expect(tryAcquireLifecycleLock(layout, acquisitionOptions)).rejects.toThrow(
+        /back out lifecycle lock/i,
+      );
+      expect(activationHeldDuringBackout).toBe(true);
+      expect(existsSync(guardPath)).toBe(true);
+      expect(existsSync(activationLockPath(layout))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test.skipIf(process.platform === "win32")(

@@ -98,8 +98,15 @@ launcher is restored before the activation lock is released. The lifecycle lock
 also excludes new installs while uninstall is active. Its purge-safe guard at
 `{dataDir}.lifecycle.lock` remains outside the removable data root; uninstall
 holds that guard through the final root operation and never sweeps another
-owner's lock after releasing it. Both lifecycle paths use a schema-1 `lifecycle`
-record with the same normalized `hostname` and `processStartId` identity fields.
+owner's lock after releasing it. Lifecycle acquisition first takes the shared
+activation lock and holds it while inspecting or reclaiming lifecycle residue,
+through purge, and until the external guard is released. This lock order makes
+stale-guard classification and replacement a single-winner operation; uninstall
+must not acquire activation a second time inside the lifecycle critical section.
+If purge already removed the activation path, owner-aware release is a safe
+no-op; other cleanup errors remain visible. Both lifecycle paths use a schema-1
+`lifecycle` record with the same normalized `hostname` and `processStartId`
+identity fields.
 A valid foreign-host lifecycle owner blocks without a local PID probe. On the
 same host, a dead PID or a mismatched available process-start identity is stale;
 an unavailable identity fails closed while the PID is live. Pre-schema records

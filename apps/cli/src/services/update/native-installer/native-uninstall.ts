@@ -7,7 +7,6 @@ import {
   readInstallManifest,
   type InstallManifest,
 } from "../install-manifest";
-import { tryAcquireActivationLock } from "./activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./install-layout";
 import {
   inspectLauncherOwnership,
@@ -113,9 +112,6 @@ export async function nativeUninstall(
   }
 
   // Active locks / transactions block before any mutation — force never deletes live locks.
-  if (options.force) {
-    await cleanupStaleLocks(layout);
-  }
   if (await hasActiveVersionLocks(layout)) {
     return blocked([
       layout.launcherPath,
@@ -153,22 +149,9 @@ export async function nativeUninstall(
   const lifecycle = await tryAcquireLifecycleLock(layout, {
     force: options.force,
     execPath: process.execPath,
+    activationLockTimeoutMs: options.activationLockTimeoutMs,
   });
   if (!lifecycle.acquired) {
-    return blocked([
-      layout.launcherPath,
-      layout.versionsDir,
-      layout.configDir,
-      layout.dataDir,
-      layout.cacheDir,
-    ]);
-  }
-
-  const activation = await tryAcquireActivationLock(layout, manifest.activeVersion, {
-    timeoutMs: options.activationLockTimeoutMs,
-  });
-  if (!activation.acquired) {
-    await lifecycle.release();
     return blocked([
       layout.launcherPath,
       layout.versionsDir,
@@ -182,7 +165,6 @@ export async function nativeUninstall(
     kind: "uninstall",
     version: manifest.activeVersion,
   }).catch(async (error: unknown) => {
-    await activation.release();
     await lifecycle.release();
     throw error;
   });
@@ -260,7 +242,6 @@ export async function nativeUninstall(
       failed,
     };
   } finally {
-    await activation.release();
     await lifecycle.release();
   }
 }

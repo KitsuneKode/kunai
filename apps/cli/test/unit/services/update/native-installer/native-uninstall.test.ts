@@ -211,6 +211,7 @@ describe("nativeUninstall residue and preservation", () => {
     await seedManagedUnixInstall(layout);
     const guardPath = `${layout.dataDir}.lifecycle.lock`;
     const guardedRemovals: string[] = [];
+    const activationGuardedRemovals: string[] = [];
     const originalRm = rm;
     const rmSpy = async (path: Parameters<typeof rm>[0], options?: Parameters<typeof rm>[1]) => {
       if (
@@ -218,6 +219,9 @@ describe("nativeUninstall residue and preservation", () => {
         (path === layout.configDir || path === layout.dataDir || path === layout.cacheDir)
       ) {
         if (existsSync(guardPath)) guardedRemovals.push(path);
+        if (existsSync(join(layout.locksDir, "activation.lock"))) {
+          activationGuardedRemovals.push(path);
+        }
       }
       return originalRm(path, options);
     };
@@ -231,6 +235,7 @@ describe("nativeUninstall residue and preservation", () => {
 
     expect(result.status).toBe("removed");
     expect(guardedRemovals).toEqual([layout.configDir, layout.cacheDir, layout.dataDir]);
+    expect(activationGuardedRemovals).toEqual([layout.configDir, layout.cacheDir, layout.dataDir]);
     expect(existsSync(guardPath)).toBe(false);
   });
 });
