@@ -150,14 +150,41 @@ Job **`candidate`** (no publish):
 
 1. Asserts `inputs.version` equals `apps/cli/package.json` `version`
 2. `bun run ci` → `build` → `pkg:check` → real npm global install → `guard` → `release:notes:check`
-3. Builds all 8 release binaries plus their deterministic archives, verifies
-   the exact 18 native assets, and runs compiled binary smoke
-4. `bun run release:pack` → `.release-candidate/kunai-npm.tgz`
+3. Builds all eight release binaries plus their deterministic archives,
+   verifies the exact 18 native files listed below, and runs compiled binary
+   smoke
+4. Builds the eight exact-version npm platform packages and preserves their
+   tarballs, then runs `bun run release:pack` to preserve the launcher as
+   `.release-candidate/kunai-npm.tgz`
 5. Stages the native files under an isolated `native/` directory, reverifies
    that exact 18-file directory, creates GitHub OIDC attestations for all 18
    subjects, then uploads artifact
-   `kunai-release-candidate-<version>` with the preserved npm artifacts
-   alongside it (14-day retention)
+   `kunai-release-candidate-<version>-<commit-sha>` with the preserved launcher
+   and platform-package tarballs alongside it (14-day retention). Downstream
+   jobs download this immutable artifact by its numeric artifact id.
+
+The exact native directory is:
+
+```text
+kunai-linux-x64
+kunai-linux-x64.tar.gz
+kunai-linux-arm64
+kunai-linux-arm64.tar.gz
+kunai-linux-x64-musl
+kunai-linux-x64-musl.tar.gz
+kunai-linux-arm64-musl
+kunai-linux-arm64-musl.tar.gz
+kunai-darwin-x64
+kunai-darwin-x64.tar.gz
+kunai-darwin-arm64
+kunai-darwin-arm64.tar.gz
+kunai-windows-x64.exe
+kunai-windows-x64.zip
+kunai-windows-arm64.exe
+kunai-windows-arm64.zip
+SHA256SUMS
+SHA256SUMS.archives
+```
 
 For the 0.3.0 compatibility bridge, legacy `SHA256SUMS` continues to hash raw
 standalone binaries so already-published installers and updaters remain
@@ -173,7 +200,9 @@ manifests from a loopback fixture, runs the checked-out production installer in
 an isolated profile, verifies the published archive provenance, and executes
 the installed launcher with `--version` and `--help`. It also executes the raw
 candidate separately for compatibility; the installer proof cannot silently
-fall back because the fixture never exposes that raw asset.
+fall back because the fixture never exposes that raw asset. The x64 and arm64
+Linux runners repeat the production `install.sh` archive path inside native
+Alpine containers for both musl builds, also with the raw fallback withheld.
 
 `release:pack` is:
 
@@ -184,12 +213,12 @@ mkdir -p .release-candidate && ROOT="$PWD" && \
 
 ### 3. Confirmation gate (still no publish)
 
-Job **`confirmation`** needs `candidate`. It downloads the preserved candidate,
-pulls the provider signoff artifact from `provider_signoff_run_id`, verifies the
-downloaded `native/` directory immediately before the confirmation boundary,
-verifies every native attestation against the release workflow and candidate
-commit,
-and runs:
+Job **`confirmation`** waits for the candidate, installer, README-command,
+live-provider, native-platform, and native-provenance gates. It downloads the
+preserved candidate by artifact id, pulls the provider signoff artifact from
+`provider_signoff_run_id`, verifies the downloaded `native/` directory
+immediately before the confirmation boundary, verifies every native attestation
+against the release workflow and candidate commit, and runs:
 
 ```sh
 bun run release:confirmation:check -- \
@@ -211,8 +240,12 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 2. Reverifies the exact native directory and all 18 attestations, before npm
    publication, against the
    expected version, release workflow, main-branch ref, and candidate commit
-3. `bun publish .release-candidate/kunai-npm.tgz --access public`
-4. Retries `npm view @kitsunekode/kunai@<version>` until visible
+3. Runs `bun run release`, whose npm publisher reconciles all eight preserved
+   platform-package tarballs first and the exact-version launcher tarball last,
+   refusing integrity or version skew and publishing with npm provenance
+4. Retries `npm view` for the launcher and all eight platform packages until
+   every exact version is visible, then performs a clean registry install and
+   launcher smoke
 5. Creates annotated tag `v<version>` and pushes it
 6. Reverifies the same downloaded native directory and provenance again,
    immediately before creating a **draft** GitHub release (`make_latest: false`)
@@ -289,7 +322,9 @@ comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate
 - `bun run changeset` → create release intent files
 - `bun run version:packages` → apply pending versions + update both changelogs + staged `.release` notes
 - `bun run release:pack` → write `.release-candidate/kunai-npm.tgz` (same packing path CI uses)
-- `bun run release` → `bun publish` of the preserved tarball (CI publish job in practice)
+- `bun run release` → reconcile/publish the eight preserved platform tarballs,
+  then the preserved launcher tarball last, using npm trusted publishing and
+  provenance (CI publish job in practice)
 - `bun run guard` → verify version ↔ changelog sync locally (also runs on pre-commit when release files change)
 - `bun run scripts/set-release-status.ts` → flip staged / published / withdrawn on one artifact
 

@@ -6,7 +6,9 @@
 //   bun run scripts/verify-github-release-assets.ts              # latest (names + sizes)
 //   bun run scripts/verify-github-release-assets.ts v0.3.0
 //   bun run scripts/verify-github-release-assets.ts v0.3.0 \
-//     --expect-draft --expected-version 0.3.0
+//     --expect-draft --expected-version 0.3.0 \
+//     --attestation-repo KitsuneKode/kunai \
+//     --attestation-source-digest <40-character-commit-sha>
 // =============================================================================
 
 import { spawnSync } from "node:child_process";
@@ -31,14 +33,16 @@ type GhReleaseView = {
   readonly assets?: readonly { readonly name?: string; readonly size?: number }[];
 };
 
-function parseArgs(argv: readonly string[]): {
-  tag: string | undefined;
-  expectDraft: boolean;
-  expectPublic: boolean;
-  expectedVersion: string | undefined;
-  attestationRepository: string | undefined;
-  attestationSourceDigest: string | undefined;
-} {
+type GitHubReleaseAssetArguments = {
+  readonly tag: string | undefined;
+  readonly expectDraft: boolean;
+  readonly expectPublic: boolean;
+  readonly expectedVersion: string | undefined;
+  readonly attestationRepository: string | undefined;
+  readonly attestationSourceDigest: string | undefined;
+};
+
+function parseArgs(argv: readonly string[]): GitHubReleaseAssetArguments {
   let tag: string | undefined;
   let expectDraft = false;
   let expectPublic = false;
@@ -95,6 +99,11 @@ function parseArgs(argv: readonly string[]): {
   if (attestationRepository && !expectedVersion) {
     throw new Error("[release-assets] attestation verification requires --expected-version");
   }
+  if (expectedVersion && (!attestationRepository || !attestationSourceDigest)) {
+    throw new Error(
+      "[release-assets] --expected-version requires --attestation-repo and --attestation-source-digest before version smoke",
+    );
+  }
   if (expectDraft && expectPublic) {
     throw new Error("[release-assets] --expect-draft and --expect-public are mutually exclusive");
   }
@@ -136,6 +145,9 @@ function viewRelease(tag: string | undefined): GhReleaseView {
     const detail = (result.stderr || result.stdout || "gh release view failed").trim();
     throw new Error(`[release-assets] ${detail}`);
   }
+  // SAFETY: `gh release view --json isDraft,tagName,assets` owns this local
+  // machine-readable shape; all asset names/counts/sizes are checked by the
+  // exact release contract before downloaded bytes are trusted.
   return JSON.parse(result.stdout) as GhReleaseView;
 }
 
@@ -143,7 +155,7 @@ function descriptorsFromRelease(release: GhReleaseView): ReleaseAssetDescriptor[
   const assets = release.assets ?? [];
   return assets.map((asset) => ({
     name: String(asset.name ?? ""),
-    size: typeof asset.size === "number" ? asset.size : 0,
+    size: Number.isFinite(asset.size) ? (asset.size ?? 0) : 0,
   }));
 }
 
@@ -155,6 +167,52 @@ function downloadReleaseAssets(tag: string, directory: string): void {
     const detail = (result.stderr || result.stdout || "gh release download failed").trim();
     throw new Error(`[release-assets] ${detail}`);
   }
+}
+
+type DownloadedReleaseVerification = {
+  readonly directory: string;
+  readonly expectedVersion: string;
+  readonly attestationRepository: string | undefined;
+  readonly attestationSourceDigest: string | undefined;
+};
+
+type DownloadedReleaseVerificationDependencies = {
+  readonly verifyDirectory: typeof verifyReleaseArtifactDirectory;
+  readonly verifyAttestations: typeof verifyNativeAttestations;
+  readonly smokeLinuxX64: typeof smokeReleaseLinuxX64;
+};
+
+const downloadedReleaseVerificationDependencies: DownloadedReleaseVerificationDependencies = {
+  verifyDirectory: verifyReleaseArtifactDirectory,
+  verifyAttestations: verifyNativeAttestations,
+  smokeLinuxX64: smokeReleaseLinuxX64,
+};
+
+/**
+ * Verify untrusted release downloads without ever executing them before their
+ * workflow and source-commit identity is authenticated.
+ */
+export async function verifyDownloadedReleaseAssets(
+  input: DownloadedReleaseVerification,
+  dependencies: DownloadedReleaseVerificationDependencies = downloadedReleaseVerificationDependencies,
+): Promise<void> {
+  if (!input.attestationRepository || !input.attestationSourceDigest) {
+    throw new Error(
+      "[release-assets] --expected-version requires complete attestation arguments before version smoke",
+    );
+  }
+
+  await dependencies.verifyDirectory({
+    directory: input.directory,
+    expectedVersion: input.expectedVersion,
+    skipVersionSmoke: true,
+  });
+  dependencies.verifyAttestations({
+    directory: input.directory,
+    repository: input.attestationRepository,
+    sourceDigest: input.attestationSourceDigest,
+  });
+  dependencies.smokeLinuxX64(input.directory, input.expectedVersion);
 }
 
 async function main(): Promise<void> {
@@ -187,21 +245,12 @@ async function main(): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), "kunai-gh-release-assets-"));
     try {
       downloadReleaseAssets(downloadTag, tempDir);
-      await verifyReleaseArtifactDirectory({
+      await verifyDownloadedReleaseAssets({
         directory: tempDir,
         expectedVersion,
-        // Never execute bytes downloaded from a release until their signed
-        // workflow/source identity has been verified.
-        skipVersionSmoke: Boolean(attestationRepository),
+        attestationRepository,
+        attestationSourceDigest,
       });
-      if (attestationRepository && attestationSourceDigest) {
-        verifyNativeAttestations({
-          directory: tempDir,
-          repository: attestationRepository,
-          sourceDigest: attestationSourceDigest,
-        });
-        smokeReleaseLinuxX64(tempDir, expectedVersion);
-      }
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

@@ -22,7 +22,10 @@ import {
   assertRequiredReleaseAssets,
 } from "../../../../../scripts/release-asset-contract";
 import { shouldWriteReleaseChecksums } from "../../../../../scripts/release-binary-checksums";
-import { assertExpectedReleaseState } from "../../../../../scripts/verify-github-release-assets";
+import {
+  assertExpectedReleaseState,
+  verifyDownloadedReleaseAssets,
+} from "../../../../../scripts/verify-github-release-assets";
 import { verifyReleaseArtifactDirectory } from "../../../../../scripts/verify-release-artifact-directory";
 import { buildReleaseArchives } from "../../../scripts/build-release-archives";
 import { buildNpmPublishManifest } from "../../../scripts/write-npm-publish-manifest";
@@ -76,7 +79,7 @@ describe("distribution release-asset contract", () => {
       assertCompleteReleaseAssetSet(
         completeSizedAssets().map((asset) =>
           asset.name === archive.archiveName
-            ? { ...asset, size: archive.maxArchiveBytes + 1 }
+            ? { name: asset.name, size: archive.maxArchiveBytes + 1 }
             : asset,
         ),
       ),
@@ -84,7 +87,9 @@ describe("distribution release-asset contract", () => {
     expect(() =>
       assertCompleteReleaseAssetSet(
         completeSizedAssets().map((asset) =>
-          asset.name === archive.out ? { ...asset, size: archive.maxBinaryBytes + 1 } : asset,
+          asset.name === archive.out
+            ? { name: asset.name, size: archive.maxBinaryBytes + 1 }
+            : asset,
         ),
       ),
     ).toThrow(/size budget.*kunai-linux-x64/i);
@@ -176,7 +181,11 @@ describe("release workflow candidate-before-publication contract", () => {
   const candidate = () => extractWorkflowJob(release, "candidate");
   const nativeProvenanceGate = () => extractWorkflowJob(release, "native-provenance-gate");
   const nativeSmoke = () => extractWorkflowJob(release, "native-smoke");
+  const nativePlatformsGate = () => extractWorkflowJob(release, "native-platforms-gate");
+  const installerSmoke = () => extractWorkflowJob(release, "installer-smoke");
+  const installerGate = () => extractWorkflowJob(release, "installer-gate");
   const readmeCommandsGate = () => extractWorkflowJob(release, "readme-commands-gate");
+  const liveProvidersGate = () => extractWorkflowJob(release, "live-providers-gate");
   const confirmation = () => extractWorkflowJob(release, "confirmation");
   const publish = () => extractWorkflowJob(release, "publish");
   const metadata = () => extractWorkflowJob(release, "metadata");
@@ -191,6 +200,43 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(pushJob).not.toContain("bun publish");
     expect(pushJob).not.toContain("changeset publish");
     expect(pushJob).not.toContain("bun run release");
+  });
+
+  test("workflow permissions deny by default and grant only each job's required scope", () => {
+    expect(release).toMatch(/^permissions:\s*\{\}\s*$/m);
+    expect(versionPr()).toMatch(
+      /permissions:\s*\n\s+contents:\s*write\s*\n\s+pull-requests:\s*write/,
+    );
+    for (const job of [nativePlatformsGate(), installerSmoke(), installerGate()]) {
+      expect(job).toMatch(/permissions:\s*\n\s+contents:\s*read/);
+      expect(job).not.toMatch(/(?:contents|pull-requests):\s*write/);
+    }
+    expect(liveProvidersGate()).toMatch(
+      /permissions:\s*\n\s+contents:\s*read\s*\n\s+actions:\s*read/,
+    );
+
+    const jobsWithContentsWrite = [
+      versionPr(),
+      candidate(),
+      nativeProvenanceGate(),
+      nativeSmoke(),
+      nativePlatformsGate(),
+      installerSmoke(),
+      installerGate(),
+      readmeCommandsGate(),
+      liveProvidersGate(),
+      confirmation(),
+      publish(),
+      metadata(),
+    ].filter((job) => /contents:\s*write/.test(job));
+    expect(jobsWithContentsWrite).toEqual([versionPr(), publish(), metadata()]);
+  });
+
+  test("cross-run provider evidence download has actions read without inherited write access", () => {
+    const live = liveProvidersGate();
+    expect(live).toContain('gh run download "${PROVIDER_SIGNOFF_RUN_ID}"');
+    expect(live).toMatch(/permissions:[\s\S]*actions:\s*read/);
+    expect(live).not.toMatch(/(?:contents|pull-requests|actions):\s*write/);
   });
 
   // The publish step is `bun run release` (scripts/publish-npm-release.ts),
@@ -318,6 +364,104 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(release.indexOf("  native-provenance-gate:")).toBeLessThan(
       release.indexOf("  readme-commands-gate:"),
     );
+  });
+
+  test("both musl candidates install their preserved archive through production install.sh", () => {
+    const smoke = nativeSmoke();
+    expect(smoke).toContain("smoke-preserved-musl-installer.sh");
+    expect(smoke).toContain("KUNAI_MUSL_BINARY");
+    expect(smoke).toContain("KUNAI_RELEASE_CANDIDATE_VERSION");
+    expect(smoke).toContain("kunai-linux-x64-musl");
+    expect(smoke).toContain("kunai-linux-arm64-musl");
+
+    const installerSmokeSource = readFileSync(
+      join(REPO_ROOT, ".github/scripts/smoke-preserved-musl-installer.sh"),
+      "utf8",
+    );
+    expect(installerSmokeSource).toContain("install.sh");
+    expect(installerSmokeSource).toContain("apps/cli/test/docker/native-installer/Dockerfile");
+    expect(installerSmokeSource).toContain("SHA256SUMS.archives");
+    expect(installerSmokeSource).toContain("archiveSha256");
+    expect(installerSmokeSource).toContain("archiveSourceUrl");
+    expect(installerSmokeSource).toContain("--version");
+    expect(installerSmokeSource).toContain("--help");
+    expect(installerSmokeSource).toContain('test ! -e "$FIXTURE_VERSION_DIR/$ASSET"');
+    expect(installerSmokeSource).toContain("--network none");
+  });
+
+  test("release-asset byte smoke is ordered after provenance and refuses incomplete provenance", async () => {
+    const calls: string[] = [];
+    await verifyDownloadedReleaseAssets(
+      {
+        directory: "/tmp/release-assets",
+        expectedVersion: "0.3.0",
+        attestationRepository: "KitsuneKode/kunai",
+        attestationSourceDigest: "a".repeat(40),
+      },
+      {
+        verifyDirectory: async (options) => {
+          calls.push(`bytes:${String(options.skipVersionSmoke)}`);
+        },
+        verifyAttestations: () => {
+          calls.push("provenance");
+        },
+        smokeLinuxX64: () => {
+          calls.push("execute");
+        },
+      },
+    );
+    expect(calls).toEqual(["bytes:true", "provenance", "execute"]);
+
+    const unsafeCalls: string[] = [];
+    await expect(
+      verifyDownloadedReleaseAssets(
+        {
+          directory: "/tmp/release-assets",
+          expectedVersion: "0.3.0",
+          attestationRepository: undefined,
+          attestationSourceDigest: undefined,
+        },
+        {
+          verifyDirectory: async () => {
+            unsafeCalls.push("bytes");
+          },
+          verifyAttestations: () => {
+            unsafeCalls.push("provenance");
+          },
+          smokeLinuxX64: () => {
+            unsafeCalls.push("execute");
+          },
+        },
+      ),
+    ).rejects.toThrow(/expected-version.*attestation/i);
+    expect(unsafeCalls).toEqual([]);
+  });
+
+  test("failed release provenance verification prevents downloaded byte execution", async () => {
+    const calls: string[] = [];
+    await expect(
+      verifyDownloadedReleaseAssets(
+        {
+          directory: "/tmp/release-assets",
+          expectedVersion: "0.3.0",
+          attestationRepository: "KitsuneKode/kunai",
+          attestationSourceDigest: "a".repeat(40),
+        },
+        {
+          verifyDirectory: async () => {
+            calls.push("bytes");
+          },
+          verifyAttestations: () => {
+            calls.push("provenance");
+            throw new Error("attestation rejected");
+          },
+          smokeLinuxX64: () => {
+            calls.push("execute");
+          },
+        },
+      ),
+    ).rejects.toThrow(/attestation rejected/);
+    expect(calls).toEqual(["bytes", "provenance"]);
   });
 
   test("publication downloads the preserved tarball/binaries", () => {

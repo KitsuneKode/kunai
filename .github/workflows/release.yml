@@ -31,6 +31,7 @@ on:
       - "scripts/verify-release-artifact-directory.ts"
       - "scripts/verify-native-attestations.ts"
       - "scripts/verify-github-release-assets.ts"
+      - ".github/scripts/smoke-preserved-musl-installer.sh"
       - "scripts/release-guard.ts"
       - "scripts/release-confirmation-gate.ts"
       - "scripts/set-release-status.ts"
@@ -51,9 +52,7 @@ concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
@@ -73,6 +72,9 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
@@ -508,24 +510,23 @@ jobs:
           ".release-download/native/${KUNAI_NATIVE_BINARY}" --version 2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
           ".release-download/native/${KUNAI_NATIVE_BINARY}" --help 2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
 
-      # Alpine on the host's own architecture, so the arm64 runner exercises the
-      # arm64 musl build rather than emulating x64.
-      - name: Execute preserved musl candidate in Alpine
+      # Alpine on the host's own architecture, so the arm64 runner installs the
+      # arm64 musl archive rather than emulating x64. The shared smoke fixture
+      # withholds the raw asset, verifies install.json provenance, and executes
+      # the installed launcher with both public non-interactive commands.
+      - name: Install preserved musl archive in Alpine
         if: matrix.musl_binary != ''
         shell: bash
         env:
           KUNAI_MUSL_BINARY: ${{ matrix.musl_binary }}
+          KUNAI_RELEASE_CANDIDATE_VERSION: ${{ needs.candidate.outputs.version }}
         run: |
           set -euo pipefail
-          chmod +x ".release-download/native/${KUNAI_MUSL_BINARY}"
-          for command in --version --help; do
-            docker run --rm \
-              --volume "$PWD/.release-download/native:/candidate:ro" \
-              --env HOME=/tmp/kunai-home \
-              alpine:3.20 \
-              "/candidate/${KUNAI_MUSL_BINARY}" "${command}" \
-              2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
-          done
+          .github/scripts/smoke-preserved-musl-installer.sh \
+            .release-download/native \
+            "${KUNAI_RELEASE_CANDIDATE_VERSION}" \
+            "${KUNAI_MUSL_BINARY}" \
+            2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
 
       - name: Verify checksums and execute Windows candidate
         if: runner.os == 'Windows'
@@ -571,6 +572,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
@@ -622,6 +625,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -669,6 +674,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
@@ -770,6 +777,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
