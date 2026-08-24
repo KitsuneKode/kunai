@@ -154,7 +154,7 @@ the PowerShell installer suite. `KUNAI_TEST_TIMEOUT_MS` still overrides the
 `run-default-tests.ts` appends its `--timeout=` after the scripted one and Bun
 applies the last flag on the command line. It does not reach
 `test:file`, `apps/docs`, or `packages/storage`, which is why those scripts
-carry their own values.
+and packages carry their own values.
 
 Do not reach for the alternatives — both were tried and rejected:
 `bunfig.toml`'s `[test] timeout` is ignored outright by Bun 1.3.14, and a
