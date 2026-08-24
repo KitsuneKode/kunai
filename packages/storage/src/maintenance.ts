@@ -20,6 +20,7 @@ export interface CacheMaintenancePruneCounts {
   readonly scheduleCache: number;
   readonly youtubeMetadataCache: number;
   readonly catalogCrosswalk: number;
+  readonly providerCache: number;
   readonly resolveTraces: number;
   readonly providerHealth: number;
   readonly titleProviderHealth: number;
@@ -42,6 +43,7 @@ const EMPTY_PRUNE_COUNTS: CacheMaintenancePruneCounts = {
   scheduleCache: 0,
   youtubeMetadataCache: 0,
   catalogCrosswalk: 0,
+  providerCache: 0,
   resolveTraces: 0,
   providerHealth: 0,
   titleProviderHealth: 0,
@@ -143,6 +145,14 @@ function pruneCacheTables(
       `,
       options.maxResolveTraces,
     );
+    // The provider cache treats expired rows as misses on read; without this
+    // sweep a large episode catalog (One Piece is ~9MB) would linger past its
+    // TTL for the life of the cache DB.
+    const providerCache = deleteRows(
+      db,
+      "DELETE FROM provider_cache WHERE expires_at <= ?",
+      nowIso,
+    );
     const providerHealth = deleteRows(
       db,
       "DELETE FROM provider_health WHERE checked_at <= ?",
@@ -192,6 +202,7 @@ function pruneCacheTables(
       scheduleCache,
       youtubeMetadataCache,
       catalogCrosswalk,
+      providerCache,
       resolveTraces,
       providerHealth,
       titleProviderHealth,
