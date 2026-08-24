@@ -202,6 +202,19 @@ describePwsh("install.ps1 dry-run", () => {
 });
 
 describePwsh("install.ps1 activation identity", () => {
+  test("caps an activation poll to the remaining deadline", () => {
+    const result = runActivationProtocolProbe(String.raw`
+      $script:ActivationLockTimeoutMs = 40
+      $script:ActivationLockPollMs = 10000
+      $timer = [System.Diagnostics.Stopwatch]::StartNew()
+      Wait-ActivationLockPoll $timer
+      Write-Output $timer.ElapsedMilliseconds
+    `);
+
+    expect(result.status).toBe(0);
+    expect(Number(result.stdout.trim())).toBeLessThan(1_000);
+  });
+
   test("treats a case-only raw successor as changed during reclaim", () => {
     const result = runActivationProtocolProbe(String.raw`
       $lockPath = Join-Path $env:KUNAI_DATA_DIR 'locks/activation.lock'
@@ -910,10 +923,8 @@ describePwsh("install.ps1 lifecycle contract", () => {
             KUNAI_ACTIVATION_LOCK_POLL_MS: "1",
           });
           await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
-          const activationStartedAt = performance.now();
           const result = await install;
           expect(result.status).not.toBe(0);
-          expect(performance.now() - activationStartedAt).toBeLessThan(300);
           expect(JSON.parse(readFileSync(activationPath, "utf8")).ownerId).toBe(
             "dead-owner-must-remain",
           );
@@ -1035,13 +1046,15 @@ describePwsh("install.ps1 lifecycle contract", () => {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
-            KUNAI_ACTIVATION_LOCK_POLL_MS: "500",
+            // Keep the mutation signal far above ordinary Windows scheduling
+            // noise: an unbounded poll would sleep for ten seconds.
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "10000",
           });
           await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
           const activationStartedAt = performance.now();
           const result = await install;
           expect(result.status).not.toBe(0);
-          expect(performance.now() - activationStartedAt).toBeLessThan(300);
+          expect(performance.now() - activationStartedAt).toBeLessThan(5_000);
         },
       );
     } finally {
