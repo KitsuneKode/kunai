@@ -321,6 +321,13 @@ describe("install.sh release asset failures", () => {
     const archiveDigest = createHash("sha256").update(archive).digest("hex");
     const sandbox = createInstallerSandbox("install-sh-archive-ok");
     try {
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(
+        shimDir,
+        "head",
+        '#!/bin/sh\n[ "${1:-}" != "-c" ] || exit 64\nexec /usr/bin/head "$@"\n',
+      );
       await withReleaseFixture(
         {
           [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
@@ -335,7 +342,7 @@ describe("install.sh release asset failures", () => {
           const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
-            PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+            PATH: `${shimDir}${delimiter}${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
           });
 
           expect(result.status, result.stderr).toBe(0);

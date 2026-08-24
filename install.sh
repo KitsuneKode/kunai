@@ -438,7 +438,7 @@ checksum_for_asset() {
 
 extract_release_tar_gz() {
 	local archive="$1" tar_path="$2" expected="$3" output="$4"
-	local tar_budget gzip_status head_status tar_size name prefix type size_field size
+	local tar_budget read_blocks gzip_status dd_status tar_size name prefix type size_field size
 	local checksum_field stored_checksum header_sum checksum_sum actual_checksum expected_tar_size
 	local -a pipeline_status
 
@@ -447,18 +447,22 @@ extract_release_tar_gz() {
 	require od
 
 	tar_budget=$((512 + ((EXTRACTED_BINARY_MAX_BYTES + 511) / 512) * 512 + 1024))
+	# macOS /usr/bin/head does not provide GNU `head -c`. Read one 512-byte
+	# block beyond the budget with POSIX dd instead; tar streams are themselves
+	# block-aligned, so any oversized container still crosses the exact bound.
+	read_blocks=$(((tar_budget + 512) / 512))
 	set +o pipefail
-	gzip -dc "$archive" 2>/dev/null | head -c "$((tar_budget + 1))" >"$tar_path"
+	gzip -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" 2>/dev/null
 	pipeline_status=("${PIPESTATUS[@]}")
 	gzip_status="${pipeline_status[0]}"
-	head_status="${pipeline_status[1]}"
+	dd_status="${pipeline_status[1]}"
 	set -o pipefail
 	tar_size="$(wc -c <"$tar_path" | tr -d ' ')"
 	if [[ "$tar_size" -gt "$tar_budget" ]]; then
 		err "Archive decompressed size exceeds the $tar_budget byte budget."
 		return 1
 	fi
-	if [[ "$gzip_status" -ne 0 || "$head_status" -ne 0 ]]; then
+	if [[ "$gzip_status" -ne 0 || "$dd_status" -ne 0 ]]; then
 		err "Archive is not a valid gzip stream."
 		return 1
 	fi
