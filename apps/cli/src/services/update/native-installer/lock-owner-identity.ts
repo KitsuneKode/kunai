@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 
-// Windows PowerShell startup can exceed 250 ms on a cold CI runner. Give the
-// first self-identity lookup enough time to succeed so its positive result is
-// cached; callers with a shorter deadline still clamp this bound below.
-const PROCESS_PROBE_TIMEOUT_MS = 1_000;
+// Windows PowerShell startup can exceed one second on a loaded runner. Normal
+// lifecycle operations allow one bounded probe and cache its positive result;
+// short activation deadlines skip optional self-identity enrichment entirely.
+const PROCESS_PROBE_TIMEOUT_MS = 2_000;
+const OWN_PROCESS_PROBE_RETRY_DELAY_MS = 1_000;
 
 export function normalizedHostname(): string {
   return hostname().trim().toLowerCase();
@@ -30,6 +31,7 @@ function boundedSpawn(command: string[], timeoutMs: number) {
 }
 
 let cachedOwnProcessStartId: string | null | undefined;
+let retryOwnProcessStartIdAfter = 0;
 
 export function processStartId(
   pid: number,
@@ -37,6 +39,17 @@ export function processStartId(
 ): string | null {
   if (pid === process.pid && cachedOwnProcessStartId !== undefined) {
     return cachedOwnProcessStartId;
+  }
+  if (process.platform === "win32" && timeoutMs < PROCESS_PROBE_TIMEOUT_MS) {
+    return null;
+  }
+  if (pid === process.pid) {
+    // Nullable processStartId is part of the cross-language lock schema. A
+    // short acquisition must reach its filesystem attempt instead of spending
+    // the entire deadline starting PowerShell solely to enrich its own record.
+    if (Date.now() < retryOwnProcessStartIdAfter) {
+      return null;
+    }
   }
 
   let value: string | null = null;
@@ -84,8 +97,16 @@ export function processStartId(
     }
   }
 
-  // A short caller deadline can make a helper probe time out. Cache only a
-  // positive identity so a later normal-budget acquisition can retry.
-  if (pid === process.pid && value !== null) cachedOwnProcessStartId = value;
+  // Cache a positive identity for the process lifetime. A failed normal-budget
+  // probe gets only a short negative backoff so a later operation can retry.
+  if (pid === process.pid) {
+    if (value !== null) {
+      cachedOwnProcessStartId = value;
+    } else {
+      // Avoid a queued acquisition storm when a loaded Windows runner cannot
+      // start PowerShell within the normal probe budget.
+      retryOwnProcessStartIdAfter = Date.now() + OWN_PROCESS_PROBE_RETRY_DELAY_MS;
+    }
+  }
   return value;
 }

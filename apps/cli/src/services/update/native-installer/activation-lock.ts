@@ -117,14 +117,17 @@ function parseLockContent(raw: string): ActivationLockContent | null {
 
 type OwnerState = "active" | "stale" | "foreign-host";
 
-function ownerState(content: ActivationLockContent): OwnerState {
+function ownerState(
+  content: ActivationLockContent,
+  processProbeBudgetMs: number = Number.POSITIVE_INFINITY,
+): OwnerState {
   if (content.hostname.trim().toLowerCase() !== normalizedHostname()) return "foreign-host";
   if (!isProcessAlive(content.pid)) return "stale";
   const acquiredAtMs = Date.parse(content.acquiredAt);
   const startIdentityDue =
     !Number.isFinite(acquiredAtMs) || Date.now() - acquiredAtMs >= PROCESS_START_ID_GRACE_MS;
   if (content.processStartId && startIdentityDue) {
-    const currentStartId = processStartId(content.pid);
+    const currentStartId = processStartId(content.pid, processProbeBudgetMs);
     if (currentStartId && currentStartId !== content.processStartId) return "stale";
   }
   return "active";
@@ -133,6 +136,7 @@ function ownerState(content: ActivationLockContent): OwnerState {
 async function reclaimClaimOwnerState(
   path: string,
   content: ActivationLockContent,
+  processProbeBudgetMs: number = Number.POSITIVE_INFINITY,
 ): Promise<OwnerState> {
   if (content.hostname.trim().toLowerCase() !== normalizedHostname()) return "foreign-host";
   if (!isProcessAlive(content.pid)) return "stale";
@@ -147,7 +151,7 @@ async function reclaimClaimOwnerState(
     return "active";
   }
   if (content.processStartId) {
-    const currentStartId = processStartId(content.pid);
+    const currentStartId = processStartId(content.pid, processProbeBudgetMs);
     if (currentStartId && currentStartId !== content.processStartId) return "stale";
   }
   return "active";
@@ -188,7 +192,7 @@ async function quarantineForReclaim(
   const quarantined = await readActivationLock(quarantinePath);
   const unchanged = quarantined.raw === observed.raw;
   const stillReclaimable = quarantined.content
-    ? ownerState(quarantined.content) === "stale"
+    ? ownerState(quarantined.content, Math.max(0, deadlineAt - Date.now())) === "stale"
     : quarantined.raw !== null;
   if (!unchanged || !stillReclaimable) {
     await restoreQuarantinedLock(quarantinePath, path);
@@ -238,7 +242,10 @@ function reclaimClaimTempPrefix(path: string): string {
   return `${path}.reclaim-tmp.`;
 }
 
-async function listReclaimClaims(path: string): Promise<string[]> {
+async function listReclaimClaims(
+  path: string,
+  deadlineAt: number = Number.POSITIVE_INFINITY,
+): Promise<string[]> {
   const prefix = reclaimClaimPrefix(path);
   const tempPrefix = reclaimClaimTempPrefix(path);
   const names = await readdir(dirname(path)).catch(() => [] as string[]);
@@ -255,14 +262,25 @@ async function listReclaimClaims(path: string): Promise<string[]> {
       const temp = await readActivationLock(claimPath);
       const tempStat = await stat(claimPath).catch(() => null);
       const reclaimable = temp.content
-        ? (await reclaimClaimOwnerState(claimPath, temp.content)) === "stale"
+        ? (await reclaimClaimOwnerState(
+            claimPath,
+            temp.content,
+            Math.max(0, deadlineAt - Date.now()),
+          )) === "stale"
         : tempStat !== null && Date.now() - tempStat.mtimeMs >= DEFAULT_CORRUPT_GRACE_MS;
       if (reclaimable) await rm(claimPath, { force: true }).catch(() => {});
       continue;
     }
     if (!claimPath.startsWith(prefix)) continue;
     const claim = await readActivationLock(claimPath);
-    if (claim.content && (await reclaimClaimOwnerState(claimPath, claim.content)) === "stale") {
+    if (
+      claim.content &&
+      (await reclaimClaimOwnerState(
+        claimPath,
+        claim.content,
+        Math.max(0, deadlineAt - Date.now()),
+      )) === "stale"
+    ) {
       // Claim paths include a UUID and are never reused, so deleting a dead
       // claimant cannot remove a successor's claim.
       await rm(claimPath, { force: true }).catch(() => {});
@@ -375,12 +393,14 @@ async function tryAcquireActivationLockFromFilesystem(
   const reclaimObserved = async (observed: LockRead, allowCorrupt: boolean): Promise<boolean> => {
     const claimPath = await createReclaimClaim(path, ownerId, contentRaw);
     try {
-      const claims = await listReclaimClaims(path);
+      const claims = await listReclaimClaims(path, deadlineAt);
       if (claims[0] !== claimPath) return false;
       const current = await readActivationLock(path);
       if (current.raw !== observed.raw) return false;
       if (current.content) {
-        if (ownerState(current.content) !== "stale") return false;
+        if (ownerState(current.content, Math.max(0, deadlineAt - Date.now())) !== "stale") {
+          return false;
+        }
       } else if (!allowCorrupt || current.raw === null) {
         return false;
       }
@@ -402,13 +422,13 @@ async function tryAcquireActivationLockFromFilesystem(
       return holderPid === undefined ? { acquired: false } : { acquired: false, holderPid };
     }
     attempted = true;
-    if ((await listReclaimClaims(path)).length > 0) {
+    if ((await listReclaimClaims(path, deadlineAt)).length > 0) {
       if (!(await sleepForRetry())) return { acquired: false, holderPid };
       continue;
     }
     try {
       await writeFile(path, contentRaw, { flag: "wx", mode: 0o600 });
-      if ((await listReclaimClaims(path)).length === 0) return acquiredResult();
+      if ((await listReclaimClaims(path, deadlineAt)).length === 0) return acquiredResult();
       await quarantineForRelease(path, ownerId);
       continue;
     } catch (error) {
@@ -429,7 +449,7 @@ async function tryAcquireActivationLockFromFilesystem(
       corruptRaw = null;
       corruptSince = 0;
       holderPid = observed.content.pid;
-      if (ownerState(observed.content) === "stale") {
+      if (ownerState(observed.content, Math.max(0, deadlineAt - Date.now())) === "stale") {
         if (await reclaimObserved(observed, false)) return acquiredResult();
       }
     } else if (observed.raw !== corruptRaw) {

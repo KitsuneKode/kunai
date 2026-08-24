@@ -14,6 +14,7 @@ import {
 } from "@/services/update/native-installer/install-layout";
 
 const made: string[] = [];
+const WINDOWS_IDENTITY_TIMEOUT_MS = 3_000;
 
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
@@ -207,7 +208,7 @@ describe("activation lock", () => {
     const results = await Promise.all(
       Array.from({ length: 8 }, async (_, index) => {
         const lock = await tryAcquireActivationLock(layout, `2.0.${index}`, {
-          timeoutMs: 2_000,
+          timeoutMs: process.platform === "win32" ? 5_000 : 2_000,
           pollMs: 1,
         });
         if (!lock.acquired) return false;
@@ -318,7 +319,7 @@ describe("activation lock", () => {
     const staleTime = new Date(Date.now() - 5_000);
     await utimes(claimPath, staleTime, staleTime);
     const aged = await tryAcquireActivationLock(layout, "2.0.0", {
-      timeoutMs: 100,
+      timeoutMs: process.platform === "win32" ? WINDOWS_IDENTITY_TIMEOUT_MS : 100,
       pollMs: 5,
     });
     expect(aged.acquired).toBe(true);
@@ -396,6 +397,38 @@ describe("activation lock", () => {
     expect(JSON.parse(await readFile(path, "utf8")).ownerId).toBe("fresh-live-owner");
   });
 
+  test.skipIf(process.platform !== "win32")(
+    "keeps a short deadline while conservatively retaining an aged live Windows owner",
+    async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      await writeFile(
+        path,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          scope: "activation",
+          pid: process.pid,
+          version: "1.0.0",
+          execPath: process.execPath,
+          ownerId: "aged-live-owner",
+          acquiredAt: "2020-01-01T00:00:00.000Z",
+          hostname: hostname().toLowerCase(),
+          processStartId: impossibleProcessStartId(),
+        })}\n`,
+      );
+
+      const startedAt = performance.now();
+      const lock = await tryAcquireActivationLock(layout, "2.0.0", {
+        timeoutMs: 40,
+        pollMs: 5,
+      });
+
+      expect(lock).toEqual({ acquired: false, holderPid: process.pid });
+      expect(performance.now() - startedAt).toBeLessThan(1_000);
+      expect(JSON.parse(await readFile(path, "utf8")).ownerId).toBe("aged-live-owner");
+    },
+  );
+
   test("reclaims a reused local pid when the process-start identity differs", async () => {
     const layout = await makeLayout();
     const path = activationLockPath(layout);
@@ -415,7 +448,7 @@ describe("activation lock", () => {
     );
 
     const lock = await tryAcquireActivationLock(layout, "2.0.0", {
-      timeoutMs: 100,
+      timeoutMs: process.platform === "win32" ? WINDOWS_IDENTITY_TIMEOUT_MS : 100,
       pollMs: 5,
     });
     expect(lock.acquired).toBe(true);

@@ -168,11 +168,13 @@ describePwsh("install.ps1 dry-run", () => {
     }
   });
 
-  test("rejects lifecycle switches — use kunai upgrade / kunai uninstall instead", () => {
+  test("rejects -Uninstall — use kunai uninstall instead", () => {
     const uninstall = runInstallPs1(["-Uninstall"]);
     expect(uninstall.status).not.toBe(0);
     expect(`${uninstall.stderr}${uninstall.stdout}`).toMatch(/Uninstall|parameter/i);
+  });
 
+  test("rejects -Upgrade — use kunai upgrade instead", () => {
     const upgrade = runInstallPs1(["-Upgrade"]);
     expect(upgrade.status).not.toBe(0);
     expect(`${upgrade.stderr}${upgrade.stdout}`).toMatch(/Upgrade|parameter/i);
