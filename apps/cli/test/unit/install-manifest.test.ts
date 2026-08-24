@@ -7,6 +7,7 @@ import {
   INSTALL_MANIFEST_SCHEMA_VERSION,
   inspectInstallManifest,
   migrateInstallManifest,
+  migrateInstallManifestAtStartup,
   readInstallManifest,
   writeInstallManifest,
 } from "@/services/update/install-manifest";
@@ -65,6 +66,31 @@ const LEGACY_FLAT = {
   layout: "flat",
 } as const;
 
+// Exact archive-bearing schema-2 shape emitted by 69b81763. That release did
+// not yet persist artifactSourceUrl, so this fixture is a compatibility
+// boundary rather than a hand-written approximation of the current schema.
+const PREDECESSOR_SCHEMA_2_ARCHIVE = {
+  schemaVersion: 2,
+  method: "binary",
+  activeVersion: "1.2.3",
+  preferredChannel: "stable",
+  launcherPath: "/x/kunai",
+  versionedPath: "/data/versions/1.2.3/kunai",
+  managedPaths: [],
+  target: "linux-x64",
+  artifactName: "kunai-linux-x64",
+  artifactSha256: "a".repeat(64),
+  artifactSizeBytes: 42,
+  archiveName: "kunai-linux-x64.tar.gz",
+  archiveSha256: "b".repeat(64),
+  archiveSizeBytes: 21,
+  archiveSourceUrl:
+    "https://github.com/KitsuneKode/kunai/releases/download/v1.2.3/kunai-linux-x64.tar.gz",
+  downloadBaseUrl: "https://github.com/KitsuneKode/kunai/releases",
+  installedAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-02T00:00:00.000Z",
+} as const;
+
 test("write then read round-trips the versioned manifest", async () => {
   const dir = tempDir();
   await writeInstallManifest(
@@ -83,7 +109,7 @@ test("write then read round-trips the versioned manifest", async () => {
       archiveSizeBytes: 21,
       archiveSourceUrl: "https://dl/download/v1.2.3/kunai-linux-x64.tar.gz",
     },
-    dir,
+    migrationLayout(dir),
   );
   const m = await readInstallManifest(dir);
   expect(m?.schemaVersion).toBe(INSTALL_MANIFEST_SCHEMA_VERSION);
@@ -104,6 +130,36 @@ test("write then read round-trips the versioned manifest", async () => {
   expect(m?.managedPaths.length).toBeGreaterThan(0);
   expect(typeof m?.installedAt).toBe("string");
   expect(typeof m?.updatedAt).toBe("string");
+});
+
+test("reads and safely backfills the exact predecessor schema-2 archive shape", async () => {
+  const dir = tempDir();
+  const path = join(dir, "install.json");
+  await Bun.write(path, `${JSON.stringify(PREDECESSOR_SCHEMA_2_ARCHIVE, null, 2)}\n`);
+
+  expect(await inspectInstallManifest(dir)).toMatchObject({
+    status: "loaded",
+    needsMigration: true,
+    manifest: {
+      schemaVersion: 2,
+      artifactSourceUrl:
+        "https://github.com/KitsuneKode/kunai/releases/download/v1.2.3/kunai-linux-x64",
+    },
+  });
+  expect(JSON.parse(await Bun.file(path).text())).toEqual(PREDECESSOR_SCHEMA_2_ARCHIVE);
+
+  expect(await migrateInstallManifest(migrationLayout(dir))).toMatchObject({
+    status: "migrated",
+    manifest: {
+      artifactSourceUrl:
+        "https://github.com/KitsuneKode/kunai/releases/download/v1.2.3/kunai-linux-x64",
+    },
+  });
+  expect(JSON.parse(await Bun.file(path).text())).toMatchObject({
+    schemaVersion: 2,
+    artifactSourceUrl:
+      "https://github.com/KitsuneKode/kunai/releases/download/v1.2.3/kunai-linux-x64",
+  });
 });
 
 test("explicit migration upgrades schema v1 without losing rollback fields", async () => {
@@ -191,7 +247,7 @@ test("write rejects partial archive provenance", async () => {
         downloadBaseUrl: "https://dl",
         archiveName: "kunai-linux-x64.tar.gz",
       },
-      dir,
+      migrationLayout(dir),
     ),
   ).rejects.toThrow(/archive provenance/i);
 });
@@ -210,7 +266,7 @@ test("write rejects empty archive provenance strings", async () => {
         archiveSizeBytes: 10,
         archiveSourceUrl: "https://dl/archive",
       },
-      dir,
+      migrationLayout(dir),
     ),
   ).rejects.toThrow(/provenance/i);
 });
@@ -229,7 +285,7 @@ test("write requires extracted-binary provenance when archive provenance is pres
         archiveSizeBytes: 10,
         archiveSourceUrl: "https://dl/archive",
       },
-      dir,
+      migrationLayout(dir),
     ),
   ).rejects.toThrow(/extracted binary provenance/i);
 });
@@ -381,6 +437,69 @@ test("migration does not recreate a manifest removed while it waits", async () =
   expect(existsSync(path)).toBe(false);
 });
 
+test("package publication serializes with migration and wins without stale overwrite", async () => {
+  const dir = tempDir();
+  const layout = migrationLayout(dir);
+  const path = join(dir, "install.json");
+  await Bun.write(path, JSON.stringify(LEGACY_VERSIONED));
+
+  const activation = await tryAcquireActivationLock(layout, "9.9.9");
+  expect(activation.acquired).toBe(true);
+
+  let packagePublished = false;
+  const migration = migrateInstallManifest(layout);
+  const packageWrite = writeInstallManifest(
+    {
+      method: "npm-global",
+      activeVersion: "9.9.9",
+      launcherPath: "/npm/bin/kunai",
+      downloadBaseUrl: "https://new.example.test/releases",
+    },
+    layout,
+  ).then(() => {
+    packagePublished = true;
+    return true;
+  });
+  await waitForPath(lockFilePath(layout, "1.2.3"));
+  await Bun.sleep(25);
+  expect(packagePublished).toBe(false);
+
+  if (activation.acquired) await activation.release();
+  await Promise.all([migration, packageWrite]);
+
+  expect(await readInstallManifest(dir)).toMatchObject({
+    schemaVersion: 2,
+    method: "npm-global",
+    activeVersion: "9.9.9",
+    launcherPath: "/npm/bin/kunai",
+  });
+});
+
+test("startup migration diagnoses invalid state and errors but keeps contention quiet", async () => {
+  const warnings: string[] = [];
+  const warn = (message: string) => warnings.push(message);
+
+  await migrateInstallManifestAtStartup({
+    migrate: async () => ({ status: "invalid", reason: "invalid-shape" }),
+    warn,
+  });
+  await migrateInstallManifestAtStartup({
+    migrate: async () => ({ status: "lock-contention" }),
+    warn,
+  });
+  await migrateInstallManifestAtStartup({
+    migrate: async () => {
+      throw new Error("disk unavailable");
+    },
+    warn,
+  });
+
+  expect(warnings).toEqual([
+    "Kunai install manifest migration skipped invalid install.json (invalid-shape).",
+    "Kunai install manifest migration failed: disk unavailable",
+  ]);
+});
+
 test("inspect reports invalid JSON without writing", async () => {
   const dir = tempDir();
   const path = join(dir, "install.json");
@@ -516,7 +635,7 @@ test("write rejects non-canonical previousVersion", async () => {
         launcherPath: "/x/kunai",
         downloadBaseUrl: "https://dl",
       },
-      dir,
+      migrationLayout(dir),
     ),
   ).rejects.toThrow(/previousVersion/);
 });
@@ -532,7 +651,7 @@ test("write accepts canonical previousVersion", async () => {
       versionedPath: "/data/versions/1.0.1/kunai",
       downloadBaseUrl: "https://dl",
     },
-    dir,
+    migrationLayout(dir),
   );
   const m = await readInstallManifest(dir);
   expect(m?.previousVersion).toBe("1.0.0");
@@ -547,7 +666,7 @@ test("write preserves installedAt and refreshes updatedAt", async () => {
       launcherPath: "/usr/bin/kunai",
       downloadBaseUrl: "https://dl",
     },
-    dir,
+    migrationLayout(dir),
   );
   const first = await readInstallManifest(dir);
   expect(first?.managedPaths).toEqual([]);
@@ -559,7 +678,7 @@ test("write preserves installedAt and refreshes updatedAt", async () => {
       launcherPath: "/usr/bin/kunai",
       downloadBaseUrl: "https://dl",
     },
-    dir,
+    migrationLayout(dir),
   );
   const second = await readInstallManifest(dir);
   expect(second?.installedAt).toBe(first?.installedAt);

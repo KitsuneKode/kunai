@@ -1479,7 +1479,7 @@ ensure_bun() {
 }
 
 install_npm() {
-	local resolved launcher
+	local resolved launcher publication_lock="$DATA_DIR/locks/activation.lock" publication_owner publication_version
 	require node
 	require npm
 	if [[ "$VERSION" != latest ]]; then
@@ -1490,6 +1490,14 @@ install_npm() {
 	else
 		resolved="latest"
 	fi
+	if [[ "$DRY" == 0 ]]; then
+		publication_version="$resolved"
+		[[ "$publication_version" == latest ]] && publication_version="0.0.0"
+		mkdir -p "$DATA_DIR/locks" || exit 1
+		acquire_activation_lock "$publication_version" "$publication_lock" || exit 1
+		publication_owner="$ACTIVATION_LOCK_OWNER_ID"
+		trap 'release_activation_lock "$publication_lock" "$publication_owner" 2>/dev/null || true' EXIT
+	fi
 	info "Installing $KUNAI_PACKAGE with npm..."
 	if [[ "$resolved" == latest ]]; then
 		run npm install -g "$KUNAI_PACKAGE"
@@ -1499,11 +1507,13 @@ install_npm() {
 	resolved="$(finalize_package_active_version npm "$resolved")" || exit 1
 	if [[ "$DRY" == 1 ]]; then launcher="kunai"; else launcher="$(resolve_owned_package_launcher npm)" || exit 1; fi
 	write_manifest npm-global "${resolved}" "$launcher"
+	[[ "$DRY" == 1 ]] || release_activation_lock "$publication_lock" "$publication_owner"
+	[[ "$DRY" == 1 ]] || trap - EXIT
 	[[ "$DRY" == 1 ]] || path_hint "$(dirname "$launcher")"
 }
 
 install_bun() {
-	local resolved launcher
+	local resolved launcher publication_lock="$DATA_DIR/locks/activation.lock" publication_owner publication_version
 	ensure_bun
 	if [[ "$VERSION" != latest ]]; then
 		resolved="$(normalize_requested_version "$VERSION")" || {
@@ -1512,6 +1522,14 @@ install_bun() {
 		}
 	else
 		resolved="latest"
+	fi
+	if [[ "$DRY" == 0 ]]; then
+		publication_version="$resolved"
+		[[ "$publication_version" == latest ]] && publication_version="0.0.0"
+		mkdir -p "$DATA_DIR/locks" || exit 1
+		acquire_activation_lock "$publication_version" "$publication_lock" || exit 1
+		publication_owner="$ACTIVATION_LOCK_OWNER_ID"
+		trap 'release_activation_lock "$publication_lock" "$publication_owner" 2>/dev/null || true' EXIT
 	fi
 	info "Installing $KUNAI_PACKAGE with bun..."
 	if [[ "$resolved" == latest ]]; then
@@ -1522,11 +1540,13 @@ install_bun() {
 	resolved="$(finalize_package_active_version bun "$resolved")" || exit 1
 	if [[ "$DRY" == 1 ]]; then launcher="kunai"; else launcher="$(resolve_owned_package_launcher bun)" || exit 1; fi
 	write_manifest bun-global "${resolved}" "$launcher"
+	[[ "$DRY" == 1 ]] || release_activation_lock "$publication_lock" "$publication_owner"
+	[[ "$DRY" == 1 ]] || trap - EXIT
 	[[ "$DRY" == 1 ]] || path_hint "$(dirname "$launcher")"
 }
 
 install_source() {
-	local source_path data_path config_path cache_path resolved
+	local source_path data_path config_path cache_path resolved publication_lock="$DATA_DIR/locks/activation.lock" publication_owner publication_version
 	if [[ "$VERSION" != latest ]]; then
 		resolved="$(normalize_requested_version "$VERSION")" || {
 			err "Invalid version: $VERSION (expected exact major.minor.patch)."
@@ -1545,6 +1565,14 @@ install_source() {
 	if [[ "$source_path" == "$data_path" || "$source_path" == "$config_path" || "$source_path" == "$cache_path" ]]; then
 		err "Source checkout path must not equal Kunai data, config, or cache paths."
 		exit 1
+	fi
+	if [[ "$DRY" == 0 ]]; then
+		publication_version="$resolved"
+		[[ "$publication_version" == latest ]] && publication_version="0.0.0"
+		mkdir -p "$DATA_DIR/locks" || exit 1
+		acquire_activation_lock "$publication_version" "$publication_lock" || exit 1
+		publication_owner="$ACTIVATION_LOCK_OWNER_ID"
+		trap 'release_activation_lock "$publication_lock" "$publication_owner" 2>/dev/null || true' EXIT
 	fi
 
 	require git
@@ -1567,6 +1595,8 @@ install_source() {
 	fi
 	resolved="$(finalize_package_active_version source "$resolved")" || exit 1
 	write_manifest source "$resolved" "$(command -v kunai || echo kunai)"
+	[[ "$DRY" == 1 ]] || release_activation_lock "$publication_lock" "$publication_owner"
+	[[ "$DRY" == 1 ]] || trap - EXIT
 }
 
 install_optional_deps() {

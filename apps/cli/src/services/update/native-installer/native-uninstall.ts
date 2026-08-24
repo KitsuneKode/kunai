@@ -3,8 +3,10 @@ import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  inspectInstallManifest,
   isVersionedBinaryManifest,
   readInstallManifest,
+  sameInstallManifestPublication,
   type InstallManifest,
 } from "../install-manifest";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./install-layout";
@@ -161,6 +163,20 @@ export async function nativeUninstall(
     ]);
   }
 
+  const currentManifest = await inspectInstallManifest(layout.configDir);
+  if (
+    currentManifest.status !== "loaded" ||
+    !sameInstallManifestPublication(currentManifest.manifest, manifest)
+  ) {
+    await lifecycle.release();
+    return blocked([
+      layout.launcherPath,
+      layout.versionsDir,
+      layout.configDir,
+      layout.dataDir,
+      layout.cacheDir,
+    ]);
+  }
   const transaction = await beginInstallTransaction(layout, {
     kind: "uninstall",
     version: manifest.activeVersion,

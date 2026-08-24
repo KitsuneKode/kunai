@@ -277,7 +277,7 @@ describe("installLatest", () => {
         downloadBaseUrl: "https://example.test/releases",
         artifactSha256: sha256Hex("OLD-BINARY"),
       },
-      layout.configDir,
+      layout,
     );
     const releaseTarget = hostTarget();
     const bytes = new TextEncoder().encode("NEW-BINARY");
@@ -324,7 +324,7 @@ describe("installLatest", () => {
         downloadBaseUrl: "https://example.test/releases",
         artifactSha256: sha256Hex("OLD-BINARY"),
       },
-      layout.configDir,
+      layout,
     );
 
     const assetName = hostAssetName();
@@ -489,7 +489,7 @@ describe("installLatest", () => {
           downloadBaseUrl: "https://example.test/releases",
           artifactSha256: sha256Hex("OLD-BINARY"),
         },
-        layout.configDir,
+        layout,
       );
       const beforeManifest = await readFile(join(layout.configDir, "install.json"), "utf8");
       await chmod(layout.configDir, 0o555);
@@ -539,7 +539,7 @@ describe("installLatest", () => {
           launcherPath: layout.launcherPath,
           downloadBaseUrl: "https://example.test/releases",
         },
-        layout.configDir,
+        layout,
       );
       const beforeManifest = await readFile(join(layout.configDir, "install.json"), "utf8");
       await chmod(layout.configDir, 0o555);

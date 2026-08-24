@@ -2,12 +2,17 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { readInstallManifest } from "./install-manifest";
+import {
+  inspectInstallManifest,
+  readInstallManifest,
+  sameInstallManifestPublication,
+} from "./install-manifest";
 import {
   detectInstallMethod,
   type DetectInstallMethodInput,
   type InstallMethodKind,
 } from "./install-method";
+import { withActivationLock } from "./native-installer/activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";
 import { nativeUninstall } from "./native-installer/native-uninstall";
 
@@ -91,12 +96,32 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       opts.execImpl ??
       ((command: readonly string[]) =>
         Bun.spawn([...command], { stdout: "inherit", stderr: "inherit" }).exited);
-    const code = await execImpl(plan.command);
-    if (code !== 0) {
-      console.error(`Package manager uninstall exited with code ${code}.`);
-      return code;
+    const removed = await withActivationLock(
+      layout,
+      manifest?.activeVersion ?? "0.0.0",
+      async () => {
+        const current = await inspectInstallManifest(layout.configDir);
+        if (
+          current.status === "invalid" ||
+          (current.status === "loaded" &&
+            (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
+        ) {
+          return { status: "changed" as const };
+        }
+        const code = await execImpl(plan.command);
+        if (code !== 0) return { status: "failed" as const, code };
+        await rm(join(layout.configDir, "install.json"), { force: true });
+        return { status: "removed" as const };
+      },
+    );
+    if (removed === null || removed.status === "changed") {
+      console.error("Uninstall blocked: install manifest changed or publication lock is active.");
+      return 1;
     }
-    await rm(join(layout.configDir, "install.json"), { force: true });
+    if (removed.status === "failed") {
+      console.error(`Package manager uninstall exited with code ${removed.code}.`);
+      return removed.code;
+    }
     if (opts.purge) {
       await purgeUserRoots(layout, opts.preservePaths);
     } else {
@@ -140,9 +165,28 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
     }
     return 0;
   } else {
-    await rm(plan.path, { force: true });
-    console.log(`Removed ${plan.path}`);
-    await rm(join(layout.configDir, "install.json"), { force: true }).catch(() => {});
+    const removed = await withActivationLock(
+      layout,
+      manifest?.activeVersion ?? "0.0.0",
+      async () => {
+        const current = await inspectInstallManifest(layout.configDir);
+        if (
+          current.status === "invalid" ||
+          (current.status === "loaded" &&
+            (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
+        ) {
+          return false;
+        }
+        await rm(plan.path, { force: true });
+        console.log(`Removed ${plan.path}`);
+        await rm(join(layout.configDir, "install.json"), { force: true }).catch(() => {});
+        return true;
+      },
+    );
+    if (!removed) {
+      console.error("Uninstall blocked: install manifest changed or publication lock is active.");
+      return 1;
+    }
   }
 
   if (opts.purge) {

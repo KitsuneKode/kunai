@@ -3,7 +3,11 @@ import { join } from "node:path";
 
 import { joinerForNodePlatform } from "@kunai/storage";
 
-import { writeInstallManifest, type WriteInstallManifestInput } from "./install-manifest";
+import {
+  withInstallManifestPublication,
+  writeInstallManifestUnderActivation,
+  type WriteInstallManifestInput,
+} from "./install-manifest";
 import { checkInstall, getInstallDiagnostics, installLatest } from "./native-installer";
 import { DEFAULT_DL_BASE } from "./native-installer/install-layout";
 import { normalizeRequestedVersion, type CanonicalVersion } from "./version";
@@ -21,6 +25,7 @@ export interface RunInstallPorts {
     method: PackageInstallMethod,
   ) => Promise<PackageInstallEvidence | null>;
   readonly writeInstallManifest: (manifest: WriteInstallManifestInput) => Promise<void>;
+  readonly withManifestPublication: <T>(version: string, fn: () => Promise<T>) => Promise<T | null>;
 }
 
 export interface PackageInstallEvidence {
@@ -47,7 +52,8 @@ const defaultPorts: RunInstallPorts = {
     return proc.exited;
   },
   inspectPackageInstall,
-  writeInstallManifest,
+  writeInstallManifest: (manifest) => writeInstallManifestUnderActivation(manifest),
+  withManifestPublication: (version, fn) => withInstallManifestPublication(version, fn),
 };
 
 function parsePackageInstallVersion(value: string | undefined): PackageInstallVersion | null {
@@ -145,7 +151,8 @@ function isRunInstallPorts(value: unknown): value is RunInstallPorts {
   return (
     typeof candidate.runCommand === "function" &&
     typeof candidate.inspectPackageInstall === "function" &&
-    typeof candidate.writeInstallManifest === "function"
+    typeof candidate.writeInstallManifest === "function" &&
+    typeof candidate.withManifestPublication === "function"
   );
 }
 
@@ -214,30 +221,42 @@ export async function runInstall(
       return 1;
     }
 
-    const command = buildPackageInstallCommand(method, requestedVersion);
-    const code = await ports.runCommand(command);
-    if (code !== 0) return code;
+    const result = await ports.withManifestPublication(
+      requestedVersion === "latest" ? "0.0.0" : requestedVersion,
+      async () => {
+        const command = buildPackageInstallCommand(method, requestedVersion);
+        const code = await ports.runCommand(command);
+        if (code !== 0) return code;
 
-    const evidence = await ports.inspectPackageInstall(method);
-    const normalizedObserved = evidence ? normalizeRequestedVersion(evidence.version) : null;
-    if (!evidence || !normalizedObserved) {
-      console.error("Could not verify the installed Kunai version; install manifest not written.");
+        const evidence = await ports.inspectPackageInstall(method);
+        const normalizedObserved = evidence ? normalizeRequestedVersion(evidence.version) : null;
+        if (!evidence || !normalizedObserved) {
+          console.error(
+            "Could not verify the installed Kunai version; install manifest not written.",
+          );
+          return 1;
+        }
+        if (requestedVersion !== "latest" && normalizedObserved !== requestedVersion) {
+          console.error(
+            `Installed Kunai version ${normalizedObserved} does not match requested ${requestedVersion}; install manifest not written.`,
+          );
+          return 1;
+        }
+
+        await ports.writeInstallManifest({
+          method: method === "npm" ? "npm-global" : "bun-global",
+          activeVersion: normalizedObserved,
+          launcherPath: evidence.launcherPath,
+          downloadBaseUrl: DEFAULT_DL_BASE,
+        });
+        return 0;
+      },
+    );
+    if (result === null) {
+      console.error("Package install blocked: another launcher/manifest publication is active.");
       return 1;
     }
-    if (requestedVersion !== "latest" && normalizedObserved !== requestedVersion) {
-      console.error(
-        `Installed Kunai version ${normalizedObserved} does not match requested ${requestedVersion}; install manifest not written.`,
-      );
-      return 1;
-    }
-
-    await ports.writeInstallManifest({
-      method: method === "npm" ? "npm-global" : "bun-global",
-      activeVersion: normalizedObserved,
-      launcherPath: evidence.launcherPath,
-      downloadBaseUrl: DEFAULT_DL_BASE,
-    });
-    return 0;
+    return result;
   }
 
   if (method === "source") {

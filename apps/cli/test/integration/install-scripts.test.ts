@@ -1427,6 +1427,7 @@ describe("install.sh package activeVersion", () => {
 
       expect(result.status).not.toBe(0);
       expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+      expect(existsSync(join(sandbox.dataDir, "locks", "activation.lock"))).toBe(false);
     } finally {
       sandbox.cleanup();
     }

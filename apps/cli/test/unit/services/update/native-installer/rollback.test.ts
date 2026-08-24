@@ -133,7 +133,7 @@ async function seedBinaryManifest(
       target: "linux-x64-gnu",
       ...(previousVersion ? { previousVersion } : {}),
     },
-    layout.configDir,
+    layout,
   );
 }
 
@@ -317,7 +317,7 @@ describePosixOnly("executeRollback activation and refusal", () => {
         archiveSizeBytes: 456,
         archiveSourceUrl: archiveBUrl,
       },
-      layout.configDir,
+      layout,
     );
 
     expect(await executeRollback(layout)).toMatchObject({
@@ -402,7 +402,7 @@ describePosixOnly("executeRollback activation and refusal", () => {
         launcherPath: layout.launcherPath,
         downloadBaseUrl: "https://example.test/releases",
       },
-      layout.configDir,
+      layout,
     );
     before = await snapshotTree(root);
     expect(await executeRollback(layout)).toMatchObject({ status: "refused", code: "non-native" });

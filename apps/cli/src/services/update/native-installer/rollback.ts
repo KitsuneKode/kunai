@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import {
   readInstallManifest,
-  writeInstallManifest,
+  writeInstallManifestUnderActivation,
   type InstallManifest,
 } from "../install-manifest";
 import { parseCanonicalVersion } from "../version";
@@ -352,7 +352,7 @@ export async function executeRollback(
               });
 
               try {
-                await writeInstallManifest(
+                await writeInstallManifestUnderActivation(
                   {
                     method: "binary",
                     activeVersion: candidate.version,
@@ -378,7 +378,7 @@ export async function executeRollback(
                       ? { observedProvenance: manifest.observedProvenance }
                       : {}),
                   },
-                  layout.configDir,
+                  layout,
                 );
               } catch (manifestError) {
                 await restoreLauncher(

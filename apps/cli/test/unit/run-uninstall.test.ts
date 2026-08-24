@@ -83,7 +83,7 @@ test("runUninstall removes the manifest after package-manager uninstall succeeds
       launcherPath: layout.launcherPath,
       downloadBaseUrl: "https://registry.npmjs.org",
     },
-    layout.configDir,
+    layout,
   );
   const configJson = join(layout.configDir, "config.json");
   await writeFile(configJson, "{}\n");
@@ -121,7 +121,7 @@ test("runUninstall retains the manifest when package-manager uninstall fails", a
       launcherPath: layout.launcherPath,
       downloadBaseUrl: "https://registry.npmjs.org",
     },
-    layout.configDir,
+    layout,
   );
 
   const code = await runUninstall({
@@ -211,7 +211,7 @@ test("runUninstall native path preserves config/history/cache/downloads by defau
       downloadBaseUrl: "https://example.test/releases",
       artifactSha256: sha,
     },
-    layout.configDir,
+    layout,
   );
 
   const configJson = join(layout.configDir, "config.json");

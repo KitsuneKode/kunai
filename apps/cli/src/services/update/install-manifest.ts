@@ -106,6 +106,14 @@ export function isVersionedBinaryManifest(manifest: InstallManifest): boolean {
   return manifest.method === "binary" && Boolean(manifest.versionedPath);
 }
 
+/** Identity used by removers to avoid deleting a replacement publication. */
+export function sameInstallManifestPublication(
+  left: InstallManifest,
+  right: InstallManifest,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 /** Derive ownership roots Kunai may manage for a native binary install. */
 export function deriveManagedPaths(
   method: InstallManifestMethod,
@@ -193,37 +201,60 @@ export async function migrateInstallManifest(
 
 export async function writeInstallManifest(
   partial: WriteInstallManifestInput,
-  configDir = getKunaiPaths().configDir,
+  layout: InstallLayoutPaths = getInstallLayoutPaths({ launcherPath: partial.launcherPath }),
 ): Promise<void> {
-  if (!archiveProvenanceComplete(partial)) {
-    throw new Error("Archive provenance must include name, checksum, size, and source URL");
+  validateWriteProvenance(partial);
+  const activeVersion = parseCanonicalVersion(partial.activeVersion);
+  if (!activeVersion) {
+    throw new Error(`Invalid install manifest version: ${partial.activeVersion}`);
   }
-  if (!archiveHasArtifactProvenance(partial)) {
-    throw new Error("Archive installs must include extracted binary provenance");
+  if (partial.previousVersion !== undefined && !parseCanonicalVersion(partial.previousVersion)) {
+    throw new Error(`Invalid install manifest previousVersion: ${partial.previousVersion}`);
   }
-  if (
-    !optionalString(partial.artifactName) ||
-    !optionalSha256(partial.artifactSha256) ||
-    !optionalSize(partial.artifactSizeBytes) ||
-    !optionalString(partial.artifactSourceUrl) ||
-    !optionalString(partial.archiveName) ||
-    !optionalSha256(partial.archiveSha256) ||
-    !optionalSize(partial.archiveSizeBytes) ||
-    !optionalString(partial.archiveSourceUrl)
-  ) {
-    throw new Error("Invalid install manifest artifact provenance");
+  const published = await withActivationLock(layout, activeVersion, () =>
+    writeInstallManifestUnderActivation(partial, layout),
+  );
+  if (published === null) {
+    throw new Error(`Install manifest publication lock held while publishing ${activeVersion}`);
   }
+}
+
+/** Hold the shared launcher/manifest publication boundary across a compound operation. */
+export async function withInstallManifestPublication<T>(
+  version: string,
+  fn: () => Promise<T>,
+  layout: InstallLayoutPaths = getInstallLayoutPaths(),
+): Promise<T | null> {
+  return withActivationLock(layout, version, fn);
+}
+
+/**
+ * Publish while the caller already owns the activation lock.
+ *
+ * Native lifecycle paths use this primitive after acquiring locks in the only
+ * supported order: lifecycle/version -> activation -> manifest I/O. Package
+ * publishers use `writeInstallManifest`, which acquires activation directly.
+ */
+export async function writeInstallManifestUnderActivation(
+  partial: WriteInstallManifestInput,
+  layout: InstallLayoutPaths = getInstallLayoutPaths({ launcherPath: partial.launcherPath }),
+): Promise<void> {
+  validateWriteProvenance(partial);
   const activeVersion = parseCanonicalVersion(partial.activeVersion);
   if (!activeVersion) {
     throw new Error(`Invalid install manifest version: ${partial.activeVersion}`);
   }
 
-  const layout = getInstallLayoutPaths({
-    configDir,
+  // Ownership validation remains based on the persisted config/launcher pair;
+  // the supplied full layout selects the publication lock root. In production
+  // those roots agree, while isolated tests can use a writable lock root
+  // without teaching a config-only reader an unverifiable dataDir override.
+  const ownershipLayout = getInstallLayoutPaths({
+    configDir: layout.configDir,
     launcherPath: partial.launcherPath,
   });
-  const managedPaths = partial.managedPaths ?? deriveManagedPaths(partial.method, layout);
-  if (!managedPathsAreSafe(managedPaths, layout, partial.method)) {
+  const managedPaths = partial.managedPaths ?? deriveManagedPaths(partial.method, ownershipLayout);
+  if (!managedPathsAreSafe(managedPaths, ownershipLayout, partial.method)) {
     throw new Error("Refusing to write install manifest with unsafe managedPaths");
   }
 
@@ -235,7 +266,7 @@ export async function writeInstallManifest(
     }
   }
 
-  const existing = await inspectInstallManifest(configDir);
+  const existing = await inspectInstallManifest(layout.configDir);
   const now = new Date().toISOString();
   const installedAt = existing.status === "loaded" ? existing.manifest.installedAt : now;
 
@@ -267,7 +298,49 @@ export async function writeInstallManifest(
     ...(partial.archiveSourceUrl ? { archiveSourceUrl: partial.archiveSourceUrl } : {}),
   };
 
-  await persistManifest(full, configDir);
+  await persistManifest(full, layout.configDir);
+}
+
+function validateWriteProvenance(partial: WriteInstallManifestInput): void {
+  if (!archiveProvenanceComplete(partial)) {
+    throw new Error("Archive provenance must include name, checksum, size, and source URL");
+  }
+  if (!archiveHasArtifactProvenance(partial)) {
+    throw new Error("Archive installs must include extracted binary provenance");
+  }
+  if (
+    !optionalString(partial.artifactName) ||
+    !optionalSha256(partial.artifactSha256) ||
+    !optionalSize(partial.artifactSizeBytes) ||
+    !optionalString(partial.artifactSourceUrl) ||
+    !optionalString(partial.archiveName) ||
+    !optionalSha256(partial.archiveSha256) ||
+    !optionalSize(partial.archiveSizeBytes) ||
+    !optionalString(partial.archiveSourceUrl)
+  ) {
+    throw new Error("Invalid install manifest artifact provenance");
+  }
+}
+
+/** Startup-only wrapper: expected contention is quiet; corrupt state and I/O fail nonfatally. */
+export async function migrateInstallManifestAtStartup(
+  options: {
+    readonly migrate?: () => Promise<InstallManifestMigrationResult>;
+    readonly warn?: (message: string) => void;
+  } = {},
+): Promise<void> {
+  const migrate = options.migrate ?? (() => migrateInstallManifest());
+  const warn = options.warn ?? ((message: string) => console.warn(message));
+  try {
+    const result = await migrate();
+    if (result.status === "invalid") {
+      warn(`Kunai install manifest migration skipped invalid install.json (${result.reason}).`);
+    }
+  } catch (error) {
+    warn(
+      `Kunai install manifest migration failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function joinManifestPath(configDir: string): string {
@@ -339,7 +412,14 @@ function inspectCurrentSchema(
   if (!archiveProvenanceComplete(record)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
-  if (!archiveHasArtifactProvenance(record)) {
+  const predecessorArtifactSourceUrl =
+    schemaVersion === INSTALL_MANIFEST_SCHEMA_VERSION &&
+    record.archiveName !== undefined &&
+    record.artifactSourceUrl === undefined &&
+    typeof record.artifactName === "string"
+      ? `${record.downloadBaseUrl.replace(/\/+$/, "")}/download/v${record.activeVersion}/${record.artifactName}`
+      : undefined;
+  if (!archiveHasArtifactProvenance(record, predecessorArtifactSourceUrl !== undefined)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
   if (!optionalString(record.artifactName) || !optionalSha256(record.artifactSha256)) {
@@ -393,7 +473,9 @@ function inspectCurrentSchema(
       : {}),
     ...(typeof record.artifactSourceUrl === "string"
       ? { artifactSourceUrl: record.artifactSourceUrl }
-      : {}),
+      : predecessorArtifactSourceUrl
+        ? { artifactSourceUrl: predecessorArtifactSourceUrl }
+        : {}),
     ...(typeof record.archiveName === "string" ? { archiveName: record.archiveName } : {}),
     ...(typeof record.archiveSha256 === "string" ? { archiveSha256: record.archiveSha256 } : {}),
     ...(typeof record.archiveSizeBytes === "number"
@@ -404,7 +486,11 @@ function inspectCurrentSchema(
       : {}),
   };
 
-  return { status: "loaded", needsMigration: schemaVersion === 1, manifest };
+  return {
+    status: "loaded",
+    needsMigration: schemaVersion === 1 || predecessorArtifactSourceUrl !== undefined,
+    manifest,
+  };
 }
 
 function inspectLegacySchema(
@@ -506,13 +592,16 @@ function archiveProvenanceComplete(value: {
   return present === 0 || present === fields.length;
 }
 
-function archiveHasArtifactProvenance(value: {
-  readonly archiveName?: unknown;
-  readonly artifactName?: unknown;
-  readonly artifactSha256?: unknown;
-  readonly artifactSizeBytes?: unknown;
-  readonly artifactSourceUrl?: unknown;
-}): boolean {
+function archiveHasArtifactProvenance(
+  value: {
+    readonly archiveName?: unknown;
+    readonly artifactName?: unknown;
+    readonly artifactSha256?: unknown;
+    readonly artifactSizeBytes?: unknown;
+    readonly artifactSourceUrl?: unknown;
+  },
+  allowMissingSourceUrl = false,
+): boolean {
   if (value.archiveName === undefined) return true;
   return (
     typeof value.artifactName === "string" &&
@@ -522,7 +611,7 @@ function archiveHasArtifactProvenance(value: {
     typeof value.artifactSizeBytes === "number" &&
     Number.isSafeInteger(value.artifactSizeBytes) &&
     value.artifactSizeBytes > 0 &&
-    typeof value.artifactSourceUrl === "string" &&
-    value.artifactSourceUrl.length > 0
+    (allowMissingSourceUrl ||
+      (typeof value.artifactSourceUrl === "string" && value.artifactSourceUrl.length > 0))
   );
 }

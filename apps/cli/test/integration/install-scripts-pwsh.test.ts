@@ -1224,6 +1224,7 @@ describePwsh("install.ps1 package activeVersion", () => {
       expect(`${result.stderr}${result.stdout}`).toContain("exit code 17");
       expect(result.stdout).not.toMatch(/^Done\.$/m);
       expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+      expect(existsSync(join(sandbox.dataDir, "locks", "activation.lock"))).toBe(false);
     } finally {
       sandbox.cleanup();
     }

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { readInstallManifest, writeInstallManifest } from "../install-manifest";
+import { readInstallManifest, writeInstallManifestUnderActivation } from "../install-manifest";
 import { fetchLatestVersion } from "../latest-version";
 import {
   detectPlatform,
@@ -260,7 +260,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
               launcherPath,
               versionPath,
             });
-            await writeInstallManifest(
+            await writeInstallManifestUnderActivation(
               {
                 method: "binary",
                 activeVersion: resolved,
@@ -277,7 +277,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
                   ? { previousVersion: activeManifest.activeVersion }
                   : {}),
               },
-              layout.configDir,
+              layout,
             );
           } catch (manifestError) {
             try {
