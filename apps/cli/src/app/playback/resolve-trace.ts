@@ -1,5 +1,5 @@
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
-import type { ProviderFailure, ProviderId, ResolveTrace } from "@kunai/types";
+import type { ProviderFailure, ProviderId, ProviderTraceEvent, ResolveTrace } from "@kunai/types";
 
 export function createResolveTraceStub({
   title,
@@ -76,4 +76,31 @@ export function finalizeResolveTrace(
     cacheHit: outcome.cacheHit,
     failures: outcome.failures,
   };
+}
+
+/**
+ * A human-facing note for an audio downgrade, or null when the requested audio
+ * was honoured.
+ *
+ * Providers emit an `audio:fallback` trace event when they resolve a different
+ * audio presentation than the one requested (e.g. a dub was asked for but only a
+ * sub server answered). Without surfacing it the user just gets the wrong
+ * language with no explanation — the silent no-op the project treats as its
+ * house failure mode.
+ */
+export function audioFallbackNoticeFromTrace(
+  events: readonly ProviderTraceEvent[] | undefined,
+): string | null {
+  const event = events?.find((entry) => entry.type === "audio:fallback");
+  if (!event) return null;
+  const requested = presentationLabel(event.attributes?.requested);
+  const resolved = presentationLabel(event.attributes?.resolved);
+  if (!requested || !resolved) return null;
+  return `${requested} unavailable — playing ${resolved}`;
+}
+
+function presentationLabel(value: unknown): string | null {
+  if (value === "dub") return "Dub";
+  if (value === "sub") return "Sub";
+  return null;
 }

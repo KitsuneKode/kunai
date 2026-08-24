@@ -137,7 +137,11 @@ import {
   type RecentPlaybackStreamProvenance,
   type RecentPlaybackStreamRecord,
 } from "@/app/playback/recent-playback-stream";
-import { createResolveTraceStub, finalizeResolveTrace } from "@/app/playback/resolve-trace";
+import {
+  audioFallbackNoticeFromTrace,
+  createResolveTraceStub,
+  finalizeResolveTrace,
+} from "@/app/playback/resolve-trace";
 import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import { planEpisodeIterationDirective } from "@/app/playback/run-playback-episode-iteration";
 import {
@@ -1897,6 +1901,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
 
             if (stream?.providerResolveResult) {
+              // Surface a silent audio downgrade (e.g. dub requested, only sub
+              // available) so the user is told why the language changed rather
+              // than just hearing the wrong one.
+              const audioFallbackNote = audioFallbackNoticeFromTrace(
+                stream.providerResolveResult.trace.events,
+              );
+              if (audioFallbackNote) {
+                this.updatePlaybackFeedback(context, { note: audioFallbackNote });
+              }
               diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "provider",
