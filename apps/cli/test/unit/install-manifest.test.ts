@@ -194,6 +194,41 @@ test("reads and safely backfills the exact predecessor schema-2 archive shape", 
   });
 });
 
+for (const metadataState of ["missing", "corrupt", "mismatched"] as const) {
+  test(`archive predecessor migration stays retryable when version metadata is ${metadataState}`, async () => {
+    const dir = tempDir();
+    const layout = migrationLayout(dir);
+    const path = join(dir, "install.json");
+    const predecessor = { ...PREDECESSOR_SCHEMA_2_ARCHIVE };
+    await Bun.write(path, `${JSON.stringify(predecessor, null, 2)}\n`);
+
+    if (metadataState !== "missing") {
+      await writeInstalledVersionMetadata(layout, {
+        schemaVersion: 1,
+        version: predecessor.activeVersion,
+        target: predecessor.target,
+        artifactName:
+          metadataState === "mismatched" ? "kunai-linux-arm64" : predecessor.artifactName,
+        artifactSha256: predecessor.artifactSha256,
+        sizeBytes: predecessor.artifactSizeBytes,
+        sourceUrl: predecessor.archiveSourceUrl,
+        verification: "release-checksum",
+        installedAt: predecessor.installedAt,
+      });
+      if (metadataState === "corrupt") {
+        await Bun.write(versionMetadataPath(layout, predecessor.activeVersion), "{broken-json");
+      }
+    }
+
+    await expect(migrateInstallManifest(layout)).rejects.toThrow(/archive.*metadata/i);
+    expect(JSON.parse(await Bun.file(path).text())).toEqual(predecessor);
+    expect(await inspectInstallManifest(dir)).toMatchObject({
+      status: "loaded",
+      needsMigration: true,
+    });
+  });
+}
+
 test("explicit migration upgrades schema v1 without losing rollback fields", async () => {
   const dir = tempDir();
   const path = join(dir, "install.json");
@@ -428,8 +463,6 @@ test("migration does not overwrite a newer activation published while it waits",
   const activation = await tryAcquireActivationLock(layout, "9.9.9");
   expect(activation.acquired).toBe(true);
   const migration = migrateInstallManifest(layout);
-  await waitForPath(lockFilePath(layout, "1.2.3"));
-
   const replacement = {
     schemaVersion: 2,
     method: "binary",
@@ -442,14 +475,63 @@ test("migration does not overwrite a newer activation published while it waits",
     installedAt: "2026-03-01T00:00:00.000Z",
     updatedAt: "2026-03-02T00:00:00.000Z",
   };
-  await Bun.write(path, `${JSON.stringify(replacement)}\n`);
-  if (activation.acquired) await activation.release();
+  try {
+    await waitForPath(lockFilePath(layout, "1.2.3"));
+    await Bun.write(path, `${JSON.stringify(replacement)}\n`);
+  } finally {
+    if (activation.acquired) await activation.release();
+  }
 
   expect(await migration).toMatchObject({
     status: "unchanged",
     manifest: { activeVersion: "9.9.9" },
   });
   expect(JSON.parse(await Bun.file(path).text())).toEqual(replacement);
+});
+
+test("migration defers a replacement predecessor until its own version lock is held", async () => {
+  const dir = tempDir();
+  const layout = migrationLayout(dir);
+  const path = join(dir, "install.json");
+  await Bun.write(path, JSON.stringify(PREDECESSOR_SCHEMA_2_ARCHIVE));
+
+  const activation = await tryAcquireActivationLock(layout, "9.9.9");
+  expect(activation.acquired).toBe(true);
+  const migration = migrateInstallManifest(layout);
+  const replacement = {
+    ...PREDECESSOR_SCHEMA_2_ARCHIVE,
+    activeVersion: "2.0.0",
+    versionedPath: join(layout.versionsDir, "2.0.0", "kunai"),
+    archiveSourceUrl:
+      "https://github.com/KitsuneKode/kunai/releases/download/v2.0.0/kunai-linux-x64.tar.gz",
+  };
+  await writeInstalledVersionMetadata(layout, {
+    schemaVersion: 1,
+    version: replacement.activeVersion,
+    target: replacement.target,
+    artifactName: replacement.artifactName,
+    artifactSha256: replacement.artifactSha256,
+    sizeBytes: replacement.artifactSizeBytes,
+    sourceUrl: replacement.archiveSourceUrl,
+    verification: "release-checksum",
+    installedAt: replacement.installedAt,
+  });
+
+  try {
+    await waitForPath(lockFilePath(layout, PREDECESSOR_SCHEMA_2_ARCHIVE.activeVersion));
+    await Bun.write(path, `${JSON.stringify(replacement)}\n`);
+  } finally {
+    if (activation.acquired) await activation.release();
+  }
+
+  expect(await migration).toMatchObject({
+    status: "deferred",
+    manifest: { activeVersion: "2.0.0" },
+  });
+  expect(JSON.parse(await Bun.file(path).text())).toEqual(replacement);
+  expect(
+    JSON.parse(await Bun.file(versionMetadataPath(layout, replacement.activeVersion)).text()),
+  ).not.toHaveProperty("archiveName");
 });
 
 test("migration does not recreate a manifest removed while it waits", async () => {
@@ -461,9 +543,12 @@ test("migration does not recreate a manifest removed while it waits", async () =
   const activation = await tryAcquireActivationLock(layout, "9.9.9");
   expect(activation.acquired).toBe(true);
   const migration = migrateInstallManifest(layout);
-  await waitForPath(lockFilePath(layout, "1.2.3"));
-  await Bun.file(path).delete();
-  if (activation.acquired) await activation.release();
+  try {
+    await waitForPath(lockFilePath(layout, "1.2.3"));
+    await Bun.file(path).delete();
+  } finally {
+    if (activation.acquired) await activation.release();
+  }
 
   expect(await migration).toEqual({ status: "missing" });
   expect(existsSync(path)).toBe(false);
@@ -479,6 +564,10 @@ test("package publication serializes with migration and wins without stale overw
   expect(activation.acquired).toBe(true);
 
   let packagePublished = false;
+  let announcePackageAttempt!: () => void;
+  const packageAttempted = new Promise<void>((resolve) => {
+    announcePackageAttempt = resolve;
+  });
   const migration = migrateInstallManifest(layout);
   const packageWrite = writeInstallManifest(
     {
@@ -488,15 +577,17 @@ test("package publication serializes with migration and wins without stale overw
       downloadBaseUrl: "https://new.example.test/releases",
     },
     layout,
+    { onAcquireAttempt: announcePackageAttempt },
   ).then(() => {
     packagePublished = true;
     return true;
   });
-  await waitForPath(lockFilePath(layout, "1.2.3"));
-  await Bun.sleep(25);
-  expect(packagePublished).toBe(false);
-
-  if (activation.acquired) await activation.release();
+  try {
+    await Promise.all([waitForPath(lockFilePath(layout, "1.2.3")), packageAttempted]);
+    expect(packagePublished).toBe(false);
+  } finally {
+    if (activation.acquired) await activation.release();
+  }
   await Promise.all([migration, packageWrite]);
 
   expect(await readInstallManifest(dir)).toMatchObject({

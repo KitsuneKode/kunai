@@ -512,4 +512,51 @@ describePosixOnly("executeRollback activation and refusal", () => {
       activeVersion: "9.9.9",
     });
   });
+
+  test("refuses when a different native publication replaces the same active version", async () => {
+    const { layout } = await makeRoot();
+    await seedVerifiedVersion(layout, "1.0.0", "old");
+    const activePath = await seedVerifiedVersion(layout, "2.0.0", "new");
+    await symlink(activePath, layout.launcherPath);
+    await seedBinaryManifest(layout, "2.0.0", "1.0.0");
+
+    const activation = await tryAcquireActivationLock(layout, "9.9.9");
+    expect(activation.acquired).toBe(true);
+    let announceActivationAttempt!: () => void;
+    const activationAttempted = new Promise<void>((resolve) => {
+      announceActivationAttempt = resolve;
+    });
+    const rollingBack = executeRollback(layout, {
+      onActivationAcquireAttempt: announceActivationAttempt,
+    });
+    try {
+      await activationAttempted;
+      await writeInstallManifestUnderActivation(
+        {
+          method: "binary",
+          activeVersion: "2.0.0",
+          previousVersion: "1.0.0",
+          launcherPath: layout.launcherPath,
+          versionedPath: activePath,
+          downloadBaseUrl: "https://replacement.example.test/releases",
+          observedProvenance: "replacement-native-publication",
+        },
+        layout,
+      );
+    } finally {
+      if (activation.acquired) await activation.release();
+    }
+
+    expect(await rollingBack).toMatchObject({
+      status: "refused",
+      code: "ownership-changed",
+    });
+    expect(await readlink(layout.launcherPath)).toBe(activePath);
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      method: "binary",
+      activeVersion: "2.0.0",
+      downloadBaseUrl: "https://replacement.example.test/releases",
+      observedProvenance: "replacement-native-publication",
+    });
+  });
 });

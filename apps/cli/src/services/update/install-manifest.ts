@@ -115,6 +115,19 @@ export function sameInstallManifestPublication(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function sameInstallManifestMigrationSource(
+  left: InstallManifest,
+  right: InstallManifest,
+): boolean {
+  // Legacy manifests have no updatedAt, so each read synthesizes a fresh one.
+  // Ignore only that derived field while still detecting a replacement of any
+  // ownership, path, version, or provenance field during migration planning.
+  return sameInstallManifestPublication(
+    { ...left, updatedAt: "migration-source" },
+    { ...right, updatedAt: "migration-source" },
+  );
+}
+
 /** Derive ownership roots Kunai may manage for a native binary install. */
 export function deriveManagedPaths(
   method: InstallManifestMethod,
@@ -188,11 +201,24 @@ export async function migrateInstallManifest(
       const current = await inspectInstallManifest(layout.configDir);
       if (current.status === "missing") return { status: "missing" } as const;
       if (current.status === "invalid") return current;
+      if (!sameInstallManifestMigrationSource(current.manifest, observed.manifest)) {
+        if (!current.needsMigration) {
+          return { status: "unchanged", manifest: current.manifest } as const;
+        }
+        return { status: "deferred", manifest: current.manifest } as const;
+      }
       if (!current.needsMigration) {
         return { status: "unchanged", manifest: current.manifest } as const;
       }
 
-      await migrateArchiveVersionMetadata(layout, current.manifest);
+      if (
+        current.manifest.archiveName &&
+        !(await migrateArchiveVersionMetadata(layout, current.manifest))
+      ) {
+        throw new Error(
+          `Archive version metadata unavailable for install manifest migration (${current.manifest.activeVersion})`,
+        );
+      }
       await persistManifest(current.manifest, layout.configDir);
       return { status: "migrated", manifest: current.manifest } as const;
     });

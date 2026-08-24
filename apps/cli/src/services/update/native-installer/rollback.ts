@@ -2,7 +2,12 @@ import { existsSync } from "node:fs";
 import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
 
-import { readInstallManifest, writeInstallManifestUnderActivation } from "../install-manifest";
+import {
+  readInstallManifest,
+  sameInstallManifestPublication,
+  writeInstallManifestUnderActivation,
+  type InstallManifest,
+} from "../install-manifest";
 import { parseCanonicalVersion } from "../version";
 import { withActivationLock } from "./activation-lock";
 import {
@@ -49,6 +54,7 @@ export type RollbackPlanResult =
   | {
       readonly status: "ready";
       readonly fromVersion: string;
+      readonly fromManifest: InstallManifest;
       readonly candidate: RollbackCandidate;
     }
   | {
@@ -256,6 +262,7 @@ export async function planRollback(
   return {
     status: "ready",
     fromVersion: manifest.activeVersion,
+    fromManifest: manifest,
     candidate,
   };
 }
@@ -333,11 +340,7 @@ export async function executeRollback(
             candidate.version,
             async () => {
               const manifest = await readInstallManifest(layout.configDir);
-              if (
-                !manifest ||
-                manifest.method !== "binary" ||
-                manifest.activeVersion !== plan.fromVersion
-              ) {
+              if (!manifest || !sameInstallManifestPublication(manifest, plan.fromManifest)) {
                 return {
                   status: "refused" as const,
                   code: "ownership-changed" as const,
