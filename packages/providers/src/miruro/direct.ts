@@ -1753,6 +1753,14 @@ export const miruroProviderModule: CoreProviderModule = {
         targetAudio,
         fallbackAudio,
         preferredSourceId: input.preferredSourceId,
+        // The builder gives hard-sub sub servers a priority boost, but this was
+        // never supplied, so the boost was dead. The adapter sets this to
+        // "hardcoded" for anime; `external` has no Miruro equivalent, so it maps
+        // to `unknown` and simply does not trigger the boost.
+        preferredSubtitleDelivery:
+          input.preferredSubtitleDelivery === "external"
+            ? "unknown"
+            : input.preferredSubtitleDelivery,
       });
       const sourceInventorySeeds = buildMiruroSourceInventoryCandidates(
         cycleCandidates,

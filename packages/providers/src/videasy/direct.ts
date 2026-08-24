@@ -99,10 +99,6 @@ export const WINGS_API_BASE = "https://api.speedracelight.com";
 export const WINGS_API_FALLBACK_BASE = "https://api.wingsdatabase.com";
 /** TMDB proxy on the old domain (redirects to api.videasy.to/3). */
 export const VIDEASY_DB_BASE = "https://api.videasy.to/3";
-/** TMDB proxy on wingsdatabase (open, no auth). */
-export const WINGS_DB_BASE = "https://db.wingsdatabase.com/3";
-/** TMDB proxy sibling of the speedracelight stream API. */
-export const SPEEDRACE_DB_BASE = "https://db.speedracelight.com/3";
 
 /* ── Wings / SpeedRace endpoint mapping ──
  * Endpoints in the `wings-*` namespace are routed to the active stream API.
