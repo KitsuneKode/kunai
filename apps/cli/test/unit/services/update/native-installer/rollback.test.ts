@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 
 import { readInstallManifest, writeInstallManifest } from "@/services/update/install-manifest";
+import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
@@ -372,6 +373,26 @@ describePosixOnly("executeRollback activation and refusal", () => {
       expect(existsSync(previousPath)).toBe(true);
     } finally {
       await chmod(layout.configDir, 0o755);
+    }
+  });
+
+  test("refuses shared activation contention without changing launcher or manifest", async () => {
+    const { layout } = await makeRoot();
+    await seedVerifiedVersion(layout, "1.0.0", "old");
+    const activePath = await seedVerifiedVersion(layout, "2.0.0", "new");
+    await symlink(activePath, layout.launcherPath);
+    await seedBinaryManifest(layout, "2.0.0", "1.0.0");
+    const beforeManifest = await readFile(join(layout.configDir, "install.json"), "utf8");
+
+    const activation = await tryAcquireActivationLock(layout, "9.9.9");
+    expect(activation.acquired).toBe(true);
+    try {
+      const result = await executeRollback(layout, { activationLockTimeoutMs: 30 });
+      expect(result).toMatchObject({ status: "refused", code: "locked" });
+      expect(await readlink(layout.launcherPath)).toBe(activePath);
+      expect(await readFile(join(layout.configDir, "install.json"), "utf8")).toBe(beforeManifest);
+    } finally {
+      if (activation.acquired) await activation.release();
     }
   });
 });

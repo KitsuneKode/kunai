@@ -1,8 +1,10 @@
 export {
+  activationLockPath,
   DEFAULT_DL_BASE,
   VERSION_RETENTION_COUNT,
   getInstallLayoutPaths,
   isVersionedExecPath,
+  lifecycleGuardPath,
   lockFilePath,
   parseVersionFromExecPath,
   removeStagingAndPruneParents,
@@ -12,6 +14,15 @@ export {
   versionMetadataPath,
   type InstallLayoutPaths,
 } from "./install-layout";
+export {
+  inspectActivationLock,
+  tryAcquireActivationLock,
+  withActivationLock,
+  type ActivationLockAcquireResult,
+  type ActivationLockContent,
+  type ActivationLockInspection,
+  type ActivationLockOptions,
+} from "./activation-lock";
 export {
   installLatest,
   checkInstall,

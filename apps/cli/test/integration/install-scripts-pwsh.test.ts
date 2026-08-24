@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,6 +17,8 @@ import { join } from "node:path";
 import {
   createInstallerSandbox,
   installCommandShim,
+  seedActivationLock,
+  seedLifecycleLock,
   windowsShellEnvDefaults,
   withCommandPath,
   withReleaseFixture,
@@ -22,6 +26,14 @@ import {
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_PS1 = join(REPO_ROOT, "install.ps1");
+
+async function waitForPaths(paths: readonly string[]): Promise<void> {
+  const deadline = Date.now() + 8_000;
+  while (paths.some((path) => !existsSync(path))) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${paths.join(", ")}`);
+    await Bun.sleep(10);
+  }
+}
 
 function pwshAvailable(): boolean {
   const result = spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], {
@@ -335,6 +347,24 @@ describePwsh("install.ps1 release asset failures", () => {
 });
 
 describePwsh("install.ps1 lifecycle contract", () => {
+  test("does not start a download while uninstall owns the lifecycle lock", async () => {
+    const sandbox = createInstallerSandbox("install-ps1-lifecycle-lock");
+    seedLifecycleLock(sandbox.dataDir, process.pid);
+    try {
+      await withReleaseFixture({}, async (baseUrl, evidence) => {
+        const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+          ...sandbox.env,
+          KUNAI_DL_BASE: baseUrl,
+        });
+        expect(result.status).not.toBe(0);
+        expect(`${result.stderr}${result.stdout}`).toMatch(/lifecycle|uninstall/i);
+        expect(evidence.requests).toEqual([]);
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test.each(["../1.2.3", "1.2.3-beta", "01.2.3", "1.2"])(
     "rejects invalid version %s before creating directories",
     (version) => {
@@ -531,6 +561,266 @@ describePwsh("install.ps1 lifecycle contract", () => {
       sandbox.cleanup();
     }
   });
+
+  test("different versions download concurrently and serialize launcher plus manifest activation", async () => {
+    const asset = hostWindowsAsset();
+    const versions = ["9.8.7", "9.8.8"] as const;
+    const bodies = {
+      "9.8.7": "MZ-version-9.8.7",
+      "9.8.8": "MZ-version-9.8.8",
+    } as const;
+    const sandbox = createInstallerSandbox("install-ps1-activation-concurrency");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: process.pid });
+    try {
+      const routes = Object.fromEntries(
+        versions.flatMap((version) => {
+          const digest = createHash("sha256").update(bodies[version]).digest("hex");
+          return [
+            [`/download/v${version}/${asset}`, { body: bodies[version] }],
+            [`/download/v${version}/SHA256SUMS`, { body: `${digest}  ${asset}\n` }],
+          ];
+        }),
+      );
+      await withReleaseFixture(routes, async (baseUrl) => {
+        const installs = versions.map((version) =>
+          runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", version], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          }),
+        );
+        await waitForPaths(
+          versions.map((version) => join(sandbox.dataDir, "versions", version, "version.json")),
+        );
+        const launcherBeforeRelease = existsSync(join(sandbox.binDir, "kunai.exe"));
+        const manifestBeforeRelease = existsSync(join(sandbox.configDir, "install.json"));
+        rmSync(activationPath, { force: true });
+
+        const results = await Promise.all(installs);
+        expect(results.map((result) => result.status)).toEqual([0, 0]);
+        expect(launcherBeforeRelease).toBe(false);
+        expect(manifestBeforeRelease).toBe(false);
+
+        const manifest = JSON.parse(
+          readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
+        ) as { activeVersion: string; versionedPath: string };
+        expect(versions).toContain(manifest.activeVersion as (typeof versions)[number]);
+        expect(manifest.versionedPath).toBe(
+          join(sandbox.dataDir, "versions", manifest.activeVersion, "kunai.exe"),
+        );
+        expect(readFileSync(join(sandbox.binDir, "kunai.exe"))).toEqual(
+          readFileSync(manifest.versionedPath),
+        );
+        expect(existsSync(activationPath)).toBe(false);
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("reclaims a dead activation owner", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-stale-owner-reclaimed";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-activation-stale");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).toBe(0);
+          expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("does not reclaim a foreign-host activation owner", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-foreign-owner";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-activation-foreign");
+    const activationPath = seedActivationLock(sandbox.dataDir, {
+      pid: 2_147_483_646,
+      hostname: "another-host.example",
+    });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "5",
+          });
+          expect(result.status).not.toBe(0);
+          expect(JSON.parse(readFileSync(activationPath, "utf8")).hostname).toBe(
+            "another-host.example",
+          );
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("reclaims schema-invalid activation metadata after the corrupt grace", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-corrupt-owner";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-activation-corrupt-schema");
+    const activationPath = seedActivationLock(sandbox.dataDir, {
+      pid: process.pid,
+      schemaVersion: 2,
+    });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS: "10",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "2",
+          });
+          expect(result.status).toBe(0);
+          expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("bounds activation contention after completing the version download", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-activation-timeout";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-activation-timeout");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: process.pid });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "5",
+          });
+          expect(result.status).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toContain("Activation lock held");
+          expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
+          expect(existsSync(activationPath)).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("releases the activation lock when manifest publication fails", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-manifest-failure";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-activation-failure");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    writeFileSync(sandbox.configDir, "not-a-directory");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).not.toBe(0);
+          expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  const testPosixPwsh = process.platform === "win32" ? test.skip : test;
+  testPosixPwsh(
+    "restores the previous launcher when manifest commit fails after replacement",
+    async () => {
+      const asset = hostWindowsAsset();
+      const body = "MZ-replacement";
+      const digest = createHash("sha256").update(body).digest("hex");
+      const sandbox = createInstallerSandbox("install-ps1-activation-restore");
+      mkdirSync(join(sandbox.dataDir, "versions", "1.0.0"), { recursive: true });
+      mkdirSync(sandbox.binDir, { recursive: true });
+      mkdirSync(sandbox.configDir, { recursive: true });
+      const previousPath = join(sandbox.dataDir, "versions", "1.0.0", "kunai.exe");
+      const launcher = join(sandbox.binDir, "kunai.exe");
+      writeFileSync(previousPath, "MZ-previous");
+      writeFileSync(launcher, "MZ-previous");
+      const manifestPath = join(sandbox.configDir, "install.json");
+      const oldManifest = `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          method: "binary",
+          activeVersion: "1.0.0",
+          preferredChannel: "stable",
+          launcherPath: launcher,
+          versionedPath: previousPath,
+          managedPaths: [sandbox.dataDir, sandbox.cacheDir],
+          downloadBaseUrl: "https://example.test/releases",
+          installedAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        null,
+        2,
+      )}\n`;
+      writeFileSync(manifestPath, oldManifest);
+      chmodSync(sandbox.configDir, 0o555);
+      try {
+        await withReleaseFixture(
+          {
+            [`/download/v2.0.0/${asset}`]: { body },
+            "/download/v2.0.0/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+          },
+          async (baseUrl) => {
+            const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "2.0.0"], {
+              ...sandbox.env,
+              KUNAI_DL_BASE: baseUrl,
+            });
+            expect(result.status).not.toBe(0);
+            expect(readFileSync(launcher, "utf8")).toBe("MZ-previous");
+            expect(readFileSync(manifestPath, "utf8")).toBe(oldManifest);
+            expect(existsSync(join(sandbox.dataDir, "locks", "activation.lock"))).toBe(false);
+          },
+        );
+      } finally {
+        chmodSync(sandbox.configDir, 0o755);
+        sandbox.cleanup();
+      }
+    },
+  );
 });
 
 const describeWindows = process.platform === "win32" && pwshAvailable() ? describe : describe.skip;

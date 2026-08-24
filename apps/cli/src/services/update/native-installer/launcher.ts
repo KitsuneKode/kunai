@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import {
   chmod,
   copyFile,
+  lstat,
   mkdir,
   readdir,
   readlink,
@@ -158,6 +159,88 @@ export async function updateLauncher(input: {
   await rm(tmpLink, { force: true }).catch(() => {});
   await symlink(input.versionPath, tmpLink);
   await rename(tmpLink, input.launcherPath);
+}
+
+export type LauncherSnapshot =
+  | { readonly kind: "missing"; readonly launcherPath: string; readonly platform: NodeJS.Platform }
+  | {
+      readonly kind: "symlink";
+      readonly launcherPath: string;
+      readonly platform: NodeJS.Platform;
+      readonly target: string;
+    }
+  | {
+      readonly kind: "file";
+      readonly launcherPath: string;
+      readonly platform: NodeJS.Platform;
+      readonly backupPath: string;
+    };
+
+/** Capture the exact pre-activation launcher until its manifest commit succeeds. */
+export async function captureLauncherSnapshot(
+  launcherPath: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<LauncherSnapshot> {
+  try {
+    await lstat(launcherPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { kind: "missing", launcherPath, platform };
+    }
+    throw error;
+  }
+
+  if (platform !== "win32") {
+    try {
+      return { kind: "symlink", launcherPath, platform, target: await readlink(launcherPath) };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EINVAL") throw error;
+    }
+  }
+
+  const backupPath = `${launcherPath}.activation-backup.${process.pid}.${Date.now()}`;
+  await copyFile(launcherPath, backupPath);
+  return { kind: "file", launcherPath, platform, backupPath };
+}
+
+/** Restore a launcher snapshot without consuming its last-known-good backup. */
+export async function restoreLauncherSnapshot(snapshot: LauncherSnapshot): Promise<void> {
+  if (snapshot.kind === "missing") {
+    await rm(snapshot.launcherPath, { force: true });
+    return;
+  }
+  if (snapshot.kind === "symlink") {
+    const candidate = `${snapshot.launcherPath}.restore.${process.pid}.${Date.now()}`;
+    await rm(candidate, { force: true }).catch(() => {});
+    try {
+      await symlink(snapshot.target, candidate);
+      await rename(candidate, snapshot.launcherPath);
+    } finally {
+      await rm(candidate, { force: true }).catch(() => {});
+    }
+    return;
+  }
+  if (snapshot.platform === "win32") {
+    await updateWindowsLauncher({
+      launcherPath: snapshot.launcherPath,
+      versionPath: snapshot.backupPath,
+    });
+    return;
+  }
+  const candidate = `${snapshot.launcherPath}.restore.${process.pid}.${Date.now()}`;
+  await rm(candidate, { force: true }).catch(() => {});
+  try {
+    await copyFile(snapshot.backupPath, candidate);
+    await rename(candidate, snapshot.launcherPath);
+  } finally {
+    await rm(candidate, { force: true }).catch(() => {});
+  }
+}
+
+export async function discardLauncherSnapshot(snapshot: LauncherSnapshot): Promise<void> {
+  if (snapshot.kind === "file") {
+    await rm(snapshot.backupPath, { force: true });
+  }
 }
 
 export type LauncherOwnership = "managed" | "unmanaged" | "missing";

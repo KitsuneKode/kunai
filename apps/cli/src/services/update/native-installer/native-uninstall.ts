@@ -7,6 +7,7 @@ import {
   readInstallManifest,
   type InstallManifest,
 } from "../install-manifest";
+import { tryAcquireActivationLock } from "./activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./install-layout";
 import {
   inspectLauncherOwnership,
@@ -37,6 +38,8 @@ export type NativeUninstallOptions = {
   readonly preservePaths?: readonly string[];
   /** Test seam for simulating partial removal failures. */
   readonly rmImpl?: typeof rm;
+  /** Test/embedding seam; production uses the shared lock default. */
+  readonly activationLockTimeoutMs?: number;
 };
 
 type RmFn = typeof rm;
@@ -161,12 +164,29 @@ export async function nativeUninstall(
     ]);
   }
 
+  const activation = await tryAcquireActivationLock(layout, manifest.activeVersion, {
+    timeoutMs: options.activationLockTimeoutMs,
+  });
+  if (!activation.acquired) {
+    await lifecycle.release();
+    return blocked([
+      layout.launcherPath,
+      layout.versionsDir,
+      layout.configDir,
+      layout.dataDir,
+      layout.cacheDir,
+    ]);
+  }
+
   const transaction = await beginInstallTransaction(layout, {
     kind: "uninstall",
     version: manifest.activeVersion,
+  }).catch(async (error: unknown) => {
+    await activation.release();
+    await lifecycle.release();
+    throw error;
   });
 
-  let lifecycleReleased = false;
   try {
     // 1. Launcher + owned copy-asides
     if (ownership === "managed") {
@@ -195,13 +215,6 @@ export async function nativeUninstall(
     }
     const transactionsOk = await tryRemove(layout.transactionsDir, removed, failed, rmImpl);
 
-    if (existsSync(layout.locksDir)) {
-      for (const entry of await readdir(layout.locksDir).catch(() => [] as string[])) {
-        if (entry === "lifecycle.lock") continue;
-        await tryRemove(join(layout.locksDir, entry), removed, failed, rmImpl, false);
-      }
-    }
-
     const lifecyclePartial = failed.length > 0 || !versionsOk || !stagingOk || !transactionsOk;
 
     // 3. Manifest last — only when lifecycle cleanup fully succeeded.
@@ -215,7 +228,10 @@ export async function nativeUninstall(
     //    user roots survive (purge of configDir would otherwise wipe the manifest).
     const preserveSet = new Set(options.preservePaths ?? []);
     if (options.purge && !lifecyclePartial) {
-      for (const root of [layout.configDir, layout.dataDir, layout.cacheDir]) {
+      // Remove dataDir last: it contains the compatibility lifecycle and
+      // activation files. The purge-safe lifecycle guard lives beside it and
+      // remains held until every root operation has completed.
+      for (const root of [layout.configDir, layout.cacheDir, layout.dataDir]) {
         if (preserveSet.has(root)) {
           preserved.push(root);
           continue;
@@ -237,17 +253,6 @@ export async function nativeUninstall(
       await finishInstallTransaction(layout, transaction.id).catch(() => {});
     }
 
-    // Release lifecycle lock before removing the locks directory.
-    await lifecycle.release();
-    lifecycleReleased = true;
-    if (existsSync(layout.locksDir)) {
-      const remaining = await readdir(layout.locksDir).catch(() => [] as string[]);
-      for (const entry of remaining) {
-        await tryRemove(join(layout.locksDir, entry), removed, failed, rmImpl, false);
-      }
-      await tryRemove(layout.locksDir, removed, failed, rmImpl);
-    }
-
     return {
       status: failed.length > 0 ? "partial" : "removed",
       removed: [...new Set(removed)],
@@ -255,8 +260,7 @@ export async function nativeUninstall(
       failed,
     };
   } finally {
-    if (!lifecycleReleased) {
-      await lifecycle.release();
-    }
+    await activation.release();
+    await lifecycle.release();
   }
 }

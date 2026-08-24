@@ -57,6 +57,9 @@ $DownloadMaxBytes = if ($env:KUNAI_DOWNLOAD_MAX_BYTES) { [long]$env:KUNAI_DOWNLO
 $DownloadChecksumMaxBytes = if ($env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES } else { 1048576 }
 $DownloadMaxAttempts = if ($env:KUNAI_DOWNLOAD_MAX_ATTEMPTS) { [int]$env:KUNAI_DOWNLOAD_MAX_ATTEMPTS } else { 3 }
 $DownloadRetryBaseMs = if ($env:KUNAI_DOWNLOAD_RETRY_BASE_MS) { [int]$env:KUNAI_DOWNLOAD_RETRY_BASE_MS } else { 1000 }
+$ActivationLockTimeoutMs = if ($env:KUNAI_ACTIVATION_LOCK_TIMEOUT_MS) { [int]$env:KUNAI_ACTIVATION_LOCK_TIMEOUT_MS } else { 10000 }
+$ActivationLockPollMs = if ($env:KUNAI_ACTIVATION_LOCK_POLL_MS) { [int]$env:KUNAI_ACTIVATION_LOCK_POLL_MS } else { 50 }
+$ActivationLockCorruptGraceMs = if ($env:KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS) { [int]$env:KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS } else { 250 }
 
 function Write-Utf8File([string]$Path, [string]$Content) {
   $encoding = New-Object System.Text.UTF8Encoding $false
@@ -407,6 +410,22 @@ function Write-VersionMetadata {
 
 function Acquire-VersionLock([string]$Ver, [string]$LockPath) {
   New-Item -ItemType Directory -Force -Path (Split-Path $LockPath) | Out-Null
+  $lifecyclePath = Join-Path (Split-Path $LockPath) 'lifecycle.lock'
+  $lifecycleGuardPath = "$DataDir.lifecycle.lock"
+  foreach ($lifecycleCandidate in @($lifecycleGuardPath, $lifecyclePath)) {
+    if (Test-Path -LiteralPath $lifecycleCandidate) {
+      try {
+        $lifecycle = Get-Content -LiteralPath $lifecycleCandidate -Raw | ConvertFrom-Json
+        $lifecyclePid = [int]$lifecycle.pid
+        if ($lifecyclePid -gt 0 -and $null -ne (Get-Process -Id $lifecyclePid -ErrorAction SilentlyContinue)) {
+          throw "Install lifecycle lock held by pid $lifecyclePid; uninstall is in progress"
+        }
+      }
+      catch {
+        if ($_.Exception.Message -match 'lifecycle lock held') { throw }
+      }
+    }
+  }
   if (Test-Path -LiteralPath $LockPath) {
     try {
       $existing = Get-Content -LiteralPath $LockPath -Raw | ConvertFrom-Json
@@ -434,6 +453,23 @@ function Acquire-VersionLock([string]$Ver, [string]$LockPath) {
     acquiredAt = (Get-IsoNow)
   }
   Write-Utf8File $LockPath (($content | ConvertTo-Json -Compress) + "`n")
+
+  # Close the race with lifecycle acquisition before download or mutation.
+  foreach ($lifecycleCandidate in @($lifecycleGuardPath, $lifecyclePath)) {
+    if (Test-Path -LiteralPath $lifecycleCandidate) {
+      try {
+        $lifecycle = Get-Content -LiteralPath $lifecycleCandidate -Raw | ConvertFrom-Json
+        $lifecyclePid = [int]$lifecycle.pid
+        if ($lifecyclePid -gt 0 -and $null -ne (Get-Process -Id $lifecyclePid -ErrorAction SilentlyContinue)) {
+          Release-VersionLock $LockPath
+          throw "Install lifecycle lock held by pid $lifecyclePid; uninstall is in progress"
+        }
+      }
+      catch {
+        if ($_.Exception.Message -match 'lifecycle lock held') { throw }
+      }
+    }
+  }
 }
 
 function Release-VersionLock([string]$LockPath) {
@@ -446,6 +482,261 @@ function Release-VersionLock([string]$LockPath) {
   }
   catch {
     Remove-Item -LiteralPath $LockPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Get-ActivationLockHostname {
+  return ([System.Net.Dns]::GetHostName()).Trim().ToLowerInvariant()
+}
+
+function Get-ActivationProcessStartId([int]$ProcessId) {
+  if ($ProcessId -le 0) { return $null }
+  if ($OnWindows) {
+    try {
+      $process = Get-Process -Id $ProcessId -ErrorAction Stop
+      return "windows-ticks:$($process.StartTime.ToUniversalTime().Ticks)"
+    }
+    catch { return $null }
+  }
+  if (Test-Path -LiteralPath "/proc/$ProcessId/stat" -PathType Leaf) {
+    try {
+      $stat = [System.IO.File]::ReadAllText("/proc/$ProcessId/stat")
+      $close = $stat.LastIndexOf(') ')
+      if ($close -lt 0) { return $null }
+      $fields = $stat.Substring($close + 2).Trim() -split '\s+'
+      if ($fields.Count -gt 19 -and $fields[19]) { return "linux-proc:$($fields[19])" }
+    }
+    catch { return $null }
+  }
+  if ($IsMacOS) {
+    try {
+      $value = (& ps -o lstart= -p $ProcessId 2>$null) -join ' '
+      $value = ($value -replace '\s+', ' ').Trim()
+      if ($value) { return "darwin-ps:$value" }
+    }
+    catch { return $null }
+  }
+  return $null
+}
+
+function Read-ActivationLockState([string]$LockPath) {
+  if (-not (Test-Path -LiteralPath $LockPath -PathType Leaf)) { return $null }
+  $raw = try { Get-Content -LiteralPath $LockPath -Raw } catch { '' }
+  $content = $null
+  try {
+    $candidate = $raw | ConvertFrom-Json
+    $hasProcessStart = $candidate.PSObject.Properties.Name -contains 'processStartId'
+    $validProcessStart = $hasProcessStart -and (
+      $null -eq $candidate.processStartId -or
+      ($candidate.processStartId -is [string] -and
+        -not [string]::IsNullOrWhiteSpace([string]$candidate.processStartId))
+    )
+    # PowerShell 7 converts ISO JSON strings to DateTime, so validate the wire
+    # representation to keep corrupt-record semantics identical to Bash/TS.
+    $validAcquiredAt = $raw -match '"acquiredAt"\s*:\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z"'
+    if (
+      ($candidate.schemaVersion -is [int] -or $candidate.schemaVersion -is [long]) -and
+      [int64]$candidate.schemaVersion -eq 1 -and
+      $candidate.scope -is [string] -and [string]$candidate.scope -eq 'activation' -and
+      ($candidate.pid -is [int] -or $candidate.pid -is [long]) -and
+      [int64]$candidate.pid -gt 0 -and
+      $candidate.version -is [string] -and (Test-CanonicalVersion ([string]$candidate.version)) -and
+      $candidate.execPath -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$candidate.execPath) -and
+      $candidate.ownerId -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$candidate.ownerId) -and
+      $validAcquiredAt -and
+      $candidate.hostname -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$candidate.hostname) -and
+      $validProcessStart
+    ) { $content = $candidate }
+  }
+  catch { $content = $null }
+  return [pscustomobject]@{ Raw = $raw; Content = $content }
+}
+
+function Read-ActivationLock([string]$LockPath) {
+  $state = Read-ActivationLockState $LockPath
+  if ($null -eq $state) { return $null }
+  return $state.Content
+}
+
+function Test-ActivationOwnerStale($Content) {
+  if ([string]$Content.hostname -ne (Get-ActivationLockHostname)) { return $false }
+  $process = Get-Process -Id ([int]$Content.pid) -ErrorAction SilentlyContinue
+  if ($null -eq $process) { return $true }
+  if (-not [string]::IsNullOrWhiteSpace([string]$Content.processStartId)) {
+    $currentStart = Get-ActivationProcessStartId ([int]$Content.pid)
+    if ($currentStart -and $currentStart -ne [string]$Content.processStartId) { return $true }
+  }
+  return $false
+}
+
+function Restore-ActivationQuarantine([string]$QuarantinePath, [string]$LockPath) {
+  try {
+    # Hard-link creation is exclusive and therefore cannot overwrite a newer
+    # canonical owner that won after the quarantine rename.
+    New-Item -ItemType HardLink -Path $LockPath -Target $QuarantinePath -ErrorAction Stop | Out-Null
+    Remove-Item -LiteralPath $QuarantinePath -Force -ErrorAction SilentlyContinue
+    return $true
+  }
+  catch {
+    if (Test-Path -LiteralPath $LockPath) {
+      # Preserve the quarantine for diagnostics when another owner already won.
+      return $false
+    }
+    # With no canonical successor, fail closed rather than abandoning a valid
+    # observed owner in quarantine and allowing activation to overlap it.
+    throw
+  }
+}
+
+function Move-ActivationLockToQuarantine(
+  [string]$LockPath,
+  [string]$ObservedRaw,
+  [bool]$AllowCorrupt,
+  [string]$OwnerId
+) {
+  $quarantinePath = "$LockPath.quarantine.$OwnerId.$([Guid]::NewGuid().ToString('N'))"
+  try { [System.IO.File]::Move($LockPath, $quarantinePath) }
+  catch [System.IO.IOException] { return $false }
+
+  $quarantined = Read-ActivationLockState $quarantinePath
+  if ($null -eq $quarantined -or [string]$quarantined.Raw -ne $ObservedRaw) {
+    Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
+    return $false
+  }
+  if ($null -ne $quarantined.Content) {
+    if (-not (Test-ActivationOwnerStale $quarantined.Content)) {
+      Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
+      return $false
+    }
+  }
+  elseif (-not $AllowCorrupt) {
+    Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
+    return $false
+  }
+  Remove-Item -LiteralPath $quarantinePath -Force -ErrorAction Stop
+  return $true
+}
+
+function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
+  New-Item -ItemType Directory -Force -Path (Split-Path $LockPath) | Out-Null
+  $ownerId = "$PID-$([Guid]::NewGuid().ToString('N'))"
+  $record = [ordered]@{
+    schemaVersion = 1
+    scope         = 'activation'
+    pid           = $PID
+    version       = $Ver
+    execPath      = 'install.ps1'
+    ownerId       = $ownerId
+    acquiredAt    = (Get-IsoNow)
+    hostname      = (Get-ActivationLockHostname)
+    processStartId = (Get-ActivationProcessStartId $PID)
+  }
+  $bytes = (New-Object System.Text.UTF8Encoding $false).GetBytes((($record | ConvertTo-Json -Compress) + "`n"))
+  $timer = [System.Diagnostics.Stopwatch]::StartNew()
+  $corruptRaw = $null
+  $corruptSinceMs = 0L
+  $holder = $null
+
+  while ($true) {
+    $stream = $null
+    try {
+      $stream = [System.IO.File]::Open(
+        $LockPath,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+      )
+      $stream.Write($bytes, 0, $bytes.Length)
+      $stream.Flush()
+      $stream.Dispose()
+      return $ownerId
+    }
+    catch [System.IO.IOException] {
+      if ($null -ne $stream) { $stream.Dispose() }
+      if (-not (Test-Path -LiteralPath $LockPath)) {
+        if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
+          throw "Could not create activation lock at $LockPath"
+        }
+        Start-Sleep -Milliseconds ([Math]::Max(1, $ActivationLockPollMs))
+        continue
+      }
+    }
+
+    $observed = Read-ActivationLockState $LockPath
+    if ($null -eq $observed) {
+      if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
+        throw "Activation lock held while activating version $Ver"
+      }
+      Start-Sleep -Milliseconds ([Math]::Max(1, $ActivationLockPollMs))
+      continue
+    }
+    $content = $observed.Content
+    if ($null -ne $content) {
+      $corruptRaw = $null
+      $corruptSinceMs = 0L
+      $holder = [int]$content.pid
+      if (Test-ActivationOwnerStale $content) {
+        Move-ActivationLockToQuarantine $LockPath ([string]$observed.Raw) $false $ownerId | Out-Null
+        continue
+      }
+    }
+    else {
+      $raw = [string]$observed.Raw
+      if ($null -eq $corruptRaw -or $raw -ne $corruptRaw) {
+        $corruptRaw = $raw
+        $corruptSinceMs = $timer.ElapsedMilliseconds
+        $holder = $null
+      }
+      elseif (($timer.ElapsedMilliseconds - $corruptSinceMs) -ge $ActivationLockCorruptGraceMs) {
+        Move-ActivationLockToQuarantine $LockPath $raw $true $ownerId | Out-Null
+        $corruptRaw = $null
+        $corruptSinceMs = 0L
+        continue
+      }
+    }
+
+    if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
+      $detail = if ($null -ne $holder) { " by pid $holder" } else { '' }
+      throw "Activation lock held$detail while activating version $Ver"
+    }
+    Start-Sleep -Milliseconds ([Math]::Max(1, $ActivationLockPollMs))
+  }
+}
+
+function Release-ActivationLock([string]$LockPath, [string]$OwnerId) {
+  if ([string]::IsNullOrWhiteSpace($OwnerId)) { return }
+  $quarantinePath = "$LockPath.quarantine.$OwnerId.release.$([Guid]::NewGuid().ToString('N'))"
+  try { [System.IO.File]::Move($LockPath, $quarantinePath) }
+  catch [System.IO.IOException] { return }
+  $moved = Read-ActivationLock $quarantinePath
+  if ($null -ne $moved -and [string]$moved.ownerId -eq $OwnerId) {
+    Remove-Item -LiteralPath $quarantinePath -Force -ErrorAction SilentlyContinue
+  }
+  else {
+    Restore-ActivationQuarantine $quarantinePath $LockPath | Out-Null
+  }
+}
+
+function New-LauncherSnapshot([string]$LauncherPath) {
+  $backup = "$LauncherPath.activation-backup.$PID"
+  Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+  $exists = Test-Path -LiteralPath $LauncherPath -PathType Leaf
+  if ($exists) { Copy-Item -Force -Path $LauncherPath -Destination $backup }
+  return [pscustomobject]@{ Exists = $exists; BackupPath = $backup }
+}
+
+function Restore-LauncherSnapshot([string]$LauncherPath, $Snapshot) {
+  if ($Snapshot.Exists) {
+    Copy-Item -Force -Path $Snapshot.BackupPath -Destination $LauncherPath
+  }
+  else {
+    Remove-Item -LiteralPath $LauncherPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Remove-LauncherSnapshot($Snapshot) {
+  if ($null -ne $Snapshot) {
+    Remove-Item -LiteralPath $Snapshot.BackupPath -Force -ErrorAction SilentlyContinue
   }
 }
 
@@ -473,12 +764,9 @@ function Update-Launcher([string]$VersionPath, [string]$LauncherPath) {
   New-Item -ItemType Directory -Force -Path (Split-Path $LauncherPath) | Out-Null
   if (Test-Path -LiteralPath $LauncherPath) {
     $aside = "$LauncherPath.old.$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-    try {
-      Move-Item -Force -Path $LauncherPath -Destination $aside
-    }
-    catch {
-      Remove-Item -LiteralPath $LauncherPath -Force -ErrorAction SilentlyContinue
-    }
+    # Never delete the working launcher after a failed move-aside. The caller
+    # holds a durable snapshot and will restore it after any later failure.
+    Move-Item -Force -Path $LauncherPath -Destination $aside
   }
   Copy-Item -Force -Path $VersionPath -Destination $LauncherPath
   # Clearing the mark-of-the-web is meaningful only on Windows, and the cmdlet
@@ -739,11 +1027,16 @@ function Install-Binary {
   $txnId = ("{0:x}-{1}" -f [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(), $PID)
   $txnPath = Join-Path $TransactionsDir "$txnId.json"
   $lockPath = Join-Path $LocksDir "$resolved.lock"
+  $activationLockPath = Join-Path $LocksDir 'activation.lock'
   $stagedBin = Join-Path $staging $asset
   $stagedSums = Join-Path $staging 'SHA256SUMS'
   $metadataPath = Join-Path (Join-Path $VersionsDir $resolved) 'version.json'
 
   $cleanupDone = $false
+  $activationOwnerId = $null
+  $launcherSnapshot = $null
+  $launcherActivated = $false
+  $preserveLauncherSnapshot = $false
   try {
     Acquire-VersionLock $resolved $lockPath
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
@@ -797,11 +1090,41 @@ function Install-Binary {
     Write-VersionMetadata -Ver $resolved -Target $target -ArtifactName $asset -Sha256 $got `
       -SizeBytes $sizeBytes -SourceUrl $url -Path $metadataPath
 
-    Update-Launcher -VersionPath $versionPath -LauncherPath $BinPath
+    $activationOwnerId = Acquire-ActivationLock $resolved $activationLockPath
+    # Another version may have activated during this download. Read shared state
+    # under the cross-version lock before publishing the launcher and manifest.
+    $activationPrevious = Get-PreviousActiveVersion
+    $launcherSnapshot = New-LauncherSnapshot $BinPath
+    try {
+      # Update-Launcher can fail after moving the old launcher but before the
+      # replacement copy completes, so restoration is required from invocation.
+      $launcherActivated = $true
+      Update-Launcher -VersionPath $versionPath -LauncherPath $BinPath
 
-    $prevArg = ''
-    if ($previous -and $previous -ne $resolved) { $prevArg = $previous }
-    Write-Manifest 'binary' $resolved $BinPath $versionPath $target $got $prevArg
+      $prevArg = ''
+      if ($activationPrevious -and $activationPrevious -ne $resolved) { $prevArg = $activationPrevious }
+      Write-Manifest 'binary' $resolved $BinPath $versionPath $target $got $prevArg
+      $launcherActivated = $false
+    }
+    catch {
+      if ($launcherActivated) {
+        try {
+          Restore-LauncherSnapshot $BinPath $launcherSnapshot
+          $launcherActivated = $false
+        }
+        catch {
+          $launcherActivated = $false
+          $preserveLauncherSnapshot = $true
+          throw
+        }
+      }
+      throw
+    }
+    finally {
+      if (-not $preserveLauncherSnapshot) { Remove-LauncherSnapshot $launcherSnapshot }
+      Release-ActivationLock $activationLockPath $activationOwnerId
+      $activationOwnerId = $null
+    }
 
     Finish-InstallTransaction $txnPath
     Release-VersionLock $lockPath
@@ -820,6 +1143,12 @@ function Install-Binary {
   }
   catch {
     if (-not $cleanupDone) {
+      if ($launcherActivated -and $null -ne $launcherSnapshot) {
+        try { Restore-LauncherSnapshot $BinPath $launcherSnapshot }
+        catch { $preserveLauncherSnapshot = $true }
+      }
+      if (-not $preserveLauncherSnapshot) { Remove-LauncherSnapshot $launcherSnapshot }
+      Release-ActivationLock $activationLockPath $activationOwnerId
       Finish-InstallTransaction $txnPath
       Release-VersionLock $lockPath
       if (Test-Path -LiteralPath $staging) {

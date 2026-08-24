@@ -1,12 +1,24 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { readInstallManifest, writeInstallManifest } from "@/services/update/install-manifest";
+import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
 import { installLatest } from "@/services/update/native-installer/install-latest";
 import {
+  activationLockPath,
   getInstallLayoutPaths,
   versionBinaryPath,
   versionMetadataPath,
@@ -53,6 +65,14 @@ function hostAssetName(): string {
 
 function sumsFor(assetName: string, digest: string): string {
   return `${digest}  ${assetName}\n`;
+}
+
+async function waitForPath(path: string): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!existsSync(path)) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
+    await Bun.sleep(5);
+  }
 }
 
 async function seedLauncher(launcherPath: string, versionPath: string): Promise<void> {
@@ -151,4 +171,182 @@ describe("installLatest", () => {
     expect(meta.artifactSha256).toBe(digest);
     expect(await verifyStoredVersion(layout, "3.1.4")).toMatchObject({ status: "verified" });
   });
+
+  test("downloads and installs the version before waiting to activate shared state", async () => {
+    const { layout } = await makeLayout();
+    const held = await tryAcquireActivationLock(layout, "1.0.0");
+    expect(held.acquired).toBe(true);
+
+    const assetName = hostAssetName();
+    const bytes = new TextEncoder().encode("WAITING-TO-ACTIVATE");
+    const digest = sha256Hex(bytes);
+    const install = installLatest({
+      version: "2.0.0",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("SHA256SUMS")) {
+          return new Response(sumsFor(assetName, digest), { status: 200 });
+        }
+        if (url.includes(assetName)) return new Response(bytes, { status: 200 });
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    const versionPath = versionBinaryPath(layout, "2.0.0");
+    await waitForPath(versionMetadataPath(layout, "2.0.0"));
+    expect(await Bun.file(versionPath).text()).toBe("WAITING-TO-ACTIVATE");
+    expect(existsSync(layout.launcherPath)).toBe(false);
+    expect(await readInstallManifest(layout.configDir)).toBeNull();
+
+    if (held.acquired) await held.release();
+    expect(await install).toMatchObject({ status: "installed", version: "2.0.0" });
+    await expectLauncherPointsTo(layout.launcherPath, versionPath);
+    expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("2.0.0");
+  });
+
+  test("releases a reclaimed activation lock when manifest publication fails", async () => {
+    const { layout } = await makeLayout();
+    const path = activationLockPath(layout);
+    await mkdir(layout.locksDir, { recursive: true });
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        scope: "activation",
+        pid: 2_147_483_646,
+        version: "1.0.0",
+        execPath: "/tmp/dead-installer",
+        ownerId: "dead-owner",
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+        hostname: hostname().trim().toLowerCase(),
+        processStartId: null,
+      })}\n`,
+    );
+    await rm(layout.configDir, { recursive: true, force: true });
+    await writeFile(layout.configDir, "not-a-directory");
+
+    const assetName = hostAssetName();
+    const bytes = new TextEncoder().encode("MANIFEST-WILL-FAIL");
+    const digest = sha256Hex(bytes);
+    const result = await installLatest({
+      version: "4.0.0",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.includes("SHA256SUMS")) {
+          return new Response(sumsFor(assetName, digest), { status: 200 });
+        }
+        if (url.includes(assetName)) return new Response(bytes, { status: 200 });
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    expect(result.status).toBe("failed");
+    expect(existsSync(path)).toBe(false);
+  });
+
+  const testPosix = process.platform === "win32" ? test.skip : test;
+  testPosix(
+    "restores the previous launcher when manifest commit fails after replacement",
+    async () => {
+      const { layout } = await makeLayout();
+      const previousPath = versionBinaryPath(layout, "1.0.0");
+      await mkdir(dirname(previousPath), { recursive: true });
+      await writeFile(previousPath, "OLD-BINARY");
+      await seedLauncher(layout.launcherPath, previousPath);
+      await writeInstallManifest(
+        {
+          method: "binary",
+          activeVersion: "1.0.0",
+          launcherPath: layout.launcherPath,
+          versionedPath: previousPath,
+          downloadBaseUrl: "https://example.test/releases",
+          artifactSha256: sha256Hex("OLD-BINARY"),
+        },
+        layout.configDir,
+      );
+      const beforeManifest = await readFile(join(layout.configDir, "install.json"), "utf8");
+      await chmod(layout.configDir, 0o555);
+
+      const assetName = hostAssetName();
+      const bytes = new TextEncoder().encode("NEW-BINARY");
+      const digest = sha256Hex(bytes);
+      let result;
+      try {
+        result = await installLatest({
+          version: "2.0.0",
+          force: true,
+          layout,
+          dlBase: "https://example.test/releases",
+          fetchImpl: async (input) => {
+            const url = String(input);
+            if (url.includes("SHA256SUMS")) {
+              return new Response(sumsFor(assetName, digest), { status: 200 });
+            }
+            if (url.includes(assetName)) return new Response(bytes, { status: 200 });
+            return new Response("missing", { status: 404 });
+          },
+        });
+      } finally {
+        await chmod(layout.configDir, 0o755);
+      }
+
+      expect(result?.status).toBe("failed");
+      await expectLauncherPointsTo(layout.launcherPath, previousPath);
+      expect(await readFile(join(layout.configDir, "install.json"), "utf8")).toBe(beforeManifest);
+      expect(existsSync(activationLockPath(layout))).toBe(false);
+    },
+  );
+
+  testPosix(
+    "restores a legacy flat launcher when manifest commit fails after replacement",
+    async () => {
+      const { layout } = await makeLayout();
+      await writeFile(layout.launcherPath, "LEGACY-FLAT-BINARY", { mode: 0o755 });
+      await writeInstallManifest(
+        {
+          method: "binary",
+          activeVersion: "1.0.0",
+          launcherPath: layout.launcherPath,
+          downloadBaseUrl: "https://example.test/releases",
+        },
+        layout.configDir,
+      );
+      const beforeManifest = await readFile(join(layout.configDir, "install.json"), "utf8");
+      await chmod(layout.configDir, 0o555);
+
+      const assetName = hostAssetName();
+      const bytes = new TextEncoder().encode("NEW-BINARY");
+      const digest = sha256Hex(bytes);
+      let result;
+      try {
+        result = await installLatest({
+          version: "2.0.0",
+          force: true,
+          layout,
+          dlBase: "https://example.test/releases",
+          fetchImpl: async (input) => {
+            const url = String(input);
+            if (url.includes("SHA256SUMS")) {
+              return new Response(sumsFor(assetName, digest), { status: 200 });
+            }
+            if (url.includes(assetName)) return new Response(bytes, { status: 200 });
+            return new Response("missing", { status: 404 });
+          },
+        });
+      } finally {
+        await chmod(layout.configDir, 0o755);
+      }
+
+      expect(result?.status).toBe("failed");
+      expect(await readFile(layout.launcherPath, "utf8")).toBe("LEGACY-FLAT-BINARY");
+      expect(await readFile(join(layout.configDir, "install.json"), "utf8")).toBe(beforeManifest);
+      expect(existsSync(activationLockPath(layout))).toBe(false);
+    },
+  );
 });

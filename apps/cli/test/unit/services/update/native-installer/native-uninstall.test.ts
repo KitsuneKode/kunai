@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { writeInstallManifest } from "@/services/update/install-manifest";
+import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
@@ -159,7 +160,8 @@ describe("nativeUninstall residue and preservation", () => {
     expect(existsSync(layout.versionsDir)).toBe(false);
     expect(existsSync(layout.stagingRoot)).toBe(false);
     expect(existsSync(layout.transactionsDir)).toBe(false);
-    expect(existsSync(layout.locksDir)).toBe(false);
+    expect(existsSync(layout.locksDir)).toBe(true);
+    expect(await readdir(layout.locksDir)).toEqual([]);
     expect(existsSync(join(layout.configDir, "install.json"))).toBe(false);
 
     expect(existsSync(user.configJson)).toBe(true);
@@ -176,7 +178,7 @@ describe("nativeUninstall residue and preservation", () => {
     expect(result.removed).toContain(layout.versionsDir);
     expect(result.removed).toContain(layout.stagingRoot);
     expect(result.removed).toContain(layout.transactionsDir);
-    expect(result.removed).toContain(layout.locksDir);
+    expect(result.removed).not.toContain(layout.locksDir);
     expect(result.removed).toContain(join(layout.configDir, "install.json"));
     expect(result.failed).toEqual([]);
     expect(abandoned.id).toBeTruthy();
@@ -204,6 +206,34 @@ describe("nativeUninstall residue and preservation", () => {
     expect(result.removed).toContain(layout.cacheDir);
     expect(result.preserved).toContain(dirname(user.externalDownloads));
   });
+
+  test("--purge keeps its external lifecycle guard through the final root removal", async () => {
+    const { layout } = await makeRoot();
+    await seedManagedUnixInstall(layout);
+    const guardPath = `${layout.dataDir}.lifecycle.lock`;
+    const guardedRemovals: string[] = [];
+    const originalRm = rm;
+    const rmSpy = async (path: Parameters<typeof rm>[0], options?: Parameters<typeof rm>[1]) => {
+      if (
+        typeof path === "string" &&
+        (path === layout.configDir || path === layout.dataDir || path === layout.cacheDir)
+      ) {
+        if (existsSync(guardPath)) guardedRemovals.push(path);
+      }
+      return originalRm(path, options);
+    };
+
+    const result = await nativeUninstall({
+      layout,
+      platform: "linux",
+      purge: true,
+      rmImpl: rmSpy,
+    });
+
+    expect(result.status).toBe("removed");
+    expect(guardedRemovals).toEqual([layout.configDir, layout.cacheDir, layout.dataDir]);
+    expect(existsSync(guardPath)).toBe(false);
+  });
 });
 
 describe("nativeUninstall refusal", () => {
@@ -226,6 +256,40 @@ describe("nativeUninstall refusal", () => {
 
     if (lock.acquired) await lock.release();
     await rm(root, { recursive: true, force: true }).catch(() => {});
+  });
+
+  test("active launcher activation blocks uninstall without mutation", async () => {
+    const { layout } = await makeRoot();
+    const { path } = await seedManagedUnixInstall(layout);
+    const beforeManifest = await readFile(join(layout.configDir, "install.json"), "utf8");
+
+    const activation = await tryAcquireActivationLock(layout, "9.9.9");
+    expect(activation.acquired).toBe(true);
+    try {
+      const result = await nativeUninstall({
+        layout,
+        platform: "linux",
+        activationLockTimeoutMs: 30,
+      });
+      expect(result.status).toBe("blocked");
+      expect(existsSync(layout.launcherPath)).toBe(true);
+      expect(existsSync(path)).toBe(true);
+      expect(await readFile(join(layout.configDir, "install.json"), "utf8")).toBe(beforeManifest);
+    } finally {
+      if (activation.acquired) await activation.release();
+    }
+  });
+
+  test("transaction-start failure releases lifecycle and activation ownership", async () => {
+    const { layout } = await makeRoot();
+    await seedManagedUnixInstall(layout);
+    await rm(layout.transactionsDir, { recursive: true, force: true });
+    await writeFile(layout.transactionsDir, "not-a-directory");
+
+    await expect(nativeUninstall({ layout, platform: "linux" })).rejects.toThrow();
+    expect(existsSync(join(layout.locksDir, "activation.lock"))).toBe(false);
+    expect(existsSync(join(layout.locksDir, "lifecycle.lock"))).toBe(false);
+    expect(existsSync(layout.launcherPath)).toBe(true);
   });
 
   test("active transaction blocks without mutation", async () => {

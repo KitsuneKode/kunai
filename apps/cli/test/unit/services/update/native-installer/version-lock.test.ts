@@ -10,6 +10,7 @@ import {
   lockCurrentVersion,
   releaseCurrentVersionLock,
   tryAcquireVersionLock,
+  tryAcquireLifecycleLock,
 } from "@/services/update/native-installer/version-lock";
 
 describe("version lock", () => {
@@ -108,6 +109,53 @@ describe("version lock", () => {
     expect(source).not.toMatch(/process\.once\(\s*"SIG/);
     expect(source).not.toMatch(/process\.on\(\s*"SIG/);
     expect(source).not.toMatch(/process\.exit\(/);
+  });
+
+  test("a live lifecycle lock prevents a new version install from bypassing uninstall", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-lock-lifecycle-"));
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      configDir: join(root, "config"),
+      launcherPath: join(root, "bin", "kunai"),
+      platform: "linux",
+    });
+
+    const lifecycle = await tryAcquireLifecycleLock(layout);
+    expect(lifecycle.acquired).toBe(true);
+    expect(existsSync(`${layout.dataDir}.lifecycle.lock`)).toBe(true);
+    const version = await tryAcquireVersionLock(layout, "1.2.3");
+    expect(version.acquired).toBe(false);
+
+    if (lifecycle.acquired) await lifecycle.release();
+    expect(existsSync(`${layout.dataDir}.lifecycle.lock`)).toBe(false);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("an external purge-safe lifecycle guard blocks a new version install", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-lock-external-lifecycle-"));
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      configDir: join(root, "config"),
+      launcherPath: join(root, "bin", "kunai"),
+      platform: "linux",
+    });
+    await mkdir(root, { recursive: true });
+    await writeFile(
+      `${layout.dataDir}.lifecycle.lock`,
+      `${JSON.stringify({
+        pid: process.pid,
+        version: "0.0.0",
+        execPath: process.execPath,
+        acquiredAt: new Date().toISOString(),
+      })}\n`,
+    );
+
+    const version = await tryAcquireVersionLock(layout, "1.2.3");
+    expect(version).toMatchObject({ acquired: false, holderPid: process.pid });
+
+    await rm(root, { recursive: true, force: true });
   });
 });
 

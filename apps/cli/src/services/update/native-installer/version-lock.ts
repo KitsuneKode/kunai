@@ -1,15 +1,22 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { parseCanonicalVersion } from "../version";
-import { getInstallLayoutPaths, lockFilePath, type InstallLayoutPaths } from "./install-layout";
+import {
+  getInstallLayoutPaths,
+  lifecycleGuardPath,
+  lockFilePath,
+  type InstallLayoutPaths,
+} from "./install-layout";
 
 export type VersionLockContent = {
   readonly pid: number;
   readonly version: string;
   readonly execPath: string;
   readonly acquiredAt: string;
+  readonly ownerId?: string;
 };
 
 export type LockAcquireResult =
@@ -95,6 +102,15 @@ export async function tryAcquireVersionLock(
   const path = lockFilePath(layout, version);
   await mkdir(layout.locksDir, { recursive: true });
 
+  const lifecyclePath = lifecycleLockPath(layout);
+  const lifecyclePaths = [lifecycleGuardPath(layout), lifecyclePath];
+  for (const guardPath of lifecyclePaths) {
+    if (existsSync(guardPath) && !(await isLockStale(guardPath))) {
+      const existing = await readLockContent(guardPath);
+      return { acquired: false, holderPid: existing?.pid };
+    }
+  }
+
   if (existsSync(path) && !(await isLockStale(path))) {
     const existing = await readLockContent(path);
     return { acquired: false, holderPid: existing?.pid };
@@ -116,6 +132,19 @@ export async function tryAcquireVersionLock(
   } catch {
     const existing = await readLockContent(path);
     return { acquired: false, holderPid: existing?.pid };
+  }
+
+  // Close the check/create race with lifecycle acquisition: if uninstall won
+  // its lock after our first check, relinquish this version lock and refuse.
+  for (const guardPath of lifecyclePaths) {
+    if (existsSync(guardPath) && !(await isLockStale(guardPath))) {
+      const existing = await readLockContent(guardPath);
+      const current = await readLockContent(path);
+      if (current?.pid === process.pid) {
+        await rm(path, { force: true }).catch(() => {});
+      }
+      return { acquired: false, holderPid: existing?.pid };
+    }
   }
 
   return {
@@ -253,35 +282,64 @@ export async function tryAcquireLifecycleLock(
     return { acquired: false };
   }
 
-  const path = lifecycleLockPath(layout);
-  if (existsSync(path) && !(await isLockStale(path))) {
-    const existing = await readLockContent(path);
-    return { acquired: false, holderPid: existing?.pid };
-  }
-  if (existsSync(path)) {
-    await rm(path, { force: true }).catch(() => {});
-  }
+  const paths = [lifecycleGuardPath(layout), lifecycleLockPath(layout)];
+  const ownerId = `${process.pid}-${randomUUID()}`;
 
   const content: VersionLockContent = {
     pid: process.pid,
     version: LIFECYCLE_LOCK_VERSION,
     execPath: options.execPath ?? process.execPath,
     acquiredAt: new Date().toISOString(),
+    ownerId,
   };
 
-  try {
-    await writeFile(path, `${JSON.stringify(content)}\n`, { flag: "wx" });
-  } catch {
-    const existing = await readLockContent(path);
-    return { acquired: false, holderPid: existing?.pid };
+  const acquiredPaths: string[] = [];
+  for (const path of paths) {
+    if (existsSync(path) && !(await isLockStale(path))) {
+      const existing = await readLockContent(path);
+      for (const acquiredPath of acquiredPaths) {
+        await rm(acquiredPath, { force: true }).catch(() => {});
+      }
+      return { acquired: false, holderPid: existing?.pid };
+    }
+    if (existsSync(path)) {
+      await rm(path, { force: true }).catch(() => {});
+    }
+    try {
+      await writeFile(path, `${JSON.stringify(content)}\n`, { flag: "wx" });
+      acquiredPaths.push(path);
+    } catch {
+      const existing = await readLockContent(path);
+      for (const acquiredPath of acquiredPaths) {
+        const current = await readLockContent(acquiredPath);
+        if (current?.ownerId === ownerId) {
+          await rm(acquiredPath, { force: true }).catch(() => {});
+        }
+      }
+      return { acquired: false, holderPid: existing?.pid };
+    }
+  }
+
+  // Close the inverse race with version-lock acquisition. One side must see
+  // the other after both exclusive creates and back out before mutation.
+  if (await hasActiveVersionLocks(layout)) {
+    for (const path of acquiredPaths) {
+      const current = await readLockContent(path);
+      if (current?.ownerId === ownerId) {
+        await rm(path, { force: true }).catch(() => {});
+      }
+    }
+    return { acquired: false };
   }
 
   return {
     acquired: true,
     release: async () => {
-      const current = await readLockContent(path);
-      if (current?.pid === process.pid) {
-        await rm(path, { force: true }).catch(() => {});
+      for (const path of [...acquiredPaths].reverse()) {
+        const current = await readLockContent(path);
+        if (current?.ownerId === ownerId) {
+          await rm(path, { force: true }).catch(() => {});
+        }
       }
     },
   };

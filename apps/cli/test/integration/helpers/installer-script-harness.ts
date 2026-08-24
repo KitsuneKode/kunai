@@ -1,5 +1,5 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { removeTempDir } from "../../support/remove-temp-dir";
@@ -80,6 +80,54 @@ export function createInstallerSandbox(name: string) {
     } as NodeJS.ProcessEnv,
     cleanup: () => removeTempDir(root),
   };
+}
+
+export function seedActivationLock(
+  dataDir: string,
+  input: {
+    readonly pid: number;
+    readonly version?: string;
+    readonly ownerId?: string;
+    readonly execPath?: string;
+    readonly hostname?: string;
+    readonly processStartId?: string | null;
+    readonly schemaVersion?: number;
+  },
+): string {
+  const locksDir = join(dataDir, "locks");
+  const path = join(locksDir, "activation.lock");
+  mkdirSync(locksDir, { recursive: true });
+  writeFileSync(
+    path,
+    `${JSON.stringify({
+      schemaVersion: input.schemaVersion ?? 1,
+      scope: "activation",
+      pid: input.pid,
+      version: input.version ?? "1.0.0",
+      execPath: input.execPath ?? "/tmp/installer-owner",
+      ownerId: input.ownerId ?? `fixture-${input.pid}`,
+      acquiredAt: "2020-01-01T00:00:00.000Z",
+      hostname: input.hostname ?? hostname().trim().toLowerCase(),
+      processStartId: input.processStartId ?? null,
+    })}\n`,
+  );
+  return path;
+}
+
+export function seedLifecycleLock(dataDir: string, pid: number): string {
+  const locksDir = join(dataDir, "locks");
+  const path = join(locksDir, "lifecycle.lock");
+  mkdirSync(locksDir, { recursive: true });
+  writeFileSync(
+    path,
+    `${JSON.stringify({
+      pid,
+      version: "0.0.0",
+      execPath: "/tmp/kunai-uninstall",
+      acquiredAt: "2026-08-24T00:00:00.000Z",
+    })}\n`,
+  );
+  return path;
 }
 
 /** Route definition for the local release fixture HTTP server. */

@@ -1,7 +1,18 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -12,12 +23,22 @@ import {
   createInstallerSandbox,
   hostInstallShAsset,
   installCommandShim,
+  seedActivationLock,
+  seedLifecycleLock,
   withoutKunaiPathOverrides,
   withReleaseFixture,
 } from "./helpers/installer-script-harness";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_SH = join(REPO_ROOT, "install.sh");
+
+async function waitForPaths(paths: readonly string[]): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (paths.some((path) => !existsSync(path))) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${paths.join(", ")}`);
+    await Bun.sleep(10);
+  }
+}
 
 function runInstallSh(
   args: string[],
@@ -382,6 +403,24 @@ describe("install.sh release asset failures", () => {
 });
 
 describe("install.sh lifecycle contract", () => {
+  test("does not start a download while uninstall owns the lifecycle lock", async () => {
+    const sandbox = createInstallerSandbox("install-sh-lifecycle-lock");
+    seedLifecycleLock(sandbox.dataDir, process.pid);
+    try {
+      await withReleaseFixture({}, async (baseUrl, evidence) => {
+        const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+          ...sandbox.env,
+          KUNAI_DL_BASE: baseUrl,
+        });
+        expect(result.status).not.toBe(0);
+        expect(`${result.stderr}${result.stdout}`).toMatch(/lifecycle|uninstall/i);
+        expect(evidence.requests).toEqual([]);
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test.each(["../1.2.3", "1.2.3-beta", "01.2.3", "1.2", "v1.2.3-rc.1"])(
     "rejects invalid version %s before creating directories",
     (version) => {
@@ -490,7 +529,6 @@ describe("install.sh lifecycle contract", () => {
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
           // Staging txn dirs must be cleaned on failure.
           if (existsSync(join(sandbox.cacheDir, "staging"))) {
-            const { readdirSync } = await import("node:fs");
             const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
               recursive: true,
             }) as string[];
@@ -535,7 +573,6 @@ describe("install.sh lifecycle contract", () => {
           );
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
           if (existsSync(join(sandbox.cacheDir, "staging"))) {
-            const { readdirSync } = await import("node:fs");
             const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
               recursive: true,
             }) as string[];
@@ -576,7 +613,6 @@ describe("install.sh lifecycle contract", () => {
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
           // Staging txn dirs must be cleaned; empty staging root is ok.
           if (existsSync(join(sandbox.cacheDir, "staging"))) {
-            const { readdirSync } = await import("node:fs");
             const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
               recursive: true,
             }) as string[];
@@ -643,6 +679,318 @@ describe("install.sh lifecycle contract", () => {
         },
       );
     } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("different versions download concurrently and serialize launcher plus manifest activation", async () => {
+    const asset = hostInstallShAsset();
+    const versions = ["9.8.7", "9.8.8"] as const;
+    const bodies = {
+      "9.8.7": "#!/bin/sh\necho version-9.8.7\n",
+      "9.8.8": "#!/bin/sh\necho version-9.8.8\n",
+    } as const;
+    const sandbox = createInstallerSandbox("install-sh-activation-concurrency");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: process.pid });
+    try {
+      const routes = Object.fromEntries(
+        versions.flatMap((version) => {
+          const digest = createHash("sha256").update(bodies[version]).digest("hex");
+          return [
+            [`/download/v${version}/${asset}`, { body: bodies[version] }],
+            [`/download/v${version}/SHA256SUMS`, { body: `${digest}  ${asset}\n` }],
+          ];
+        }),
+      );
+      await withReleaseFixture(routes, async (baseUrl) => {
+        const installs = versions.map((version) =>
+          runInstallShAsync(["--yes", "--skip-deps", "--version", version], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          }),
+        );
+        await waitForPaths(
+          versions.map((version) => join(sandbox.dataDir, "versions", version, "version.json")),
+        );
+        const launcherBeforeRelease = existsSync(join(sandbox.binDir, "kunai"));
+        const manifestBeforeRelease = existsSync(join(sandbox.configDir, "install.json"));
+        rmSync(activationPath, { force: true });
+
+        const results = await Promise.all(installs);
+        expect(results.map((result) => result.status)).toEqual([0, 0]);
+        expect(launcherBeforeRelease).toBe(false);
+        expect(manifestBeforeRelease).toBe(false);
+
+        const manifest = JSON.parse(
+          readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
+        ) as { activeVersion: string; versionedPath: string };
+        expect(versions).toContain(manifest.activeVersion as (typeof versions)[number]);
+        expect(manifest.versionedPath).toBe(
+          join(sandbox.dataDir, "versions", manifest.activeVersion, "kunai"),
+        );
+        expect(readlinkSync(join(sandbox.binDir, "kunai"))).toBe(manifest.versionedPath);
+        expect(existsSync(activationPath)).toBe(false);
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("reclaims a dead activation owner", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho stale-owner-reclaimed\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-activation-stale");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).toBe(0);
+          expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("does not reclaim a foreign-host activation owner", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho foreign-owner\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-activation-foreign");
+    const activationPath = seedActivationLock(sandbox.dataDir, {
+      pid: 2_147_483_646,
+      hostname: "another-host.example",
+    });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "5",
+          });
+          expect(result.status).not.toBe(0);
+          expect(JSON.parse(readFileSync(activationPath, "utf8")).hostname).toBe(
+            "another-host.example",
+          );
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("reclaims schema-invalid activation metadata after the corrupt grace", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho corrupt-owner\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-activation-corrupt-schema");
+    const activationPath = seedActivationLock(sandbox.dataDir, {
+      pid: process.pid,
+      schemaVersion: 2,
+    });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS: "10",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "2",
+          });
+          expect(result.status).toBe(0);
+          expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("bounds activation contention after completing the version download", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho activation-timeout\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-activation-timeout");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: process.pid });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "5",
+          });
+          expect(result.status).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toContain("Activation lock held");
+          expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
+          expect(existsSync(activationPath)).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("releases the activation lock when manifest publication fails", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho manifest-failure\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-activation-failure");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    writeFileSync(sandbox.configDir, "not-a-directory");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).not.toBe(0);
+          expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("restores the previous launcher when manifest commit fails after replacement", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho replacement\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-activation-restore");
+    mkdirSync(join(sandbox.dataDir, "versions", "1.0.0"), { recursive: true });
+    mkdirSync(sandbox.binDir, { recursive: true });
+    mkdirSync(sandbox.configDir, { recursive: true });
+    const previousPath = join(sandbox.dataDir, "versions", "1.0.0", "kunai");
+    const launcher = join(sandbox.binDir, "kunai");
+    writeFileSync(previousPath, "#!/bin/sh\necho previous\n", { mode: 0o755 });
+    symlinkSync(previousPath, launcher);
+    const manifestPath = join(sandbox.configDir, "install.json");
+    const oldManifest = `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        method: "binary",
+        activeVersion: "1.0.0",
+        preferredChannel: "stable",
+        launcherPath: launcher,
+        versionedPath: previousPath,
+        managedPaths: [sandbox.dataDir, sandbox.cacheDir],
+        downloadBaseUrl: "https://example.test/releases",
+        installedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(manifestPath, oldManifest);
+    chmodSync(sandbox.configDir, 0o555);
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v2.0.0/${asset}`]: { body },
+          "/download/v2.0.0/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "2.0.0"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).not.toBe(0);
+          expect(readlinkSync(launcher)).toBe(previousPath);
+          expect(readFileSync(manifestPath, "utf8")).toBe(oldManifest);
+          expect(existsSync(join(sandbox.dataDir, "locks", "activation.lock"))).toBe(false);
+        },
+      );
+    } finally {
+      chmodSync(sandbox.configDir, 0o755);
+      sandbox.cleanup();
+    }
+  });
+
+  test("retains a flat-launcher backup when restoration itself fails", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho replacement\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-activation-restore-failure");
+    mkdirSync(sandbox.binDir, { recursive: true });
+    mkdirSync(sandbox.configDir, { recursive: true });
+    const launcher = join(sandbox.binDir, "kunai");
+    writeFileSync(launcher, "#!/bin/sh\necho legacy-flat\n", { mode: 0o755 });
+    writeFileSync(
+      join(sandbox.configDir, "install.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        method: "binary",
+        activeVersion: "1.0.0",
+        preferredChannel: "stable",
+        launcherPath: launcher,
+        managedPaths: [sandbox.dataDir, sandbox.cacheDir],
+        downloadBaseUrl: "https://example.test/releases",
+        installedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })}\n`,
+    );
+    const shimDir = join(sandbox.root, "shims");
+    mkdirSync(shimDir, { recursive: true });
+    const realMv = Bun.which("mv");
+    if (!realMv) throw new Error("mv is required for installer integration tests");
+    installCommandShim(
+      shimDir,
+      "mv",
+      `#!/bin/sh\ncase " $* " in *.activation-backup.*) exit 73 ;; esac\nexec "${realMv}" "$@"\n`,
+    );
+    chmodSync(sandbox.configDir, 0o555);
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v2.0.0/${asset}`]: { body },
+          "/download/v2.0.0/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "2.0.0"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+          });
+          expect(result.status).not.toBe(0);
+          expect(result.stderr).toContain("Launcher restoration failed");
+          expect(
+            readdirSync(sandbox.binDir).some((name) => name.includes("activation-backup")),
+          ).toBe(true);
+        },
+      );
+    } finally {
+      chmodSync(sandbox.configDir, 0o755);
       sandbox.cleanup();
     }
   });

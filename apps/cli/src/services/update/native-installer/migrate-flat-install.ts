@@ -1,15 +1,24 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, rename } from "node:fs/promises";
 
-import type { InstallManifest } from "../install-manifest";
-import { writeInstallManifest } from "../install-manifest";
+import {
+  readInstallManifest,
+  writeInstallManifest,
+  type InstallManifest,
+} from "../install-manifest";
 import { parseCanonicalVersion } from "../version";
+import { withActivationLock } from "./activation-lock";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
-import { updateLauncher } from "./launcher";
+import {
+  captureLauncherSnapshot,
+  discardLauncherSnapshot,
+  restoreLauncherSnapshot,
+  updateLauncher,
+} from "./launcher";
 
 export type MigrateFlatResult =
   | { readonly migrated: false }
@@ -60,20 +69,55 @@ export async function migrateFlatInstall(input: {
     }
   }
 
-  await updateLauncher({ launcherPath: layout.launcherPath, versionPath: targetPath });
+  const activated = await withActivationLock(layout, version, async () => {
+    // A manual installer may have completed while the legacy binary was copied.
+    // Re-evaluate shared state only after winning activation ownership.
+    const activeManifest = await readInstallManifest(layout.configDir);
+    if (
+      activeManifest?.versionedPath ||
+      (activeManifest?.method && activeManifest.method !== "binary")
+    ) {
+      return { migrated: false } as const;
+    }
 
-  const downloadBaseUrl =
-    manifest?.downloadBaseUrl ?? "https://github.com/KitsuneKode/kunai/releases";
-  await writeInstallManifest(
-    {
-      method: "binary",
-      activeVersion: version,
-      launcherPath: layout.launcherPath,
-      versionedPath: targetPath,
-      downloadBaseUrl,
-    },
-    layout.configDir,
-  );
+    const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
+    const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
 
-  return { migrated: true, versionPath: targetPath };
+    let preserveBackup = false;
+    try {
+      await updateLauncher({ launcherPath, versionPath: targetPath });
+
+      const downloadBaseUrl =
+        activeManifest?.downloadBaseUrl ?? "https://github.com/KitsuneKode/kunai/releases";
+      await writeInstallManifest(
+        {
+          method: "binary",
+          activeVersion: version,
+          launcherPath,
+          versionedPath: targetPath,
+          downloadBaseUrl,
+        },
+        layout.configDir,
+      );
+
+      return { migrated: true, versionPath: targetPath } as const;
+    } catch (manifestError) {
+      try {
+        await restoreLauncherSnapshot(launcherSnapshot);
+      } catch (restoreError) {
+        preserveBackup = launcherSnapshot.kind === "file";
+        const recoveryFailure = new Error(
+          "Flat-install manifest commit and launcher restoration both failed",
+          { cause: restoreError },
+        );
+        Object.assign(recoveryFailure, { errors: [manifestError, restoreError] });
+        throw recoveryFailure;
+      }
+      throw manifestError;
+    } finally {
+      if (!preserveBackup) await discardLauncherSnapshot(launcherSnapshot).catch(() => {});
+    }
+  });
+
+  return activated ?? { migrated: false };
 }

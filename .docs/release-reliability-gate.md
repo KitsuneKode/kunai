@@ -60,6 +60,49 @@ creation/verification slice. This builder slice does not close issue #132 and
 does not yet reduce user downloads: 0.3.0 release dispatch remains blocked until
 the installer/updater archive-consumption stack lands and is verified.
 
+## Native Installer Activation Gate
+
+Native install, in-process update, rollback, and uninstall share one short
+cross-language activation lock at `{dataDir}/locks/activation.lock`. The Bash,
+PowerShell, and TypeScript implementations exclusively create the same schema-1
+JSON record (`schemaVersion`, `scope`, `pid`, `version`, `execPath`, `ownerId`,
+`acquiredAt`, `hostname`, `processStartId`). A live local owner is waited on for
+a bounded interval; PID reuse is rejected when a process-start identity is
+available; a valid foreign-host owner is never declared dead from a local PID
+probe; and unreadable metadata receives a short grace period before reclaim.
+Stale/corrupt reclamation and release atomically rename the canonical file to a
+token-owned quarantine before validation, so no contender can delete a newer
+owner through a read/delete race.
+
+The activation critical section contains only the shared launcher replacement
+and `install.json` publication. Artifact download, checksum verification,
+versioned binary installation, and `version.json` publication remain under the
+independent per-version lock and must complete without holding the activation
+lock. If manifest publication fails after launcher replacement, the previous
+launcher is restored before the activation lock is released. The lifecycle lock
+also excludes new installs while uninstall is active. Its purge-safe guard at
+`{dataDir}.lifecycle.lock` remains outside the removable data root; uninstall
+holds that guard through the final root operation and never sweeps another
+owner's lock after releasing it.
+
+Run the focused cross-language contract before changing installer activation:
+
+```sh
+bun run --cwd apps/cli test:file -- \
+  test/unit/services/update/native-installer/activation-lock.test.ts \
+  test/unit/services/update/native-installer/install-latest.test.ts \
+  test/unit/services/update/native-installer/migrate-flat-install.test.ts \
+  test/unit/services/update/native-installer/rollback.test.ts \
+  test/unit/services/update/native-installer/native-uninstall.test.ts \
+  test/unit/services/update/native-installer/install-diagnostic.test.ts \
+  test/integration/install-scripts.test.ts \
+  test/integration/install-scripts-pwsh.test.ts
+```
+
+The PowerShell integration suite skips when `pwsh` is unavailable locally;
+Windows CI remains the required native-platform parity run. `kunai doctor`
+reports stale activation ownership without mutating the lock.
+
 ## Changelog Gate
 
 User-facing changes need a changeset before release:
