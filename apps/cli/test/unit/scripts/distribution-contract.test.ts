@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,6 +22,7 @@ import {
   assertRequiredReleaseAssets,
 } from "../../../../../scripts/release-asset-contract";
 import { shouldWriteReleaseChecksums } from "../../../../../scripts/release-binary-checksums";
+import { assertExpectedReleaseState } from "../../../../../scripts/verify-github-release-assets";
 import { verifyReleaseArtifactDirectory } from "../../../../../scripts/verify-release-artifact-directory";
 import { buildReleaseArchives } from "../../../scripts/build-release-archives";
 import { buildNpmPublishManifest } from "../../../scripts/write-npm-publish-manifest";
@@ -228,14 +238,30 @@ describe("release workflow candidate-before-publication contract", () => {
     const cand = candidate();
     const stage = cand.indexOf("Stage candidate upload directory");
     const exactVerify = cand.indexOf("verify-release-artifact-directory.ts", stage);
+    const attestStep = cand.indexOf("- name: Attest exact native candidate", exactVerify);
+    const attest = cand.indexOf("actions/attest@", attestStep);
     const upload = cand.indexOf("- name: Upload candidate artifacts");
 
     expect(cand).toContain(".candidate-upload/native");
     expect(stage).toBeGreaterThanOrEqual(0);
     expect(exactVerify).toBeGreaterThan(stage);
-    expect(upload).toBeGreaterThan(exactVerify);
-    expect(cand.slice(exactVerify, upload)).not.toContain("- name:");
+    expect(attestStep).toBeGreaterThan(exactVerify);
+    expect(attest).toBeGreaterThan(attestStep);
+    expect(upload).toBeGreaterThan(attest);
+    expect(cand.slice(exactVerify, attestStep)).not.toContain("- name:");
     expect(cand).toContain(".candidate-upload/native/SHA256SUMS");
+  });
+
+  test("candidate attests the exact native payload with narrowly scoped OIDC permissions", () => {
+    const cand = candidate();
+    expect(release).toContain('- "scripts/verify-native-attestations.ts"');
+    expect(cand).toMatch(
+      /permissions:[\s\S]*contents:\s*read[\s\S]*id-token:\s*write[\s\S]*attestations:\s*write[\s\S]*artifact-metadata:\s*write/,
+    );
+    expect(cand).toContain(
+      "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # actions/attest@v4",
+    );
+    expect(cand).toContain("subject-path: .candidate-upload/native/*");
   });
 
   test("publication downloads the preserved tarball/binaries", () => {
@@ -260,6 +286,19 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(draftVerify).toBeGreaterThanOrEqual(0);
     expect(promote).toBeGreaterThan(draftVerify);
     expect(pub.indexOf("verify-github-release-assets.ts")).toBeGreaterThanOrEqual(0);
+    expect(pub.match(/--attestation-repo/g)).toHaveLength(2);
+    expect(pub.match(/--attestation-source-digest/g)).toHaveLength(2);
+    expect(pub).toContain("--expect-public");
+  });
+
+  test("release-state verification fails closed for draft and public boundaries", () => {
+    expect(() => assertExpectedReleaseState(true, "draft", "v0.3.0")).not.toThrow();
+    expect(() => assertExpectedReleaseState(false, "public", "v0.3.0")).not.toThrow();
+    expect(() => assertExpectedReleaseState(false, "draft", "v0.3.0")).toThrow(/expected draft/i);
+    expect(() => assertExpectedReleaseState(true, "public", "v0.3.0")).toThrow(/expected public/i);
+    expect(() => assertExpectedReleaseState(undefined, "public", "v0.3.0")).toThrow(
+      /expected public/i,
+    );
   });
 
   test("metadata publication follows public verification", () => {
@@ -298,26 +337,48 @@ describe("release workflow candidate-before-publication contract", () => {
   test("confirmation directly verifies the preserved native payload immediately before gating", () => {
     const confirm = confirmation();
     const verify = confirm.indexOf("verify-release-artifact-directory.ts");
+    const attest = confirm.indexOf("verify-native-attestations.ts", verify);
     const gate = confirm.indexOf("- name: Run confirmation gate");
 
     expect(confirm).not.toContain("Stage binaries for confirmation");
     expect(confirm).toContain(".release-download/native");
     expect(verify).toBeGreaterThanOrEqual(0);
-    expect(gate).toBeGreaterThan(verify);
-    expect(confirm.slice(verify, gate)).not.toContain("- name:");
+    expect(attest).toBeGreaterThan(verify);
+    expect(gate).toBeGreaterThan(attest);
     expect(confirm).toContain('--expected-version "${VERSION}"');
     expect(confirm).toContain("--binary-dir .release-download/native");
+  });
+
+  test("confirmation and publication verify native provenance against the exact source commit", () => {
+    for (const job of [confirmation(), publish()]) {
+      expect(job).toMatch(/permissions:[\s\S]*attestations:\s*read/);
+      expect(job).toContain("verify-native-attestations.ts");
+      expect(job).toContain('--repo "${GITHUB_REPOSITORY}"');
+      expect(job).toContain('--source-digest "${GITHUB_SHA}"');
+    }
+  });
+
+  test("publication verifies provenance before its first irreversible publish", () => {
+    const pub = publish();
+    const exactVerify = pub.indexOf("Reverify protected native publication input");
+    const provenance = pub.indexOf("Verify native provenance before npm publication", exactVerify);
+    const npmPublish = pub.search(PUBLISH_STEP);
+
+    expect(exactVerify).toBeGreaterThanOrEqual(0);
+    expect(provenance).toBeGreaterThan(exactVerify);
+    expect(npmPublish).toBeGreaterThan(provenance);
   });
 
   test("protected publication reverifies native bytes immediately before draft creation", () => {
     const pub = publish();
     const createDraft = pub.indexOf("- name: Create draft GitHub release");
     const exactVerify = pub.lastIndexOf("verify-release-artifact-directory.ts", createDraft);
+    const attest = pub.lastIndexOf("verify-native-attestations.ts", createDraft);
 
     expect(pub).toContain(".release-download/native");
     expect(exactVerify).toBeGreaterThanOrEqual(0);
-    expect(createDraft).toBeGreaterThan(exactVerify);
-    expect(pub.slice(exactVerify, createDraft)).not.toContain("- name:");
+    expect(attest).toBeGreaterThan(exactVerify);
+    expect(createDraft).toBeGreaterThan(attest);
     for (const name of REQUIRED_RELEASE_ASSET_NAMES) {
       expect(pub).toContain(`.release-download/native/${name}`);
     }
@@ -560,6 +621,45 @@ describe("verifyReleaseArtifactDirectory", () => {
       }
     }
   });
+
+  test("rejects unexpected directories instead of filtering them out", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-directory-"));
+    try {
+      writeCompleteReleaseFixture(dir);
+      mkdirSync(join(dir, "unexpected-directory"));
+
+      await expect(
+        verifyReleaseArtifactDirectory({
+          directory: dir,
+          expectedVersion: "9.9.9",
+          skipVersionSmoke: true,
+        }),
+      ).rejects.toThrow(/unexpected non-regular/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "rejects unexpected symlinks instead of following them",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-symlink-"));
+      try {
+        writeCompleteReleaseFixture(dir);
+        symlinkSync("kunai-linux-x64", join(dir, "unexpected-symlink"));
+
+        await expect(
+          verifyReleaseArtifactDirectory({
+            directory: dir,
+            expectedVersion: "9.9.9",
+            skipVersionSmoke: true,
+          }),
+        ).rejects.toThrow(/unexpected non-regular/i);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("rejects SHA256SUMS with the wrong row count", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));

@@ -69,6 +69,16 @@ the recorded archive provenance and executes the sandboxed installed launcher
 with `--version` and `--help`; the separate raw and musl executions remain
 compatibility checks.
 
+After the final candidate-directory verification, `actions/attest` signs all 18
+subjects with GitHub OIDC. Confirmation and protected publication run
+`scripts/verify-native-attestations.ts` against the exact workflow identity,
+`refs/heads/main`, and candidate commit before trusting those bytes. Candidate
+permissions are limited to read access plus OIDC, attestation, and artifact
+metadata writes; later jobs receive attestation read access only. Release
+downloads are checked and attested before the Linux smoke executes; protected
+publication verifies provenance before npm receives any package, and draft/public
+downloads repeat the byte and provenance checks.
+
 The TypeScript native updater and both native installer scripts consume these
 archives. All three verify the archive against `SHA256SUMS.archives`, permit
 exactly one expected regular-file member, bound compressed and decompressed

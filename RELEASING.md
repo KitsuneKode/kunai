@@ -154,7 +154,8 @@ Job **`candidate`** (no publish):
    the exact 18 native assets, and runs compiled binary smoke
 4. `bun run release:pack` → `.release-candidate/kunai-npm.tgz`
 5. Stages the native files under an isolated `native/` directory, reverifies
-   that exact 18-file directory immediately before upload, then uploads artifact
+   that exact 18-file directory, creates GitHub OIDC attestations for all 18
+   subjects, then uploads artifact
    `kunai-release-candidate-<version>` with the preserved npm artifacts
    alongside it (14-day retention)
 
@@ -186,6 +187,8 @@ mkdir -p .release-candidate && ROOT="$PWD" && \
 Job **`confirmation`** needs `candidate`. It downloads the preserved candidate,
 pulls the provider signoff artifact from `provider_signoff_run_id`, verifies the
 downloaded `native/` directory immediately before the confirmation boundary,
+verifies every native attestation against the release workflow and candidate
+commit,
 and runs:
 
 ```sh
@@ -205,16 +208,21 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 
 1. Downloads the preserved candidate artifact (does **not** rebuild, re-pack,
    or recompress native assets)
-2. Reverifies the exact native directory against the expected version
+2. Reverifies the exact native directory and all 18 attestations, before npm
+   publication, against the
+   expected version, release workflow, main-branch ref, and candidate commit
 3. `bun publish .release-candidate/kunai-npm.tgz --access public`
 4. Retries `npm view @kitsunekode/kunai@<version>` until visible
 5. Creates annotated tag `v<version>` and pushes it
-6. Reverifies the same downloaded native directory again, immediately before
-   creating a **draft** GitHub release (`make_latest: false`) with its 18 files
+6. Reverifies the same downloaded native directory and provenance again,
+   immediately before creating a **draft** GitHub release (`make_latest: false`)
+   with its 18 files
 7. `bun run scripts/verify-github-release-assets.ts <tag> --expect-draft …`
+   downloads the draft assets and verifies their bytes and attestations
 8. Promotes immediately after that draft-byte verification:
    `gh release edit <tag> --draft=false --latest`
-9. Verifies the public release assets again
+9. Proves the release is public, then downloads and verifies its bytes and
+   attestations again
 
 ### 5. Metadata after public verification
 

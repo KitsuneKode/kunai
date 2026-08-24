@@ -29,6 +29,7 @@ on:
       - "scripts/release-binary-checksums.ts"
       - "scripts/release-asset-contract.ts"
       - "scripts/verify-release-artifact-directory.ts"
+      - "scripts/verify-native-attestations.ts"
       - "scripts/verify-github-release-assets.ts"
       - "scripts/release-guard.ts"
       - "scripts/release-confirmation-gate.ts"
@@ -100,6 +101,11 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     outputs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
@@ -274,6 +280,11 @@ jobs:
           bun run scripts/verify-release-artifact-directory.ts \
             .candidate-upload/native \
             --expected-version "${{ steps.ver.outputs.version }}"
+
+      - name: Attest exact native candidate
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # actions/attest@v4
+        with:
+          subject-path: .candidate-upload/native/*
 
       - name: Upload candidate artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
@@ -744,6 +755,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read
     outputs:
       version: ${{ needs.candidate.outputs.version }}
       tag: ${{ needs.candidate.outputs.tag }}
@@ -780,6 +794,15 @@ jobs:
             .release-download/native \
             --expected-version "${VERSION}" \
             --skip-version-smoke
+
+      - name: Verify preserved native provenance
+        run: |
+          bun run scripts/verify-native-attestations.ts \
+            .release-download/native \
+            --repo "${GITHUB_REPOSITORY}" \
+            --source-digest "${GITHUB_SHA}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run confirmation gate
         id: gate
@@ -841,6 +864,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      attestations: read
     outputs:
       version: ${{ needs.confirmation.outputs.version }}
       tag: ${{ needs.confirmation.outputs.tag }}
@@ -906,6 +930,15 @@ jobs:
             .release-download/native \
             --expected-version "${{ needs.confirmation.outputs.version }}" \
             --skip-version-smoke
+
+      - name: Verify native provenance before npm publication
+        run: |
+          bun run scripts/verify-native-attestations.ts \
+            .release-download/native \
+            --repo "${GITHUB_REPOSITORY}" \
+            --source-digest "${GITHUB_SHA}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Platform packages first, launcher last, refusing on any version skew.
       # Publishing the launcher first leaves anyone installing in that window
@@ -999,6 +1032,15 @@ jobs:
             --expected-version "${{ needs.confirmation.outputs.version }}" \
             --skip-version-smoke
 
+      - name: Verify native provenance before draft upload
+        run: |
+          bun run scripts/verify-native-attestations.ts \
+            .release-download/native \
+            --repo "${GITHUB_REPOSITORY}" \
+            --source-digest "${GITHUB_SHA}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create draft GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # softprops/action-gh-release@v2
         with:
@@ -1035,7 +1077,9 @@ jobs:
           bun run scripts/verify-github-release-assets.ts \
             "${{ needs.confirmation.outputs.tag }}" \
             --expect-draft \
-            --expected-version "${{ needs.confirmation.outputs.version }}"
+            --expected-version "${{ needs.confirmation.outputs.version }}" \
+            --attestation-repo "${GITHUB_REPOSITORY}" \
+            --attestation-source-digest "${GITHUB_SHA}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -1049,7 +1093,10 @@ jobs:
         run: |
           bun run scripts/verify-github-release-assets.ts \
             "${{ needs.confirmation.outputs.tag }}" \
-            --expected-version "${{ needs.confirmation.outputs.version }}"
+            --expect-public \
+            --expected-version "${{ needs.confirmation.outputs.version }}" \
+            --attestation-repo "${GITHUB_REPOSITORY}" \
+            --attestation-source-digest "${GITHUB_SHA}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

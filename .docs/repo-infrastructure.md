@@ -154,6 +154,11 @@ boundaries use the downloaded files directly without a rebuild, native copy, or
 recompression. GitHub downloads may discard the raw binary's executable mode,
 so the Linux smoke restores that filesystem metadata after byte verification;
 the canonical `0755` mode inside tar archives remains independently verified.
+The candidate job then creates GitHub artifact attestations for the exact 18
+verified paths. Confirmation and publication fail closed unless every file
+verifies against `KitsuneKode/kunai/.github/workflows/release.yml`, the main
+branch ref, and the current release commit. The verifier also rejects extra or
+non-regular directory entries before consulting remote provenance.
 On every available Linux, macOS, and Windows native runner, the release smoke
 also exposes only that runner's downloaded archive and the two manifests over a
 loopback fixture, installs it through the production shell installer into an
