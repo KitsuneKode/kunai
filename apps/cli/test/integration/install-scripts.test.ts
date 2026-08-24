@@ -18,6 +18,8 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 
+import type { InstallManifest } from "@/services/update/install-manifest";
+import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
 import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -35,6 +37,25 @@ import {
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_SH = join(REPO_ROOT, "install.sh");
+
+function readInstallerManifest(configDir: string): InstallManifest {
+  return JSON.parse(readFileSync(join(configDir, "install.json"), "utf8"));
+}
+
+async function readInstallerVersionMetadata(dataDir: string, version: string) {
+  const result = await verifyStoredVersion(
+    { versionsDir: join(dataDir, "versions"), binaryFileName: "kunai" },
+    version,
+  );
+  if (result.status !== "verified") {
+    throw new Error(`Installer wrote invalid ${version} metadata: ${result.detail}`);
+  }
+  return result.metadata;
+}
+
+function quoteShellArgument(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
 
 function hostInstallShTarget() {
   const asset = hostInstallShAsset();
@@ -319,6 +340,8 @@ describe("install.sh release asset failures", () => {
     const archive = createReleaseArchive(target, new TextEncoder().encode(body));
     const binaryDigest = createHash("sha256").update(body).digest("hex");
     const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const realDd = Bun.which("dd");
+    if (!realDd) throw new Error("Archive fixture requires dd");
     const sandbox = createInstallerSandbox("install-sh-archive-ok");
     try {
       const shimDir = join(sandbox.root, "shims");
@@ -341,7 +364,7 @@ for arg in "$@"; do
   esac
 done
 [ "$bounded" != 1 ] || [ "$fullblock" = 1 ] || exit 64
-exec /usr/bin/dd "$@"
+exec ${quoteShellArgument(realDd)} "$@"
 `,
       );
       await withReleaseFixture(
@@ -370,9 +393,7 @@ exec /usr/bin/dd "$@"
           expect(readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai"), "utf8")).toBe(
             body,
           );
-          const manifest = JSON.parse(
-            readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-          ) as Record<string, unknown>;
+          const manifest = readInstallerManifest(sandbox.configDir);
           expect(manifest).toMatchObject({
             schemaVersion: 2,
             artifactName: target.out,
@@ -384,9 +405,7 @@ exec /usr/bin/dd "$@"
             archiveSizeBytes: archive.length,
             archiveSourceUrl: `${baseUrl}/download/v9.8.7/${target.archiveName}`,
           });
-          const metadata = JSON.parse(
-            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
-          ) as Record<string, unknown>;
+          const metadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(metadata).toMatchObject({
             artifactName: target.out,
             artifactSha256: binaryDigest,
@@ -723,9 +742,7 @@ exec /usr/bin/dd "$@"
           ]);
           expect(evidence.requests.some((path) => path.includes("/latest/download"))).toBe(false);
 
-          const metadata = JSON.parse(
-            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
-          ) as { sourceUrl: string };
+          const metadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(metadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
         },
       );
@@ -839,9 +856,7 @@ exec /usr/bin/dd "$@"
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(true);
           expect(result.stdout).toContain(`PATH winner: ${join(sandbox.binDir, "kunai")}`);
 
-          const manifest = JSON.parse(
-            readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-          ) as Record<string, unknown>;
+          const manifest = readInstallerManifest(sandbox.configDir);
           expect(manifest.schemaVersion).toBe(2);
           expect(manifest.method).toBe("binary");
           expect(manifest.activeVersion).toBe("9.8.7");
@@ -855,12 +870,10 @@ exec /usr/bin/dd "$@"
           expect(Array.isArray(manifest.managedPaths)).toBe(true);
           expect(manifest.managedPaths).toContain(sandbox.dataDir);
           expect(manifest.managedPaths).toContain(sandbox.cacheDir);
-          expect(typeof manifest.installedAt).toBe("string");
-          expect(typeof manifest.updatedAt).toBe("string");
+          expect(Date.parse(manifest.installedAt)).not.toBeNaN();
+          expect(Date.parse(manifest.updatedAt)).not.toBeNaN();
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
-          const versionMetadata = JSON.parse(
-            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
-          ) as { sourceUrl: string };
+          const versionMetadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(versionMetadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
           expect(existsSync(join(sandbox.dataDir, "locks"))).toBe(true);
           expect(existsSync(join(sandbox.dataDir, "transactions"))).toBe(true);
@@ -1081,7 +1094,8 @@ describe("install.sh lifecycle contract", () => {
           if (existsSync(join(sandbox.cacheDir, "staging"))) {
             const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
               recursive: true,
-            }) as string[];
+              encoding: "utf8",
+            });
             expect(leftover.filter((e) => String(e).includes(asset))).toEqual([]);
           }
         },
@@ -1125,7 +1139,8 @@ describe("install.sh lifecycle contract", () => {
           if (existsSync(join(sandbox.cacheDir, "staging"))) {
             const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
               recursive: true,
-            }) as string[];
+              encoding: "utf8",
+            });
             expect(leftover.filter((e) => String(e).includes(asset))).toEqual([]);
           }
         },
@@ -1165,7 +1180,8 @@ describe("install.sh lifecycle contract", () => {
           if (existsSync(join(sandbox.cacheDir, "staging"))) {
             const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
               recursive: true,
-            }) as string[];
+              encoding: "utf8",
+            });
             expect(leftover.filter((e) => e.includes(asset) || e.endsWith("kunai"))).toEqual([]);
           }
         },
@@ -1271,10 +1287,9 @@ describe("install.sh lifecycle contract", () => {
         expect(launcherBeforeRelease).toBe(false);
         expect(manifestBeforeRelease).toBe(false);
 
-        const manifest = JSON.parse(
-          readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-        ) as { activeVersion: string; versionedPath: string };
-        expect(versions).toContain(manifest.activeVersion as (typeof versions)[number]);
+        const manifest = readInstallerManifest(sandbox.configDir);
+        expect(new Set<string>(versions).has(manifest.activeVersion)).toBe(true);
+        if (!manifest.versionedPath) throw new Error("Binary manifest omitted versionedPath");
         expect(manifest.versionedPath).toBe(
           join(sandbox.dataDir, "versions", manifest.activeVersion, "kunai"),
         );
@@ -1789,9 +1804,7 @@ describe("install.sh package activeVersion", () => {
       });
 
       expect(result.status).toBe(0);
-      const manifest = JSON.parse(
-        readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-      ) as { activeVersion: string; launcherPath: string; method: string };
+      const manifest = readInstallerManifest(sandbox.configDir);
       expect(manifest.method).toBe("npm-global");
       expect(manifest.activeVersion).toBe("4.5.6");
       expect(manifest.activeVersion).not.toBe("latest");
@@ -1826,9 +1839,7 @@ describe("install.sh package activeVersion", () => {
       });
 
       expect(result.status).toBe(0);
-      const manifest = JSON.parse(
-        readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-      ) as { activeVersion: string; launcherPath: string; method: string };
+      const manifest = readInstallerManifest(sandbox.configDir);
       expect(manifest.method).toBe("bun-global");
       expect(manifest.activeVersion).toBe("7.8.9");
       expect(manifest.activeVersion).not.toBe("latest");
@@ -1921,12 +1932,11 @@ describe("install.sh consent without a terminal", () => {
         process.platform === "darwin"
           ? ["-q", "/dev/null", "bash", probePath]
           : ["-qfec", 'bash "$KUNAI_ASK_PROBE"', "/dev/null"];
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      if (process.platform !== "darwin") env.KUNAI_ASK_PROBE = probePath;
       return spawnSync(scriptBin, args, {
         encoding: "utf8",
-        env: {
-          ...process.env,
-          ...(process.platform === "darwin" ? {} : { KUNAI_ASK_PROBE: probePath }),
-        },
+        env,
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 2_000,
       });

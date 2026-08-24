@@ -15,6 +15,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
+import type { InstallManifest } from "@/services/update/install-manifest";
+import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
 import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 
 import { createReleaseArchive } from "../../scripts/build-release-archives";
@@ -30,6 +32,21 @@ import {
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_PS1 = join(REPO_ROOT, "install.ps1");
+
+function readInstallerManifest(configDir: string): InstallManifest {
+  return JSON.parse(readFileSync(join(configDir, "install.json"), "utf8"));
+}
+
+async function readInstallerVersionMetadata(dataDir: string, version: string) {
+  const result = await verifyStoredVersion(
+    { versionsDir: join(dataDir, "versions"), binaryFileName: "kunai.exe" },
+    version,
+  );
+  if (result.status !== "verified") {
+    throw new Error(`Installer wrote invalid ${version} metadata: ${result.detail}`);
+  }
+  return result.metadata;
+}
 
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
@@ -419,9 +436,7 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(
             readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai.exe"), "utf8"),
           ).toBe(body);
-          const manifest = JSON.parse(
-            readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-          ) as Record<string, unknown>;
+          const manifest = readInstallerManifest(sandbox.configDir);
           expect(manifest).toMatchObject({
             schemaVersion: 2,
             artifactName: target.out,
@@ -433,9 +448,7 @@ describePwsh("install.ps1 release asset failures", () => {
             archiveSizeBytes: archive.length,
             archiveSourceUrl: `${baseUrl}/download/v9.8.7/${target.archiveName}`,
           });
-          const metadata = JSON.parse(
-            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
-          ) as Record<string, unknown>;
+          const metadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(metadata).toMatchObject({
             artifactName: target.out,
             artifactSha256: binaryDigest,
@@ -781,9 +794,7 @@ describePwsh("install.ps1 release asset failures", () => {
           ]);
           expect(evidence.requests.some((path) => path.includes("/latest/download"))).toBe(false);
 
-          const metadata = JSON.parse(
-            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
-          ) as { sourceUrl: string };
+          const metadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(metadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
         },
       );
@@ -900,9 +911,7 @@ describePwsh("install.ps1 release asset failures", () => {
           ]);
           expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(true);
 
-          const manifest = JSON.parse(
-            readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-          ) as Record<string, unknown>;
+          const manifest = readInstallerManifest(sandbox.configDir);
           expect(manifest.schemaVersion).toBe(2);
           expect(manifest.method).toBe("binary");
           expect(manifest.activeVersion).toBe("9.8.7");
@@ -917,9 +926,7 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(manifest.artifactSizeBytes).toBe(Buffer.byteLength(body));
           expect(Array.isArray(manifest.managedPaths)).toBe(true);
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
-          const versionMetadata = JSON.parse(
-            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
-          ) as { sourceUrl: string };
+          const versionMetadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(versionMetadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
         },
       );
@@ -1263,10 +1270,9 @@ describePwsh("install.ps1 lifecycle contract", () => {
         expect(launcherBeforeRelease).toBe(false);
         expect(manifestBeforeRelease).toBe(false);
 
-        const manifest = JSON.parse(
-          readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-        ) as { activeVersion: string; versionedPath: string };
-        expect(versions).toContain(manifest.activeVersion as (typeof versions)[number]);
+        const manifest = readInstallerManifest(sandbox.configDir);
+        expect(new Set<string>(versions).has(manifest.activeVersion)).toBe(true);
+        if (!manifest.versionedPath) throw new Error("Binary manifest omitted versionedPath");
         expect(manifest.versionedPath).toBe(
           join(sandbox.dataDir, "versions", manifest.activeVersion, "kunai.exe"),
         );
@@ -1733,9 +1739,7 @@ describePwsh("install.ps1 package activeVersion", () => {
 
       const result = runInstallPs1(["-Method", "npm", "-Yes"], env);
       expect(result.status).toBe(0);
-      const manifest = JSON.parse(
-        readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-      ) as { activeVersion: string; method: string; launcherPath: string };
+      const manifest = readInstallerManifest(sandbox.configDir);
       expect(manifest.method).toBe("npm-global");
       expect(manifest.activeVersion).toBe("4.5.6");
       expect(manifest.activeVersion).not.toBe("latest");
@@ -1816,9 +1820,7 @@ describePwsh("install.ps1 package activeVersion", () => {
         const result = runInstallPs1(["-Method", method, "-Yes", "-Version", "4.5.6"], env);
         expect(result.status).toBe(0);
         expect(readFileSync(argvLog, "utf8").trim()).toBe(`install -g @kitsunekode/kunai@4.5.6`);
-        const manifest = JSON.parse(
-          readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-        ) as { activeVersion: string; launcherPath: string };
+        const manifest = readInstallerManifest(sandbox.configDir);
         expect(manifest.activeVersion).toBe("4.5.6");
         // Each channel records its own owner's absolute launcher, not "kunai".
         expect(manifest.launcherPath).toBe(
