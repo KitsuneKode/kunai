@@ -130,12 +130,12 @@ Differences from `ink-testing-library`'s `Instance`:
 
 ### Per-test timeout budget
 
-Bun's default is 5000ms. That is ample on Linux and wrong on the Windows runner,
-where the SQLite-backed suites open a fresh database per test and the temp-store
-registry forces a synchronous full GC per teardown so Windows releases the file
-handles. Under full-suite load a test drifts past 5s and **which** test loses
-moves between runs — one storage test measured 6428ms on one run and 16549ms on
-the next.
+Bun's default is 5000ms. That is too low for two deliberate integration costs:
+the docs idempotence test runs the generator twice and can cross 5s under a full
+parallel Turbo run, while the Windows SQLite-backed suites open a fresh database
+per test and the temp-store registry forces a synchronous full GC per teardown
+so Windows releases the file handles. Under full-suite load a test drifts past
+5s; one storage test measured 6428ms on one run and 16549ms on the next.
 
 The budget lives on the suite scripts, because that is the one place every
 caller shares:
@@ -145,6 +145,7 @@ caller shares:
 | `apps/cli` `test:file`        | 20000ms |
 | `apps/cli` `test:unit`        | 20000ms |
 | `apps/cli` `test:integration` | 20000ms |
+| `apps/docs` `test`            | 20000ms |
 | `packages/storage` `test`     | 30000ms |
 
 `test:file` carries that baseline into CI's single-file invocations, including
@@ -152,8 +153,8 @@ the PowerShell installer suite. `KUNAI_TEST_TIMEOUT_MS` still overrides the
 `apps/cli` unit/integration pair, because
 `run-default-tests.ts` appends its `--timeout=` after the scripted one and Bun
 applies the last flag on the command line. It does not reach
-`test:file` or `packages/storage`, which is why those scripts carry their own
-values.
+`test:file`, `apps/docs`, or `packages/storage`, which is why those scripts
+carry their own values.
 
 Do not reach for the alternatives — both were tried and rejected:
 `bunfig.toml`'s `[test] timeout` is ignored outright by Bun 1.3.14, and a

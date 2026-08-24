@@ -15,7 +15,7 @@
     "lighthouse:docs": "bun run scripts/lighthouse-docs.ts",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "test": "bun test test",
+    "test": "bun test test --timeout=20000",
     "clean": "rm -rf .next dist .source"
   },
   "dependencies": {
