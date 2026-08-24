@@ -176,6 +176,42 @@ describe("SyncService drain", () => {
     expect(repo.counts().pending).toBe(0);
   });
 
+  test("a zero or negative drain limit cannot wedge the queue", async () => {
+    // Both limits spin at 0, and differently: batchSize 0 makes
+    // `claimed < batchSize` false forever inside drainBatches, while a pass
+    // budget of 0 makes `claimed >= budget` true forever in deliverSoon's
+    // continuation check. Clamping to 1 keeps both terminating.
+    for (const limits of [
+      { batchSize: 0, maxOperationsPerPass: 0 },
+      { batchSize: -5, maxOperationsPerPass: -5 },
+    ]) {
+      const repo = outbox();
+      const anilist = adapter("anilist");
+      const service = new SyncService({
+        adapters: [anilist.adapter],
+        outbox: repo,
+        config: configPort(),
+        ...limits,
+      });
+
+      for (let id = 1; id <= 3; id += 1) {
+        seedOperation(repo, {
+          version: 1,
+          kind: "favorite-membership:set",
+          target: { tracker: "anilist", anilistId: id, mediaKind: "anime" },
+          present: true,
+        });
+      }
+
+      // Terminating at all is the assertion: unclamped, this never resolves.
+      const summary = await service.drain();
+      expect(summary.claimed).toBe(1);
+      service.deliverSoon();
+      await waitUntil(() => repo.counts().pending === 0, { label: "clamped drain drained" });
+      expect(anilist.calls).toHaveLength(3);
+    }
+  });
+
   test("an uninjected service uses the production drain budget, not a test-sized one", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");

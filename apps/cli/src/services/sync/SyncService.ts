@@ -227,6 +227,26 @@ export function buildProgressUpdates(
  * a manual "sync now" cannot both claim the same row, and shutdown has a single
  * thing to cancel and await.
  */
+/**
+ * Clamp an injected drain limit to something a pass can actually make progress
+ * on.
+ *
+ * Zero is the dangerous value, and it fails differently on each limit. A batch
+ * size of 0 claims nothing, and `claimed < batchSize` is then `0 < 0` -- false
+ * -- so `drainBatches` never breaks and never decrements: it spins. A pass
+ * budget of 0 skips the loop entirely, but `claimed >= maxOperationsPerPass` is
+ * then `0 >= 0` -- true -- so `deliverSoon` reschedules a continuation that
+ * will do nothing, forever. Negative and fractional values are the same class.
+ *
+ * Clamping rather than throwing matches the activation lock, which clamps a
+ * non-positive poll interval to one millisecond: a caller passing nonsense
+ * should get slow, not a wedged queue or a crash on a background path.
+ */
+function clampDrainLimit(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.floor(value));
+}
+
 export class SyncService {
   private readonly adaptersById = new Map<TrackerId, SyncAdapter>();
   private readonly outbox: SyncOutboxRepository;
@@ -251,8 +271,8 @@ export class SyncService {
     this.config = deps.config;
     this.diagnostics = deps.diagnostics;
     this.now = deps.now ?? (() => new Date());
-    this.maxOperationsPerPass = deps.maxOperationsPerPass ?? DRAIN_MAX_OPERATIONS;
-    this.batchSize = deps.batchSize ?? DRAIN_BATCH_LIMIT;
+    this.maxOperationsPerPass = clampDrainLimit(deps.maxOperationsPerPass, DRAIN_MAX_OPERATIONS);
+    this.batchSize = clampDrainLimit(deps.batchSize, DRAIN_BATCH_LIMIT);
     this.scheduleWake =
       deps.scheduleWake ??
       ((task, delayMs) => {
