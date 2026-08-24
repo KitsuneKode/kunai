@@ -465,6 +465,10 @@ async function tryAcquireActivationLockFromFilesystem(
       await quarantineForRelease(path, ownerId);
       continue;
     } catch (error) {
+      if (errorCode(error) === "ENOENT") {
+        await mkdir(dirname(path), { recursive: true });
+        continue;
+      }
       if (errorCode(error) !== "EEXIST") {
         throw new Error(`Could not create activation lock at ${path}`, { cause: error });
       }

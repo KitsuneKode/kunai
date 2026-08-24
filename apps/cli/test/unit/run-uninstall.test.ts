@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { writeInstallManifest } from "@/services/update/install-manifest";
+import { readInstallManifest, writeInstallManifest } from "@/services/update/install-manifest";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
@@ -132,6 +132,83 @@ test("runUninstall retains the manifest when package-manager uninstall fails", a
 
   expect(code).toBe(7);
   expect(existsSync(join(layout.configDir, "install.json"))).toBe(true);
+});
+
+test("runUninstall keeps a concurrent package publication behind every purge root", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kunai-run-uninstall-package-purge-race-"));
+  made.push(root);
+  const layout = getInstallLayoutPaths({
+    dataDir: join(root, "data"),
+    cacheDir: join(root, "cache"),
+    configDir: join(root, "config"),
+    launcherPath: join(root, "bin", "kunai"),
+    platform: "linux",
+  });
+  await writeInstallManifest(
+    {
+      method: "npm-global",
+      activeVersion: "1.0.0",
+      launcherPath: layout.launcherPath,
+      downloadBaseUrl: "https://registry.npmjs.org",
+    },
+    layout,
+  );
+  await mkdir(layout.cacheDir, { recursive: true });
+  await writeFile(join(layout.cacheDir, "cache"), "old");
+
+  let announcePurge!: () => void;
+  const purgeStarted = new Promise<void>((resolve) => {
+    announcePurge = resolve;
+  });
+  let resumePurge!: () => void;
+  const purgeMayContinue = new Promise<void>((resolve) => {
+    resumePurge = resolve;
+  });
+  const lifecycleGuard = `${layout.dataDir}.lifecycle.lock`;
+  const guardedRoots: string[] = [];
+  const originalRm = rm;
+  const rmImpl: typeof rm = async (path, options) => {
+    if (path === layout.configDir) {
+      announcePurge();
+      await purgeMayContinue;
+    }
+    const isPurgeRoot =
+      path === layout.configDir || path === layout.cacheDir || path === layout.dataDir;
+    if (isPurgeRoot && existsSync(lifecycleGuard)) guardedRoots.push(String(path));
+    const result = await originalRm(path, options);
+    if (isPurgeRoot) expect(existsSync(lifecycleGuard)).toBe(true);
+    return result;
+  };
+
+  const uninstalling = runUninstall({
+    purge: true,
+    layout,
+    execImpl: async () => 0,
+    rmImpl,
+  });
+  await purgeStarted;
+
+  let publicationFinished = false;
+  const publishing = (async () => {
+    await writeInstallManifest(
+      {
+        method: "npm-global",
+        activeVersion: "2.0.0",
+        launcherPath: layout.launcherPath,
+        downloadBaseUrl: "https://registry.npmjs.org",
+      },
+      layout,
+    );
+    publicationFinished = true;
+  })();
+  await Bun.sleep(25);
+
+  expect(publicationFinished).toBe(false);
+  resumePurge();
+  expect(await uninstalling).toBe(0);
+  await publishing;
+  expect(guardedRoots).toEqual([layout.configDir, layout.cacheDir, layout.dataDir]);
+  expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("2.0.0");
 });
 
 for (const [manager, expectedCommand] of [

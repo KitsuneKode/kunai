@@ -883,6 +883,7 @@ acquire_activation_lock() {
 				err "Could not create activation lock at $lock_path"
 				return 1
 			fi
+			mkdir -p "$(dirname "$lock_path")" || return 1
 			activation_lock_poll_until "$deadline" || continue
 			continue
 		fi

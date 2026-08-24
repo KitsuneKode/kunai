@@ -857,6 +857,7 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
         if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
           throw "Could not create activation lock at $LockPath"
         }
+        New-Item -ItemType Directory -Force -Path (Split-Path $LockPath) | Out-Null
         Wait-ActivationLockPoll $timer
         continue
       }

@@ -12,9 +12,10 @@ import {
   type DetectInstallMethodInput,
   type InstallMethodKind,
 } from "./install-method";
-import { withActivationLock } from "./native-installer/activation-lock";
+import { tryAcquireActivationLock } from "./native-installer/activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";
 import { nativeUninstall } from "./native-installer/native-uninstall";
+import { tryAcquireLifecycleLock } from "./native-installer/version-lock";
 
 const PKG = "@kitsunekode/kunai";
 
@@ -64,6 +65,8 @@ export type RunUninstallOptions = {
   readonly preservePaths?: readonly string[];
   /** Test seam for package-manager delegation. */
   readonly execImpl?: (command: readonly string[]) => Promise<number>;
+  /** Test seam for deterministic purge interleavings. */
+  readonly rmImpl?: typeof rm;
   /** Test seam for compiled children carrying launcher ownership context. */
   readonly detectInstallMethodInput?: DetectInstallMethodInput;
 };
@@ -76,6 +79,7 @@ export type RunUninstallOptions = {
  */
 export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
   const layout = opts.layout ?? getInstallLayoutPaths();
+  const rmImpl = opts.rmImpl ?? rm;
   const manifest = await readInstallManifest(layout.configDir);
   const channel: InstallMethodKind =
     manifest?.method ??
@@ -90,15 +94,43 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
   });
 
   if (plan.kind === "manual") {
-    console.log(plan.message);
+    if (!opts.purge) {
+      console.log(plan.message);
+      console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+      return 0;
+    }
+    const purged = await withPurgeSafeUninstallOwnership(
+      layout,
+      manifest?.activeVersion ?? "0.0.0",
+      opts.force,
+      async () => {
+        const current = await inspectInstallManifest(layout.configDir);
+        if (
+          current.status === "invalid" ||
+          (current.status === "loaded" &&
+            (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
+        ) {
+          return false;
+        }
+        console.log(plan.message);
+        await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+        return true;
+      },
+    );
+    if (!purged) {
+      console.error("Uninstall blocked: install manifest changed or publication lock is active.");
+      return 1;
+    }
+    return 0;
   } else if (plan.kind === "exec") {
     const execImpl =
       opts.execImpl ??
       ((command: readonly string[]) =>
         Bun.spawn([...command], { stdout: "inherit", stderr: "inherit" }).exited);
-    const removed = await withActivationLock(
+    const removed = await withPurgeSafeUninstallOwnership(
       layout,
       manifest?.activeVersion ?? "0.0.0",
+      opts.force,
       async () => {
         const current = await inspectInstallManifest(layout.configDir);
         if (
@@ -110,7 +142,10 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
         }
         const code = await execImpl(plan.command);
         if (code !== 0) return { status: "failed" as const, code };
-        await rm(join(layout.configDir, "install.json"), { force: true });
+        await rmImpl(join(layout.configDir, "install.json"), { force: true });
+        if (opts.purge) {
+          await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+        }
         return { status: "removed" as const };
       },
     );
@@ -122,9 +157,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       console.error(`Package manager uninstall exited with code ${removed.code}.`);
       return removed.code;
     }
-    if (opts.purge) {
-      await purgeUserRoots(layout, opts.preservePaths);
-    } else {
+    if (!opts.purge) {
       console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
     }
     return 0;
@@ -165,9 +198,10 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
     }
     return 0;
   } else {
-    const removed = await withActivationLock(
+    const removed = await withPurgeSafeUninstallOwnership(
       layout,
       manifest?.activeVersion ?? "0.0.0",
+      opts.force,
       async () => {
         const current = await inspectInstallManifest(layout.configDir);
         if (
@@ -177,9 +211,12 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
         ) {
           return false;
         }
-        await rm(plan.path, { force: true });
+        await rmImpl(plan.path, { force: true });
         console.log(`Removed ${plan.path}`);
-        await rm(join(layout.configDir, "install.json"), { force: true }).catch(() => {});
+        await rmImpl(join(layout.configDir, "install.json"), { force: true }).catch(() => {});
+        if (opts.purge) {
+          await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+        }
         return true;
       },
     );
@@ -189,25 +226,53 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
     }
   }
 
-  if (opts.purge) {
-    await purgeUserRoots(layout, opts.preservePaths);
-  } else {
+  if (!opts.purge) {
     console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
   }
   return 0;
 }
 
+/**
+ * Current-base adapter for the purge-safe lifecycle -> activation composite.
+ * Keeping the acquisition boundary here lets the base lifecycle implementation
+ * own this contract after the updater branch is rebased.
+ */
+async function withPurgeSafeUninstallOwnership<T>(
+  layout: InstallLayoutPaths,
+  version: string,
+  force: boolean | undefined,
+  fn: () => Promise<T>,
+): Promise<T | null> {
+  const lifecycle = await tryAcquireLifecycleLock(layout, {
+    force,
+    execPath: process.execPath,
+  });
+  if (!lifecycle.acquired) return null;
+  try {
+    const activation = await tryAcquireActivationLock(layout, version);
+    if (!activation.acquired) return null;
+    try {
+      return await fn();
+    } finally {
+      await activation.release();
+    }
+  } finally {
+    await lifecycle.release();
+  }
+}
+
 async function purgeUserRoots(
   layout: Pick<InstallLayoutPaths, "configDir" | "dataDir" | "cacheDir">,
   preservePaths: readonly string[] | undefined,
+  rmImpl: typeof rm = rm,
 ): Promise<void> {
   const preserve = new Set(preservePaths ?? []);
-  for (const target of [layout.configDir, layout.dataDir, layout.cacheDir]) {
+  for (const target of [layout.configDir, layout.cacheDir, layout.dataDir]) {
     if (preserve.has(target)) {
       console.log(`Preserved ${target}`);
       continue;
     }
-    await rm(target, { recursive: true, force: true }).catch(() => {});
+    await rmImpl(target, { recursive: true, force: true }).catch(() => {});
     console.log(`Removed ${target}`);
   }
 }
