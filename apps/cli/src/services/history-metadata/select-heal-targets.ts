@@ -8,7 +8,8 @@
 // picks the titles worth re-resolving, most-recent first, capped to throttle work.
 // =============================================================================
 
-import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
+import { isCatalogAddressableTitleId } from "@/domain/catalog/title-detail";
+import { isPlaceholderTitleName, looksLikeOpaqueProviderNativeId } from "@kunai/core";
 import type { HistoryProgress } from "@kunai/storage";
 import type { MediaKind, ProviderExternalIds, ProviderId } from "@kunai/types";
 
@@ -21,6 +22,15 @@ export type HistoryHealTarget = {
   readonly anchorEpisode?: number;
   readonly needsPoster: boolean;
   readonly needsExternalIds: boolean;
+  /**
+   * The stored title is the id wearing a name — the `-i/--id` placeholder, or a
+   * share ref that named a title after itself — *and* that id can address a
+   * catalog entry. Such a row cannot be healed by searching its own text (the
+   * query would be the placeholder), so it is repaired by id instead. A
+   * placeholder over an opaque provider id is not flagged: nothing could resolve
+   * it, and guessing would name the row after an unrelated title.
+   */
+  readonly needsTitle: boolean;
   readonly needsProviderNativeMapping: boolean;
   readonly providerId?: ProviderId;
 };
@@ -58,7 +68,10 @@ export function selectHistoryHealTargets(
     const needsPoster = !anchor.posterUrl;
     const needsExternalIds = !hasExternalIds(anchor.externalIds);
     const needsProviderNative = needsProviderNativeMapping(anchor);
-    if (!needsPoster && !needsExternalIds && !needsProviderNative) continue;
+    const needsTitle =
+      isPlaceholderTitleName(anchor.title, anchor.titleId) &&
+      isCatalogAddressableTitleId(anchor.titleId);
+    if (!needsPoster && !needsExternalIds && !needsProviderNative && !needsTitle) continue;
     targets.push({
       titleId: anchor.titleId,
       title: anchor.title,
@@ -69,6 +82,7 @@ export function selectHistoryHealTargets(
       needsPoster,
       needsExternalIds,
       needsProviderNativeMapping: needsProviderNative,
+      needsTitle,
       providerId: anchor.providerId,
     });
   }

@@ -21,7 +21,7 @@ import { CatalogIdentityService } from "../services/catalog/CatalogIdentityServi
 import { createCatalogScheduleService } from "../services/catalog/CatalogScheduleService";
 import { ResultEnrichmentService } from "../services/catalog/ResultEnrichmentService";
 import { TimelineService } from "../services/catalog/TimelineService";
-import { bindTitleDetailCrosswalk } from "../services/catalog/TitleDetailService";
+import { bindTitleDetailCrosswalk, fetchTitleDetail } from "../services/catalog/TitleDetailService";
 import { ContinuationProjectionService } from "../services/continuation/ContinuationProjectionService";
 import { ContinueWatchingService } from "../services/continuation/ContinueWatchingService";
 import { DownloadService } from "../services/download/DownloadService";
@@ -407,6 +407,24 @@ export function bootstrapServices(input: {
         } catch (error) {
           logger.warn("History metadata search failed", { title, error });
           return [];
+        }
+      },
+      // Rows whose stored title is a stand-in for their id ("TMDB 438631") are
+      // unfindable by search — the query would be the placeholder itself. The id
+      // addresses the catalog entry directly, so repair those by lookup.
+      fetchDetail: async (titleId, mediaKind, signal) => {
+        try {
+          return await fetchTitleDetail(
+            titleId,
+            mediaKind === "movie" ? "movie" : "series",
+            signal,
+            {
+              isAnime: mediaKind === "anime",
+            },
+          );
+        } catch (error) {
+          logger.warn("History metadata detail lookup failed", { titleId, error });
+          return null;
         }
       },
     }),

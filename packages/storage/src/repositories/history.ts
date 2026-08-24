@@ -1,4 +1,5 @@
 import {
+  isPlaceholderTitleName,
   mergeBackfillExternalIds,
   resolveHistoryLookupTitleId,
   resolvePersistedHistoryTitle,
@@ -113,6 +114,16 @@ export class HistoryRepository {
         }
       }
     }
+    // A write carries whatever metadata its launching lane happened to have, and
+    // a lane that knows less than the row must never subtract from it. `-i
+    // 438631 -t movie` knows only an id: it used to overwrite a searched row's
+    // real title with "TMDB 438631" and null its external ids, which silently
+    // took the title out of tracker sync (sync resolves its target from those
+    // ids). Progress fields still come from the newest write — only identity
+    // metadata is protected. `poster_url` has always been COALESCEd for exactly
+    // this reason; title and external ids simply never got the same treatment.
+    const title = resolvePersistedTitleText(persistedTitle, existing);
+    const externalIds = mergeBackfillExternalIds(existing?.externalIds, persistedTitle.externalIds);
     const watchedSeconds = resolveWatchedSeconds(input, existing);
     const lastWatchedAt =
       input.lastWatchedAt !== undefined ? input.lastWatchedAt : (existing?.lastWatchedAt ?? now);
@@ -168,7 +179,7 @@ export class HistoryRepository {
         key,
         persistedTitle.id,
         persistedTitle.kind,
-        persistedTitle.title,
+        title,
         input.episode?.season ?? null,
         input.episode?.episode ?? null,
         input.episode?.absoluteEpisode ?? null,
@@ -179,18 +190,14 @@ export class HistoryRepository {
         lastWatchedAt,
         completedAt,
         input.providerId ?? null,
-        serializeExternalIds(persistedTitle.externalIds),
+        serializeExternalIds(externalIds),
         input.posterUrl ?? null,
         now,
         now,
       );
 
     // Keep the alias index current so any external id resolves to this unit.
-    this.titleAliases.upsertAliases(
-      persistedTitle.id,
-      externalIdsToAliases(persistedTitle.externalIds),
-      now,
-    );
+    this.titleAliases.upsertAliases(persistedTitle.id, externalIdsToAliases(externalIds), now);
     this.syncReconciliation.record(
       { kind: "history", historyKey: key, localMutationId: crypto.randomUUID() },
       new Date(now),
@@ -376,9 +383,31 @@ export class HistoryRepository {
    */
   backfillTitleMetadata(
     titleId: string,
-    metadata: { readonly posterUrl?: string; readonly externalIds?: ProviderExternalIds },
+    metadata: {
+      readonly title?: string;
+      readonly posterUrl?: string;
+      readonly externalIds?: ProviderExternalIds;
+    },
   ): boolean {
     let changed = false;
+    if (metadata.title) {
+      // Repair only rows still stored under a stand-in name. A row whose title a
+      // catalog or a user already supplied is never overwritten from here — the
+      // healer resolves from an id, and a wrong repair is unrecoverable where a
+      // missed one is not.
+      const rows = this.db
+        .query<{ key: string; title: string }, [string]>(
+          "SELECT key, title FROM history_progress WHERE title_id = ?",
+        )
+        .all(titleId);
+      for (const row of rows) {
+        if (!isPlaceholderTitleName(row.title, titleId)) continue;
+        const result = this.db
+          .query("UPDATE history_progress SET title = ? WHERE key = ?")
+          .run(metadata.title, row.key);
+        changed ||= result.changes > 0;
+      }
+    }
     if (metadata.posterUrl) {
       const result = this.db
         .query(
@@ -673,6 +702,24 @@ function resolveWatchedSeconds(
     return prior;
   }
   return Math.max(prior, fromPosition);
+}
+
+/**
+ * The title text to persist: the incoming one, unless it is a stand-in for the
+ * id and the row already holds a real name.
+ *
+ * Deliberately narrow. A genuine rename (a catalog correcting "Dune" to "Dune:
+ * Part One") still lands; only a name that *is* the id — the `-i/--id`
+ * placeholder, or a share ref that fell back to naming a title after itself —
+ * is refused, and only when there is something better to keep.
+ */
+function resolvePersistedTitleText(
+  incoming: TitleIdentity,
+  existing: HistoryProgress | undefined,
+): string {
+  if (!existing?.title) return incoming.title;
+  if (!isPlaceholderTitleName(incoming.title, incoming.id)) return incoming.title;
+  return isPlaceholderTitleName(existing.title, existing.titleId) ? incoming.title : existing.title;
 }
 
 function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {

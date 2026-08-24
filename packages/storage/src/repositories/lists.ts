@@ -1,3 +1,4 @@
+import { isPlaceholderTitleName, mergeBackfillExternalIds } from "@kunai/core";
 import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
@@ -193,6 +194,14 @@ export class ListRepository {
   private addItemInTransaction(input: ListItemInput): ListItem {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+    // Re-adding a title must never subtract from what the row already knows.
+    // A caller holding only an id (a `-i/--id` launch before the catalog
+    // answers) used to overwrite the stored name with its placeholder and null
+    // the external ids that address the title's tracker entry. Same contract as
+    // `history_progress`.
+    const existing = this.getItemByTitle(input.listId, input.titleId);
+    const title = resolvePersistedListTitle(input, existing);
+    const externalIds = mergeBackfillExternalIds(existing?.externalIds, input.externalIds);
     const maxOrder = this.db
       .query<{ max_order: number | null }, [string]>(
         "SELECT MAX(sort_order) AS max_order FROM list_items WHERE list_id = ?",
@@ -219,11 +228,11 @@ export class ListRepository {
         input.titleId,
         input.mediaKind,
         input.contentType ?? null,
-        input.title,
+        title,
         input.season ?? null,
         input.episode ?? null,
         input.notes ?? null,
-        serializeExternalIds(input.externalIds),
+        serializeExternalIds(externalIds),
         now,
         sortOrder,
       );
@@ -263,6 +272,16 @@ export class ListRepository {
       this.db.query("DELETE FROM list_items WHERE list_id = ? AND title_id = ?").run(list, title);
       this.recordListReconciliation(mapListItemRow(row), false, new Date().toISOString());
     })(listId, titleId);
+  }
+
+  /** The stored item for a title in a list, or undefined. */
+  getItemByTitle(listId: string, titleId: string): ListItem | undefined {
+    const row = this.db
+      .query<ListItemRow, [string, string]>(
+        "SELECT * FROM list_items WHERE list_id = ? AND title_id = ?",
+      )
+      .get(listId, titleId);
+    return row ? mapListItemRow(row) : undefined;
   }
 
   isInList(listId: string, titleId: string): boolean {
@@ -314,6 +333,16 @@ export class ListRepository {
       new Date(now),
     );
   }
+}
+
+/**
+ * The list item title to persist: the incoming one, unless it is a stand-in for
+ * the id and the row already holds a real name. Mirrors the history rule.
+ */
+function resolvePersistedListTitle(input: ListItemInput, existing: ListItem | undefined): string {
+  if (!existing?.title) return input.title;
+  if (!isPlaceholderTitleName(input.title, input.titleId)) return input.title;
+  return isPlaceholderTitleName(existing.title, existing.titleId) ? input.title : existing.title;
 }
 
 function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {

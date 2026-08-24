@@ -1,4 +1,4 @@
-import { isDirectIdTitleName } from "@/domain/types";
+import { applyCatalogDetailToTitle } from "@/domain/catalog/apply-title-detail";
 // =============================================================================
 // Session State Types
 //
@@ -478,20 +478,11 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       if (!state.currentTitle || state.currentTitle.id !== transition.titleId) {
         return state;
       }
-      // Catalog format may stamp a film after search. Upgrade only — never
-      // turn a movie back into a series from a later fetch.
-      let currentTitle =
-        state.currentTitle.type !== "movie" && transition.detail.type === "movie"
-          ? { ...state.currentTitle, type: "movie" as const, episodeCount: undefined }
-          : state.currentTitle;
-      // A `-i/--id` launch has only an id, so it renders the placeholder name
-      // until the catalog answers. This is where the real one arrives -- without
-      // adopting it the panel showed "TMDB 438631" as the film's title while
-      // every other field beside it was correct.
-      const resolvedName = transition.detail.title.trim();
-      if (resolvedName && isDirectIdTitleName(currentTitle.name, currentTitle.id)) {
-        currentTitle = { ...currentTitle, name: resolvedName };
-      }
+      // Adopt the catalog answer through the same function the playback phase
+      // uses, so the rendered title and the persisted one cannot disagree: a
+      // film stamped after search, the `-i/--id` placeholder name, a missing
+      // poster, and missing external ids all resolve here, upgrade-only.
+      const currentTitle = applyCatalogDetailToTitle(state.currentTitle, transition.detail);
       return { ...state, titleDetail: transition.detail, currentTitle };
     }
 

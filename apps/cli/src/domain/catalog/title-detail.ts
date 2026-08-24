@@ -182,3 +182,17 @@ export function mergeArtwork(
     ...(contributingSources.length ? { contributingSources } : {}),
   };
 }
+
+/**
+ * True when `fetchTitleDetail` can address a catalog entry from this id alone —
+ * a bare numeric id, or one namespaced `tmdb:` / `anilist:`.
+ *
+ * Anything else (an opaque provider-native id like AllManga's) has no catalog
+ * meaning, and asking for it either fails or, worse, matches an unrelated entry
+ * that happens to share the number. Callers that repair a row from its id must
+ * check this first: a missed repair is recoverable, a wrong one is not.
+ */
+export function isCatalogAddressableTitleId(id: string): boolean {
+  const trimmed = id.trim();
+  return /^\d+$/.test(trimmed) || /^(?:tmdb|anilist):\d+$/.test(trimmed);
+}

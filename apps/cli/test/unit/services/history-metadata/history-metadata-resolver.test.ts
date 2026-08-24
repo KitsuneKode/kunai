@@ -12,6 +12,7 @@ function target(over: Partial<HistoryHealTarget> & { title: string }): HistoryHe
     needsPoster: over.needsPoster ?? true,
     needsExternalIds: over.needsExternalIds ?? true,
     needsProviderNativeMapping: over.needsProviderNativeMapping ?? false,
+    needsTitle: over.needsTitle ?? false,
     ...over,
   };
 }

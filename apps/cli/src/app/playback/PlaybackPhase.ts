@@ -159,9 +159,9 @@ import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
 import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
+import { applyCatalogDetailToTitle } from "@/domain/catalog/apply-title-detail";
 import { resolveProvenNumericTmdbId } from "@/domain/catalog/tmdb-identity";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
-import { upgradeTitleInfoStructure } from "@/domain/media/anilist-format";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
 import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
@@ -745,7 +745,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
       const catalogDetail = await catalogDetailPromise;
       if (catalogDetail) {
-        title = upgradeTitleInfoStructure(title, catalogDetail.type);
+        // Everything persisted or broadcast below reads this `title`, not the
+        // reducer's copy — history, the ledger, presence, and share links. Fold
+        // the whole catalog answer in, not just its structure, or a `-i/--id`
+        // launch writes "TMDB 438631" and no ids to all four.
+        title = applyCatalogDetailToTitle(title, catalogDetail);
         stateManager.dispatch({
           type: "SET_TITLE_DETAIL",
           titleId: title.id,
