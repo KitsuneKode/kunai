@@ -137,6 +137,54 @@ test("ProviderEngine aliases legacy vidking id to the videasy module", () => {
   expect(engine.getManifest("vidking")?.id).toBe("videasy");
 });
 
+test("ProviderEngine passes the cache port to the module resolve context", async () => {
+  // Regression: the cache was wired into createRuntimeContext but not the
+  // attempt context that engine.resolve() actually builds for module.resolve,
+  // so production resolution silently bypassed the persistent cache.
+  let seenCache: unknown = "unset";
+  const module: CoreProviderModule = {
+    providerId: "videasy",
+    manifest: { ...vidkingManifest, id: "videasy", displayName: "Videasy" },
+    async resolve(_input, context) {
+      seenCache = context.cache;
+      return {
+        status: "exhausted",
+        providerId: "videasy",
+        sources: [],
+        variants: [],
+        streams: [],
+        subtitles: [],
+        trace: {
+          id: "t",
+          startedAt: "2026-06-08T00:00:00.000Z",
+          cacheHit: false,
+          title: { id: "1", kind: "movie", title: "X" },
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const cache = { read: async () => null, write: async () => {} };
+  const engine = createProviderEngine({ modules: [module], cache });
+  // The exhausted result makes engine.resolve reject, but module.resolve still
+  // ran and captured the context — which is all this asserts.
+  await engine
+    .resolve(
+      {
+        mediaKind: "movie",
+        title: { id: "tmdb:1", title: "X" },
+        allowedRuntimes: ["direct-http"],
+        qualityPreference: "best",
+        startupPriority: "balanced",
+      } as never,
+      "videasy",
+    )
+    .catch(() => undefined);
+  expect(seenCache).toBe(cache);
+});
+
 test("vidking manifest declares capability, cache, and runtime boundaries", () => {
   expect(vidkingManifest.id).toBe("vidking");
   expect(vidkingManifest.mediaKinds).toContain("movie");

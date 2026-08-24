@@ -24,7 +24,14 @@ export class ProviderCacheRepository {
       .get(namespace, cacheKey);
     if (!row) return null;
     if (isExpired(row.expires_at, now)) {
-      this.delete(namespace, cacheKey);
+      // Delete only if this exact expired row still stands: another process may
+      // have refreshed it between this read and the delete, and dropping that
+      // fresh value would reintroduce the cold cost we are avoiding.
+      this.db
+        .query(
+          "DELETE FROM provider_cache WHERE namespace = ? AND cache_key = ? AND expires_at = ?",
+        )
+        .run(namespace, cacheKey, row.expires_at);
       return null;
     }
     return row.payload_json;

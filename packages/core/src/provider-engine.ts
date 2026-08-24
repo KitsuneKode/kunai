@@ -672,6 +672,7 @@ export class ProviderEngine {
         ? guardEndpointHealthAgainstCancellation(this.endpointHealth, attemptSignal)
         : undefined,
       titleBridge: this.titleBridge,
+      cache: this.cache,
       emit: (event) => traceEvents.push(event),
     });
 
