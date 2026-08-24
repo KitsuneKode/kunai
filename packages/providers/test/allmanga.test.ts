@@ -963,8 +963,9 @@ describe("AllManga provider evidence fixtures", () => {
       signal: new AbortController().signal,
     } as Parameters<typeof resolveEpisodeSources>[0]);
 
-    expect(links.some((link) => link.url.includes("video.wixstatic.com"))).toBe(true);
-    expect(links.some((link) => link.url.includes("direct.example"))).toBe(true);
+    const hosts = links.map((link) => new URL(link.url).hostname);
+    expect(hosts).toContain("video.wixstatic.com");
+    expect(hosts).toContain("direct.example");
     expect(performance.now() - startedAt).toBeLessThan(80);
     expect(fetchMock.abortedBaselineRequests).toBe(1);
   });

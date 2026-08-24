@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   relayAllAnimeSmokePath,
@@ -120,9 +122,10 @@ describe("relay URL safety", () => {
 });
 
 test("relayAllAnimeSmokePath decodes filesystem URLs", () => {
-  expect(relayAllAnimeSmokePath("file:///tmp/kunai%20repo/relay-from-config.ts")).toBe(
-    "/tmp/kunai repo/relay-allanime.smoke.ts",
-  );
+  const fixtureDirectory = join(import.meta.dir, "kunai repo");
+  const metaUrl = pathToFileURL(join(fixtureDirectory, "relay-from-config.ts")).href;
+
+  expect(relayAllAnimeSmokePath(metaUrl)).toBe(join(fixtureDirectory, "relay-allanime.smoke.ts"));
 });
 
 test("relay health diagnostics discard paths and redact arbitrary error messages", () => {
