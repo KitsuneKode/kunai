@@ -40,6 +40,25 @@ export function RootIdleShell({ state }: { state: SessionState }) {
       </Box>
     );
   }
+
+  // A title was selected but playback has not started yet. `SELECT_TITLE` sets
+  // `view: "details"` with `playbackStatus: "idle"`, and every playback path —
+  // movie or series — later dispatches `SELECT_EPISODE`, which flips the view to
+  // "playback"; so `view === "details"` is reached only during that resolve
+  // window and never on a resting/paused session (which sits at "playback").
+  // Without this branch the idle surface showed the static session view with no
+  // sign of work in flight — the same gap the search branch above closes, one
+  // step later in the flow.
+  if (currentTitle && state.view === "details") {
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <SakuraLoader
+          label={`Preparing ${currentTitle.name}…`}
+          sublabel="Resolving sources · esc to cancel"
+        />
+      </Box>
+    );
+  }
   const hasSession = !!currentTitle;
   const currentEpisode =
     state.currentEpisode && showsEpisodeLabel(currentTitle)
