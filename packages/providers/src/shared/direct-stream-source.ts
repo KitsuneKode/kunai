@@ -185,10 +185,15 @@ export async function resolveDirectStreamSource(
     if (resolveGateProbe) {
       let gateFailure: ProviderFailure | undefined;
 
+      let cancelled = false;
+
       for (const candidate of streams.slice(0, RESOLVE_GATE_MAX_PROBES)) {
         // A cancelled resolve must not keep spending probes, and must not be
         // recorded as a stream failure — the caller went away, the CDN is fine.
-        if (context.signal?.aborted) break;
+        if (context.signal?.aborted) {
+          cancelled = true;
+          break;
+        }
         if (!candidate.url) continue;
 
         const health = await runStreamHealthCheck({
@@ -241,6 +246,24 @@ export async function resolveDirectStreamSource(
           failures,
           startedAt,
         });
+      }
+
+      // Nothing was verified because the caller cancelled. Returning the
+      // selected stream anyway would let playback start on a resolve the user
+      // already abandoned, so report the cancellation instead. `cancelled` is
+      // health-neutral, so this costs the provider nothing.
+      if (cancelled && !streamReachabilityVerified) {
+        return createExhaustedResult(
+          input,
+          context,
+          providerId,
+          {
+            code: "cancelled",
+            message: `${label} resolve was cancelled`,
+            retryable: false,
+          },
+          { cachePolicy, events, failures, startedAt },
+        );
       }
     }
 

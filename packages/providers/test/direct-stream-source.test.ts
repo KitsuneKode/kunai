@@ -58,7 +58,7 @@ describe("direct stream resolve gate", () => {
     expect(result.selectedStreamId).toBeTruthy();
   });
 
-  test("a rate-limited CDN no longer condemns the whole provider", async () => {
+  test("a rate-limited CDN blocks, because its streams do not play either", async () => {
     const result = await resolveDirectStreamSource({
       providerId: "vidlink",
       host: "vidlink.pro",
@@ -69,7 +69,8 @@ describe("direct stream resolve gate", () => {
       resolveGateProbe: true,
     });
 
-    expect(result.status).toBe("resolved");
+    // Falling back to a working provider beats handing mpv an error page.
+    expect(result.status).toBe("exhausted");
   });
 
   test("exhausts only when every probed candidate is definitively unreachable", async () => {
@@ -109,7 +110,7 @@ describe("direct stream resolve gate", () => {
     expect(probes).toBeLessThanOrEqual(3);
   });
 
-  test("a cancelled resolve stops probing and is not recorded as a stream failure", async () => {
+  test("a cancelled resolve stops probing and does not hand back a stream", async () => {
     const controller = new AbortController();
     let probes = 0;
     controller.abort();
@@ -128,7 +129,15 @@ describe("direct stream resolve gate", () => {
     });
 
     expect(probes).toBe(0);
-    expect(result.status).toBe("resolved");
+    // Returning the selection anyway would start playback on a resolve the user
+    // already abandoned.
+    expect(result.status).toBe("exhausted");
+    expect(result.streams).toHaveLength(0);
+    const failure = result.failures.at(-1);
+    expect(failure?.code).toBe("cancelled");
+    // Cancellation is not evidence about the provider, so it must not be
+    // reported as a health failure.
+    expect(result.healthDelta).toBeUndefined();
   });
 
   test("season 0 specials are resolvable, and a missing episode still fails closed", async () => {

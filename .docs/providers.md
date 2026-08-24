@@ -138,19 +138,27 @@ Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endp
 
 `runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
 
-**"Definitive" excludes transient 4xx.** HTTP 408, 425 and 429 are temporary by
-definition, so `isDefinitiveHttpStatus` in
-`packages/providers/src/shared/stream-reachability.ts` keeps them out of the
-definitive set. Treating a 429 as definitive is what made VidLink fail outright:
-its CDN rate-limits CLI range probes, so every resolve was discarded at the gate
-even though the stream played. A throttled probe is not a verdict about the
-stream.
+**Every 4xx is definitive at the resolve gate.** `isDefinitiveHttpStatus` in
+`packages/providers/src/shared/stream-reachability.ts` treats the whole 4xx range
+as a refusal. 429 was briefly excluded on the theory that a CDN throttling a CLI
+probe says nothing about playback; live testing on 2026-08-24 disproved it —
+VidLink's CDN answers 429 to GET, HEAD and ranged GET alike on every candidate,
+so passing the gate only handed mpv a 587-byte nginx error page. Failing here is
+what lets a working provider take over. Any future exception needs evidence that
+the stream _plays_, not merely that a probe passed.
 
 **The gate walks candidates, it does not judge one.** `resolveDirectStreamSource`
 probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
 answers, so one dead or hotlink-protected URL no longer condemns its working
 siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
 keeps its selection rather than recording a stream failure.
+
+**VidLink is CDN-blocked for CLI clients (2026-08-24).** `vidlink.pro` still
+returns a payload, but every signed URL it hands back carries a stale `t` and
+`bcdn.hakunaymatata.com` answers 429 to any request from a non-browser client
+(403 without referer/origin). The lane therefore resolves and then fails the
+gate, which is the correct outcome: the provider is skipped and another one
+serves the title. Do not "fix" this by loosening the gate.
 
 **Per-candidate timeouts are clamped to the attempt budget.**
 `providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)

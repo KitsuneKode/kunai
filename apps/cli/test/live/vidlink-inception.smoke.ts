@@ -79,10 +79,12 @@ const payload = {
     stream,
     resolveDurationMs,
   }),
-  ...(resolveError ? providerSmokeError(resolveError) : {}),
   failureCodes,
   failureMessages,
   streamCandidates,
+  // Last on purpose: on a rejected resolve the locals above are still empty and
+  // would otherwise blank out the real failure codes this carries.
+  ...(resolveError ? providerSmokeError(resolveError) : {}),
   ...providerSmokeProfilePayload(profile),
   cacheCleared: clearCache,
 };

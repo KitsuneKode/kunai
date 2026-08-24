@@ -590,6 +590,11 @@ export async function resolveAnidbEpisodeStreams(options: {
           callerSignal: options.signal,
         })
       : null;
+  // When the wait budget expires and the caller has already aborted,
+  // `settleAlternateWithinBudget` throws before it attaches its own handler, so
+  // this rejection would surface as an unhandled rejection. The awaiting
+  // consumer still receives the original promise's outcome.
+  void alternatePromise?.catch(() => undefined);
 
   const requested = await settleAnidbLanguage({
     context: options.context,

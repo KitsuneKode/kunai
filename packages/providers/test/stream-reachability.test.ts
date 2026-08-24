@@ -187,7 +187,10 @@ describe("stream reachability", () => {
     expect(shouldAbortPlaybackForPreflight(probe, false)).toBe(true);
   });
 
-  test("rate-limited probes are not definitive and survive the resolve gate", async () => {
+  test("a rate-limited CDN blocks the resolve gate", async () => {
+    // Treating 429 as transient let the gate pass a stream whose CDN was
+    // refusing every request, so mpv received an nginx error page. Verified
+    // live against bcdn.hakunaymatata.com on 2026-08-24.
     const probe = await probeStreamReachability({
       url: "https://cdn.example/rate-limited.m3u8",
       fetchImpl: async () => response(429, "slow down"),
@@ -195,24 +198,7 @@ describe("stream reachability", () => {
     });
 
     expect(probe.status).toBe("unreachable");
-    // A CDN throttling a CLI probe says nothing about whether the stream plays.
-    expect(isStreamReachableForResolve(probe)).toBe(true);
-    expect(shouldAbortPlaybackForPreflight(probe, false)).toBe(false);
-  });
-
-  test("429 on HEAD falls through to a ranged GET instead of blocking", async () => {
-    const methods: string[] = [];
-    const probe = await probeStreamReachability({
-      url: "https://cdn.example/video.mp4",
-      fetchImpl: async (_url, init) => {
-        methods.push(String(init.method));
-        return init.method === "HEAD" ? response(429, "slow down") : response(206, "partial");
-      },
-      timeoutMs: 500,
-    });
-
-    expect(methods).toEqual(["HEAD", "GET"]);
-    expect(probe.status).toBe("reachable");
+    expect(isStreamReachableForResolve(probe)).toBe(false);
   });
 
   test("404 stays definitive", async () => {
