@@ -66,6 +66,6 @@ export const allanimeManifest = defineProviderManifest({
     "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
     "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
     "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
-    "2026-08: mkissa crypto requires buildId=119 (rotated from 81) + /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. ani-cli v5 moved primary to anidb.app.",
+    "2026-08: mkissa crypto rotates buildId + derivation constants (81 → 119 → 140; 140 added bootPrefix HMAC and group.host.lane.buildId.epoch payload) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. ani-cli v5 moved primary to anidb.app.",
   ],
 });

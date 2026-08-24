@@ -116,7 +116,7 @@ export type AllMangaAkDeferredDescriptor = {
 export type AllMangaSourceLane = "baseline" | "ak-only";
 
 /**
- * AllManga crypto lives in `./crypto.ts` (mkissa buildId `81` + bootstrap).
+ * AllManga crypto lives in `./crypto.ts` (mkissa rotating buildId + bootstrap).
  * `tobeparsed` remains AES-256-GCM; API base is `api.mkissa.net` with
  * Referer/Origin `https://mkissa.to`. Rate-limit bursts still get a soft retry.
  */
