@@ -115,10 +115,33 @@ function detectCurlHttp2Support(): boolean {
   return curlSupportsHttp2;
 }
 
+/**
+ * Ceilings for the module-level caches. They were unbounded, so a long anime
+ * session accumulated one entry per title/episode probed and never freed them —
+ * the same growth class already bounded for the Videasy Wings transports.
+ */
+export const MIRURO_CACHE_LIMITS = {
+  episodeEntries: 128,
+  sourceEntries: 256,
+} as const;
+
 /** Cache episode lists per AniList ID. TTL 30 minutes (episode data is stable). */
-const episodeCache = new TTLCache<string, unknown>(1_800_000);
+const episodeCache = new TTLCache<string, unknown>(1_800_000, {
+  maxEntries: MIRURO_CACHE_LIMITS.episodeEntries,
+});
 /** Cache source responses per episode+category. TTL 5 minutes. */
-const sourceCache = new TTLCache<string, unknown>(300_000);
+const sourceCache = new TTLCache<string, unknown>(300_000, {
+  maxEntries: MIRURO_CACHE_LIMITS.sourceEntries,
+});
+
+/**
+ * Clear the module caches. The smoke's `KITSUNE_CLEAR_CACHE=1` cleared the CLI
+ * cache store but not these, so a "cache cleared" run still answered from them.
+ */
+export function clearMiruroCachesForTest(): void {
+  episodeCache.clear();
+  sourceCache.clear();
+}
 
 type MiruroPipeStream = {
   readonly url?: string;

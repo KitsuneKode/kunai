@@ -1,5 +1,9 @@
 import type { TitleInfo } from "@/domain/types";
-import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
+import {
+  clearMiruroCachesForTest,
+  isStreamReachableForResolve,
+  probeStreamReachability,
+} from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -30,6 +34,10 @@ if (!provider) {
 
 if (clearCache) {
   await container.cacheStore.clear();
+  // The CLI cache store is not the only place a stale answer hides — the Miruro
+  // module keeps its own episode/source caches. Clear those too, or a
+  // "cache cleared" run still reads from them.
+  clearMiruroCachesForTest();
 }
 
 const title: TitleInfo = {
