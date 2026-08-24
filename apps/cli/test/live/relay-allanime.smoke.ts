@@ -7,6 +7,7 @@ import {
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
 } from "./provider-smoke";
+import { relayDisplayOrigin } from "./relay-config";
 
 const relayBaseUrl = process.env.KUNAI_RELAY_BASE_URL?.trim();
 if (!relayBaseUrl) {
@@ -24,8 +25,28 @@ if (!relayBaseUrl) {
   process.exit(0);
 }
 
+let relayOrigin: string;
+try {
+  relayOrigin = relayDisplayOrigin(relayBaseUrl);
+} catch (error) {
+  console.error(
+    JSON.stringify(
+      {
+        ok: false,
+        stage: "relay-config",
+        reason: error instanceof Error ? error.message : "relay URL validation failed",
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(1);
+}
+
 const profile = createProviderSmokeProfile("allanime");
-const args = process.argv.slice(1);
+// Works under both invocation styles: `bun file.ts query` (argv holds the
+// script at index 1) and `bun -e "await import('./…smoke.ts')"` (it does not).
+const args = process.argv.slice(Bun.main === import.meta.path ? 2 : 1);
 const query = args[0] ?? "Kimetsu no Yaiba";
 const fixtureTitleId = args[1] ?? "SJms742bSTrcyJZay";
 
@@ -60,7 +81,7 @@ const search = await searchTitles(query, {
         stage: "search",
         query,
         provider: "allanime",
-        relayBaseUrl,
+        relayOrigin,
         ...providerSmokeProfilePayload(profile),
         ...providerSmokeError(error),
       },
@@ -84,7 +105,7 @@ if (!selected) {
         ok: false,
         stage: "search",
         query,
-        relayBaseUrl,
+        relayOrigin,
         reason: "no_results",
         ...providerSmokeProfilePayload(profile),
       },
@@ -143,7 +164,7 @@ const payload = {
   }),
   query,
   fixtureTitleId,
-  relayBaseUrl,
+  relayOrigin,
   sourceName: search.sourceName,
   ...(resolveError ? providerSmokeError(resolveError) : {}),
   failureCodes,
