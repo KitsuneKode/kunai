@@ -34,7 +34,9 @@ import {
 } from "./invidious-client";
 import { YOUTUBE_PROVIDER_ID, youtubeManifest } from "./manifest";
 import { mapInvidiousSearchResults, mapPipedSearchResults } from "./map-search-result";
+import { classifyYoutubeMetadataFailure } from "./metadata-failure";
 import { pipedSearch } from "./piped-client";
+import { selectYoutubeQuality, youtubeQualityHeight } from "./quality-selection";
 import { spawnYtDlpWithTimeout } from "./spawn-ytdlp";
 import { boundYoutubeSubtitleTracks } from "./subtitle-language";
 import type {
@@ -315,16 +317,42 @@ async function resolveYoutube(
 
   try {
     let ytInfo: YoutubeVideoMetadata | null = null;
+    let metadataUnavailable = false;
     try {
       ytInfo = await loadYtDlpVideoInfo(videoId, watchUrl, context);
+      // A null result (no metadata service configured, or nothing cached and no
+      // fetch) is not a failure, but the quality ladder, duration and subtitles
+      // are still unverified — mark it so the streams do not claim otherwise.
+      if (!ytInfo) metadataUnavailable = true;
     } catch (error) {
-      failures.push({
+      const classified = classifyYoutubeMetadataFailure(error);
+      const failure: ProviderFailure = {
         providerId: YOUTUBE_PROVIDER_ID,
-        code: "parse-failed",
-        message: error instanceof Error ? error.message : "yt-dlp metadata failed",
-        retryable: true,
+        code: classified.code,
+        message: classified.message,
+        retryable: !classified.terminal,
         at: context.now(),
+      };
+      failures.push(failure);
+      emitTraceEvent(events, context, {
+        type: "source:failed",
+        providerId: YOUTUBE_PROVIDER_ID,
+        sourceId: `source:${YOUTUBE_PROVIDER_ID}:metadata`,
+        message: classified.message,
+        attributes: { code: classified.code, terminal: classified.terminal },
       });
+      // YouTube said no. Returning a "resolved" watch URL here is what sent
+      // private, deleted, members-only and geo-blocked videos into mpv to die
+      // with no diagnosis; fail closed so the reason reaches the shell.
+      if (classified.terminal) {
+        return createExhaustedResult(input, context, YOUTUBE_PROVIDER_ID, failure, {
+          cachePolicy,
+          events,
+          failures,
+          startedAt,
+        });
+      }
+      metadataUnavailable = true;
     }
 
     const liveStatus = mapYtDlpLiveStatus(ytInfo?.isLive, ytInfo?.liveStatus);
@@ -339,13 +367,24 @@ async function resolveYoutube(
     const isLive = liveStatus === "live" || ytInfo?.isLive === true;
 
     const mappedFormats = ytInfo?.qualities ?? [];
-    const qualityLabels =
-      mappedFormats.length > 0 ? mappedFormats : [{ label: "best", rank: 0, formatId: "best" }];
-    const selectedQuality =
+    // Without metadata the ladder is unknown, but the ceiling is still known.
+    // Falling back to a bare "best" here dropped the user's cap entirely and
+    // asked yt-dlp for the highest rendition available.
+    const fallbackLabel =
       input.qualityPreference && input.qualityPreference !== "best"
-        ? (qualityLabels.find((entry) => entry.label === input.qualityPreference) ??
-          qualityLabels[0])
-        : qualityLabels[0];
+        ? input.qualityPreference
+        : "best";
+    const qualityLabels =
+      mappedFormats.length > 0
+        ? mappedFormats
+        : [
+            {
+              label: fallbackLabel,
+              rank: youtubeQualityHeight(fallbackLabel) ?? 0,
+              formatId: fallbackLabel,
+            },
+          ];
+    const selectedQuality = selectYoutubeQuality(qualityLabels, input.qualityPreference);
 
     // One source per player client. Clients fail independently — one answers 403 on
     // media URLs while another plays the same video — and which one works rotates
@@ -401,6 +440,9 @@ async function resolveYoutube(
           durationSeconds: ytInfo?.durationSeconds,
           isLive,
           liveStatus,
+          // Read back by diagnostics: a resolve that ran without metadata has an
+          // unverified quality ladder, so a wrong rendition is explainable.
+          metadataUnavailable,
         },
       })),
     );

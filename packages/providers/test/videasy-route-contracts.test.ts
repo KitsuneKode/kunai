@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import { hasResolvableSeriesCoordinates } from "../src/shared/series-coordinates";
 import {
   buildQueryVariants,
   classifyVideasyHttpFailure,
-  hasResolvableSeriesCoordinates,
   getPhaseAVidkingFlavorIds,
   isVidkingFlavorDeprecated,
   listDeprecatedVidkingEndpoints,

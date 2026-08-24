@@ -13,6 +13,7 @@ import {
   parseAnidbSeasonEvidence,
   anidbCipherArgs,
   resolveAnidbCurl,
+  resolveAnidbEpisodeStreams,
   searchAnidb,
 } from "../src/anidb/direct";
 import { anidbManifest, ANIDB_PROVIDER_ID } from "../src/anidb/manifest";
@@ -444,6 +445,121 @@ describe("anidb search delegation", () => {
   });
 });
 
+describe("anidb episode stream inventory", () => {
+  async function withClientStub<T>(stub: typeof fetch, run: () => Promise<T>): Promise<T> {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = stub;
+      return await run();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+      clearAnidbCachesForTest();
+    }
+  }
+
+  test("ignores languages that Kunai cannot label honestly", async () => {
+    const resolution = await withClientStub(
+      (async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/api/frontend/anime/1234/episodes")) {
+          return Response.json({ episodes: [{ id: 555, number: 1 }] });
+        }
+        if (url.includes("/api/frontend/episode/555/languages")) {
+          return Response.json({
+            languages: [
+              { code: "jpn", name: "Japanese", embed_url: "https://anidb.app/embed/jpn-1" },
+              { code: "spa", name: "Spanish", embed_url: "https://anidb.app/embed/spa-1" },
+            ],
+          });
+        }
+        if (url.includes("/embed/jpn-1")) {
+          return new Response("file: 'https://cdn.example/jpn.m3u8'");
+        }
+        if (url.includes("jpn.m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:4,\nsegment.ts");
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }) as typeof fetch,
+      () =>
+        resolveAnidbEpisodeStreams({
+          showId: "show-1234",
+          episodeNumber: 1,
+          requestedMode: "sub",
+          startupPriority: "balanced",
+        } as Parameters<typeof resolveAnidbEpisodeStreams>[0]),
+    );
+
+    expect(resolution.availableModes).toEqual(["sub"]);
+    expect(resolution.requested).toMatchObject({ mode: "sub", status: "resolved" });
+    expect(resolution.alternate).toBeUndefined();
+  });
+
+  test("aborts a slow alternate without holding the requested stream", async () => {
+    let englishRequestAborted = false;
+    const startedAt = performance.now();
+    const resolution = await withClientStub(
+      (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/frontend/anime/1234/episodes")) {
+          return Response.json({ episodes: [{ id: 555, number: 1 }] });
+        }
+        if (url.includes("/api/frontend/episode/555/languages")) {
+          return Response.json({
+            languages: [
+              { code: "jpn", name: "Japanese", embed_url: "https://anidb.app/embed/jpn-1" },
+              { code: "eng", name: "English", embed_url: "https://anidb.app/embed/eng-1" },
+            ],
+          });
+        }
+        if (url.includes("/embed/jpn-1")) {
+          return new Response("file: 'https://cdn.example/jpn.m3u8'");
+        }
+        if (url.includes("jpn.m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:4,\nsegment.ts");
+        }
+        if (url.includes("/embed/eng-1")) {
+          return await new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(
+              () => resolve(new Response("file: 'https://cdn.example/eng.m3u8'")),
+              200,
+            );
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                englishRequestAborted = true;
+                reject(init.signal?.reason ?? new DOMException("aborted", "AbortError"));
+              },
+              { once: true },
+            );
+          });
+        }
+        if (url.includes("eng.m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:4,\nsegment.ts");
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }) as typeof fetch,
+      () =>
+        resolveAnidbEpisodeStreams({
+          showId: "show-1234",
+          episodeNumber: 1,
+          requestedMode: "sub",
+          startupPriority: "balanced",
+          alternateWaitBudgetMs: 20,
+        } as Parameters<typeof resolveAnidbEpisodeStreams>[0]),
+    );
+
+    expect(performance.now() - startedAt).toBeLessThan(150);
+    expect(resolution.requested).toMatchObject({ mode: "sub", status: "resolved" });
+    expect(resolution.alternate).toMatchObject({ mode: "dub", status: "timed-out" });
+    expect(englishRequestAborted).toBe(true);
+  });
+});
+
 describe("anidb direct resolve season routing", () => {
   const CONTEXT: ProviderRuntimeContext = {
     providerId: "anidb",
@@ -679,6 +795,7 @@ describe("anidb direct resolve season routing", () => {
 
     expect(result.status).toBe("exhausted");
     expect(result.failures[0]?.message).toContain("No AniDB streams");
+    expect(result.failures[0]?.retryable).toBe(false);
   });
 
   test("does not advertise hardcoded English subs without a subtitle track", async () => {
@@ -707,6 +824,121 @@ describe("anidb direct resolve season routing", () => {
       expect.objectContaining({ role: "hardsub" }),
     );
     expect(result.subtitles).toEqual([]);
+  });
+
+  test("resolves dual audio streams (sub and dub) when episode exposes both languages", async () => {
+    clearAnidbCachesForTest();
+    const result = await resolveWithStub(
+      {
+        title: { id: "kaguya-sama-1234", kind: "anime", title: "Kaguya-sama" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      (async (input: unknown) => {
+        const url = String(
+          typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
+        );
+        if (url.includes("/api/frontend/anime/1234/episodes")) {
+          return new Response(JSON.stringify({ episodes: [{ id: 555, number: 1 }] }), {
+            status: 200,
+          });
+        }
+        if (/\/api\/frontend\/episode\/555\/languages/.test(url)) {
+          return new Response(
+            JSON.stringify({
+              languages: [
+                { code: "jpn", name: "Japanese", embed_url: "https://anidb.app/embed/jpn-1" },
+                { code: "eng", name: "English", embed_url: "https://anidb.app/embed/eng-1" },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/embed/jpn-1")) {
+          return new Response("file: 'https://cdn.example/stream-jpn.m3u8'", { status: 200 });
+        }
+        if (url.includes("/embed/eng-1")) {
+          return new Response("file: 'https://cdn.example/stream-eng.m3u8'", { status: 200 });
+        }
+        if (url.includes("stream-jpn.m3u8")) {
+          return new Response(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1920x1080\n1080p.m3u8",
+            { status: 200 },
+          );
+        }
+        if (url.includes("stream-eng.m3u8")) {
+          return new Response(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1920x1080\n1080p.m3u8",
+            { status: 200 },
+          );
+        }
+        return new Response("", { status: 404 });
+      }) as unknown as typeof fetch,
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved result");
+    expect(result.trace.events).toContainEqual(
+      expect.objectContaining({
+        type: "inventory:audio-modes",
+        attributes: expect.objectContaining({ modes: "sub,dub" }),
+      }),
+    );
+    expect(result.sources?.map((s) => s.id)).toEqual(["source:anidb:sub", "source:anidb:dub"]);
+    expect(result.sources?.find((s) => s.id === "source:anidb:sub")?.status).toBe("selected");
+    expect(result.sources?.find((s) => s.id === "source:anidb:dub")?.status).toBe("available");
+    expect(
+      result.streams.some((s) => s.sourceId === "source:anidb:sub" && s.presentation === "sub"),
+    ).toBe(true);
+    expect(
+      result.streams.some((s) => s.sourceId === "source:anidb:dub" && s.presentation === "dub"),
+    ).toBe(true);
+  });
+
+  test("keeps requested success and reports a rejected alternate without advertising it", async () => {
+    const result = await resolveWithStub(
+      {
+        title: { id: "kaguya-sama-1234", kind: "anime", title: "Kaguya-sama" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      (async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/api/frontend/anime/1234/episodes")) {
+          return Response.json({ episodes: [{ id: 555, number: 1 }] });
+        }
+        if (url.includes("/api/frontend/episode/555/languages")) {
+          return Response.json({
+            languages: [
+              { code: "jpn", name: "Japanese", embed_url: "https://anidb.app/embed/jpn-1" },
+              { code: "eng", name: "English", embed_url: "https://anidb.app/embed/eng-1" },
+            ],
+          });
+        }
+        if (url.includes("/embed/jpn-1")) {
+          return new Response("file: 'https://cdn.example/jpn.m3u8'");
+        }
+        if (url.includes("jpn.m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:4,\nsegment.ts");
+        }
+        if (url.includes("/embed/eng-1")) {
+          throw new Error("English embed unavailable");
+        }
+        throw new Error(`unexpected request: ${url}`);
+      }) as typeof fetch,
+    );
+
+    expect(result.status).toBe("resolved");
+    expect(result.sources?.map((source) => source.id)).toEqual(["source:anidb:sub"]);
+    expect(result.trace.events).toContainEqual(
+      expect.objectContaining({ type: "source:failed", sourceId: "source:anidb:dub" }),
+    );
   });
 });
 

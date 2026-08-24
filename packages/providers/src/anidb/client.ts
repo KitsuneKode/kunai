@@ -1,4 +1,4 @@
-import type { ProviderRuntimeContext } from "@kunai/types";
+import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "@kunai/types";
 
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import {
@@ -9,6 +9,10 @@ import {
 import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
 import { markupToPlainText } from "../shared/markup-text";
 import { TTLCache } from "../shared/provider-cache";
+import {
+  BALANCED_QUALITY_WAIT_BUDGET_MS,
+  QUALITY_FIRST_WAIT_BUDGET_MS,
+} from "../shared/startup-selection";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
 
@@ -71,6 +75,36 @@ export type AnidbStreamLink = {
   readonly referer: string;
   readonly protocol: "hls";
   readonly container: "m3u8";
+};
+
+export type AnidbAudioMode = "sub" | "dub";
+
+export type AnidbModeOutcome =
+  | {
+      readonly mode: AnidbAudioMode;
+      readonly status: "resolved";
+      readonly links: readonly AnidbStreamLink[];
+    }
+  | {
+      readonly mode: AnidbAudioMode;
+      readonly status: "catalog-unavailable" | "skipped";
+      readonly links: readonly [];
+    }
+  | {
+      readonly mode: AnidbAudioMode;
+      readonly status: "failed" | "timed-out";
+      readonly links: readonly [];
+      readonly failure: {
+        readonly code: ResolveErrorCode;
+        readonly message: string;
+        readonly retryable: true;
+      };
+    };
+
+export type AnidbEpisodeStreamResolution = {
+  readonly availableModes: readonly AnidbAudioMode[];
+  readonly requested: AnidbModeOutcome;
+  readonly alternate?: AnidbModeOutcome;
 };
 
 /**
@@ -425,6 +459,24 @@ export async function fetchAnidbLanguages(
   return languages;
 }
 
+/**
+ * Inspect which audio modes (sub/dub) are available for an episode by checking
+ * the language codes returned by the AniDB language API.
+ *
+ * Mirrors ani-cli parity: `jpn` → sub, `eng` → dub (ani-cli line 186-187).
+ */
+export async function collectAnidbAvailableAudioModes(
+  episodeId: number,
+  signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
+): Promise<readonly ("sub" | "dub")[]> {
+  const languages = await fetchAnidbLanguages(episodeId, signal, context);
+  const modes: ("sub" | "dub")[] = [];
+  if (languages.some((entry) => entry.code === "jpn")) modes.push("sub");
+  if (languages.some((entry) => entry.code === "eng")) modes.push("dub");
+  return modes;
+}
+
 export async function fetchAnidbMasterUrl(
   embedUrl: string,
   signal?: AbortSignal,
@@ -435,30 +487,22 @@ export async function fetchAnidbMasterUrl(
   return match?.[1]?.trim() || null;
 }
 
-export async function resolveAnidbEpisodeStreams(options: {
+/**
+ * Resolves HLS ladder stream links for a single AniDB language embed.
+ */
+export async function resolveAnidbLanguageStreams(options: {
   readonly context?: ProviderRuntimeContext;
-  readonly showId: string;
-  readonly episodeNumber: number;
+  readonly language: AnidbLanguageEntry;
   readonly audioMode: "sub" | "dub";
   readonly signal?: AbortSignal;
 }): Promise<readonly AnidbStreamLink[]> {
-  const episodes = await fetchAnidbEpisodes(options.showId, options.signal, options.context);
-  const episode = episodes.find((entry) => entry.number === options.episodeNumber);
-  if (!episode) return [];
-
-  const languages = await fetchAnidbLanguages(episode.id, options.signal, options.context);
-  const preferredCode = options.audioMode === "dub" ? "eng" : "jpn";
-  // Do not silently play the other language and label it as the requested mode.
-  // The caller can then fall back to another provider or let the user switch.
-  const language = languages.find((entry) => entry.code === preferredCode);
-  if (!language) return [];
-
-  const masterUrl = await fetchAnidbMasterUrl(language.embedUrl, options.signal, options.context);
+  const masterUrl = await fetchAnidbMasterUrl(
+    options.language.embedUrl,
+    options.signal,
+    options.context,
+  );
   if (!masterUrl) return [];
 
-  // Same transport as metadata: try the relay fetch port, then curl. Using
-  // context.fetch alone 404s on an unregistered /rpc/anidb and expandHls
-  // silently collapses to one "auto" row.
   const variants = await expandHlsMasterPlaylist({
     fetch: async (url: string, init?: RequestInit) => {
       const text = await anidbFetchText(url, {
@@ -483,6 +527,218 @@ export async function resolveAnidbEpisodeStreams(options: {
     protocol: "hls" as const,
     container: "m3u8" as const,
   }));
+}
+
+/**
+ * Resolves episode streams for all available languages in parallel so that
+ * the resulting inventory contains real, playable streams for every mode
+ * (e.g. sub and dub) supported by the AniDB episode.
+ */
+export async function resolveAnidbEpisodeStreams(options: {
+  readonly context?: ProviderRuntimeContext;
+  readonly showId: string;
+  readonly episodeNumber: number;
+  readonly requestedMode: AnidbAudioMode;
+  readonly startupPriority?: StartupPriority;
+  readonly alternateWaitBudgetMs?: number;
+  readonly signal?: AbortSignal;
+}): Promise<AnidbEpisodeStreamResolution> {
+  const episodes = await fetchAnidbEpisodes(options.showId, options.signal, options.context);
+  const episode = episodes.find((entry) => entry.number === options.episodeNumber);
+  if (!episode) {
+    return {
+      availableModes: [],
+      requested: {
+        mode: options.requestedMode,
+        status: "catalog-unavailable",
+        links: [],
+      },
+    };
+  }
+
+  const languages = await fetchAnidbLanguages(episode.id, options.signal, options.context);
+  const availableModes = (["sub", "dub"] as const).filter((mode) =>
+    Boolean(languageEntryForMode(languages, mode)),
+  );
+  const requestedLanguage = languageEntryForMode(languages, options.requestedMode);
+  if (!requestedLanguage) {
+    return {
+      availableModes,
+      requested: {
+        mode: options.requestedMode,
+        status: "catalog-unavailable",
+        links: [],
+      },
+    };
+  }
+
+  const alternateMode: AnidbAudioMode = options.requestedMode === "sub" ? "dub" : "sub";
+  const alternateLanguage = languageEntryForMode(languages, alternateMode);
+  const waitBudgetMs =
+    options.alternateWaitBudgetMs ?? anidbAlternateWaitBudgetMs(options.startupPriority);
+  const alternateController = alternateLanguage && waitBudgetMs > 0 ? new AbortController() : null;
+  const removeCallerListener = alternateController
+    ? linkAbortSignal(options.signal, alternateController)
+    : () => undefined;
+  const alternatePromise =
+    alternateLanguage && alternateController
+      ? settleAnidbLanguage({
+          context: options.context,
+          language: alternateLanguage,
+          mode: alternateMode,
+          signal: alternateController.signal,
+          callerSignal: options.signal,
+        })
+      : null;
+  // When the wait budget expires and the caller has already aborted,
+  // `settleAlternateWithinBudget` throws before it attaches its own handler, so
+  // this rejection would surface as an unhandled rejection. The awaiting
+  // consumer still receives the original promise's outcome.
+  void alternatePromise?.catch(() => undefined);
+
+  const requested = await settleAnidbLanguage({
+    context: options.context,
+    language: requestedLanguage,
+    mode: options.requestedMode,
+    signal: options.signal,
+    callerSignal: options.signal,
+  });
+  if (requested.status !== "resolved") {
+    alternateController?.abort("requested-mode-failed");
+    await alternatePromise?.catch(() => undefined);
+    removeCallerListener();
+    return { availableModes, requested };
+  }
+
+  if (!alternateLanguage) {
+    removeCallerListener();
+    return { availableModes, requested };
+  }
+  if (!alternatePromise || !alternateController) {
+    removeCallerListener();
+    return {
+      availableModes,
+      requested,
+      alternate: { mode: alternateMode, status: "skipped", links: [] },
+    };
+  }
+
+  try {
+    const alternate = await settleAlternateWithinBudget({
+      promise: alternatePromise,
+      controller: alternateController,
+      waitBudgetMs,
+      mode: alternateMode,
+      callerSignal: options.signal,
+    });
+    return { availableModes, requested, alternate };
+  } finally {
+    removeCallerListener();
+  }
+}
+
+export function anidbAlternateWaitBudgetMs(priority: StartupPriority = "balanced"): number {
+  if (priority === "fast") return 0;
+  return priority === "quality-first"
+    ? QUALITY_FIRST_WAIT_BUDGET_MS
+    : BALANCED_QUALITY_WAIT_BUDGET_MS;
+}
+
+function languageEntryForMode(
+  languages: readonly AnidbLanguageEntry[],
+  mode: AnidbAudioMode,
+): AnidbLanguageEntry | undefined {
+  const code = mode === "dub" ? "eng" : "jpn";
+  return languages.find((entry) => entry.code.toLowerCase() === code);
+}
+
+async function settleAnidbLanguage(options: {
+  readonly context?: ProviderRuntimeContext;
+  readonly language: AnidbLanguageEntry;
+  readonly mode: AnidbAudioMode;
+  readonly signal?: AbortSignal;
+  readonly callerSignal?: AbortSignal;
+}): Promise<AnidbModeOutcome> {
+  try {
+    const links = await resolveAnidbLanguageStreams({
+      context: options.context,
+      language: options.language,
+      audioMode: options.mode,
+      signal: options.signal,
+    });
+    if (options.callerSignal?.aborted) throw options.callerSignal.reason;
+    if (links.length > 0) return { mode: options.mode, status: "resolved", links };
+    return {
+      mode: options.mode,
+      status: "failed",
+      links: [],
+      failure: {
+        code: "parse-failed",
+        message: `AniDB ${options.mode} source did not expose a playable HLS stream`,
+        retryable: true,
+      },
+    };
+  } catch (error) {
+    if (options.callerSignal?.aborted) throw error;
+    return {
+      mode: options.mode,
+      status: "failed",
+      links: [],
+      failure: {
+        code: "network-error",
+        message: error instanceof Error ? error.message : `AniDB ${options.mode} source failed`,
+        retryable: true,
+      },
+    };
+  }
+}
+
+async function settleAlternateWithinBudget(options: {
+  readonly promise: Promise<AnidbModeOutcome>;
+  readonly controller: AbortController;
+  readonly waitBudgetMs: number;
+  readonly mode: AnidbAudioMode;
+  readonly callerSignal?: AbortSignal;
+}): Promise<AnidbModeOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timed-out">((resolve) => {
+    timer = setTimeout(() => resolve("timed-out"), options.waitBudgetMs);
+  });
+  try {
+    const result = await Promise.race([
+      options.promise.then((outcome) => ({ outcome }) as const),
+      timeout,
+    ]);
+    if (options.callerSignal?.aborted) throw options.callerSignal.reason;
+    if (result !== "timed-out") return result.outcome;
+
+    options.controller.abort("alternate-inventory-timeout");
+    await options.promise.catch(() => undefined);
+    if (options.callerSignal?.aborted) throw options.callerSignal.reason;
+    return {
+      mode: options.mode,
+      status: "timed-out",
+      links: [],
+      failure: {
+        code: "timeout",
+        message: `AniDB ${options.mode} alternate source exceeded its inventory budget`,
+        retryable: true,
+      },
+    };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function linkAbortSignal(signal: AbortSignal | undefined, controller: AbortController): () => void {
+  if (!signal) return () => undefined;
+  if (signal.aborted) {
+    controller.abort(signal.reason);
+    return () => undefined;
+  }
+  const abort = () => controller.abort(signal.reason);
+  signal.addEventListener("abort", abort, { once: true });
+  return () => signal.removeEventListener("abort", abort);
 }
 
 export function clearAnidbCachesForTest(): void {

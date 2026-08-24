@@ -20,11 +20,40 @@ describe("normalizeStreamHttpHeaders", () => {
       referer: "https://cineplay.to/tv/1/1/1",
       userAgent: "kunai-test",
       origin: "https://www.cineplay.to",
+      extraFields: [],
     });
   });
 
+  test("forwards provider headers mpv has no dedicated option for", () => {
+    // VidLink's DASH manifests are CloudFront signed and 403 without their
+    // Cookie, so a resolve that carried it still failed at the player.
+    const normalized = normalizeStreamHttpHeaders({
+      referer: "https://vidlink.pro/",
+      "user-agent": "kunai-test",
+      origin: "https://vidlink.pro",
+      Cookie: "CloudFront-Policy=abc;CloudFront-Signature=def",
+    });
+    expect(normalized.extraFields).toEqual([
+      "Cookie: CloudFront-Policy=abc;CloudFront-Signature=def",
+    ]);
+
+    const options = buildPersistentLoadfileOptions("https://cdn.example/x.mpd", 0, {
+      origin: "https://vidlink.pro",
+      Cookie: "CloudFront-Policy=abc",
+    });
+    expect(options["http-header-fields"]).toBe(
+      "Origin: https://vidlink.pro,Cookie: CloudFront-Policy=abc",
+    );
+  });
+
+  test("drops a header value containing mpv's list separator", () => {
+    // mpv splits this list on commas and offers no escape. Stripping the comma
+    // would silently corrupt a signature, so the header is dropped instead.
+    expect(normalizeStreamHttpHeaders({ Cookie: "a=1,b=2" }).extraFields).toEqual([]);
+  });
+
   test("drops empty header values", () => {
-    expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({});
+    expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({ extraFields: [] });
   });
 });
 
@@ -231,6 +260,41 @@ describe("buildPersistentLoadfileCommand", () => {
         "demuxer-lavf-o-clr": "",
       },
     ]);
+  });
+
+  test("a ytdl quality ceiling goes to ytdl-format, not the ytdl flag", () => {
+    // mpv's `--ytdl` is a yes/no flag and `--ytdl-format` is the selector.
+    // Assigning the selector to `ytdl` was accepted by mpv and then ignored, so
+    // the persistent session silently played 720p for a `height<=144` request.
+    const options = buildPersistentLoadfileOptions(
+      "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      0,
+      undefined,
+      { requiresYtdl: true, ytdlFormat: "bestvideo[height<=144]+bestaudio/bv*+ba/b" },
+    );
+
+    expect(options["ytdl-format"]).toBe("bestvideo[height<=144]+bestaudio/bv*+ba/b");
+    expect(options.ytdl).toBe("yes");
+  });
+
+  test("a YouTube watch URL enables ytdl even without an explicit format", () => {
+    const options = buildPersistentLoadfileOptions(
+      "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      0,
+      undefined,
+    );
+    expect(options.ytdl).toBe("yes");
+    expect(options["ytdl-format"]).toBe("bv*+ba/b");
+  });
+
+  test("a remote HLS manifest still turns ytdl off and sets no format", () => {
+    const options = buildPersistentLoadfileOptions(
+      "https://cdn.example/episode.m3u8",
+      0,
+      undefined,
+    );
+    expect(options.ytdl).toBe("no");
+    expect(options["ytdl-format"]).toBeUndefined();
   });
 
   test("rejects unsafe remote loadfile targets", () => {

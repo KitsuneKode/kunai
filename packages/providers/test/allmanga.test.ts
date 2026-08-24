@@ -19,7 +19,7 @@ import {
   allmangaProviderModule,
   buildAllmangaCycleCandidates,
   buildAllMangaAaReq,
-  ALLMANGA_BUILD_ID,
+  buildAllMangaBootToken,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
   BUNDLED_ALLMANGA_CRYPTO,
@@ -30,10 +30,12 @@ import {
   decryptTobeparsedPlaintext,
   decryptTobeparsedWithEpochFallback,
   deriveKeyFromPartB,
+  deriveMaskKey,
   extractRawSources,
   fetchAllMangaEpisodeCatalog,
   getAllMangaCryptoMaterial,
   gqlPost,
+  hashBuildId,
   resolveAllMangaAkDeferredLocator,
   resolveAnimeEpisodeString,
   resolveEpisodeSources,
@@ -266,7 +268,7 @@ describe("buildAllMangaAaReq", () => {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = deriveKeyFromPartB(PART_B, ALLMANGA_BUILD_ID).toString("hex");
+  const EXPECTED_KEY_HEX = "532fbba462deed2b68657d7c758b7bcd6978e4ebeac46cd4e3f6d4c24ab863c7";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -289,10 +291,12 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     const originalFetch = globalThis.fetch;
     let apiCallCount = 0;
     let bootstrapFetchCount = 0;
-    globalThis.fetch = (async (input) => {
+    let bootstrapHeaders: Headers | undefined;
+    globalThis.fetch = (async (input, init) => {
       const url = String(input);
       if (url.includes("/client-crypto/v1/bootstrap")) {
         bootstrapFetchCount += 1;
+        bootstrapHeaders = new Headers(init?.headers);
         if (options.bootstrapStatus && options.bootstrapStatus !== 200) {
           return new Response(JSON.stringify({ error: "nope" }), {
             status: options.bootstrapStatus,
@@ -323,6 +327,9 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
       get bootstrapFetchCount() {
         return bootstrapFetchCount;
       },
+      get bootstrapHeaders() {
+        return bootstrapHeaders;
+      },
       [Symbol.dispose]() {
         globalThis.fetch = originalFetch;
       },
@@ -343,16 +350,45 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
 
   test("derives the key from bootstrap and caches it", async () => {
     using site = mockCryptoSiteFetch({ apiResponses: [PLAIN_SOURCE_JSON] });
+    const epochContext: ProviderRuntimeContext = {
+      ...TEST_CONTEXT,
+      now: () => new Date(6900 * 604_800_000 + 2 * 86_400_000).toISOString(),
+    };
 
-    const material = await getAllMangaCryptoMaterial(TEST_CONTEXT, "ua");
+    const material = await getAllMangaCryptoMaterial(epochContext, "ua");
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(material?.epoch).toBe(6900);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
-    expect(material?.buildId).toBe("119");
+    expect(material?.buildId).toBe("140");
+    expect(site.bootstrapHeaders?.get("x-build-id")).toBe("140");
+    expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
+      "9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35",
+    );
+    expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
+    expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
 
-    const again = await getAllMangaCryptoMaterial(TEST_CONTEXT, "ua");
+    const again = await getAllMangaCryptoMaterial(epochContext, "ua");
     expect(again?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(site.bootstrapFetchCount).toBe(1);
+  });
+
+  test("matches independent build-140 derivation and boot-token vectors", () => {
+    expect(hashBuildId("140").toString("hex")).toBe(
+      "07041a152a2823383631cec4dfdcd2ede2e0fbf08e89869c9794aaa5bab8b348",
+    );
+    expect(deriveMaskKey("140").toString("hex")).toBe(
+      "522db8a067d8ea23616f7670788574dd786af7ffffd27bccfaeccfde57a67ce7",
+    );
+    expect(deriveKeyFromPartB(PART_B, "140").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(
+      buildAllMangaBootToken({
+        buildId: "140",
+        epoch: 6900,
+        keyGroup: "mkissa",
+        refererHost: "mkissa.to",
+        contentLane: "k7",
+      }),
+    ).toBe("9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35");
   });
 
   test("falls back to bundled material when bootstrap fails", async () => {
@@ -728,6 +764,38 @@ describe("AllManga HTTP helpers", () => {
 });
 
 describe("AllManga provider evidence fixtures", () => {
+  test("starts crypto bootstrap while the cold episode catalog is still pending", async () => {
+    let releaseCatalog: () => void = () => undefined;
+    const catalogGate = new Promise<void>((resolve) => {
+      releaseCatalog = resolve;
+    });
+    using fetchMock = await mockAllMangaFetch({ liveCrypto: true, catalogGate });
+
+    const resolvePromise = resolveEvidenceEpisode();
+    for (
+      let attempt = 0;
+      attempt < 50 && !fetchMock.startedRequests.includes("catalog");
+      attempt++
+    ) {
+      await Bun.sleep(1);
+    }
+    await Bun.sleep(20);
+    const overlapped = fetchMock.startedRequests.includes("bootstrap");
+    releaseCatalog();
+    const result = await resolvePromise;
+
+    expect(result.status).toBe("resolved");
+    expect(overlapped).toBe(true);
+    const preparationEvent = result.trace.events?.find(
+      (event) => event.sourceId === "source:allanime:cold-preparation",
+    );
+    expect(preparationEvent?.type).toBe("source:success");
+    expect(preparationEvent?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(preparationEvent)).not.toMatch(
+      /partB|aaReq|x-aa-boot|token|https?:\/\//i,
+    );
+  });
+
   test("search result preserves provider-native ids artwork and language evidence", async () => {
     using fetchMock = await mockAllMangaFetch();
 
@@ -863,6 +931,43 @@ describe("AllManga provider evidence fixtures", () => {
     expect(result.status).toBe("resolved");
     expect(result.streams[0]?.protocol).toBe("hls");
     expect(fetchMock.calls.some((url) => url.includes("/ak-source"))).toBe(false);
+    const sourcePreparationEvent = result.trace.events?.find(
+      (event) => event.sourceId === "source:allanime:source-preparation",
+    );
+    expect(sourcePreparationEvent).toMatchObject({
+      type: "source:success",
+      attributes: { linkCount: 2, requiredAkFallback: false },
+    });
+    expect(sourcePreparationEvent?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(sourcePreparationEvent)).not.toMatch(/token|https?:\/\//i);
+  });
+
+  test("baseline extraction aborts a slow optional adapter after its wait budget", async () => {
+    using fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "fast-and-slow-baseline",
+      fastBaselineDelayMs: 10,
+      slowBaselineDelayMs: 100,
+    });
+
+    const startedAt = performance.now();
+    const links = await resolveEpisodeSources({
+      context: TEST_CONTEXT,
+      apiUrl: "https://api.allanime.day/api",
+      referer: "https://youtu-chan.com",
+      ua: "ua",
+      showId: "show-allmanga-evidence",
+      epStr: "1",
+      mode: "sub",
+      sourceLane: "baseline",
+      adapterWaitBudgetMs: 20,
+      signal: new AbortController().signal,
+    } as Parameters<typeof resolveEpisodeSources>[0]);
+
+    const hosts = links.map((link) => new URL(link.url).hostname);
+    expect(hosts).toContain("video.wixstatic.com");
+    expect(hosts).toContain("direct.example");
+    expect(performance.now() - startedAt).toBeLessThan(80);
+    expect(fetchMock.abortedBaselineRequests).toBe(1);
   });
 
   test("quality-first startup includes prompt Ak response", async () => {
@@ -1224,21 +1329,36 @@ async function mockAllMangaFetch(
       | "ak-episode-response"
       | "mixed-unselectable-baseline-ak"
       | "baseline-ak"
+      | "fast-and-slow-baseline"
       | "cycle-hls-720-mp4-1080";
     readonly akDelayMs?: number;
+    readonly fastBaselineDelayMs?: number;
+    readonly slowBaselineDelayMs?: number;
+    readonly liveCrypto?: boolean;
+    readonly catalogGate?: Promise<void>;
   } = {},
-): Promise<Disposable & { readonly calls: readonly string[]; readonly abortedAkRequests: number }> {
+): Promise<
+  Disposable & {
+    readonly calls: readonly string[];
+    readonly startedRequests: readonly string[];
+    readonly abortedAkRequests: number;
+    readonly abortedBaselineRequests: number;
+  }
+> {
   clearAllMangaProviderCachesForTest();
   // Keep resolve paths off the live mkissa.to key scrape; fixtures return plain
   // sourceUrls JSON so the key itself is never exercised here.
-  setAllMangaCryptoMaterialForTest(BUNDLED_ALLMANGA_CRYPTO);
+  if (!options.liveCrypto) setAllMangaCryptoMaterialForTest(BUNDLED_ALLMANGA_CRYPTO);
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
+  const startedRequests: string[] = [];
   let abortedAkRequests = 0;
+  let abortedBaselineRequests = 0;
   const subFixture =
     options.subSourceFixture === "mixed-unselectable-baseline-ak" ||
     options.subSourceFixture === "baseline-ak" ||
-    options.subSourceFixture === "cycle-hls-720-mp4-1080"
+    options.subSourceFixture === "cycle-hls-720-mp4-1080" ||
+    options.subSourceFixture === "fast-and-slow-baseline"
       ? {
           data: {
             episode: {
@@ -1255,19 +1375,28 @@ async function mockAllMangaFetch(
                         sourceUrl: "--https://cdn.allmanga.example/sub/720/master.m3u8",
                       },
                     ]
-                  : [
-                      {
-                        sourceName: "Default",
-                        sourceUrl:
-                          options.subSourceFixture === "baseline-ak"
-                            ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
-                            : "--/broken-source",
-                      },
-                      {
-                        sourceName: "Ak",
-                        sourceUrl: "--/ak-source",
-                      },
-                    ],
+                  : options.subSourceFixture === "fast-and-slow-baseline"
+                    ? [
+                        {
+                          sourceName: "Yt-mp4",
+                          sourceUrl: "--https://direct.example/video.mp4",
+                        },
+                        { sourceName: "Default", sourceUrl: "--/baseline-fast" },
+                        { sourceName: "Luf-Mp4", sourceUrl: "--/baseline-slow" },
+                      ]
+                    : [
+                        {
+                          sourceName: "Default",
+                          sourceUrl:
+                            options.subSourceFixture === "baseline-ak"
+                              ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
+                              : "--/broken-source",
+                        },
+                        {
+                          sourceName: "Ak",
+                          sourceUrl: "--/ak-source",
+                        },
+                      ],
             },
           },
         }
@@ -1283,6 +1412,14 @@ async function mockAllMangaFetch(
   globalThis.fetch = (async (input, init) => {
     const url = String(input);
     calls.push(url);
+    if (url.includes("/client-crypto/v1/bootstrap")) {
+      startedRequests.push("bootstrap");
+      return jsonResponse({
+        epoch: 6900,
+        partB: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+        k: "k7",
+      });
+    }
     if (url.includes("/ak-source")) {
       if (init?.signal?.aborted) {
         abortedAkRequests += 1;
@@ -1306,6 +1443,38 @@ async function mockAllMangaFetch(
     if (url.includes("/broken-source")) {
       return jsonResponse({ links: [{ link: "", resolutionStr: "1080p" }] });
     }
+    if (url.includes("/baseline-fast")) {
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          abortedBaselineRequests += 1;
+          reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
+        };
+        const timer = setTimeout(() => {
+          init?.signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, options.fastBaselineDelayMs ?? 0);
+        init?.signal?.addEventListener("abort", onAbort, { once: true });
+      });
+      return jsonResponse({
+        links: [{ link: "https://video.wixstatic.com/video/fast.mp4", resolutionStr: "1080p" }],
+      });
+    }
+    if (url.includes("/baseline-slow")) {
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          abortedBaselineRequests += 1;
+          reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
+        };
+        const timer = setTimeout(() => {
+          init?.signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, options.slowBaselineDelayMs ?? 100);
+        init?.signal?.addEventListener("abort", onAbort, { once: true });
+      });
+      return jsonResponse({ links: [] });
+    }
     const bodyText = typeof init?.body === "string" ? init.body : "";
     if (url.includes("variables=")) {
       const variablesMatch = /variables=([^&]+)/.exec(url);
@@ -1318,6 +1487,8 @@ async function mockAllMangaFetch(
       return jsonResponse(fixtures.search);
     }
     if (bodyText.includes("show(_id:$id)")) {
+      startedRequests.push("catalog");
+      await options.catalogGate;
       return jsonResponse(fixtures.catalog);
     }
     if (bodyText.includes("episode(showId:$showId")) {
@@ -1329,8 +1500,12 @@ async function mockAllMangaFetch(
 
   return {
     calls,
+    startedRequests,
     get abortedAkRequests() {
       return abortedAkRequests;
+    },
+    get abortedBaselineRequests() {
+      return abortedBaselineRequests;
     },
     [Symbol.dispose]() {
       globalThis.fetch = originalFetch;

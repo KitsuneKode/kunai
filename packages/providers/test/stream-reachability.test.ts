@@ -187,6 +187,31 @@ describe("stream reachability", () => {
     expect(shouldAbortPlaybackForPreflight(probe, false)).toBe(true);
   });
 
+  test("a rate-limited CDN blocks the resolve gate", async () => {
+    // Treating 429 as transient let the gate pass a stream whose CDN was
+    // refusing every request, so mpv received an nginx error page. Verified
+    // live against bcdn.hakunaymatata.com on 2026-08-24.
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/rate-limited.m3u8",
+      fetchImpl: async () => response(429, "slow down"),
+      timeoutMs: 50,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    expect(isStreamReachableForResolve(probe)).toBe(false);
+  });
+
+  test("404 stays definitive", async () => {
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/missing.m3u8",
+      fetchImpl: async () => response(404, "gone"),
+      timeoutMs: 50,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    expect(isStreamReachableForResolve(probe)).toBe(false);
+  });
+
   test("playback preflight stays lenient on timeout", async () => {
     const probe = { status: "timeout" } as const;
     expect(isStreamReachableForResolve(probe)).toBe(true);

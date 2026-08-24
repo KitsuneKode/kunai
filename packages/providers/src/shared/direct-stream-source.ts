@@ -14,6 +14,7 @@ import type {
 
 import { resolveTmdbCatalogId } from "./catalog-id";
 import { createExhaustedResult, emitTraceEvent } from "./resolve-helpers";
+import { hasResolvableSeriesCoordinates } from "./series-coordinates";
 import {
   createStreamId,
   createVariantId,
@@ -77,6 +78,17 @@ export interface DirectStreamSourceOptions {
   readonly resolveGateTimeoutMs?: number;
 }
 
+/**
+ * How many ranked candidates the resolve gate may probe before giving up.
+ *
+ * Probing only `streams[0]` meant one throttled or hotlink-protected URL
+ * condemned every working sibling in the same payload, failing the whole
+ * provider. The walk is capped because each probe costs a round trip against
+ * the attempt budget — a lower-quality stream that plays beats a perfect one
+ * that never arrives, but not at unbounded cost.
+ */
+const RESOLVE_GATE_MAX_PROBES = 3;
+
 export async function resolveDirectStreamSource(
   options: DirectStreamSourceOptions,
 ): Promise<ProviderResolveResult> {
@@ -105,7 +117,7 @@ export async function resolveDirectStreamSource(
       retryable: false,
     });
   }
-  if (input.mediaKind === "series" && (!input.episode?.season || !input.episode.episode)) {
+  if (input.mediaKind === "series" && !hasResolvableSeriesCoordinates(input.episode)) {
     return createExhaustedResult(input, context, providerId, {
       code: "unsupported-title",
       message: `${label} requires season and episode for series`,
@@ -170,16 +182,44 @@ export async function resolveDirectStreamSource(
     }
 
     let streamReachabilityVerified: boolean | undefined;
-    if (resolveGateProbe && selectedStream.url) {
-      const health = await runStreamHealthCheck({
-        phase: "resolve-gate",
-        url: selectedStream.url,
-        headers: selectedStream.headers,
-        fetchImpl: context.fetch?.fetch.bind(context.fetch),
-        timeoutMs: options.resolveGateTimeoutMs ?? STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
-        signal: context.signal,
-      });
-      if (!health.healthy) {
+    if (resolveGateProbe) {
+      let gateFailure: ProviderFailure | undefined;
+
+      let cancelled = false;
+
+      for (const candidate of streams.slice(0, RESOLVE_GATE_MAX_PROBES)) {
+        // A cancelled resolve must not keep spending probes, and must not be
+        // recorded as a stream failure — the caller went away, the CDN is fine.
+        if (context.signal?.aborted) {
+          cancelled = true;
+          break;
+        }
+        if (!candidate.url) continue;
+
+        const health = await runStreamHealthCheck({
+          phase: "resolve-gate",
+          url: candidate.url,
+          headers: candidate.headers,
+          fetchImpl: context.fetch?.fetch.bind(context.fetch),
+          timeoutMs: options.resolveGateTimeoutMs ?? STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
+          signal: context.signal,
+        });
+
+        // The abort may have landed while this probe was in flight. Its result
+        // is then meaningless — the caller is gone — so it must not become a
+        // stream failure or a verified selection.
+        if (context.signal?.aborted) {
+          cancelled = true;
+          break;
+        }
+
+        if (health.healthy) {
+          selectedStream = candidate;
+          streamReachabilityVerified = true;
+          gateFailure = undefined;
+          break;
+        }
+
         const probe = health.probe;
         const reason =
           probe?.status === "timeout"
@@ -187,30 +227,53 @@ export async function resolveDirectStreamSource(
             : probe?.status === "unreachable"
               ? probe.reason
               : "stream probe failed";
-        const failure: ProviderFailure = {
+        // Keep the first rejection: it is the highest-ranked candidate, so it
+        // describes the failure the user would otherwise have seen.
+        gateFailure ??= {
           providerId,
           code: probe?.status === "timeout" ? "timeout" : "not-found",
           message: `${label} selected stream is unreachable (${reason})`,
           retryable: true,
           at: context.now(),
         };
-        failures.push(failure);
         emitTraceEvent(events, context, {
           type: "source:failed",
           providerId,
           sourceId,
-          streamId: selectedStream.id,
+          streamId: candidate.id,
           message: `${label} resolve-gate probe failed`,
           attributes: { reason, probe: probe?.status ?? "failed" },
         });
-        return createExhaustedResult(input, context, providerId, failure, {
+      }
+
+      // Cancellation outranks a partial gate failure. If the caller aborted, any
+      // rejection collected before the abort describes a probe the user no
+      // longer cares about, and `not-found` is not health-neutral — reporting it
+      // would penalise the provider for the user backing out. `cancelled` does
+      // not, so it is the honest outcome.
+      if (cancelled && !streamReachabilityVerified) {
+        return createExhaustedResult(
+          input,
+          context,
+          providerId,
+          {
+            code: "cancelled",
+            message: `${label} resolve was cancelled`,
+            retryable: false,
+          },
+          { cachePolicy, events, failures, startedAt },
+        );
+      }
+
+      if (gateFailure) {
+        failures.push(gateFailure);
+        return createExhaustedResult(input, context, providerId, gateFailure, {
           cachePolicy,
           events,
           failures,
           startedAt,
         });
       }
-      streamReachabilityVerified = true;
     }
 
     emitTraceEvent(events, context, {

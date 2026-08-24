@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-23
+Last updated: 2026-08-24
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in

@@ -119,6 +119,13 @@ export KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787
 bun run test:live:relay-allanime
 ```
 
+To test the relay already stored in the real Kunai config without copying its
+credentials into the shell, run `bun run test:relay`. The wrapper reads the
+config without modifying it, preflights `/health` with Bun's own fetch path, and
+then launches the same isolated AllAnime smoke profile. It logs only the relay
+origin, token presence, health provider count, and a bounded network failure
+code. Explicit `KUNAI_RELAY_*` values still override stored values.
+
 Use `apps/relay-server/README.md` for Vercel deployment and security notes.
 
 ### Endpoint quarantine (dead mirrors)
@@ -130,6 +137,46 @@ Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endp
 - **transient** (timeout/network): in-memory cooldown only; never persisted.
 
 `runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
+
+**Every 4xx is definitive at the resolve gate.** `isDefinitiveHttpStatus` in
+`packages/providers/src/shared/stream-reachability.ts` treats the whole 4xx range
+as a refusal. 429 was briefly excluded on the theory that a CDN throttling a CLI
+probe says nothing about playback; live testing on 2026-08-24 disproved it —
+VidLink's CDN answers 429 to GET, HEAD and ranged GET alike on every candidate,
+so passing the gate only handed mpv a 587-byte nginx error page. Failing here is
+what lets a working provider take over. Any future exception needs evidence that
+the stream _plays_, not merely that a probe passed.
+
+**The gate walks candidates, it does not judge one.** `resolveDirectStreamSource`
+probes up to `RESOLVE_GATE_MAX_PROBES` ranked candidates and takes the first that
+answers, so one dead or hotlink-protected URL no longer condemns its working
+siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
+keeps its selection rather than recording a stream failure.
+
+**VidLink needs the browser playback environment (2026-08-24).** Without an
+`x-playback-environment` header, `vidlink.pro/api/b` answers with
+`deliveryType: "file"` — direct MP4s on `bcdn.hakunaymatata.com` flagged
+`requiresProxy`, which return 429 to every non-browser client and 403 with no
+referer. Sending `webkit` switches delivery to a DASH manifest on
+`sacdn.hakunaymatata.com`, and the CloudFront cookies that authorise it arrive
+in `stream.playlistHeaders`. That cookie has to reach the manifest fetch, the
+segment fetches, and the resolve-gate probe; without it the host answers 403.
+Verified end to end with mpv decoding frames for both a movie and an episode.
+
+Two consequences worth keeping in mind. The signed cookie carries `TTL: 3600`,
+so a cached resolve older than an hour will 403 on replay. And mpv only has
+dedicated options for referer and user-agent — everything else a provider
+attaches has to ride `http-header-fields`, which is why
+`normalizeStreamHttpHeaders` forwards unknown headers instead of dropping them.
+
+**Per-candidate timeouts are clamped to the attempt budget.**
+`providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
+holds a provider's chosen `candidateTimeoutMs` below the attempt timeout it runs
+inside. Miruro and Videasy both requested 20s inside a 12s `balanced` attempt, so
+the bound was unreachable and one hung mirror consumed the whole attempt with
+nothing attributable in the trace. Providers still pick their own value: Miruro
+wants a short bound so it can walk past a blocked mirror, Videasy wants a slow
+flavor to finish.
 
 Provider priority is user-configurable:
 
@@ -254,6 +301,49 @@ interface ApiProvider extends BaseProvider {
 Active beta providers resolve through direct modules in `packages/providers`.
 
 ### YouTube (`packages/providers/src/youtube`)
+
+**The quality ceiling reaches mpv only if three things are right.** Verified
+against mpv 0.41 over the real IPC socket:
+
+- `ytdl` is a yes/no flag, `ytdl-format` is the selector. The persistent loadfile
+  path assigned the selector to the flag; mpv answered `error: "success"` and
+  ignored it, so a `height<=144` request played 720p.
+- `script-opts` cannot be set per file. With `mpv-ytdlautoformat` installed it
+  overrides Kunai's `ytdl-format` unless `ytdlautoformat-domains=` is in the
+  launch args, so a persistent session always carries that guard — it may be
+  handed a YouTube URL over IPC long after launch.
+- `--ytdl=no` is process-wide and a later per-file `ytdl: "yes"` cannot lift it.
+  A persistent session launched on an HLS stream therefore could not play
+  YouTube at all afterwards; mpv reported the load as successful and produced no
+  video. That flag is now one-shot only, and the persistent path disables ytdl
+  per file instead.
+
+**A failed metadata probe is classified, not swallowed.**
+`classifyYoutubeMetadataFailure` (`youtube/metadata-failure.ts`) splits yt-dlp
+stderr into terminal and transient. Terminal — private, deleted, members-only,
+age-gated, geo-blocked — fails the lane closed with the real reason. Every
+failure used to collapse into one retryable `parse-failed` while resolve still
+returned `status: "resolved"` with the bare watch URL, so nothing fell back and
+playback died inside mpv with no diagnosis near the cause. Transient failures
+(network, 429, timeout) still resolve, because a flaky probe must not destroy a
+working playback path; those streams carry `metadataUnavailable: true`.
+
+**A quality preference is a ceiling, not a wish.** `selectYoutubeQuality`
+(`youtube/quality-selection.ts`) rounds _down_ to the highest rendition at or
+below the requested height. The old selector did an exact label match and fell
+back to `qualityLabels[0]` — a list sorted highest-first — so asking for 720p on
+a video publishing only 1080p and 480p silently returned 1080p. When metadata is
+unavailable the requested label is still used to build the yt-dlp format
+selector, so the cap survives a failed probe instead of becoming `best`.
+
+**The Invidious registry lookup is bounded.** It was the only fetch on the search
+path without its own timeout, so a hung registry stalled search before any
+instance was tried. It now carries a short deadline and falls back to the last
+known pool when the registry is slow or broken — an expired directory still
+names instances that work. Instance order is left as the registry returns it
+(`sort_by=type,health,api`), so the first entry is the healthiest; failures
+rotate via cooldown rather than round-robin, which would spread load onto less
+healthy instances.
 
 Third lane provider for standalone videos, playlists, and channels.
 
@@ -431,7 +521,7 @@ If the provider has native search or episode listing, export standalone function
   - search GraphQL query shape
   - episode list query shape
   - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch/build returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`/`AA_CRYPTO_MISSING_BUILD`
-  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=119&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
+  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=140&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
   - `aaReq` AES-256-GCM over `{v,ts,epoch,buildId,qh,k}` with IV `SHA-256(epoch:buildId:qh:ts:k)[0:12]`; send `x-build-id` on API GETs
   - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16)
   - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
@@ -465,13 +555,20 @@ cannot be mistaken for either.
 
 A relay running on the same machine as the client does **not** clear the gate,
 because the egress IP is unchanged; a relay deployed to an ungated region is the
-untested variable. Consequently `allanime` was dropped from the automatic anime
-lane on 2026-08-13 while staying a registered, manually selectable production
-module.
+untested variable. AllAnime was dropped from the automatic anime lane on
+2026-08-13 while staying a registered, manually selectable production module.
 
-**Do not "fix" this by changing crypto.** Build id 81, the bootstrap, HMAC
-`x-aa-boot`, and AES-256-GCM are all working and verified. The historical
-epoch/partB query construction and AES-CTR decryption must not be restored.
+The 2026-08-24 build-140 repair makes AllAnime usable again where the source
+endpoint is not captcha-gated. No priority-default change is needed:
+`animeProviderPriority` is ordering rather than an allowlist, so registered
+providers omitted from the array remain available after its named entries. The
+NEED_CAPTCHA classification and relay hint stay because geo/bot-gated networks
+can still hit the gate.
+
+**Do not restore historical crypto.** Build 140, the current mask constants,
+HMAC `x-aa-boot`, and AES-256-GCM are the verified contract. The older build 81
+or 119 material, epoch/partB query construction, and AES-CTR decryption must not
+be restored.
 
 ### AllAnime via user relay (2026-08-17)
 
@@ -518,10 +615,51 @@ row to characterize. Per that gate, `resolveDirectStreamReferer()` is unchanged.
 mp4upload keeps its dedicated referer and scoped `--tls-verify=no`; TLS
 verification is not broadened to any other host.
 
+### AllAnime crypto rotation 119 → 140 (2026-08-24)
+
+The bootstrap started answering `{error:"unknown_build_id"}` (HTTP 404) — build
+**119 is retired**, current build id is **140**. This rotation also changed the
+derivation constants, which upstream now ships as a config object (`Fd`) in the
+obfuscated crypto chunk instead of hard-coding them:
+
+- `hashBuildId` mixes `(index * saltMul + saltAdd)` = `*250 + 54` (was `*17+31`)
+- `deriveMaskKey` mixes `(fragmentIndex * fragMul + byteIndex * fragAdd)` =
+  `*16 + *217` (was `*41 + *7`)
+- new mask fragments; episode persisted-query hash unchanged
+- boot token layout changed: first HMAC message is now `{bootPrefix}{buildId}`
+  (prefix `4X2PsZc2r:`), second HMAC covers
+  `group.host.lane.buildId.epoch` joined by `.` (was
+  `buildId:keyGroup:host:epoch:lane` joined by `:`)
+
+Recovery procedure (worked end-to-end against live bootstrap + episode sources):
+
+1. Fetch the mkissa home page, follow `_app/immutable/entry/*.js`, then the
+   chunks they reference on `cdn.mkissa.net`; find the chunk containing
+   `/client-crypto/v1/bootstrap`.
+2. Slice out the self-contained crypto region between `const _I=` and the
+   second string-table client (`const Tt=ms;`), append exports of the scoped
+   symbols, and run it under Bun with dynamic `import()` — the chunk's anti-debug
+   console patching silences `console.log`, so write through
+   `process.stdout.write`. That yields buildId, mask fragments, and the config
+   object directly.
+3. Verify: computed `x-aa-boot` must return HTTP 200 partB from bootstrap, then
+   decrypt a real `tobeparsed` blob with the derived key before shipping.
+
+On a cold resolve, the episode catalog and crypto bootstrap start concurrently.
+Baseline source adapters then share a 1.5-second foreground inventory window:
+prompt peers are retained, but a dead adapter is aborted instead of holding
+already-playable streams until its own request deadline. The individual request
+timeouts and stale-material retry policy are unchanged. On 2026-08-24 the same
+production cold smoke retained four stream candidates and fell from 12.257 to
+2.573 seconds after a dead `Luf-Mp4` adapter was isolated as the 11-second wait.
+Trace output records only preparation duration, readiness, link count, and
+whether Ak was required—never bootstrap material, attestation, token, or source
+URLs.
+
 Note: ani-cli v5 (2026-08-01) left AllAnime/mkissa for **anidb.app** and deleted its AllAnime code
 entirely, so **there is no upstream parity reference left** for this provider — the "compare against
 ani-cli" step above applies to AniDB only. For mkissa crypto the live JS chunk is the sole source of
-truth. Kunai keeps AllManga as a manually selectable secondary anime source with `anidb` as the
+truth. Kunai keeps AllManga as a registered secondary anime source with `anidb` as the
 default anime provider. See [.docs/research/anidb-provider-dossier.md](./research/anidb-provider-dossier.md).
 
 Parity tip: for AniDB compare against local ani-cli `master`. For mkissa crypto, the live JS chunk is the source of truth when ani-cli no longer tracks it. The API rate-limits bursts (~3s), so stale-material recovery re-bootstraps keys instead of retry-storming.
@@ -547,11 +685,12 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
-`anidb` is the **default** provider-native anime catalog and, as of 2026-08-13, the **only**
-provider in the automatic anime lane (`animeProvider: "anidb"`,
-`animeProviderPriority: ["anidb"]`). `allanime` and `miruro` both stay registered production
-modules and remain manually selectable; neither runs as an automatic fallback. See
-"AllAnime NEED_CAPTCHA" below and the Miruro pipe contract for why each was demoted.
+`anidb` is the **default** provider-native anime catalog and the first configured
+anime priority (`animeProvider: "anidb"`, `animeProviderPriority: ["anidb"]`).
+The priority list is ordering, not an allowlist: registered `allanime` and
+`miruro` modules remain available after AniDB and are manually selectable. See
+"AllAnime NEED_CAPTCHA" below and the Miruro pipe contract for their network
+failure modes.
 
 | ID           | Content Types | Runtime     | Module Location                               |
 | ------------ | ------------- | ----------- | --------------------------------------------- |
@@ -570,7 +709,8 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
   AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
   `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.
-- **AllAnime (`allanime`)** — `provider-native`, registered and **manually selectable**; not in the automatic anime lane (`animeProviderPriority` is `['anidb']` alone). AniList-backed discovery
+- **AllAnime (`allanime`)** — `provider-native`, registered as a fallback and
+  manually selectable. AniList-backed discovery
   results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is
   preserved on merge. An AllAnime lookup may populate only `providerNativeIds.allanime`.
 - **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
@@ -627,6 +767,11 @@ instead of pretending those fields came from `anidb.app`.
   only by the episode languages response.
 - A missing requested language is an exhausted AniDB attempt. It must not fall back to the other
   language and label the stream incorrectly.
+- Only exact `jpn` (sub/original) and `eng` (dub) catalog evidence is accepted.
+  The requested mode resolves first; the alternate starts concurrently but is
+  skipped for `fast`, bounded to 1 second for `balanced`, and bounded to 4
+  seconds for `quality-first`. A timed-out alternate is aborted and is not
+  advertised as an available source.
 - The embed probe currently exposes an HLS source but no independently addressable subtitle track.
   AniDB results keep `subtitles: []` and mark subtitle delivery unknown; `jpn` is not sufficient
   evidence that captions are hardcoded.

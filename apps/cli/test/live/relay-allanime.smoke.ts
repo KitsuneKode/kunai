@@ -7,6 +7,7 @@ import {
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
 } from "./provider-smoke";
+import { relayDisplayOrigin } from "./relay-config";
 
 const relayBaseUrl = process.env.KUNAI_RELAY_BASE_URL?.trim();
 if (!relayBaseUrl) {
@@ -24,8 +25,28 @@ if (!relayBaseUrl) {
   process.exit(0);
 }
 
+let relayOrigin: string;
+try {
+  relayOrigin = relayDisplayOrigin(relayBaseUrl);
+} catch (error) {
+  console.error(
+    JSON.stringify(
+      {
+        ok: false,
+        stage: "relay-config",
+        reason: error instanceof Error ? error.message : "relay URL validation failed",
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(1);
+}
+
 const profile = createProviderSmokeProfile("allanime");
-const args = process.argv.slice(1);
+// Works under both invocation styles: `bun file.ts query` (argv holds the
+// script at index 1) and `bun -e "await import('./…smoke.ts')"` (it does not).
+const args = process.argv.slice(Bun.main === import.meta.path ? 2 : 1);
 const query = args[0] ?? "Kimetsu no Yaiba";
 const fixtureTitleId = args[1] ?? "SJms742bSTrcyJZay";
 
@@ -46,6 +67,7 @@ await container.config.update({
 });
 
 const { searchRegistry, providerRegistry, config } = container;
+let searchError: unknown = null;
 const search = await searchTitles(query, {
   mode: "anime",
   providerId: "allanime",
@@ -53,58 +75,33 @@ const search = await searchTitles(query, {
   searchRegistry,
   providerRegistry,
 }).catch((error) => {
-  console.error(
-    JSON.stringify(
-      {
-        ok: false,
-        stage: "search",
-        query,
-        provider: "allanime",
-        relayBaseUrl,
-        ...providerSmokeProfilePayload(profile),
-        ...providerSmokeError(error),
-      },
-      null,
-      2,
-    ),
-  );
-  process.exit(1);
+  searchError = error;
+  return null;
 });
 
 const selected =
-  search.results.find((result) => result.id === fixtureTitleId) ??
-  search.results.find((result) => result.type === "series" && (result.episodeCount ?? 0) > 1) ??
-  search.results.find((result) => result.type === "series") ??
-  search.results[0];
-
-if (!selected) {
-  console.error(
-    JSON.stringify(
-      {
-        ok: false,
-        stage: "search",
-        query,
-        relayBaseUrl,
-        reason: "no_results",
-        ...providerSmokeProfilePayload(profile),
-      },
-      null,
-      2,
-    ),
-  );
-  process.exit(1);
-}
-
-const title = {
-  id: selected.id,
-  type: selected.type,
-  name: selected.title,
-  year: selected.year,
-  overview: selected.overview,
-  posterUrl: selected.posterPath ?? undefined,
-  episodeCount: selected.episodeCount,
-  isAnime: true,
-};
+  search?.results.find((result) => result.id === fixtureTitleId) ??
+  search?.results.find((result) => result.type === "series" && (result.episodeCount ?? 0) > 1) ??
+  search?.results.find((result) => result.type === "series") ??
+  search?.results[0];
+const usedFixtureFallback = !selected;
+const title = selected
+  ? {
+      id: selected.id,
+      type: selected.type,
+      name: selected.title,
+      year: selected.year,
+      overview: selected.overview,
+      posterUrl: selected.posterPath ?? undefined,
+      episodeCount: selected.episodeCount,
+      isAnime: true,
+    }
+  : {
+      id: fixtureTitleId,
+      type: "series" as const,
+      name: query,
+      isAnime: true,
+    };
 
 let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
@@ -143,8 +140,14 @@ const payload = {
   }),
   query,
   fixtureTitleId,
-  relayBaseUrl,
-  sourceName: search.sourceName,
+  relayOrigin,
+  sourceName: search?.sourceName ?? null,
+  usedFixtureFallback,
+  searchError: searchError
+    ? providerSmokeError(searchError).error
+    : usedFixtureFallback
+      ? "no_results"
+      : null,
   ...(resolveError ? providerSmokeError(resolveError) : {}),
   failureCodes,
   failureMessages,

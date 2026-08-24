@@ -174,4 +174,98 @@ describe("an empty selection is not a healthy pool", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("a broken registry falls back to the previous pool instead of failing search", async () => {
+    const url = "https://fixtures.test/instances-stale.json";
+    const originalFetch = globalThis.fetch;
+    let call = 0;
+    globalThis.fetch = (async () => {
+      call += 1;
+      if (call === 1) {
+        return new Response(JSON.stringify([["a.test", { uri: "https://a.test", api: true }]]), {
+          status: 200,
+        });
+      }
+      throw new Error("registry unreachable");
+    }) as unknown as typeof fetch;
+
+    try {
+      const first = await fetchHealthyInvidiousInstances({ instancesUrl: url, now: () => 0 });
+      expect(first).toEqual(["https://a.test"]);
+
+      // Past the 15-minute TTL, so the registry is refetched and now fails.
+      const afterTtl = 16 * 60 * 1000;
+      const second = await fetchHealthyInvidiousInstances({
+        instancesUrl: url,
+        now: () => afterTtl,
+      });
+      expect(second).toEqual(["https://a.test"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a malformed registry payload falls back to the previous pool", async () => {
+    // A 200 carrying the wrong shape (an object, not the [uri, meta] array) would
+    // throw on `.map` and bypass the stale-cache fallback if selection ran
+    // outside the try block.
+    const url = "https://fixtures.test/instances-malformed.json";
+    const originalFetch = globalThis.fetch;
+    let call = 0;
+    globalThis.fetch = (async () => {
+      call += 1;
+      if (call === 1) {
+        return new Response(JSON.stringify([["a.test", { uri: "https://a.test", api: true }]]), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ error: "maintenance" }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      const first = await fetchHealthyInvidiousInstances({ instancesUrl: url, now: () => 0 });
+      expect(first).toEqual(["https://a.test"]);
+      const second = await fetchHealthyInvidiousInstances({
+        instancesUrl: url,
+        now: () => 16 * 60 * 1000,
+      });
+      expect(second).toEqual(["https://a.test"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a malformed payload with no previous pool surfaces an error, not a crash", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({}), { status: 200 })) as unknown as typeof fetch;
+    try {
+      await expect(
+        fetchHealthyInvidiousInstances({
+          instancesUrl: "https://fixtures.test/instances-bad-shape.json",
+          now: () => 0,
+        }),
+      ).rejects.toThrow("unexpected shape");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a registry failure with no previous pool still surfaces the error", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("registry unreachable");
+    }) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        fetchHealthyInvidiousInstances({
+          instancesUrl: "https://fixtures.test/instances-never-seen.json",
+          now: () => 0,
+        }),
+      ).rejects.toThrow("registry unreachable");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

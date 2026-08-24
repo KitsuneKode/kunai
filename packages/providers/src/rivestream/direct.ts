@@ -22,11 +22,13 @@ import type {
 } from "@kunai/types";
 
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
+import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
   createProviderLanguageEvidence,
   createProviderSourceEvidence,
@@ -42,7 +44,7 @@ import {
   streamPresentationFields,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
-import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
@@ -56,13 +58,26 @@ const USER_AGENT =
 /** Memoize secretKey per tmdbId — deterministic, expensive to recompute. */
 const secretKeyCache = new Map<string, string>();
 const RIVESTREAM_PROVIDER_SERVICES_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Last-resort list for when service discovery is unreachable.
+ *
+ * Captured from live discovery on 2026-08-24. The previous list had drifted:
+ * it still named `ophim`, which upstream no longer serves, and knew none of the
+ * six services that now answer. A stale fallback is worse than a short one —
+ * every name here costs a request when discovery is already failing.
+ */
 const RIVESTREAM_STATIC_PROVIDER_SERVICES = [
+  "apex",
+  "pulse",
+  "solstice",
+  "quasar",
+  "horizon",
+  "primevids",
   "flowcast",
   "asiacloud",
-  "primevids",
+  "citadel",
   "hindicast",
   "guru",
-  "ophim",
 ] as const;
 let providerServicesCache:
   | {
@@ -275,11 +290,26 @@ export const rivestreamProviderModule: CoreProviderModule = {
       });
     }
 
-    const tmdbId = input.title.tmdbId ?? input.title.id.replace("tmdb:", "");
-    if (!tmdbId || Number.isNaN(Number(tmdbId))) {
+    // `Number.isNaN(Number(id))` accepted "0", negatives and padded values, and
+    // built upstream URLs from them. The shared parser is the one place that
+    // knows what a complete positive decimal TMDB id looks like.
+    const tmdbCatalogId = resolveTmdbCatalogId(input.title);
+    if (tmdbCatalogId === null) {
       return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, {
         code: "unsupported-title",
         message: "Rivestream requires a numeric TMDB ID",
+        retryable: false,
+      });
+    }
+    const tmdbId = String(tmdbCatalogId);
+
+    // Missing coordinates used to fall through to S1E1, so a series with no
+    // episode played the pilot instead of failing — wrong content is worse than
+    // no content. Season 0 stays valid: it is the catalog identity for specials.
+    if (input.mediaKind === "series" && !hasResolvableSeriesCoordinates(input.episode)) {
+      return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, {
+        code: "unsupported-title",
+        message: "Rivestream requires a season and episode for series",
         retryable: false,
       });
     }
@@ -314,9 +344,22 @@ export const rivestreamProviderModule: CoreProviderModule = {
       const season = input.episode?.season ?? 1;
       const episode = input.episode?.episode ?? 1;
 
-      const providers = await getRivestreamProviderServices(context);
+      const { providers, origin: servicesOrigin } = await getRivestreamProviderServices(context);
+      if (servicesOrigin === "static") {
+        emitTraceEvent(events, context, {
+          type: "source:failed",
+          providerId: RIVESTREAM_PROVIDER_ID,
+          sourceId: "source:rivestream:service-discovery",
+          message: "Rivestream service discovery unavailable; using the static fallback list",
+          attributes: { origin: servicesOrigin, services: providers.length },
+        });
+      }
 
-      const cycleCandidates = buildRivestreamCycleCandidates(providers, input.preferredSourceId);
+      const cycleCandidates = buildRivestreamCycleCandidates(
+        providers,
+        input.preferredSourceId,
+        input.preferredAudioLanguage,
+      );
       const sourceInventorySeeds = buildRivestreamSourceInventoryCandidates(
         cycleCandidates,
         cachePolicy,
@@ -554,10 +597,26 @@ export const rivestreamProviderModule: CoreProviderModule = {
   },
 };
 
-function buildRivestreamCycleCandidates(
+/**
+ * Order the service cycle so a requested audio language is actually reached.
+ *
+ * Rivestream ships language-specific mirrors (hindicast for Hindi, and so on),
+ * but the cycle used to walk them in discovery order and simply *label* whatever
+ * came back with the requested language. An `hi` request therefore resolved the
+ * English mirror and stamped "HI" on it. Ordering is the whole fix: every
+ * candidate is prefetched in parallel regardless, so promoting the matching
+ * mirror costs no extra request — it only changes which settled result the
+ * sequential cycle accepts first.
+ *
+ * An explicitly pinned source still outranks the language heuristic: the user
+ * choosing a source by hand is evidence, a language guess is inference.
+ */
+export function buildRivestreamCycleCandidates(
   providers: readonly string[],
   preferredSourceId?: string,
+  preferredAudioLanguage?: string,
 ): readonly ProviderCycleCandidate[] {
+  const requestedLanguage = normalizeIsoLanguageCode(preferredAudioLanguage);
   return providers.map((provider, index) => {
     const displayLabel = displayRivestreamSourceLabel(provider);
     const audioSubtitle = inferRivestreamAudioSubtitle(provider);
@@ -569,7 +628,13 @@ function buildRivestreamCycleCandidates(
       serverId: provider,
       label: displayLabel,
       nativeLabel: provider,
-      priority: sourceId === preferredSourceId ? index - 10_000 : index,
+      priority:
+        sourceId === preferredSourceId
+          ? index - 10_000
+          : requestedLanguage !== undefined &&
+              inferRivestreamAudioLanguage(provider, undefined) === requestedLanguage
+            ? index - 1_000
+            : index,
       metadata: {
         provider,
         sourceHost: "rivestream.app",
@@ -633,13 +698,21 @@ function buildRivestreamSourceInventoryCandidates(
   });
 }
 
+export type RivestreamServicesOrigin = "discovery" | "cache" | "static";
+
+export type RivestreamServices = {
+  readonly providers: readonly string[];
+  /** Where the list came from, so a silent fallback stops being silent. */
+  readonly origin: RivestreamServicesOrigin;
+};
+
 async function getRivestreamProviderServices(
   context: ProviderRuntimeContext,
-): Promise<readonly string[]> {
+): Promise<RivestreamServices> {
   const nowMs = Date.parse(context.now());
   const cacheNow = Number.isFinite(nowMs) ? nowMs : Date.now();
   if (providerServicesCache && providerServicesCache.expiresAtMs > cacheNow) {
-    return providerServicesCache.providers;
+    return { providers: providerServicesCache.providers, origin: "cache" };
   }
 
   try {
@@ -662,13 +735,13 @@ async function getRivestreamProviderServices(
         providers,
         expiresAtMs: cacheNow + RIVESTREAM_PROVIDER_SERVICES_TTL_MS,
       };
-      return providers;
+      return { providers, origin: "discovery" };
     }
   } catch {
     // Fall through to the known baseline provider list so source resolution can still try.
   }
 
-  return RIVESTREAM_STATIC_PROVIDER_SERVICES;
+  return { providers: RIVESTREAM_STATIC_PROVIDER_SERVICES, origin: "static" };
 }
 
 function fetchRivestreamSourceData(opts: {
@@ -848,7 +921,7 @@ async function resolveRivestreamProviderCandidate({
       url: subUrl,
       language: normalizedLang,
       label: lang,
-      format: subUrl.endsWith(".vtt") ? "vtt" : "srt",
+      format: inferSubtitleFormat(subUrl),
       source: "provider",
       confidence: 0.95,
       cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },

@@ -46,6 +46,7 @@ import {
   resolveEpisodeSources,
   buildStreamHeaders,
   fetchAllMangaEpisodeCatalog,
+  getAllMangaCryptoMaterial,
   searchAllManga,
 } from "./api-client";
 import { allanimeManifest, ALLANIME_PROVIDER_ID } from "./manifest";
@@ -273,15 +274,34 @@ export const allmangaProviderModule: CoreProviderModule = {
       const mode = resolveAnimeAudioIntent(input.preferredAudioLanguage ?? "original").catalogMode;
       const episodeNum = selectProviderEpisodeNumber(input.episode);
 
-      // Same GQL catalog as listEpisodes (showCatalogCache, 45s TTL in api-client).
-      const detail = await loadAvailableEpisodesDetail(
-        context,
-        ALLANIME_API_URL,
-        ALLANIME_REFERER,
-        DEFAULT_UA,
-        showId,
-        context.signal,
-      );
+      // The catalog and crypto bootstrap are independent cold-path requests.
+      // Start both together; resolveEpisodeSources reuses the deduplicated
+      // material instead of adding a serial bootstrap after the catalog.
+      const preparationStartedAt = performance.now();
+      const [catalogResult, cryptoResult] = await Promise.allSettled([
+        loadAvailableEpisodesDetail(
+          context,
+          ALLANIME_API_URL,
+          ALLANIME_REFERER,
+          DEFAULT_UA,
+          showId,
+          context.signal,
+        ),
+        getAllMangaCryptoMaterial(context, DEFAULT_UA, context.signal),
+      ]);
+      if (context.signal?.aborted) throw context.signal.reason;
+      if (catalogResult.status === "rejected") throw catalogResult.reason;
+      const detail = catalogResult.value;
+      emitTraceEvent(events, context, {
+        type: "source:success",
+        providerId: ALLANIME_PROVIDER_ID,
+        sourceId: "source:allanime:cold-preparation",
+        message: "Prepared AllManga episode catalog and crypto material",
+        durationMs: performance.now() - preparationStartedAt,
+        attributes: {
+          cryptoReady: cryptoResult.status === "fulfilled" && cryptoResult.value !== null,
+        },
+      });
       const availableModes: ("sub" | "dub")[] = [];
       if ((detail.sub ?? []).length > 0) availableModes.push("sub");
       if ((detail.dub ?? []).length > 0) availableModes.push("dub");
@@ -301,6 +321,7 @@ export const allmangaProviderModule: CoreProviderModule = {
 
       const epStr = resolveAnimeEpisodeString(episodes, episodeNum);
       const startupPriority = input.startupPriority ?? "balanced";
+      const sourcePreparationStartedAt = performance.now();
       const linkResult = await collectAllMangaLinksForStartup(input, {
         context,
         apiUrl: ALLANIME_API_URL,
@@ -310,6 +331,17 @@ export const allmangaProviderModule: CoreProviderModule = {
         epStr,
         mode,
         signal: context.signal,
+      });
+      emitTraceEvent(events, context, {
+        type: linkResult.links.length > 0 ? "source:success" : "source:failed",
+        providerId: ALLANIME_PROVIDER_ID,
+        sourceId: "source:allanime:source-preparation",
+        message: "Prepared bounded AllManga source inventory",
+        durationMs: performance.now() - sourcePreparationStartedAt,
+        attributes: {
+          linkCount: linkResult.links.length,
+          requiredAkFallback: linkResult.requiredAkFallback,
+        },
       });
       let links = linkResult.links;
       let triedAk = isExplicitAkSelection(input) || linkResult.requiredAkFallback;

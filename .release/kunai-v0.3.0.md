@@ -2,6 +2,28 @@
 
 Security, honesty, and platform fixes from a full codebase review.
 
+Provider source reliability and lower cold-start waiting.
+
+- **AniDB:** source inventory now comes from exact per-episode `jpn`/`eng`
+  evidence. The requested audio mode resolves first; optional alternate audio is
+  skipped in fast mode and bounded in balanced/quality-first modes, so a slow or
+  missing alternate cannot hold a playable requested stream or appear as a
+  selectable source.
+- **AllAnime:** the mkissa build-140 crypto rotation is locked with independent
+  known-answer vectors and exact bootstrap-header tests. Cold episode-catalog
+  and crypto preparation now overlap, and baseline source adapters share a 1.5
+  second inventory window so a dead mirror cannot hold already-playable peers.
+  The production cold smoke kept four candidates while dropping from 12.257 to
+  2.573 seconds; request retries and their individual deadlines are unchanged.
+- **Relay diagnostics:** `bun run test:relay` reads the user's existing relay
+  config without modifying it, preflights `/health` through Bun itself, then
+  runs the AllAnime smoke in an isolated profile. It reports only the relay
+  origin, token presence, provider count, and bounded failure code; full URLs,
+  URL queries, fragments, embedded credentials, and tokens are not logged.
+- **Provider ordering:** the default remains `animeProviderPriority: ["anidb"]`.
+  The field is documented as ordering rather than an allowlist; registered
+  AllAnime and Miruro providers remain available behind AniDB.
+
 - **Downloads:** provider stream URLs and headers are guarded before reaching
   yt-dlp (scheme check, leading-dash rejection, `--` terminator, CRLF-stripped
   headers), closing an argv option-injection path the mpv lane already blocked.

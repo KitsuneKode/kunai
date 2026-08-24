@@ -14,7 +14,21 @@ export type NormalizedStreamHttpHeaders = {
   readonly referer?: string;
   readonly userAgent?: string;
   readonly origin?: string;
+  /**
+   * Every other header the provider attached, already formatted as
+   * `Name: Value` for mpv's `http-header-fields` list.
+   *
+   * mpv has dedicated options for referer and user-agent and nothing else, so
+   * anything a provider adds beyond those has to ride this list or it is simply
+   * dropped. VidLink is why this exists: its DASH manifests are CloudFront
+   * signed and answer 403 without their `Cookie`, so a resolve that carried the
+   * cookie still failed at the player.
+   */
+  readonly extraFields: readonly string[];
 };
+
+/** Headers mpv sets through dedicated options rather than the header list. */
+const DEDICATED_HEADER_NAMES = new Set(["referer", "user-agent", "origin"]);
 
 /** Canonical HTTP header fields used for mpv launch args and persistent loadfile options. */
 export function normalizeStreamHttpHeaders(
@@ -29,10 +43,23 @@ export function normalizeStreamHttpHeaders(
     const sanitized = value.trim().replace(pattern, "");
     return sanitized.length > 0 ? sanitized : undefined;
   };
+  const extraFields: string[] = [];
+  for (const [name, value] of Object.entries(source)) {
+    if (DEDICATED_HEADER_NAMES.has(name.toLowerCase())) continue;
+    const cleaned = sanitize(value, /[\r\n]/g);
+    if (!cleaned) continue;
+    // mpv separates this list on commas and offers no escape, so a value
+    // containing one cannot be represented. Dropping the header is honest;
+    // stripping the comma would corrupt a signature or cookie silently.
+    if (cleaned.includes(",")) continue;
+    extraFields.push(`${name}: ${cleaned}`);
+  }
+
   return {
     referer: sanitize(referer, /[\r\n]/g),
     userAgent: sanitize(userAgent, /[\r\n]/g),
     origin: sanitize(origin, /[\r\n,]/g),
+    extraFields,
   };
 }
 
@@ -55,7 +82,9 @@ export type PersistentLoadfileOptions = {
   readonly "http-header-fields"?: string;
   readonly "http-header-fields-clr"?: string;
   readonly "tls-verify"?: string;
+  /** mpv's `--ytdl` is a yes/no flag: whether ytdl_hook runs at all. */
   readonly ytdl?: string;
+  /** mpv's `--ytdl-format` is the format selector string. */
   readonly "ytdl-format"?: string;
   readonly "ytdl-raw-options"?: string;
   readonly "demuxer-lavf-o"?: string;
@@ -73,7 +102,7 @@ export function buildPersistentLoadfileOptions(
     readonly urlKind?: MpvUrlKind;
   },
 ): PersistentLoadfileOptions {
-  const { referer, userAgent, origin } = normalizeStreamHttpHeaders(headers);
+  const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(headers);
   const loadOptions: Record<string, string> = {
     start: shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
   };
@@ -84,8 +113,9 @@ export function buildPersistentLoadfileOptions(
   if (userAgent) {
     loadOptions["user-agent"] = userAgent;
   }
-  if (origin) {
-    loadOptions["http-header-fields"] = `Origin: ${origin}`;
+  const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
+  if (headerFields.length > 0) {
+    loadOptions["http-header-fields"] = headerFields.join(",");
   } else {
     loadOptions["http-header-fields-clr"] = "";
   }
@@ -94,10 +124,13 @@ export function buildPersistentLoadfileOptions(
   }
 
   if (isYoutubeWatchUrl(url) || ytdlOptions?.requiresYtdl) {
-    // `ytdl` is a yes/no flag; the format belongs in `ytdl-format`. Passing the
-    // format here made mpv answer "unsupported format for accessing property"
-    // and drop the option, so the quality ceiling silently never applied on the
-    // persistent path while the spawn path in mpv.ts got it right.
+    // `ytdl` is a yes/no flag and `ytdl-format` is the selector, so assigning
+    // the format to `ytdl` silently discarded the user's quality ceiling on the
+    // persistent session: a loadfile carrying a `height<=144` selector still
+    // played 720p. Probing the live IPC socket on mpv 0.41,
+    // `set_property ytdl "bv*+ba/b"` answers `unsupported format for accessing
+    // property` while `ytdl-format` accepts it. Setting the flag explicitly
+    // also survives a user config that turned ytdl off.
     loadOptions.ytdl = "yes";
     loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? "bv*+ba/b";
     if (ytdlOptions?.ytdlRawOptions?.trim()) {

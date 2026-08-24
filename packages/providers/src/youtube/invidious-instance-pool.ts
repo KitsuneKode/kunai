@@ -1,5 +1,17 @@
+import { createTimeoutSignal } from "../shared/timeout-signal";
+
 const DEFAULT_INSTANCES_URL = "https://api.invidious.io/instances.json?sort_by=type,health,api";
 const INSTANCE_COOLDOWN_MS = 5 * 60 * 1000;
+/**
+ * The registry lookup is the only fetch on the search path that was unbounded —
+ * every Invidious data request already carries `INVIDIOUS_FETCH_TIMEOUT_MS`, but
+ * this one inherited whatever the caller passed, which is often nothing. A hung
+ * registry then stalls search itself, before a single instance is even tried.
+ * Shorter than the data timeout on purpose: this is a lookup standing between
+ * the user and their results, and a stale cache or the static fallback is a far
+ * better answer than waiting.
+ */
+const INSTANCE_REGISTRY_TIMEOUT_MS = 5_000;
 
 type InvidiousInstanceRecord = {
   readonly uri?: string;
@@ -47,19 +59,36 @@ export async function fetchHealthyInvidiousInstances(
     return filterAvailableInstances(cachedInstances.instances, now);
   }
 
-  const response = await fetch(instancesUrl, {
-    headers: { Accept: "application/json" },
-    signal: options.signal,
-  });
-  if (!response.ok) {
-    throw new Error(`Invidious instance list failed (${response.status})`);
+  let instances: readonly string[];
+  try {
+    const response = await fetch(instancesUrl, {
+      headers: { Accept: "application/json" },
+      signal: createTimeoutSignal(options.signal, INSTANCE_REGISTRY_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`Invidious instance list failed (${response.status})`);
+    }
+    const payload = await response.json();
+    // A 200 carrying the wrong shape (`{}`, an object, a string) is as useless
+    // as a failed fetch, and `selectReachableInstances` throwing on it outside
+    // this block would skip the stale-cache fallback entirely. Parse and select
+    // inside the try so malformed data takes the same recovery path.
+    if (!Array.isArray(payload)) {
+      throw new Error("Invidious instance list returned an unexpected shape");
+    }
+    instances = selectReachableInstances(
+      payload as readonly (readonly [string, InvidiousInstanceRecord])[],
+    );
+  } catch (error) {
+    // The registry is a directory, not the service. An expired directory still
+    // names instances that very likely still work, so a slow or broken registry
+    // should not take YouTube search down with it — same reasoning as the empty
+    // -payload path below, applied to the fetch itself.
+    if (options.signal?.aborted) throw error;
+    const stale = cachedInstances ? filterAvailableInstances(cachedInstances.instances, now) : [];
+    if (stale.length > 0) return stale;
+    throw error;
   }
-
-  const payload = (await response.json()) as readonly (readonly [
-    string,
-    InvidiousInstanceRecord,
-  ])[];
-  const instances = selectReachableInstances(payload);
 
   // An empty selection is not a healthy pool.
   //

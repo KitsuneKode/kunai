@@ -48,6 +48,7 @@ import {
   parseAnidbSeasonEvidence,
   resolveAnidbEpisodeStreams,
   searchAnidb,
+  type AnidbModeOutcome,
   type AnidbSearchResult,
   type AnidbStreamLink,
 } from "./client";
@@ -59,6 +60,7 @@ export {
   anidbNumericId,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
+  collectAnidbAvailableAudioModes,
   fetchAnidbExternalIds,
   fetchAnidbOfficialEpisodeMetadata,
   fetchAnidbMalId,
@@ -67,6 +69,7 @@ export {
   parseAnidbSeasonEvidence,
   anidbCipherArgs,
   resolveAnidbCurl,
+  resolveAnidbEpisodeStreams,
   searchAnidb,
   type AnidbSearchResult,
   type AnidbSeasonEvidence,
@@ -109,24 +112,32 @@ function buildStreamHeaders(referer: string): Record<string, string> {
 }
 
 function buildAnidbSourceInventory(
-  audioMode: "sub" | "dub",
+  availableModes: readonly ("sub" | "dub")[],
+  selectedMode: "sub" | "dub",
   cachePolicy: ReturnType<typeof createProviderCachePolicy>,
 ): readonly ProviderSourceCandidate[] {
-  const sourceId = `source:${ANIDB_PROVIDER_ID}:${audioMode}`;
-  return [
-    {
+  // Build one source entry per available audio mode so the inventory advertises
+  // every language the AniDB episode API reports.  The selected mode starts as
+  // "probing" (finalizeCycleSourceInventory will promote it); the rest start as
+  // "available" so the user can switch to them from the Tracks picker.
+  const modes = availableModes.length > 0 ? availableModes : [selectedMode];
+  return modes.map((audioMode) => {
+    const sourceId = `source:${ANIDB_PROVIDER_ID}:${audioMode}`;
+    return {
       id: sourceId,
       providerId: ANIDB_PROVIDER_ID,
-      kind: "provider-api",
+      kind: "provider-api" as const,
       label: audioMode === "dub" ? "AniDB Dub" : "AniDB Sub",
       host: "anidb.app",
-      status: "probing",
+      status: (audioMode === selectedMode
+        ? "probing"
+        : "available") as ProviderSourceCandidate["status"],
       confidence: 0.85,
-      requiresRuntime: "direct-http",
+      requiresRuntime: "direct-http" as const,
       cachePolicy,
       languageEvidence: [
         {
-          role: "audio",
+          role: "audio" as const,
           normalizedLanguage: audioMode === "dub" ? "en" : "ja",
           nativeLabel: audioMode,
           sourceId,
@@ -142,8 +153,8 @@ function buildAnidbSourceInventory(
           confidence: 0.85,
         },
       ],
-    },
-  ];
+    };
+  });
 }
 
 function linksToCandidates(
@@ -152,22 +163,22 @@ function linksToCandidates(
 ): {
   readonly streams: StreamCandidate[];
   readonly variants: ProviderVariantCandidate[];
-  readonly sourceId: string;
 } {
-  const audioMode = links[0]?.audioMode ?? "sub";
-  const sourceId = `source:${ANIDB_PROVIDER_ID}:${audioMode}`;
   const streams: StreamCandidate[] = [];
   const variants: ProviderVariantCandidate[] = [];
-  const sourceDetail = formatAnimeSourceDetail({
-    audio: audioMode,
-    subtitleMode: "unknown",
-  });
-  const archetype = formatAnimeSourceArchetype({
-    audio: audioMode,
-    detail: audioMode === "dub" ? "Dub" : "Sub",
-  });
 
   for (const link of links) {
+    const audioMode = link.audioMode;
+    const sourceId = `source:${ANIDB_PROVIDER_ID}:${audioMode}`;
+    const sourceDetail = formatAnimeSourceDetail({
+      audio: audioMode,
+      subtitleMode: "unknown",
+    });
+    const archetype = formatAnimeSourceArchetype({
+      audio: audioMode,
+      detail: audioMode === "dub" ? "Dub" : "Sub",
+    });
+
     const quality = animeQualityFields(link.quality);
     const streamId = `stream:${ANIDB_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
     const variantId = `variant:${ANIDB_PROVIDER_ID}:${sourceId}:${link.quality}`;
@@ -189,6 +200,24 @@ function linksToCandidates(
       serverName: "anidb",
       confidence: 0.9,
       cachePolicy,
+      languageEvidence: [
+        {
+          role: "audio",
+          normalizedLanguage: audioMode === "dub" ? "en" : "ja",
+          nativeLabel: audioMode,
+          sourceId,
+          confidence: 0.85,
+        },
+      ],
+      sourceEvidence: [
+        {
+          sourceId,
+          serverId: audioMode,
+          nativeLabel: audioMode === "dub" ? "English" : "Japanese",
+          host: "anidb.app",
+          confidence: 0.85,
+        },
+      ],
       metadata: {
         audioMode,
         sourceDetail,
@@ -209,7 +238,7 @@ function linksToCandidates(
     });
   }
 
-  return { streams, variants, sourceId };
+  return { streams, variants };
 }
 
 export const anidbProviderModule: CoreProviderModule = {
@@ -372,9 +401,17 @@ export const anidbProviderModule: CoreProviderModule = {
       message: `Started AniDB resolve for ${showId}`,
     });
 
-    const audioMode = resolveAnimeAudioIntent(
-      input.preferredAudioLanguage ?? input.preferredPresentation ?? "original",
-    ).catalogMode;
+    const explicitSourceMode =
+      input.preferredSourceId === `source:${ANIDB_PROVIDER_ID}:dub`
+        ? "dub"
+        : input.preferredSourceId === `source:${ANIDB_PROVIDER_ID}:sub`
+          ? "sub"
+          : undefined;
+    const audioMode =
+      explicitSourceMode ??
+      resolveAnimeAudioIntent(
+        input.preferredAudioLanguage ?? input.preferredPresentation ?? "original",
+      ).catalogMode;
     // Numbering is decided by routeAnidbSeason, which only uses absoluteEpisode
     // when the routed title's own episode catalog confirms it.
     const episodeNumber = route.episodeNumber;
@@ -391,31 +428,60 @@ export const anidbProviderModule: CoreProviderModule = {
     };
 
     try {
-      const links = await resolveAnidbEpisodeStreams({
+      const resolution = await resolveAnidbEpisodeStreams({
         context,
         showId,
         episodeNumber,
-        audioMode,
+        requestedMode: audioMode,
+        startupPriority: input.startupPriority,
         signal: context.signal,
       });
-      if (links.length === 0) {
-        return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
-          code: "not-found",
-          message: `No AniDB streams for ${showId} episode ${episodeNumber} (${audioMode})`,
-          retryable: true,
+      if (resolution.availableModes.length > 0) {
+        emitTraceEvent(events, context, {
+          type: "inventory:audio-modes",
+          providerId: ANIDB_PROVIDER_ID,
+          message: `AniDB episode exposes ${resolution.availableModes.join(" and ")} audio modes`,
+          attributes: { modes: resolution.availableModes.join(",") },
         });
       }
 
-      const { streams, variants, sourceId } = linksToCandidates(links, cachePolicy);
+      emitAnidbModeOutcome(events, context, resolution.requested);
+      if (resolution.alternate) emitAnidbModeOutcome(events, context, resolution.alternate);
+
+      if (resolution.requested.status !== "resolved") {
+        const failure =
+          "failure" in resolution.requested
+            ? resolution.requested.failure
+            : {
+                code: "not-found" as const,
+                message: `No AniDB streams for ${showId} episode ${episodeNumber} (${audioMode})`,
+                retryable: false,
+              };
+        return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, failure, {
+          cachePolicy,
+          events,
+          failures,
+          startedAt,
+        });
+      }
+
+      const resolvedOutcomes = [resolution.requested, resolution.alternate].filter(
+        (outcome): outcome is Extract<AnidbModeOutcome, { status: "resolved" }> =>
+          outcome?.status === "resolved",
+      );
+      const links = resolvedOutcomes.flatMap((outcome) => outcome.links);
+      const resolvedModes = resolvedOutcomes.map((outcome) => outcome.mode);
+      const { streams, variants } = linksToCandidates(links, cachePolicy);
+      const targetSourceId = input.preferredSourceId ?? `source:${ANIDB_PROVIDER_ID}:${audioMode}`;
       const selection = selectReadyStream(streams, {
         startupPriority: input.startupPriority,
         qualityPreference: input.qualityPreference,
-        preferredSourceId: input.preferredSourceId,
+        preferredSourceId: targetSourceId,
         preferredStreamId: input.preferredStreamId,
         favoriteSourceNames: input.favoriteSourceNames,
       });
       const sources = finalizeCycleSourceInventory({
-        sources: buildAnidbSourceInventory(audioMode, cachePolicy),
+        sources: buildAnidbSourceInventory(resolvedModes, audioMode, cachePolicy),
         attempts: [],
         streams,
         selectedStreamId: selection.selected.id,
@@ -426,7 +492,11 @@ export const anidbProviderModule: CoreProviderModule = {
         type: "provider:success",
         providerId: ANIDB_PROVIDER_ID,
         message: `Resolved ${streams.length} AniDB stream(s)`,
-        attributes: { sourceId, showId, ...routeAttributes },
+        attributes: {
+          sourceId: selection.selected.sourceId ?? targetSourceId,
+          showId,
+          ...routeAttributes,
+        },
       });
 
       const malId = await malIdPromise;
@@ -478,6 +548,24 @@ export const anidbProviderModule: CoreProviderModule = {
         },
       };
     } catch (error) {
+      if (context.signal?.aborted) {
+        return createExhaustedResult(
+          input,
+          context,
+          ANIDB_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "AniDB resolution was cancelled",
+            retryable: false,
+          },
+          {
+            cachePolicy,
+            events,
+            failures,
+            startedAt,
+          },
+        );
+      }
       const message = error instanceof Error ? error.message : String(error);
       const failure: ProviderFailure = {
         providerId: ANIDB_PROVIDER_ID,
@@ -496,3 +584,24 @@ export const anidbProviderModule: CoreProviderModule = {
     }
   },
 };
+
+function emitAnidbModeOutcome(
+  events: ProviderTraceEvent[],
+  context: ProviderRuntimeContext,
+  outcome: AnidbModeOutcome,
+): void {
+  const sourceId = `source:${ANIDB_PROVIDER_ID}:${outcome.mode}`;
+  const type =
+    outcome.status === "resolved"
+      ? "source:success"
+      : outcome.status === "failed" || outcome.status === "timed-out"
+        ? "source:failed"
+        : "source:skipped";
+  emitTraceEvent(events, context, {
+    type,
+    providerId: ANIDB_PROVIDER_ID,
+    sourceId,
+    message: `AniDB ${outcome.mode} source ${outcome.status}`,
+    attributes: { mode: outcome.mode, status: outcome.status },
+  });
+}
