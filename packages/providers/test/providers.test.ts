@@ -1423,7 +1423,9 @@ test("miruro resolve times the episodes stage even when it fails", async () => {
   // The episodes fetch is where the time was proven to go, and a Cloudflare
   // block throws there — so that failure path must still emit a timed stage.
   const events: { readonly sourceId?: string; readonly durationMs?: number }[] = [];
-  const result = await miruroProviderModule.resolve!(
+  const { resolve: resolveMiruro } = miruroProviderModule;
+  if (!resolveMiruro) throw new Error("miruro module must expose resolve");
+  const result = await resolveMiruro(
     {
       title: { id: "anilist:999", anilistId: "999", kind: "anime", title: "Evidence Fox" },
       episode: { episode: 1 },

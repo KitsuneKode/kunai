@@ -27,7 +27,9 @@ function buildInput(overrides: Record<string, unknown> = {}): ProviderResolveInp
 }
 
 async function resolve(input: ProviderResolveInput) {
-  return rivestreamProviderModule.resolve!(input, CONTEXT);
+  const { resolve: resolveStream } = rivestreamProviderModule;
+  if (!resolveStream) throw new Error("rivestream module must expose resolve");
+  return resolveStream(input, CONTEXT);
 }
 
 describe("rivestream input validation", () => {
