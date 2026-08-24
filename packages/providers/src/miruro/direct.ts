@@ -1226,9 +1226,10 @@ export async function getMiruroEpisodesResponse(
   // 3. Network.
   const epData = await pipeCall(context, "episodes", { anilistId: Number(anilistId) }, signal);
   episodeCache.set(cacheKey, epData);
-  if (epData?.providers) {
-    // Only persist a real catalog; an empty/failed body must not be cached as
-    // "this show has no episodes" for 12 hours.
+  if (selectMiruroEpisodeCatalogEntries(epData).length > 0) {
+    // Only persist a catalog that actually has episodes. `providers: {}` is
+    // truthy, so guarding on it alone would cache an empty body as "this show
+    // has no episodes" for 12 hours and starve every later resolve.
     void context.cache?.write(
       MIRURO_EPISODES_CACHE_NAMESPACE,
       anilistId,
