@@ -25,7 +25,13 @@ import {
 } from "@/services/update/native-installer/install-layout";
 import { isMuslEnvironmentSync } from "@/services/update/native-installer/musl";
 import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
-import { releaseAssetName } from "@/services/update/platform-assets";
+import {
+  releaseAssetName,
+  resolveReleaseBinaryTarget,
+  type ReleaseBinaryTarget,
+} from "@/services/update/platform-assets";
+
+import { createReleaseArchive } from "../../../../../scripts/build-release-archives";
 
 const made: string[] = [];
 
@@ -63,6 +69,16 @@ function hostAssetName(): string {
   return releaseAssetName(os, arch, libc);
 }
 
+function hostTarget(): ReleaseBinaryTarget {
+  const os =
+    process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  const libc = os === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu";
+  const target = resolveReleaseBinaryTarget(os, arch, libc);
+  if (!target) throw new Error(`Missing host release target ${os}-${arch}-${libc}`);
+  return target;
+}
+
 function sumsFor(assetName: string, digest: string): string {
   return `${digest}  ${assetName}\n`;
 }
@@ -92,6 +108,98 @@ async function expectLauncherPointsTo(launcherPath: string, versionPath: string)
 }
 
 describe("installLatest", () => {
+  test("installs the verified archive member and records transport plus binary provenance", async () => {
+    const { layout } = await makeLayout();
+    const releaseTarget = hostTarget();
+    const bytes = new TextEncoder().encode("ARCHIVED-VERIFIED-BINARY");
+    const archive = createReleaseArchive(releaseTarget, bytes);
+    const binaryDigest = sha256Hex(bytes);
+    const archiveDigest = sha256Hex(archive);
+    const requested: string[] = [];
+
+    const result = await installLatest({
+      version: "3.2.0",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        requested.push(url);
+        if (url.endsWith("/SHA256SUMS.archives")) {
+          return new Response(sumsFor(releaseTarget.archiveName, archiveDigest));
+        }
+        if (url.endsWith("/SHA256SUMS")) {
+          return new Response(sumsFor(releaseTarget.out, binaryDigest));
+        }
+        if (url.endsWith(`/${releaseTarget.archiveName}`)) return new Response(archive);
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    expect(result).toMatchObject({ status: "installed", version: "3.2.0" });
+    expect(await Bun.file(versionBinaryPath(layout, "3.2.0")).text()).toBe(
+      "ARCHIVED-VERIFIED-BINARY",
+    );
+    expect(requested.some((url) => url.endsWith(`/${releaseTarget.out}`))).toBe(false);
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      schemaVersion: 2,
+      artifactName: releaseTarget.out,
+      artifactSha256: binaryDigest,
+      artifactSizeBytes: bytes.length,
+      archiveName: releaseTarget.archiveName,
+      archiveSha256: archiveDigest,
+      archiveSizeBytes: archive.length,
+      archiveSourceUrl: `https://example.test/releases/download/v3.2.0/${releaseTarget.archiveName}`,
+    });
+  });
+
+  test("archive checksum failure preserves the active launcher and manifest", async () => {
+    const { layout } = await makeLayout();
+    const previousPath = versionBinaryPath(layout, "1.0.0");
+    await mkdir(dirname(previousPath), { recursive: true });
+    await writeFile(previousPath, "OLD-BINARY");
+    await seedLauncher(layout.launcherPath, previousPath);
+    await writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "1.0.0",
+        launcherPath: layout.launcherPath,
+        versionedPath: previousPath,
+        downloadBaseUrl: "https://example.test/releases",
+        artifactSha256: sha256Hex("OLD-BINARY"),
+      },
+      layout.configDir,
+    );
+    const releaseTarget = hostTarget();
+    const bytes = new TextEncoder().encode("NEW-BINARY");
+    const archive = createReleaseArchive(releaseTarget, bytes);
+
+    const result = await installLatest({
+      version: "2.0.0",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) {
+          return new Response(sumsFor(releaseTarget.archiveName, "0".repeat(64)));
+        }
+        if (url.endsWith("/SHA256SUMS")) {
+          return new Response(sumsFor(releaseTarget.out, sha256Hex(bytes)));
+        }
+        if (url.endsWith(`/${releaseTarget.archiveName}`)) return new Response(archive);
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: `Checksum mismatch for ${releaseTarget.archiveName}`,
+    });
+    await expectLauncherPointsTo(layout.launcherPath, previousPath);
+    expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("1.0.0");
+  });
+
   test("checksum failure preserves launcher and manifest", async () => {
     const { layout } = await makeLayout();
     const previousPath = versionBinaryPath(layout, "1.0.0");
@@ -121,6 +229,7 @@ describe("installLatest", () => {
       dlBase: "https://example.test/releases",
       fetchImpl: async (input) => {
         const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) return new Response("missing", { status: 404 });
         if (url.includes("SHA256SUMS")) {
           return new Response(badSums, { status: 200 });
         }
@@ -149,6 +258,7 @@ describe("installLatest", () => {
       dlBase: "https://example.test/releases",
       fetchImpl: async (input) => {
         const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) return new Response("missing", { status: 404 });
         if (url.includes("SHA256SUMS")) {
           return new Response(sumsFor(assetName, digest), { status: 200 });
         }
@@ -187,6 +297,7 @@ describe("installLatest", () => {
       dlBase: "https://example.test/releases",
       fetchImpl: async (input) => {
         const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) return new Response("missing", { status: 404 });
         if (url.includes("SHA256SUMS")) {
           return new Response(sumsFor(assetName, digest), { status: 200 });
         }
@@ -238,6 +349,7 @@ describe("installLatest", () => {
       dlBase: "https://example.test/releases",
       fetchImpl: async (input) => {
         const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) return new Response("missing", { status: 404 });
         if (url.includes("SHA256SUMS")) {
           return new Response(sumsFor(assetName, digest), { status: 200 });
         }
@@ -285,6 +397,9 @@ describe("installLatest", () => {
           dlBase: "https://example.test/releases",
           fetchImpl: async (input) => {
             const url = String(input);
+            if (url.endsWith("/SHA256SUMS.archives")) {
+              return new Response("missing", { status: 404 });
+            }
             if (url.includes("SHA256SUMS")) {
               return new Response(sumsFor(assetName, digest), { status: 200 });
             }
@@ -332,6 +447,9 @@ describe("installLatest", () => {
           dlBase: "https://example.test/releases",
           fetchImpl: async (input) => {
             const url = String(input);
+            if (url.endsWith("/SHA256SUMS.archives")) {
+              return new Response("missing", { status: 404 });
+            }
             if (url.includes("SHA256SUMS")) {
               return new Response(sumsFor(assetName, digest), { status: 200 });
             }

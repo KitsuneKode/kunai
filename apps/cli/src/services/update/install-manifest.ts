@@ -12,12 +12,12 @@ import { parseCanonicalVersion } from "./version";
  * route to the correct mechanism and never fight another installer.
  * Authoritative when present; otherwise callers fall back to `detectInstallMethod`.
  */
-export const INSTALL_MANIFEST_SCHEMA_VERSION = 1 as const;
+export const INSTALL_MANIFEST_SCHEMA_VERSION = 2 as const;
 
 export type InstallManifestMethod = "binary" | "npm-global" | "bun-global" | "source";
 
 export interface InstallManifest {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly method: InstallManifestMethod;
   readonly observedProvenance?: string;
   readonly activeVersion: string;
@@ -27,7 +27,13 @@ export interface InstallManifest {
   readonly versionedPath?: string;
   readonly managedPaths: readonly string[];
   readonly target?: string;
+  readonly artifactName?: string;
   readonly artifactSha256?: string;
+  readonly artifactSizeBytes?: number;
+  readonly archiveName?: string;
+  readonly archiveSha256?: string;
+  readonly archiveSizeBytes?: number;
+  readonly archiveSourceUrl?: string;
   readonly downloadBaseUrl: string;
   readonly installedAt: string;
   readonly updatedAt: string;
@@ -60,7 +66,13 @@ export type WriteInstallManifestInput = {
   readonly previousVersion?: string;
   readonly observedProvenance?: string;
   readonly target?: string;
+  readonly artifactName?: string;
   readonly artifactSha256?: string;
+  readonly artifactSizeBytes?: number;
+  readonly archiveName?: string;
+  readonly archiveSha256?: string;
+  readonly archiveSizeBytes?: number;
+  readonly archiveSourceUrl?: string;
   readonly managedPaths?: readonly string[];
 };
 
@@ -142,6 +154,23 @@ export async function writeInstallManifest(
   partial: WriteInstallManifestInput,
   configDir = getKunaiPaths().configDir,
 ): Promise<void> {
+  if (!archiveProvenanceComplete(partial)) {
+    throw new Error("Archive provenance must include name, checksum, size, and source URL");
+  }
+  if (!archiveHasArtifactProvenance(partial)) {
+    throw new Error("Archive installs must include extracted binary provenance");
+  }
+  if (
+    !optionalString(partial.artifactName) ||
+    !optionalSha256(partial.artifactSha256) ||
+    !optionalSize(partial.artifactSizeBytes) ||
+    !optionalString(partial.archiveName) ||
+    !optionalSha256(partial.archiveSha256) ||
+    !optionalSize(partial.archiveSizeBytes) ||
+    !optionalString(partial.archiveSourceUrl)
+  ) {
+    throw new Error("Invalid install manifest artifact provenance");
+  }
   const activeVersion = parseCanonicalVersion(partial.activeVersion);
   if (!activeVersion) {
     throw new Error(`Invalid install manifest version: ${partial.activeVersion}`);
@@ -182,7 +211,17 @@ export async function writeInstallManifest(
     ...(previousVersion ? { previousVersion } : {}),
     ...(partial.observedProvenance ? { observedProvenance: partial.observedProvenance } : {}),
     ...(partial.target ? { target: partial.target } : {}),
+    ...(partial.artifactName ? { artifactName: partial.artifactName } : {}),
     ...(partial.artifactSha256 ? { artifactSha256: partial.artifactSha256 } : {}),
+    ...(partial.artifactSizeBytes !== undefined
+      ? { artifactSizeBytes: partial.artifactSizeBytes }
+      : {}),
+    ...(partial.archiveName ? { archiveName: partial.archiveName } : {}),
+    ...(partial.archiveSha256 ? { archiveSha256: partial.archiveSha256 } : {}),
+    ...(partial.archiveSizeBytes !== undefined
+      ? { archiveSizeBytes: partial.archiveSizeBytes }
+      : {}),
+    ...(partial.archiveSourceUrl ? { archiveSourceUrl: partial.archiveSourceUrl } : {}),
   };
 
   await persistManifest(full, configDir);
@@ -209,7 +248,7 @@ function inspectCurrentSchema(
   if (typeof schemaVersion !== "number" || !Number.isInteger(schemaVersion)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
-  if (schemaVersion !== INSTALL_MANIFEST_SCHEMA_VERSION) {
+  if (schemaVersion !== 1 && schemaVersion !== INSTALL_MANIFEST_SCHEMA_VERSION) {
     return { status: "invalid", reason: "unsupported-schema" };
   }
 
@@ -254,6 +293,26 @@ function inspectCurrentSchema(
   ) {
     return { status: "invalid", reason: "invalid-shape" };
   }
+  if (!archiveProvenanceComplete(record)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  if (!archiveHasArtifactProvenance(record)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  if (!optionalString(record.artifactName) || !optionalSha256(record.artifactSha256)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  if (!optionalSize(record.artifactSizeBytes)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  if (
+    !optionalString(record.archiveName) ||
+    !optionalSha256(record.archiveSha256) ||
+    !optionalSize(record.archiveSizeBytes) ||
+    !optionalString(record.archiveSourceUrl)
+  ) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
 
   const layout = getInstallLayoutPaths({
     configDir,
@@ -264,7 +323,7 @@ function inspectCurrentSchema(
   }
 
   const manifest: InstallManifest = {
-    schemaVersion: 1,
+    schemaVersion: INSTALL_MANIFEST_SCHEMA_VERSION,
     method: typedMethod,
     activeVersion: record.activeVersion,
     preferredChannel: "stable",
@@ -281,10 +340,22 @@ function inspectCurrentSchema(
       ? { observedProvenance: record.observedProvenance }
       : {}),
     ...(typeof record.target === "string" ? { target: record.target } : {}),
+    ...(typeof record.artifactName === "string" ? { artifactName: record.artifactName } : {}),
     ...(typeof record.artifactSha256 === "string" ? { artifactSha256: record.artifactSha256 } : {}),
+    ...(typeof record.artifactSizeBytes === "number"
+      ? { artifactSizeBytes: record.artifactSizeBytes }
+      : {}),
+    ...(typeof record.archiveName === "string" ? { archiveName: record.archiveName } : {}),
+    ...(typeof record.archiveSha256 === "string" ? { archiveSha256: record.archiveSha256 } : {}),
+    ...(typeof record.archiveSizeBytes === "number"
+      ? { archiveSizeBytes: record.archiveSizeBytes }
+      : {}),
+    ...(typeof record.archiveSourceUrl === "string"
+      ? { archiveSourceUrl: record.archiveSourceUrl }
+      : {}),
   };
 
-  return { status: "loaded", needsMigration: false, manifest };
+  return { status: "loaded", needsMigration: schemaVersion === 1, manifest };
 }
 
 function inspectLegacySchema(
@@ -354,4 +425,52 @@ function managedPathsAreSafe(
     if (!ok) return false;
   }
   return true;
+}
+
+function optionalString(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && value.length > 0);
+}
+
+function optionalSha256(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value));
+}
+
+function optionalSize(value: unknown): boolean {
+  return (
+    value === undefined || (typeof value === "number" && Number.isSafeInteger(value) && value > 0)
+  );
+}
+
+function archiveProvenanceComplete(value: {
+  readonly archiveName?: unknown;
+  readonly archiveSha256?: unknown;
+  readonly archiveSizeBytes?: unknown;
+  readonly archiveSourceUrl?: unknown;
+}): boolean {
+  const fields = [
+    value.archiveName,
+    value.archiveSha256,
+    value.archiveSizeBytes,
+    value.archiveSourceUrl,
+  ];
+  const present = fields.filter((field) => field !== undefined).length;
+  return present === 0 || present === fields.length;
+}
+
+function archiveHasArtifactProvenance(value: {
+  readonly archiveName?: unknown;
+  readonly artifactName?: unknown;
+  readonly artifactSha256?: unknown;
+  readonly artifactSizeBytes?: unknown;
+}): boolean {
+  if (value.archiveName === undefined) return true;
+  return (
+    typeof value.artifactName === "string" &&
+    value.artifactName.length > 0 &&
+    typeof value.artifactSha256 === "string" &&
+    /^[a-fA-F0-9]{64}$/.test(value.artifactSha256) &&
+    typeof value.artifactSizeBytes === "number" &&
+    Number.isSafeInteger(value.artifactSizeBytes) &&
+    value.artifactSizeBytes > 0
+  );
 }

@@ -50,6 +50,13 @@ test("write then read round-trips the versioned manifest", async () => {
       launcherPath: "/x/kunai",
       versionedPath: "/data/versions/1.2.3/kunai",
       downloadBaseUrl: "https://dl",
+      artifactName: "kunai-linux-x64",
+      artifactSha256: "a".repeat(64),
+      artifactSizeBytes: 42,
+      archiveName: "kunai-linux-x64.tar.gz",
+      archiveSha256: "b".repeat(64),
+      archiveSizeBytes: 21,
+      archiveSourceUrl: "https://dl/download/v1.2.3/kunai-linux-x64.tar.gz",
     },
     dir,
   );
@@ -60,10 +67,135 @@ test("write then read round-trips the versioned manifest", async () => {
   expect(m?.launcherPath).toBe("/x/kunai");
   expect(m?.versionedPath).toBe("/data/versions/1.2.3/kunai");
   expect(m?.downloadBaseUrl).toBe("https://dl");
+  expect(m?.artifactName).toBe("kunai-linux-x64");
+  expect(m?.artifactSha256).toBe("a".repeat(64));
+  expect(m?.artifactSizeBytes).toBe(42);
+  expect(m?.archiveName).toBe("kunai-linux-x64.tar.gz");
+  expect(m?.archiveSha256).toBe("b".repeat(64));
+  expect(m?.archiveSizeBytes).toBe(21);
+  expect(m?.archiveSourceUrl).toBe("https://dl/download/v1.2.3/kunai-linux-x64.tar.gz");
   expect(m?.preferredChannel).toBe("stable");
   expect(m?.managedPaths.length).toBeGreaterThan(0);
   expect(typeof m?.installedAt).toBe("string");
   expect(typeof m?.updatedAt).toBe("string");
+});
+
+test("read migrates a schema-v1 manifest to schema v2 without losing rollback fields", async () => {
+  const dir = tempDir();
+  const path = join(dir, "install.json");
+  await Bun.write(
+    path,
+    JSON.stringify({
+      schemaVersion: 1,
+      method: "binary",
+      activeVersion: "1.2.3",
+      previousVersion: "1.2.2",
+      preferredChannel: "stable",
+      launcherPath: "/x/kunai",
+      versionedPath: "/data/versions/1.2.3/kunai",
+      managedPaths: [],
+      target: "linux-x64",
+      artifactSha256: "c".repeat(64),
+      downloadBaseUrl: "https://dl",
+      installedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    }),
+  );
+
+  expect(await inspectInstallManifest(dir)).toMatchObject({
+    status: "loaded",
+    needsMigration: true,
+    manifest: {
+      schemaVersion: 2,
+      activeVersion: "1.2.3",
+      previousVersion: "1.2.2",
+      artifactSha256: "c".repeat(64),
+    },
+  });
+  expect(await readInstallManifest(dir)).toMatchObject({
+    schemaVersion: 2,
+    activeVersion: "1.2.3",
+    previousVersion: "1.2.2",
+  });
+  expect(JSON.parse(await Bun.file(path).text())).toMatchObject({ schemaVersion: 2 });
+});
+
+test("schema v2 rejects partial archive provenance", async () => {
+  const dir = tempDir();
+  await Bun.write(
+    join(dir, "install.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      method: "binary",
+      activeVersion: "1.2.3",
+      preferredChannel: "stable",
+      launcherPath: "/x/kunai",
+      managedPaths: [],
+      downloadBaseUrl: "https://dl",
+      installedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      archiveName: "kunai-linux-x64.tar.gz",
+    }),
+  );
+
+  expect(await inspectInstallManifest(dir)).toMatchObject({
+    status: "invalid",
+    reason: "invalid-shape",
+  });
+});
+
+test("write rejects partial archive provenance", async () => {
+  const dir = tempDir();
+  await expect(
+    writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "1.2.3",
+        launcherPath: "/x/kunai",
+        downloadBaseUrl: "https://dl",
+        archiveName: "kunai-linux-x64.tar.gz",
+      },
+      dir,
+    ),
+  ).rejects.toThrow(/archive provenance/i);
+});
+
+test("write rejects empty archive provenance strings", async () => {
+  const dir = tempDir();
+  await expect(
+    writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "1.2.3",
+        launcherPath: "/x/kunai",
+        downloadBaseUrl: "https://dl",
+        archiveName: "",
+        archiveSha256: "d".repeat(64),
+        archiveSizeBytes: 10,
+        archiveSourceUrl: "https://dl/archive",
+      },
+      dir,
+    ),
+  ).rejects.toThrow(/provenance/i);
+});
+
+test("write requires extracted-binary provenance when archive provenance is present", async () => {
+  const dir = tempDir();
+  await expect(
+    writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "1.2.3",
+        launcherPath: "/x/kunai",
+        downloadBaseUrl: "https://dl",
+        archiveName: "kunai-linux-x64.tar.gz",
+        archiveSha256: "d".repeat(64),
+        archiveSizeBytes: 10,
+        archiveSourceUrl: "https://dl/archive",
+      },
+      dir,
+    ),
+  ).rejects.toThrow(/extracted binary provenance/i);
 });
 
 test("read returns null when manifest is absent", async () => {
@@ -90,7 +222,7 @@ test("read migrates legacy versioned binary atomically", async () => {
   await Bun.write(path, `${JSON.stringify(LEGACY_VERSIONED, null, 2)}\n`);
   const m = await readInstallManifest(dir);
   expect(m).toMatchObject({
-    schemaVersion: 1,
+    schemaVersion: 2,
     method: "binary",
     activeVersion: "1.2.3",
     launcherPath: "/home/u/.local/bin/kunai",
@@ -104,7 +236,7 @@ test("read migrates legacy versioned binary atomically", async () => {
 
   const onDisk = JSON.parse(await Bun.file(path).text()) as typeof m;
   expect(onDisk).toMatchObject({
-    schemaVersion: 1,
+    schemaVersion: 2,
     method: "binary",
     activeVersion: "1.2.3",
     installedAt: "2026-01-01T00:00:00.000Z",
@@ -119,7 +251,7 @@ test("read migrates legacy flat binary without versionedPath", async () => {
   await Bun.write(join(dir, "install.json"), JSON.stringify(LEGACY_FLAT));
   const m = await readInstallManifest(dir);
   expect(m).toMatchObject({
-    schemaVersion: 1,
+    schemaVersion: 2,
     method: "binary",
     activeVersion: "1.0.0",
     launcherPath: "/home/u/.local/bin/kunai",
@@ -147,7 +279,7 @@ test.each([
   );
   const m = await readInstallManifest(dir);
   expect(m).toMatchObject({
-    schemaVersion: 1,
+    schemaVersion: 2,
     method: channel,
     activeVersion: version,
     launcherPath: "/usr/bin/kunai",

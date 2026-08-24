@@ -11,7 +11,7 @@ import {
 } from "@/services/update/native-installer/install-layout";
 
 const binaryManifest: InstallManifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   method: "binary",
   activeVersion: "0.3.0",
   preferredChannel: "stable",

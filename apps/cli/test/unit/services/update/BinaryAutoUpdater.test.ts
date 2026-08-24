@@ -201,7 +201,7 @@ describe("resolveAutoUpdateGate", () => {
 
 function binaryManifest(): InstallManifest {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     method: "binary",
     activeVersion: "0.3.0",
     preferredChannel: "stable",

@@ -150,10 +150,13 @@ bits. The build reconstructs and byte-compares each archive after preservation,
 then release confirmation and publication reverify the same bytes without a
 rebuild.
 
-Installer/updater archive consumption is a separate stacked change. Until that
-lands, they still follow the functional legacy raw-asset path. This builder
-slice does not close issue #132 or reduce end-user downloads; do not dispatch
-0.3.0 from the archive-creation slice alone.
+The TypeScript native updater now consumes the platform archive, independently
+verifies its transport hash and its extracted raw-binary hash, and keeps a
+404/410-only raw fallback for releases published before archives existed. It
+uses an in-process, bounded one-member parser rather than an external tar/zip
+command. The Bash and PowerShell installers still follow the functional legacy
+raw-asset path until their later stacked consumption slice lands. Issue #132
+and 0.3.0 release dispatch remain blocked on that cross-language parity.
 
 ### Windows parity
 

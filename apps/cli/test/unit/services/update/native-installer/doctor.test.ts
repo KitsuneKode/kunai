@@ -250,7 +250,7 @@ describe("buildDoctorReport", () => {
         status: "loaded",
         needsMigration: false,
         manifest: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           method: "binary",
           activeVersion: "9.9.9",
           preferredChannel: "stable",
