@@ -114,8 +114,17 @@ export function buildProviderSmokePayload({
   readonly resolveDurationMs?: number | null;
 }): ProviderSmokePayload {
   const engine = stream?.providerResolveResult?.trace.runtime ?? null;
+  // Summarise the trace on success too. It used to be attached only by
+  // `providerSmokeError`, so a resolve that worked reported one total duration
+  // and nothing about where the time went -- exactly backwards, since the
+  // latency worth attributing lives in successful resolves. On failure
+  // `providerSmokeError` is spread after this and still wins.
+  const traceSummary = summarizeProviderTraceEvents(stream?.providerResolveResult?.trace.events);
   return {
     ok: Boolean(stream?.url),
+    traceEventCount: traceSummary.eventCount,
+    lastTraceEvent: traceSummary.lastEvent,
+    sourceAttempts: traceSummary.sourceAttempts,
     skipped: false,
     provider,
     providerId: provider,
