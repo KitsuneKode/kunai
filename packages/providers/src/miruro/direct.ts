@@ -1193,12 +1193,16 @@ export function resolveMiruroAnilistId(title: TitleIdentity): string | null {
 }
 
 /**
- * Persistent cache namespace + TTL for the episode catalog. The catalog is
- * stable, so a long TTL is safe — and the whole point is to skip the ~6s
- * Cloudflare-gated pipe call on the next session, not just the next minute.
+ * Persistent cache namespace + TTL for the episode catalog.
+ *
+ * 2 hours, not 12: the catalog is stable for finished shows, but for a
+ * currently-airing one a new episode would not appear until the entry expired.
+ * 2h still covers the case that matters — a binge or a same-afternoon restart
+ * skips the ~6s Cloudflare-gated pipe call — while keeping a newly-aired episode
+ * at most 2h stale rather than half a day.
  */
 const MIRURO_EPISODES_CACHE_NAMESPACE = "miruro:episodes";
-const MIRURO_EPISODES_PERSIST_TTL_MS = 12 * 60 * 60 * 1000;
+const MIRURO_EPISODES_PERSIST_TTL_MS = 2 * 60 * 60 * 1000;
 
 /** Shared episode list fetch for listEpisodes + resolve. */
 export async function getMiruroEpisodesResponse(
