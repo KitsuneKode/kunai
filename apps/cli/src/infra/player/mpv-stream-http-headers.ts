@@ -56,6 +56,7 @@ export type PersistentLoadfileOptions = {
   readonly "http-header-fields-clr"?: string;
   readonly "tls-verify"?: string;
   readonly ytdl?: string;
+  readonly "ytdl-format"?: string;
   readonly "ytdl-raw-options"?: string;
   readonly "demuxer-lavf-o"?: string;
   readonly "demuxer-lavf-o-clr"?: string;
@@ -93,7 +94,12 @@ export function buildPersistentLoadfileOptions(
   }
 
   if (isYoutubeWatchUrl(url) || ytdlOptions?.requiresYtdl) {
-    loadOptions.ytdl = ytdlOptions?.ytdlFormat ?? "bv*+ba/b";
+    // `ytdl` is a yes/no flag; the format belongs in `ytdl-format`. Passing the
+    // format here made mpv answer "unsupported format for accessing property"
+    // and drop the option, so the quality ceiling silently never applied on the
+    // persistent path while the spawn path in mpv.ts got it right.
+    loadOptions.ytdl = "yes";
+    loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? "bv*+ba/b";
     if (ytdlOptions?.ytdlRawOptions?.trim()) {
       loadOptions["ytdl-raw-options"] = ytdlOptions.ytdlRawOptions.trim();
     }
