@@ -129,9 +129,19 @@ function historyProgress(episode: number, updatedAt: string): HistoryProgress {
   };
 }
 
-/** Small stand-ins for the production drain budget; see `maxOperationsPerPass`. */
-const BUDGET = 5;
-const OVER_BUDGET = BUDGET + 3;
+/**
+ * Production drain shape, kept in proportion rather than in size.
+ *
+ * Production is 100 rows per pass in batches of 25 — four batches, then a
+ * continuation for whatever is left. What these tests exercise is that
+ * structure, not the row count, so the numbers below hold the same shape:
+ * BATCH_SIZE x 4 == BUDGET, with OVER_BUDGET spilling into a continuation.
+ * Shrinking the budget alone would have collapsed each pass to a single batch
+ * and stopped testing the batch loop entirely.
+ */
+const BATCH_SIZE = 2;
+const BUDGET = BATCH_SIZE * 4;
+const OVER_BUDGET = BUDGET + BATCH_SIZE;
 
 describe("SyncService drain", () => {
   test("a direct startup drain schedules continuation beyond its operation budget", async () => {
@@ -146,6 +156,7 @@ describe("SyncService drain", () => {
       // it against the production 100 meant 103 real SQLite rows per test for
       // no extra coverage.
       maxOperationsPerPass: BUDGET,
+      batchSize: BATCH_SIZE,
     });
 
     for (let id = 1; id <= OVER_BUDGET; id += 1) {
@@ -157,7 +168,7 @@ describe("SyncService drain", () => {
       });
     }
 
-    const first = await service.drain(25);
+    const first = await service.drain();
     expect(first.claimed).toBe(BUDGET);
     await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
 
@@ -204,6 +215,7 @@ describe("SyncService drain", () => {
       // it against the production 100 meant 103 real SQLite rows per test for
       // no extra coverage.
       maxOperationsPerPass: BUDGET,
+      batchSize: BATCH_SIZE,
     });
 
     for (let id = 1; id <= OVER_BUDGET; id += 1) {

@@ -105,9 +105,21 @@ export interface SyncServiceDeps {
    * first to lose under parallel CI load. The behaviour is identical at 5.
    */
   readonly maxOperationsPerPass?: number;
+  /**
+   * Rows claimed per batch inside a pass.
+   *
+   * Injectable alongside `maxOperationsPerPass` so a test can keep the two in
+   * production *proportion* rather than production *size*. Production runs 100
+   * rows in batches of 25 -- four batches per pass -- and it is that loop, not
+   * the row count, that the drain tests exercise. Shrinking only the budget
+   * would collapse each pass to a single batch and quietly stop testing the
+   * loop at all.
+   */
+  readonly batchSize?: number;
 }
 
-const DRAIN_BATCH_LIMIT = 25;
+/** Rows claimed per batch inside a pass. Overridable per instance. */
+export const DRAIN_BATCH_LIMIT = 25;
 /** Rows one delivery pass attempts by default. Overridable per instance. */
 export const DRAIN_MAX_OPERATIONS = 100;
 const DISABLED_RECHECK_MS = 60_000;
@@ -223,6 +235,7 @@ export class SyncService {
   private readonly scheduleWake: (task: () => void, delayMs: number) => () => void;
   private readonly now: () => Date;
   private readonly maxOperationsPerPass: number;
+  private readonly batchSize: number;
   private readonly shutdownController = new AbortController();
   private activeDrain: Promise<SyncPushSummary> | null = null;
   private continuationScheduled = false;
@@ -239,6 +252,7 @@ export class SyncService {
     this.diagnostics = deps.diagnostics;
     this.now = deps.now ?? (() => new Date());
     this.maxOperationsPerPass = deps.maxOperationsPerPass ?? DRAIN_MAX_OPERATIONS;
+    this.batchSize = deps.batchSize ?? DRAIN_BATCH_LIMIT;
     this.scheduleWake =
       deps.scheduleWake ??
       ((task, delayMs) => {
@@ -513,9 +527,9 @@ export class SyncService {
    * Deliver one bounded batch. Duplicate callers join the active drain rather
    * than starting a second one — two drains would race for the same claims.
    */
-  async drain(limit = 25, options?: SyncMutationOptions): Promise<SyncPushSummary> {
+  async drain(limit = this.batchSize, options?: SyncMutationOptions): Promise<SyncPushSummary> {
     if (this.activeDrain) return this.activeDrain;
-    const run = this.drainBatches(Math.min(limit, DRAIN_BATCH_LIMIT), options)
+    const run = this.drainBatches(Math.min(limit, this.batchSize), options)
       .then((summary) => {
         this.scheduleNextPendingAttempt();
         return summary;
