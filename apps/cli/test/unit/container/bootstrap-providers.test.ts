@@ -17,4 +17,34 @@ describe("production provider defaults", () => {
     expect(ids).toContain(DEFAULT_CONFIG.animeProvider);
     expect(ids).toContain(DEFAULT_CONFIG.youtubeProvider);
   });
+
+  test("every production source resolver keys the full request identity", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    const preferenceTokens = [
+      "audio",
+      "subtitle",
+      "quality",
+      "startup",
+      "source",
+      "stream",
+    ] as const;
+
+    for (const module of modules.filter(({ manifest }) =>
+      manifest.capabilities.includes("source-resolve"),
+    )) {
+      const { keyParts } = module.manifest.cachePolicy;
+      expect(keyParts).toContain("provider");
+      expect(keyParts).toContain(module.providerId);
+      expect(keyParts).toContain("title");
+      for (const token of preferenceTokens) {
+        expect(keyParts).toContain(token);
+      }
+
+      if (module.manifest.mediaKinds.some((kind) => kind !== "video")) {
+        expect(keyParts).toContain("episode");
+      }
+    }
+  });
 });

@@ -881,15 +881,21 @@ History and continuation use **canonical catalog ids** as the merge key (`anilis
   different requests for that preference — switching audio or quality then serves a
   stream that answers the previous choice until the TTL expires. Under-keying is a
   correctness bug; over-keying costs at most a redundant re-resolve.
-  `manifest-capability-truth.test.ts` asserts the full set on every production
-  stream-resolve provider so the drift that put five different partial lists in five
-  manifests cannot recur.
+  `bootstrap-providers.test.ts` derives the conformance matrix from
+  `loadProductionProviderModules()` and asserts the full set on every production
+  stream-resolve provider, including YouTube, so adding a provider cannot silently
+  leave it outside the gate.
 - **The CLI stream-cache key is route-agnostic, and that is deliberate.**
   `buildApiStreamResolveCacheKey()` in
   `apps/cli/src/services/cache/stream-resolve-cache.ts` derives its preimage from the
   manifest `keyParts`, which carry no `apiRoute`. Read, write, and invalidation all
   use that one key, so they cannot disagree. A stale entry whose route later dies is
   caught by the cache-revalidation stream-health probe, not by key fragmentation.
+  The selected-route policy returned by Videasy is result provenance and TTL metadata,
+  not a second lookup key. This matters for Vyse and Fade: both resolve through
+  `wings-hdmovie`, but their distinct source ids are part of the manifest-driven CLI
+  key (as is the request's audio preference), so the shared backend cannot alias their
+  cached stream resolves.
 - **Wings transport state is bounded.** Seed and preferred-host entries are keyed per
   media id and previously grew for the life of the process — expiry alone never freed
   an entry nobody asked for again. All three maps are now `TTLCache` instances with
