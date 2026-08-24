@@ -177,6 +177,38 @@ describe("Miruro server order has one authority", () => {
     expect(catalogServers).toEqual([...EXPECTED_ORDER]);
   });
 
+  test("a hardcoded subtitle preference pulls sub servers ahead of dub", () => {
+    // The builder gives sub servers a -5000 boost when hard-sub is preferred.
+    // The resolve path never passed the preference, so the boost was dead code;
+    // this proves it now reorders when the preference is supplied.
+    const bothLangs = { sub: [{ id: "s-1", number: 1 }], dub: [{ id: "d-1", number: 1 }] };
+    const providers = { kiwi: { episodes: bothLangs } };
+
+    // The cycle engine orders by the `priority` field, so sort as it would.
+    const leader = (
+      candidates: ReturnType<typeof buildMiruroCycleCandidates>,
+    ): string | undefined => [...candidates].sort((a, b) => a.priority - b.priority)[0]?.groupId;
+
+    const withoutPreference = buildMiruroCycleCandidates({
+      providers,
+      episodeNum: 1,
+      targetAudio: "dub",
+      fallbackAudio: "sub",
+    });
+    // Default: dub (the target) is tried first.
+    expect(leader(withoutPreference)).toBe("dub");
+
+    const withHardsub = buildMiruroCycleCandidates({
+      providers,
+      episodeNum: 1,
+      targetAudio: "dub",
+      fallbackAudio: "sub",
+      preferredSubtitleDelivery: "hardcoded",
+    });
+    // With the preference honoured, the boosted sub server leads.
+    expect(leader(withHardsub)).toBe("sub");
+  });
+
   test("fallback construction with no discovered providers follows the canonical order", () => {
     const candidates = buildMiruroCycleCandidates({
       episodes,
