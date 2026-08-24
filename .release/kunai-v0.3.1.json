@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 2,
+  "status": "staged",
+  "publishedAt": null,
+  "packageName": "@kitsunekode/kunai",
+  "version": "0.3.1",
+  "tag": "v0.3.1",
+  "title": "Kunai 0.3.1",
+  "date": null,
+  "summary": "[`88d35be`](https://github.com/KitsuneKode/kunai/commit/88d35be2d0128f47d3c56e83f1af4aceee3bccb4) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Contain malformed Discord IPC frames inside optional Rich Presence so they\ncannot end playback or grow memory without a bound.",
+  "sections": [],
+  "changelogBody": "[`88d35be`](https://github.com/KitsuneKode/kunai/commit/88d35be2d0128f47d3c56e83f1af4aceee3bccb4) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Contain malformed Discord IPC frames inside optional Rich Presence so they\ncannot end playback or grow memory without a bound.",
+  "install": {
+    "npm": "npm install -g @kitsunekode/kunai@0.3.1",
+    "bunx": "bunx @kitsunekode/kunai@0.3.1",
+    "binaryLatest": "https://github.com/KitsuneKode/kunai/releases/latest"
+  }
+}
