@@ -184,8 +184,9 @@ describe("activation lock", () => {
     );
 
     const lock = await tryAcquireActivationLock(layout, "2.0.0", {
-      timeoutMs: 100,
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
       pollMs: 5,
+      processStartIdLookup: () => null,
     });
 
     expect(lock.acquired).toBe(true);
@@ -365,7 +366,7 @@ describe("activation lock", () => {
     const staleTime = new Date(Date.now() - 5_000);
     await utimes(claimPath, staleTime, staleTime);
     const aged = await tryAcquireActivationLock(layout, "2.0.0", {
-      timeoutMs: 100,
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
       pollMs: 5,
       processStartIdLookup: () => knownCurrentProcessStartId(),
     });
@@ -383,8 +384,9 @@ describe("activation lock", () => {
     await utimes(orphanTempPath, abandoned, abandoned);
 
     const lock = await tryAcquireActivationLock(layout, "2.1.0", {
-      timeoutMs: 40,
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
       pollMs: 5,
+      processStartIdLookup: () => null,
     });
 
     expect(lock.acquired).toBe(true);
@@ -534,9 +536,10 @@ describe("activation lock", () => {
     await writeFile(path, "{not-json\n");
 
     const lock = await tryAcquireActivationLock(layout, "3.0.0", {
-      timeoutMs: 100,
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
       pollMs: 5,
       corruptGraceMs: 15,
+      processStartIdLookup: () => null,
     });
     expect(lock.acquired).toBe(true);
     const content = JSON.parse(await readFile(path, "utf8")) as { version: string };
