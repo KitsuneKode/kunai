@@ -174,4 +174,52 @@ describe("an empty selection is not a healthy pool", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("a broken registry falls back to the previous pool instead of failing search", async () => {
+    const url = "https://fixtures.test/instances-stale.json";
+    const originalFetch = globalThis.fetch;
+    let call = 0;
+    globalThis.fetch = (async () => {
+      call += 1;
+      if (call === 1) {
+        return new Response(JSON.stringify([["a.test", { uri: "https://a.test", api: true }]]), {
+          status: 200,
+        });
+      }
+      throw new Error("registry unreachable");
+    }) as unknown as typeof fetch;
+
+    try {
+      const first = await fetchHealthyInvidiousInstances({ instancesUrl: url, now: () => 0 });
+      expect(first).toEqual(["https://a.test"]);
+
+      // Past the 15-minute TTL, so the registry is refetched and now fails.
+      const afterTtl = 16 * 60 * 1000;
+      const second = await fetchHealthyInvidiousInstances({
+        instancesUrl: url,
+        now: () => afterTtl,
+      });
+      expect(second).toEqual(["https://a.test"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a registry failure with no previous pool still surfaces the error", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("registry unreachable");
+    }) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        fetchHealthyInvidiousInstances({
+          instancesUrl: "https://fixtures.test/instances-never-seen.json",
+          now: () => 0,
+        }),
+      ).rejects.toThrow("registry unreachable");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

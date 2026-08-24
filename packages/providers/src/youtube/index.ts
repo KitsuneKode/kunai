@@ -14,3 +14,5 @@ export * from "./metadata-normalize";
 export * from "./youtube-metadata";
 export * from "./youtube-metadata-service";
 export * from "./subtitle-language";
+export * from "./metadata-failure";
+export * from "./quality-selection";

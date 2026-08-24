@@ -285,6 +285,33 @@ Active beta providers resolve through direct modules in `packages/providers`.
 
 ### YouTube (`packages/providers/src/youtube`)
 
+**A failed metadata probe is classified, not swallowed.**
+`classifyYoutubeMetadataFailure` (`youtube/metadata-failure.ts`) splits yt-dlp
+stderr into terminal and transient. Terminal — private, deleted, members-only,
+age-gated, geo-blocked — fails the lane closed with the real reason. Every
+failure used to collapse into one retryable `parse-failed` while resolve still
+returned `status: "resolved"` with the bare watch URL, so nothing fell back and
+playback died inside mpv with no diagnosis near the cause. Transient failures
+(network, 429, timeout) still resolve, because a flaky probe must not destroy a
+working playback path; those streams carry `metadataUnavailable: true`.
+
+**A quality preference is a ceiling, not a wish.** `selectYoutubeQuality`
+(`youtube/quality-selection.ts`) rounds _down_ to the highest rendition at or
+below the requested height. The old selector did an exact label match and fell
+back to `qualityLabels[0]` — a list sorted highest-first — so asking for 720p on
+a video publishing only 1080p and 480p silently returned 1080p. When metadata is
+unavailable the requested label is still used to build the yt-dlp format
+selector, so the cap survives a failed probe instead of becoming `best`.
+
+**The Invidious registry lookup is bounded.** It was the only fetch on the search
+path without its own timeout, so a hung registry stalled search before any
+instance was tried. It now carries a short deadline and falls back to the last
+known pool when the registry is slow or broken — an expired directory still
+names instances that work. Instance order is left as the registry returns it
+(`sort_by=type,health,api`), so the first entry is the healthiest; failures
+rotate via cooldown rather than round-robin, which would spread load onto less
+healthy instances.
+
 Third lane provider for standalone videos, playlists, and channels.
 
 - **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail.
