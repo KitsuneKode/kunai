@@ -148,6 +148,42 @@ describe("activation lock", () => {
     if (lock.acquired) await lock.release();
   });
 
+  test("elects reclaim claims when a parent directory contains the legacy temp marker", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai.tmp.activation-lock-"));
+    made.push(root);
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      configDir: join(root, "config"),
+      launcherPath: join(root, "bin", "kunai"),
+      platform: "linux",
+    });
+    await mkdir(layout.locksDir, { recursive: true });
+    const path = activationLockPath(layout);
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        scope: "activation",
+        pid: 2_147_483_646,
+        version: "1.0.0",
+        execPath: "/tmp/dead-installer",
+        ownerId: "dead-owner",
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+        hostname: hostname().toLowerCase(),
+        processStartId: null,
+      })}\n`,
+    );
+
+    const lock = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: 100,
+      pollMs: 5,
+    });
+
+    expect(lock.acquired).toBe(true);
+    if (lock.acquired) await lock.release();
+  });
+
   test("only one of eight stale-lock reclaimers enters activation at a time", async () => {
     const layout = await makeLayout();
     const path = activationLockPath(layout);

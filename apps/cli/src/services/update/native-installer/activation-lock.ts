@@ -245,7 +245,8 @@ async function listReclaimClaims(path: string): Promise<string[]> {
   const claims: string[] = [];
   for (const name of names) {
     const claimPath = join(dirname(path), name);
-    const isLegacyTemp = claimPath.startsWith(prefix) && claimPath.includes(".tmp.");
+    const isLegacyTemp =
+      claimPath.startsWith(prefix) && claimPath.slice(prefix.length).includes(".tmp.");
     if (claimPath.startsWith(tempPrefix) || isLegacyTemp) {
       // Temp records never participate in election. Old releases wrote them
       // below `.reclaim.*`; a crash during that write otherwise left an
