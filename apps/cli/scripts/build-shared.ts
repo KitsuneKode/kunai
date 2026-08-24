@@ -238,6 +238,14 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * KiB of headroom, so any one of these would have tripped it. Deleting the dead
  * `mixRandomCandidatePools` export paid some of it back. The step restores real
  * headroom rather than clearing one change.
+ *
+ * The Discord IPC containment branch originally needed a proposed 2_888 KiB
+ * step before those launch fixes landed: it measured 2,952,099 bytes, 4,065
+ * above its 2,948,034-byte base. The host binary grew by 4,096 bytes and gzip
+ * -9 by 94 bytes. After integrating the current main branch, the combined
+ * development bundle is 2,953,713 bytes, 36,367 below main's existing 2_920
+ * KiB cap. Discord containment therefore does not raise the final ratchet.
+ * This budget still applies only to the unpublished development bundle.
  */
 export const NPM_BUNDLE_BUDGET_KB = 2_920;
 
