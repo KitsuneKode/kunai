@@ -119,6 +119,12 @@ export KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787
 bun run test:live:relay-allanime
 ```
 
+To test the relay already stored in the real Kunai config without copying its
+credentials into the shell, run `bun run test:relay`. The wrapper reads the
+config without modifying it, launches the same isolated AllAnime smoke profile,
+and logs only the relay origin and whether a token is present. Explicit
+`KUNAI_RELAY_*` values still override stored values.
+
 Use `apps/relay-server/README.md` for Vercel deployment and security notes.
 
 ### Endpoint quarantine (dead mirrors)
@@ -431,7 +437,7 @@ If the provider has native search or episode listing, export standalone function
   - search GraphQL query shape
   - episode list query shape
   - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch/build returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`/`AA_CRYPTO_MISSING_BUILD`
-  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=119&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
+  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=140&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
   - `aaReq` AES-256-GCM over `{v,ts,epoch,buildId,qh,k}` with IV `SHA-256(epoch:buildId:qh:ts:k)[0:12]`; send `x-build-id` on API GETs
   - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16)
   - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
@@ -465,13 +471,20 @@ cannot be mistaken for either.
 
 A relay running on the same machine as the client does **not** clear the gate,
 because the egress IP is unchanged; a relay deployed to an ungated region is the
-untested variable. Consequently `allanime` was dropped from the automatic anime
-lane on 2026-08-13 while staying a registered, manually selectable production
-module.
+untested variable. AllAnime was dropped from the automatic anime lane on
+2026-08-13 while staying a registered, manually selectable production module.
 
-**Do not "fix" this by changing crypto.** Build id 81, the bootstrap, HMAC
-`x-aa-boot`, and AES-256-GCM are all working and verified. The historical
-epoch/partB query construction and AES-CTR decryption must not be restored.
+The 2026-08-24 build-140 repair makes AllAnime usable again where the source
+endpoint is not captcha-gated. No priority-default change is needed:
+`animeProviderPriority` is ordering rather than an allowlist, so registered
+providers omitted from the array remain available after its named entries. The
+NEED_CAPTCHA classification and relay hint stay because geo/bot-gated networks
+can still hit the gate.
+
+**Do not restore historical crypto.** Build 140, the current mask constants,
+HMAC `x-aa-boot`, and AES-256-GCM are the verified contract. The older build 81
+or 119 material, epoch/partB query construction, and AES-CTR decryption must not
+be restored.
 
 ### AllAnime via user relay (2026-08-17)
 
@@ -518,10 +531,45 @@ row to characterize. Per that gate, `resolveDirectStreamReferer()` is unchanged.
 mp4upload keeps its dedicated referer and scoped `--tls-verify=no`; TLS
 verification is not broadened to any other host.
 
+### AllAnime crypto rotation 119 → 140 (2026-08-24)
+
+The bootstrap started answering `{error:"unknown_build_id"}` (HTTP 404) — build
+**119 is retired**, current build id is **140**. This rotation also changed the
+derivation constants, which upstream now ships as a config object (`Fd`) in the
+obfuscated crypto chunk instead of hard-coding them:
+
+- `hashBuildId` mixes `(index * saltMul + saltAdd)` = `*250 + 54` (was `*17+31`)
+- `deriveMaskKey` mixes `(fragmentIndex * fragMul + byteIndex * fragAdd)` =
+  `*16 + *217` (was `*41 + *7`)
+- new mask fragments; episode persisted-query hash unchanged
+- boot token layout changed: first HMAC message is now `{bootPrefix}{buildId}`
+  (prefix `4X2PsZc2r:`), second HMAC covers
+  `group.host.lane.buildId.epoch` joined by `.` (was
+  `buildId:keyGroup:host:epoch:lane` joined by `:`)
+
+Recovery procedure (worked end-to-end against live bootstrap + episode sources):
+
+1. Fetch the mkissa home page, follow `_app/immutable/entry/*.js`, then the
+   chunks they reference on `cdn.mkissa.net`; find the chunk containing
+   `/client-crypto/v1/bootstrap`.
+2. Slice out the self-contained crypto region between `const _I=` and the
+   second string-table client (`const Tt=ms;`), append exports of the scoped
+   symbols, and run it under Bun with dynamic `import()` — the chunk's anti-debug
+   console patching silences `console.log`, so write through
+   `process.stdout.write`. That yields buildId, mask fragments, and the config
+   object directly.
+3. Verify: computed `x-aa-boot` must return HTTP 200 partB from bootstrap, then
+   decrypt a real `tobeparsed` blob with the derived key before shipping.
+
+On a cold resolve, the episode catalog and crypto bootstrap start concurrently;
+the existing per-request timeouts and stale-material retry policy are unchanged.
+Trace output records only the combined preparation duration and readiness, never
+the bootstrap material, attestation, token, or source URLs.
+
 Note: ani-cli v5 (2026-08-01) left AllAnime/mkissa for **anidb.app** and deleted its AllAnime code
 entirely, so **there is no upstream parity reference left** for this provider — the "compare against
 ani-cli" step above applies to AniDB only. For mkissa crypto the live JS chunk is the sole source of
-truth. Kunai keeps AllManga as a manually selectable secondary anime source with `anidb` as the
+truth. Kunai keeps AllManga as a registered secondary anime source with `anidb` as the
 default anime provider. See [.docs/research/anidb-provider-dossier.md](./research/anidb-provider-dossier.md).
 
 Parity tip: for AniDB compare against local ani-cli `master`. For mkissa crypto, the live JS chunk is the source of truth when ani-cli no longer tracks it. The API rate-limits bursts (~3s), so stale-material recovery re-bootstraps keys instead of retry-storming.
@@ -547,11 +595,12 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
-`anidb` is the **default** provider-native anime catalog and, as of 2026-08-13, the **only**
-provider in the automatic anime lane (`animeProvider: "anidb"`,
-`animeProviderPriority: ["anidb"]`). `allanime` and `miruro` both stay registered production
-modules and remain manually selectable; neither runs as an automatic fallback. See
-"AllAnime NEED_CAPTCHA" below and the Miruro pipe contract for why each was demoted.
+`anidb` is the **default** provider-native anime catalog and the first configured
+anime priority (`animeProvider: "anidb"`, `animeProviderPriority: ["anidb"]`).
+The priority list is ordering, not an allowlist: registered `allanime` and
+`miruro` modules remain available after AniDB and are manually selectable. See
+"AllAnime NEED_CAPTCHA" below and the Miruro pipe contract for their network
+failure modes.
 
 | ID           | Content Types | Runtime     | Module Location                               |
 | ------------ | ------------- | ----------- | --------------------------------------------- |
@@ -570,7 +619,8 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
   AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
   `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.
-- **AllAnime (`allanime`)** — `provider-native`, registered and **manually selectable**; not in the automatic anime lane (`animeProviderPriority` is `['anidb']` alone). AniList-backed discovery
+- **AllAnime (`allanime`)** — `provider-native`, registered as a fallback and
+  manually selectable. AniList-backed discovery
   results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is
   preserved on merge. An AllAnime lookup may populate only `providerNativeIds.allanime`.
 - **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
@@ -627,6 +677,11 @@ instead of pretending those fields came from `anidb.app`.
   only by the episode languages response.
 - A missing requested language is an exhausted AniDB attempt. It must not fall back to the other
   language and label the stream incorrectly.
+- Only exact `jpn` (sub/original) and `eng` (dub) catalog evidence is accepted.
+  The requested mode resolves first; the alternate starts concurrently but is
+  skipped for `fast`, bounded to 1 second for `balanced`, and bounded to 4
+  seconds for `quality-first`. A timed-out alternate is aborted and is not
+  advertised as an available source.
 - The embed probe currently exposes an HLS source but no independently addressable subtitle track.
   AniDB results keep `subtitles: []` and mark subtitle delivery unknown; `jpn` is not sufficient
   evidence that captions are hardcoded.
