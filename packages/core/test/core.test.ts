@@ -1541,6 +1541,48 @@ test("summarizeProviderTraceEvents exports source attempt breadcrumbs", () => {
   ]);
 });
 
+test("summarizeProviderTraceEvents keeps measured stage durations alongside attempt events", () => {
+  // The real Miruro shape: stages report `durationMs` on the event that ends
+  // them, and a healthy stage ends on `source:success` carrying no attempt,
+  // server, or failure class. Both of those used to disqualify it.
+  const summary = summarizeProviderTraceEvents([
+    {
+      type: "source:success",
+      providerId: "miruro",
+      sourceId: "source:miruro:episodes",
+      at: "2026-08-24T00:00:01.000Z",
+      message: "Fetched Miruro episode catalog",
+      durationMs: 4841,
+      attributes: { providers: 7 },
+    },
+    {
+      type: "source:failed",
+      providerId: "miruro",
+      sourceId: "source:miruro:kiwi",
+      at: "2026-08-24T00:00:06.000Z",
+      attempt: 1,
+      message: "kiwi timed out",
+      attributes: { failureClass: "candidate-timeout" },
+    },
+    {
+      type: "source:success",
+      providerId: "miruro",
+      sourceId: "source:miruro:source-cycle",
+      at: "2026-08-24T00:00:07.000Z",
+      message: "Resolved a Miruro source",
+      durationMs: 5840,
+    },
+  ]);
+
+  expect(
+    summary.sourceAttempts.map((event) => [event.sourceId, event.durationMs] as const),
+  ).toEqual([
+    ["source:miruro:episodes", 4841],
+    ["source:miruro:kiwi", undefined],
+    ["source:miruro:source-cycle", 5840],
+  ]);
+});
+
 test("summarizeProviderTraceEvents prefers canonical cycle events over provider-local source notes", () => {
   const summary = summarizeProviderTraceEvents([
     {
