@@ -45,14 +45,14 @@ archive and put only the residue here.
 
 ### Playback and providers
 
-| Track                      | Remaining                                                               | Plan                                                                               |
-| -------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 0.3.0 source reliability   | AniDB inventory, AllManga build 140, safe relay diagnostic              | [provider-source-reliability-0.3.0.md](./provider-source-reliability-0.3.0.md)     |
-| Provider resolve hardening | Health recovery, latency ordering, and measured hedge-delay calibration | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)   |
-| Provider hardening         | Research and scraper capability roadmap                                 | [provider-hardening.md](./provider-hardening.md)                                   |
-| Provider result contract   | Contract work before broad `@kunai/core` extraction                     | [provider-result-contract.md](./provider-result-contract.md)                       |
-| Beta UI/provider hardening | Tasks 8–10: input routing, subtitle calls, display honesty              | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)   |
-| Resolve UX and Playwright  | Pick up during a browser/provider reliability pass                      | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md) |
+| Track                      | Remaining                                                               | Plan                                                                                                                     |
+| -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 0.3.0 source reliability   | AniDB inventory, AllManga build 140, safe relay diagnostic              | [spec](./provider-source-reliability-0.3.0.md) · [implementation](./provider-source-reliability-0.3.0-implementation.md) |
+| Provider resolve hardening | Health recovery, latency ordering, and measured hedge-delay calibration | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                                         |
+| Provider hardening         | Research and scraper capability roadmap                                 | [provider-hardening.md](./provider-hardening.md)                                                                         |
+| Provider result contract   | Contract work before broad `@kunai/core` extraction                     | [provider-result-contract.md](./provider-result-contract.md)                                                             |
+| Beta UI/provider hardening | Tasks 8–10: input routing, subtitle calls, display honesty              | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                                         |
+| Resolve UX and Playwright  | Pick up during a browser/provider reliability pass                      | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                                       |
 
 ### Offline and release stability
 

@@ -1,6 +1,6 @@
 # Provider Source Reliability for 0.3.0
 
-Status: DESIGN APPROVED — IMPLEMENTATION PLAN PENDING USER REVIEW
+Status: DESIGN APPROVED — IMPLEMENTATION PLAN READY
 
 Owner: provider runtime
 
