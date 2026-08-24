@@ -464,6 +464,7 @@ function Assert-KunaiReleaseZipStructure(
     if ($null -ne $reader) { $reader.Dispose() }
     elseif ($null -ne $stream) { $stream.Dispose() }
   }
+  return [uint32]$centralCrc
 }
 
 function Expand-KunaiReleaseZip(
@@ -472,7 +473,48 @@ function Expand-KunaiReleaseZip(
   [string]$DestinationPath
 ) {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
-  Assert-KunaiReleaseZipStructure $ArchivePath $ExpectedName
+  if (-not ('KunaiInstallerCrc32' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+
+public sealed class KunaiInstallerCrc32
+{
+    private static readonly uint[] Table = CreateTable();
+    private uint value = UInt32.MaxValue;
+
+    public void Append(byte[] buffer, int count)
+    {
+        if (buffer == null) throw new ArgumentNullException("buffer");
+        if (count < 0 || count > buffer.Length) throw new ArgumentOutOfRangeException("count");
+        for (int index = 0; index < count; index++)
+        {
+            value = (value >> 8) ^ Table[(value ^ buffer[index]) & 0xff];
+        }
+    }
+
+    public uint Complete()
+    {
+        return value ^ UInt32.MaxValue;
+    }
+
+    private static uint[] CreateTable()
+    {
+        uint[] table = new uint[256];
+        for (uint entry = 0; entry < table.Length; entry++)
+        {
+            uint remainder = entry;
+            for (int bit = 0; bit < 8; bit++)
+            {
+                remainder = (remainder >> 1) ^ (0xedb88320u & (uint)-(int)(remainder & 1));
+            }
+            table[entry] = remainder;
+        }
+        return table;
+    }
+}
+'@
+  }
+  $expectedCrc = Assert-KunaiReleaseZipStructure $ArchivePath $ExpectedName
   $zip = $null
   $input = $null
   $output = $null
@@ -513,6 +555,7 @@ function Expand-KunaiReleaseZip(
       [System.IO.FileShare]::None
     )
     $buffer = New-Object byte[] 8192
+    $crc = New-Object KunaiInstallerCrc32
     $total = [long]0
     while ($true) {
       $read = $input.Read($buffer, 0, $buffer.Length)
@@ -521,10 +564,15 @@ function Expand-KunaiReleaseZip(
       if ($total -gt $ExtractedBinaryMaxBytes) {
         throw "Extracted binary exceeds the $ExtractedBinaryMaxBytes byte budget."
       }
+      $crc.Append($buffer, $read)
       $output.Write($buffer, 0, $read)
     }
     if ($total -ne $entry.Length) {
       throw "Extracted binary size $total does not match the zip entry size $($entry.Length)."
+    }
+    $actualCrc = $crc.Complete()
+    if ($actualCrc -ne $expectedCrc) {
+      throw 'Extracted binary CRC does not match the zip entry CRC.'
     }
   }
   catch {

@@ -94,6 +94,7 @@ function invalidTarArchive(
     | "absolute"
     | "corrupt"
     | "extra"
+    | "gzip-crc"
     | "hardlink"
     | "missing"
     | "newline-padding"
@@ -104,6 +105,11 @@ function invalidTarArchive(
   bodyLength: number,
 ): Uint8Array {
   if (kind === "corrupt") return new TextEncoder().encode("not-a-gzip-archive");
+  if (kind === "gzip-crc") {
+    const output = new Uint8Array(canonical);
+    output[output.length - 8] = (output[output.length - 8] ?? 0) ^ 1;
+    return output;
+  }
   if (kind === "extra") return duplicateTarMember(canonical, bodyLength);
   if (kind === "missing") return new Uint8Array(gzipSync(new Uint8Array(1_024)));
   if (kind === "newline-padding") return addNewlineTarPadding(canonical, bodyLength);
@@ -427,6 +433,7 @@ exec ${quoteShellArgument(realDd)} "$@"
     "absolute",
     "corrupt",
     "extra",
+    "gzip-crc",
     "hardlink",
     "missing",
     "newline-padding",
@@ -460,6 +467,7 @@ exec ${quoteShellArgument(realDd)} "$@"
           });
 
           expect(result.status).not.toBe(0);
+          if (kind === "gzip-crc") expect(result.stderr).toMatch(/gzip|decompress/i);
           expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
           expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);

@@ -208,6 +208,7 @@ function invalidZipArchive(
     | "absolute"
     | "case-variant"
     | "corrupt"
+    | "crc"
     | "extra"
     | "local-traversal"
     | "missing"
@@ -239,12 +240,18 @@ function invalidZipArchive(
   if (kind === "wrong") return rewriteZipNames(canonical, "wrong.exe");
   const output = new Uint8Array(canonical);
   const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  const centralOffset = 30 + view.getUint16(26, true) + view.getUint32(18, true);
+  if (kind === "crc") {
+    const invalidCrc = (view.getUint32(14, true) ^ 1) >>> 0;
+    view.setUint32(14, invalidCrc, true);
+    view.setUint32(centralOffset + 16, invalidCrc, true);
+    return output;
+  }
   if (kind === "extra") {
     view.setUint16(output.length - 14, 2, true);
     view.setUint16(output.length - 12, 2, true);
     return output;
   }
-  const centralOffset = 30 + view.getUint16(26, true) + view.getUint32(18, true);
   const attributes = view.getUint32(centralOffset + 38, true);
   view.setUint32(
     centralOffset + 38,
@@ -470,6 +477,7 @@ describePwsh("install.ps1 release asset failures", () => {
     "absolute",
     "case-variant",
     "corrupt",
+    "crc",
     "extra",
     "local-traversal",
     "missing",
@@ -506,6 +514,7 @@ describePwsh("install.ps1 release asset failures", () => {
           });
 
           expect(result.status).not.toBe(0);
+          if (kind === "crc") expect(result.stderr).toMatch(/CRC/i);
           expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
           expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
           expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
