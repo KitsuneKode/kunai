@@ -36,11 +36,14 @@ function timeoutOf(script: string): number | null {
 
 test("suite scripts that touch SQLite or spawn shells carry an explicit per-test timeout", async () => {
   const cli = await scriptsOf("../../../package.json");
+  const docs = await scriptsOf("../../../../docs/package.json");
   const storage = await scriptsOf("../../../../../packages/storage/package.json");
 
   const budgeted: ReadonlyArray<readonly [string, string | undefined]> = [
+    ["apps/cli test:file", cli["test:file"]],
     ["apps/cli test:unit", cli["test:unit"]],
     ["apps/cli test:integration", cli["test:integration"]],
+    ["apps/docs test", docs.test],
     ["packages/storage test", storage.test],
   ];
 
