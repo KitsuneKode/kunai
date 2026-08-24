@@ -16,7 +16,7 @@
  *   KITSUNE_SMOKE_STARTUP_PRIORITY=fast|balanced|quality-first
  */
 import type { TitleInfo } from "@/domain/types";
-import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
+import { probeStreamReachability } from "@kunai/providers";
 import type { StartupPriority } from "@kunai/types";
 
 import {
@@ -25,6 +25,7 @@ import {
   providerSmokeError,
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
+  smokeStreamReachable,
 } from "./provider-smoke";
 import {
   type VideasyLiveFixture,
@@ -210,12 +211,14 @@ async function runVideasyFixtureSmoke({
       })
     : null;
 
-  const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : false;
+  const streamReachable = smokeStreamReachable(streamProbe);
 
   const assertion = evaluateVideasyLiveSmoke({
     fixture,
     streamResolved: Boolean(stream?.url),
-    streamReachable,
+    // The assertion is boolean; `null` means inconclusive, which must not read
+    // as "not playable". Only measured evidence fails.
+    streamReachable: streamReachable !== false,
     streamCandidates,
     resolveDurationMs,
     selectedSourceLabel,
@@ -236,7 +239,7 @@ async function runVideasyFixtureSmoke({
 
   const payload = {
     ...base,
-    ok: assertion.ok && base.ok && streamReachable,
+    ok: assertion.ok && base.ok && streamReachable !== false,
     fixtureId: fixture.id,
     mediaKind: fixture.mediaKind,
     knownGoodLabels: fixture.knownGoodLabels,
@@ -270,7 +273,7 @@ async function runVideasyFixtureSmoke({
     payload,
     assertion: {
       ...assertion,
-      ok: assertion.ok && Boolean(stream?.url) && streamReachable,
+      ok: assertion.ok && Boolean(stream?.url) && streamReachable !== false,
     },
   };
 }

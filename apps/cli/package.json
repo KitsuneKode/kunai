@@ -76,7 +76,6 @@
     "test:live:offline-beta": "bun -e \"await import('./test/live/offline-beta.smoke.ts')\"",
     "test:live:videasy": "bun test/live/videasy-bloodhounds.smoke.ts",
     "test:live:videasy:suite": "KUNAI_VIDEASY_LIVE_SUITE=1 bun test/live/videasy-bloodhounds.smoke.ts",
-    "test:live:vidking": "bun run test:live:videasy",
     "test:vhs:setup": "vhs test/vhs/setup.tape",
     "test:vhs:offline": "vhs test/vhs/offline-library.tape",
     "test:vhs:palette": "vhs test/vhs/command-palette.tape",

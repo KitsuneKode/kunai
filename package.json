@@ -96,7 +96,6 @@
     "test:live:offline-beta": "bun run --cwd apps/cli test:live:offline-beta",
     "test:live:videasy": "bun run --cwd apps/cli test:live:videasy",
     "test:live:videasy:suite": "bun run --cwd apps/cli test:live:videasy:suite",
-    "test:live:vidking": "bun run --cwd apps/cli test:live:videasy",
     "ci": "turbo run typecheck lint fmt:check test --summarize",
     "ci:affected": "turbo run typecheck lint fmt:check test --affected --summarize",
     "build": "turbo run build build:binary:host --filter=@kitsunekode/kunai",

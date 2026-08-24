@@ -13,6 +13,7 @@ import {
   type CoreProviderManifest,
   type ProviderTraceEventSummary,
 } from "@kunai/core";
+import type { StreamReachabilityProbeResult } from "@kunai/providers";
 import { getKunaiPaths, type StoragePlatform } from "@kunai/storage";
 import type { ProviderResolveResult, StartupPriority } from "@kunai/types";
 
@@ -229,4 +230,32 @@ export function providerSmokeError(
     lastTraceEvent: traceSummary.lastEvent,
     sourceAttempts: traceSummary.sourceAttempts,
   };
+}
+
+/**
+ * Tri-state reachability for a smoke payload: was playback actually evidenced?
+ *
+ * `isStreamReachableForResolve` is a *gate* predicate and is permissive on
+ * purpose -- it answers "should the resolve be allowed to proceed?", returning
+ * true for a timeout and for a non-definitive unreachable so a slow CDN is not
+ * condemned. Reporting that value as `streamReachable` claims playback was
+ * verified when it was not, which is the false green these probes exist to
+ * catch.
+ *
+ * Reporting needs the stricter question, and three outcomes rather than two:
+ *
+ * - `true`  -- the probe served bytes
+ * - `false` -- the probe was refused; evidence the stream will not play
+ * - `null`  -- inconclusive (timed out, or never ran), so nothing is claimed
+ *
+ * Callers gate on `=== false` so only evidence fails a smoke; `null` stays
+ * neutral and leaves the resolution check to decide.
+ */
+export function smokeStreamReachable(
+  probe: StreamReachabilityProbeResult | null | undefined,
+): boolean | null {
+  if (!probe) return null;
+  if (probe.status === "reachable") return true;
+  if (probe.status === "unreachable") return false;
+  return null;
 }

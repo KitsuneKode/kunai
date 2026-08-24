@@ -1,9 +1,5 @@
 import type { TitleInfo } from "@/domain/types";
-import {
-  clearMiruroCachesForTest,
-  isStreamReachableForResolve,
-  probeStreamReachability,
-} from "@kunai/providers";
+import { clearMiruroCachesForTest, probeStreamReachability } from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -11,6 +7,7 @@ import {
   providerSmokeError,
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
+  smokeStreamReachable,
 } from "./provider-smoke";
 import { directSmokeArgs } from "./smoke-argv";
 
@@ -88,7 +85,7 @@ const streamProbe = stream?.url
       timeoutMs: 5_000,
     })
   : null;
-const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : false;
+const streamReachable = smokeStreamReachable(streamProbe);
 
 const payload = {
   ...buildProviderSmokePayload({
@@ -115,7 +112,7 @@ console.log(JSON.stringify(payload, null, 2));
 
 // Pass on measured reachability, not on resolver attestation — a resolver that
 // correctly declines to attest an unprobed stream must still be able to pass.
-if (!stream?.url || !streamReachable) {
+if (!stream?.url || streamReachable === false) {
   // Let stdout flush so the matrix parent can retain structured failure evidence.
   process.exitCode = 1;
 }
