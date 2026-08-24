@@ -29,6 +29,7 @@ export const rivestreamManifest = defineProviderManifest({
       "title",
       "season",
       "episode",
+      "audio",
       "subtitle",
       "quality",
       "startup",

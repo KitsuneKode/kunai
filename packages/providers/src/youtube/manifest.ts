@@ -23,7 +23,17 @@ export const youtubeManifest = defineProviderManifest({
   cachePolicy: {
     ttlClass: "provider-metadata",
     scope: "local",
-    keyParts: ["provider", YOUTUBE_PROVIDER_ID, "video-id"],
+    keyParts: [
+      "provider",
+      YOUTUBE_PROVIDER_ID,
+      "title",
+      "audio",
+      "subtitle",
+      "quality",
+      "startup",
+      "source",
+      "stream",
+    ],
     allowStale: true,
   },
   browserSafe: true,

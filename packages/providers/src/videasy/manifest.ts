@@ -33,6 +33,7 @@ export const videasyManifest = defineProviderManifest({
       "title",
       "season",
       "episode",
+      "audio",
       "subtitle",
       "quality",
       "startup",

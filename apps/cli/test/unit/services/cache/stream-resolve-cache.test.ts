@@ -4,7 +4,12 @@ import {
   buildApiStreamResolveCacheKey,
   buildEmbedStreamCacheKey,
 } from "@/services/cache/stream-resolve-cache";
-import { allanimeManifest, videasyManifest } from "@kunai/providers";
+import {
+  allanimeManifest,
+  flavorSourceId,
+  videasyManifest,
+  youtubeManifest,
+} from "@kunai/providers";
 
 test("buildApiStreamResolveCacheKey is stable and encodes prefs", () => {
   const title = { id: "abc", type: "series" as const, name: "X", year: "2020" };
@@ -94,7 +99,73 @@ test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => 
     subtitlePreference: "en",
     qualityPreference: "720p",
   });
-  expect(key).toContain("provider:videasy:series:tmdb:1:2:7:en:720p:balanced:none:none");
+  // audio now sits between episode and subtitle: switching audio must not reuse
+  // a stream cached for the previous choice.
+  expect(key).toContain("provider:videasy:series:tmdb:1:2:7:original:en:720p:balanced:none:none");
+});
+
+test("changing the audio preference changes the key for videasy", () => {
+  // Regression for the drift where videasy omitted `audio` from keyParts, so a
+  // dub<->sub switch reused the stream cached for the previous choice.
+  const base = {
+    providerId: "videasy",
+    providerManifest: videasyManifest,
+    title: { id: "tmdb:1", type: "series" as const, name: "X" },
+    episode: { season: 2, episode: 7 },
+    mode: "series" as const,
+    subtitlePreference: "en",
+    qualityPreference: "720p",
+  };
+  expect(buildApiStreamResolveCacheKey({ ...base, audioPreference: "original" })).not.toBe(
+    buildApiStreamResolveCacheKey({ ...base, audioPreference: "en" }),
+  );
+});
+
+test("two YouTube video ids cannot share one stream resolve key", () => {
+  const base = {
+    providerId: "youtube",
+    providerManifest: youtubeManifest,
+    episode: { season: 0, episode: 0 },
+    mode: "youtube" as const,
+    audioPreference: "original",
+    subtitlePreference: "en",
+    qualityPreference: "1080p",
+  };
+
+  const first = buildApiStreamResolveCacheKey({
+    ...base,
+    title: { id: "youtube:video:first", type: "movie", name: "First" },
+  });
+  const second = buildApiStreamResolveCacheKey({
+    ...base,
+    title: { id: "youtube:video:second", type: "movie", name: "Second" },
+  });
+
+  expect(first).not.toBe(second);
+});
+
+test("Vyse and Fade stay distinct despite sharing the hdmovie backend", () => {
+  const base = {
+    providerId: "videasy",
+    providerManifest: videasyManifest,
+    title: { id: "tmdb:1", type: "series" as const, name: "X" },
+    episode: { season: 2, episode: 7 },
+    mode: "series" as const,
+    audioPreference: "original",
+    subtitlePreference: "en",
+    qualityPreference: "1080p",
+  };
+
+  const vyse = buildApiStreamResolveCacheKey({
+    ...base,
+    selectedSourceId: flavorSourceId("cineby-vyse"),
+  });
+  const fade = buildApiStreamResolveCacheKey({
+    ...base,
+    selectedSourceId: flavorSourceId("cineby-fade"),
+  });
+
+  expect(vyse).not.toBe(fade);
 });
 
 test("buildEmbedStreamCacheKey preserves embed URL", () => {
