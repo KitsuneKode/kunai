@@ -156,9 +156,9 @@ raw-binary hash, and keep a 404/410-only raw fallback for releases published
 before archives existed. TypeScript uses an in-process bounded parser,
 PowerShell uses bounded .NET zip streams, and Bash validates a bounded tar
 container before streaming its one expected member through the host `tar`.
-Malformed archives and all other download/integrity failures fail closed. Issue
-#132 and 0.3.0 release dispatch remain blocked until the stacked consumers are
-rebased onto the final activation-lock parent and pass protected native gates.
+Malformed archives and all other download/integrity failures fail closed. The
+archive-consuming updater and installers are stacked on the final activation-lock
+protocol; release promotion and attestation remain downstream protected gates.
 
 ### Windows parity
 

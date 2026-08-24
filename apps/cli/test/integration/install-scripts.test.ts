@@ -458,6 +458,43 @@ describe("install.sh release asset failures", () => {
     }
   });
 
+  test("rejects extracted binary checksum mismatch without raw fallback or residue", async () => {
+    const target = hostInstallShTarget();
+    const body = "#!/bin/sh\necho archive-member\n";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-extracted-mismatch");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${"0".repeat(64)}  ${target.out}\n`,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body: "LEGACY-RAW-MUST-NOT-RUN" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+
+          expect(result.status).not.toBe(0);
+          expect(result.stderr).toContain(`Checksum mismatch for extracted ${target.out}`);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+          expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+          expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("rejects archive and decompressed size bombs and cleans staging", async () => {
     const target = hostInstallShTarget();
     const body = "binary-larger-than-four-bytes";
