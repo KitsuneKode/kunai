@@ -50,6 +50,7 @@ export type AppCommandId =
   | "mark-anime"
   | "mark-series"
   | "share"
+  | "share-qr"
   | "watch"
   | "bookmark"
   | "follow"
@@ -139,6 +140,7 @@ export const COMMAND_CONTEXTS = {
     "mark-anime",
     "mark-series",
     "share",
+    "share-qr",
     "bookmark",
     "follow",
     "unfollow",
@@ -187,6 +189,7 @@ export const COMMAND_CONTEXTS = {
     "mark-anime",
     "mark-series",
     "share",
+    "share-qr",
     "bookmark",
     "follow",
     "unfollow",
@@ -607,7 +610,13 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "share",
     label: "Share This",
     aliases: ["share", "share-link", "share-code"],
-    description: "Copy a catalog-anchored kunai:// share link for the current title",
+    description: "Copy a browser-safe HTTPS share link for the current title",
+  },
+  {
+    id: "share-qr",
+    label: "Share This as QR",
+    aliases: ["share --qr", "share-qr", "qr"],
+    description: "Show a scannable HTTPS share QR and copy the full link",
   },
   {
     id: "bookmark",
@@ -832,6 +841,7 @@ export function commandGroupFor(id: AppCommandId): AppCommandGroup {
     case "downloads":
     case "library":
     case "share":
+    case "share-qr":
     case "settings":
     case "providers":
     case "help":
@@ -1302,6 +1312,7 @@ function resolveCommandState(
     case "mark-anime":
     case "mark-series":
     case "share":
+    case "share-qr":
     case "bookmark":
     case "follow":
     case "unfollow":
@@ -1321,7 +1332,7 @@ function resolveCommandState(
         : {
             enabled: false,
             reason:
-              id === "share"
+              id === "share" || id === "share-qr"
                 ? "Play or select a title before sharing it."
                 : id === "bookmark"
                   ? "Play or select a title before bookmarking it."

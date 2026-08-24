@@ -1,10 +1,12 @@
 ---
 title: Share Links
-description: "Copy and open catalog-anchored kunai:// links across machines and providers, and understand the confirmation Kunai requires before a shared link plays."
+description: "Copy browser-safe Kunai links, show a terminal QR, and open HTTPS, compact, or kunai:// handoffs across machines and providers."
 status: shipped
 ---
 
-Kunai uses one portable `kunai://` link format for sharing what to play. Links anchor to catalog metadata (TMDB, AniList, MAL, IMDb) so the receiver can resolve through their own providers.
+Kunai shares browser-safe `https://kunai.kitsunekode.in/w/<code>` links. The web page shows what was shared, offers an **Open in Kunai** handoff, and gives native install commands to someone who does not have Kunai yet. Links remain anchored to catalog metadata (TMDB, AniList, MAL, IMDb), so the receiver resolves through their own providers instead of repeating a title search.
+
+The URL contains the playback ref itself. There is no shortener database, and share-page visits are excluded from site analytics. Anyone holding the URL can read the title and episode it contains.
 
 <ScopeCallout variant="beta" title="Protocol handler is Linux-only">
   `kunai --open` works on every platform without OS registration. `kunai --install-protocol-handler` registers the `kunai://` OS handler on **Linux only** in 0.3.0.
@@ -18,7 +20,15 @@ During or after playback:
 /share
 ```
 
-Copies a catalog-anchored `kunai://play?...` URL to your clipboard. When resume position exists, Kunai can include a timestamp (`t=`) so the receiver starts near where you left off.
+Copies a catalog-anchored HTTPS URL to your clipboard. When resume position exists, Kunai can include a timestamp (`t=`) so the receiver starts near where you left off.
+
+To show a scannable HTTPS QR inside the terminal while copying the full link:
+
+```text
+/share --qr
+```
+
+The QR uses a compact, checksummed catalog code. It intentionally omits display-only title and provider hints to stay readable in ordinary terminal sizes; the catalog, episode, and timestamp remain exact.
 
 From mpv while playing:
 
@@ -32,7 +42,7 @@ Post-playback and History rows also expose **Share link** / **Copy share link** 
 /watch
 ```
 
-Reads a `kunai://` URL from your clipboard, resolves it against your local catalog and providers, and launches mpv with any shared timestamp applied once on the first play.
+Reads an HTTPS URL, a `kunai://` URL, or a compact `k1…` code from your clipboard, resolves it against your local catalog and providers, and launches mpv with any shared timestamp applied once on the first play.
 
 ## Launch from the terminal
 
@@ -51,6 +61,14 @@ kunai --install-protocol-handler
 After registration on Linux (including WSL), `kunai://` links from browsers or chat apps route through `--handoff-url`, which may ask for confirmation. On macOS and Windows-native, keep using `kunai --open`. A WSL registration does not cover Windows-native browsers outside WSL.
 
 ## URL shape
+
+The copied form is HTTPS:
+
+```text
+https://kunai.kitsunekode.in/w/v1.<encoded-ref>
+```
+
+The application handoff inside that page keeps the existing grammar:
 
 ```text
 kunai://play?cat=<namespace>:<id>&kind=<movie|series|anime>&s=<season>&e=<episode>&t=<seconds>
@@ -75,6 +93,8 @@ kunai://play?cat=tmdb%3A1396&kind=series&s=1&e=3
 kunai://play?cat=anilist%3A21&kind=anime&s=1&e=1&t=120
 kunai://play?q=One%20Piece&kind=anime
 ```
+
+Catalog targets also have a checksummed compact form such as `k1pts.1396.1.3.…`. Search fallback links do not: Kunai never turns a direct catalog target into the slower `q=` path merely to shorten it.
 
 ## Timestamp resume
 

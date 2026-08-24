@@ -133,6 +133,8 @@ describe("resolveCommandContext scoped surfaces", () => {
       "source",
       "quality",
       "provider",
+      "share",
+      "share-qr",
       "bookmark",
       "follow",
       "unfollow",

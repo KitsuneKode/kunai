@@ -38,8 +38,9 @@ deliberately reduced public reference generated from the keybinding registry.
 - `/calendar` opens release calendar results.
 - `/discover` and `/recommendation` open recommendation surfaces without autoplay.
 - `/filters` opens guided search facets (type, year, library, and more).
-- `/share` copies a catalog-anchored `kunai://` play link to the clipboard.
-- `/watch` parses a `kunai://` URL from the clipboard and launches playback.
+- `/share` copies a catalog-anchored HTTPS play link to the clipboard.
+- `/share --qr` shows a compact HTTPS QR and also copies the full link.
+- `/watch` accepts HTTPS, compact `k1…`, or `kunai://` clipboard input and launches playback.
 
 `/stats` is on the default browse palette. Tracker sync is experimental and lives under
 `/settings` → Sync. `/random` and `/surprise` are on the default browse palette

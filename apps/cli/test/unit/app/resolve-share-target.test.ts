@@ -5,6 +5,10 @@ import {
   shareTitleCatalogIdForAnimeMapping,
 } from "@/app/bootstrap/resolve-share-target";
 import type { Container } from "@/container";
+import {
+  encodePlaybackTargetWebUrl,
+  parsePlaybackTargetRef,
+} from "@/domain/share/playback-target-ref";
 import type { TitleInfo } from "@/domain/types";
 
 import { createContainerFixture } from "../../support/container-fixture";
@@ -111,6 +115,26 @@ describe("resolveShareTarget", () => {
     expect(out.episode).toEqual({ season: 2, episode: 5 });
     expect(out.startSeconds).toBe(90);
     expect(out.mode).toBe("series");
+  });
+
+  it("keeps an HTTPS series handoff on the direct catalog path", async () => {
+    const container = createResolverContainer();
+    const parsed = parsePlaybackTargetRef(
+      encodePlaybackTargetWebUrl({
+        anchor: { by: "catalog", ns: "tmdb", id: "1396" },
+        kind: "series",
+        season: 1,
+        episode: 3,
+      }),
+    );
+
+    expect(parsed?.anchor).toEqual({ by: "catalog", ns: "tmdb", id: "1396" });
+    if (!parsed) throw new Error("expected the generated HTTPS share link to parse");
+    const out = await resolveShareTarget(parsed, container);
+    expect(out.title.id).toBe("tmdb:1396");
+    expect(out.episode).toEqual({ season: 1, episode: 3 });
+    expect(out.searchQuery).toBeUndefined();
+    expect(out.autoPickIndex).toBeUndefined();
   });
 
   it("maps movie and imdb catalog anchors", async () => {

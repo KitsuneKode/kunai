@@ -33,6 +33,8 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "source",
   "quality",
   "provider",
+  "share",
+  "share-qr",
   "bookmark",
   "follow",
   "unfollow",
