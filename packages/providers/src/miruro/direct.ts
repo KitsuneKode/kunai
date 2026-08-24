@@ -1724,8 +1724,29 @@ export const miruroProviderModule: CoreProviderModule = {
       startupPriority: input.startupPriority,
     });
 
+    // Time the episodes fetch inclusive of failure: a Cloudflare block throws
+    // here, and that is the case whose latency most needs attributing.
+    const episodesStartedAt = performance.now();
+    const emitEpisodesStage = (providerCount: number, failed: boolean) =>
+      emitTraceEvent(events, context, {
+        type: failed ? "source:failed" : "source:success",
+        providerId: MIRURO_PROVIDER_ID,
+        sourceId: "source:miruro:episodes",
+        message: "Fetched Miruro episode catalog",
+        durationMs: performance.now() - episodesStartedAt,
+        attributes: { providers: providerCount },
+      });
+
     try {
-      const epData = await getMiruroEpisodesResponse(context, anilistId, context.signal);
+      let epData: Awaited<ReturnType<typeof getMiruroEpisodesResponse>>;
+      try {
+        epData = await getMiruroEpisodesResponse(context, anilistId, context.signal);
+      } catch (episodesError) {
+        emitEpisodesStage(0, true);
+        throw episodesError;
+      }
+      const providerCount = epData?.providers ? Object.keys(epData.providers).length : 0;
+      emitEpisodesStage(providerCount, providerCount === 0);
       if (!epData?.providers || Object.keys(epData.providers).length === 0) {
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
           code: "not-found",
@@ -1774,6 +1795,7 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
+      const cycleStartedAt = performance.now();
       const cycleResult = await runProviderCycle({
         providerId: MIRURO_PROVIDER_ID,
         candidates: cycleCandidates,
@@ -1902,6 +1924,13 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
+      emitTraceEvent(events, context, {
+        type: "source:success",
+        providerId: MIRURO_PROVIDER_ID,
+        sourceId: "source:miruro:source-cycle",
+        message: "Resolved a Miruro source",
+        durationMs: performance.now() - cycleStartedAt,
+      });
       emitTraceEvent(events, context, {
         type: "provider:success",
         providerId: MIRURO_PROVIDER_ID,
