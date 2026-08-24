@@ -531,7 +531,8 @@ extract_release_tar_gz() {
 write_manifest() {
 	local method="$1" version="$2" launcher="$3" versionpath="${4:-}" target="${5:-}" sha256="${6:-}"
 	local previous="${7:-}" artifact_name="${8:-}" artifact_size="${9:-}"
-	local archive_name="${10:-}" archive_sha256="${11:-}" archive_size="${12:-}" archive_source_url="${13:-}"
+	local artifact_source_url="${10:-}" archive_name="${11:-}" archive_sha256="${12:-}"
+	local archive_size="${13:-}" archive_source_url="${14:-}"
 	local now installed_at managed_json tmp manifest_path
 	if [[ "$DRY" == 1 ]]; then
 		info "[dry-run] would write schema-2 manifest ($method) to $CONFIG_DIR/install.json"
@@ -581,6 +582,9 @@ write_manifest() {
 		if [[ -n "$artifact_size" ]]; then
 			printf '  "artifactSizeBytes": %s,\n' "$artifact_size"
 		fi
+		if [[ -n "$artifact_source_url" ]]; then
+			printf '  "artifactSourceUrl": "%s",\n' "$(json_escape "$artifact_source_url")"
+		fi
 		if [[ -n "$archive_name" ]]; then
 			printf '  "archiveName": "%s",\n' "$(json_escape "$archive_name")"
 			printf '  "archiveSha256": "%s",\n' "$(json_escape "$archive_sha256")"
@@ -604,21 +608,28 @@ write_manifest() {
 
 write_version_metadata() {
 	local version="$1" target="$2" artifact="$3" sha256="$4" size="$5" source_url="$6" path="$7"
+	local archive_name="${8:-}" archive_sha256="${9:-}" archive_size="${10:-}" archive_source_url="${11:-}"
 	local tmp
 	tmp="${path}.tmp-$$"
-	cat >"$tmp" <<JSON
-{
-  "schemaVersion": 1,
-  "version": "$(json_escape "$version")",
-  "target": "$(json_escape "$target")",
-  "artifactName": "$(json_escape "$artifact")",
-  "artifactSha256": "$(json_escape "$sha256")",
-  "sizeBytes": $size,
-  "sourceUrl": "$(json_escape "$source_url")",
-  "verification": "release-checksum",
-  "installedAt": "$(iso_now)"
-}
-JSON
+	{
+		printf '{\n'
+		printf '  "schemaVersion": 1,\n'
+		printf '  "version": "%s",\n' "$(json_escape "$version")"
+		printf '  "target": "%s",\n' "$(json_escape "$target")"
+		printf '  "artifactName": "%s",\n' "$(json_escape "$artifact")"
+		printf '  "artifactSha256": "%s",\n' "$(json_escape "$sha256")"
+		printf '  "sizeBytes": %s,\n' "$size"
+		printf '  "sourceUrl": "%s",\n' "$(json_escape "$source_url")"
+		if [[ -n "$archive_name" ]]; then
+			printf '  "archiveName": "%s",\n' "$(json_escape "$archive_name")"
+			printf '  "archiveSha256": "%s",\n' "$(json_escape "$archive_sha256")"
+			printf '  "archiveSizeBytes": %s,\n' "$archive_size"
+			printf '  "archiveSourceUrl": "%s",\n' "$(json_escape "$archive_source_url")"
+		fi
+		printf '  "verification": "release-checksum",\n'
+		printf '  "installedAt": "%s"\n' "$(iso_now)"
+		printf '}\n'
+	} >"$tmp"
 	mv -f "$tmp" "$path"
 }
 
@@ -1316,7 +1327,7 @@ read_previous_active_version() {
 install_binary() {
 	local os arch translated asset archive base url sums archive_url archive_sums resolved_version version_path versions_dir
 	local staging txn_id txn_path lock_path staged_bin staged_sums staged_archive staged_archive_sums staged_tar
-	local want got size_bytes archive_want archive_got archive_size archive_source_url artifact_source_url archive_available archive_name_used
+	local want got size_bytes archive_want archive_got archive_size archive_source_url archive_available archive_name_used
 	local target previous activation_previous kind metadata_path
 	local activation_lock_path
 
@@ -1441,7 +1452,6 @@ install_binary() {
 	archive_size=""
 	archive_source_url=""
 	archive_name_used=""
-	artifact_source_url="$url"
 	if ! bounded_download "$archive_sums" "$staged_archive_sums" "$DOWNLOAD_CHECKSUM_MAX_BYTES" "SHA256SUMS.archives"; then
 		if [[ "$BOUNDED_DOWNLOAD_HTTP_STATUS" == 404 || "$BOUNDED_DOWNLOAD_HTTP_STATUS" == 410 ]]; then
 			archive_available=0
@@ -1492,7 +1502,6 @@ install_binary() {
 		fi
 		archive_size="$(wc -c <"$staged_archive" | tr -d ' ')"
 		archive_source_url="$archive_url"
-		artifact_source_url="$archive_url"
 	else
 		if ! bounded_download "$url" "$staged_bin" "$DOWNLOAD_MAX_BYTES" "$asset"; then
 			download_failed_hint "$asset"
@@ -1520,7 +1529,8 @@ install_binary() {
 	install -m 0755 "$staged_bin" "$version_tmp"
 	mv -f "$version_tmp" "$version_path"
 
-	write_version_metadata "$resolved_version" "$target" "$asset" "$got" "$size_bytes" "$artifact_source_url" "$metadata_path"
+	write_version_metadata "$resolved_version" "$target" "$asset" "$got" "$size_bytes" "$url" "$metadata_path" \
+		"$archive_name_used" "$archive_got" "$archive_size" "$archive_source_url"
 
 	if [[ "$os" == darwin ]]; then
 		xattr -d com.apple.quarantine "$version_path" 2>/dev/null || true
@@ -1566,7 +1576,7 @@ install_binary() {
 		prev_arg="$activation_previous"
 	fi
 	if ! write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "$target" "$got" "$prev_arg" \
-		"$asset" "$size_bytes" "$archive_name_used" "$archive_got" "$archive_size" "$archive_source_url"; then
+		"$asset" "$size_bytes" "$url" "$archive_name_used" "$archive_got" "$archive_size" "$archive_source_url"; then
 		err "Could not publish install.json; restoring the previous launcher."
 		if ! restore_launcher_snapshot "$BIN_DIR/kunai"; then
 			err "Launcher restoration failed; inspect $LAUNCHER_SNAPSHOT_BACKUP before retrying."

@@ -427,6 +427,20 @@ describePwsh("install.ps1 release asset failures", () => {
             artifactName: target.out,
             artifactSha256: binaryDigest,
             artifactSizeBytes: Buffer.byteLength(body),
+            artifactSourceUrl: `${baseUrl}/download/v9.8.7/${target.out}`,
+            archiveName: target.archiveName,
+            archiveSha256: archiveDigest,
+            archiveSizeBytes: archive.length,
+            archiveSourceUrl: `${baseUrl}/download/v9.8.7/${target.archiveName}`,
+          });
+          const metadata = JSON.parse(
+            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
+          ) as Record<string, unknown>;
+          expect(metadata).toMatchObject({
+            artifactName: target.out,
+            artifactSha256: binaryDigest,
+            sizeBytes: Buffer.byteLength(body),
+            sourceUrl: `${baseUrl}/download/v9.8.7/${target.out}`,
             archiveName: target.archiveName,
             archiveSha256: archiveDigest,
             archiveSizeBytes: archive.length,

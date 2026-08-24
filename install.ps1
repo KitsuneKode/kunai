@@ -550,6 +550,7 @@ function Write-Manifest(
   [string]$PreviousVersion = '',
   [string]$ArtifactName = '',
   [long]$ArtifactSizeBytes = 0,
+  [string]$ArtifactSourceUrl = '',
   [string]$ArchiveName = '',
   [string]$ArchiveSha256 = '',
   [long]$ArchiveSizeBytes = 0,
@@ -590,6 +591,7 @@ function Write-Manifest(
   if ($Sha256) { $manifest.artifactSha256 = $Sha256 }
   if ($ArtifactName) { $manifest.artifactName = $ArtifactName }
   if ($ArtifactSizeBytes -gt 0) { $manifest.artifactSizeBytes = $ArtifactSizeBytes }
+  if ($ArtifactSourceUrl) { $manifest.artifactSourceUrl = $ArtifactSourceUrl }
   if ($ArchiveName) {
     $manifest.archiveName = $ArchiveName
     $manifest.archiveSha256 = $ArchiveSha256
@@ -624,7 +626,11 @@ function Write-VersionMetadata {
     [string]$Sha256,
     [long]$SizeBytes,
     [string]$SourceUrl,
-    [string]$Path
+    [string]$Path,
+    [string]$ArchiveName = '',
+    [string]$ArchiveSha256 = '',
+    [long]$ArchiveSizeBytes = 0,
+    [string]$ArchiveSourceUrl = ''
   )
   $meta = [ordered]@{
     schemaVersion   = 1
@@ -636,6 +642,12 @@ function Write-VersionMetadata {
     sourceUrl       = $SourceUrl
     verification    = 'release-checksum'
     installedAt     = (Get-IsoNow)
+  }
+  if ($ArchiveName) {
+    $meta.archiveName = $ArchiveName
+    $meta.archiveSha256 = $ArchiveSha256
+    $meta.archiveSizeBytes = $ArchiveSizeBytes
+    $meta.archiveSourceUrl = $ArchiveSourceUrl
   }
   $tmp = "$Path.tmp-$PID"
   New-Item -ItemType Directory -Force -Path (Split-Path $Path) | Out-Null
@@ -1482,7 +1494,6 @@ function Install-Binary {
     $archiveSize = [long]0
     $archiveSourceUrl = ''
     $archiveNameUsed = ''
-    $artifactSourceUrl = $url
     try {
       Invoke-BoundedDownload -Url $archiveSumsUrl -DestinationPath $stagedArchiveSums `
         -MaxBytes $DownloadChecksumMaxBytes -Label 'SHA256SUMS.archives'
@@ -1529,7 +1540,6 @@ function Install-Binary {
       $archiveSize = [long](Get-Item -LiteralPath $stagedArchive).Length
       $archiveSourceUrl = $archiveUrl
       $archiveNameUsed = $archive
-      $artifactSourceUrl = $archiveUrl
     }
 
     try {
@@ -1578,7 +1588,8 @@ function Install-Binary {
     Move-Item -Force -Path $versionTmp -Destination $versionPath
 
     Write-VersionMetadata -Ver $resolved -Target $target -ArtifactName $asset -Sha256 $got `
-      -SizeBytes $sizeBytes -SourceUrl $artifactSourceUrl -Path $metadataPath
+      -SizeBytes $sizeBytes -SourceUrl $url -Path $metadataPath -ArchiveName $archiveNameUsed `
+      -ArchiveSha256 $archiveGot -ArchiveSizeBytes $archiveSize -ArchiveSourceUrl $archiveSourceUrl
 
     $activationOwnerId = Acquire-ActivationLock $resolved $activationLockPath
     # Another version may have activated during this download. Read shared state
@@ -1595,7 +1606,8 @@ function Install-Binary {
       if ($activationPrevious -and $activationPrevious -ne $resolved) { $prevArg = $activationPrevious }
       Write-Manifest -MethodName 'binary' -Ver $resolved -Launcher $BinPath `
         -VersionPath $versionPath -Target $target -Sha256 $got -PreviousVersion $prevArg `
-        -ArtifactName $asset -ArtifactSizeBytes $sizeBytes -ArchiveName $archiveNameUsed `
+        -ArtifactName $asset -ArtifactSizeBytes $sizeBytes -ArtifactSourceUrl $url `
+        -ArchiveName $archiveNameUsed `
         -ArchiveSha256 $archiveGot -ArchiveSizeBytes $archiveSize -ArchiveSourceUrl $archiveSourceUrl
       $launcherActivated = $false
     }
