@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-23
+Last updated: 2026-08-24
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -47,6 +47,7 @@ archive and put only the residue here.
 
 | Track                      | Remaining                                                               | Plan                                                                               |
 | -------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 0.3.0 source reliability   | AniDB inventory, AllManga build 140, safe relay diagnostic              | [provider-source-reliability-0.3.0.md](./provider-source-reliability-0.3.0.md)     |
 | Provider resolve hardening | Health recovery, latency ordering, and measured hedge-delay calibration | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)   |
 | Provider hardening         | Research and scraper capability roadmap                                 | [provider-hardening.md](./provider-hardening.md)                                   |
 | Provider result contract   | Contract work before broad `@kunai/core` extraction                     | [provider-result-contract.md](./provider-result-contract.md)                       |
