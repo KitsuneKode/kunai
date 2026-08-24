@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-08-24"
 ---
 
 # Kunai — Repo Infrastructure
@@ -110,7 +110,7 @@ The invariant is enforced two ways:
 | Job                   | PR                                                                                    | Main         |
 | --------------------- | ------------------------------------------------------------------------------------- | ------------ |
 | `fmt`                 | `turbo run fmt:check --affected`                                                      | full         |
-| `lint`                | `turbo run lint --affected`                                                           | full         |
+| `lint`                | `turbo run lint --affected` + changed-file anti-slop advisory                         | full         |
 | `typecheck`           | `turbo run typecheck --affected`                                                      | full         |
 | `test`                | `turbo run test --affected` (CLI splits into cached `test:unit` + `test:integration`) | full         |
 | `windows-cli`         | root typecheck + CLI tests when CLI paths change                                      | same on main |

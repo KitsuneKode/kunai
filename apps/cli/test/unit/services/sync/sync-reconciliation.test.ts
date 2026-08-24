@@ -955,6 +955,9 @@ test("transient prefix backs off so later eligible rows run and retries resume w
   const scheduled: Array<{ task: () => Promise<void>; delayMs: number }> = [];
   const options = {
     maxRows: 3,
+    // Frozen: retry due-times use wallNow, while the operation budget uses a
+    // monotonic clock. This test exercises retry ordering, not runner speed.
+    now: () => 0,
     wallNow: () => wallNow,
     scheduleContinuation: (task: () => Promise<void>, delayMs = 0) =>
       scheduled.push({ task, delayMs }),

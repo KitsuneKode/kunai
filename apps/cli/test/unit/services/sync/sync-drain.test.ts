@@ -147,6 +147,7 @@ describe("SyncService drain", () => {
   test("a direct startup drain schedules continuation beyond its operation budget", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
+    const scheduled: Array<() => void> = [];
     const service = new SyncService({
       adapters: [anilist.adapter],
       outbox: repo,
@@ -157,6 +158,10 @@ describe("SyncService drain", () => {
       // no extra coverage.
       maxOperationsPerPass: BUDGET,
       batchSize: BATCH_SIZE,
+      scheduleWake: (task) => {
+        scheduled.push(task);
+        return () => {};
+      },
     });
 
     for (let id = 1; id <= OVER_BUDGET; id += 1) {
@@ -170,7 +175,13 @@ describe("SyncService drain", () => {
 
     const first = await service.drain();
     expect(first.claimed).toBe(BUDGET);
-    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
+    expect(anilist.calls).toHaveLength(BUDGET);
+    expect(scheduled).toHaveLength(1);
+
+    // Driving the wake by hand instead of polling a real clock: the pass is
+    // done, so what remains is whether the continuation drains the rest.
+    scheduled.shift()?.();
+    await service.drain();
 
     expect(anilist.calls).toHaveLength(OVER_BUDGET);
     expect(repo.counts().pending).toBe(0);
@@ -242,6 +253,7 @@ describe("SyncService drain", () => {
   test("deliverSoon continues after its operation budget until every due row is attempted", async () => {
     const repo = outbox();
     const anilist = adapter("anilist");
+    const continuations: Array<() => void> = [];
     const service = new SyncService({
       adapters: [anilist.adapter],
       outbox: repo,
@@ -252,6 +264,9 @@ describe("SyncService drain", () => {
       // no extra coverage.
       maxOperationsPerPass: BUDGET,
       batchSize: BATCH_SIZE,
+      scheduleContinuation: (task) => {
+        continuations.push(task);
+      },
     });
 
     for (let id = 1; id <= OVER_BUDGET; id += 1) {
@@ -264,7 +279,16 @@ describe("SyncService drain", () => {
     }
 
     service.deliverSoon();
-    await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
+    const first = await service.drain();
+    expect(first.claimed).toBe(BUDGET);
+    expect(anilist.calls).toHaveLength(BUDGET);
+    expect(continuations).toHaveLength(1);
+
+    // Run the captured continuation directly: no real timer, so the test
+    // proves the continuation drains the remainder rather than that a
+    // `setTimeout(0)` fired before a polling deadline.
+    continuations.shift()?.();
+    await service.drain();
 
     expect(anilist.calls).toHaveLength(OVER_BUDGET);
     expect(repo.counts().pending).toBe(0);

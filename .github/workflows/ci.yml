@@ -155,6 +155,10 @@ jobs:
         if: github.event_name == 'push'
         run: bunx turbo run lint --summarize
 
+      - name: Anti-slop changed-file advisory
+        if: github.event_name == 'pull_request'
+        run: bun run lint:anti-slop:changed
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
