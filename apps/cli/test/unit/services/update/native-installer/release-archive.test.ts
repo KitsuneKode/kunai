@@ -48,6 +48,11 @@ function rewriteZipNames(archive: Uint8Array, replacement: string): Uint8Array {
   return output;
 }
 
+function zipCentralOffset(archive: Uint8Array): number {
+  const view = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+  return 30 + view.getUint16(26, true) + view.getUint16(28, true) + view.getUint32(18, true);
+}
+
 describe("extractReleaseArchive", () => {
   for (const id of ["linux-x64", "darwin-arm64"] as const) {
     test(`extracts the canonical one-member ${id} tar.gz`, () => {
@@ -126,6 +131,59 @@ describe("extractReleaseArchive", () => {
     );
     expect(() => extractReleaseArchive(symlink, releaseTarget)).toThrow(/regular file|symlink/i);
     expect(() => extractReleaseArchive(multiple, releaseTarget)).toThrow(/exactly one|multiple/i);
+  });
+
+  test("rejects a Windows zip whose payload CRC is corrupted", () => {
+    const releaseTarget = target("windows-x64");
+    const archive = createReleaseArchive(releaseTarget, encoder.encode("MZ-crc-binary"));
+    const corrupted = new Uint8Array(archive);
+    const view = new DataView(corrupted.buffer, corrupted.byteOffset, corrupted.byteLength);
+    const centralOffset = zipCentralOffset(corrupted);
+    const corruptedCrc = (view.getUint32(14, true) ^ 0xffff_ffff) >>> 0;
+    view.setUint32(14, corruptedCrc, true);
+    view.setUint32(centralOffset + 16, corruptedCrc, true);
+
+    expect(() => extractReleaseArchive(corrupted, releaseTarget)).toThrow(/CRC/i);
+  });
+
+  test("rejects local and central Windows zip size disagreement", () => {
+    const releaseTarget = target("windows-x64");
+    const archive = createReleaseArchive(releaseTarget, encoder.encode("MZ-size-binary"));
+    const mismatched = new Uint8Array(archive);
+    const view = new DataView(mismatched.buffer, mismatched.byteOffset, mismatched.byteLength);
+    view.setUint32(22, view.getUint32(22, true) + 1, true);
+
+    expect(() => extractReleaseArchive(mismatched, releaseTarget)).toThrow(
+      /local entry.*central record/i,
+    );
+  });
+
+  test("rejects records trailing the Windows zip end record", () => {
+    const releaseTarget = target("windows-x64");
+    const archive = createReleaseArchive(releaseTarget, encoder.encode("MZ-trailing-binary"));
+    const trailing = new Uint8Array(archive.length + 4);
+    trailing.set(archive);
+    trailing.set([0x50, 0x4b, 0x05, 0x06], archive.length);
+
+    expect(() => extractReleaseArchive(trailing, releaseTarget)).toThrow(/trailing data/i);
+  });
+
+  test("enforces the Windows zip decompression output budget", () => {
+    const releaseTarget = target("windows-x64");
+    const archive = createReleaseArchive(releaseTarget, new Uint8Array(4_096).fill(7));
+    const budgetMismatch = new Uint8Array(archive);
+    const view = new DataView(
+      budgetMismatch.buffer,
+      budgetMismatch.byteOffset,
+      budgetMismatch.byteLength,
+    );
+    const centralOffset = zipCentralOffset(budgetMismatch);
+    view.setUint32(22, 4, true);
+    view.setUint32(centralOffset + 24, 4, true);
+
+    expect(() =>
+      extractReleaseArchive(budgetMismatch, { ...releaseTarget, maxBinaryBytes: 4 }),
+    ).toThrow(/decompression.*budget|output budget/i);
   });
 
   test("bounds archive bytes and decompressed output before allocation", () => {

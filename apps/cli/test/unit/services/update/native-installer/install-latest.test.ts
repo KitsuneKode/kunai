@@ -146,11 +146,120 @@ describe("installLatest", () => {
       artifactName: releaseTarget.out,
       artifactSha256: binaryDigest,
       artifactSizeBytes: bytes.length,
+      artifactSourceUrl: `https://example.test/releases/download/v3.2.0/${releaseTarget.out}`,
       archiveName: releaseTarget.archiveName,
       archiveSha256: archiveDigest,
       archiveSizeBytes: archive.length,
       archiveSourceUrl: `https://example.test/releases/download/v3.2.0/${releaseTarget.archiveName}`,
     });
+    expect(JSON.parse(await Bun.file(versionMetadataPath(layout, "3.2.0")).text())).toMatchObject({
+      artifactName: releaseTarget.out,
+      artifactSha256: binaryDigest,
+      sizeBytes: bytes.length,
+      sourceUrl: `https://example.test/releases/download/v3.2.0/${releaseTarget.out}`,
+      archiveName: releaseTarget.archiveName,
+      archiveSha256: archiveDigest,
+      archiveSizeBytes: archive.length,
+      archiveSourceUrl: `https://example.test/releases/download/v3.2.0/${releaseTarget.archiveName}`,
+    });
+  });
+
+  test("410 archive manifest response falls back to the verified raw asset", async () => {
+    const { layout } = await makeLayout();
+    const releaseTarget = hostTarget();
+    const bytes = new TextEncoder().encode("LEGACY-RAW-BINARY");
+    const digest = sha256Hex(bytes);
+    const requested: string[] = [];
+
+    const result = await installLatest({
+      version: "2.9.0",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        requested.push(url);
+        if (url.endsWith("/SHA256SUMS.archives")) {
+          return new Response("gone", { status: 410 });
+        }
+        if (url.endsWith("/SHA256SUMS")) {
+          return new Response(sumsFor(releaseTarget.out, digest));
+        }
+        if (url.endsWith(`/${releaseTarget.out}`)) return new Response(bytes);
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    expect(result).toMatchObject({ status: "installed", version: "2.9.0" });
+    expect(requested.some((url) => url.endsWith(`/${releaseTarget.archiveName}`))).toBe(false);
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      artifactName: releaseTarget.out,
+      artifactSha256: digest,
+      artifactSizeBytes: bytes.length,
+      artifactSourceUrl: `https://example.test/releases/download/v2.9.0/${releaseTarget.out}`,
+    });
+    expect((await readInstallManifest(layout.configDir))?.archiveName).toBeUndefined();
+  });
+
+  test("present malformed archive manifest fails closed without raw fallback", async () => {
+    const { layout } = await makeLayout();
+    const releaseTarget = hostTarget();
+    const rawRequested: string[] = [];
+
+    const result = await installLatest({
+      version: "3.0.0",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) return new Response("malformed\n");
+        if (url.endsWith("/SHA256SUMS")) {
+          return new Response(sumsFor(releaseTarget.out, "a".repeat(64)));
+        }
+        if (url.endsWith(`/${releaseTarget.out}`)) rawRequested.push(url);
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: `No checksum entry for ${releaseTarget.archiveName}`,
+    });
+    expect(rawRequested).toEqual([]);
+    expect(await readInstallManifest(layout.configDir)).toBeNull();
+  });
+
+  test("archive extraction fails closed when the raw artifact checksum mismatches", async () => {
+    const { layout } = await makeLayout();
+    const releaseTarget = hostTarget();
+    const bytes = new TextEncoder().encode("WRONG-EXTRACTED-BINARY");
+    const archive = createReleaseArchive(releaseTarget, bytes);
+
+    const result = await installLatest({
+      version: "3.0.1",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) {
+          return new Response(sumsFor(releaseTarget.archiveName, sha256Hex(archive)));
+        }
+        if (url.endsWith("/SHA256SUMS")) {
+          return new Response(sumsFor(releaseTarget.out, "0".repeat(64)));
+        }
+        if (url.endsWith(`/${releaseTarget.archiveName}`)) return new Response(archive);
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: `Checksum mismatch for extracted ${releaseTarget.out}`,
+    });
+    expect(existsSync(versionBinaryPath(layout, "3.0.1"))).toBe(false);
+    expect(await readInstallManifest(layout.configDir)).toBeNull();
   });
 
   test("archive checksum failure preserves the active launcher and manifest", async () => {

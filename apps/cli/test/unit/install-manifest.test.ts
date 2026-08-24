@@ -1,15 +1,20 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   INSTALL_MANIFEST_SCHEMA_VERSION,
   inspectInstallManifest,
+  migrateInstallManifest,
   readInstallManifest,
   writeInstallManifest,
 } from "@/services/update/install-manifest";
-import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
+import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
+import {
+  getInstallLayoutPaths,
+  lockFilePath,
+} from "@/services/update/native-installer/install-layout";
 
 const made: string[] = [];
 afterEach(() => {
@@ -20,6 +25,25 @@ function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "kunai-manifest-"));
   made.push(dir);
   return dir;
+}
+
+function migrationLayout(configDir: string) {
+  const root = join(configDir, "native");
+  return getInstallLayoutPaths({
+    configDir,
+    dataDir: join(root, "data"),
+    cacheDir: join(root, "cache"),
+    launcherPath: join(root, "bin", "kunai"),
+    platform: "linux",
+  });
+}
+
+async function waitForPath(path: string): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!existsSync(path)) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
+    await Bun.sleep(5);
+  }
 }
 
 const LEGACY_VERSIONED = {
@@ -53,6 +77,7 @@ test("write then read round-trips the versioned manifest", async () => {
       artifactName: "kunai-linux-x64",
       artifactSha256: "a".repeat(64),
       artifactSizeBytes: 42,
+      artifactSourceUrl: "https://dl/download/v1.2.3/kunai-linux-x64",
       archiveName: "kunai-linux-x64.tar.gz",
       archiveSha256: "b".repeat(64),
       archiveSizeBytes: 21,
@@ -70,6 +95,7 @@ test("write then read round-trips the versioned manifest", async () => {
   expect(m?.artifactName).toBe("kunai-linux-x64");
   expect(m?.artifactSha256).toBe("a".repeat(64));
   expect(m?.artifactSizeBytes).toBe(42);
+  expect(m?.artifactSourceUrl).toBe("https://dl/download/v1.2.3/kunai-linux-x64");
   expect(m?.archiveName).toBe("kunai-linux-x64.tar.gz");
   expect(m?.archiveSha256).toBe("b".repeat(64));
   expect(m?.archiveSizeBytes).toBe(21);
@@ -80,7 +106,7 @@ test("write then read round-trips the versioned manifest", async () => {
   expect(typeof m?.updatedAt).toBe("string");
 });
 
-test("read migrates a schema-v1 manifest to schema v2 without losing rollback fields", async () => {
+test("explicit migration upgrades schema v1 without losing rollback fields", async () => {
   const dir = tempDir();
   const path = join(dir, "install.json");
   await Bun.write(
@@ -116,6 +142,16 @@ test("read migrates a schema-v1 manifest to schema v2 without losing rollback fi
     schemaVersion: 2,
     activeVersion: "1.2.3",
     previousVersion: "1.2.2",
+  });
+  expect(JSON.parse(await Bun.file(path).text())).toMatchObject({ schemaVersion: 1 });
+
+  expect(await migrateInstallManifest(migrationLayout(dir))).toMatchObject({
+    status: "migrated",
+    manifest: {
+      schemaVersion: 2,
+      activeVersion: "1.2.3",
+      previousVersion: "1.2.2",
+    },
   });
   expect(JSON.parse(await Bun.file(path).text())).toMatchObject({ schemaVersion: 2 });
 });
@@ -216,10 +252,12 @@ test("inspection reports migration without writing", async () => {
   expect(await Bun.file(path).text()).toBe(before);
 });
 
-test("read migrates legacy versioned binary atomically", async () => {
+test("explicit migration upgrades legacy versioned binary atomically", async () => {
   const dir = tempDir();
   const path = join(dir, "install.json");
   await Bun.write(path, `${JSON.stringify(LEGACY_VERSIONED, null, 2)}\n`);
+  const migrated = await migrateInstallManifest(migrationLayout(dir));
+  expect(migrated.status).toBe("migrated");
   const m = await readInstallManifest(dir);
   expect(m).toMatchObject({
     schemaVersion: 2,
@@ -246,9 +284,10 @@ test("read migrates legacy versioned binary atomically", async () => {
   expect(again).toMatchObject({ status: "loaded", needsMigration: false });
 });
 
-test("read migrates legacy flat binary without versionedPath", async () => {
+test("explicit migration upgrades legacy flat binary without versionedPath", async () => {
   const dir = tempDir();
   await Bun.write(join(dir, "install.json"), JSON.stringify(LEGACY_FLAT));
+  expect((await migrateInstallManifest(migrationLayout(dir))).status).toBe("migrated");
   const m = await readInstallManifest(dir);
   expect(m).toMatchObject({
     schemaVersion: 2,
@@ -265,27 +304,81 @@ test.each([
   ["npm-global", "2.0.0"],
   ["bun-global", "2.1.0"],
   ["source", "0.3.0"],
-] as const)("read migrates legacy %s with empty managedPaths", async (channel, version) => {
-  const dir = tempDir();
-  await Bun.write(
-    join(dir, "install.json"),
-    JSON.stringify({
+] as const)(
+  "legacy %s is converted in memory without unsafe native-lock publication",
+  async (channel, version) => {
+    const dir = tempDir();
+    const path = join(dir, "install.json");
+    const legacy = JSON.stringify({
       channel,
       version,
       binPath: "/usr/bin/kunai",
       dlBase: "https://dl.example/releases",
       installedAt: "2026-03-01T00:00:00.000Z",
-    }),
-  );
-  const m = await readInstallManifest(dir);
-  expect(m).toMatchObject({
+    });
+    await Bun.write(path, legacy);
+    expect((await migrateInstallManifest(migrationLayout(dir))).status).toBe("deferred");
+    const m = await readInstallManifest(dir);
+    expect(m).toMatchObject({
+      schemaVersion: 2,
+      method: channel,
+      activeVersion: version,
+      launcherPath: "/usr/bin/kunai",
+      managedPaths: [],
+      installedAt: "2026-03-01T00:00:00.000Z",
+    });
+    expect(await Bun.file(path).text()).toBe(legacy);
+  },
+);
+
+test("migration does not overwrite a newer activation published while it waits", async () => {
+  const dir = tempDir();
+  const layout = migrationLayout(dir);
+  const path = join(dir, "install.json");
+  await Bun.write(path, JSON.stringify(LEGACY_VERSIONED));
+
+  const activation = await tryAcquireActivationLock(layout, "9.9.9");
+  expect(activation.acquired).toBe(true);
+  const migration = migrateInstallManifest(layout);
+  await waitForPath(lockFilePath(layout, "1.2.3"));
+
+  const replacement = {
     schemaVersion: 2,
-    method: channel,
-    activeVersion: version,
-    launcherPath: "/usr/bin/kunai",
+    method: "binary",
+    activeVersion: "9.9.9",
+    preferredChannel: "stable",
+    launcherPath: layout.launcherPath,
+    versionedPath: join(layout.versionsDir, "9.9.9", "kunai"),
     managedPaths: [],
+    downloadBaseUrl: "https://new.example.test/releases",
     installedAt: "2026-03-01T00:00:00.000Z",
+    updatedAt: "2026-03-02T00:00:00.000Z",
+  };
+  await Bun.write(path, `${JSON.stringify(replacement)}\n`);
+  if (activation.acquired) await activation.release();
+
+  expect(await migration).toMatchObject({
+    status: "unchanged",
+    manifest: { activeVersion: "9.9.9" },
   });
+  expect(JSON.parse(await Bun.file(path).text())).toEqual(replacement);
+});
+
+test("migration does not recreate a manifest removed while it waits", async () => {
+  const dir = tempDir();
+  const layout = migrationLayout(dir);
+  const path = join(dir, "install.json");
+  await Bun.write(path, JSON.stringify(LEGACY_VERSIONED));
+
+  const activation = await tryAcquireActivationLock(layout, "9.9.9");
+  expect(activation.acquired).toBe(true);
+  const migration = migrateInstallManifest(layout);
+  await waitForPath(lockFilePath(layout, "1.2.3"));
+  await Bun.file(path).delete();
+  if (activation.acquired) await activation.release();
+
+  expect(await migration).toEqual({ status: "missing" });
+  expect(existsSync(path)).toBe(false);
 });
 
 test("inspect reports invalid JSON without writing", async () => {

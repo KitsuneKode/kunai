@@ -271,6 +271,77 @@ describePosixOnly("executeRollback activation and refusal", () => {
     expect(manifest?.preferredChannel).toBe("stable");
   });
 
+  test("archive A to B to rollback A restores A transport and raw artifact provenance", async () => {
+    const { layout } = await makeRoot();
+    const rawAUrl = "https://example.test/download/v1.0.0/kunai-linux-x64-gnu";
+    const archiveAUrl = `${rawAUrl}.tar.gz`;
+    const archiveASha = "a".repeat(64);
+    const archiveAPath = await seedVerifiedVersion(layout, "1.0.0", "archive-a", {
+      sourceUrl: rawAUrl,
+      archiveName: "kunai-linux-x64-gnu.tar.gz",
+      archiveSha256: archiveASha,
+      archiveSizeBytes: 123,
+      archiveSourceUrl: archiveAUrl,
+    });
+    const rawBUrl = "https://example.test/download/v2.0.0/kunai-linux-x64-gnu";
+    const archiveBUrl = `${rawBUrl}.tar.gz`;
+    const archiveBSha = "b".repeat(64);
+    const archiveBPath = await seedVerifiedVersion(layout, "2.0.0", "archive-b", {
+      sourceUrl: rawBUrl,
+      archiveName: "kunai-linux-x64-gnu.tar.gz",
+      archiveSha256: archiveBSha,
+      archiveSizeBytes: 456,
+      archiveSourceUrl: archiveBUrl,
+    });
+    const metadataA = await readFile(
+      join(layout.versionsDir, "1.0.0", "version.json"),
+      "utf8",
+    ).then((raw) => JSON.parse(raw) as InstalledVersionMetadata);
+
+    await symlink(archiveBPath, layout.launcherPath);
+    await writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "2.0.0",
+        previousVersion: "1.0.0",
+        launcherPath: layout.launcherPath,
+        versionedPath: archiveBPath,
+        downloadBaseUrl: "https://example.test/releases",
+        target: "linux-x64-gnu",
+        artifactName: "kunai-linux-x64-gnu",
+        artifactSha256: createHash("sha256").update("archive-b").digest("hex"),
+        artifactSizeBytes: 9,
+        artifactSourceUrl: rawBUrl,
+        archiveName: "kunai-linux-x64-gnu.tar.gz",
+        archiveSha256: archiveBSha,
+        archiveSizeBytes: 456,
+        archiveSourceUrl: archiveBUrl,
+      },
+      layout.configDir,
+    );
+
+    expect(await executeRollback(layout)).toMatchObject({
+      status: "rolled-back",
+      fromVersion: "2.0.0",
+      toVersion: "1.0.0",
+    });
+    expect(await readlink(layout.launcherPath)).toBe(archiveAPath);
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      activeVersion: "1.0.0",
+      previousVersion: "2.0.0",
+      versionedPath: archiveAPath,
+      target: metadataA.target,
+      artifactName: metadataA.artifactName,
+      artifactSha256: metadataA.artifactSha256,
+      artifactSizeBytes: metadataA.sizeBytes,
+      artifactSourceUrl: rawAUrl,
+      archiveName: "kunai-linux-x64-gnu.tar.gz",
+      archiveSha256: archiveASha,
+      archiveSizeBytes: 123,
+      archiveSourceUrl: archiveAUrl,
+    });
+  });
+
   test("explicit --to validates strictly and activates that version", async () => {
     const { layout } = await makeRoot();
     await seedVerifiedVersion(layout, "1.0.0", "v1");

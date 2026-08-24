@@ -65,10 +65,16 @@ legacy raw `SHA256SUMS` before version-store or launcher activation. Missing
 archive manifests on an older release fall back to its raw compatibility asset;
 a present but malformed or mismatched archive fails closed. Native
 `install.json` is schema 2 and records both archive transport and extracted
-binary provenance; schema-1 manifests migrate atomically while preserving
-active/previous version fields used by doctor and rollback. The shell and
-PowerShell installer archive-consumption slices remain release blockers for
-issue #132.
+binary provenance. Per-version `version.json` records the raw artifact as
+`artifactName`, `artifactSha256`, `sizeBytes`, and `sourceUrl`; archive installs
+add the all-or-none `archiveName`, `archiveSha256`, `archiveSizeBytes`, and
+`archiveSourceUrl` quartet. Rollback republishes both groups into `install.json`
+(`artifactSizeBytes` and `artifactSourceUrl` are the manifest spellings).
+Schema-1 manifest migration is an explicit startup transition: it acquires the
+version and activation locks, which exclude uninstall through the lifecycle
+guard, then re-reads before publishing so a newer activation is not overwritten
+and a removed manifest is not recreated. The shell and PowerShell installer
+archive-consumption slices remain release blockers for issue #132.
 
 ## Native Installer Activation Gate
 

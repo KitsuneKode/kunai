@@ -151,7 +151,6 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
 
         let artifactSha256: string;
         let artifactSizeBytes: number;
-        let artifactSourceUrl: string;
         let archiveProvenance:
           | {
               readonly archiveName: string;
@@ -208,7 +207,6 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           const binaryBytes = extractReleaseArchive(archiveBytes, releaseTarget);
           artifactSha256 = createHash("sha256").update(binaryBytes).digest("hex");
           artifactSizeBytes = binaryBytes.length;
-          artifactSourceUrl = archiveUrl;
           if (!verifyChecksum(artifactSha256, expected)) {
             throw new Error(`Checksum mismatch for extracted ${assetName}`);
           }
@@ -231,7 +229,6 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           }
           artifactSha256 = downloaded.sha256;
           artifactSizeBytes = downloaded.sizeBytes;
-          artifactSourceUrl = downloadUrl;
         }
 
         await mkdir(dirname(versionPath), { recursive: true });
@@ -244,7 +241,8 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           artifactName: assetName,
           artifactSha256,
           sizeBytes: artifactSizeBytes,
-          sourceUrl: artifactSourceUrl,
+          sourceUrl: downloadUrl,
+          ...archiveProvenance,
           verification: "release-checksum",
           installedAt: new Date().toISOString(),
         });
@@ -273,6 +271,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
                 artifactName: assetName,
                 artifactSha256,
                 artifactSizeBytes,
+                artifactSourceUrl: downloadUrl,
                 ...archiveProvenance,
                 ...(activeManifest?.activeVersion && activeManifest.activeVersion !== resolved
                   ? { previousVersion: activeManifest.activeVersion }

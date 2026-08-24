@@ -4,7 +4,9 @@ import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
 
+import { withActivationLock } from "./native-installer/activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";
+import { withVersionLock } from "./native-installer/version-lock";
 import { parseCanonicalVersion } from "./version";
 
 /**
@@ -30,6 +32,7 @@ export interface InstallManifest {
   readonly artifactName?: string;
   readonly artifactSha256?: string;
   readonly artifactSizeBytes?: number;
+  readonly artifactSourceUrl?: string;
   readonly archiveName?: string;
   readonly archiveSha256?: string;
   readonly archiveSizeBytes?: number;
@@ -57,6 +60,13 @@ export type InstallManifestInspection =
       readonly manifest: InstallManifest;
     };
 
+export type InstallManifestMigrationResult =
+  | { readonly status: "migrated" | "unchanged"; readonly manifest: InstallManifest }
+  | { readonly status: "deferred"; readonly manifest: InstallManifest }
+  | { readonly status: "missing" }
+  | { readonly status: "invalid"; readonly reason: InstallManifestInvalidReason }
+  | { readonly status: "lock-contention" };
+
 export type WriteInstallManifestInput = {
   readonly method: InstallManifestMethod;
   readonly activeVersion: string;
@@ -69,6 +79,7 @@ export type WriteInstallManifestInput = {
   readonly artifactName?: string;
   readonly artifactSha256?: string;
   readonly artifactSizeBytes?: number;
+  readonly artifactSourceUrl?: string;
   readonly archiveName?: string;
   readonly archiveSha256?: string;
   readonly archiveSizeBytes?: number;
@@ -135,19 +146,49 @@ export async function inspectInstallManifest(
   return inspectLegacySchema(record as LegacyInstallManifest, configDir);
 }
 
-/**
- * Read the install ownership record. Atomically migrates valid legacy schema.
- * Never writes for invalid / unsupported / missing manifests.
- */
+/** Read the install ownership record without mutating it. */
 export async function readInstallManifest(
   configDir = getKunaiPaths().configDir,
 ): Promise<InstallManifest | null> {
   const inspection = await inspectInstallManifest(configDir);
   if (inspection.status !== "loaded") return null;
-  if (inspection.needsMigration) {
-    await persistManifest(inspection.manifest, configDir);
-  }
   return inspection.manifest;
+}
+
+/**
+ * Publish a schema migration only while lifecycle, version, and activation
+ * ownership exclude uninstall and competing native activation. The manifest is
+ * re-read inside the locks so a replacement is preserved and a removal is not
+ * recreated from a stale snapshot.
+ */
+export async function migrateInstallManifest(
+  layout: InstallLayoutPaths = getInstallLayoutPaths(),
+): Promise<InstallManifestMigrationResult> {
+  const observed = await inspectInstallManifest(layout.configDir);
+  if (observed.status === "missing") return { status: "missing" };
+  if (observed.status === "invalid") return observed;
+  if (!observed.needsMigration) {
+    return { status: "unchanged", manifest: observed.manifest };
+  }
+  if (observed.manifest.method !== "binary") {
+    return { status: "deferred", manifest: observed.manifest };
+  }
+
+  const migrated = await withVersionLock(layout, observed.manifest.activeVersion, async () => {
+    return withActivationLock(layout, observed.manifest.activeVersion, async () => {
+      const current = await inspectInstallManifest(layout.configDir);
+      if (current.status === "missing") return { status: "missing" } as const;
+      if (current.status === "invalid") return current;
+      if (!current.needsMigration) {
+        return { status: "unchanged", manifest: current.manifest } as const;
+      }
+
+      await persistManifest(current.manifest, layout.configDir);
+      return { status: "migrated", manifest: current.manifest } as const;
+    });
+  });
+
+  return migrated ?? { status: "lock-contention" };
 }
 
 export async function writeInstallManifest(
@@ -164,6 +205,7 @@ export async function writeInstallManifest(
     !optionalString(partial.artifactName) ||
     !optionalSha256(partial.artifactSha256) ||
     !optionalSize(partial.artifactSizeBytes) ||
+    !optionalString(partial.artifactSourceUrl) ||
     !optionalString(partial.archiveName) ||
     !optionalSha256(partial.archiveSha256) ||
     !optionalSize(partial.archiveSizeBytes) ||
@@ -216,6 +258,7 @@ export async function writeInstallManifest(
     ...(partial.artifactSizeBytes !== undefined
       ? { artifactSizeBytes: partial.artifactSizeBytes }
       : {}),
+    ...(partial.artifactSourceUrl ? { artifactSourceUrl: partial.artifactSourceUrl } : {}),
     ...(partial.archiveName ? { archiveName: partial.archiveName } : {}),
     ...(partial.archiveSha256 ? { archiveSha256: partial.archiveSha256 } : {}),
     ...(partial.archiveSizeBytes !== undefined
@@ -305,6 +348,9 @@ function inspectCurrentSchema(
   if (!optionalSize(record.artifactSizeBytes)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
+  if (!optionalString(record.artifactSourceUrl)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
   if (
     !optionalString(record.archiveName) ||
     !optionalSha256(record.archiveSha256) ||
@@ -344,6 +390,9 @@ function inspectCurrentSchema(
     ...(typeof record.artifactSha256 === "string" ? { artifactSha256: record.artifactSha256 } : {}),
     ...(typeof record.artifactSizeBytes === "number"
       ? { artifactSizeBytes: record.artifactSizeBytes }
+      : {}),
+    ...(typeof record.artifactSourceUrl === "string"
+      ? { artifactSourceUrl: record.artifactSourceUrl }
       : {}),
     ...(typeof record.archiveName === "string" ? { archiveName: record.archiveName } : {}),
     ...(typeof record.archiveSha256 === "string" ? { archiveSha256: record.archiveSha256 } : {}),
@@ -462,6 +511,7 @@ function archiveHasArtifactProvenance(value: {
   readonly artifactName?: unknown;
   readonly artifactSha256?: unknown;
   readonly artifactSizeBytes?: unknown;
+  readonly artifactSourceUrl?: unknown;
 }): boolean {
   if (value.archiveName === undefined) return true;
   return (
@@ -471,6 +521,8 @@ function archiveHasArtifactProvenance(value: {
     /^[a-fA-F0-9]{64}$/.test(value.artifactSha256) &&
     typeof value.artifactSizeBytes === "number" &&
     Number.isSafeInteger(value.artifactSizeBytes) &&
-    value.artifactSizeBytes > 0
+    value.artifactSizeBytes > 0 &&
+    typeof value.artifactSourceUrl === "string" &&
+    value.artifactSourceUrl.length > 0
   );
 }

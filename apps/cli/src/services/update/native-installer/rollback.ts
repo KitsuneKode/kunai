@@ -23,8 +23,14 @@ export interface RollbackCandidate {
   readonly version: string;
   readonly versionPath: string;
   readonly target: string;
+  readonly artifactName: string;
   readonly artifactSha256: string;
   readonly sizeBytes: number;
+  readonly sourceUrl: string;
+  readonly archiveName?: string;
+  readonly archiveSha256?: string;
+  readonly archiveSizeBytes?: number;
+  readonly archiveSourceUrl?: string;
   readonly installedAt: string;
   readonly active: boolean;
   readonly previous: boolean;
@@ -108,8 +114,22 @@ export async function listRollbackCandidates(
       version,
       versionPath: versionBinaryPath(layout, version),
       target: verification.metadata.target,
+      artifactName: verification.metadata.artifactName,
       artifactSha256: verification.metadata.artifactSha256,
       sizeBytes: verification.metadata.sizeBytes,
+      sourceUrl: verification.metadata.sourceUrl,
+      ...(verification.metadata.archiveName
+        ? { archiveName: verification.metadata.archiveName }
+        : {}),
+      ...(verification.metadata.archiveSha256
+        ? { archiveSha256: verification.metadata.archiveSha256 }
+        : {}),
+      ...(verification.metadata.archiveSizeBytes !== undefined
+        ? { archiveSizeBytes: verification.metadata.archiveSizeBytes }
+        : {}),
+      ...(verification.metadata.archiveSourceUrl
+        ? { archiveSourceUrl: verification.metadata.archiveSourceUrl }
+        : {}),
       installedAt: verification.metadata.installedAt,
       active: manifest?.activeVersion === version,
       previous: manifest?.previousVersion === version,
@@ -341,7 +361,18 @@ export async function executeRollback(
                     versionedPath: candidate.versionPath,
                     downloadBaseUrl: manifest.downloadBaseUrl,
                     target: candidate.target,
+                    artifactName: candidate.artifactName,
                     artifactSha256: candidate.artifactSha256,
+                    artifactSizeBytes: candidate.sizeBytes,
+                    artifactSourceUrl: candidate.sourceUrl,
+                    ...(candidate.archiveName ? { archiveName: candidate.archiveName } : {}),
+                    ...(candidate.archiveSha256 ? { archiveSha256: candidate.archiveSha256 } : {}),
+                    ...(candidate.archiveSizeBytes !== undefined
+                      ? { archiveSizeBytes: candidate.archiveSizeBytes }
+                      : {}),
+                    ...(candidate.archiveSourceUrl
+                      ? { archiveSourceUrl: candidate.archiveSourceUrl }
+                      : {}),
                     managedPaths: manifest.managedPaths,
                     ...(manifest.observedProvenance
                       ? { observedProvenance: manifest.observedProvenance }

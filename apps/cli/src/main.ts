@@ -718,7 +718,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   lifetimeLockReady = (async () => {
     const { lockCurrentVersion, cleanupOldVersions } =
       await import("./services/update/native-installer");
-    const { readInstallManifest } = await import("./services/update/install-manifest");
+    const { migrateInstallManifest, readInstallManifest } =
+      await import("./services/update/install-manifest");
+    await migrateInstallManifest().catch(() => {});
     const manifest = await readInstallManifest();
     if (manifest?.method === "binary" || manifest?.versionedPath) {
       await lockCurrentVersion().catch(() => {});
