@@ -11,7 +11,12 @@ import {
   lockFilePath,
   type InstallLayoutPaths,
 } from "./install-layout";
-import { isProcessAlive, normalizedHostname, processStartId } from "./lock-owner-identity";
+import {
+  isProcessAlive,
+  normalizedHostname,
+  processStartId,
+  type ProcessStartIdLookup,
+} from "./lock-owner-identity";
 
 export type VersionLockContent = {
   readonly pid: number;
@@ -28,6 +33,12 @@ export type VersionLockContent = {
 export type LockAcquireResult =
   | { readonly acquired: true; readonly release: () => Promise<void> }
   | { readonly acquired: false; readonly holderPid?: number };
+
+export type VersionLockOptions = {
+  readonly execPath?: string;
+  /** Test seam for deterministic PID-reuse coverage. */
+  readonly processStartIdLookup?: ProcessStartIdLookup;
+};
 
 export type VersionLockInspection =
   | { readonly status: "missing" }
@@ -87,7 +98,10 @@ function isModernLifecycleContent(content: VersionLockContent): boolean {
  * local owners are stale only when their PID is dead or its start ID changed.
  * Pre-schema records retain the legacy local-PID behavior for upgrades.
  */
-async function isLifecycleLockStale(path: string): Promise<boolean> {
+async function isLifecycleLockStale(
+  path: string,
+  processStartIdLookup: ProcessStartIdLookup = processStartId,
+): Promise<boolean> {
   const content = await readLockContent(path);
   if (!content) {
     const metadata = await stat(path).catch(() => null);
@@ -106,7 +120,7 @@ async function isLifecycleLockStale(path: string): Promise<boolean> {
   if (content.hostname?.trim().toLowerCase() !== normalizedHostname()) return false;
   if (!isProcessAlive(content.pid)) return true;
   if (content.processStartId) {
-    const currentStartId = processStartId(content.pid);
+    const currentStartId = processStartIdLookup(content.pid);
     if (currentStartId && currentStartId !== content.processStartId) return true;
   }
   return false;
@@ -145,15 +159,17 @@ export async function inspectVersionLock(
 export async function tryAcquireVersionLock(
   layout: InstallLayoutPaths,
   version: string,
-  execPath: string = process.execPath,
+  options: VersionLockOptions = {},
 ): Promise<LockAcquireResult> {
+  const execPath = options.execPath ?? process.execPath;
+  const processStartIdLookup = options.processStartIdLookup ?? processStartId;
   const path = lockFilePath(layout, version);
   await mkdir(layout.locksDir, { recursive: true });
 
   const lifecyclePath = lifecycleLockPath(layout);
   const lifecyclePaths = [lifecycleGuardPath(layout), lifecyclePath];
   for (const guardPath of lifecyclePaths) {
-    if (existsSync(guardPath) && !(await isLifecycleLockStale(guardPath))) {
+    if (existsSync(guardPath) && !(await isLifecycleLockStale(guardPath, processStartIdLookup))) {
       const existing = await readLockContent(guardPath);
       return { acquired: false, holderPid: existing?.pid };
     }
@@ -185,7 +201,7 @@ export async function tryAcquireVersionLock(
   // Close the check/create race with lifecycle acquisition: if uninstall won
   // its lock after our first check, relinquish this version lock and refuse.
   for (const guardPath of lifecyclePaths) {
-    if (existsSync(guardPath) && !(await isLifecycleLockStale(guardPath))) {
+    if (existsSync(guardPath) && !(await isLifecycleLockStale(guardPath, processStartIdLookup))) {
       const existing = await readLockContent(guardPath);
       const current = await readLockContent(path);
       if (current?.pid === process.pid) {
@@ -213,7 +229,7 @@ export async function withVersionLock<T>(
   fn: () => Promise<T>,
   options: { readonly requireLock?: boolean; readonly execPath?: string } = {},
 ): Promise<T | null> {
-  const lock = await tryAcquireVersionLock(layout, version, options.execPath);
+  const lock = await tryAcquireVersionLock(layout, version, { execPath: options.execPath });
   if (!lock.acquired) {
     if (options.requireLock) {
       throw new Error(
@@ -251,7 +267,7 @@ export async function lockCurrentVersion(
   const path = lockFilePath(layout, version);
   if (lifetimeLockPath === path) return;
 
-  const lock = await tryAcquireVersionLock(layout, version, execPath);
+  const lock = await tryAcquireVersionLock(layout, version, { execPath });
   if (!lock.acquired) return;
 
   lifetimeLockPath = path;

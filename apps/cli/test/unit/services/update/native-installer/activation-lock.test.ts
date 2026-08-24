@@ -14,12 +14,17 @@ import {
 } from "@/services/update/native-installer/install-layout";
 
 const made: string[] = [];
-const WINDOWS_IDENTITY_TIMEOUT_MS = 3_000;
 
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
   if (process.platform === "darwin") return "darwin-ps:impossible";
   return "linux-proc:0";
+}
+
+function knownCurrentProcessStartId(): string {
+  if (process.platform === "win32") return "windows-ticks:1";
+  if (process.platform === "darwin") return "darwin-ps:known-current";
+  return "linux-proc:1";
 }
 
 afterEach(async () => {
@@ -319,8 +324,9 @@ describe("activation lock", () => {
     const staleTime = new Date(Date.now() - 5_000);
     await utimes(claimPath, staleTime, staleTime);
     const aged = await tryAcquireActivationLock(layout, "2.0.0", {
-      timeoutMs: process.platform === "win32" ? WINDOWS_IDENTITY_TIMEOUT_MS : 100,
+      timeoutMs: 100,
       pollMs: 5,
+      processStartIdLookup: () => knownCurrentProcessStartId(),
     });
     expect(aged.acquired).toBe(true);
     expect(existsSync(claimPath)).toBe(false);
@@ -448,8 +454,9 @@ describe("activation lock", () => {
     );
 
     const lock = await tryAcquireActivationLock(layout, "2.0.0", {
-      timeoutMs: process.platform === "win32" ? WINDOWS_IDENTITY_TIMEOUT_MS : 100,
+      timeoutMs: 100,
       pollMs: 5,
+      processStartIdLookup: () => knownCurrentProcessStartId(),
     });
     expect(lock.acquired).toBe(true);
     if (lock.acquired) await lock.release();

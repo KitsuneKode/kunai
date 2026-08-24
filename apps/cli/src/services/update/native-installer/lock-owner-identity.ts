@@ -7,6 +7,8 @@ import { hostname } from "node:os";
 const PROCESS_PROBE_TIMEOUT_MS = 2_000;
 const OWN_PROCESS_PROBE_RETRY_DELAY_MS = 1_000;
 
+export type ProcessStartIdLookup = (pid: number, timeoutMs?: number) => string | null;
+
 export function normalizedHostname(): string {
   return hostname().trim().toLowerCase();
 }

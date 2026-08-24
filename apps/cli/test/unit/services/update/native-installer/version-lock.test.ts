@@ -233,7 +233,11 @@ describe("version lock", () => {
       })}\n`,
     );
 
-    const version = await tryAcquireVersionLock(layout, "1.2.3");
+    const version = await tryAcquireVersionLock(layout, "1.2.3", {
+      execPath: process.execPath,
+      processStartIdLookup: () =>
+        process.platform === "win32" ? "windows-ticks:1" : "linux-proc:1",
+    });
     expect(version.acquired).toBe(true);
     if (version.acquired) await version.release();
 
