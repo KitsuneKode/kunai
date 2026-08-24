@@ -463,7 +463,7 @@ extract_release_tar_gz() {
 		return 1
 	fi
 	if [[ "$gzip_status" -ne 0 || "$dd_status" -ne 0 ]]; then
-		err "Archive is not a valid gzip stream."
+		err "Archive decompression failed (gzip status $gzip_status, bounded reader status $dd_status)."
 		return 1
 	fi
 	if [[ "$tar_size" -lt 1536 || $((tar_size % 512)) -ne 0 ]]; then
