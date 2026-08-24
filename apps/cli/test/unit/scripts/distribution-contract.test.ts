@@ -174,6 +174,9 @@ describe("release workflow candidate-before-publication contract", () => {
   const publisher = readFileSync(join(REPO_ROOT, "scripts/publish-npm-release.ts"), "utf8");
   const versionPr = () => extractWorkflowJob(release, "version-pr");
   const candidate = () => extractWorkflowJob(release, "candidate");
+  const nativeProvenanceGate = () => extractWorkflowJob(release, "native-provenance-gate");
+  const nativeSmoke = () => extractWorkflowJob(release, "native-smoke");
+  const readmeCommandsGate = () => extractWorkflowJob(release, "readme-commands-gate");
   const confirmation = () => extractWorkflowJob(release, "confirmation");
   const publish = () => extractWorkflowJob(release, "publish");
   const metadata = () => extractWorkflowJob(release, "metadata");
@@ -262,6 +265,59 @@ describe("release workflow candidate-before-publication contract", () => {
       "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # actions/attest@v4",
     );
     expect(cand).toContain("subject-path: .candidate-upload/native/*");
+  });
+
+  test("downloaded native candidates are provenance-gated before any execution job", () => {
+    const cand = candidate();
+    const provenance = nativeProvenanceGate();
+    expect(cand).toContain("id: upload-candidate");
+    expect(cand).toContain(
+      "candidate_artifact_id: ${{ steps.upload-candidate.outputs.artifact-id }}",
+    );
+    expect(provenance).toMatch(/needs:\s*candidate/);
+    expect(provenance).toMatch(/permissions:[\s\S]*contents:\s*read[\s\S]*attestations:\s*read/);
+    expect(provenance).toContain(
+      "artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}",
+    );
+    expect(provenance).toContain('merge-multiple: "true"');
+    expect(provenance).toContain("verify-release-artifact-directory.ts");
+    expect(provenance).toContain("verify-native-attestations.ts");
+    expect(provenance).toContain('--source-digest "${GITHUB_SHA}"');
+
+    for (const executionJob of [nativeSmoke(), readmeCommandsGate()]) {
+      expect(executionJob).toMatch(/needs:\s*\[candidate, native-provenance-gate\]/);
+      expect(executionJob).toMatch(/permissions:\s*\n\s+contents:\s*read/);
+      expect(executionJob.indexOf("download-artifact")).toBeGreaterThanOrEqual(0);
+      expect(executionJob).toContain(
+        "artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}",
+      );
+      expect(executionJob).toContain('merge-multiple: "true"');
+    }
+
+    const smoke = nativeSmoke();
+    expect(smoke.indexOf("verify-release-artifact-directory.ts")).toBeLessThan(
+      smoke.indexOf("Exercise exact preserved archive"),
+    );
+    const readme = readmeCommandsGate();
+    expect(readme.indexOf("verify-release-artifact-directory.ts")).toBeLessThan(
+      readme.indexOf("Execute README quick-start commands"),
+    );
+
+    const confirm = confirmation();
+    expect(confirm).toMatch(/needs:[\s\S]*native-provenance-gate/);
+    expect(confirm).toContain(
+      "candidate_artifact_id: ${{ needs.candidate.outputs.candidate_artifact_id }}",
+    );
+    expect(publish()).toContain(
+      "artifact-ids: ${{ needs.confirmation.outputs.candidate_artifact_id }}",
+    );
+
+    expect(release.indexOf("  native-provenance-gate:")).toBeLessThan(
+      release.indexOf("  native-smoke:"),
+    );
+    expect(release.indexOf("  native-provenance-gate:")).toBeLessThan(
+      release.indexOf("  readme-commands-gate:"),
+    );
   });
 
   test("publication downloads the preserved tarball/binaries", () => {

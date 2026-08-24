@@ -70,14 +70,18 @@ with `--version` and `--help`; the separate raw and musl executions remain
 compatibility checks.
 
 After the final candidate-directory verification, `actions/attest` signs all 18
-subjects with GitHub OIDC. Confirmation and protected publication run
-`scripts/verify-native-attestations.ts` against the exact workflow identity,
-`refs/heads/main`, and candidate commit before trusting those bytes. Candidate
-permissions are limited to read access plus OIDC, attestation, and artifact
-metadata writes; later jobs receive attestation read access only. Release
-downloads are checked and attested before the Linux smoke executes; protected
-publication verifies provenance before npm receives any package, and draft/public
-downloads repeat the byte and provenance checks.
+subjects with GitHub OIDC. The upload's immutable artifact ID is passed through
+the provenance, execution, confirmation, and publication jobs so every boundary
+downloads the same candidate rather than resolving it again by name. A dedicated
+provenance gate runs `scripts/verify-native-attestations.ts` against the exact
+workflow identity, `refs/heads/main`, and candidate commit before any downloaded
+native binary may execute. Confirmation and protected publication repeat that
+check before trusting the bytes. Candidate permissions are limited to read access
+plus OIDC, attestation, and artifact metadata writes; later jobs receive only the
+read permissions they need. Each execution job locally checks the downloaded
+directory before its first smoke. Protected publication verifies provenance
+before npm receives any package, and draft/public downloads repeat the byte and
+provenance checks.
 
 The TypeScript native updater and both native installer scripts consume these
 archives. All three verify the archive against `SHA256SUMS.archives`, permit

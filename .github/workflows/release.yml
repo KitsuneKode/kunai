@@ -109,6 +109,7 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
+      candidate_artifact_id: ${{ steps.upload-candidate.outputs.artifact-id }}
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
@@ -287,6 +288,7 @@ jobs:
           subject-path: .candidate-upload/native/*
 
       - name: Upload candidate artifacts
+        id: upload-candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}-${{ github.sha }}
@@ -340,14 +342,71 @@ jobs:
             .candidate-upload/native/SHA256SUMS
 
   # ---------------------------------------------------------------------------
+  # Verify the preserved candidate's bytes and provenance before any downstream
+  # job is allowed to execute a downloaded native binary.
+  # ---------------------------------------------------------------------------
+  native-provenance-gate:
+    name: Verify native candidate provenance
+    needs: candidate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-native-provenance
+          skip-turbo-cache: "true"
+
+      - name: Download preserved native candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
+          path: .release-download
+          merge-multiple: "true"
+
+      - name: Verify exact bytes without executing them
+        run: |
+          set -euo pipefail
+          bun run scripts/verify-release-artifact-directory.ts \
+            .release-download/native \
+            --expected-version "${{ needs.candidate.outputs.version }}" \
+            --skip-version-smoke
+
+      - name: Verify candidate provenance before native execution
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if bun run scripts/verify-native-attestations.ts \
+              .release-download/native \
+              --repo "${GITHUB_REPOSITORY}" \
+              --source-digest "${GITHUB_SHA}"; then
+              exit 0
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "::error::native candidate provenance did not verify after ${attempt} attempts"
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
   # Execute the exact preserved native candidate on each blocking host OS.
   # ---------------------------------------------------------------------------
   native-smoke:
     name: Native candidate smoke (${{ matrix.id }})
-    needs: candidate
+    needs: [candidate, native-provenance-gate]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -389,8 +448,9 @@ jobs:
       - name: Download exact preserved candidate
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
+          merge-multiple: "true"
 
       - name: Reverify exact preserved native payload
         run: >-
@@ -651,10 +711,12 @@ jobs:
 
   readme-commands-gate:
     name: Verify README commands
-    needs: candidate
+    needs: [candidate, native-provenance-gate]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
@@ -664,8 +726,15 @@ jobs:
           skip-turbo-cache: "true"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
+          merge-multiple: "true"
+
+      - name: Reverify exact preserved native payload without executing it
+        run: >-
+          bun run scripts/verify-release-artifact-directory.ts
+          .release-download/native --expected-version
+          "${{ needs.candidate.outputs.version }}" --skip-version-smoke
 
       - name: Execute README quick-start commands
         run: |
@@ -751,7 +820,7 @@ jobs:
   confirmation:
     name: Release confirmation gate
     needs:
-      [candidate, installer-gate, readme-commands-gate, live-providers-gate, native-platforms-gate]
+      [candidate, installer-gate, readme-commands-gate, live-providers-gate, native-platforms-gate, native-provenance-gate]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -761,6 +830,7 @@ jobs:
     outputs:
       version: ${{ needs.candidate.outputs.version }}
       tag: ${{ needs.candidate.outputs.tag }}
+      candidate_artifact_id: ${{ needs.candidate.outputs.candidate_artifact_id }}
       binary_artifact: ${{ steps.gate.outputs.binary_artifact }}
 
     steps:
@@ -776,8 +846,9 @@ jobs:
       - name: Download candidate artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
+          merge-multiple: "true"
 
       - name: Download every gate evidence document and hashed artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
@@ -905,8 +976,9 @@ jobs:
       - name: Download candidate artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.confirmation.outputs.version }}-${{ github.sha }}
+          artifact-ids: ${{ needs.confirmation.outputs.candidate_artifact_id }}
           path: .release-download
+          merge-multiple: "true"
 
       - name: Stage preserved npm artifacts
         run: |

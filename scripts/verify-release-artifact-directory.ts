@@ -32,14 +32,18 @@ function fileSha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-function listReleaseFiles(directory: string): readonly { name: string; size: number }[] {
-  return readdirSync(directory).map((name) => {
-    const stat = lstatSync(join(directory, name));
-    if (!stat.isFile()) {
-      throw new Error(`[release-assets] unexpected non-regular entry: ${name}`);
-    }
-    return { name, size: stat.size };
-  });
+export function listRegularReleaseFiles(
+  directory: string,
+): readonly { name: string; size: number }[] {
+  return readdirSync(directory)
+    .sort()
+    .map((name) => {
+      const stat = lstatSync(join(directory, name));
+      if (!stat.isFile()) {
+        throw new Error(`[release-assets] unexpected non-regular entry: ${name}`);
+      }
+      return { name, size: stat.size };
+    });
 }
 
 export function smokeReleaseLinuxX64(directory: string, expectedVersion: string): void {
@@ -100,7 +104,7 @@ export function smokeReleaseLinuxX64(directory: string, expectedVersion: string)
 export async function verifyReleaseArtifactDirectory(
   input: VerifyReleaseArtifactDirectoryInput,
 ): Promise<void> {
-  const files = listReleaseFiles(input.directory);
+  const files = listRegularReleaseFiles(input.directory);
   assertCompleteReleaseAssetSet(files);
 
   verifyChecksumManifest(input.directory, "SHA256SUMS", REQUIRED_BINARY_ASSET_NAMES);

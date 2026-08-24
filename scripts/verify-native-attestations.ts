@@ -2,13 +2,13 @@
 /** Verify provenance for the exact native release payload before publication. */
 
 import { spawnSync } from "node:child_process";
-import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   REQUIRED_RELEASE_ASSET_NAMES,
   assertCompleteReleaseAssetSet,
 } from "./release-asset-contract";
+import { listRegularReleaseFiles } from "./verify-release-artifact-directory";
 
 export type AttestationCommandResult = {
   readonly status: number | null;
@@ -37,19 +37,6 @@ function defaultRunner(args: readonly string[]): AttestationCommandResult {
   };
 }
 
-function exactReleaseFiles(directory: string): readonly string[] {
-  const entries = readdirSync(directory).sort();
-  const descriptors = entries.map((name) => {
-    const stat = lstatSync(join(directory, name));
-    if (!stat.isFile()) {
-      throw new Error(`[attestation] native payload entry is not a regular file: ${name}`);
-    }
-    return { name, size: stat.size };
-  });
-  assertCompleteReleaseAssetSet(descriptors);
-  return entries;
-}
-
 export function verifyNativeAttestations(input: VerifyNativeAttestationsInput): void {
   if (!REPOSITORY_PATTERN.test(input.repository)) {
     throw new Error(`[attestation] repository must be owner/name, got: ${input.repository}`);
@@ -58,15 +45,12 @@ export function verifyNativeAttestations(input: VerifyNativeAttestationsInput): 
     throw new Error("[attestation] source digest must be a 40-character Git commit SHA");
   }
 
-  const files = exactReleaseFiles(input.directory);
-  const expected = [...REQUIRED_RELEASE_ASSET_NAMES].sort();
-  if (files.length !== expected.length || files.some((name, index) => name !== expected[index])) {
-    throw new Error("[attestation] native payload does not match the exact release asset set");
-  }
+  const files = listRegularReleaseFiles(input.directory);
+  assertCompleteReleaseAssetSet(files);
 
   const run = input.run ?? defaultRunner;
   const signerWorkflow = `${input.repository}/.github/workflows/release.yml`;
-  for (const name of files) {
+  for (const { name } of files) {
     const result = run([
       "attestation",
       "verify",
