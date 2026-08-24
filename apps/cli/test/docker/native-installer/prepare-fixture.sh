@@ -6,7 +6,9 @@
 #
 # Creates:
 #   <output>/download/v<ver>/<asset>
+#   <output>/download/v<ver>/<asset>.tar.gz
 #   <output>/download/v<ver>/SHA256SUMS
+#   <output>/download/v<ver>/SHA256SUMS.archives
 #   <output>/releases/latest.json   (tag_name = highest semver arg)
 set -euo pipefail
 
@@ -25,22 +27,25 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
-sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  else
-    shasum -a 256 "$1" | awk '{print $1}'
+ARCHIVE="${BINARY}.tar.gz"
+RAW_SUMS="$(dirname "$BINARY")/SHA256SUMS"
+ARCHIVE_SUMS="$(dirname "$BINARY")/SHA256SUMS.archives"
+for required in "$ARCHIVE" "$RAW_SUMS" "$ARCHIVE_SUMS"; do
+  if [[ ! -f "$required" ]]; then
+    echo "prepare-fixture: release companion not found: $required" >&2
+    exit 1
   fi
-}
+done
 
 latest="$(printf '%s\n' "$@" | sort -V | tail -1)"
 for ver in "$@"; do
   dest="$OUT/download/v$ver"
   mkdir -p "$dest"
   cp "$BINARY" "$dest/$ASSET"
+  cp "$ARCHIVE" "$dest/$ASSET.tar.gz"
+  cp "$RAW_SUMS" "$dest/SHA256SUMS"
+  cp "$ARCHIVE_SUMS" "$dest/SHA256SUMS.archives"
   chmod 0755 "$dest/$ASSET"
-  hash="$(sha256_of "$dest/$ASSET")"
-  printf '%s  %s\n' "$hash" "$ASSET" >"$dest/SHA256SUMS"
 done
 
 mkdir -p "$OUT/releases"

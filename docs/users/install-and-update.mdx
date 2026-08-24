@@ -18,6 +18,13 @@ Default — downloads a verified release binary into a versioned store and links
 curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 ```
 
+The installer downloads the platform `.tar.gz`, verifies it with
+`SHA256SUMS.archives`, accepts exactly one expected regular-file member, and
+verifies the extracted binary again with `SHA256SUMS`. It needs the standard
+`gzip` and `tar` tools. Releases from before archive publication use the legacy
+raw binary only when the archive or archive-checksum endpoint returns HTTP 404
+or 410; integrity and network failures do not downgrade verification.
+
 Or from an existing Kunai binary:
 
 ```sh
@@ -54,6 +61,11 @@ Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-a
 ```powershell
 irm https://kunai.kitsunekode.in/install.ps1 | iex
 ```
+
+PowerShell downloads the platform `.zip`, verifies the archive and its single
+`kunai.exe` member independently, and extracts through bounded .NET streams; no
+separate zip utility is required. The same HTTP 404/410-only legacy fallback
+rule applies.
 
 Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`.
 
@@ -154,7 +166,7 @@ Release binaries are **not code-signed or notarized** today. That is intentional
 - **Windows:** SmartScreen may warn on first run. After download, `install.ps1` runs `Unblock-File` on the staged binary. You can also run `Unblock-File` manually on `kunai.exe`, or right-click → Properties → Unblock.
 - **macOS (Apple Silicon):** release binaries are cross-compiled on Linux, so they arrive **unsigned**, and arm64 macOS refuses to execute an unsigned Mach-O outright. The shell reports only `killed: 9` — no Gatekeeper dialog, and `xattr` does not help, because quarantine is not what failed. `install.sh` now ad-hoc signs the binary on your Mac (`codesign --force --sign -`); if `codesign` is unavailable it prints the exact command to run.
 - **macOS (Intel, or downloads outside the installer):** Gatekeeper quarantine can still block a manually downloaded binary. Clear it with `xattr -dr com.apple.quarantine ~/.local/bin/kunai` (or your install path).
-- **Linux:** No signing step; verify downloads against the `SHA256SUMS` file published on each GitHub Release.
+- **Linux:** No signing step. Archives are covered by `SHA256SUMS.archives`; the extracted executable is independently covered by `SHA256SUMS`.
 
 Production code signing and notarization are a post-beta goal, not a beta blocker.
 

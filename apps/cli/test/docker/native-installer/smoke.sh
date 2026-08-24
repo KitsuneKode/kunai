@@ -114,11 +114,11 @@ assert_no_operational_residue() {
   fi
 }
 
-assert_schema1_manifest() {
+assert_schema2_manifest() {
   local version="$1"
   local path="$KUNAI_CONFIG_DIR/install.json"
   [[ -f "$path" ]] || fail "install.json missing"
-  grep -qE '"schemaVersion"[[:space:]]*:[[:space:]]*1' "$path" || fail "install.json missing schemaVersion"
+  grep -qE '"schemaVersion"[[:space:]]*:[[:space:]]*2' "$path" || fail "install.json missing schemaVersion"
   grep -qE '"method"[[:space:]]*:[[:space:]]*"binary"' "$path" || fail "install.json method not binary"
   grep -qE "\"activeVersion\"[[:space:]]*:[[:space:]]*\"${version//./\\.}\"" "$path" ||
     fail "install.json activeVersion not $version"
@@ -127,6 +127,12 @@ assert_schema1_manifest() {
   grep -q '"versionedPath"' "$path" || fail "install.json versionedPath"
   grep -q '"managedPaths"' "$path" || fail "install.json managedPaths"
   grep -q '"artifactSha256"' "$path" || fail "install.json artifactSha256"
+  grep -q '"artifactName"' "$path" || fail "install.json artifactName"
+  grep -q '"artifactSizeBytes"' "$path" || fail "install.json artifactSizeBytes"
+  grep -q '"archiveName"' "$path" || fail "install.json archiveName"
+  grep -q '"archiveSha256"' "$path" || fail "install.json archiveSha256"
+  grep -q '"archiveSizeBytes"' "$path" || fail "install.json archiveSizeBytes"
+  grep -q '"archiveSourceUrl"' "$path" || fail "install.json archiveSourceUrl"
   grep -q '"target"' "$path" || fail "install.json target"
 }
 
@@ -188,11 +194,11 @@ scenario_clean_install() {
   start_fixture_server
   install_pinned 1.0.0
   assert_version_layout 1.0.0
-  assert_schema1_manifest 1.0.0
+  assert_schema2_manifest 1.0.0
   "$KUNAI_BIN_DIR/kunai" --version >/tmp/kunai-version.txt
   grep -qi '^kunai ' /tmp/kunai-version.txt || fail "kunai --version must print kunai semver"
   assert_no_operational_residue
-  pass "clean-install schema-1 ownership state"
+  pass "clean-install schema-2 archive ownership state"
 }
 
 scenario_checksum_rejection() {
@@ -204,8 +210,9 @@ scenario_checksum_rejection() {
   local writable
   writable="$(mktemp -d /tmp/kunai-corrupt-fixture.XXXXXX)"
   cp -a "$FIXTURE/." "$writable/"
-  # Corrupt the asset after SHA256SUMS was generated so checksum verification fails.
-  printf '\x00corrupt' >>"$writable/download/v1.0.0/$ASSET"
+  # Corrupt the archive after SHA256SUMS.archives was generated so transport
+  # verification fails before extraction or raw compatibility fallback.
+  printf '\x00corrupt' >>"$writable/download/v1.0.0/$ASSET.tar.gz"
   start_fixture_server "$writable"
 
   set +e
@@ -238,7 +245,7 @@ scenario_reinstall_idempotent() {
 
   install_pinned 1.0.0
   assert_version_layout 1.0.0
-  assert_schema1_manifest 1.0.0
+  assert_schema2_manifest 1.0.0
   local target_after
   target_after="$(readlink -f "$KUNAI_BIN_DIR/kunai")"
   [[ "$target_after" == "$target_before" ]] || fail "launcher target changed on reinstall"
@@ -297,7 +304,7 @@ scenario_stale_lock_recovery() {
 
   install_pinned 1.0.0
   assert_version_layout 1.0.0
-  assert_schema1_manifest 1.0.0
+  assert_schema2_manifest 1.0.0
   assert_no_operational_residue
   assert_user_data_preserved
   pass "stale-lock-recovery completed install"
@@ -347,7 +354,7 @@ scenario_custom_xdg_layout() {
   start_fixture_server
   install_pinned 1.0.0
   assert_version_layout 1.0.0
-  assert_schema1_manifest 1.0.0
+  assert_schema2_manifest 1.0.0
   [[ ! -d "$HOME/.config/kunai" ]] || fail "default ~/.config/kunai was created"
   [[ ! -d "$HOME/.local/share/kunai" ]] || fail "default ~/.local/share/kunai was created"
   [[ ! -d "$HOME/.cache/kunai" ]] || fail "default ~/.cache/kunai was created"
@@ -366,8 +373,8 @@ scenario_full_lifecycle() {
   start_fixture_server
   install_pinned 1.0.0
   assert_version_layout 1.0.0
-  assert_schema1_manifest 1.0.0
-  pass "install.sh created versioned layout (schema-1)"
+  assert_schema2_manifest 1.0.0
+  pass "install.sh created versioned layout (schema-2 archive provenance)"
 
   "$KUNAI_BIN_DIR/kunai" --version >/tmp/kunai-version.txt
   grep -qi '^kunai ' /tmp/kunai-version.txt || fail "kunai --version must print kunai semver"

@@ -54,6 +54,8 @@ $DownloadConnectTimeoutSec = if ($env:KUNAI_DOWNLOAD_CONNECT_TIMEOUT) { [int]$en
 $DownloadTotalSeconds = if ($env:KUNAI_DOWNLOAD_TOTAL_SECONDS) { [int]$env:KUNAI_DOWNLOAD_TOTAL_SECONDS } else { 300 }
 $DownloadStallMs = if ($env:KUNAI_DOWNLOAD_STALL_MS) { [int]$env:KUNAI_DOWNLOAD_STALL_MS } else { 30000 }
 $DownloadMaxBytes = if ($env:KUNAI_DOWNLOAD_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_MAX_BYTES } else { 268435456 }
+$DownloadArchiveMaxBytes = if ($env:KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES } else { 67108864 }
+$ExtractedBinaryMaxBytes = if ($env:KUNAI_EXTRACTED_BINARY_MAX_BYTES) { [long]$env:KUNAI_EXTRACTED_BINARY_MAX_BYTES } else { 134217728 }
 $DownloadChecksumMaxBytes = if ($env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES } else { 1048576 }
 $DownloadMaxAttempts = if ($env:KUNAI_DOWNLOAD_MAX_ATTEMPTS) { [int]$env:KUNAI_DOWNLOAD_MAX_ATTEMPTS } else { 3 }
 $DownloadRetryBaseMs = if ($env:KUNAI_DOWNLOAD_RETRY_BASE_MS) { [int]$env:KUNAI_DOWNLOAD_RETRY_BASE_MS } else { 1000 }
@@ -63,6 +65,7 @@ $ActivationLockCorruptGraceMs = if ($env:KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS)
 $ActivationLockTimeoutMs = [Math]::Max(0, $ActivationLockTimeoutMs)
 $ActivationLockPollMs = [Math]::Max(1, $ActivationLockPollMs)
 $ActivationLockCorruptGraceMs = [Math]::Max(0, $ActivationLockCorruptGraceMs)
+$script:LastDownloadHttpStatus = $null
 
 function Write-Utf8File([string]$Path, [string]$Content) {
   $encoding = New-Object System.Text.UTF8Encoding $false
@@ -227,6 +230,7 @@ function Invoke-BoundedDownload {
     [string]$Label = 'download'
   )
 
+  $script:LastDownloadHttpStatus = $null
   $started = [DateTime]::UtcNow
   $attempt = 1
   while ($attempt -le $DownloadMaxAttempts) {
@@ -255,6 +259,7 @@ function Invoke-BoundedDownload {
       ).GetAwaiter().GetResult()
 
       $status = [int]$response.StatusCode
+      $script:LastDownloadHttpStatus = $status
       if ($status -lt 200 -or $status -ge 300) {
         if ((Test-RetryableHttpStatus $status) -and $attempt -lt $DownloadMaxAttempts) {
           Write-Info "Retrying $Label (attempt $($attempt + 1)/$DownloadMaxAttempts) after HTTP $status..."
@@ -335,6 +340,96 @@ function Invoke-BoundedDownload {
   throw "Download failed for $Label after $DownloadMaxAttempts attempts."
 }
 
+function Get-ChecksumEntry([string]$ManifestPath, [string]$AssetName) {
+  $digests = @()
+  foreach ($line in Get-Content -LiteralPath $ManifestPath) {
+    if ($line -match '^([0-9A-Fa-f]{64})\s{2}([^\s]+)$' -and $Matches[2] -eq $AssetName) {
+      $digests += $Matches[1].ToLowerInvariant()
+      continue
+    }
+    if ($line -match "\s$([regex]::Escape($AssetName))\s*$") {
+      throw "Checksum manifest has a malformed entry for $AssetName."
+    }
+  }
+  if ($digests.Count -ne 1) {
+    throw "Checksum manifest must contain exactly one valid entry for $AssetName."
+  }
+  return [string]$digests[0]
+}
+
+function Expand-KunaiReleaseZip(
+  [string]$ArchivePath,
+  [string]$ExpectedName,
+  [string]$DestinationPath
+) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = $null
+  $input = $null
+  $output = $null
+  try {
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
+    if ($zip.Entries.Count -ne 1) {
+      throw 'Release archive must contain exactly one regular file.'
+    }
+    $entry = $zip.Entries[0]
+    $name = [string]$entry.FullName
+    if ([string]::IsNullOrEmpty($name) -or [System.IO.Path]::IsPathRooted($name) -or
+      $name.Contains('/') -or $name.Contains('\') -or $name -in @('.', '..')) {
+      throw "Archive contains an unsafe traversal or absolute-path entry: $name"
+    }
+    if ($name -ne $ExpectedName) {
+      throw "Archive contains unexpected entry '$name'; expected '$ExpectedName'."
+    }
+
+    $attributes = [uint32]([int64]$entry.ExternalAttributes -band 0xffffffffL)
+    $unixType = ($attributes -shr 16) -band 0xf000
+    $dosAttributes = $attributes -band 0xffff
+    if (($unixType -ne 0 -and $unixType -ne 0x8000) -or
+      (($dosAttributes -band 0x410) -ne 0)) {
+      throw 'Archive entry must be a regular file; symlink, directory, and reparse entries are forbidden.'
+    }
+    if ($entry.Length -le 0 -or $entry.Length -gt $ExtractedBinaryMaxBytes) {
+      throw "Extracted binary size $($entry.Length) exceeds the $ExtractedBinaryMaxBytes byte budget."
+    }
+    if ($entry.CompressedLength -gt $DownloadArchiveMaxBytes) {
+      throw "Compressed zip entry exceeds the $DownloadArchiveMaxBytes byte budget."
+    }
+
+    $input = $entry.Open()
+    $output = [System.IO.File]::Open(
+      $DestinationPath,
+      [System.IO.FileMode]::CreateNew,
+      [System.IO.FileAccess]::Write,
+      [System.IO.FileShare]::None
+    )
+    $buffer = New-Object byte[] 8192
+    $total = [long]0
+    while ($true) {
+      $read = $input.Read($buffer, 0, $buffer.Length)
+      if ($read -le 0) { break }
+      $total += $read
+      if ($total -gt $ExtractedBinaryMaxBytes) {
+        throw "Extracted binary exceeds the $ExtractedBinaryMaxBytes byte budget."
+      }
+      $output.Write($buffer, 0, $read)
+    }
+    if ($total -ne $entry.Length) {
+      throw "Extracted binary size $total does not match the zip entry size $($entry.Length)."
+    }
+  }
+  catch {
+    if (Test-Path -LiteralPath $DestinationPath) {
+      Remove-Item -LiteralPath $DestinationPath -Force -ErrorAction SilentlyContinue
+    }
+    throw
+  }
+  finally {
+    if ($null -ne $output) { $output.Dispose() }
+    if ($null -ne $input) { $input.Dispose() }
+    if ($null -ne $zip) { $zip.Dispose() }
+  }
+}
+
 function Write-Manifest(
   [string]$MethodName,
   [string]$Ver,
@@ -342,9 +437,15 @@ function Write-Manifest(
   [string]$VersionPath = '',
   [string]$Target = '',
   [string]$Sha256 = '',
-  [string]$PreviousVersion = ''
+  [string]$PreviousVersion = '',
+  [string]$ArtifactName = '',
+  [long]$ArtifactSizeBytes = 0,
+  [string]$ArchiveName = '',
+  [string]$ArchiveSha256 = '',
+  [long]$ArchiveSizeBytes = 0,
+  [string]$ArchiveSourceUrl = ''
 ) {
-  if ($DryRun) { Write-Info "[dry-run] would write schema-1 manifest ($MethodName)"; return }
+  if ($DryRun) { Write-Info "[dry-run] would write schema-2 manifest ($MethodName)"; return }
   New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
   $manifestPath = Join-Path $ConfigDir 'install.json'
   $now = Get-IsoNow
@@ -363,7 +464,7 @@ function Write-Manifest(
   }
 
   $manifest = [ordered]@{
-    schemaVersion     = 1
+    schemaVersion     = 2
     method            = $MethodName
     activeVersion     = $Ver
     preferredChannel  = 'stable'
@@ -377,6 +478,14 @@ function Write-Manifest(
   if ($PreviousVersion) { $manifest.previousVersion = $PreviousVersion }
   if ($Target) { $manifest.target = $Target }
   if ($Sha256) { $manifest.artifactSha256 = $Sha256 }
+  if ($ArtifactName) { $manifest.artifactName = $ArtifactName }
+  if ($ArtifactSizeBytes -gt 0) { $manifest.artifactSizeBytes = $ArtifactSizeBytes }
+  if ($ArchiveName) {
+    $manifest.archiveName = $ArchiveName
+    $manifest.archiveSha256 = $ArchiveSha256
+    $manifest.archiveSizeBytes = $ArchiveSizeBytes
+    $manifest.archiveSourceUrl = $ArchiveSourceUrl
+  }
 
   $tmp = "$manifestPath.tmp-$PID"
   Write-Utf8File $tmp (($manifest | ConvertTo-Json -Depth 6) + "`n")
@@ -1222,10 +1331,15 @@ function Install-Binary {
   $target = "windows-$arch"
   $url = "$base/$asset"
   $sumsUrl = "$base/SHA256SUMS"
+  $archive = $asset.Substring(0, $asset.Length - 4) + '.zip'
+  $archiveUrl = "$base/$archive"
+  $archiveSumsUrl = "$base/SHA256SUMS.archives"
 
   Write-Info "Downloading $asset (v$resolved) ..."
   if ($DryRun) {
-    Write-Info "[dry-run] would download (bounded HttpClient), verify SHA256, install to $versionPath and $BinPath"
+    Write-Info "[dry-run] would download and verify $archive against SHA256SUMS.archives"
+    Write-Info "[dry-run] would safely extract $asset, verify it against SHA256SUMS, and install to $versionPath and $BinPath"
+    Write-Info '[dry-run] raw compatibility fallback is allowed only for archive HTTP 404/410'
     Write-Manifest 'binary' $resolved $BinPath $versionPath $target
     return
   }
@@ -1239,6 +1353,8 @@ function Install-Binary {
   $activationLockPath = Join-Path $LocksDir 'activation.lock'
   $stagedBin = Join-Path $staging $asset
   $stagedSums = Join-Path $staging 'SHA256SUMS'
+  $stagedArchive = Join-Path $staging $archive
+  $stagedArchiveSums = Join-Path $staging 'SHA256SUMS.archives'
   $metadataPath = Join-Path (Join-Path $VersionsDir $resolved) 'version.json'
 
   $cleanupDone = $false
@@ -1251,42 +1367,98 @@ function Install-Binary {
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
     Begin-InstallTransaction $txnId $kind $resolved $staging $txnPath
 
+    $archiveAvailable = $true
+    $archiveGot = ''
+    $archiveSize = [long]0
+    $archiveSourceUrl = ''
+    $archiveNameUsed = ''
+    $artifactSourceUrl = $url
+    try {
+      Invoke-BoundedDownload -Url $archiveSumsUrl -DestinationPath $stagedArchiveSums `
+        -MaxBytes $DownloadChecksumMaxBytes -Label 'SHA256SUMS.archives'
+    }
+    catch {
+      if ($script:LastDownloadHttpStatus -in @(404, 410)) {
+        $archiveAvailable = $false
+        Write-Info "Archive checksums are unavailable for v$resolved; using the legacy raw asset."
+      }
+      else {
+        Write-Warn 'Download failed for SHA256SUMS.archives.'
+        Write-Warn 'Try: -Method npm | -Method bun | -Method source'
+        Write-Warn 'Or pin a version: -Version X.Y.Z'
+        throw
+      }
+    }
+
+    if ($archiveAvailable) {
+      try { $archiveWant = Get-ChecksumEntry $stagedArchiveSums $archive }
+      catch { throw "SHA256SUMS.archives must contain exactly one valid entry for $archive. $($_.Exception.Message)" }
+      try {
+        Invoke-BoundedDownload -Url $archiveUrl -DestinationPath $stagedArchive `
+          -MaxBytes $DownloadArchiveMaxBytes -Label $archive
+      }
+      catch {
+        if ($script:LastDownloadHttpStatus -in @(404, 410)) {
+          $archiveAvailable = $false
+          Write-Info "Archive asset is unavailable for v$resolved; using the legacy raw asset."
+        }
+        else {
+          Write-Warn "Download failed for $archive."
+          Write-Warn 'Try: -Method npm | -Method bun | -Method source'
+          Write-Warn 'Or pin a version: -Version X.Y.Z'
+          throw
+        }
+      }
+    }
+
+    if ($archiveAvailable) {
+      $archiveGot = (Get-FileHash -Path $stagedArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($archiveWant -ne $archiveGot) {
+        throw "Checksum mismatch for $archive (expected '$archiveWant', got '$archiveGot')."
+      }
+      $archiveSize = [long](Get-Item -LiteralPath $stagedArchive).Length
+      $archiveSourceUrl = $archiveUrl
+      $archiveNameUsed = $archive
+      $artifactSourceUrl = $archiveUrl
+    }
+
     try {
       Invoke-BoundedDownload -Url $sumsUrl -DestinationPath $stagedSums -MaxBytes $DownloadChecksumMaxBytes -Label 'SHA256SUMS'
     }
     catch {
-      Write-Warn "Download failed for SHA256SUMS."
+      Write-Warn 'Download failed for SHA256SUMS.'
       Write-Warn 'Try: -Method npm | -Method bun | -Method source'
       Write-Warn 'Or pin a version: -Version X.Y.Z'
       throw
     }
+    try { $want = Get-ChecksumEntry $stagedSums $asset }
+    catch { throw "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries. $($_.Exception.Message)" }
 
-    try {
-      Invoke-BoundedDownload -Url $url -DestinationPath $stagedBin -MaxBytes $DownloadMaxBytes -Label $asset
+    if ($archiveAvailable) {
+      Expand-KunaiReleaseZip $stagedArchive $asset $stagedBin
     }
-    catch {
-      Write-Warn "Download failed for $asset."
-      Write-Warn 'Try: -Method npm | -Method bun | -Method source'
-      Write-Warn 'Or pin a version: -Version X.Y.Z'
-      throw
-    }
-
-    if ((Get-Item -LiteralPath $stagedBin).Length -eq 0) {
-      throw "Downloaded asset $asset is empty; the release is incomplete. Try -Method npm, -Method bun, or -Method source."
-    }
-
-    $sumsText = Get-Content -LiteralPath $stagedSums -Raw
-    $want = ($sumsText -split "`n" |
-      Where-Object { $_ -match "\s$([regex]::Escape($asset))\s*$" }) -replace '\s.*', ''
-    $want = ([string]$want).Trim().ToLowerInvariant()
-
-    if ([string]::IsNullOrEmpty($want)) {
-      throw "SHA256SUMS has no entry for $asset; the release is incomplete. Try -Method npm, -Method bun, or -Method source."
+    else {
+      try {
+        Invoke-BoundedDownload -Url $url -DestinationPath $stagedBin -MaxBytes $DownloadMaxBytes -Label $asset
+      }
+      catch {
+        Write-Warn "Download failed for $asset."
+        Write-Warn 'Try: -Method npm | -Method bun | -Method source'
+        Write-Warn 'Or pin a version: -Version X.Y.Z'
+        throw
+      }
     }
 
+    $sizeBytes = [long](Get-Item -LiteralPath $stagedBin).Length
+    if ($sizeBytes -le 0) {
+      throw "Downloaded or extracted asset $asset is empty; the release is incomplete."
+    }
+    if ($sizeBytes -gt $ExtractedBinaryMaxBytes) {
+      throw "Binary size $sizeBytes exceeds the $ExtractedBinaryMaxBytes byte budget."
+    }
     $got = (Get-FileHash -Path $stagedBin -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($want -ne $got) {
-      throw "Checksum mismatch for $asset (expected '$want', got '$got')."
+      throw "Checksum mismatch for extracted $asset (expected '$want', got '$got')."
     }
 
     New-Item -ItemType Directory -Force -Path (Split-Path $versionPath) | Out-Null
@@ -1295,9 +1467,8 @@ function Install-Binary {
     if ($OnWindows) { Unblock-File -Path $versionTmp -ErrorAction SilentlyContinue }
     Move-Item -Force -Path $versionTmp -Destination $versionPath
 
-    $sizeBytes = [long](Get-Item -LiteralPath $versionPath).Length
     Write-VersionMetadata -Ver $resolved -Target $target -ArtifactName $asset -Sha256 $got `
-      -SizeBytes $sizeBytes -SourceUrl $url -Path $metadataPath
+      -SizeBytes $sizeBytes -SourceUrl $artifactSourceUrl -Path $metadataPath
 
     $activationOwnerId = Acquire-ActivationLock $resolved $activationLockPath
     # Another version may have activated during this download. Read shared state
@@ -1312,7 +1483,10 @@ function Install-Binary {
 
       $prevArg = ''
       if ($activationPrevious -and $activationPrevious -ne $resolved) { $prevArg = $activationPrevious }
-      Write-Manifest 'binary' $resolved $BinPath $versionPath $target $got $prevArg
+      Write-Manifest -MethodName 'binary' -Ver $resolved -Launcher $BinPath `
+        -VersionPath $versionPath -Target $target -Sha256 $got -PreviousVersion $prevArg `
+        -ArtifactName $asset -ArtifactSizeBytes $sizeBytes -ArchiveName $archiveNameUsed `
+        -ArchiveSha256 $archiveGot -ArchiveSizeBytes $archiveSize -ArchiveSourceUrl $archiveSourceUrl
       $launcherActivated = $false
     }
     catch {

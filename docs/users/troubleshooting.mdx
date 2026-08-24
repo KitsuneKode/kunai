@@ -302,7 +302,7 @@ More: [Share links](/docs/users/share-links).
 
 3. **Ownership mismatch:** use the owner channel. Binary installs → `kunai upgrade` / `kunai uninstall`. npm → `npm uninstall -g @kitsunekode/kunai` or ownership-aware `kunai uninstall`. Do not delete a package-manager install with a raw `rm` of another channel's launcher.
 
-4. **Checksum / 404 on install or upgrade:** confirm the release tag exists and `SHA256SUMS` matches. Retry with `kunai install --force` or pin an explicit version (`kunai install --force X.Y.Z` / `install.sh … --version X.Y.Z`). A 404 usually means the asset for your target (for example musl vs glibc) is missing — check [Platforms](/docs/users/platforms).
+4. **Checksum / 404 on install or upgrade:** confirm the release tag exists and both `SHA256SUMS.archives` (downloaded archive) and `SHA256SUMS` (extracted binary) match. Retry with `kunai install --force` or pin an explicit version (`kunai install --force X.Y.Z` / `install.sh … --version X.Y.Z`). HTTP 404/410 on an archive endpoint may select the older raw compatibility asset; checksum failures, malformed archives, timeouts, and 5xx responses fail closed instead. A persistent 404 usually means the asset for your target (for example musl vs glibc) is missing — check [Platforms](/docs/users/platforms).
 
 5. **Rollback** to a previously verified local version (does not re-download):
 
@@ -324,7 +324,7 @@ More: [Share links](/docs/users/share-links).
 
    - **macOS Gatekeeper quarantine** (Intel, or a binary downloaded outside the installer): `xattr -dr com.apple.quarantine` on the install path.
    - **Windows SmartScreen:** `Unblock-File` on `kunai.exe`.
-   - **Linux:** verify against `SHA256SUMS`.
+   - **Linux:** verify the archive against `SHA256SUMS.archives` and the extracted binary against `SHA256SUMS`.
 
    Details: [Unsigned binaries](/docs/users/install-and-update#unsigned-binaries-beta).
 
@@ -338,7 +338,7 @@ More: [Share links](/docs/users/share-links).
 | --- | --- |
 | PATH candidates / winner | `kunai doctor` or `kunai doctor --json` |
 | Install channel / ownership | `~/.config/kunai/install.json` (Windows: `%APPDATA%\kunai\install.json`) |
-| Checksum / verification | doctor findings; GitHub Release `SHA256SUMS` |
+| Checksum / verification | doctor findings; GitHub Release `SHA256SUMS.archives` and `SHA256SUMS` |
 | Rollback candidates | `kunai rollback --list` |
 
 More: [Install and update](/docs/users/install-and-update), [Platforms](/docs/users/platforms).

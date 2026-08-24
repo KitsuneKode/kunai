@@ -16,9 +16,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 
+import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 import { getKunaiPaths } from "@kunai/storage";
 
+import { createReleaseArchive } from "../../scripts/build-release-archives";
 import { describePosixOnly as describe } from "../helpers/platform-gates";
 import {
   createInstallerSandbox,
@@ -32,6 +35,60 @@ import {
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_SH = join(REPO_ROOT, "install.sh");
+
+function hostInstallShTarget() {
+  const asset = hostInstallShAsset();
+  const target = RELEASE_BINARY_TARGETS.find((candidate) => candidate.out === asset);
+  if (!target) throw new Error(`Missing release target for ${asset}`);
+  return target;
+}
+
+function rewriteTarHeader(archive: Uint8Array, mutate: (header: Uint8Array) => void): Uint8Array {
+  const tar = new Uint8Array(gunzipSync(archive));
+  const header = tar.subarray(0, 512);
+  mutate(header);
+  header.fill(0x20, 148, 156);
+  const sum = header.reduce((total, byte) => total + byte, 0);
+  header.set(new TextEncoder().encode(`${sum.toString(8).padStart(6, "0")}\0 `), 148);
+  return new Uint8Array(gzipSync(tar));
+}
+
+function duplicateTarMember(archive: Uint8Array, bodyLength: number): Uint8Array {
+  const tar = new Uint8Array(gunzipSync(archive));
+  const memberLength = 512 + Math.ceil(bodyLength / 512) * 512;
+  const output = new Uint8Array(memberLength * 2 + 1_024);
+  output.set(tar.subarray(0, memberLength), 0);
+  output.set(tar.subarray(0, memberLength), memberLength);
+  return new Uint8Array(gzipSync(output));
+}
+
+function invalidTarArchive(
+  kind:
+    | "absolute"
+    | "corrupt"
+    | "extra"
+    | "hardlink"
+    | "missing"
+    | "symlink"
+    | "traversal"
+    | "wrong",
+  canonical: Uint8Array,
+  bodyLength: number,
+): Uint8Array {
+  if (kind === "corrupt") return new TextEncoder().encode("not-a-gzip-archive");
+  if (kind === "extra") return duplicateTarMember(canonical, bodyLength);
+  if (kind === "missing") return new Uint8Array(gzipSync(new Uint8Array(1_024)));
+  return rewriteTarHeader(canonical, (header) => {
+    if (kind === "symlink" || kind === "hardlink") {
+      header[156] = (kind === "symlink" ? "2" : "1").charCodeAt(0);
+      return;
+    }
+    const name =
+      kind === "absolute" ? "/tmp/kunai" : kind === "traversal" ? "../kunai" : "wrong-binary";
+    header.fill(0, 0, 100);
+    header.set(new TextEncoder().encode(name), 0);
+  });
+}
 
 async function waitForPaths(paths: readonly string[]): Promise<void> {
   const deadline = Date.now() + 5_000;
@@ -248,6 +305,308 @@ describe("install.sh dry-run", () => {
 });
 
 describe("install.sh release asset failures", () => {
+  test("installs the verified tar.gz member and records archive provenance", async () => {
+    const target = hostInstallShTarget();
+    const body = "#!/bin/sh\necho archived-kunai\n";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-archive-ok");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${binaryDigest}  ${target.out}\n`,
+          },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+          });
+
+          expect(result.status, result.stderr).toBe(0);
+          expect(evidence.requests).toEqual([
+            "/download/v9.8.7/SHA256SUMS.archives",
+            `/download/v9.8.7/${target.archiveName}`,
+            "/download/v9.8.7/SHA256SUMS",
+          ]);
+          expect(readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai"), "utf8")).toBe(
+            body,
+          );
+          const manifest = JSON.parse(
+            readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
+          ) as Record<string, unknown>;
+          expect(manifest).toMatchObject({
+            schemaVersion: 2,
+            artifactName: target.out,
+            artifactSha256: binaryDigest,
+            artifactSizeBytes: Buffer.byteLength(body),
+            archiveName: target.archiveName,
+            archiveSha256: archiveDigest,
+            archiveSizeBytes: archive.length,
+            archiveSourceUrl: `${baseUrl}/download/v9.8.7/${target.archiveName}`,
+          });
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.each([
+    "absolute",
+    "corrupt",
+    "extra",
+    "hardlink",
+    "missing",
+    "symlink",
+    "traversal",
+    "wrong",
+  ] as const)("rejects a %s tar archive without raw fallback or residue", async (kind) => {
+    const target = hostInstallShTarget();
+    const body = "#!/bin/sh\necho safe-binary\n";
+    const canonical = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archive = invalidTarArchive(kind, canonical, Buffer.byteLength(body));
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox(`install-sh-archive-${kind}`);
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${binaryDigest}  ${target.out}\n`,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body: "LEGACY-RAW-MUST-NOT-RUN" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+
+          expect(result.status).not.toBe(0);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+          expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+          expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects archive checksum mismatch without raw fallback", async () => {
+    const target = hostInstallShTarget();
+    const body = "archive-checksum-mismatch";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const sandbox = createInstallerSandbox("install-sh-archive-mismatch");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${"0".repeat(64)}  ${target.archiveName}\n`,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body: "legacy" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).not.toBe(0);
+          expect(result.stderr).toContain(`Checksum mismatch for ${target.archiveName}`);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects archive and decompressed size bombs and cleans staging", async () => {
+    const target = hostInstallShTarget();
+    const body = "binary-larger-than-four-bytes";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    for (const [label, env] of [
+      ["archive", { KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES: "8" }],
+      ["decompressed", { KUNAI_EXTRACTED_BINARY_MAX_BYTES: "4" }],
+    ] as const) {
+      const sandbox = createInstallerSandbox(`install-sh-${label}-bomb`);
+      try {
+        await withReleaseFixture(
+          {
+            [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+            "/download/v9.8.7/SHA256SUMS.archives": {
+              body: `${archiveDigest}  ${target.archiveName}\n`,
+            },
+            "/download/v9.8.7/SHA256SUMS": {
+              body: `${binaryDigest}  ${target.out}\n`,
+            },
+          },
+          async (baseUrl) => {
+            const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+              ...sandbox.env,
+              ...env,
+              KUNAI_DL_BASE: baseUrl,
+              KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
+            });
+            expect(result.status).not.toBe(0);
+            expect(`${result.stderr}${result.stdout}`).toMatch(/size|budget|exceeds/i);
+            expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+          },
+        );
+      } finally {
+        sandbox.cleanup();
+      }
+    }
+  });
+
+  test("fails closed when the tar extractor is missing", async () => {
+    const target = hostInstallShTarget();
+    const body = "archive-needs-extractor";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-missing-extractor");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${binaryDigest}  ${target.out}\n`,
+          },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ARCHIVE_TAR_COMMAND: "kunai-test-missing-tar",
+          });
+          expect(result.status).not.toBe(0);
+          expect(result.stderr).toContain("kunai-test-missing-tar is required");
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.each([
+    ["checksum", 404],
+    ["checksum", 410],
+    ["archive", 404],
+    ["archive", 410],
+  ] as const)("falls back to the legacy raw asset only for %s HTTP %i", async (missing, status) => {
+    const target = hostInstallShTarget();
+    const body = "legacy-raw-fallback";
+    const canonical = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archiveDigest = createHash("sha256").update(canonical).digest("hex");
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox(`install-sh-fallback-${missing}-${status}`);
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]:
+            missing === "archive" ? { status } : { body: canonical },
+          "/download/v9.8.7/SHA256SUMS.archives":
+            missing === "checksum"
+              ? { status }
+              : { body: `${archiveDigest}  ${target.archiveName}\n` },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${binaryDigest}  ${target.out}\n`,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status, result.stderr).toBe(0);
+          expect(evidence.requests).toContain(`/download/v9.8.7/${target.out}`);
+          expect(readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai"), "utf8")).toBe(
+            body,
+          );
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("does not use raw fallback for archive HTTP 500", async () => {
+    const target = hostInstallShTarget();
+    const sandbox = createInstallerSandbox("install-sh-archive-500");
+    try {
+      await withReleaseFixture(
+        {
+          "/download/v9.8.7/SHA256SUMS.archives": { status: 500 },
+          [`/download/v9.8.7/${target.out}`]: { body: "legacy" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
+          });
+          expect(result.status).not.toBe(0);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("does not use raw fallback when the archive checksum download stalls", async () => {
+    const target = hostInstallShTarget();
+    const sandbox = createInstallerSandbox("install-sh-archive-stall");
+    try {
+      await withReleaseFixture(
+        {
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${"a".repeat(64)}  ${target.archiveName}\n`,
+            chunkDelayMs: 1_100,
+            chunkSize: 1,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body: "legacy" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
+            KUNAI_DOWNLOAD_SPEED_LIMIT: "10",
+            KUNAI_DOWNLOAD_SPEED_TIME: "1",
+          });
+          expect(result.status).not.toBe(0);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+          expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("pins a resolved latest binary and checksum to the immutable release URL", async () => {
     const asset = hostInstallShAsset();
     const body = "#!/bin/sh\necho kunai-fixture\n";
@@ -275,6 +634,7 @@ describe("install.sh release asset failures", () => {
           expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
           expect(evidence.requests).toEqual([
             "/releases/latest",
+            "/download/v9.8.7/SHA256SUMS.archives",
             "/download/v9.8.7/SHA256SUMS",
             `/download/v9.8.7/${asset}`,
           ]);
@@ -389,6 +749,7 @@ describe("install.sh release asset failures", () => {
           expect(result.status).toBe(0);
           expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
           expect(evidence.requests).toEqual([
+            "/download/v9.8.7/SHA256SUMS.archives",
             "/download/v9.8.7/SHA256SUMS",
             `/download/v9.8.7/${asset}`,
           ]);
@@ -398,7 +759,7 @@ describe("install.sh release asset failures", () => {
           const manifest = JSON.parse(
             readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
           ) as Record<string, unknown>;
-          expect(manifest.schemaVersion).toBe(1);
+          expect(manifest.schemaVersion).toBe(2);
           expect(manifest.method).toBe("binary");
           expect(manifest.activeVersion).toBe("9.8.7");
           expect(manifest.preferredChannel).toBe("stable");
@@ -406,6 +767,8 @@ describe("install.sh release asset failures", () => {
           expect(manifest.versionedPath).toBe(join(sandbox.dataDir, "versions", "9.8.7", "kunai"));
           expect(manifest.downloadBaseUrl).toBe(baseUrl);
           expect(manifest.artifactSha256).toBe(digest);
+          expect(manifest.artifactName).toBe(asset);
+          expect(manifest.artifactSizeBytes).toBe(Buffer.byteLength(body));
           expect(Array.isArray(manifest.managedPaths)).toBe(true);
           expect(manifest.managedPaths).toContain(sandbox.dataDir);
           expect(manifest.managedPaths).toContain(sandbox.cacheDir);
