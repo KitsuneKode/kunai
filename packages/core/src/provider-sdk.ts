@@ -1,6 +1,7 @@
 import type {
   EndpointHealthPort,
   ProviderAuthPort,
+  ProviderCachePort,
   ProviderFetchPort,
   ProviderId,
   ProviderModule,
@@ -33,6 +34,7 @@ export function createProviderRuntimeContext({
   auth,
   endpointHealth,
   titleBridge,
+  cache,
   emit,
 }: {
   readonly now?: () => string;
@@ -43,6 +45,7 @@ export function createProviderRuntimeContext({
   readonly auth?: ProviderAuthPort;
   readonly endpointHealth?: EndpointHealthPort;
   readonly titleBridge?: ProviderTitleBridgePort;
+  readonly cache?: ProviderCachePort;
   readonly emit?: (event: ProviderTraceEvent) => void;
 } = {}): ProviderRuntimeContext {
   return {
@@ -54,6 +57,7 @@ export function createProviderRuntimeContext({
     auth,
     endpointHealth,
     titleBridge,
+    cache,
     emit,
   };
 }

@@ -7,6 +7,7 @@ import {
   type ProviderPriorityInput,
 } from "@kunai/core";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
+import { ProviderCacheRepository } from "@kunai/storage";
 
 import { PlaybackResolveCoordinator } from "../services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
@@ -16,6 +17,7 @@ import {
   resolveProviderMaxAttempts,
 } from "../services/playback/provider-resolve-budget-policy";
 import { StreamHealthService } from "../services/playback/StreamHealthService";
+import { createProviderCachePort } from "../services/providers/provider-cache-port";
 import { createProviderPrioritySnapshot } from "../services/providers/provider-priority";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import { createProviderRegistry } from "../services/providers/ProviderRegistry";
@@ -101,6 +103,9 @@ export async function bootstrapProviders(
         token: process.env.KUNAI_RELAY_TOKEN,
       },
     });
+  const providerCachePort = createProviderCachePort(
+    new ProviderCacheRepository(persistence.cacheDb),
+  );
   const engine = createProviderEngine({
     modules: providerModules,
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
@@ -108,6 +113,7 @@ export async function bootstrapProviders(
     hedgeDelayMs: resolveProviderHedgeDelayMs(config.startupPriority),
     fetch: createProviderFetchPort,
     endpointHealth,
+    cache: providerCachePort,
     titleBridge: titleBridgePort,
     auth: {
       getSecret(providerId, key) {
