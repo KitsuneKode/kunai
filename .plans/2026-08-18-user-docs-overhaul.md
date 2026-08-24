@@ -27,7 +27,7 @@ lastReviewed: "2026-08-18"
 - Do not hand-edit generated tables; fix source or `apps/docs/scripts/sync-code-metadata.ts`.
 - `bun run test` never `bun test`.
 - Canonical URL env is `DOCS_SITE_URL` (not `NEXT_PUBLIC_DOCS_SITE_URL`).
-- Relay is metadata-only; `providerRelay.baseUrl` default empty; `videoFallback` has no production reader (K-04) — do not promise video relay.
+- Relay is metadata-only; `providerRelay.baseUrl` defaults empty and no video-relay configuration exists.
 - Analytics: explicit opt-in, five-key payload. Default `analyticsEndpoint` is already `""` and means “use the shipped URL”, not “disable”. Document that; do not treat empty config as a kill switch.
 
 ---
@@ -79,7 +79,7 @@ Verified against source. Each item is a shipping lie.
 | Failure-class table                                       | troubleshooting                   | map `userSummary` strings                                             |
 | YouTube playlists/live/SponsorBlock                       | providers or new section          | `what-you-can-do` has zero YouTube                                    |
 | Absolute vs seasonal episodes, AniSkip defaults           | playback / anime                  | `skipIntro: true`, `skipCredits: true`, cour 2+ MAL gap               |
-| Relay stand-up for binary users                           | providers                         | metadata-only; no public URL; K-04 unused `videoFallback`             |
+| Relay stand-up for binary users                           | providers                         | metadata-only; no public URL or media route                           |
 | Tracker outbox / fail-closed                              | customization or reliability      | do not call it production                                             |
 | Discord client id vs README “just run Discord”            | customization + README            |                                                                       |
 | Downloads resume-on-quit                                  | downloads-and-offline.md          | already in README                                                     |

@@ -1,9 +1,11 @@
 # 023 — CLI surface honesty: packaging, flags, docs, first run
 
-> **2026-08-14 release reconciliation:** K-16 (`--dry-run` scope) is the
-> release-blocking slice. Recheck every other section against live code before
-> executing it. The old poster-helper installer premise in 023.7 was retired by
-> PR #35; posters have no external dependency.
+> **2026-08-24 release reconciliation:** K-16 (`--dry-run` scope) was fixed by
+> PR #144. The launch path now renders a pure bootstrap plan and returns before
+> locks, storage, container bootstrap, probes, or dependency checks. Recheck
+> every other section against live code before executing it. The old
+> poster-helper installer premise in 023.7 was retired by PR #35; posters have
+> no external dependency.
 
 - **Written against commit**: `01ab215b`
 - **Priority**: P2
@@ -66,13 +68,10 @@ that installs with **no Bun on PATH** and asserts the install succeeds and
 
 ## 023.2 — Flags that lie (S)
 
-- **`--dry-run` changes everything except the one path it guards.** Read at exactly
-  one site: `main.ts:633`, inside the `installProtocolHandler` branch. Yet
-  `docs/users/cli-reference.mdx:88` says it "prints the planned bootstrap without
-  changing state" — in reality `kunai --dry-run -S "Dune"` boots the shell, writes
-  config, runs update checks and can start playback. **Fix:** reject `--dry-run`
-  combined with anything other than `--install-protocol-handler` / `rollback`, exit
-  non-zero, and correct the docs.
+- **`--dry-run` scope — landed in PR #144.** Protocol registration and rollback
+  retain their dedicated plans. Other launch combinations render the pure
+  bootstrap intent and return before any mutable startup work, so the global
+  help promise is now true rather than silently starting playback.
 - **`--no-user-mpv-config` is a no-op.** See plan 020.5 — same fix, land it there.
 - **Typos become searches.** Subcommands are matched by exact `argv[0]`
   (`main.ts:559-596`); anything else falls through to

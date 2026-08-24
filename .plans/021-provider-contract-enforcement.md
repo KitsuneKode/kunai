@@ -1,5 +1,11 @@
 # 021 — Make the provider contract enforced instead of decorative
 
+> **2026-08-24 release reconciliation:** K-04 is complete. The unused video
+> fallback flag, media-host allowlist, and URL rewrite helper were deleted; the
+> relay contract is metadata-only. K-08's generic two-symbol baseline was split:
+> geo-block detection remains the explicit Stage 2 debt below rather than being
+> conflated with the retired video-relay promise.
+
 - **Written against commit**: `01ab215b`
 - **Priority**: P2
 - **Effort**: L (staged; land finding-by-finding, not in one change)
@@ -17,7 +23,6 @@ by grep across `apps/cli/src` + `packages/*/src`, excluding tests and declaratio
 | `relaySafe` (12 sites)                   | 0                  |
 | `manifest.capabilities` (every provider) | 0                  |
 | `detectGeoBlockedProviderResponse`       | 0                  |
-| `rewriteStreamUrlForRelay`               | 0                  |
 | `Provider.resolveStream`                 | 0                  |
 
 Meanwhile provider identity is hardcoded into nine "agnostic" modules. The net cost:
@@ -44,7 +49,7 @@ declaration for now.
   code is reachable.
 - AllManga and Videasy declare `relaySafe: true` because they are on the Settings
   relay list and metadata relay is the product. YouTube stays `false`.
-- Video remains gated by the unused `videoFallback` flag (K-04) — do not add `/stream/`.
+- Video stays direct. The unused video fallback contract was removed; do not add `/stream/`.
 
 ---
 
