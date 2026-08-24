@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 
-const PROCESS_PROBE_TIMEOUT_MS = 250;
+// Windows PowerShell startup can exceed 250 ms on a cold CI runner. Give the
+// first self-identity lookup enough time to succeed so its positive result is
+// cached; callers with a shorter deadline still clamp this bound below.
+const PROCESS_PROBE_TIMEOUT_MS = 1_000;
 
 export function normalizedHostname(): string {
   return hostname().trim().toLowerCase();
