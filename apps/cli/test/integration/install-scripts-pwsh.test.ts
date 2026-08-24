@@ -212,7 +212,9 @@ describePwsh("install.ps1 activation identity", () => {
     `);
 
     expect(result.status).toBe(0);
-    expect(Number(result.stdout.trim())).toBeLessThan(1_000);
+    const elapsedMs = Number(result.stdout.trim());
+    expect(elapsedMs).toBeGreaterThanOrEqual(10);
+    expect(elapsedMs).toBeLessThan(1_000);
   });
 
   test("treats a case-only raw successor as changed during reclaim", () => {
