@@ -160,8 +160,7 @@ describe("nativeUninstall residue and preservation", () => {
     expect(existsSync(layout.versionsDir)).toBe(false);
     expect(existsSync(layout.stagingRoot)).toBe(false);
     expect(existsSync(layout.transactionsDir)).toBe(false);
-    expect(existsSync(layout.locksDir)).toBe(true);
-    expect(await readdir(layout.locksDir)).toEqual([]);
+    expect(existsSync(layout.locksDir)).toBe(false);
     expect(existsSync(join(layout.configDir, "install.json"))).toBe(false);
 
     expect(existsSync(user.configJson)).toBe(true);

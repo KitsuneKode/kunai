@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -14,6 +14,12 @@ import {
 } from "@/services/update/native-installer/install-layout";
 
 const made: string[] = [];
+
+function impossibleProcessStartId(): string {
+  if (process.platform === "win32") return "windows-ticks:0";
+  if (process.platform === "darwin") return "darwin-ps:impossible";
+  return "linux-proc:0";
+}
 
 afterEach(async () => {
   for (const root of made.splice(0)) {
@@ -212,6 +218,43 @@ describe("activation lock", () => {
     expect(existsSync(violationPath)).toBe(false);
   });
 
+  test("defers process-start validation for a fresh live reclaim claim", async () => {
+    const layout = await makeLayout();
+    const path = activationLockPath(layout);
+    const claimPath = `${path}.reclaim.reused-pid-claim`;
+    await writeFile(
+      claimPath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        scope: "activation",
+        pid: process.pid,
+        version: "1.0.0",
+        execPath: "/tmp/previous-installer",
+        ownerId: "reused-pid-claim",
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+        hostname: hostname().toLowerCase(),
+        processStartId: impossibleProcessStartId(),
+      })}\n`,
+    );
+
+    const fresh = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: 20,
+      pollMs: 5,
+    });
+    expect(fresh.acquired).toBe(false);
+    expect(existsSync(claimPath)).toBe(true);
+
+    const staleTime = new Date(Date.now() - 5_000);
+    await utimes(claimPath, staleTime, staleTime);
+    const aged = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: 100,
+      pollMs: 5,
+    });
+    expect(aged.acquired).toBe(true);
+    expect(existsSync(claimPath)).toBe(false);
+    if (aged.acquired) await aged.release();
+  });
+
   test("never reclaims a valid lock owned by another hostname", async () => {
     const layout = await makeLayout();
     const path = activationLockPath(layout);
@@ -238,6 +281,32 @@ describe("activation lock", () => {
     expect(JSON.parse(await readFile(path, "utf8")).ownerId).toBe("remote-owner");
   });
 
+  test("defers process-start validation for a newly published live lock", async () => {
+    const layout = await makeLayout();
+    const path = activationLockPath(layout);
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        scope: "activation",
+        pid: process.pid,
+        version: "1.0.0",
+        execPath: "/tmp/current-installer",
+        ownerId: "fresh-live-owner",
+        acquiredAt: new Date().toISOString(),
+        hostname: hostname().toLowerCase(),
+        processStartId: impossibleProcessStartId(),
+      })}\n`,
+    );
+
+    const lock = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: 20,
+      pollMs: 5,
+    });
+    expect(lock).toEqual({ acquired: false, holderPid: process.pid });
+    expect(JSON.parse(await readFile(path, "utf8")).ownerId).toBe("fresh-live-owner");
+  });
+
   test("reclaims a reused local pid when the process-start identity differs", async () => {
     const layout = await makeLayout();
     const path = activationLockPath(layout);
@@ -252,7 +321,7 @@ describe("activation lock", () => {
         ownerId: "reused-pid-owner",
         acquiredAt: "2020-01-01T00:00:00.000Z",
         hostname: hostname().toLowerCase(),
-        processStartId: "linux-proc:0",
+        processStartId: impossibleProcessStartId(),
       })}\n`,
     );
 
@@ -264,27 +333,30 @@ describe("activation lock", () => {
     if (lock.acquired) await lock.release();
   });
 
-  test("does not hot-loop when exclusive creation fails while the lock path is absent", async () => {
-    const layout = await makeLayout();
-    await chmod(layout.locksDir, 0o500);
-    const acquisition = tryAcquireActivationLock(layout, "5.0.0", {
-      timeoutMs: 30,
-      pollMs: 5,
-    });
-    const outcome = await Promise.race([
-      acquisition.then(
-        () => "settled",
-        () => "settled",
-      ),
-      Bun.sleep(150).then(() => "hung"),
-    ]);
-    await chmod(layout.locksDir, 0o700);
-    if (outcome === "hung") {
-      const eventual = await acquisition;
-      if (eventual.acquired) await eventual.release();
-    }
-    expect(outcome).toBe("settled");
-  });
+  test.skipIf(process.platform === "win32")(
+    "does not hot-loop when exclusive creation fails while the lock path is absent",
+    async () => {
+      const layout = await makeLayout();
+      await chmod(layout.locksDir, 0o500);
+      const acquisition = tryAcquireActivationLock(layout, "5.0.0", {
+        timeoutMs: 30,
+        pollMs: 5,
+      });
+      const outcome = await Promise.race([
+        acquisition.then(
+          () => "settled",
+          () => "settled",
+        ),
+        Bun.sleep(150).then(() => "hung"),
+      ]);
+      await chmod(layout.locksDir, 0o700);
+      if (outcome === "hung") {
+        const eventual = await acquisition;
+        if (eventual.acquired) await eventual.release();
+      }
+      expect(outcome).toBe("settled");
+    },
+  );
 
   test("reclaims persistently corrupt metadata after the partial-write grace period", async () => {
     const layout = await makeLayout();

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { parseCanonicalVersion } from "../version";
@@ -339,6 +339,13 @@ export async function tryAcquireLifecycleLock(
         const current = await readLockContent(path);
         if (current?.ownerId === ownerId) {
           await rm(path, { force: true }).catch(() => {});
+          if (path === lifecycleLockPath(layout)) {
+            // The external purge-safe guard is still held at this point, so no
+            // new install can acquire ownership while we remove an empty
+            // compatibility lock directory. rmdir fails safely if any lock or
+            // diagnostic quarantine remains.
+            await rmdir(layout.locksDir).catch(() => {});
+          }
         }
       }
     },

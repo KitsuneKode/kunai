@@ -611,6 +611,35 @@ activation_lock_owner_is_stale() {
 	return 0
 }
 
+first_activation_reclaim_claim() {
+	local lock_path="$1" claim raw
+	for claim in "${lock_path}.reclaim."*; do
+		[[ -f "$claim" ]] || continue
+		raw="$(cat "$claim" 2>/dev/null || true)"
+		if read_activation_lock "$raw" && activation_lock_owner_is_stale; then
+			# Claim names contain a random owner token and are never reused.
+			rm -f "$claim"
+			continue
+		fi
+		printf '%s\n' "$claim"
+	done | sort | head -1
+}
+
+create_activation_reclaim_claim() {
+	local lock_path="$1" owner_id="$2" record="$3" claim_path temp_path
+	claim_path="${lock_path}.reclaim.${owner_id}"
+	temp_path="${claim_path}.tmp.$$.$RANDOM"
+	(
+		umask 077
+		printf '%s\n' "$record" >"$temp_path"
+	) || return 1
+	if ! mv "$temp_path" "$claim_path" 2>/dev/null; then
+		rm -f "$temp_path"
+		return 1
+	fi
+	printf '%s' "$claim_path"
+}
+
 restore_activation_quarantine() {
 	local quarantine_path="$1" lock_path="$2"
 	# A hard link is an exclusive restore: it can never overwrite a canonical
@@ -627,7 +656,7 @@ restore_activation_quarantine() {
 }
 
 reclaim_activation_lock() {
-	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4"
+	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4" successor_raw="$5"
 	local quarantine_path quarantined_raw
 	quarantine_path="${lock_path}.quarantine.${owner_id}.${RANDOM}"
 	while [[ -e "$quarantine_path" ]]; do
@@ -651,7 +680,36 @@ reclaim_activation_lock() {
 		return 1
 	fi
 	rm -f "$quarantine_path"
-	return 0
+	local attempt=0
+	while ((attempt < 20)); do
+		if (
+			set -o noclobber
+			umask 077
+			printf '%s\n' "$successor_raw" >"$lock_path"
+		) 2>/dev/null; then
+			return 0
+		fi
+		activation_lock_sleep 1
+		attempt=$((attempt + 1))
+	done
+	return 1
+}
+
+claim_and_reclaim_activation_lock() {
+	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4" successor_raw="$5"
+	local claim_path first_claim current_raw result=1
+	claim_path="$(create_activation_reclaim_claim "$lock_path" "$owner_id" "$successor_raw")" || return 1
+	first_claim="$(first_activation_reclaim_claim "$lock_path")"
+	if [[ "$first_claim" == "$claim_path" ]]; then
+		current_raw="$(cat "$lock_path" 2>/dev/null || true)"
+		if [[ "$current_raw" == "$observed_raw" ]]; then
+			if reclaim_activation_lock "$lock_path" "$current_raw" "$allow_corrupt" "$owner_id" "$successor_raw"; then
+				result=0
+			fi
+		fi
+	fi
+	rm -f "$claim_path"
+	return "$result"
 }
 
 # Cross-language activation lock shared by install.sh, install.ps1, and the
@@ -659,7 +717,7 @@ reclaim_activation_lock() {
 # every implementation uses the same JSON fields and token-checked release.
 acquire_activation_lock() {
 	local version="$1" lock_path="$2"
-	local elapsed=0 corrupt_elapsed=0 holder="" raw local_hostname process_start process_start_json
+	local elapsed=0 corrupt_elapsed=0 holder="" raw local_hostname process_start process_start_json activation_record
 
 	mkdir -p "$(dirname "$lock_path")"
 	ACTIVATION_LOCK_OWNER_ID="$$-$(date +%s)-$RANDOM"
@@ -670,15 +728,29 @@ acquire_activation_lock() {
 	else
 		process_start_json=null
 	fi
+	activation_record="$(printf '{"schemaVersion":1,"scope":"activation","pid":%s,"version":"%s","execPath":"install.sh","ownerId":"%s","acquiredAt":"%s","hostname":"%s","processStartId":%s}' \
+		"$$" "$(json_escape "$version")" "$(json_escape "$ACTIVATION_LOCK_OWNER_ID")" "$(iso_now)" "$(json_escape "$local_hostname")" "$process_start_json")"
 
 	while :; do
+		if [[ -n "$(first_activation_reclaim_claim "$lock_path")" ]]; then
+			if ((elapsed >= ACTIVATION_LOCK_TIMEOUT_MS)); then
+				err "Activation reclamation is already in progress for version $version"
+				return 1
+			fi
+			activation_lock_sleep "$ACTIVATION_LOCK_POLL_MS"
+			elapsed=$((elapsed + ACTIVATION_LOCK_POLL_MS))
+			continue
+		fi
 		if (
 			set -o noclobber
 			umask 077
-			printf '{"schemaVersion":1,"scope":"activation","pid":%s,"version":"%s","execPath":"install.sh","ownerId":"%s","acquiredAt":"%s","hostname":"%s","processStartId":%s}\n' \
-				"$$" "$(json_escape "$version")" "$(json_escape "$ACTIVATION_LOCK_OWNER_ID")" "$(iso_now)" "$(json_escape "$local_hostname")" "$process_start_json" >"$lock_path"
+			printf '%s\n' "$activation_record" >"$lock_path"
 		) 2>/dev/null; then
-			return 0
+			if [[ -z "$(first_activation_reclaim_claim "$lock_path")" ]]; then
+				return 0
+			fi
+			release_activation_lock "$lock_path" "$ACTIVATION_LOCK_OWNER_ID"
+			continue
 		fi
 		if [[ ! -e "$lock_path" ]]; then
 			if ((elapsed >= ACTIVATION_LOCK_TIMEOUT_MS)); then
@@ -696,24 +768,14 @@ acquire_activation_lock() {
 			corrupt_elapsed=0
 			holder="$ACTIVATION_READ_PID"
 			if activation_lock_owner_is_stale; then
-				if ! reclaim_activation_lock "$lock_path" "$raw" 0 "$ACTIVATION_LOCK_OWNER_ID"; then
-					[[ -e "$lock_path" ]] || {
-						err "Could not safely restore quarantined activation ownership"
-						return 1
-					}
-				fi
+				claim_and_reclaim_activation_lock "$lock_path" "$raw" 0 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" && return 0
 				continue
 			fi
 		else
 			holder=""
 			corrupt_elapsed=$((corrupt_elapsed + ACTIVATION_LOCK_POLL_MS))
 			if ((corrupt_elapsed >= ACTIVATION_LOCK_CORRUPT_GRACE_MS)); then
-				if ! reclaim_activation_lock "$lock_path" "$raw" 1 "$ACTIVATION_LOCK_OWNER_ID"; then
-					[[ -e "$lock_path" ]] || {
-						err "Could not safely restore quarantined activation ownership"
-						return 1
-					}
-				fi
+				claim_and_reclaim_activation_lock "$lock_path" "$raw" 1 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" && return 0
 				corrupt_elapsed=0
 				continue
 			fi

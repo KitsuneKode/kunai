@@ -569,6 +569,34 @@ function Test-ActivationOwnerStale($Content) {
   return $false
 }
 
+function Get-ActivationReclaimClaims([string]$LockPath) {
+  $directory = Split-Path $LockPath
+  $leaf = Split-Path $LockPath -Leaf
+  $claims = [System.Collections.Generic.List[string]]::new()
+  foreach ($item in @(Get-ChildItem -LiteralPath $directory -Filter "$leaf.reclaim.*" -File -ErrorAction SilentlyContinue)) {
+    $state = Read-ActivationLockState $item.FullName
+    if ($null -ne $state -and $null -ne $state.Content -and (Test-ActivationOwnerStale $state.Content)) {
+      # Claim paths contain a GUID owner token and are never reused.
+      Remove-Item -LiteralPath $item.FullName -Force -ErrorAction SilentlyContinue
+      continue
+    }
+    $claims.Add($item.FullName)
+  }
+  return @($claims | Sort-Object)
+}
+
+function New-ActivationReclaimClaim([string]$LockPath, [string]$OwnerId, [byte[]]$Bytes) {
+  $claimPath = "$LockPath.reclaim.$OwnerId"
+  $tempPath = "$claimPath.tmp.$([Guid]::NewGuid().ToString('N'))"
+  [System.IO.File]::WriteAllBytes($tempPath, $Bytes)
+  try { [System.IO.File]::Move($tempPath, $claimPath) }
+  catch {
+    Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+    throw
+  }
+  return $claimPath
+}
+
 function Restore-ActivationQuarantine([string]$QuarantinePath, [string]$LockPath) {
   try {
     # Hard-link creation is exclusive and therefore cannot overwrite a newer
@@ -592,7 +620,8 @@ function Move-ActivationLockToQuarantine(
   [string]$LockPath,
   [string]$ObservedRaw,
   [bool]$AllowCorrupt,
-  [string]$OwnerId
+  [string]$OwnerId,
+  [byte[]]$SuccessorBytes
 ) {
   $quarantinePath = "$LockPath.quarantine.$OwnerId.$([Guid]::NewGuid().ToString('N'))"
   try { [System.IO.File]::Move($LockPath, $quarantinePath) }
@@ -614,7 +643,51 @@ function Move-ActivationLockToQuarantine(
     return $false
   }
   Remove-Item -LiteralPath $quarantinePath -Force -ErrorAction Stop
-  return $true
+  for ($attempt = 0; $attempt -lt 20; $attempt++) {
+    $stream = $null
+    try {
+      $stream = [System.IO.File]::Open(
+        $LockPath,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+      )
+      $stream.Write($SuccessorBytes, 0, $SuccessorBytes.Length)
+      $stream.Flush()
+      $stream.Dispose()
+      return $true
+    }
+    catch [System.IO.IOException] {
+      if ($null -ne $stream) { $stream.Dispose() }
+      Start-Sleep -Milliseconds 1
+    }
+  }
+  return $false
+}
+
+function Invoke-ActivationReclaim(
+  [string]$LockPath,
+  [string]$ObservedRaw,
+  [bool]$AllowCorrupt,
+  [string]$OwnerId,
+  [byte[]]$SuccessorBytes
+) {
+  $claimPath = New-ActivationReclaimClaim $LockPath $OwnerId $SuccessorBytes
+  try {
+    $claims = @(Get-ActivationReclaimClaims $LockPath)
+    if ($claims.Count -eq 0) { return $false }
+    # FullName may expand a Windows 8.3 path that LockPath retained. Election is
+    # scoped to one lock directory, so compare the unique token-owned leaf.
+    $electedLeaf = [System.IO.Path]::GetFileName([string]$claims[0])
+    $claimLeaf = [System.IO.Path]::GetFileName($claimPath)
+    if (-not [string]::Equals($electedLeaf, $claimLeaf, [StringComparison]::Ordinal)) { return $false }
+    $current = Read-ActivationLockState $LockPath
+    if ($null -eq $current -or [string]$current.Raw -ne $ObservedRaw) { return $false }
+    return Move-ActivationLockToQuarantine $LockPath $ObservedRaw $AllowCorrupt $OwnerId $SuccessorBytes
+  }
+  finally {
+    Remove-Item -LiteralPath $claimPath -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
@@ -638,6 +711,13 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
   $holder = $null
 
   while ($true) {
+    if (@(Get-ActivationReclaimClaims $LockPath).Count -gt 0) {
+      if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
+        throw "Activation reclamation is already in progress for version $Ver"
+      }
+      Start-Sleep -Milliseconds ([Math]::Max(1, $ActivationLockPollMs))
+      continue
+    }
     $stream = $null
     try {
       $stream = [System.IO.File]::Open(
@@ -649,7 +729,9 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
       $stream.Write($bytes, 0, $bytes.Length)
       $stream.Flush()
       $stream.Dispose()
-      return $ownerId
+      if (@(Get-ActivationReclaimClaims $LockPath).Count -eq 0) { return $ownerId }
+      Release-ActivationLock $LockPath $ownerId
+      continue
     }
     catch [System.IO.IOException] {
       if ($null -ne $stream) { $stream.Dispose() }
@@ -676,8 +758,9 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
       $corruptSinceMs = 0L
       $holder = [int]$content.pid
       if (Test-ActivationOwnerStale $content) {
-        Move-ActivationLockToQuarantine $LockPath ([string]$observed.Raw) $false $ownerId | Out-Null
-        continue
+        if (Invoke-ActivationReclaim $LockPath ([string]$observed.Raw) $false $ownerId $bytes) {
+          return $ownerId
+        }
       }
     }
     else {
@@ -688,10 +771,9 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
         $holder = $null
       }
       elseif (($timer.ElapsedMilliseconds - $corruptSinceMs) -ge $ActivationLockCorruptGraceMs) {
-        Move-ActivationLockToQuarantine $LockPath $raw $true $ownerId | Out-Null
+        if (Invoke-ActivationReclaim $LockPath $raw $true $ownerId $bytes) { return $ownerId }
         $corruptRaw = $null
         $corruptSinceMs = 0L
-        continue
       }
     }
 

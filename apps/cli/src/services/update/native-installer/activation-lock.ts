@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { hostname as getHostname } from "node:os";
+import { dirname, join } from "node:path";
 
 import { parseCanonicalVersion } from "../version";
 import { activationLockPath, type InstallLayoutPaths } from "./install-layout";
@@ -9,6 +10,7 @@ import { activationLockPath, type InstallLayoutPaths } from "./install-layout";
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_POLL_MS = 50;
 const DEFAULT_CORRUPT_GRACE_MS = 250;
+const PROCESS_START_ID_GRACE_MS = 1_000;
 
 export type ActivationLockContent = {
   readonly schemaVersion: 1;
@@ -47,6 +49,25 @@ type LockRead = {
   readonly raw: string | null;
 };
 
+const localAcquisitionTails = new Map<string, Promise<void>>();
+
+async function serializeLocalAcquisition<T>(path: string, fn: () => Promise<T>): Promise<T> {
+  const previous = localAcquisitionTails.get(path) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => current);
+  localAcquisitionTails.set(path, tail);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (localAcquisitionTails.get(path) === tail) localAcquisitionTails.delete(path);
+  }
+}
+
 function isProcessAlive(pid: number): boolean {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
@@ -63,12 +84,31 @@ function localHostname(): string {
   return getHostname().trim().toLowerCase();
 }
 
-function processStartId(pid: number): string | null {
+function lookupProcessStartId(pid: number): string | null {
+  if (process.platform === "win32") {
+    try {
+      const powershell = Bun.which("powershell.exe") ?? Bun.which("pwsh.exe") ?? Bun.which("pwsh");
+      if (!powershell) return null;
+      const result = Bun.spawnSync([
+        powershell,
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$process = Get-Process -Id ${pid} -ErrorAction Stop; [Console]::Out.Write($process.StartTime.ToUniversalTime().Ticks)`,
+      ]);
+      if (result.exitCode !== 0) return null;
+      const ticks = result.stdout.toString().trim();
+      return /^\d+$/.test(ticks) ? `windows-ticks:${ticks}` : null;
+    } catch {
+      return null;
+    }
+  }
   if (process.platform === "linux") {
     try {
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-      const afterName = stat
-        .slice(stat.lastIndexOf(") ") + 2)
+      const procStat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const afterName = procStat
+        .slice(procStat.lastIndexOf(") ") + 2)
         .trim()
         .split(/\s+/);
       const startTicks = afterName[19];
@@ -88,6 +128,17 @@ function processStartId(pid: number): string | null {
     }
   }
   return null;
+}
+
+let cachedOwnProcessStartId: string | null | undefined;
+
+function processStartId(pid: number): string | null {
+  if (pid === process.pid && cachedOwnProcessStartId !== undefined) {
+    return cachedOwnProcessStartId;
+  }
+  const value = lookupProcessStartId(pid);
+  if (pid === process.pid) cachedOwnProcessStartId = value;
+  return value;
 }
 
 function parseLockContent(raw: string): ActivationLockContent | null {
@@ -124,6 +175,32 @@ type OwnerState = "active" | "stale" | "foreign-host";
 function ownerState(content: ActivationLockContent): OwnerState {
   if (content.hostname.trim().toLowerCase() !== localHostname()) return "foreign-host";
   if (!isProcessAlive(content.pid)) return "stale";
+  const acquiredAtMs = Date.parse(content.acquiredAt);
+  const startIdentityDue =
+    !Number.isFinite(acquiredAtMs) || Date.now() - acquiredAtMs >= PROCESS_START_ID_GRACE_MS;
+  if (content.processStartId && startIdentityDue) {
+    const currentStartId = processStartId(content.pid);
+    if (currentStartId && currentStartId !== content.processStartId) return "stale";
+  }
+  return "active";
+}
+
+async function reclaimClaimOwnerState(
+  path: string,
+  content: ActivationLockContent,
+): Promise<OwnerState> {
+  if (content.hostname.trim().toLowerCase() !== localHostname()) return "foreign-host";
+  if (!isProcessAlive(content.pid)) return "stale";
+
+  // A reclaim claim is normally present for only a few file operations. Avoid
+  // launching an expensive Windows process-start probe for every contender's
+  // fresh claim; that creates an O(contenders²) PowerShell storm. Dead PIDs are
+  // still reclaimed immediately, while an aged live-PID claim receives the
+  // full PID-reuse check before it can block future attempts indefinitely.
+  const claimStat = await stat(path).catch(() => null);
+  if (!claimStat || Date.now() - claimStat.mtimeMs < PROCESS_START_ID_GRACE_MS) {
+    return "active";
+  }
   if (content.processStartId) {
     const currentStartId = processStartId(content.pid);
     if (currentStartId && currentStartId !== content.processStartId) return "stale";
@@ -152,6 +229,7 @@ async function quarantineForReclaim(
   path: string,
   observed: LockRead,
   ownerId: string,
+  successorRaw: string,
 ): Promise<boolean> {
   const quarantinePath = `${path}.quarantine.${ownerId}.${randomUUID()}`;
   try {
@@ -173,7 +251,16 @@ async function quarantineForReclaim(
 
   try {
     await rm(quarantinePath, { force: true });
-    return true;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        await writeFile(path, successorRaw, { flag: "wx", mode: 0o600 });
+        return true;
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
+        await Bun.sleep(1);
+      }
+    }
+    return false;
   } catch (error) {
     await restoreQuarantinedLock(quarantinePath, path).catch(() => {});
     throw error;
@@ -188,6 +275,42 @@ async function readActivationLock(path: string): Promise<LockRead> {
   } catch {
     return { content: null, raw: "" };
   }
+}
+
+function reclaimClaimPrefix(path: string): string {
+  return `${path}.reclaim.`;
+}
+
+async function listReclaimClaims(path: string): Promise<string[]> {
+  const prefix = reclaimClaimPrefix(path);
+  const names = await readdir(dirname(path)).catch(() => [] as string[]);
+  const claims: string[] = [];
+  for (const name of names) {
+    const claimPath = join(dirname(path), name);
+    if (!claimPath.startsWith(prefix)) continue;
+    const claim = await readActivationLock(claimPath);
+    if (claim.content && (await reclaimClaimOwnerState(claimPath, claim.content)) === "stale") {
+      // Claim paths include a UUID and are never reused, so deleting a dead
+      // claimant cannot remove a successor's claim.
+      await rm(claimPath, { force: true }).catch(() => {});
+      continue;
+    }
+    claims.push(claimPath);
+  }
+  return claims.sort();
+}
+
+async function createReclaimClaim(path: string, ownerId: string, raw: string): Promise<string> {
+  const claimPath = `${reclaimClaimPrefix(path)}${ownerId}`;
+  const tempPath = `${claimPath}.tmp.${randomUUID()}`;
+  await writeFile(tempPath, raw, { flag: "wx", mode: 0o600 });
+  try {
+    await rename(tempPath, claimPath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
+  return claimPath;
 }
 
 /** Inspect activation ownership without mutating or reclaiming the lock. */
@@ -221,10 +344,24 @@ export async function tryAcquireActivationLock(
   if (!canonical) throw new Error(`Invalid activation lock version: ${version}`);
 
   const path = activationLockPath(layout);
+  return serializeLocalAcquisition(path, () =>
+    tryAcquireActivationLockFromFilesystem(path, canonical, options),
+  );
+}
+
+async function tryAcquireActivationLockFromFilesystem(
+  path: string,
+  canonical: string,
+  options: ActivationLockOptions,
+): Promise<ActivationLockAcquireResult> {
   const timeoutMs = Math.max(0, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const pollMs = Math.max(1, options.pollMs ?? DEFAULT_POLL_MS);
   const corruptGraceMs = Math.max(0, options.corruptGraceMs ?? DEFAULT_CORRUPT_GRACE_MS);
   const ownerId = `${process.pid}-${randomUUID()}`;
+  // Resolve this once before timestamping the record. On Windows the fallback
+  // PowerShell query is comparatively expensive; acquisition-age grace starts
+  // when the lock is ready to publish, not while that identity is being read.
+  const ownProcessStartId = processStartId(process.pid);
   const content: ActivationLockContent = {
     schemaVersion: 1,
     scope: "activation",
@@ -234,29 +371,57 @@ export async function tryAcquireActivationLock(
     ownerId,
     acquiredAt: new Date().toISOString(),
     hostname: localHostname(),
-    processStartId: processStartId(process.pid),
+    processStartId: ownProcessStartId,
   };
+  const contentRaw = `${JSON.stringify(content)}\n`;
   const startedAt = Date.now();
   let corruptRaw: string | null = null;
   let corruptSince = 0;
   let holderPid: number | undefined;
 
-  await mkdir(layout.locksDir, { recursive: true });
+  await mkdir(dirname(path), { recursive: true });
+
+  const acquiredResult = (): ActivationLockAcquireResult => ({
+    acquired: true,
+    release: async () => {
+      const current = await readActivationLock(path);
+      if (current.content?.ownerId === ownerId) {
+        // Rename first, then validate the moved inode. A read-then-delete
+        // release could otherwise remove a successor created in between.
+        await quarantineForRelease(path, ownerId).catch(() => {});
+      }
+    },
+  });
+
+  const reclaimObserved = async (observed: LockRead, allowCorrupt: boolean): Promise<boolean> => {
+    const claimPath = await createReclaimClaim(path, ownerId, contentRaw);
+    try {
+      const claims = await listReclaimClaims(path);
+      if (claims[0] !== claimPath) return false;
+      const current = await readActivationLock(path);
+      if (current.raw !== observed.raw) return false;
+      if (current.content) {
+        if (ownerState(current.content) !== "stale") return false;
+      } else if (!allowCorrupt || current.raw === null) {
+        return false;
+      }
+      return await quarantineForReclaim(path, current, ownerId, contentRaw);
+    } finally {
+      await rm(claimPath, { force: true }).catch(() => {});
+    }
+  };
 
   while (true) {
+    if ((await listReclaimClaims(path)).length > 0) {
+      if (Date.now() - startedAt >= timeoutMs) return { acquired: false, holderPid };
+      await Bun.sleep(Math.min(pollMs, Math.max(1, timeoutMs - (Date.now() - startedAt))));
+      continue;
+    }
     try {
-      await writeFile(path, `${JSON.stringify(content)}\n`, { flag: "wx", mode: 0o600 });
-      return {
-        acquired: true,
-        release: async () => {
-          const current = await readActivationLock(path);
-          if (current.content?.ownerId === ownerId) {
-            // Rename first, then validate the moved inode. A read-then-delete
-            // release could otherwise remove a successor created in between.
-            await quarantineForRelease(path, ownerId).catch(() => {});
-          }
-        },
-      };
+      await writeFile(path, contentRaw, { flag: "wx", mode: 0o600 });
+      if ((await listReclaimClaims(path)).length === 0) return acquiredResult();
+      await quarantineForRelease(path, ownerId).catch(() => {});
+      continue;
     } catch (error) {
       if (errorCode(error) !== "EEXIST") {
         throw new Error(`Could not create activation lock at ${path}`, { cause: error });
@@ -277,7 +442,7 @@ export async function tryAcquireActivationLock(
       corruptSince = 0;
       holderPid = observed.content.pid;
       if (ownerState(observed.content) === "stale") {
-        await quarantineForReclaim(path, observed, ownerId);
+        if (await reclaimObserved(observed, false)) return acquiredResult();
         continue;
       }
     } else if (observed.raw !== corruptRaw) {
@@ -285,7 +450,7 @@ export async function tryAcquireActivationLock(
       corruptSince = Date.now();
       holderPid = undefined;
     } else if (Date.now() - corruptSince >= corruptGraceMs) {
-      await quarantineForReclaim(path, observed, ownerId);
+      if (await reclaimObserved(observed, true)) return acquiredResult();
       corruptRaw = null;
       corruptSince = 0;
       continue;

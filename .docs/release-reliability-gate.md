@@ -67,12 +67,17 @@ cross-language activation lock at `{dataDir}/locks/activation.lock`. The Bash,
 PowerShell, and TypeScript implementations exclusively create the same schema-1
 JSON record (`schemaVersion`, `scope`, `pid`, `version`, `execPath`, `ownerId`,
 `acquiredAt`, `hostname`, `processStartId`). A live local owner is waited on for
-a bounded interval; PID reuse is rejected when a process-start identity is
-available; a valid foreign-host owner is never declared dead from a local PID
-probe; and unreadable metadata receives a short grace period before reclaim.
-Stale/corrupt reclamation and release atomically rename the canonical file to a
-token-owned quarantine before validation, so no contender can delete a newer
-owner through a read/delete race.
+a bounded interval; fresh live-PID records receive a one-second grace before
+process-start validation so Windows contenders do not spawn a probe storm; PID
+reuse is then rejected when a process-start identity is available. A valid
+foreign-host owner is never declared dead from a local PID probe, and unreadable
+metadata receives a short grace period before reclaim.
+Stale/corrupt reclamation first publishes a unique token-owned reclaim claim.
+Claimants elect one reclaimer by lexical claim order, then that owner re-reads
+and atomically renames the canonical file to quarantine for validation. It
+publishes its successor lock before removing the claim, so the canonical path
+never becomes an acquisition window and no contender can delete a newer owner
+through a read/delete race. Release uses the same token-owned quarantine rule.
 
 The activation critical section contains only the shared launcher replacement
 and `install.json` publication. Artifact download, checksum verification,

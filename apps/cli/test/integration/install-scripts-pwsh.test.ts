@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   createInstallerSandbox,
@@ -82,8 +82,10 @@ function installPwshCommandShim(
 async function runInstallPs1Async(
   args: string[],
   env: NodeJS.ProcessEnv = DEFAULT_SHELL_ENV,
+  cwd?: string,
 ): Promise<{ status: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["pwsh", "-NoProfile", "-File", INSTALL_PS1, ...args], {
+    cwd,
     env,
     stdout: "pipe",
     stderr: "pipe",
@@ -634,6 +636,38 @@ describePwsh("install.ps1 lifecycle contract", () => {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
           });
+          expect(result.status).toBe(0);
+          expect(existsSync(activationPath)).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("elects its reclaim claim across lexical path aliases", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-relative-lock-path";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-activation-relative-path");
+    const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    const sandboxRoot = dirname(sandbox.dataDir);
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(
+            ["-Yes", "-SkipDeps", "-Version", "9.8.7"],
+            {
+              ...sandbox.env,
+              KUNAI_DATA_DIR: basename(sandbox.dataDir),
+              KUNAI_DL_BASE: baseUrl,
+            },
+            sandboxRoot,
+          );
           expect(result.status).toBe(0);
           expect(existsSync(activationPath)).toBe(false);
         },
