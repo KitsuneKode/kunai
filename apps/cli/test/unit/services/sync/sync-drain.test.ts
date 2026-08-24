@@ -7,6 +7,7 @@ import { trackerOperationDedupeKey, type TrackerOperation } from "@/services/syn
 import type { SyncAdapter } from "@/services/sync/SyncAdapter";
 import {
   buildProgressUpdates,
+  DRAIN_MAX_OPERATIONS,
   SyncAdmissionAbortedError,
   SyncService,
   type SyncConfigPort,
@@ -128,6 +129,10 @@ function historyProgress(episode: number, updatedAt: string): HistoryProgress {
   };
 }
 
+/** Small stand-ins for the production drain budget; see `maxOperationsPerPass`. */
+const BUDGET = 5;
+const OVER_BUDGET = BUDGET + 3;
+
 describe("SyncService drain", () => {
   test("a direct startup drain schedules continuation beyond its operation budget", async () => {
     const repo = outbox();
@@ -136,9 +141,14 @@ describe("SyncService drain", () => {
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
+      // The property is "the pass stops at its budget and a continuation picks
+      // up the rest", which only needs the queue to out-run the budget. Proving
+      // it against the production 100 meant 103 real SQLite rows per test for
+      // no extra coverage.
+      maxOperationsPerPass: BUDGET,
     });
 
-    for (let id = 1; id <= 103; id += 1) {
+    for (let id = 1; id <= OVER_BUDGET; id += 1) {
       seedOperation(repo, {
         version: 1,
         kind: "favorite-membership:set",
@@ -148,10 +158,37 @@ describe("SyncService drain", () => {
     }
 
     const first = await service.drain(25);
-    expect(first.claimed).toBe(100);
+    expect(first.claimed).toBe(BUDGET);
     await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
 
-    expect(anilist.calls).toHaveLength(103);
+    expect(anilist.calls).toHaveLength(OVER_BUDGET);
+    expect(repo.counts().pending).toBe(0);
+  });
+
+  test("an uninjected service uses the production drain budget, not a test-sized one", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    // No `maxOperationsPerPass`: this is the wiring the app actually gets.
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    for (let id = 1; id <= OVER_BUDGET; id += 1) {
+      seedOperation(repo, {
+        version: 1,
+        kind: "favorite-membership:set",
+        target: { tracker: "anilist", anilistId: id, mediaKind: "anime" },
+        present: true,
+      });
+    }
+
+    // OVER_BUDGET is far below the production budget, so one pass takes them
+    // all. A default wired to the injected test value, or to zero, fails here.
+    const summary = await service.drain();
+    expect(DRAIN_MAX_OPERATIONS).toBe(100);
+    expect(summary.claimed).toBe(OVER_BUDGET);
     expect(repo.counts().pending).toBe(0);
   });
 
@@ -162,9 +199,14 @@ describe("SyncService drain", () => {
       adapters: [anilist.adapter],
       outbox: repo,
       config: configPort(),
+      // The property is "the pass stops at its budget and a continuation picks
+      // up the rest", which only needs the queue to out-run the budget. Proving
+      // it against the production 100 meant 103 real SQLite rows per test for
+      // no extra coverage.
+      maxOperationsPerPass: BUDGET,
     });
 
-    for (let id = 1; id <= 103; id += 1) {
+    for (let id = 1; id <= OVER_BUDGET; id += 1) {
       seedOperation(repo, {
         version: 1,
         kind: "favorite-membership:set",
@@ -176,7 +218,7 @@ describe("SyncService drain", () => {
     service.deliverSoon();
     await waitUntil(() => repo.counts().pending === 0, { label: "outbox drained" });
 
-    expect(anilist.calls).toHaveLength(103);
+    expect(anilist.calls).toHaveLength(OVER_BUDGET);
     expect(repo.counts().pending).toBe(0);
   });
 

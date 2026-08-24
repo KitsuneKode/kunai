@@ -94,10 +94,22 @@ export interface SyncServiceDeps {
   /** Injectable only so due-time and shutdown behavior are deterministic in tests. */
   readonly scheduleWake?: (task: () => void, delayMs: number) => () => void;
   readonly now?: () => Date;
+  /**
+   * Rows one `deliverSoon` pass will attempt before handing back to the loop.
+   *
+   * Injectable because the continuation rule -- "keep going until every due row
+   * has been attempted" -- is only observable across a budget boundary, so a
+   * test has to enqueue more rows than the budget. Against the production 100
+   * that meant seeding 103 rows through real SQLite per test, which is orders
+   * of magnitude more work than the property needs and made those tests the
+   * first to lose under parallel CI load. The behaviour is identical at 5.
+   */
+  readonly maxOperationsPerPass?: number;
 }
 
 const DRAIN_BATCH_LIMIT = 25;
-const DRAIN_MAX_OPERATIONS = 100;
+/** Rows one delivery pass attempts by default. Overridable per instance. */
+export const DRAIN_MAX_OPERATIONS = 100;
 const DISABLED_RECHECK_MS = 60_000;
 
 const emptySummary = (pending: number): SyncPushSummary => ({
@@ -210,6 +222,7 @@ export class SyncService {
   private readonly diagnostics?: Pick<DiagnosticsService, "record">;
   private readonly scheduleWake: (task: () => void, delayMs: number) => () => void;
   private readonly now: () => Date;
+  private readonly maxOperationsPerPass: number;
   private readonly shutdownController = new AbortController();
   private activeDrain: Promise<SyncPushSummary> | null = null;
   private continuationScheduled = false;
@@ -225,6 +238,7 @@ export class SyncService {
     this.config = deps.config;
     this.diagnostics = deps.diagnostics;
     this.now = deps.now ?? (() => new Date());
+    this.maxOperationsPerPass = deps.maxOperationsPerPass ?? DRAIN_MAX_OPERATIONS;
     this.scheduleWake =
       deps.scheduleWake ??
       ((task, delayMs) => {
@@ -473,7 +487,7 @@ export class SyncService {
         const requestedWhileActive = this.deliveryRequestedWhileActive;
         this.deliveryRequestedWhileActive = false;
         if (
-          (requestedWhileActive || summary.claimed >= DRAIN_MAX_OPERATIONS) &&
+          (requestedWhileActive || summary.claimed >= this.maxOperationsPerPass) &&
           summary.pending > 0 &&
           !this.continuationScheduled &&
           !this.shutdownController.signal.aborted
@@ -518,7 +532,7 @@ export class SyncService {
     options?: SyncMutationOptions,
   ): Promise<SyncPushSummary> {
     let total: SyncPushSummary | null = null;
-    let remaining = DRAIN_MAX_OPERATIONS;
+    let remaining = this.maxOperationsPerPass;
     while (remaining > 0) {
       const summary = await this.drainOnce(Math.min(batchSize, remaining), options);
       total = total ? mergeSummaries(total, summary) : summary;
