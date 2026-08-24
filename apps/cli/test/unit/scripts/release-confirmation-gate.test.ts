@@ -398,6 +398,9 @@ describe("release workflow confirmation dependency graph", () => {
     expect(native).toContain("--version");
     expect(native).toContain("--help");
     expect(native).toContain("download-artifact");
+    expect(native).toContain("verify-release-artifact-directory.ts");
+    expect(native).toContain(".release-download/native");
+    expect(native).toMatch(/Reverify exact preserved native payload[\s\S]*run:\s*>-/);
     expect(native).toContain("install-scripts-pwsh.test.ts");
     expect(aggregate).toMatch(/needs:[^\n]*native-smoke/);
     expect(aggregate).toContain("nativePlatforms");

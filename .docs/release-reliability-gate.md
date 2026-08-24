@@ -55,7 +55,12 @@ missing, duplicate, unexpected, empty, oversized, hash-mismatched, or
 non-canonical assets. A canonical archive has one entry whose name is the raw
 asset name and no directory prefix; tar metadata is normalized with executable
 mode `0755`, while zip records that Unix mode but Windows extraction does not
-promise to restore it.
+promise to restore it. GitHub artifact and release downloads do not preserve the
+raw file's Unix executable mode either, so verification restores mode only for
+the Linux smoke after hashes pass; this does not change file bytes. CI isolates
+the 18 native files under the candidate's `native/` directory and runs the exact
+directory verifier immediately before candidate upload, confirmation, draft
+asset upload, and public promotion. No boundary rebuilds or recompresses them.
 
 The TypeScript native updater and both native installer scripts consume these
 archives. All three verify the archive against `SHA256SUMS.archives`, permit

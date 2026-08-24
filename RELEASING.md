@@ -153,17 +153,18 @@ Job **`candidate`** (no publish):
 3. Builds all 8 release binaries plus their deterministic archives, verifies
    the exact 18 native assets, and runs compiled binary smoke
 4. `bun run release:pack` → `.release-candidate/kunai-npm.tgz`
-5. Uploads artifact `kunai-release-candidate-<version>` (8 archives + 8 raw
-   binaries + `SHA256SUMS` + `SHA256SUMS.archives` + preserved npm artifacts,
-   14-day retention)
+5. Stages the native files under an isolated `native/` directory, reverifies
+   that exact 18-file directory immediately before upload, then uploads artifact
+   `kunai-release-candidate-<version>` with the preserved npm artifacts
+   alongside it (14-day retention)
 
 For the 0.3.0 compatibility bridge, legacy `SHA256SUMS` continues to hash raw
 standalone binaries so already-published installers and updaters remain
-functional. `SHA256SUMS.archives` hashes archives. Archive creation is only the
-first stacked layer: this slice does not close issue #132 or reduce user
-downloads. Installers and the in-app updater still consume raw assets until the
-archive-aware follow-up lands. Do not dispatch a release from the
-archive-creation layer alone.
+functional. `SHA256SUMS.archives` hashes archives. Current installers and the
+in-app updater consume the canonical archive first, then use the raw asset only
+when an older release returns HTTP 404/410 for its archive metadata or asset.
+Do not dispatch a release until the complete archive-consumer stack and these
+protected preservation gates are green.
 
 `release:pack` is:
 
@@ -174,7 +175,10 @@ mkdir -p .release-candidate && ROOT="$PWD" && \
 
 ### 3. Confirmation gate (still no publish)
 
-Job **`confirmation`** needs `candidate`. It downloads the preserved candidate binaries, pulls the provider signoff artifact from `provider_signoff_run_id`, and runs:
+Job **`confirmation`** needs `candidate`. It downloads the preserved candidate,
+pulls the provider signoff artifact from `provider_signoff_run_id`, verifies the
+downloaded `native/` directory immediately before the confirmation boundary,
+and runs:
 
 ```sh
 bun run release:confirmation:check -- \
@@ -182,7 +186,7 @@ bun run release:confirmation:check -- \
   --commit <sha> \
   --provider-evidence artifacts/release-provider-signoff.json \
   --provider-signoff-run-id <run_id> \
-  --binary-dir apps/cli/dist/bin
+  --binary-dir .release-download/native
 ```
 
 Expected machine-readable `ready-for-confirmation` JSON. Nothing has been published yet.
@@ -191,14 +195,17 @@ Expected machine-readable `ready-for-confirmation` JSON. Nothing has been publis
 
 Job **`publish`** needs `confirmation` and declares `environment: release-production`. After approval it:
 
-1. Downloads the preserved candidate artifact (does **not** rebuild or re-pack)
-2. Reverifies binaries against the expected version
+1. Downloads the preserved candidate artifact (does **not** rebuild, re-pack,
+   or recompress native assets)
+2. Reverifies the exact native directory against the expected version
 3. `bun publish .release-candidate/kunai-npm.tgz --access public`
 4. Retries `npm view @kitsunekode/kunai@<version>` until visible
 5. Creates annotated tag `v<version>` and pushes it
-6. Creates a **draft** GitHub release (`make_latest: false`) with the 18 required native assets
+6. Reverifies the same downloaded native directory again, immediately before
+   creating a **draft** GitHub release (`make_latest: false`) with its 18 files
 7. `bun run scripts/verify-github-release-assets.ts <tag> --expect-draft …`
-8. Promotes: `gh release edit <tag> --draft=false --latest`
+8. Promotes immediately after that draft-byte verification:
+   `gh release edit <tag> --draft=false --latest`
 9. Verifies the public release assets again
 
 ### 5. Metadata after public verification

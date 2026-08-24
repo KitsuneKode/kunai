@@ -10,7 +10,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { verifyBuiltReleaseArchives } from "../apps/cli/scripts/build-release-archives";
@@ -51,6 +51,11 @@ function smokeLinuxX64(binPath: string, expectedVersion: string): void {
   if (process.platform !== "linux" || process.arch !== "x64") {
     return;
   }
+
+  // GitHub artifact and release downloads intentionally do not preserve Unix
+  // executable mode. Restoring the mode changes filesystem metadata, not the
+  // verified bytes; archive mode is checked independently as canonical 0755.
+  chmodSync(binPath, 0o755);
 
   const version = spawnSync(binPath, ["--version"], {
     encoding: "utf8",

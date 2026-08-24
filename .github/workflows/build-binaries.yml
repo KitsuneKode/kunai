@@ -51,6 +51,14 @@ jobs:
       - name: Verify release binaries
         run: bash apps/cli/scripts/verify-release-binaries.sh
 
+      - name: Verify exact native artifact set
+        run: |
+          set -euo pipefail
+          VERSION="$(bun -e 'console.log(require("./apps/cli/package.json").version)')"
+          bun run scripts/verify-release-artifact-directory.ts \
+            apps/cli/dist/bin \
+            --expected-version "${VERSION}"
+
       - name: Upload binaries artifact
         uses: actions/upload-artifact@v4
         with:

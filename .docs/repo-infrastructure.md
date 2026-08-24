@@ -147,8 +147,13 @@ one member named after its raw asset. Tar members have normalized uid/gid/mtime
 and mode `0755`; zip members carry normalized DOS timestamps and Unix mode
 metadata, although Windows zip extraction does not restore POSIX executable
 bits. The build reconstructs and byte-compares each archive after preservation,
-then release confirmation and publication reverify the same bytes without a
-rebuild.
+then the release workflow stages the exact set under the candidate artifact's
+isolated `native/` directory. The verifier runs immediately before candidate
+upload, confirmation, draft asset upload, and draft-to-public promotion; those
+boundaries use the downloaded files directly without a rebuild, native copy, or
+recompression. GitHub downloads may discard the raw binary's executable mode,
+so the Linux smoke restores that filesystem metadata after byte verification;
+the canonical `0755` mode inside tar archives remains independently verified.
 
 The TypeScript native updater and the Bash/PowerShell installers consume the
 platform archive, independently verify its transport hash and extracted

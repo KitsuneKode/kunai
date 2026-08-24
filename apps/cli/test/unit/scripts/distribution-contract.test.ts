@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -120,6 +120,16 @@ describe("distribution release-asset contract", () => {
     }
   });
 
+  test("build-binaries.yml verifies the exact directory immediately before upload", () => {
+    const workflow = readFileSync(join(REPO_ROOT, ".github/workflows/build-binaries.yml"), "utf8");
+    const upload = workflow.indexOf("- name: Upload binaries artifact");
+    const exactVerify = workflow.lastIndexOf("verify-release-artifact-directory.ts", upload);
+
+    expect(exactVerify).toBeGreaterThanOrEqual(0);
+    expect(upload).toBeGreaterThan(exactVerify);
+    expect(workflow.slice(exactVerify, upload)).not.toContain("- name:");
+  });
+
   test("host and installer-matrix raw-binary checks preserve SHA256SUMS compatibility", () => {
     const verifier = readFileSync(
       join(REPO_ROOT, "apps/cli/scripts/verify-host-binary.sh"),
@@ -214,6 +224,20 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(release.indexOf("upload-artifact")).toBeLessThan(release.indexOf("download-artifact"));
   });
 
+  test("candidate isolates and verifies the exact native payload immediately before upload", () => {
+    const cand = candidate();
+    const stage = cand.indexOf("Stage candidate upload directory");
+    const exactVerify = cand.indexOf("verify-release-artifact-directory.ts", stage);
+    const upload = cand.indexOf("- name: Upload candidate artifacts");
+
+    expect(cand).toContain(".candidate-upload/native");
+    expect(stage).toBeGreaterThanOrEqual(0);
+    expect(exactVerify).toBeGreaterThan(stage);
+    expect(upload).toBeGreaterThan(exactVerify);
+    expect(cand.slice(exactVerify, upload)).not.toContain("- name:");
+    expect(cand).toContain(".candidate-upload/native/SHA256SUMS");
+  });
+
   test("publication downloads the preserved tarball/binaries", () => {
     const pub = publish();
     expect(pub).toContain("download-artifact");
@@ -271,16 +295,40 @@ describe("release workflow candidate-before-publication contract", () => {
     }
   });
 
-  test("confirmation reconstructs and verifies the preserved native archives", () => {
+  test("confirmation directly verifies the preserved native payload immediately before gating", () => {
     const confirm = confirmation();
-    const stage = confirm.indexOf("Stage binaries for confirmation");
     const verify = confirm.indexOf("verify-release-artifact-directory.ts");
-    const gate = confirm.indexOf("Run confirmation gate");
+    const gate = confirm.indexOf("- name: Run confirmation gate");
 
-    expect(stage).toBeGreaterThanOrEqual(0);
-    expect(verify).toBeGreaterThan(stage);
+    expect(confirm).not.toContain("Stage binaries for confirmation");
+    expect(confirm).toContain(".release-download/native");
+    expect(verify).toBeGreaterThanOrEqual(0);
     expect(gate).toBeGreaterThan(verify);
+    expect(confirm.slice(verify, gate)).not.toContain("- name:");
     expect(confirm).toContain('--expected-version "${VERSION}"');
+    expect(confirm).toContain("--binary-dir .release-download/native");
+  });
+
+  test("protected publication reverifies native bytes immediately before draft creation", () => {
+    const pub = publish();
+    const createDraft = pub.indexOf("- name: Create draft GitHub release");
+    const exactVerify = pub.lastIndexOf("verify-release-artifact-directory.ts", createDraft);
+
+    expect(pub).toContain(".release-download/native");
+    expect(exactVerify).toBeGreaterThanOrEqual(0);
+    expect(createDraft).toBeGreaterThan(exactVerify);
+    expect(pub.slice(exactVerify, createDraft)).not.toContain("- name:");
+    for (const name of REQUIRED_RELEASE_ASSET_NAMES) {
+      expect(pub).toContain(`.release-download/native/${name}`);
+    }
+  });
+
+  test("confirmation and publication never rebuild or recompress preserved native assets", () => {
+    for (const job of [confirmation(), publish()]) {
+      expect(job).not.toContain("build:binaries");
+      expect(job).not.toContain("build-release-archives");
+      expect(job).not.toMatch(/^\s+(?:tar|zip|gzip)\s/m);
+    }
   });
 
   test("candidate install gate consumes preserved local tarballs after they are created", () => {
@@ -438,6 +486,36 @@ describe("verifyReleaseArtifactDirectory", () => {
     }
   });
 
+  test("restores downloaded Linux executable mode for the version smoke without changing bytes", async () => {
+    if (process.platform !== "linux" || process.arch !== "x64") return;
+
+    const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-mode-"));
+    try {
+      for (const name of requiredBinaryNames) {
+        writeFileSync(
+          join(dir, name),
+          name === "kunai-linux-x64"
+            ? '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "kunai 9.9.9"; else echo "Kunai help"; fi\n'
+            : `payload:${name}\n`,
+        );
+      }
+      chmodSync(join(dir, "kunai-linux-x64"), 0o644);
+      buildReleaseArchives(dir);
+      const bytesBefore = readFileSync(join(dir, "kunai-linux-x64"));
+
+      await expect(
+        verifyReleaseArtifactDirectory({
+          directory: dir,
+          expectedVersion: "9.9.9",
+        }),
+      ).resolves.toBeUndefined();
+      expect(readFileSync(join(dir, "kunai-linux-x64"))).toEqual(bytesBefore);
+      expect(statSync(join(dir, "kunai-linux-x64")).mode & 0o111).not.toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("rejects checksum mismatch", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
@@ -454,6 +532,32 @@ describe("verifyReleaseArtifactDirectory", () => {
       ).rejects.toThrow(/checksum|sha256/i);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects missing, unexpected, and raw-byte-mutated preserved payloads", async () => {
+    for (const failure of ["missing", "unexpected", "mutated"] as const) {
+      const dir = mkdtempSync(join(tmpdir(), `kunai-release-assets-${failure}-`));
+      try {
+        writeCompleteReleaseFixture(dir);
+        if (failure === "missing") {
+          rmSync(join(dir, requiredArchiveNames[0]!));
+        } else if (failure === "unexpected") {
+          writeFileSync(join(dir, "unexpected-release-asset"), "unexpected\n");
+        } else {
+          writeFileSync(join(dir, requiredBinaryNames[0]!), "mutated raw bytes\n");
+        }
+
+        await expect(
+          verifyReleaseArtifactDirectory({
+            directory: dir,
+            expectedVersion: "9.9.9",
+            skipVersionSmoke: true,
+          }),
+        ).rejects.toThrow(failure === "unexpected" ? /unexpected/ : /missing|checksum|sha256/i);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
   });
 

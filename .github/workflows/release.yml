@@ -213,7 +213,7 @@ jobs:
       - name: Stage candidate upload directory
         run: |
           set -euo pipefail
-          mkdir -p .candidate-upload
+          mkdir -p .candidate-upload/native
           cp ".release-candidate/${NPM_TARBALL_NAME}" .candidate-upload/
           cp -R .release-candidate/npm-platform .candidate-upload/npm-platform
           cp apps/cli/dist/bin/kunai-linux-x64 \
@@ -234,7 +234,7 @@ jobs:
             apps/cli/dist/bin/kunai-windows-arm64.zip \
             apps/cli/dist/bin/SHA256SUMS \
             apps/cli/dist/bin/SHA256SUMS.archives \
-            .candidate-upload/
+            .candidate-upload/native/
 
       - name: Emit candidate gate evidence
         run: |
@@ -265,8 +265,15 @@ jobs:
             --commit "${SHA}" \
             --run-id "${RUN_ID}" \
             --artifact-name "${CANDIDATE_ARTIFACT}-${VERSION}-${SHA}" \
-            --artifact-path apps/cli/dist/bin/SHA256SUMS \
+            --artifact-path .candidate-upload/native/SHA256SUMS \
             --output artifacts/gates/releaseAssets.json
+
+      - name: Reverify exact staged native candidate
+        run: |
+          set -euo pipefail
+          bun run scripts/verify-release-artifact-directory.ts \
+            .candidate-upload/native \
+            --expected-version "${{ steps.ver.outputs.version }}"
 
       - name: Upload candidate artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
@@ -274,7 +281,7 @@ jobs:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}-${{ github.sha }}
           retention-days: 14
           if-no-files-found: error
-          path: .candidate-upload/*
+          path: .candidate-upload/
 
       - name: Upload repository gate evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
@@ -319,7 +326,7 @@ jobs:
           if-no-files-found: error
           path: |
             artifacts/gates/releaseAssets.json
-            apps/cli/dist/bin/SHA256SUMS
+            .candidate-upload/native/SHA256SUMS
 
   # ---------------------------------------------------------------------------
   # Execute the exact preserved native candidate on each blocking host OS.
@@ -374,6 +381,12 @@ jobs:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: .release-download
 
+      - name: Reverify exact preserved native payload
+        run: >-
+          bun run scripts/verify-release-artifact-directory.ts
+          .release-download/native --expected-version
+          "${{ needs.candidate.outputs.version }}" --skip-version-smoke
+
       - name: Verify checksums and execute Unix candidate
         if: runner.os != 'Windows'
         shell: bash
@@ -383,19 +396,19 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           if command -v sha256sum >/dev/null 2>&1; then
-            (cd .release-download && sha256sum --check SHA256SUMS)
+            (cd .release-download/native && sha256sum --check SHA256SUMS)
           else
-            (cd .release-download && shasum --algorithm 256 --check SHA256SUMS)
+            (cd .release-download/native && shasum --algorithm 256 --check SHA256SUMS)
           fi
-          chmod +x ".release-download/${KUNAI_NATIVE_BINARY}"
+          chmod +x ".release-download/native/${KUNAI_NATIVE_BINARY}"
           PROFILE_ROOT="$(mktemp -d)"
           export HOME="${PROFILE_ROOT}/home"
           export XDG_CONFIG_HOME="${PROFILE_ROOT}/config"
           export XDG_DATA_HOME="${PROFILE_ROOT}/data"
           export XDG_CACHE_HOME="${PROFILE_ROOT}/cache"
           mkdir -p "${HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
-          ".release-download/${KUNAI_NATIVE_BINARY}" --version 2>&1 | tee "artifacts/native-${{ matrix.id }}.log"
-          ".release-download/${KUNAI_NATIVE_BINARY}" --help 2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
+          ".release-download/native/${KUNAI_NATIVE_BINARY}" --version 2>&1 | tee "artifacts/native-${{ matrix.id }}.log"
+          ".release-download/native/${KUNAI_NATIVE_BINARY}" --help 2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
 
       # Alpine on the host's own architecture, so the arm64 runner exercises the
       # arm64 musl build rather than emulating x64.
@@ -406,10 +419,10 @@ jobs:
           KUNAI_MUSL_BINARY: ${{ matrix.musl_binary }}
         run: |
           set -euo pipefail
-          chmod +x ".release-download/${KUNAI_MUSL_BINARY}"
+          chmod +x ".release-download/native/${KUNAI_MUSL_BINARY}"
           for command in --version --help; do
             docker run --rm \
-              --volume "$PWD/.release-download:/candidate:ro" \
+              --volume "$PWD/.release-download/native:/candidate:ro" \
               --env HOME=/tmp/kunai-home \
               alpine:3.20 \
               "/candidate/${KUNAI_MUSL_BINARY}" "${command}" \
@@ -424,11 +437,11 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force artifacts | Out-Null
-          foreach ($line in Get-Content .release-download/SHA256SUMS) {
+          foreach ($line in Get-Content .release-download/native/SHA256SUMS) {
             if ($line -notmatch '^([0-9a-f]{64})\s+(.+)$') { throw "Malformed SHA256SUMS row: $line" }
             $expected = $Matches[1]
             $name = $Matches[2]
-            $actual = (Get-FileHash ".release-download/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            $actual = (Get-FileHash ".release-download/native/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($actual -ne $expected) { throw "Checksum mismatch for $name" }
           }
           $profileRoot = Join-Path $env:RUNNER_TEMP "kunai-native-$([guid]::NewGuid())"
@@ -436,12 +449,12 @@ jobs:
           $env:APPDATA = Join-Path $profileRoot "appdata"
           $env:LOCALAPPDATA = Join-Path $profileRoot "localappdata"
           New-Item -ItemType Directory -Force $env:USERPROFILE,$env:APPDATA,$env:LOCALAPPDATA | Out-Null
-          $version = (& ".release-download/$env:KUNAI_NATIVE_BINARY" --version 2>&1 | Out-String).Trim()
+          $version = (& ".release-download/native/$env:KUNAI_NATIVE_BINARY" --version 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { throw "--version exited $LASTEXITCODE" }
           if ($version -notmatch '^kunai\s+v?\d') { throw "--version did not print a kunai version" }
           $version | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log"
 
-          $help = (& ".release-download/$env:KUNAI_NATIVE_BINARY" --help 2>&1 | Out-String).Trim()
+          $help = (& ".release-download/native/$env:KUNAI_NATIVE_BINARY" --help 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { throw "--help exited $LASTEXITCODE" }
           if ($help.Length -eq 0) { throw "--help printed nothing" }
           $help | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
@@ -628,11 +641,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          chmod +x .release-download/kunai-linux-x64
+          chmod +x .release-download/native/kunai-linux-x64
           bun run verify:readme:commands -- \
             --mode fixture-assets \
             --version "${{ needs.candidate.outputs.version }}" \
-            --binary .release-download/kunai-linux-x64 \
+            --binary .release-download/native/kunai-linux-x64 \
             2>&1 | tee artifacts/readmeCommands.log
           bun run scripts/release-gate-evidence.ts create \
             --gate readmeCommands \
@@ -733,44 +746,21 @@ jobs:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: .release-download
 
-      - name: Stage binaries for confirmation
-        run: |
-          set -euo pipefail
-          mkdir -p apps/cli/dist/bin
-          cp .release-download/kunai-linux-x64 \
-            .release-download/kunai-linux-x64.tar.gz \
-            .release-download/kunai-linux-arm64 \
-            .release-download/kunai-linux-arm64.tar.gz \
-            .release-download/kunai-linux-x64-musl \
-            .release-download/kunai-linux-x64-musl.tar.gz \
-            .release-download/kunai-linux-arm64-musl \
-            .release-download/kunai-linux-arm64-musl.tar.gz \
-            .release-download/kunai-darwin-x64 \
-            .release-download/kunai-darwin-x64.tar.gz \
-            .release-download/kunai-darwin-arm64 \
-            .release-download/kunai-darwin-arm64.tar.gz \
-            .release-download/kunai-windows-x64.exe \
-            .release-download/kunai-windows-x64.zip \
-            .release-download/kunai-windows-arm64.exe \
-            .release-download/kunai-windows-arm64.zip \
-            .release-download/SHA256SUMS \
-            .release-download/SHA256SUMS.archives \
-            apps/cli/dist/bin/
-
-      - name: Reverify preserved release artifacts
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.candidate.outputs.version }}"
-          bun run scripts/verify-release-artifact-directory.ts \
-            apps/cli/dist/bin \
-            --expected-version "${VERSION}"
-
       - name: Download every gate evidence document and hashed artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
           pattern: gate-*-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: artifacts/gates
           merge-multiple: true
+
+      - name: Reverify exact preserved native candidate
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.candidate.outputs.version }}"
+          bun run scripts/verify-release-artifact-directory.ts \
+            .release-download/native \
+            --expected-version "${VERSION}" \
+            --skip-version-smoke
 
       - name: Run confirmation gate
         id: gate
@@ -805,7 +795,7 @@ jobs:
             --gate-artifact "nativePlatforms-${VERSION}-${SHA}=artifacts/gates/native-platforms.log" \
             --provider-evidence artifacts/gates/release-provider-signoff.json \
             --provider-signoff-run-id "${PROVIDER_SIGNOFF_RUN_ID}" \
-            --binary-dir apps/cli/dist/bin \
+            --binary-dir .release-download/native \
             --binary-artifact-name "${ARTIFACT_NAME}" \
             | tee artifacts/release-confirmation.json
           echo "binary_artifact=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
@@ -875,33 +865,14 @@ jobs:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.confirmation.outputs.version }}-${{ github.sha }}
           path: .release-download
 
-      - name: Stage preserved binaries and tarball
+      - name: Stage preserved npm artifacts
         run: |
           set -euo pipefail
-          mkdir -p apps/cli/dist/bin .release-candidate
-          cp .release-download/kunai-linux-x64 \
-            .release-download/kunai-linux-x64.tar.gz \
-            .release-download/kunai-linux-arm64 \
-            .release-download/kunai-linux-arm64.tar.gz \
-            .release-download/kunai-linux-x64-musl \
-            .release-download/kunai-linux-x64-musl.tar.gz \
-            .release-download/kunai-linux-arm64-musl \
-            .release-download/kunai-linux-arm64-musl.tar.gz \
-            .release-download/kunai-darwin-x64 \
-            .release-download/kunai-darwin-x64.tar.gz \
-            .release-download/kunai-darwin-arm64 \
-            .release-download/kunai-darwin-arm64.tar.gz \
-            .release-download/kunai-windows-x64.exe \
-            .release-download/kunai-windows-x64.zip \
-            .release-download/kunai-windows-arm64.exe \
-            .release-download/kunai-windows-arm64.zip \
-            .release-download/SHA256SUMS \
-            .release-download/SHA256SUMS.archives \
-            apps/cli/dist/bin/
+          mkdir -p .release-candidate
           cp .release-download/kunai-npm.tgz .release-candidate/kunai-npm.tgz
           cp -R .release-download/npm-platform .release-candidate/npm-platform
           test -f .release-candidate/kunai-npm.tgz
-          test -f apps/cli/dist/bin/SHA256SUMS
+          test -f .release-download/native/SHA256SUMS
           test -d .release-candidate/npm-platform
 
       - name: Reverify exact preserved npm launcher tarball
@@ -910,11 +881,12 @@ jobs:
           .release-candidate/kunai-npm.tgz --expected-version
           "${{ needs.confirmation.outputs.version }}"
 
-      - name: Reverify preserved binaries
+      - name: Reverify protected native publication input
         run: |
           bun run scripts/verify-release-artifact-directory.ts \
-            apps/cli/dist/bin \
-            --expected-version "${{ needs.confirmation.outputs.version }}"
+            .release-download/native \
+            --expected-version "${{ needs.confirmation.outputs.version }}" \
+            --skip-version-smoke
 
       # Platform packages first, launcher last, refusing on any version skew.
       # Publishing the launcher first leaves anyone installing in that window
@@ -1001,6 +973,13 @@ jobs:
           git tag -a "${TAG}" -m "Release ${TAG}"
           git push origin "refs/tags/${TAG}"
 
+      - name: Reverify exact native payload before draft upload
+        run: |
+          bun run scripts/verify-release-artifact-directory.ts \
+            .release-download/native \
+            --expected-version "${{ needs.confirmation.outputs.version }}" \
+            --skip-version-smoke
+
       - name: Create draft GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # softprops/action-gh-release@v2
         with:
@@ -1011,24 +990,24 @@ jobs:
           body_path: .release/kunai-${{ needs.confirmation.outputs.tag }}.md
           fail_on_unmatched_files: true
           files: |
-            apps/cli/dist/bin/kunai-linux-x64
-            apps/cli/dist/bin/kunai-linux-x64.tar.gz
-            apps/cli/dist/bin/kunai-linux-arm64
-            apps/cli/dist/bin/kunai-linux-arm64.tar.gz
-            apps/cli/dist/bin/kunai-linux-x64-musl
-            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
-            apps/cli/dist/bin/kunai-linux-arm64-musl
-            apps/cli/dist/bin/kunai-linux-arm64-musl.tar.gz
-            apps/cli/dist/bin/kunai-darwin-x64
-            apps/cli/dist/bin/kunai-darwin-x64.tar.gz
-            apps/cli/dist/bin/kunai-darwin-arm64
-            apps/cli/dist/bin/kunai-darwin-arm64.tar.gz
-            apps/cli/dist/bin/kunai-windows-x64.exe
-            apps/cli/dist/bin/kunai-windows-x64.zip
-            apps/cli/dist/bin/kunai-windows-arm64.exe
-            apps/cli/dist/bin/kunai-windows-arm64.zip
-            apps/cli/dist/bin/SHA256SUMS
-            apps/cli/dist/bin/SHA256SUMS.archives
+            .release-download/native/kunai-linux-x64
+            .release-download/native/kunai-linux-x64.tar.gz
+            .release-download/native/kunai-linux-arm64
+            .release-download/native/kunai-linux-arm64.tar.gz
+            .release-download/native/kunai-linux-x64-musl
+            .release-download/native/kunai-linux-x64-musl.tar.gz
+            .release-download/native/kunai-linux-arm64-musl
+            .release-download/native/kunai-linux-arm64-musl.tar.gz
+            .release-download/native/kunai-darwin-x64
+            .release-download/native/kunai-darwin-x64.tar.gz
+            .release-download/native/kunai-darwin-arm64
+            .release-download/native/kunai-darwin-arm64.tar.gz
+            .release-download/native/kunai-windows-x64.exe
+            .release-download/native/kunai-windows-x64.zip
+            .release-download/native/kunai-windows-arm64.exe
+            .release-download/native/kunai-windows-arm64.zip
+            .release-download/native/SHA256SUMS
+            .release-download/native/SHA256SUMS.archives
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
