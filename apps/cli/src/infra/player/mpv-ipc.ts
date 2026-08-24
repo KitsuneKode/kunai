@@ -294,14 +294,21 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
           // Uncleared it fires 200ms later against an already-closed socket,
           // and `close()` runs on every session release, not only at exit — so
           // each released mpv session left one behind.
-          const fallback = setTimeout(() => {
-            socket.terminate();
-            resolve();
-          }, 200);
-          socket.data.onClose = () => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
             clearTimeout(fallback);
+            socket.data.onClose = null;
+            // The guard above makes the clean-close/timeout race single-shot.
+            // eslint-disable-next-line promise/no-multiple-resolved
             resolve();
           };
+          const fallback = setTimeout(() => {
+            socket.terminate();
+            finish();
+          }, 200);
+          socket.data.onClose = finish;
           socket.end();
         });
       })();
