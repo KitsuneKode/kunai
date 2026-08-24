@@ -154,6 +154,12 @@ boundaries use the downloaded files directly without a rebuild, native copy, or
 recompression. GitHub downloads may discard the raw binary's executable mode,
 so the Linux smoke restores that filesystem metadata after byte verification;
 the canonical `0755` mode inside tar archives remains independently verified.
+On every available Linux, macOS, and Windows native runner, the release smoke
+also exposes only that runner's downloaded archive and the two manifests over a
+loopback fixture, installs it through the production shell installer into an
+isolated profile, verifies the archive provenance in `install.json`, and runs
+the installed launcher. Deliberately withholding the raw asset makes an
+accidental archive-to-raw fallback fail this gate.
 
 The TypeScript native updater and the Bash/PowerShell installers consume the
 platform archive, independently verify its transport hash and extracted

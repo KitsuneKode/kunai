@@ -166,6 +166,14 @@ when an older release returns HTTP 404/410 for its archive metadata or asset.
 Do not dispatch a release until the complete archive-consumer stack and these
 protected preservation gates are green.
 
+The blocking native matrix downloads this preserved candidate on Linux, macOS,
+and Windows. Each host serves only its exact archive and both checksum
+manifests from a loopback fixture, runs the checked-out production installer in
+an isolated profile, verifies the published archive provenance, and executes
+the installed launcher with `--version` and `--help`. It also executes the raw
+candidate separately for compatibility; the installer proof cannot silently
+fall back because the fixture never exposes that raw asset.
+
 `release:pack` is:
 
 ```sh

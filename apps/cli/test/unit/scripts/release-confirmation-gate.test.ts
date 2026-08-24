@@ -401,7 +401,17 @@ describe("release workflow confirmation dependency graph", () => {
     expect(native).toContain("verify-release-artifact-directory.ts");
     expect(native).toContain(".release-download/native");
     expect(native).toMatch(/Reverify exact preserved native payload[\s\S]*run:\s*>-/);
-    expect(native).toContain("install-scripts-pwsh.test.ts");
+    expect(native).toContain("preserved-native-installer-smoke.test.ts");
+    expect(native).toContain("KUNAI_RELEASE_CANDIDATE_DIR");
+    expect(native).toContain("KUNAI_RELEASE_CANDIDATE_VERSION");
+    expect(native).toContain("KUNAI_RELEASE_CANDIDATE_ASSET");
+    expect(native).toContain("${{ matrix.binary }}");
+    expect(native).toContain("Exercise exact preserved archive through install.sh");
+    expect(native).toContain("Exercise exact preserved archive through install.ps1");
+    expect(native).not.toContain('| tee "artifacts/native-${{ matrix.id }}.log"');
+    expect(native).not.toMatch(
+      /Tee-Object -FilePath "artifacts\/native-\$\{\{ matrix\.id \}\}\.log"\s*$/m,
+    );
     expect(aggregate).toMatch(/needs:[^\n]*native-smoke/);
     expect(aggregate).toContain("nativePlatforms");
     expect(confirmation).toMatch(/needs:[\s\S]*native-platforms-gate/);

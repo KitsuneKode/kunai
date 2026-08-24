@@ -387,6 +387,33 @@ jobs:
           .release-download/native --expected-version
           "${{ needs.candidate.outputs.version }}" --skip-version-smoke
 
+      - name: Exercise exact preserved archive through install.sh
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          KUNAI_RELEASE_CANDIDATE_DIR: ${{ github.workspace }}/.release-download/native
+          KUNAI_RELEASE_CANDIDATE_VERSION: ${{ needs.candidate.outputs.version }}
+          KUNAI_RELEASE_CANDIDATE_ASSET: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          bun run --cwd apps/cli test:file -- \
+            test/integration/preserved-native-installer-smoke.test.ts \
+            2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
+
+      - name: Exercise exact preserved archive through install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          KUNAI_RELEASE_CANDIDATE_DIR: ${{ github.workspace }}/.release-download/native
+          KUNAI_RELEASE_CANDIDATE_VERSION: ${{ needs.candidate.outputs.version }}
+          KUNAI_RELEASE_CANDIDATE_ASSET: ${{ matrix.binary }}
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          bun run --cwd apps/cli test:file -- test/integration/preserved-native-installer-smoke.test.ts 2>&1 |
+            Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Verify checksums and execute Unix candidate
         if: runner.os != 'Windows'
         shell: bash
@@ -407,7 +434,7 @@ jobs:
           export XDG_DATA_HOME="${PROFILE_ROOT}/data"
           export XDG_CACHE_HOME="${PROFILE_ROOT}/cache"
           mkdir -p "${HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
-          ".release-download/native/${KUNAI_NATIVE_BINARY}" --version 2>&1 | tee "artifacts/native-${{ matrix.id }}.log"
+          ".release-download/native/${KUNAI_NATIVE_BINARY}" --version 2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
           ".release-download/native/${KUNAI_NATIVE_BINARY}" --help 2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
 
       # Alpine on the host's own architecture, so the arm64 runner exercises the
@@ -452,20 +479,12 @@ jobs:
           $version = (& ".release-download/native/$env:KUNAI_NATIVE_BINARY" --version 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { throw "--version exited $LASTEXITCODE" }
           if ($version -notmatch '^kunai\s+v?\d') { throw "--version did not print a kunai version" }
-          $version | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log"
+          $version | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
 
           $help = (& ".release-download/native/$env:KUNAI_NATIVE_BINARY" --help 2>&1 | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) { throw "--help exited $LASTEXITCODE" }
           if ($help.Length -eq 0) { throw "--help printed nothing" }
           $help | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
-
-      - name: Exercise PowerShell installer harness
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          bun run --cwd apps/cli test:file -- test/integration/install-scripts-pwsh.test.ts 2>&1 |
-            Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload native smoke log
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
