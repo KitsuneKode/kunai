@@ -24,8 +24,7 @@ export interface CoreProviderManifest {
   readonly browserSafe: boolean;
   /**
    * When true, this provider's metadata HTTP may be sent through `/rpc/{id}`
-   * on a user-owned relay. Video URL rewrite is a separate, currently unused
-   * `videoFallback` flag — do not treat this as permission to proxy media.
+   * on a user-owned relay. This is never permission to proxy media.
    */
   readonly relaySafe: boolean;
   readonly relayProfile?: RelayProfile;

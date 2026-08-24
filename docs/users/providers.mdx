@@ -255,7 +255,7 @@ What it does:
 What it does not do:
 
 - Kunai does not operate a public relay for you.
-- Kunai does not host or proxy video. Enabling `videoFallback` in config does not route media through the relay in the current runtime.
+- Kunai does not host or proxy video. There is no video-relay configuration; stream URLs always stay direct.
 - The relay does not bypass provider login or DRM.
 
 Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct fetches. To use a relay you operate, set `baseUrl` (and optional token) in `/settings` or `config.json` to **your** origin — Kunai never ships a public relay URL. `fallbackToDirect: true` lets a broken relay degrade to direct fetches where the provider is not geo-blocked. Env overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`.

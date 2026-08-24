@@ -32,6 +32,18 @@ describe("@kunai/config parse boundary", () => {
     });
   });
 
+  test("parseProviderRelayConfig drops the retired video relay flag", () => {
+    expect(
+      parseProviderRelayConfig({
+        baseUrl: "https://relay.example.com",
+        providers: { allanime: { enabled: true, videoFallback: true } },
+      }),
+    ).toEqual({
+      baseUrl: "https://relay.example.com",
+      providers: { allanime: { enabled: true } },
+    });
+  });
+
   test("parseKitsuneConfigPartial preserves unknown keys", () => {
     expect(parseKitsuneConfigPartial({ provider: "videasy", unknownKey: 1 })).toMatchObject({
       provider: "videasy",

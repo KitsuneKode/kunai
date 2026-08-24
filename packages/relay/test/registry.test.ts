@@ -8,7 +8,6 @@ const registry = buildProviderRelayRegistry([
     manifest: {
       relayProfile: {
         upstreamHosts: ["api.allanime.day", "allanime.day"],
-        videoRelayHosts: ["fast4speed.rsvp"],
       },
     },
   },
@@ -21,13 +20,10 @@ test("registry finds providers by exact and subdomain upstream hosts", () => {
   );
 });
 
-test("registry keeps metadata and media host allowlists separate", () => {
+test("registry allows only provider metadata hosts", () => {
   expect(registry.isHostAllowed("allanime", "https://allanime.day/path", "metadata")).toBe(true);
   expect(registry.isHostAllowed("allanime", "https://fast4speed.rsvp/video.mp4", "metadata")).toBe(
     false,
-  );
-  expect(registry.isHostAllowed("allanime", "https://fast4speed.rsvp/video.mp4", "media")).toBe(
-    true,
   );
 });
 

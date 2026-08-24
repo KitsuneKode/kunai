@@ -43,8 +43,7 @@ export const videasyManifest = defineProviderManifest({
     allowStale: true,
   },
   browserSafe: false,
-  // Catalog and route metadata may traverse /rpc/videasy. Stream URLs stay
-  // direct; videoFallback has no production reader.
+  // Catalog and route metadata may traverse /rpc/videasy. Stream URLs stay direct.
   relaySafe: true,
   relayProfile: {
     upstreamHosts: [

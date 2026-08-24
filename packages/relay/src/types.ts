@@ -30,7 +30,7 @@ export interface ProviderRelayRegistry {
   readonly providers: readonly RelayProviderEntry[];
   get(providerId: string): RelayProviderEntry | undefined;
   findByUpstreamUrl(url: string | URL): RelayProviderEntry | undefined;
-  isHostAllowed(providerId: string, url: string | URL, kind: "metadata" | "media"): boolean;
+  isHostAllowed(providerId: string, url: string | URL, kind: "metadata"): boolean;
 }
 
 export type RelayFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;

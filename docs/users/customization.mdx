@@ -71,9 +71,8 @@ geo-blocked from your network.
 ```
 
 `KUNAI_RELAY_BASE_URL` and `KUNAI_RELAY_TOKEN` override local config for smoke
-tests and temporary sessions. The relay is metadata-only. Stream URLs stay
-direct; `videoFallback` is persisted in config but has no production reader, so
-turning it on does not proxy video.
+tests and temporary sessions. The relay is metadata-only. Stream URLs always
+stay direct, and unknown legacy video-relay keys are ignored.
 
 ### Language and media profiles
 

@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "d0bb55845c6b6efcd21c817de8f80fe72d683bc2d1bbba72f5bcaf678936ac64",
-  "docsContentFingerprint": "2a1e8657c13b3bc9b389305e32370b1486082df307225fb27063474251cba183",
+  "cliSourceFingerprint": "ed489e603e107cb630b4fdf67fa1d30e5f3c2bbfd0343095eb4d8f102b845c90",
+  "docsContentFingerprint": "e0c72ad7ac976fff76bb54681e88eef14ce08ca46504771c2e4ae8acfd111b9e",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
@@ -71,7 +71,7 @@
         "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
         "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained. Ladder expansion uses the same curl fallback as metadata so a relay miss does not collapse to one auto row.",
         "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it. No independently addressable subtitle track has been observed — do not advertise hardsub.",
-        "Relay-safe for metadata RPC (/rpc/anidb). Video stays direct: `videoFallback` is persisted but has no production reader and no `/stream/` handler."
+        "Relay-safe for metadata RPC (/rpc/anidb). Video always stays direct; the relay has no media route."
       ]
     },
     {
@@ -94,7 +94,7 @@
         "Mp4 (mp4upload scrape)",
         "Luf-Mp4",
         "Ak. Filemoon is gone.",
-        "2026-08: mkissa crypto rotates buildId + derivation constants (81 → 119 → 140; 140 added bootPrefix HMAC and group.host.lane.buildId.epoch payload) with /client-crypto/v1/bootstrap (x-aa-boot)",
+        "2026-08: mkissa crypto requires buildId=119 (rotated from 81) + /client-crypto/v1/bootstrap (x-aa-boot)",
         "7-day epochs. ani-cli v5 moved primary to anidb.app."
       ]
     },
@@ -113,11 +113,7 @@
         "Primary hosts: www.miruro.bz",
         "www.miruro.ru. Bare miruro.bz/.ru are 301 redirects to www. and still CF-block at the pipe path; miruro.com serves a different app shell with no /api/secure/pipe; miruro.tv/.to are TLS-dead — all stay off the resolve list.",
         "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
-        "The default anime priority names AniDB first; that list is ordering",
-        "not an allowlist",
-        "so Miruro remains a registered fallback and manually selectable when the curl/http2 path works.",
-        "May hit Cloudflare rate limits if called too frequently.",
-        "2026-08-17: curl --http2 with browser headers also receives CF 403 HTML from some networks; the WAF block message now carries a relay hint."
+        "Not in the automatic anime lane: `animeProviderPriority` is `[anidb"
       ]
     },
     {

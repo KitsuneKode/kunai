@@ -46,8 +46,7 @@ export const allanimeManifest = defineProviderManifest({
     allowStale: true,
   },
   browserSafe: false,
-  // Metadata RPC is the relay use case. Stream tokens stay IP-bound; that is
-  // `videoFallback`, which has no production reader and must stay off.
+  // Metadata RPC is the relay use case. Stream tokens stay IP-bound and direct.
   relaySafe: true,
   relayProfile: {
     upstreamHosts: [
@@ -57,7 +56,6 @@ export const allanimeManifest = defineProviderManifest({
       "allanime.day",
       "wp.youtube-anime.com",
     ],
-    videoRelayHosts: ["fast4speed.rsvp", "tools.fast4speed.rsvp"],
     defaultHeaders: {
       Referer: "https://mkissa.to",
     },
