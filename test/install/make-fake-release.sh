@@ -66,7 +66,11 @@ rm -f "$stub"
 ARCHIVES=()
 for asset in "${ASSETS[@]}"; do
 	archive="$asset.tar.gz"
-	tar -b 1 --format=ustar -czf "$DL_DIR/$archive" -C "$DL_DIR" "$asset"
+	# macOS bsdtar pads compressed archives after the gzip member, which makes
+	# strict gzip readers report trailing data. Stream the canonical ustar into
+	# gzip instead so the compressed container ends exactly with its footer.
+	COPYFILE_DISABLE=1 tar -b 1 --format=ustar -cf - -C "$DL_DIR" "$asset" |
+		gzip -n >"$DL_DIR/$archive"
 	ARCHIVES+=("$archive")
 done
 
