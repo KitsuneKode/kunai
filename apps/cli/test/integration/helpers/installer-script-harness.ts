@@ -114,19 +114,41 @@ export function seedActivationLock(
   return path;
 }
 
-export function seedLifecycleLock(dataDir: string, pid: number): string {
+export function seedLifecycleLock(
+  dataDir: string,
+  input:
+    | number
+    | {
+        readonly pid: number;
+        readonly hostname?: string;
+        readonly processStartId?: string | null;
+        readonly legacy?: boolean;
+        readonly external?: boolean;
+      },
+): string {
+  const options = typeof input === "number" ? { pid: input } : input;
   const locksDir = join(dataDir, "locks");
-  const path = join(locksDir, "lifecycle.lock");
-  mkdirSync(locksDir, { recursive: true });
-  writeFileSync(
-    path,
-    `${JSON.stringify({
-      pid,
-      version: "0.0.0",
-      execPath: "/tmp/kunai-uninstall",
-      acquiredAt: "2026-08-24T00:00:00.000Z",
-    })}\n`,
-  );
+  const path = options.external ? `${dataDir}.lifecycle.lock` : join(locksDir, "lifecycle.lock");
+  mkdirSync(options.external ? join(dataDir, "..") : locksDir, { recursive: true });
+  const content = options.legacy
+    ? {
+        pid: options.pid,
+        version: "0.0.0",
+        execPath: "/tmp/kunai-uninstall",
+        acquiredAt: "2026-08-24T00:00:00.000Z",
+      }
+    : {
+        schemaVersion: 1,
+        scope: "lifecycle",
+        pid: options.pid,
+        version: "0.0.0",
+        execPath: "/tmp/kunai-uninstall",
+        ownerId: `lifecycle-fixture-${options.pid}`,
+        acquiredAt: "2026-08-24T00:00:00.000Z",
+        hostname: options.hostname ?? hostname().trim().toLowerCase(),
+        processStartId: options.processStartId ?? null,
+      };
+  writeFileSync(path, `${JSON.stringify(content)}\n`);
   return path;
 }
 

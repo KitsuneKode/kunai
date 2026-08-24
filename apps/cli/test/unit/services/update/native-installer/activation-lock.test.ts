@@ -76,11 +76,46 @@ describe("activation lock", () => {
 
     const second = await tryAcquireActivationLock(layout, "2.0.0", {
       timeoutMs: 30,
-      pollMs: 5,
+      pollMs: 0,
     });
     expect(second).toMatchObject({ acquired: false, holderPid: process.pid });
     expect(existsSync(activationLockPath(layout))).toBe(true);
 
+    if (first.acquired) await first.release();
+  });
+
+  test("timeout zero still makes one immediate uncontended acquisition attempt", async () => {
+    const layout = await makeLayout();
+    const lock = await tryAcquireActivationLock(layout, "1.0.1", {
+      timeoutMs: 0,
+      pollMs: 0,
+    });
+    expect(lock.acquired).toBe(true);
+    if (lock.acquired) await lock.release();
+  });
+
+  test("includes local acquisition queue time in the caller's deadline", async () => {
+    const layout = await makeLayout();
+    const path = activationLockPath(layout);
+    await writeFile(path, "{not-json\n");
+
+    const firstPromise = tryAcquireActivationLock(layout, "1.0.0", {
+      timeoutMs: 500,
+      pollMs: 5,
+      corruptGraceMs: 150,
+    });
+    await Bun.sleep(10);
+    const startedAt = performance.now();
+    const second = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: 30,
+      pollMs: 5,
+    });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(second.acquired).toBe(false);
+    expect(elapsedMs).toBeLessThan(100);
+
+    const first = await firstPromise;
     if (first.acquired) await first.release();
   });
 
@@ -385,4 +420,24 @@ describe("activation lock", () => {
     ).rejects.toThrow("activation failed");
     expect(existsSync(activationLockPath(layout))).toBe(false);
   });
+
+  test.skipIf(process.platform === "win32")(
+    "surfaces an injected release cleanup failure and preserves ownership",
+    async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      const lock = await tryAcquireActivationLock(layout, "4.1.0");
+      expect(lock.acquired).toBe(true);
+      if (!lock.acquired) return;
+
+      try {
+        await chmod(layout.locksDir, 0o500);
+        await expect(lock.release()).rejects.toThrow(/release activation lock/i);
+        expect(existsSync(path)).toBe(true);
+      } finally {
+        await chmod(layout.locksDir, 0o700);
+        await lock.release();
+      }
+    },
+  );
 });

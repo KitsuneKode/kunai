@@ -61,6 +61,11 @@ Linux) HOST_OS="linux" ;;
 *) HOST_OS="unknown" ;;
 esac
 
+[[ "$ACTIVATION_LOCK_TIMEOUT_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_TIMEOUT_MS=10000
+[[ "$ACTIVATION_LOCK_POLL_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_POLL_MS=50
+[[ "$ACTIVATION_LOCK_CORRUPT_GRACE_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_CORRUPT_GRACE_MS=250
+((ACTIVATION_LOCK_POLL_MS > 0)) || ACTIVATION_LOCK_POLL_MS=1
+
 if [[ "$HOST_OS" == "darwin" ]]; then
 	CONFIG_DIR="${KUNAI_CONFIG_DIR:-$HOME/Library/Application Support/kunai}"
 	DATA_DIR="${KUNAI_DATA_DIR:-$HOME/Library/Application Support/kunai}"
@@ -490,6 +495,66 @@ JSON
 	mv -f "$tmp" "$path"
 }
 
+read_lifecycle_lock() {
+	local raw="$1" process_start_raw
+	LIFECYCLE_READ_SCHEMA="$(printf '%s\n' "$raw" | sed -n 's/.*"schemaVersion"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+	LIFECYCLE_READ_SCOPE="$(printf '%s\n' "$raw" | sed -n 's/.*"scope"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_PID="$(printf '%s\n' "$raw" | sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+	LIFECYCLE_READ_VERSION="$(printf '%s\n' "$raw" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_EXEC_PATH="$(printf '%s\n' "$raw" | sed -n 's/.*"execPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_OWNER="$(printf '%s\n' "$raw" | sed -n 's/.*"ownerId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_ACQUIRED_AT="$(printf '%s\n' "$raw" | sed -n 's/.*"acquiredAt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_HOSTNAME="$(printf '%s\n' "$raw" | sed -n 's/.*"hostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | tr '[:upper:]' '[:lower:]')"
+	LIFECYCLE_READ_PROCESS_START="$(printf '%s\n' "$raw" | sed -n 's/.*"processStartId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	process_start_raw="$(printf '%s\n' "$raw" | sed -n 's/.*"processStartId"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p' | head -1)"
+	[[ "$LIFECYCLE_READ_PID" =~ ^[1-9][0-9]*$ ]] || return 2
+	if [[ -z "$LIFECYCLE_READ_SCHEMA$LIFECYCLE_READ_SCOPE$LIFECYCLE_READ_HOSTNAME$process_start_raw" ]]; then
+		LIFECYCLE_READ_MODERN=0
+		return 0
+	fi
+	LIFECYCLE_READ_MODERN=1
+	[[ "$LIFECYCLE_READ_SCHEMA" == 1 && "$LIFECYCLE_READ_SCOPE" == lifecycle ]] || return 2
+	[[ "$LIFECYCLE_READ_VERSION" == 0.0.0 ]] || return 2
+	[[ -n "$LIFECYCLE_READ_EXEC_PATH" && -n "$LIFECYCLE_READ_OWNER" ]] || return 2
+	[[ "$LIFECYCLE_READ_ACQUIRED_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || return 2
+	[[ -n "$LIFECYCLE_READ_HOSTNAME" ]] || return 2
+	[[ "$process_start_raw" == null || -n "$LIFECYCLE_READ_PROCESS_START" ]] || return 2
+}
+
+lifecycle_lock_blocks() {
+	local lock_path="$1" raw reread status local_hostname current_start
+	raw="$(cat "$lock_path" 2>/dev/null || true)"
+	if read_lifecycle_lock "$raw"; then
+		status=0
+	else
+		status=$?
+	fi
+	if ((status == 2)); then
+		activation_lock_sleep 250
+		reread="$(cat "$lock_path" 2>/dev/null || true)"
+		[[ "$reread" == "$raw" ]] || return 0
+		if ! read_lifecycle_lock "$reread"; then
+			return 1
+		fi
+	fi
+	if [[ "$LIFECYCLE_READ_MODERN" == 1 ]]; then
+		local_hostname="$(activation_lock_hostname)"
+		[[ "$LIFECYCLE_READ_HOSTNAME" == "$local_hostname" ]] || return 0
+		if kill -0 "$LIFECYCLE_READ_PID" 2>/dev/null || ps -p "$LIFECYCLE_READ_PID" >/dev/null 2>&1; then
+			if [[ -n "$LIFECYCLE_READ_PROCESS_START" ]]; then
+				current_start="$(activation_lock_process_start_id "$LIFECYCLE_READ_PID")"
+				[[ -n "$current_start" && "$current_start" != "$LIFECYCLE_READ_PROCESS_START" ]] && return 1
+			fi
+			return 0
+		fi
+		return 1
+	fi
+	if kill -0 "$LIFECYCLE_READ_PID" 2>/dev/null || ps -p "$LIFECYCLE_READ_PID" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
 acquire_version_lock() {
 	local version="$1" lock_path="$2"
 	local lifecycle_path lifecycle_guard_path lifecycle_candidate holder
@@ -498,8 +563,8 @@ acquire_version_lock() {
 	lifecycle_guard_path="${DATA_DIR}.lifecycle.lock"
 	for lifecycle_candidate in "$lifecycle_guard_path" "$lifecycle_path"; do
 		if [[ -f "$lifecycle_candidate" ]]; then
-			holder="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$lifecycle_candidate" | head -1)"
-			if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+			if lifecycle_lock_blocks "$lifecycle_candidate"; then
+				holder="$LIFECYCLE_READ_PID"
 				err "Install lifecycle lock held by pid $holder; uninstall is in progress"
 				return 1
 			fi
@@ -520,8 +585,8 @@ JSON
 	# first check, relinquish our version lock before any download or mutation.
 	for lifecycle_candidate in "$lifecycle_guard_path" "$lifecycle_path"; do
 		if [[ -f "$lifecycle_candidate" ]]; then
-			holder="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$lifecycle_candidate" | head -1)"
-			if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+			if lifecycle_lock_blocks "$lifecycle_candidate"; then
+				holder="$LIFECYCLE_READ_PID"
 				release_version_lock "$lock_path"
 				err "Install lifecycle lock held by pid $holder; uninstall is in progress"
 				return 1
@@ -546,10 +611,36 @@ activation_lock_sleep() {
 	sleep "$seconds"
 }
 
+activation_lock_now_ms() {
+	local value seconds
+	value="$(date +%s%3N 2>/dev/null || true)"
+	if [[ "$value" =~ ^[0-9]+$ ]]; then
+		printf '%s' "$value"
+		return
+	fi
+	if have perl; then
+		perl -MTime::HiRes=time -e 'printf "%.0f", time() * 1000'
+		return
+	fi
+	seconds="$(date +%s)"
+	printf '%s000' "$seconds"
+}
+
+activation_lock_poll_until() {
+	local deadline="$1" now remaining delay
+	now="$(activation_lock_now_ms)"
+	remaining=$((deadline - now))
+	((remaining > 0)) || return 1
+	delay="$ACTIVATION_LOCK_POLL_MS"
+	((delay <= remaining)) || delay="$remaining"
+	((delay > 0)) || delay=1
+	activation_lock_sleep "$delay"
+}
+
 activation_lock_hostname() {
 	local value
 	value="$(hostname 2>/dev/null || uname -n 2>/dev/null || true)"
-	printf '%s' "$value" | tr '[:upper:]' '[:lower:]'
+	printf '%s' "$value" | awk '{$1=$1; print}' | tr '[:upper:]' '[:lower:]'
 }
 
 activation_lock_process_start_id() {
@@ -656,7 +747,7 @@ restore_activation_quarantine() {
 }
 
 reclaim_activation_lock() {
-	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4" successor_raw="$5"
+	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4" successor_raw="$5" deadline="$6"
 	local quarantine_path quarantined_raw
 	quarantine_path="${lock_path}.quarantine.${owner_id}.${RANDOM}"
 	while [[ -e "$quarantine_path" ]]; do
@@ -682,6 +773,7 @@ reclaim_activation_lock() {
 	rm -f "$quarantine_path"
 	local attempt=0
 	while ((attempt < 20)); do
+		(( $(activation_lock_now_ms) < deadline )) || return 1
 		if (
 			set -o noclobber
 			umask 077
@@ -696,15 +788,17 @@ reclaim_activation_lock() {
 }
 
 claim_and_reclaim_activation_lock() {
-	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4" successor_raw="$5"
+	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4" successor_raw="$5" deadline="$6"
 	local claim_path first_claim current_raw result=1
 	claim_path="$(create_activation_reclaim_claim "$lock_path" "$owner_id" "$successor_raw")" || return 1
 	first_claim="$(first_activation_reclaim_claim "$lock_path")"
 	if [[ "$first_claim" == "$claim_path" ]]; then
 		current_raw="$(cat "$lock_path" 2>/dev/null || true)"
 		if [[ "$current_raw" == "$observed_raw" ]]; then
-			if reclaim_activation_lock "$lock_path" "$current_raw" "$allow_corrupt" "$owner_id" "$successor_raw"; then
+			if reclaim_activation_lock "$lock_path" "$current_raw" "$allow_corrupt" "$owner_id" "$successor_raw" "$deadline"; then
 				result=0
+			else
+				result=$?
 			fi
 		fi
 	fi
@@ -717,8 +811,9 @@ claim_and_reclaim_activation_lock() {
 # every implementation uses the same JSON fields and token-checked release.
 acquire_activation_lock() {
 	local version="$1" lock_path="$2"
-	local elapsed=0 corrupt_elapsed=0 holder="" raw local_hostname process_start process_start_json activation_record
+	local deadline corrupt_since=0 holder="" raw local_hostname process_start process_start_json activation_record reclaim_result attempted=0
 
+	deadline=$(( $(activation_lock_now_ms) + ACTIVATION_LOCK_TIMEOUT_MS ))
 	mkdir -p "$(dirname "$lock_path")"
 	ACTIVATION_LOCK_OWNER_ID="$$-$(date +%s)-$RANDOM"
 	local_hostname="$(activation_lock_hostname)"
@@ -732,13 +827,21 @@ acquire_activation_lock() {
 		"$$" "$(json_escape "$version")" "$(json_escape "$ACTIVATION_LOCK_OWNER_ID")" "$(iso_now)" "$(json_escape "$local_hostname")" "$process_start_json")"
 
 	while :; do
+		if ((attempted == 1 && $(activation_lock_now_ms) >= deadline)); then
+			if [[ -n "$holder" ]]; then
+				err "Activation lock held by pid $holder while activating version $version"
+			else
+				err "Activation lock held while activating version $version"
+			fi
+			return 1
+		fi
+		attempted=1
 		if [[ -n "$(first_activation_reclaim_claim "$lock_path")" ]]; then
-			if ((elapsed >= ACTIVATION_LOCK_TIMEOUT_MS)); then
+			if (( $(activation_lock_now_ms) >= deadline )); then
 				err "Activation reclamation is already in progress for version $version"
 				return 1
 			fi
-			activation_lock_sleep "$ACTIVATION_LOCK_POLL_MS"
-			elapsed=$((elapsed + ACTIVATION_LOCK_POLL_MS))
+			activation_lock_poll_until "$deadline" || continue
 			continue
 		fi
 		if (
@@ -753,35 +856,49 @@ acquire_activation_lock() {
 			continue
 		fi
 		if [[ ! -e "$lock_path" ]]; then
-			if ((elapsed >= ACTIVATION_LOCK_TIMEOUT_MS)); then
+			if (( $(activation_lock_now_ms) >= deadline )); then
 				err "Could not create activation lock at $lock_path"
 				return 1
 			fi
-			activation_lock_sleep "$ACTIVATION_LOCK_POLL_MS"
-			elapsed=$((elapsed + ACTIVATION_LOCK_POLL_MS))
+			activation_lock_poll_until "$deadline" || continue
 			continue
 		fi
 
 		raw="$(cat "$lock_path" 2>/dev/null || true)"
 
 		if read_activation_lock "$raw"; then
-			corrupt_elapsed=0
+			corrupt_since=0
 			holder="$ACTIVATION_READ_PID"
 			if activation_lock_owner_is_stale; then
-				claim_and_reclaim_activation_lock "$lock_path" "$raw" 0 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" && return 0
-				continue
+				if claim_and_reclaim_activation_lock "$lock_path" "$raw" 0 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" "$deadline"; then
+					return 0
+				else
+					reclaim_result=$?
+					if ((reclaim_result == 2)); then
+						err "Could not restore activation lock quarantine at $lock_path; refusing activation"
+						return 1
+					fi
+				fi
 			fi
 		else
 			holder=""
-			corrupt_elapsed=$((corrupt_elapsed + ACTIVATION_LOCK_POLL_MS))
-			if ((corrupt_elapsed >= ACTIVATION_LOCK_CORRUPT_GRACE_MS)); then
-				claim_and_reclaim_activation_lock "$lock_path" "$raw" 1 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" && return 0
-				corrupt_elapsed=0
-				continue
+			if ((corrupt_since == 0)); then
+				corrupt_since="$(activation_lock_now_ms)"
+			elif (( $(activation_lock_now_ms) - corrupt_since >= ACTIVATION_LOCK_CORRUPT_GRACE_MS )); then
+				if claim_and_reclaim_activation_lock "$lock_path" "$raw" 1 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" "$deadline"; then
+					return 0
+				else
+					reclaim_result=$?
+					if ((reclaim_result == 2)); then
+						err "Could not restore activation lock quarantine at $lock_path; refusing activation"
+						return 1
+					fi
+				fi
+				corrupt_since=0
 			fi
 		fi
 
-		if ((elapsed >= ACTIVATION_LOCK_TIMEOUT_MS)); then
+		if (( $(activation_lock_now_ms) >= deadline )); then
 			if [[ -n "$holder" ]]; then
 				err "Activation lock held by pid $holder while activating version $version"
 			else
@@ -789,8 +906,7 @@ acquire_activation_lock() {
 			fi
 			return 1
 		fi
-		activation_lock_sleep "$ACTIVATION_LOCK_POLL_MS"
-		elapsed=$((elapsed + ACTIVATION_LOCK_POLL_MS))
+		activation_lock_poll_until "$deadline" || true
 	done
 }
 
@@ -809,7 +925,10 @@ release_activation_lock() {
 	if [[ "$current_owner" == "$owner_id" ]]; then
 		rm -f "$quarantine_path"
 	else
-		restore_activation_quarantine "$quarantine_path" "$lock_path" || true
+		if ! restore_activation_quarantine "$quarantine_path" "$lock_path"; then
+			err "Could not restore activation lock quarantine at $lock_path; ownership remains quarantined"
+			return 1
+		fi
 	fi
 }
 

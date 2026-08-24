@@ -27,6 +27,12 @@ import {
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_PS1 = join(REPO_ROOT, "install.ps1");
 
+function impossibleProcessStartId(): string {
+  if (process.platform === "win32") return "windows-ticks:0";
+  if (process.platform === "darwin") return "darwin-ps:impossible";
+  return "linux-proc:0";
+}
+
 async function waitForPaths(paths: readonly string[]): Promise<void> {
   const deadline = Date.now() + 8_000;
   while (paths.some((path) => !existsSync(path))) {
@@ -367,6 +373,86 @@ describePwsh("install.ps1 lifecycle contract", () => {
     }
   });
 
+  test("fails closed on a foreign-host lifecycle guard before download", async () => {
+    const sandbox = createInstallerSandbox("install-ps1-lifecycle-foreign");
+    const path = seedLifecycleLock(sandbox.dataDir, {
+      pid: 2_147_483_646,
+      hostname: " Another-Host.Example ",
+      external: true,
+    });
+    try {
+      await withReleaseFixture({}, async (baseUrl, evidence) => {
+        const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+          ...sandbox.env,
+          KUNAI_DL_BASE: baseUrl,
+        });
+        expect(result.status).not.toBe(0);
+        expect(`${result.stderr}${result.stdout}`).toMatch(/lifecycle|uninstall/i);
+        expect(evidence.requests).toEqual([]);
+        expect(existsSync(path)).toBe(true);
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("reclaims a same-host lifecycle guard whose pid start identity was reused", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-lifecycle-reused-pid";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-lifecycle-reused");
+    seedLifecycleLock(sandbox.dataDir, {
+      pid: process.pid,
+      processStartId: impossibleProcessStartId(),
+      external: true,
+    });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).toBe(0);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("gives an unchanged partial lifecycle guard bounded grace before recovery", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-lifecycle-partial";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-lifecycle-partial");
+    mkdirSync(sandbox.dataDir, { recursive: true });
+    writeFileSync(`${sandbox.dataDir}.lifecycle.lock`, "");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const startedAt = performance.now();
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).toBe(0);
+          expect(performance.now() - startedAt).toBeGreaterThanOrEqual(400);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test.each(["../1.2.3", "1.2.3-beta", "01.2.3", "1.2"])(
     "rejects invalid version %s before creating directories",
     (version) => {
@@ -697,7 +783,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
-            KUNAI_ACTIVATION_LOCK_POLL_MS: "5",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "0",
           });
           expect(result.status).not.toBe(0);
           expect(JSON.parse(readFileSync(activationPath, "utf8")).hostname).toBe(
@@ -764,6 +850,37 @@ describePwsh("install.ps1 lifecycle contract", () => {
           expect(`${result.stderr}${result.stdout}`).toContain("Activation lock held");
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
           expect(existsSync(activationPath)).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("bounds activation contention by real elapsed time when poll exceeds timeout", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-activation-real-deadline";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-activation-real-deadline");
+    seedActivationLock(sandbox.dataDir, { pid: process.pid });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const install = runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "500",
+          });
+          await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
+          const activationStartedAt = performance.now();
+          const result = await install;
+          expect(result.status).not.toBe(0);
+          expect(performance.now() - activationStartedAt).toBeLessThan(300);
         },
       );
     } finally {

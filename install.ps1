@@ -60,6 +60,9 @@ $DownloadRetryBaseMs = if ($env:KUNAI_DOWNLOAD_RETRY_BASE_MS) { [int]$env:KUNAI_
 $ActivationLockTimeoutMs = if ($env:KUNAI_ACTIVATION_LOCK_TIMEOUT_MS) { [int]$env:KUNAI_ACTIVATION_LOCK_TIMEOUT_MS } else { 10000 }
 $ActivationLockPollMs = if ($env:KUNAI_ACTIVATION_LOCK_POLL_MS) { [int]$env:KUNAI_ACTIVATION_LOCK_POLL_MS } else { 50 }
 $ActivationLockCorruptGraceMs = if ($env:KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS) { [int]$env:KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS } else { 250 }
+$ActivationLockTimeoutMs = [Math]::Max(0, $ActivationLockTimeoutMs)
+$ActivationLockPollMs = [Math]::Max(1, $ActivationLockPollMs)
+$ActivationLockCorruptGraceMs = [Math]::Max(0, $ActivationLockCorruptGraceMs)
 
 function Write-Utf8File([string]$Path, [string]$Content) {
   $encoding = New-Object System.Text.UTF8Encoding $false
@@ -408,21 +411,60 @@ function Write-VersionMetadata {
   Move-Item -Force -Path $tmp -Destination $Path
 }
 
+function Test-LifecycleLockActive([string]$LockPath) {
+  $script:LifecycleHolderPid = $null
+  $raw = try { Get-Content -LiteralPath $LockPath -Raw -ErrorAction Stop } catch { '' }
+  $candidate = $null
+  try { $candidate = $raw | ConvertFrom-Json } catch { $candidate = $null }
+  $validPid = $null -ne $candidate -and
+    ($candidate.pid -is [int] -or $candidate.pid -is [long]) -and [int64]$candidate.pid -gt 0
+  $properties = if ($null -ne $candidate) { @($candidate.PSObject.Properties.Name) } else { @() }
+  $modernIntent = $properties -contains 'schemaVersion' -or $properties -contains 'scope' -or
+    $properties -contains 'hostname' -or $properties -contains 'processStartId'
+  $validModern = $validPid -and $modernIntent -and
+    [int64]$candidate.schemaVersion -eq 1 -and [string]$candidate.scope -eq 'lifecycle' -and
+    $candidate.version -is [string] -and [string]$candidate.version -eq '0.0.0' -and
+    $candidate.execPath -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$candidate.execPath) -and
+    $candidate.ownerId -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$candidate.ownerId) -and
+    $raw -match '"acquiredAt"\s*:\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z"' -and
+    $candidate.hostname -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$candidate.hostname) -and
+    ($properties -contains 'processStartId') -and
+    ($null -eq $candidate.processStartId -or
+      ($candidate.processStartId -is [string] -and
+        -not [string]::IsNullOrWhiteSpace([string]$candidate.processStartId)))
+
+  if (-not $validPid -or ($modernIntent -and -not $validModern)) {
+    Start-Sleep -Milliseconds 250
+    $reread = try { Get-Content -LiteralPath $LockPath -Raw -ErrorAction Stop } catch { '' }
+    # A changing record is still being published. An unchanged invalid record
+    # has exhausted its bounded grace and is abandoned crash residue.
+    return $reread -ne $raw
+  }
+
+  $script:LifecycleHolderPid = [int]$candidate.pid
+  if (-not $modernIntent) {
+    return $null -ne (Get-Process -Id $script:LifecycleHolderPid -ErrorAction SilentlyContinue)
+  }
+  $ownerHost = ([string]$candidate.hostname).Trim().ToLowerInvariant()
+  if ($ownerHost -ne (Get-ActivationLockHostname)) { return $true }
+  $process = Get-Process -Id $script:LifecycleHolderPid -ErrorAction SilentlyContinue
+  if ($null -eq $process) { return $false }
+  if (-not [string]::IsNullOrWhiteSpace([string]$candidate.processStartId)) {
+    $currentStart = Get-ActivationProcessStartId $script:LifecycleHolderPid
+    if ($currentStart -and $currentStart -ne [string]$candidate.processStartId) { return $false }
+  }
+  return $true
+}
+
 function Acquire-VersionLock([string]$Ver, [string]$LockPath) {
   New-Item -ItemType Directory -Force -Path (Split-Path $LockPath) | Out-Null
   $lifecyclePath = Join-Path (Split-Path $LockPath) 'lifecycle.lock'
   $lifecycleGuardPath = "$DataDir.lifecycle.lock"
   foreach ($lifecycleCandidate in @($lifecycleGuardPath, $lifecyclePath)) {
     if (Test-Path -LiteralPath $lifecycleCandidate) {
-      try {
-        $lifecycle = Get-Content -LiteralPath $lifecycleCandidate -Raw | ConvertFrom-Json
-        $lifecyclePid = [int]$lifecycle.pid
-        if ($lifecyclePid -gt 0 -and $null -ne (Get-Process -Id $lifecyclePid -ErrorAction SilentlyContinue)) {
-          throw "Install lifecycle lock held by pid $lifecyclePid; uninstall is in progress"
-        }
-      }
-      catch {
-        if ($_.Exception.Message -match 'lifecycle lock held') { throw }
+      if (Test-LifecycleLockActive $lifecycleCandidate) {
+        $detail = if ($null -ne $script:LifecycleHolderPid) { " by pid $($script:LifecycleHolderPid)" } else { '' }
+        throw "Install lifecycle lock held$detail; uninstall is in progress"
       }
     }
   }
@@ -457,16 +499,10 @@ function Acquire-VersionLock([string]$Ver, [string]$LockPath) {
   # Close the race with lifecycle acquisition before download or mutation.
   foreach ($lifecycleCandidate in @($lifecycleGuardPath, $lifecyclePath)) {
     if (Test-Path -LiteralPath $lifecycleCandidate) {
-      try {
-        $lifecycle = Get-Content -LiteralPath $lifecycleCandidate -Raw | ConvertFrom-Json
-        $lifecyclePid = [int]$lifecycle.pid
-        if ($lifecyclePid -gt 0 -and $null -ne (Get-Process -Id $lifecyclePid -ErrorAction SilentlyContinue)) {
-          Release-VersionLock $LockPath
-          throw "Install lifecycle lock held by pid $lifecyclePid; uninstall is in progress"
-        }
-      }
-      catch {
-        if ($_.Exception.Message -match 'lifecycle lock held') { throw }
+      if (Test-LifecycleLockActive $lifecycleCandidate) {
+        Release-VersionLock $LockPath
+        $detail = if ($null -ne $script:LifecycleHolderPid) { " by pid $($script:LifecycleHolderPid)" } else { '' }
+        throw "Install lifecycle lock held$detail; uninstall is in progress"
       }
     }
   }
@@ -563,7 +599,12 @@ function Test-ActivationOwnerStale($Content) {
   $process = Get-Process -Id ([int]$Content.pid) -ErrorAction SilentlyContinue
   if ($null -eq $process) { return $true }
   if (-not [string]::IsNullOrWhiteSpace([string]$Content.processStartId)) {
-    $currentStart = Get-ActivationProcessStartId ([int]$Content.pid)
+    $currentStart = if ($OnWindows) {
+      "windows-ticks:$($process.StartTime.ToUniversalTime().Ticks)"
+    }
+    else {
+      Get-ActivationProcessStartId ([int]$Content.pid)
+    }
     if ($currentStart -and $currentStart -ne [string]$Content.processStartId) { return $true }
   }
   return $false
@@ -575,6 +616,11 @@ function Get-ActivationReclaimClaims([string]$LockPath) {
   $claims = [System.Collections.Generic.List[string]]::new()
   foreach ($item in @(Get-ChildItem -LiteralPath $directory -Filter "$leaf.reclaim.*" -File -ErrorAction SilentlyContinue)) {
     $state = Read-ActivationLockState $item.FullName
+    if ($null -ne $state -and $null -ne $state.Content -and
+      ([DateTime]::UtcNow - $item.LastWriteTimeUtc).TotalMilliseconds -lt 1000) {
+      $claims.Add($item.FullName)
+      continue
+    }
     if ($null -ne $state -and $null -ne $state.Content -and (Test-ActivationOwnerStale $state.Content)) {
       # Claim paths contain a GUID owner token and are never reused.
       Remove-Item -LiteralPath $item.FullName -Force -ErrorAction SilentlyContinue
@@ -690,7 +736,14 @@ function Invoke-ActivationReclaim(
   }
 }
 
+function Wait-ActivationLockPoll([System.Diagnostics.Stopwatch]$Timer) {
+  $remaining = $ActivationLockTimeoutMs - $Timer.ElapsedMilliseconds
+  if ($remaining -le 0) { return }
+  Start-Sleep -Milliseconds ([Math]::Max(1, [Math]::Min($ActivationLockPollMs, $remaining)))
+}
+
 function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
+  $timer = [System.Diagnostics.Stopwatch]::StartNew()
   New-Item -ItemType Directory -Force -Path (Split-Path $LockPath) | Out-Null
   $ownerId = "$PID-$([Guid]::NewGuid().ToString('N'))"
   $record = [ordered]@{
@@ -705,17 +758,22 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
     processStartId = (Get-ActivationProcessStartId $PID)
   }
   $bytes = (New-Object System.Text.UTF8Encoding $false).GetBytes((($record | ConvertTo-Json -Compress) + "`n"))
-  $timer = [System.Diagnostics.Stopwatch]::StartNew()
   $corruptRaw = $null
   $corruptSinceMs = 0L
   $holder = $null
+  $attempted = $false
 
   while ($true) {
+    if ($attempted -and $timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
+      $detail = if ($null -ne $holder) { " by pid $holder" } else { '' }
+      throw "Activation lock held$detail while activating version $Ver"
+    }
+    $attempted = $true
     if (@(Get-ActivationReclaimClaims $LockPath).Count -gt 0) {
       if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
         throw "Activation reclamation is already in progress for version $Ver"
       }
-      Start-Sleep -Milliseconds ([Math]::Max(1, $ActivationLockPollMs))
+      Wait-ActivationLockPoll $timer
       continue
     }
     $stream = $null
@@ -739,7 +797,7 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
         if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
           throw "Could not create activation lock at $LockPath"
         }
-        Start-Sleep -Milliseconds ([Math]::Max(1, $ActivationLockPollMs))
+        Wait-ActivationLockPoll $timer
         continue
       }
     }
@@ -749,7 +807,7 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
       if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
         throw "Activation lock held while activating version $Ver"
       }
-      Start-Sleep -Milliseconds ([Math]::Max(1, $ActivationLockPollMs))
+      Wait-ActivationLockPoll $timer
       continue
     }
     $content = $observed.Content
@@ -781,7 +839,7 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
       $detail = if ($null -ne $holder) { " by pid $holder" } else { '' }
       throw "Activation lock held$detail while activating version $Ver"
     }
-    Start-Sleep -Milliseconds ([Math]::Max(1, $ActivationLockPollMs))
+    Wait-ActivationLockPoll $timer
   }
 }
 

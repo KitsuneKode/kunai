@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { parseCanonicalVersion } from "../version";
@@ -10,6 +10,7 @@ import {
   lockFilePath,
   type InstallLayoutPaths,
 } from "./install-layout";
+import { isProcessAlive, normalizedHostname, processStartId } from "./lock-owner-identity";
 
 export type VersionLockContent = {
   readonly pid: number;
@@ -17,6 +18,10 @@ export type VersionLockContent = {
   readonly execPath: string;
   readonly acquiredAt: string;
   readonly ownerId?: string;
+  readonly schemaVersion?: number;
+  readonly scope?: string;
+  readonly hostname?: string;
+  readonly processStartId?: string | null;
 };
 
 export type LockAcquireResult =
@@ -32,15 +37,7 @@ export type VersionLockInspection =
       readonly detail: string;
     };
 
-function isProcessAlive(pid: number): boolean {
-  if (pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const LIFECYCLE_CORRUPT_GRACE_MS = 250;
 
 export async function readLockContent(path: string): Promise<VersionLockContent | null> {
   if (!existsSync(path)) return null;
@@ -62,6 +59,56 @@ async function isLockStale(path: string): Promise<boolean> {
   }
   // Unreadable/invalid: reclaim immediately (matches inspect "stale").
   return true;
+}
+
+function isModernLifecycleContent(content: VersionLockContent): boolean {
+  return (
+    content.schemaVersion === 1 &&
+    content.scope === "lifecycle" &&
+    Number.isSafeInteger(content.pid) &&
+    content.pid > 0 &&
+    content.version === LIFECYCLE_LOCK_VERSION &&
+    typeof content.execPath === "string" &&
+    content.execPath.length > 0 &&
+    typeof content.ownerId === "string" &&
+    content.ownerId.length > 0 &&
+    typeof content.acquiredAt === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(content.acquiredAt) &&
+    typeof content.hostname === "string" &&
+    content.hostname.trim().length > 0 &&
+    (content.processStartId === null ||
+      (typeof content.processStartId === "string" && content.processStartId.length > 0))
+  );
+}
+
+/**
+ * Schema-1 lifecycle identities are host-scoped. Foreign owners fail closed;
+ * local owners are stale only when their PID is dead or its start ID changed.
+ * Pre-schema records retain the legacy local-PID behavior for upgrades.
+ */
+async function isLifecycleLockStale(path: string): Promise<boolean> {
+  const content = await readLockContent(path);
+  if (!content) {
+    const metadata = await stat(path).catch(() => null);
+    return metadata === null || Date.now() - metadata.mtimeMs >= LIFECYCLE_CORRUPT_GRACE_MS;
+  }
+  const hasModernIdentity =
+    content.schemaVersion !== undefined ||
+    content.scope !== undefined ||
+    content.hostname !== undefined ||
+    content.processStartId !== undefined;
+  if (!hasModernIdentity) return !isProcessAlive(content.pid);
+  if (!isModernLifecycleContent(content)) {
+    const metadata = await stat(path).catch(() => null);
+    return metadata === null || Date.now() - metadata.mtimeMs >= LIFECYCLE_CORRUPT_GRACE_MS;
+  }
+  if (content.hostname?.trim().toLowerCase() !== normalizedHostname()) return false;
+  if (!isProcessAlive(content.pid)) return true;
+  if (content.processStartId) {
+    const currentStartId = processStartId(content.pid);
+    if (currentStartId && currentStartId !== content.processStartId) return true;
+  }
+  return false;
 }
 
 /** Read-only lock inspection — never deletes or reclaims lock files. */
@@ -105,7 +152,7 @@ export async function tryAcquireVersionLock(
   const lifecyclePath = lifecycleLockPath(layout);
   const lifecyclePaths = [lifecycleGuardPath(layout), lifecyclePath];
   for (const guardPath of lifecyclePaths) {
-    if (existsSync(guardPath) && !(await isLockStale(guardPath))) {
+    if (existsSync(guardPath) && !(await isLifecycleLockStale(guardPath))) {
       const existing = await readLockContent(guardPath);
       return { acquired: false, holderPid: existing?.pid };
     }
@@ -137,7 +184,7 @@ export async function tryAcquireVersionLock(
   // Close the check/create race with lifecycle acquisition: if uninstall won
   // its lock after our first check, relinquish this version lock and refuse.
   for (const guardPath of lifecyclePaths) {
-    if (existsSync(guardPath) && !(await isLockStale(guardPath))) {
+    if (existsSync(guardPath) && !(await isLifecycleLockStale(guardPath))) {
       const existing = await readLockContent(guardPath);
       const current = await readLockContent(path);
       if (current?.pid === process.pid) {
@@ -225,7 +272,7 @@ export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<voi
   for (const entry of await readdir(layout.locksDir).catch(() => [] as string[])) {
     if (entry === LIFECYCLE_LOCK_NAME) {
       const path = join(layout.locksDir, LIFECYCLE_LOCK_NAME);
-      if (await isLockStale(path)) {
+      if (await isLifecycleLockStale(path)) {
         await rm(path, { force: true }).catch(() => {});
       }
       continue;
@@ -286,16 +333,20 @@ export async function tryAcquireLifecycleLock(
   const ownerId = `${process.pid}-${randomUUID()}`;
 
   const content: VersionLockContent = {
+    schemaVersion: 1,
+    scope: "lifecycle",
     pid: process.pid,
     version: LIFECYCLE_LOCK_VERSION,
     execPath: options.execPath ?? process.execPath,
     acquiredAt: new Date().toISOString(),
     ownerId,
+    hostname: normalizedHostname(),
+    processStartId: processStartId(process.pid),
   };
 
   const acquiredPaths: string[] = [];
   for (const path of paths) {
-    if (existsSync(path) && !(await isLockStale(path))) {
+    if (existsSync(path) && !(await isLifecycleLockStale(path))) {
       const existing = await readLockContent(path);
       for (const acquiredPath of acquiredPaths) {
         await rm(acquiredPath, { force: true }).catch(() => {});
@@ -338,7 +389,11 @@ export async function tryAcquireLifecycleLock(
       for (const path of [...acquiredPaths].reverse()) {
         const current = await readLockContent(path);
         if (current?.ownerId === ownerId) {
-          await rm(path, { force: true }).catch(() => {});
+          try {
+            await rm(path, { force: true });
+          } catch (error) {
+            throw new Error(`Could not release lifecycle lock at ${path}`, { cause: error });
+          }
           if (path === lifecycleLockPath(layout)) {
             // The external purge-safe guard is still held at this point, so no
             // new install can acquire ownership while we remove an empty

@@ -65,6 +65,29 @@ async function runInstallShAsync(
   return { status, stdout, stderr };
 }
 
+async function runInstallShWithin(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  timeoutMs: number,
+): Promise<{ status: number; stdout: string; stderr: string } | null> {
+  const proc = Bun.spawn(["bash", INSTALL_SH, ...args], {
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const output = Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]).then(([stdout, stderr, status]) => ({ status, stdout, stderr }));
+  const result = await Promise.race([output, Bun.sleep(timeoutMs).then(() => null)]);
+  if (result === null) {
+    proc.kill();
+    await proc.exited;
+  }
+  return result;
+}
+
 type DarwinSysctlFixture = "missing" | "failing" | "0" | "1" | "unexpected";
 
 function runInstallShForDarwin(
@@ -416,6 +439,86 @@ describe("install.sh lifecycle contract", () => {
         expect(`${result.stderr}${result.stdout}`).toMatch(/lifecycle|uninstall/i);
         expect(evidence.requests).toEqual([]);
       });
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("fails closed on a foreign-host lifecycle guard before download", async () => {
+    const sandbox = createInstallerSandbox("install-sh-lifecycle-foreign");
+    const path = seedLifecycleLock(sandbox.dataDir, {
+      pid: 2_147_483_646,
+      hostname: " Another-Host.Example ",
+      external: true,
+    });
+    try {
+      await withReleaseFixture({}, async (baseUrl, evidence) => {
+        const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+          ...sandbox.env,
+          KUNAI_DL_BASE: baseUrl,
+        });
+        expect(result.status).not.toBe(0);
+        expect(`${result.stderr}${result.stdout}`).toMatch(/lifecycle|uninstall/i);
+        expect(evidence.requests).toEqual([]);
+        expect(existsSync(path)).toBe(true);
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("reclaims a same-host lifecycle guard whose pid start identity was reused", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho lifecycle-reused-pid\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-lifecycle-reused");
+    seedLifecycleLock(sandbox.dataDir, {
+      pid: process.pid,
+      processStartId: "linux-proc:0",
+      external: true,
+    });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).toBe(0);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("gives an unchanged partial lifecycle guard bounded grace before recovery", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho lifecycle-partial\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-lifecycle-partial");
+    mkdirSync(sandbox.dataDir, { recursive: true });
+    writeFileSync(`${sandbox.dataDir}.lifecycle.lock`, "");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const startedAt = performance.now();
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).toBe(0);
+          expect(performance.now() - startedAt).toBeGreaterThanOrEqual(400);
+        },
+      );
     } finally {
       sandbox.cleanup();
     }
@@ -849,6 +952,178 @@ describe("install.sh lifecycle contract", () => {
           expect(`${result.stderr}${result.stdout}`).toContain("Activation lock held");
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
           expect(existsSync(activationPath)).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("bounds activation contention by real elapsed time when poll exceeds timeout", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho activation-real-deadline\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-activation-real-deadline");
+    seedActivationLock(sandbox.dataDir, { pid: process.pid });
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const install = runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "500",
+          });
+          await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
+          const activationStartedAt = performance.now();
+          const result = await install;
+          expect(result.status).not.toBe(0);
+          expect(performance.now() - activationStartedAt).toBeLessThan(300);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("a failed reclaim with zero poll observes the activation deadline instead of hot-looping", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho reclaim-deadline\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-reclaim-deadline");
+    seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    const shimDir = join(sandbox.root, "shims");
+    mkdirSync(shimDir, { recursive: true });
+    const realMv = Bun.which("mv");
+    if (!realMv) throw new Error("mv is required for installer integration tests");
+    installCommandShim(
+      shimDir,
+      "mv",
+      `#!/bin/sh\ncase " $* " in *.reclaim.*) exit 73 ;; esac\nexec "${realMv}" "$@"\n`,
+    );
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShWithin(
+            ["--yes", "--skip-deps", "--version", "9.8.7"],
+            {
+              ...sandbox.env,
+              KUNAI_DL_BASE: baseUrl,
+              KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
+              KUNAI_ACTIVATION_LOCK_POLL_MS: "0",
+              PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+            },
+            500,
+          );
+          expect(result).not.toBeNull();
+          expect(result?.status).not.toBe(0);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("fails closed when an injected hard-link failure prevents quarantine restore", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho quarantine-restore\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-quarantine-restore-failure");
+    seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    const shimDir = join(sandbox.root, "shims");
+    mkdirSync(shimDir, { recursive: true });
+    const realMv = Bun.which("mv");
+    const realLn = Bun.which("ln");
+    if (!realMv || !realLn) throw new Error("mv and ln are required for installer tests");
+    installCommandShim(
+      shimDir,
+      "mv",
+      `#!/bin/sh\n"${realMv}" "$@" || exit $?\ncase "\${2:-}" in *.quarantine.*) printf ' ' >>"\${2}" ;; esac\n`,
+    );
+    installCommandShim(
+      shimDir,
+      "ln",
+      `#!/bin/sh\ncase " $* " in *.quarantine.*activation.lock*) exit 74 ;; esac\nexec "${realLn}" "$@"\n`,
+    );
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "100",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "5",
+            PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+          });
+          expect(result.status).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toMatch(/quarantine|activation lock/i);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+          expect(
+            readdirSync(join(sandbox.dataDir, "locks")).some((name) =>
+              name.includes("activation.lock.quarantine"),
+            ),
+          ).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("surfaces an injected hard-link failure while releasing quarantined ownership", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho release-quarantine-restore\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-release-quarantine-failure");
+    const shimDir = join(sandbox.root, "shims");
+    mkdirSync(shimDir, { recursive: true });
+    const realMv = Bun.which("mv");
+    const realLn = Bun.which("ln");
+    const realSed = Bun.which("sed");
+    if (!realMv || !realLn || !realSed) {
+      throw new Error("mv, ln, and sed are required for installer tests");
+    }
+    installCommandShim(
+      shimDir,
+      "mv",
+      `#!/bin/sh\n"${realMv}" "$@" || exit $?\ncase "\${2:-}" in *.release.*) "${realSed}" -i 's/"ownerId":"[^"]*"/"ownerId":"injected-other-owner"/' "\${2}" ;; esac\n`,
+    );
+    installCommandShim(
+      shimDir,
+      "ln",
+      `#!/bin/sh\ncase " $* " in *.release.*activation.lock*) exit 74 ;; esac\nexec "${realLn}" "$@"\n`,
+    );
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+          });
+          expect(result.status).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toMatch(/restore activation lock quarantine/i);
+          expect(
+            readdirSync(join(sandbox.dataDir, "locks")).some((name) =>
+              name.includes("activation.lock.quarantine"),
+            ),
+          ).toBe(true);
         },
       );
     } finally {
