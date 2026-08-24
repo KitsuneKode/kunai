@@ -185,6 +185,25 @@ Ship the npm package as a minimal Node launcher with exact-version optional
 platform binaries, and preserve the correct npm or Bun managed-install
 ownership in the compiled CLI.
 
+Late 0.3.0 fixes, from a review pass over the release train.
+
+- **YouTube plays at the quality you chose**, on the persistent player path. The
+  format selector was set on mpv's `ytdl` option, which is a yes/no flag — mpv
+  dropped it, so the ceiling silently never applied while the spawn path honoured
+  it. Both player paths now agree.
+- **Tracker credentials are private on Windows, and survive a power cut
+  everywhere.** The owner-only permission sat behind a POSIX-only branch, so on
+  Windows `sync-tokens.json` and `config.json` kept whatever `%APPDATA%`
+  inherited; they now get an inheritance-free, user-only ACL. Neither file was
+  flushed either, so a power loss could leave a correctly named, empty config.
+- **A malformed Discord IPC frame can no longer end your session.** Rich Presence
+  is optional; a bad frame could take playback down with it. Presence now
+  degrades to no presence.
+- **`-i/--id` no longer leaves a placeholder in your history**, and a partial
+  write can no longer erase external ids that were already resolved.
+- **Choosing a title shows the loader while it resolves**, instead of a still
+  screen that looked like nothing had happened.
+
 ## v0.2.5
 
 A large reliability + experience pass: continuous play, offline parity, smarter
