@@ -31,6 +31,7 @@ export const anidbManifest = defineProviderManifest({
       "title",
       "episode",
       "audio",
+      "subtitle",
       "quality",
       "startup",
       "source",

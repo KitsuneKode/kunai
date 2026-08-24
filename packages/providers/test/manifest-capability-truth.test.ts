@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
+import { allanimeManifest } from "../src/allmanga/manifest";
+import { anidbManifest } from "../src/anidb/manifest";
 import { miruroManifest } from "../src/miruro/manifest";
 import { providerResearchProfiles } from "../src/research";
+import { rivestreamManifest } from "../src/rivestream/manifest";
+import { videasyManifest } from "../src/videasy/manifest";
+import { vidlinkManifest } from "../src/vidlink/manifest";
 import { youtubeManifest } from "../src/youtube/manifest";
 
 /**
@@ -25,6 +30,53 @@ describe("manifests describe what the code does", () => {
     expect(youtubeManifest.capabilities).toContain("source-resolve");
     expect(miruroManifest.capabilities).toContain("multi-source");
   });
+});
+
+/**
+ * Cache keyParts are load-bearing: `stream-resolve-cache.ts` reads them verbatim
+ * to build the resolve cache key. A stream-resolve provider that omits a
+ * preference token reuses one cached entry across different requests for that
+ * preference, so switching audio, subtitle, or quality can serve a stream that
+ * answers the previous choice until the TTL expires — a correctness bug, not a
+ * perf one. Over-keying is safe (a redundant re-resolve); under-keying is not,
+ * so every stream-resolve provider must carry the whole preference set.
+ */
+describe("resolve cache keyParts cannot silently drift", () => {
+  const PREFERENCE_TOKENS = [
+    "audio",
+    "subtitle",
+    "quality",
+    "startup",
+    "source",
+    "stream",
+  ] as const;
+
+  const streamResolveManifests = [
+    { name: "vidlink", manifest: vidlinkManifest },
+    { name: "videasy", manifest: videasyManifest },
+    { name: "rivestream", manifest: rivestreamManifest },
+    { name: "miruro", manifest: miruroManifest },
+    { name: "anidb", manifest: anidbManifest },
+    { name: "allmanga", manifest: allanimeManifest },
+  ];
+
+  for (const { name, manifest } of streamResolveManifests) {
+    test(`${name} keys on every request preference`, () => {
+      expect(manifest.capabilities).toContain("source-resolve");
+      const keyParts = manifest.cachePolicy.keyParts;
+      for (const token of PREFERENCE_TOKENS) {
+        expect(keyParts).toContain(token);
+      }
+    });
+
+    test(`${name} keys on provider identity and the episode coordinate`, () => {
+      const keyParts = manifest.cachePolicy.keyParts;
+      expect(keyParts).toContain("provider");
+      expect(keyParts).toContain(manifest.id);
+      expect(keyParts).toContain("title");
+      expect(keyParts).toContain("episode");
+    });
+  }
 });
 
 describe("research profiles match the production registry", () => {

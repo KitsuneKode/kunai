@@ -94,7 +94,26 @@ test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => 
     subtitlePreference: "en",
     qualityPreference: "720p",
   });
-  expect(key).toContain("provider:videasy:series:tmdb:1:2:7:en:720p:balanced:none:none");
+  // audio now sits between episode and subtitle: switching audio must not reuse
+  // a stream cached for the previous choice.
+  expect(key).toContain("provider:videasy:series:tmdb:1:2:7:original:en:720p:balanced:none:none");
+});
+
+test("changing the audio preference changes the key for videasy", () => {
+  // Regression for the drift where videasy omitted `audio` from keyParts, so a
+  // dub<->sub switch reused the stream cached for the previous choice.
+  const base = {
+    providerId: "videasy",
+    providerManifest: videasyManifest,
+    title: { id: "tmdb:1", type: "series" as const, name: "X" },
+    episode: { season: 2, episode: 7 },
+    mode: "series" as const,
+    subtitlePreference: "en",
+    qualityPreference: "720p",
+  };
+  expect(buildApiStreamResolveCacheKey({ ...base, audioPreference: "original" })).not.toBe(
+    buildApiStreamResolveCacheKey({ ...base, audioPreference: "en" }),
+  );
 });
 
 test("buildEmbedStreamCacheKey preserves embed URL", () => {

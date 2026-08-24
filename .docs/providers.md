@@ -875,6 +875,15 @@ History and continuation use **canonical catalog ids** as the merge key (`anilis
   by re-deriving the route and app id. The selected source records `metadata.apiRoute`
   so route provenance is read explicitly rather than by positionally parsing
   `cachePolicy.keyParts`.
+- **Every stream-resolve manifest keys on the whole preference set.** The resolve
+  cache key is built from `keyParts`, so a manifest that omits `audio`, `subtitle`,
+  `quality`, `startup`, `source`, or `stream` reuses one cached entry across
+  different requests for that preference — switching audio or quality then serves a
+  stream that answers the previous choice until the TTL expires. Under-keying is a
+  correctness bug; over-keying costs at most a redundant re-resolve.
+  `manifest-capability-truth.test.ts` asserts the full set on every production
+  stream-resolve provider so the drift that put five different partial lists in five
+  manifests cannot recur.
 - **The CLI stream-cache key is route-agnostic, and that is deliberate.**
   `buildApiStreamResolveCacheKey()` in
   `apps/cli/src/services/cache/stream-resolve-cache.ts` derives its preimage from the

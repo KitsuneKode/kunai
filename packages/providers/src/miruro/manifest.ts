@@ -61,6 +61,7 @@ export const miruroManifest = defineProviderManifest({
       "title",
       "episode",
       "audio",
+      "subtitle",
       "quality",
       "startup",
       "source",
