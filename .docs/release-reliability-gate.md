@@ -301,3 +301,75 @@ bun run test:live:youtube
 ```
 
 Expected: `ok: true`, `streamResolved: true`, `streamHost` contains `youtube.com`. When yt-dlp is intentionally absent on the runner, `skipped: true` is acceptable.
+
+## Withdrawing a Released Version
+
+Every gate above exists to stop a bad release shipping. This section is for when
+one ships anyway. Rehearse it before tagging, not during an incident.
+
+Nothing here needs a code change. Both update channels resolve a *server-side
+mutable pointer*, so withdrawal is a metadata edit and is reversible.
+
+| Channel | Pointer read at runtime | Read by |
+| ------- | ----------------------- | ------- |
+| `binary` | `https://api.github.com/repos/KitsuneKode/kunai/releases/latest` → `tag_name` | `apps/cli/src/services/update/latest-version.ts` |
+| `npm-global`, `bun-global` | `https://registry.npmjs.org/@kitsunekode%2fkunai/latest` | `apps/cli/src/services/update/UpdateService.ts` |
+
+`apps/cli/src/services/update/resolve-latest-version.ts` is the single entry
+point that routes an install method to its channel.
+
+### 1. Stop the binary channel
+
+`parseVersionFromTag` rejects prerelease tags, so marking the GitHub release as
+a prerelease removes it from `releases/latest` and clients resolve the previous
+stable release instead.
+
+```sh
+gh release edit v0.3.0 --prerelease
+```
+
+Do not delete the release or its assets. Anyone already pinned to that version
+still needs the assets to reinstall or roll back, and deletion is not
+reversible.
+
+### 2. Stop the npm channel
+
+Move `latest` back and mark the bad version deprecated. Prefer this over
+`npm unpublish`, which is only permitted within 72 hours and hard-breaks anyone
+who pinned the version.
+
+```sh
+npm dist-tag add @kitsunekode/kunai@<previous-good-version> latest
+npm deprecate @kitsunekode/kunai@0.3.0 "Withdrawn — run: kunai rollback"
+```
+
+The platform packages are exact-version `optionalDependencies` of the launcher,
+so moving the launcher's `latest` tag is sufficient; the matching platform
+package is pinned by the launcher version that resolves.
+
+### 3. Recover users already on the bad version
+
+`kunai rollback` restores the previously activated version from the versioned
+install layout. Verify the real rollback, not only `--dry-run` — it is the
+least-exercised path that matters most, and it runs when everything else has
+already failed.
+
+```sh
+kunai rollback --list
+kunai rollback
+```
+
+### 4. Say so where people look
+
+Release notes, `README.md`, and the docs site. A withdrawn version that is
+withdrawn silently gets reinstalled from a cached tarball, a pinned CI file, or
+a blog post.
+
+### Rehearsal
+
+Before tagging, confirm on the candidate that:
+
+- `kunai rollback --list` shows the previous version
+- a real `kunai rollback` restores a working launcher and manifest
+- `kunai --version` reports the restored version afterwards
+- the native installer Docker lifecycle passes (`bun run test:installer:docker`)
