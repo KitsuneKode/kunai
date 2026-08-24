@@ -12,7 +12,6 @@ import {
   type DetectInstallMethodInput,
   type InstallMethodKind,
 } from "./install-method";
-import { tryAcquireActivationLock } from "./native-installer/activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";
 import { nativeUninstall } from "./native-installer/native-uninstall";
 import { tryAcquireLifecycleLock } from "./native-installer/version-lock";
@@ -99,24 +98,19 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
       return 0;
     }
-    const purged = await withPurgeSafeUninstallOwnership(
-      layout,
-      manifest?.activeVersion ?? "0.0.0",
-      opts.force,
-      async () => {
-        const current = await inspectInstallManifest(layout.configDir);
-        if (
-          current.status === "invalid" ||
-          (current.status === "loaded" &&
-            (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
-        ) {
-          return false;
-        }
-        console.log(plan.message);
-        await purgeUserRoots(layout, opts.preservePaths, rmImpl);
-        return true;
-      },
-    );
+    const purged = await withPurgeSafeUninstallOwnership(layout, opts.force, async () => {
+      const current = await inspectInstallManifest(layout.configDir);
+      if (
+        current.status === "invalid" ||
+        (current.status === "loaded" &&
+          (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
+      ) {
+        return false;
+      }
+      console.log(plan.message);
+      await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+      return true;
+    });
     if (!purged) {
       console.error("Uninstall blocked: install manifest changed or publication lock is active.");
       return 1;
@@ -127,28 +121,23 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       opts.execImpl ??
       ((command: readonly string[]) =>
         Bun.spawn([...command], { stdout: "inherit", stderr: "inherit" }).exited);
-    const removed = await withPurgeSafeUninstallOwnership(
-      layout,
-      manifest?.activeVersion ?? "0.0.0",
-      opts.force,
-      async () => {
-        const current = await inspectInstallManifest(layout.configDir);
-        if (
-          current.status === "invalid" ||
-          (current.status === "loaded" &&
-            (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
-        ) {
-          return { status: "changed" as const };
-        }
-        const code = await execImpl(plan.command);
-        if (code !== 0) return { status: "failed" as const, code };
-        await rmImpl(join(layout.configDir, "install.json"), { force: true });
-        if (opts.purge) {
-          await purgeUserRoots(layout, opts.preservePaths, rmImpl);
-        }
-        return { status: "removed" as const };
-      },
-    );
+    const removed = await withPurgeSafeUninstallOwnership(layout, opts.force, async () => {
+      const current = await inspectInstallManifest(layout.configDir);
+      if (
+        current.status === "invalid" ||
+        (current.status === "loaded" &&
+          (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
+      ) {
+        return { status: "changed" as const };
+      }
+      const code = await execImpl(plan.command);
+      if (code !== 0) return { status: "failed" as const, code };
+      await rmImpl(join(layout.configDir, "install.json"), { force: true });
+      if (opts.purge) {
+        await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+      }
+      return { status: "removed" as const };
+    });
     if (removed === null || removed.status === "changed") {
       console.error("Uninstall blocked: install manifest changed or publication lock is active.");
       return 1;
@@ -198,28 +187,23 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
     }
     return 0;
   } else {
-    const removed = await withPurgeSafeUninstallOwnership(
-      layout,
-      manifest?.activeVersion ?? "0.0.0",
-      opts.force,
-      async () => {
-        const current = await inspectInstallManifest(layout.configDir);
-        if (
-          current.status === "invalid" ||
-          (current.status === "loaded" &&
-            (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
-        ) {
-          return false;
-        }
-        await rmImpl(plan.path, { force: true });
-        console.log(`Removed ${plan.path}`);
-        await rmImpl(join(layout.configDir, "install.json"), { force: true }).catch(() => {});
-        if (opts.purge) {
-          await purgeUserRoots(layout, opts.preservePaths, rmImpl);
-        }
-        return true;
-      },
-    );
+    const removed = await withPurgeSafeUninstallOwnership(layout, opts.force, async () => {
+      const current = await inspectInstallManifest(layout.configDir);
+      if (
+        current.status === "invalid" ||
+        (current.status === "loaded" &&
+          (!manifest || !sameInstallManifestPublication(current.manifest, manifest)))
+      ) {
+        return false;
+      }
+      await rmImpl(plan.path, { force: true });
+      console.log(`Removed ${plan.path}`);
+      await rmImpl(join(layout.configDir, "install.json"), { force: true }).catch(() => {});
+      if (opts.purge) {
+        await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+      }
+      return true;
+    });
     if (!removed) {
       console.error("Uninstall blocked: install manifest changed or publication lock is active.");
       return 1;
@@ -233,13 +217,12 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
 }
 
 /**
- * Current-base adapter for the purge-safe lifecycle -> activation composite.
- * Keeping the acquisition boundary here lets the base lifecycle implementation
- * own this contract after the updater branch is rebased.
+ * Hold the shared lifecycle -> activation composite across command execution,
+ * manifest removal, and every purge root. The lifecycle primitive owns both
+ * locks; acquiring activation again here would self-contend until timeout.
  */
 async function withPurgeSafeUninstallOwnership<T>(
   layout: InstallLayoutPaths,
-  version: string,
   force: boolean | undefined,
   fn: () => Promise<T>,
 ): Promise<T | null> {
@@ -249,13 +232,7 @@ async function withPurgeSafeUninstallOwnership<T>(
   });
   if (!lifecycle.acquired) return null;
   try {
-    const activation = await tryAcquireActivationLock(layout, version);
-    if (!activation.acquired) return null;
-    try {
-      return await fn();
-    } finally {
-      await activation.release();
-    }
+    return await fn();
   } finally {
     await lifecycle.release();
   }
