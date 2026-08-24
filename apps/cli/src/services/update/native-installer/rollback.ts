@@ -2,11 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
 
-import {
-  readInstallManifest,
-  writeInstallManifestUnderActivation,
-  type InstallManifest,
-} from "../install-manifest";
+import { readInstallManifest, writeInstallManifestUnderActivation } from "../install-manifest";
 import { parseCanonicalVersion } from "../version";
 import { withActivationLock } from "./activation-lock";
 import {
@@ -46,6 +42,7 @@ export type RollbackRefuseCode =
   | "missing"
   | "corrupt"
   | "locked"
+  | "ownership-changed"
   | "not-candidate";
 
 export type RollbackPlanResult =
@@ -76,6 +73,8 @@ export type RollbackOptions = {
   readonly layout?: InstallLayoutPaths;
   /** Test/embedding seam; production uses the shared lock default. */
   readonly activationLockTimeoutMs?: number;
+  /** Test/embedding seam fired when rollback starts activation acquisition. */
+  readonly onActivationAcquireAttempt?: () => void;
 };
 
 async function listInstalledVersions(
@@ -333,7 +332,18 @@ export async function executeRollback(
             layout,
             candidate.version,
             async () => {
-              const manifest = (await readInstallManifest(layout.configDir)) as InstallManifest;
+              const manifest = await readInstallManifest(layout.configDir);
+              if (
+                !manifest ||
+                manifest.method !== "binary" ||
+                manifest.activeVersion !== plan.fromVersion
+              ) {
+                return {
+                  status: "refused" as const,
+                  code: "ownership-changed" as const,
+                  reason: "Install ownership changed after rollback planning; refusing activation",
+                };
+              }
               if (manifest.activeVersion === candidate.version) {
                 return {
                   status: "refused" as const,
@@ -348,30 +358,34 @@ export async function executeRollback(
 
               await updateLauncher({
                 launcherPath: manifest.launcherPath,
-                versionPath: candidate.versionPath,
+                versionPath: versionBinaryPath(layout, reverify.metadata.version),
               });
 
               try {
                 await writeInstallManifestUnderActivation(
                   {
                     method: "binary",
-                    activeVersion: candidate.version,
+                    activeVersion: reverify.metadata.version,
                     previousVersion: manifest.activeVersion,
                     launcherPath: manifest.launcherPath,
-                    versionedPath: candidate.versionPath,
+                    versionedPath: versionBinaryPath(layout, reverify.metadata.version),
                     downloadBaseUrl: manifest.downloadBaseUrl,
-                    target: candidate.target,
-                    artifactName: candidate.artifactName,
-                    artifactSha256: candidate.artifactSha256,
-                    artifactSizeBytes: candidate.sizeBytes,
-                    artifactSourceUrl: candidate.sourceUrl,
-                    ...(candidate.archiveName ? { archiveName: candidate.archiveName } : {}),
-                    ...(candidate.archiveSha256 ? { archiveSha256: candidate.archiveSha256 } : {}),
-                    ...(candidate.archiveSizeBytes !== undefined
-                      ? { archiveSizeBytes: candidate.archiveSizeBytes }
+                    target: reverify.metadata.target,
+                    artifactName: reverify.metadata.artifactName,
+                    artifactSha256: reverify.metadata.artifactSha256,
+                    artifactSizeBytes: reverify.metadata.sizeBytes,
+                    artifactSourceUrl: reverify.metadata.sourceUrl,
+                    ...(reverify.metadata.archiveName
+                      ? { archiveName: reverify.metadata.archiveName }
                       : {}),
-                    ...(candidate.archiveSourceUrl
-                      ? { archiveSourceUrl: candidate.archiveSourceUrl }
+                    ...(reverify.metadata.archiveSha256
+                      ? { archiveSha256: reverify.metadata.archiveSha256 }
+                      : {}),
+                    ...(reverify.metadata.archiveSizeBytes !== undefined
+                      ? { archiveSizeBytes: reverify.metadata.archiveSizeBytes }
+                      : {}),
+                    ...(reverify.metadata.archiveSourceUrl
+                      ? { archiveSourceUrl: reverify.metadata.archiveSourceUrl }
                       : {}),
                     managedPaths: manifest.managedPaths,
                     ...(manifest.observedProvenance
@@ -395,7 +409,10 @@ export async function executeRollback(
                 toVersion: candidate.version,
               };
             },
-            { timeoutMs: options.activationLockTimeoutMs },
+            {
+              timeoutMs: options.activationLockTimeoutMs,
+              onAcquireAttempt: options.onActivationAcquireAttempt,
+            },
           );
 
           if (activated === null) {

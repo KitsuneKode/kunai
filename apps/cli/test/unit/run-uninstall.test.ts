@@ -189,6 +189,10 @@ test("runUninstall keeps a concurrent package publication behind every purge roo
   await purgeStarted;
 
   let publicationFinished = false;
+  let announcePublicationAttempt!: () => void;
+  const publicationAttempted = new Promise<void>((resolve) => {
+    announcePublicationAttempt = resolve;
+  });
   const publishing = (async () => {
     await writeInstallManifest(
       {
@@ -198,10 +202,11 @@ test("runUninstall keeps a concurrent package publication behind every purge roo
         downloadBaseUrl: "https://registry.npmjs.org",
       },
       layout,
+      { onAcquireAttempt: announcePublicationAttempt },
     );
     publicationFinished = true;
   })();
-  await Bun.sleep(25);
+  await publicationAttempted;
 
   expect(publicationFinished).toBe(false);
   resumePurge();
@@ -209,6 +214,46 @@ test("runUninstall keeps a concurrent package publication behind every purge roo
   await publishing;
   expect(guardedRoots).toEqual([layout.configDir, layout.cacheDir, layout.dataDir]);
   expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("2.0.0");
+});
+
+test("runUninstall reports purge failures instead of claiming the root was removed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kunai-run-uninstall-purge-failure-"));
+  made.push(root);
+  const layout = getInstallLayoutPaths({
+    dataDir: join(root, "data"),
+    cacheDir: join(root, "cache"),
+    configDir: join(root, "config"),
+    launcherPath: join(root, "bin", "kunai"),
+    platform: "linux",
+  });
+  await writeInstallManifest(
+    {
+      method: "npm-global",
+      activeVersion: "1.0.0",
+      launcherPath: layout.launcherPath,
+      downloadBaseUrl: "https://registry.npmjs.org",
+    },
+    layout,
+  );
+
+  const originalError = console.error;
+  const errors: string[] = [];
+  console.error = (...args) => errors.push(args.map(String).join(" "));
+  try {
+    const code = await runUninstall({
+      purge: true,
+      layout,
+      execImpl: async () => 0,
+      rmImpl: async (path, options) => {
+        if (path === layout.cacheDir) throw new Error("cache busy");
+        return rm(path, options);
+      },
+    });
+    expect(code).toBe(1);
+  } finally {
+    console.error = originalError;
+  }
+  expect(errors).toContain(`Failed to remove ${layout.cacheDir}: cache busy`);
 });
 
 for (const [manager, expectedCommand] of [

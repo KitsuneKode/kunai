@@ -14,7 +14,11 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { readInstallManifest, writeInstallManifest } from "@/services/update/install-manifest";
+import {
+  readInstallManifest,
+  writeInstallManifest,
+  writeInstallManifestUnderActivation,
+} from "@/services/update/install-manifest";
 import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
 import { installLatest } from "@/services/update/native-installer/install-latest";
 import {
@@ -425,6 +429,51 @@ describe("installLatest", () => {
     expect(await install).toMatchObject({ status: "installed", version: "2.0.0" });
     await expectLauncherPointsTo(layout.launcherPath, versionPath);
     expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("2.0.0");
+  });
+
+  test("does not replace package ownership published while the native binary downloads", async () => {
+    const { layout } = await makeLayout();
+    const held = await tryAcquireActivationLock(layout, "1.0.0");
+    expect(held.acquired).toBe(true);
+
+    const assetName = hostAssetName();
+    const bytes = new TextEncoder().encode("DOWNLOADED-BUT-NOT-ACTIVATED");
+    const digest = sha256Hex(bytes);
+    const install = installLatest({
+      version: "2.0.0",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) return new Response("missing", { status: 404 });
+        if (url.includes("SHA256SUMS")) return new Response(sumsFor(assetName, digest));
+        if (url.includes(assetName)) return new Response(bytes);
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    await waitForPath(versionMetadataPath(layout, "2.0.0"));
+    await writeInstallManifestUnderActivation(
+      {
+        method: "npm-global",
+        activeVersion: "9.9.9",
+        launcherPath: layout.launcherPath,
+        downloadBaseUrl: "https://registry.npmjs.org",
+      },
+      layout,
+    );
+    if (held.acquired) await held.release();
+
+    expect(await install).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("Install ownership changed"),
+    });
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      method: "npm-global",
+      activeVersion: "9.9.9",
+    });
+    expect(existsSync(layout.launcherPath)).toBe(false);
   });
 
   test("releases a reclaimed activation lock when manifest publication fails", async () => {

@@ -4,9 +4,10 @@ import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
 
-import { withActivationLock } from "./native-installer/activation-lock";
+import { withActivationLock, type ActivationLockOptions } from "./native-installer/activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";
 import { withVersionLock } from "./native-installer/version-lock";
+import { migrateArchiveVersionMetadata } from "./native-installer/version-metadata";
 import { parseCanonicalVersion } from "./version";
 
 /**
@@ -191,6 +192,7 @@ export async function migrateInstallManifest(
         return { status: "unchanged", manifest: current.manifest } as const;
       }
 
+      await migrateArchiveVersionMetadata(layout, current.manifest);
       await persistManifest(current.manifest, layout.configDir);
       return { status: "migrated", manifest: current.manifest } as const;
     });
@@ -202,6 +204,7 @@ export async function migrateInstallManifest(
 export async function writeInstallManifest(
   partial: WriteInstallManifestInput,
   layout: InstallLayoutPaths = getInstallLayoutPaths({ launcherPath: partial.launcherPath }),
+  activationOptions: ActivationLockOptions = {},
 ): Promise<void> {
   validateWriteProvenance(partial);
   const activeVersion = parseCanonicalVersion(partial.activeVersion);
@@ -211,8 +214,11 @@ export async function writeInstallManifest(
   if (partial.previousVersion !== undefined && !parseCanonicalVersion(partial.previousVersion)) {
     throw new Error(`Invalid install manifest previousVersion: ${partial.previousVersion}`);
   }
-  const published = await withActivationLock(layout, activeVersion, () =>
-    writeInstallManifestUnderActivation(partial, layout),
+  const published = await withActivationLock(
+    layout,
+    activeVersion,
+    () => writeInstallManifestUnderActivation(partial, layout),
+    activationOptions,
   );
   if (published === null) {
     throw new Error(`Install manifest publication lock held while publishing ${activeVersion}`);

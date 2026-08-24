@@ -40,6 +40,8 @@ export type ActivationLockOptions = {
   readonly corruptGraceMs?: number;
   /** Test seam for deterministic PID-reuse coverage. */
   readonly processStartIdLookup?: ProcessStartIdLookup;
+  /** Test/embedding seam fired once this acquisition request has started. */
+  readonly onAcquireAttempt?: () => void;
 };
 
 export type ActivationLockInspection =
@@ -351,6 +353,7 @@ export async function tryAcquireActivationLock(
   const canonical = parseCanonicalVersion(version);
   if (!canonical) throw new Error(`Invalid activation lock version: ${version}`);
 
+  options.onAcquireAttempt?.();
   const path = activationLockPath(layout);
   const timeoutMs = Math.max(0, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const deadlineAt = Date.now() + timeoutMs;

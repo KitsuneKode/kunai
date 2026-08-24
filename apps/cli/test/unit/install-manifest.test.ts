@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +16,10 @@ import { tryAcquireActivationLock } from "@/services/update/native-installer/act
 import {
   getInstallLayoutPaths,
   lockFilePath,
+  versionBinaryPath,
+  versionMetadataPath,
 } from "@/services/update/native-installer/install-layout";
+import { writeInstalledVersionMetadata } from "@/services/update/native-installer/version-metadata";
 
 const made: string[] = [];
 afterEach(() => {
@@ -134,8 +138,29 @@ test("write then read round-trips the versioned manifest", async () => {
 
 test("reads and safely backfills the exact predecessor schema-2 archive shape", async () => {
   const dir = tempDir();
+  const layout = migrationLayout(dir);
   const path = join(dir, "install.json");
-  await Bun.write(path, `${JSON.stringify(PREDECESSOR_SCHEMA_2_ARCHIVE, null, 2)}\n`);
+  const bytes = new TextEncoder().encode("predecessor-archive-member");
+  const artifactSha256 = createHash("sha256").update(bytes).digest("hex");
+  const predecessor = {
+    ...PREDECESSOR_SCHEMA_2_ARCHIVE,
+    artifactSha256,
+    artifactSizeBytes: bytes.length,
+  };
+  await Bun.write(path, `${JSON.stringify(predecessor, null, 2)}\n`);
+  const binaryPath = versionBinaryPath(layout, predecessor.activeVersion);
+  await Bun.write(binaryPath, bytes);
+  await writeInstalledVersionMetadata(layout, {
+    schemaVersion: 1,
+    version: predecessor.activeVersion,
+    target: predecessor.target,
+    artifactName: predecessor.artifactName,
+    artifactSha256,
+    sizeBytes: bytes.length,
+    sourceUrl: predecessor.archiveSourceUrl,
+    verification: "release-checksum",
+    installedAt: predecessor.installedAt,
+  });
 
   expect(await inspectInstallManifest(dir)).toMatchObject({
     status: "loaded",
@@ -146,9 +171,9 @@ test("reads and safely backfills the exact predecessor schema-2 archive shape", 
         "https://github.com/KitsuneKode/kunai/releases/download/v1.2.3/kunai-linux-x64",
     },
   });
-  expect(JSON.parse(await Bun.file(path).text())).toEqual(PREDECESSOR_SCHEMA_2_ARCHIVE);
+  expect(JSON.parse(await Bun.file(path).text())).toEqual(predecessor);
 
-  expect(await migrateInstallManifest(migrationLayout(dir))).toMatchObject({
+  expect(await migrateInstallManifest(layout)).toMatchObject({
     status: "migrated",
     manifest: {
       artifactSourceUrl:
@@ -159,6 +184,13 @@ test("reads and safely backfills the exact predecessor schema-2 archive shape", 
     schemaVersion: 2,
     artifactSourceUrl:
       "https://github.com/KitsuneKode/kunai/releases/download/v1.2.3/kunai-linux-x64",
+  });
+  expect(JSON.parse(await Bun.file(versionMetadataPath(layout, "1.2.3")).text())).toMatchObject({
+    sourceUrl: "https://github.com/KitsuneKode/kunai/releases/download/v1.2.3/kunai-linux-x64",
+    archiveName: predecessor.archiveName,
+    archiveSha256: predecessor.archiveSha256,
+    archiveSizeBytes: predecessor.archiveSizeBytes,
+    archiveSourceUrl: predecessor.archiveSourceUrl,
   });
 });
 

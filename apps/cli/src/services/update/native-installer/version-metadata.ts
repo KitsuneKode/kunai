@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 
+import type { InstallManifest } from "../install-manifest";
 import { parseCanonicalVersion } from "../version";
 import { versionBinaryPath, versionMetadataPath, type InstallLayoutPaths } from "./install-layout";
 
@@ -131,6 +132,72 @@ export async function writeInstalledVersionMetadata(
   const path = versionMetadataPath(layout, canonical);
   await mkdir(dirname(path), { recursive: true });
   await writeAtomicJson(path, normalized);
+}
+
+/**
+ * Repair the exact archive metadata shape emitted before version.json carried
+ * transport provenance. The manifest migration owns both version and
+ * activation locks, so this cannot race a replacement publication.
+ */
+export async function migrateArchiveVersionMetadata(
+  layout: Pick<InstallLayoutPaths, "versionsDir" | "binaryFileName">,
+  manifest: Pick<
+    InstallManifest,
+    | "activeVersion"
+    | "artifactName"
+    | "artifactSha256"
+    | "artifactSizeBytes"
+    | "artifactSourceUrl"
+    | "archiveName"
+    | "archiveSha256"
+    | "archiveSizeBytes"
+    | "archiveSourceUrl"
+  >,
+): Promise<boolean> {
+  if (
+    !manifest.artifactName ||
+    !manifest.artifactSha256 ||
+    manifest.artifactSizeBytes === undefined ||
+    !manifest.artifactSourceUrl ||
+    !manifest.archiveName ||
+    !manifest.archiveSha256 ||
+    manifest.archiveSizeBytes === undefined ||
+    !manifest.archiveSourceUrl
+  ) {
+    return false;
+  }
+
+  const path = versionMetadataPath(layout, manifest.activeVersion);
+  if (!existsSync(path)) return false;
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    return false;
+  }
+  const metadata = parseMetadata(raw);
+  if (
+    !metadata ||
+    metadata.version !== manifest.activeVersion ||
+    metadata.archiveName !== undefined ||
+    metadata.artifactName !== manifest.artifactName ||
+    metadata.artifactSha256 !== manifest.artifactSha256.toLowerCase() ||
+    metadata.sizeBytes !== manifest.artifactSizeBytes ||
+    metadata.sourceUrl !== manifest.archiveSourceUrl
+  ) {
+    return false;
+  }
+
+  await writeInstalledVersionMetadata(layout, {
+    ...metadata,
+    sourceUrl: manifest.artifactSourceUrl,
+    archiveName: manifest.archiveName,
+    archiveSha256: manifest.archiveSha256,
+    archiveSizeBytes: manifest.archiveSizeBytes,
+    archiveSourceUrl: manifest.archiveSourceUrl,
+  });
+  return true;
 }
 
 export async function verifyStoredVersion(

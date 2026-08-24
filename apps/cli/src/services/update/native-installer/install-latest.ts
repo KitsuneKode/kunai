@@ -251,6 +251,16 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           // Another version may have activated while this version downloaded.
           // Re-read shared state only after winning the cross-version lock.
           const activeManifest = await readInstallManifest(layout.configDir);
+          const ownershipChanged =
+            activeManifest?.method !== undefined && activeManifest.method !== "binary";
+          const nativeInstallWasRemoved = manifest !== null && activeManifest === null;
+          const nativeInstallWasNeverOwner =
+            manifest?.method !== undefined && manifest.method !== "binary";
+          if (ownershipChanged || nativeInstallWasRemoved || nativeInstallWasNeverOwner) {
+            throw new Error(
+              "Install ownership changed while downloading; refusing to replace a non-native publication",
+            );
+          }
           const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
           const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
           let preserveSnapshot = false;

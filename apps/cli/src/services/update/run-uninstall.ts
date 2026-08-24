@@ -108,11 +108,13 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
         return false;
       }
       console.log(plan.message);
-      await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+      if (!(await purgeUserRoots(layout, opts.preservePaths, rmImpl))) return false;
       return true;
     });
     if (!purged) {
-      console.error("Uninstall blocked: install manifest changed or publication lock is active.");
+      console.error(
+        "Uninstall did not complete: ownership changed, a publication lock is active, or purge failed.",
+      );
       return 1;
     }
     return 0;
@@ -134,7 +136,9 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       if (code !== 0) return { status: "failed" as const, code };
       await rmImpl(join(layout.configDir, "install.json"), { force: true });
       if (opts.purge) {
-        await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+        if (!(await purgeUserRoots(layout, opts.preservePaths, rmImpl))) {
+          return { status: "purge-failed" as const };
+        }
       }
       return { status: "removed" as const };
     });
@@ -146,6 +150,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       console.error(`Package manager uninstall exited with code ${removed.code}.`);
       return removed.code;
     }
+    if (removed.status === "purge-failed") return 1;
     if (!opts.purge) {
       console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
     }
@@ -200,12 +205,14 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       console.log(`Removed ${plan.path}`);
       await rmImpl(join(layout.configDir, "install.json"), { force: true }).catch(() => {});
       if (opts.purge) {
-        await purgeUserRoots(layout, opts.preservePaths, rmImpl);
+        if (!(await purgeUserRoots(layout, opts.preservePaths, rmImpl))) return false;
       }
       return true;
     });
     if (!removed) {
-      console.error("Uninstall blocked: install manifest changed or publication lock is active.");
+      console.error(
+        "Uninstall did not complete: ownership changed, a publication lock is active, or purge failed.",
+      );
       return 1;
     }
   }
@@ -242,14 +249,23 @@ async function purgeUserRoots(
   layout: Pick<InstallLayoutPaths, "configDir" | "dataDir" | "cacheDir">,
   preservePaths: readonly string[] | undefined,
   rmImpl: typeof rm = rm,
-): Promise<void> {
+): Promise<boolean> {
   const preserve = new Set(preservePaths ?? []);
+  let success = true;
   for (const target of [layout.configDir, layout.cacheDir, layout.dataDir]) {
     if (preserve.has(target)) {
       console.log(`Preserved ${target}`);
       continue;
     }
-    await rmImpl(target, { recursive: true, force: true }).catch(() => {});
-    console.log(`Removed ${target}`);
+    try {
+      await rmImpl(target, { recursive: true, force: true });
+      console.log(`Removed ${target}`);
+    } catch (error) {
+      success = false;
+      console.error(
+        `Failed to remove ${target}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
   }
+  return success;
 }

@@ -15,7 +15,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 
-import { readInstallManifest, writeInstallManifest } from "@/services/update/install-manifest";
+import {
+  readInstallManifest,
+  writeInstallManifest,
+  writeInstallManifestUnderActivation,
+} from "@/services/update/install-manifest";
 import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
 import {
   getInstallLayoutPaths,
@@ -465,5 +469,47 @@ describePosixOnly("executeRollback activation and refusal", () => {
     } finally {
       if (activation.acquired) await activation.release();
     }
+  });
+
+  test("refuses when package ownership replaces the native manifest after planning", async () => {
+    const { layout } = await makeRoot();
+    await seedVerifiedVersion(layout, "1.0.0", "old");
+    const activePath = await seedVerifiedVersion(layout, "2.0.0", "new");
+    await symlink(activePath, layout.launcherPath);
+    await seedBinaryManifest(layout, "2.0.0", "1.0.0");
+
+    const activation = await tryAcquireActivationLock(layout, "9.9.9");
+    expect(activation.acquired).toBe(true);
+    let announceActivationAttempt!: () => void;
+    const activationAttempted = new Promise<void>((resolve) => {
+      announceActivationAttempt = resolve;
+    });
+    const rollingBack = executeRollback(layout, {
+      onActivationAcquireAttempt: announceActivationAttempt,
+    });
+    try {
+      await activationAttempted;
+      await writeInstallManifestUnderActivation(
+        {
+          method: "bun-global",
+          activeVersion: "9.9.9",
+          launcherPath: layout.launcherPath,
+          downloadBaseUrl: "https://registry.npmjs.org",
+        },
+        layout,
+      );
+    } finally {
+      if (activation.acquired) await activation.release();
+    }
+
+    expect(await rollingBack).toMatchObject({
+      status: "refused",
+      code: "ownership-changed",
+    });
+    expect(await readlink(layout.launcherPath)).toBe(activePath);
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      method: "bun-global",
+      activeVersion: "9.9.9",
+    });
   });
 });
