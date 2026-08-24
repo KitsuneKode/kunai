@@ -343,11 +343,11 @@ function Invoke-BoundedDownload {
 function Get-ChecksumEntry([string]$ManifestPath, [string]$AssetName) {
   $digests = @()
   foreach ($line in Get-Content -LiteralPath $ManifestPath) {
-    if ($line -match '^([0-9A-Fa-f]{64})\s{2}([^\s]+)$' -and $Matches[2] -eq $AssetName) {
+    if ($line -cmatch '^([0-9A-Fa-f]{64})\s{2}([^\s]+)$' -and $Matches[2] -ceq $AssetName) {
       $digests += $Matches[1].ToLowerInvariant()
       continue
     }
-    if ($line -match "\s$([regex]::Escape($AssetName))\s*$") {
+    if ($line -cmatch "\s$([regex]::Escape($AssetName))\s*$") {
       throw "Checksum manifest has a malformed entry for $AssetName."
     }
   }
@@ -357,12 +357,122 @@ function Get-ChecksumEntry([string]$ManifestPath, [string]$AssetName) {
   return [string]$digests[0]
 }
 
+function Get-ZipUInt16([System.IO.BinaryReader]$Reader, [long]$Offset) {
+  $Reader.BaseStream.Position = $Offset
+  return $Reader.ReadUInt16()
+}
+
+function Get-ZipUInt32([System.IO.BinaryReader]$Reader, [long]$Offset) {
+  $Reader.BaseStream.Position = $Offset
+  return $Reader.ReadUInt32()
+}
+
+function Get-ZipEntryName(
+  [System.IO.BinaryReader]$Reader,
+  [long]$Offset,
+  [int]$Length
+) {
+  $Reader.BaseStream.Position = $Offset
+  $bytes = $Reader.ReadBytes($Length)
+  if ($bytes.Length -ne $Length) { throw 'Zip entry name is truncated.' }
+  return [System.Text.Encoding]::UTF8.GetString($bytes)
+}
+
+function Assert-KunaiReleaseZipStructure(
+  [string]$ArchivePath,
+  [string]$ExpectedName
+) {
+  $stream = $null
+  $reader = $null
+  try {
+    $stream = [System.IO.File]::Open(
+      $ArchivePath,
+      [System.IO.FileMode]::Open,
+      [System.IO.FileAccess]::Read,
+      [System.IO.FileShare]::Read
+    )
+    $reader = [System.IO.BinaryReader]::new($stream)
+    $archiveLength = $stream.Length
+    if ($archiveLength -lt 22) { throw 'Zip archive is truncated.' }
+
+    $endOffset = $archiveLength - 22
+    if ((Get-ZipUInt32 $reader $endOffset) -ne 0x06054b50) {
+      throw 'Zip archive contains trailing data or is missing its end record.'
+    }
+    if ((Get-ZipUInt16 $reader ($endOffset + 20)) -ne 0) {
+      throw 'Zip archive comments and trailing data are forbidden.'
+    }
+    if ((Get-ZipUInt16 $reader ($endOffset + 4)) -ne 0 -or
+      (Get-ZipUInt16 $reader ($endOffset + 6)) -ne 0) {
+      throw 'Multi-disk zip archives are forbidden.'
+    }
+    if ((Get-ZipUInt16 $reader ($endOffset + 8)) -ne 1 -or
+      (Get-ZipUInt16 $reader ($endOffset + 10)) -ne 1) {
+      throw 'Release archive must contain exactly one regular file.'
+    }
+
+    $centralSize = [long](Get-ZipUInt32 $reader ($endOffset + 12))
+    $centralOffset = [long](Get-ZipUInt32 $reader ($endOffset + 16))
+    if ($centralOffset -lt 30 -or $centralOffset + $centralSize -ne $endOffset) {
+      throw 'Zip archive has invalid central directory bounds.'
+    }
+    if ((Get-ZipUInt32 $reader $centralOffset) -ne 0x02014b50) {
+      throw 'Zip archive has an invalid central directory.'
+    }
+
+    $centralFlags = Get-ZipUInt16 $reader ($centralOffset + 8)
+    $centralMethod = Get-ZipUInt16 $reader ($centralOffset + 10)
+    $centralCrc = Get-ZipUInt32 $reader ($centralOffset + 16)
+    $compressedSize = [long](Get-ZipUInt32 $reader ($centralOffset + 20))
+    $binarySize = [long](Get-ZipUInt32 $reader ($centralOffset + 24))
+    $centralNameLength = [int](Get-ZipUInt16 $reader ($centralOffset + 28))
+    $centralExtraLength = [long](Get-ZipUInt16 $reader ($centralOffset + 30))
+    $centralCommentLength = [long](Get-ZipUInt16 $reader ($centralOffset + 32))
+    $localOffset = [long](Get-ZipUInt32 $reader ($centralOffset + 42))
+    if ($centralOffset + 46 + $centralNameLength + $centralExtraLength +
+      $centralCommentLength -ne $endOffset) {
+      throw 'Zip central directory contains unexpected records.'
+    }
+    if ($localOffset -ne 0 -or (Get-ZipUInt32 $reader $localOffset) -ne 0x04034b50) {
+      throw 'Zip archive contains an unsafe prefix or invalid local entry.'
+    }
+
+    $localFlags = Get-ZipUInt16 $reader ($localOffset + 6)
+    $localMethod = Get-ZipUInt16 $reader ($localOffset + 8)
+    $localCrc = Get-ZipUInt32 $reader ($localOffset + 14)
+    $localCompressedSize = [long](Get-ZipUInt32 $reader ($localOffset + 18))
+    $localBinarySize = [long](Get-ZipUInt32 $reader ($localOffset + 22))
+    $localNameLength = [int](Get-ZipUInt16 $reader ($localOffset + 26))
+    $localExtraLength = [long](Get-ZipUInt16 $reader ($localOffset + 28))
+    if ($localFlags -ne $centralFlags -or $localMethod -ne $centralMethod -or
+      $localCrc -ne $centralCrc -or $localCompressedSize -ne $compressedSize -or
+      $localBinarySize -ne $binarySize) {
+      throw 'Zip local entry does not match its central record.'
+    }
+
+    $localName = Get-ZipEntryName $reader ($localOffset + 30) $localNameLength
+    $centralName = Get-ZipEntryName $reader ($centralOffset + 46) $centralNameLength
+    if ($localName -cne $centralName -or $centralName -cne $ExpectedName) {
+      throw "Archive contains unexpected entry '$localName'; expected '$ExpectedName'."
+    }
+    $bodyStart = $localOffset + 30 + $localNameLength + $localExtraLength
+    if ($bodyStart + $compressedSize -ne $centralOffset) {
+      throw 'Zip archive contains unexpected local records.'
+    }
+  }
+  finally {
+    if ($null -ne $reader) { $reader.Dispose() }
+    elseif ($null -ne $stream) { $stream.Dispose() }
+  }
+}
+
 function Expand-KunaiReleaseZip(
   [string]$ArchivePath,
   [string]$ExpectedName,
   [string]$DestinationPath
 ) {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
+  Assert-KunaiReleaseZipStructure $ArchivePath $ExpectedName
   $zip = $null
   $input = $null
   $output = $null
@@ -377,7 +487,7 @@ function Expand-KunaiReleaseZip(
       $name.Contains('/') -or $name.Contains('\') -or $name -in @('.', '..')) {
       throw "Archive contains an unsafe traversal or absolute-path entry: $name"
     }
-    if ($name -ne $ExpectedName) {
+    if ($name -cne $ExpectedName) {
       throw "Archive contains unexpected entry '$name'; expected '$ExpectedName'."
     }
 

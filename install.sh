@@ -513,7 +513,8 @@ extract_release_tar_gz() {
 		err "Release archive must contain exactly one regular file."
 		return 1
 	fi
-	if [[ -n "$(tail -c "+$((513 + size))" "$tar_path" | tr -d '\000')" ]]; then
+	if od -An -v -tu1 -j "$((512 + size))" "$tar_path" |
+		awk '{ for (i = 1; i <= NF; i++) if ($i != 0) found = 1 } END { exit found ? 0 : 1 }'; then
 		err "Archive contains non-zero padding, extra entries, or trailing data."
 		return 1
 	fi

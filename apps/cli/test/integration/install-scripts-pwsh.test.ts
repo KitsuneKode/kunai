@@ -156,14 +156,48 @@ function rewriteZipNames(archive: Uint8Array, replacement: string): Uint8Array {
   return output;
 }
 
+function rewriteZipLocalName(archive: Uint8Array, replacement: string): Uint8Array {
+  const output = new Uint8Array(archive);
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  const localNameLength = view.getUint16(26, true);
+  const name = new TextEncoder().encode(
+    replacement.padEnd(localNameLength, "x").slice(0, localNameLength),
+  );
+  output.set(name, 30);
+  return output;
+}
+
+function prefixZipArchive(archive: Uint8Array): Uint8Array {
+  const source = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+  const centralOffset = 30 + source.getUint16(26, true) + source.getUint32(18, true);
+  const output = new Uint8Array(archive.length + 1);
+  output[0] = 0x0a;
+  output.set(archive, 1);
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  view.setUint32(centralOffset + 1 + 42, 1, true);
+  view.setUint32(output.length - 22 + 16, centralOffset + 1, true);
+  return output;
+}
+
+function appendZipTrailingData(archive: Uint8Array): Uint8Array {
+  const output = new Uint8Array(archive.length + 1);
+  output.set(archive);
+  output[archive.length] = 0x0a;
+  return output;
+}
+
 function invalidZipArchive(
   kind:
     | "absolute"
+    | "case-variant"
     | "corrupt"
     | "extra"
+    | "local-traversal"
     | "missing"
+    | "prefix"
     | "reparse"
     | "symlink"
+    | "trailing"
     | "traversal"
     | "wrong",
   canonical: Uint8Array,
@@ -175,6 +209,15 @@ function invalidZipArchive(
     return empty;
   }
   if (kind === "absolute") return rewriteZipNames(canonical, "C:\\kunai.exe");
+  if (kind === "case-variant") {
+    const view = new DataView(canonical.buffer, canonical.byteOffset, canonical.byteLength);
+    const localNameLength = view.getUint16(26, true);
+    const current = new TextDecoder().decode(canonical.subarray(30, 30 + localNameLength));
+    return rewriteZipNames(canonical, current.toUpperCase());
+  }
+  if (kind === "local-traversal") return rewriteZipLocalName(canonical, "../evil.exe");
+  if (kind === "prefix") return prefixZipArchive(canonical);
+  if (kind === "trailing") return appendZipTrailingData(canonical);
   if (kind === "traversal") return rewriteZipNames(canonical, "../kunai.exe");
   if (kind === "wrong") return rewriteZipNames(canonical, "wrong.exe");
   const output = new Uint8Array(canonical);
@@ -398,11 +441,15 @@ describePwsh("install.ps1 release asset failures", () => {
 
   test.each([
     "absolute",
+    "case-variant",
     "corrupt",
     "extra",
+    "local-traversal",
     "missing",
+    "prefix",
     "reparse",
     "symlink",
+    "trailing",
     "traversal",
     "wrong",
   ] as const)("rejects a %s zip archive without raw fallback or residue", async (kind) => {
@@ -436,6 +483,41 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
           expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
           expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects a case-variant checksum asset identity", async () => {
+    const target = hostWindowsTarget();
+    const body = "MZ-case-sensitive-checksum-name";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-checksum-case-variant");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName.toUpperCase()}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${binaryDigest}  ${target.out}\n`,
+          },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+
+          expect(result.status).not.toBe(0);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
         },
       );
     } finally {

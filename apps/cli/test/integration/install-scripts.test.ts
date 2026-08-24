@@ -62,6 +62,12 @@ function duplicateTarMember(archive: Uint8Array, bodyLength: number): Uint8Array
   return new Uint8Array(gzipSync(output));
 }
 
+function addNewlineTarPadding(archive: Uint8Array, bodyLength: number): Uint8Array {
+  const tar = new Uint8Array(gunzipSync(archive));
+  tar[512 + bodyLength] = 0x0a;
+  return new Uint8Array(gzipSync(tar));
+}
+
 function invalidTarArchive(
   kind:
     | "absolute"
@@ -69,6 +75,7 @@ function invalidTarArchive(
     | "extra"
     | "hardlink"
     | "missing"
+    | "newline-padding"
     | "symlink"
     | "traversal"
     | "wrong",
@@ -78,6 +85,7 @@ function invalidTarArchive(
   if (kind === "corrupt") return new TextEncoder().encode("not-a-gzip-archive");
   if (kind === "extra") return duplicateTarMember(canonical, bodyLength);
   if (kind === "missing") return new Uint8Array(gzipSync(new Uint8Array(1_024)));
+  if (kind === "newline-padding") return addNewlineTarPadding(canonical, bodyLength);
   return rewriteTarHeader(canonical, (header) => {
     if (kind === "symlink" || kind === "hardlink") {
       header[156] = (kind === "symlink" ? "2" : "1").charCodeAt(0);
@@ -365,6 +373,7 @@ describe("install.sh release asset failures", () => {
     "extra",
     "hardlink",
     "missing",
+    "newline-padding",
     "symlink",
     "traversal",
     "wrong",
