@@ -1093,7 +1093,12 @@ describePwsh("install.ps1 lifecycle contract", () => {
     }
   });
 
-  const testPosixPwsh = process.platform === "win32" ? test.skip : test;
+  // A read-only config directory is what makes the manifest commit fail here.
+  // Windows ignores POSIX mode bits and root bypasses them, so on either the
+  // write succeeds and the test asserts a failure that never happened. Skip
+  // where the precondition cannot hold rather than weaken the fixture.
+  const canDenyWriteByMode = process.platform !== "win32" && (process.getuid?.() ?? 0) !== 0;
+  const testPosixPwsh = canDenyWriteByMode ? test : test.skip;
   testPosixPwsh(
     "restores the previous launcher when manifest commit fails after replacement",
     async () => {
