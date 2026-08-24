@@ -73,6 +73,37 @@ describe("shouldDisableMpvTlsVerify", () => {
 });
 
 describe("buildPersistentLoadfileOptions", () => {
+  // mpv's `ytdl` is a yes/no Flag and `ytdl-format` is a String. Setting the
+  // format on `ytdl` made mpv answer "unsupported format for accessing
+  // property" over IPC and drop the option, so the ceiling never applied.
+  test("puts the YouTube format in ytdl-format and keeps ytdl a yes/no flag", () => {
+    const options = buildPersistentLoadfileOptions(
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      0,
+      undefined,
+      { ytdlFormat: "bv*[height<=1080]+ba/b" },
+    );
+
+    expect(options.ytdl).toBe("yes");
+    expect(options["ytdl-format"]).toBe("bv*[height<=1080]+ba/b");
+  });
+
+  test("falls back to the default format rather than leaving the ceiling unset", () => {
+    const options = buildPersistentLoadfileOptions("https://example.test/v", 0, undefined, {
+      requiresYtdl: true,
+    });
+
+    expect(options.ytdl).toBe("yes");
+    expect(options["ytdl-format"]).toBe("bv*+ba/b");
+  });
+
+  test("still disables ytdl outright for remote HLS manifests", () => {
+    const options = buildPersistentLoadfileOptions("https://cdn.example/a.m3u8", 0, undefined);
+
+    expect(options.ytdl).toBe("no");
+    expect(options["ytdl-format"]).toBeUndefined();
+  });
+
   test("includes file-local HTTP options for autoplay-chain replacements", () => {
     expect(
       buildPersistentLoadfileOptions("https://cdn.example/episode.m3u8", 0, {
