@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -14,6 +14,7 @@ import {
 } from "@/services/update/native-installer/install-layout";
 
 const made: string[] = [];
+const RECLAIM_TEST_TIMEOUT_MS = process.platform === "win32" ? 1_000 : 100;
 
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
@@ -144,8 +145,9 @@ describe("activation lock", () => {
     );
 
     const lock = await tryAcquireActivationLock(layout, "2.0.0", {
-      timeoutMs: 100,
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
       pollMs: 5,
+      processStartIdLookup: () => null,
     });
     expect(lock.acquired).toBe(true);
     const content = JSON.parse(await readFile(path, "utf8")) as { version: string };
@@ -235,6 +237,7 @@ describe("activation lock", () => {
     const path = activationLockPath(layout);
     const criticalPath = join(dirname(path), "activation-critical-section");
     const violationPath = join(dirname(path), "activation-overlap-detected");
+    const startPath = join(dirname(path), "activation-workers-start");
     await writeFile(
       path,
       `${JSON.stringify({
@@ -255,8 +258,16 @@ describe("activation lock", () => {
       "../../../../../src/services/update/native-installer/activation-lock.ts",
     );
     const worker = `
+      import { existsSync } from "node:fs";
       import { mkdir, rm, writeFile } from "node:fs/promises";
+      import { join } from "node:path";
       import { withActivationLock } from ${JSON.stringify(modulePath)};
+      const workerId = process.env.KUNAI_TEST_WORKER_ID;
+      const readyPath = join(process.env.KUNAI_TEST_LOCKS_DIR, \`activation-worker-ready-\${workerId}\`);
+      const enteredPath = join(process.env.KUNAI_TEST_LOCKS_DIR, \`activation-worker-entered-\${workerId}\`);
+      const releasePath = join(process.env.KUNAI_TEST_LOCKS_DIR, \`activation-worker-release-\${workerId}\`);
+      await writeFile(readyPath, "ready");
+      while (!existsSync(process.env.KUNAI_TEST_START_PATH)) await Bun.sleep(5);
       const result = await withActivationLock(
         { locksDir: process.env.KUNAI_TEST_LOCKS_DIR },
         process.env.KUNAI_TEST_VERSION,
@@ -268,10 +279,11 @@ describe("activation lock", () => {
           } catch {
             await writeFile(process.env.KUNAI_TEST_VIOLATION_PATH, "overlap");
           }
-          await Bun.sleep(20);
+          await writeFile(enteredPath, "entered");
+          while (!existsSync(releasePath)) await Bun.sleep(5);
           if (ownsSentinel) await rm(process.env.KUNAI_TEST_CRITICAL_PATH, { recursive: true });
         },
-        { timeoutMs: 2_000, pollMs: 1 },
+        { timeoutMs: process.platform === "win32" ? 5_000 : 2_000, pollMs: 1 },
       );
       process.exit(result === null ? 2 : 0);
     `;
@@ -282,6 +294,8 @@ describe("activation lock", () => {
           ...process.env,
           KUNAI_TEST_LOCKS_DIR: layout.locksDir,
           KUNAI_TEST_VERSION: `3.0.${index}`,
+          KUNAI_TEST_WORKER_ID: String(index),
+          KUNAI_TEST_START_PATH: startPath,
           KUNAI_TEST_CRITICAL_PATH: criticalPath,
           KUNAI_TEST_VIOLATION_PATH: violationPath,
         },
@@ -289,6 +303,33 @@ describe("activation lock", () => {
         stderr: "pipe",
       }),
     );
+
+    const waitForWorkerCount = async (prefix: string, expected: number): Promise<void> => {
+      const deadlineAt = Date.now() + 5_000;
+      while (Date.now() < deadlineAt) {
+        const count = (await readdir(layout.locksDir)).filter((name) =>
+          name.startsWith(prefix),
+        ).length;
+        if (count >= expected) return;
+        await Bun.sleep(5);
+      }
+      throw new Error(`Timed out waiting for ${expected} ${prefix} handshakes`);
+    };
+
+    await waitForWorkerCount("activation-worker-ready-", 8);
+    await writeFile(startPath, "start");
+    const released = new Set<string>();
+    for (let enteredCount = 1; enteredCount <= 8; enteredCount += 1) {
+      await waitForWorkerCount("activation-worker-entered-", enteredCount);
+      expect(existsSync(violationPath)).toBe(false);
+      const entered = (await readdir(layout.locksDir)).filter((name) =>
+        name.startsWith("activation-worker-entered-"),
+      );
+      const next = entered.find((name) => !released.has(name));
+      if (!next) throw new Error("Missing newly entered activation worker");
+      released.add(next);
+      await writeFile(join(layout.locksDir, next.replace("entered", "release")), "release");
+    }
     const statuses = await Promise.all(processes.map((process) => process.exited));
 
     expect(statuses).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
@@ -454,7 +495,7 @@ describe("activation lock", () => {
     );
 
     const lock = await tryAcquireActivationLock(layout, "2.0.0", {
-      timeoutMs: 100,
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
       pollMs: 5,
       processStartIdLookup: () => knownCurrentProcessStartId(),
     });
