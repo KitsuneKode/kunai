@@ -1237,18 +1237,50 @@ export function resolveMiruroAnilistId(title: TitleIdentity): string | null {
   return parsePositiveDecimalId(title.id.slice(MIRURO_ANILIST_ID_PREFIX.length));
 }
 
-/** Shared episode list fetch for listEpisodes + resolve (30m TTL). */
+/**
+ * Persistent cache namespace + TTL for the episode catalog. The catalog is
+ * stable, so a long TTL is safe — and the whole point is to skip the ~6s
+ * Cloudflare-gated pipe call on the next session, not just the next minute.
+ */
+const MIRURO_EPISODES_CACHE_NAMESPACE = "miruro:episodes";
+const MIRURO_EPISODES_PERSIST_TTL_MS = 12 * 60 * 60 * 1000;
+
+/** Shared episode list fetch for listEpisodes + resolve. */
 export async function getMiruroEpisodesResponse(
   context: ProviderRuntimeContext,
   anilistId: string,
   signal?: AbortSignal,
 ): Promise<MiruroEpisodesResponse | null> {
   const cacheKey = `episodes:${anilistId}`;
-  const cached = episodeCache.get(cacheKey) as MiruroEpisodesResponse | null;
-  if (cached) return cached;
 
+  // 1. In-memory: instant within a session.
+  const memoryHit = episodeCache.get(cacheKey) as MiruroEpisodesResponse | null;
+  if (memoryHit) return memoryHit;
+
+  // 2. Persistent: survives a restart, so the cold ~6s pipe call is paid once
+  //    per catalog per TTL rather than once per session.
+  const persistentHit = await context.cache?.read<MiruroEpisodesResponse>(
+    MIRURO_EPISODES_CACHE_NAMESPACE,
+    anilistId,
+  );
+  if (persistentHit) {
+    episodeCache.set(cacheKey, persistentHit);
+    return persistentHit;
+  }
+
+  // 3. Network.
   const epData = await pipeCall(context, "episodes", { anilistId: Number(anilistId) }, signal);
   episodeCache.set(cacheKey, epData);
+  if (epData?.providers) {
+    // Only persist a real catalog; an empty/failed body must not be cached as
+    // "this show has no episodes" for 12 hours.
+    void context.cache?.write(
+      MIRURO_EPISODES_CACHE_NAMESPACE,
+      anilistId,
+      epData,
+      MIRURO_EPISODES_PERSIST_TTL_MS,
+    );
+  }
   return epData;
 }
 

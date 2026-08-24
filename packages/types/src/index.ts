@@ -482,6 +482,22 @@ export interface EndpointHealthPort {
   recordSuccess(providerId: ProviderId, endpoint: string): void;
 }
 
+/**
+ * A persistent key/value cache a provider may use for expensive, stable
+ * intermediate data (a Cloudflare-gated episode catalog, a signed manifest).
+ *
+ * Providers are pure and own no storage, so without this seam a provider's only
+ * cache is process-local and dies on exit — every session re-pays the cold
+ * network cost. The app backs this with SQLite. Values are JSON-serialisable;
+ * `namespace` scopes keys per provider/purpose so two providers cannot collide.
+ * Reads return `null` on a miss or an expired entry; a backing-store error must
+ * degrade to `null`/no-op rather than fail the resolve.
+ */
+export interface ProviderCachePort {
+  read<T = unknown>(namespace: string, key: string): Promise<T | null>;
+  write(namespace: string, key: string, value: unknown, ttlMs: number): Promise<void>;
+}
+
 export interface ProviderRuntimePort {
   readonly runtime: ProviderRuntime;
   readonly operations: readonly ProviderOperation[];
@@ -608,6 +624,7 @@ export interface ProviderRuntimeContext {
   readonly auth?: ProviderAuthPort;
   readonly endpointHealth?: EndpointHealthPort;
   readonly titleBridge?: ProviderTitleBridgePort;
+  readonly cache?: ProviderCachePort;
   now(): string;
   emit?(event: ProviderTraceEvent): void;
 }

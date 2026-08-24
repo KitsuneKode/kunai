@@ -1074,6 +1074,23 @@ export const cacheMigrations: readonly Migration[] = [
         ON catalog_id_crosswalk(expires_at);
     `,
   },
+  {
+    id: "016_cache_provider_cache",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS provider_cache (
+        namespace TEXT NOT NULL,
+        cache_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (namespace, cache_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_provider_cache_expires_at
+        ON provider_cache(expires_at);
+    `,
+  },
 ];
 
 export function runMigrations(

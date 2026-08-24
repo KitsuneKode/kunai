@@ -1,4 +1,5 @@
 import type {
+  ProviderCachePort,
   EndpointHealthPort,
   ProviderFailure,
   ProviderId,
@@ -40,6 +41,7 @@ export interface ProviderEngineOptions {
   readonly auth?: ProviderAuthPort;
   readonly fetch?: ProviderFetchPort | ProviderFetchPortFactory;
   readonly endpointHealth?: EndpointHealthPort;
+  readonly cache?: ProviderCachePort;
   readonly titleBridge?: ProviderTitleBridgePort;
   /**
    * How many consecutive providers must fail with reliable offline-evidence
@@ -164,6 +166,7 @@ export class ProviderEngine {
   private readonly auth?: ProviderAuthPort;
   private readonly fetch?: ProviderFetchPort | ProviderFetchPortFactory;
   private readonly endpointHealth?: EndpointHealthPort;
+  private readonly cache?: ProviderCachePort;
   private readonly titleBridge?: ProviderTitleBridgePort;
   private readonly consecutiveOfflineThreshold: number;
   private readonly hedgeDelayMs: number;
@@ -185,6 +188,7 @@ export class ProviderEngine {
     this.auth = opts.auth;
     this.fetch = opts.fetch;
     this.endpointHealth = opts.endpointHealth;
+    this.cache = opts.cache;
     this.titleBridge = opts.titleBridge;
 
     for (const module of opts.modules) {
@@ -225,6 +229,7 @@ export class ProviderEngine {
         ? guardEndpointHealthAgainstCancellation(this.endpointHealth, signal)
         : undefined,
       titleBridge: this.titleBridge,
+      cache: this.cache,
     });
   }
 
