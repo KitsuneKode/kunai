@@ -8,6 +8,7 @@ import {
   createMiruroResultFromPayload,
   decodeMiruroPipePayload,
   interpretMiruroCurlResult,
+  isMiruroAudioFallback,
   MiruroPipeDecodeError,
   type MiruroPipeDecodeFailureCode,
   MIRURO_SERVER_TRY_ORDER,
@@ -468,5 +469,23 @@ describe("interpretMiruroCurlResult", () => {
     expect(() =>
       interpretMiruroCurlResult({ exitCode: 0, stdout: `body${marker}0`, stderr: "" }),
     ).toThrow();
+  });
+});
+
+describe("miruro audio fallback detection", () => {
+  test("a resolved presentation matching the request is not a fallback", () => {
+    expect(isMiruroAudioFallback("dub", "dub")).toBe(false);
+    expect(isMiruroAudioFallback("sub", "sub")).toBe(false);
+  });
+
+  test("a dub request resolving a sub is a fallback", () => {
+    // The silent dub->sub downgrade this event makes visible.
+    expect(isMiruroAudioFallback("dub", "sub")).toBe(true);
+    expect(isMiruroAudioFallback("sub", "dub")).toBe(true);
+  });
+
+  test("a missing or non-audio presentation is not treated as a fallback", () => {
+    expect(isMiruroAudioFallback("dub", undefined)).toBe(false);
+    expect(isMiruroAudioFallback("dub", "external")).toBe(false);
   });
 });

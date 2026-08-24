@@ -586,6 +586,21 @@ function sortMiruroProviderEntries(
   return [...entries].sort(([a], [b]) => rank(a) - rank(b));
 }
 
+/**
+ * Did Miruro resolve a different audio presentation than the one asked for?
+ *
+ * Miruro walks the fallback audio when the requested one has no working server,
+ * so a dub request can resolve a sub. Callers emit `audio:fallback` on a true
+ * result so the downgrade stops being silent.
+ */
+export function isMiruroAudioFallback(
+  requested: MiruroAudioCategory,
+  resolved: string | undefined,
+): boolean {
+  // Only sub/dub are audio presentations; anything else is not a downgrade.
+  return (resolved === "sub" || resolved === "dub") && resolved !== requested;
+}
+
 export function buildMiruroCycleCandidates({
   providers,
   episodes,
@@ -1931,6 +1946,24 @@ export const miruroProviderModule: CoreProviderModule = {
         message: "Resolved a Miruro source",
         durationMs: performance.now() - cycleStartedAt,
       });
+
+      // Miruro tries the fallback audio when the requested one has no working
+      // server. That downgrade was silent, so the shell could not tell the user
+      // they asked for a dub and got a sub. Emit a typed event whenever the
+      // resolved presentation differs from what was requested.
+      const selected = cycleResult.selected;
+      const resolvedPresentation = selected.streams.find(
+        (stream) => stream.id === selected.selectedStreamId,
+      )?.presentation;
+      if (isMiruroAudioFallback(targetAudio, resolvedPresentation)) {
+        emitTraceEvent(events, context, {
+          type: "audio:fallback",
+          providerId: MIRURO_PROVIDER_ID,
+          message: `Requested ${targetAudio} audio was unavailable; resolved ${String(resolvedPresentation)}`,
+          attributes: { requested: targetAudio, resolved: String(resolvedPresentation) },
+        });
+      }
+
       emitTraceEvent(events, context, {
         type: "provider:success",
         providerId: MIRURO_PROVIDER_ID,
