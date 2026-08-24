@@ -35,8 +35,9 @@ test your current changes rather than a copy baked into the image.
 
 `install.sh` takes `KUNAI_DL_BASE`, `KUNAI_RELEASES_API`, `KUNAI_BIN_DIR` and
 `KUNAI_DATA_DIR` as overrides, and `curl` handles `file://` URLs. So
-`make-fake-release.sh` writes a release tree to disk and the installer consumes
-it directly — no HTTP server, no ports, no daemons, no network.
+`make-fake-release.sh` writes raw compatibility binaries, one-member `.tar.gz`
+archives, and both checksum manifests to a release tree on disk. The installer
+consumes it directly — no HTTP server, no ports, no daemons, no network.
 
 ## What these prove, and what they don't
 
