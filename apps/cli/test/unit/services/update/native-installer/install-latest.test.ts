@@ -24,6 +24,7 @@ import { installLatest } from "@/services/update/native-installer/install-latest
 import {
   activationLockPath,
   getInstallLayoutPaths,
+  stagingDirForVersion,
   versionBinaryPath,
   versionMetadataPath,
 } from "@/services/update/native-installer/install-layout";
@@ -203,6 +204,95 @@ describe("installLatest", () => {
       artifactSourceUrl: `https://example.test/releases/download/v2.9.0/${releaseTarget.out}`,
     });
     expect((await readInstallManifest(layout.configDir))?.archiveName).toBeUndefined();
+  });
+
+  test.each([404, 410] as const)(
+    "%i archive response falls back to the verified raw asset",
+    async (status) => {
+      const { layout } = await makeLayout();
+      const releaseTarget = hostTarget();
+      const bytes = new TextEncoder().encode(`LEGACY-RAW-BINARY-${status}`);
+      const digest = sha256Hex(bytes);
+      const requested: string[] = [];
+
+      const result = await installLatest({
+        version: "2.9.1",
+        force: true,
+        layout,
+        dlBase: "https://example.test/releases",
+        fetchImpl: async (input) => {
+          const url = String(input);
+          requested.push(url);
+          if (url.endsWith("/SHA256SUMS.archives")) {
+            return new Response(sumsFor(releaseTarget.archiveName, "a".repeat(64)));
+          }
+          if (url.endsWith("/SHA256SUMS")) {
+            return new Response(sumsFor(releaseTarget.out, digest));
+          }
+          if (url.endsWith(`/${releaseTarget.archiveName}`)) {
+            return new Response("missing", { status });
+          }
+          if (url.endsWith(`/${releaseTarget.out}`)) return new Response(bytes);
+          return new Response("missing", { status: 404 });
+        },
+      });
+
+      expect(result).toMatchObject({ status: "installed", version: "2.9.1" });
+      expect(requested.some((url) => url.endsWith(`/${releaseTarget.archiveName}`))).toBe(true);
+      expect(requested.some((url) => url.endsWith(`/${releaseTarget.out}`))).toBe(true);
+      expect(await Bun.file(versionBinaryPath(layout, "2.9.1")).text()).toBe(
+        `LEGACY-RAW-BINARY-${status}`,
+      );
+      expect((await readInstallManifest(layout.configDir))?.archiveName).toBeUndefined();
+    },
+  );
+
+  test("archive server failure never falls back or disturbs the active install", async () => {
+    const { layout } = await makeLayout();
+    const previousPath = versionBinaryPath(layout, "1.0.0");
+    await mkdir(dirname(previousPath), { recursive: true });
+    await writeFile(previousPath, "OLD-BINARY");
+    await seedLauncher(layout.launcherPath, previousPath);
+    await writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "1.0.0",
+        launcherPath: layout.launcherPath,
+        versionedPath: previousPath,
+        downloadBaseUrl: "https://example.test/releases",
+        artifactSha256: sha256Hex("OLD-BINARY"),
+      },
+      layout,
+    );
+    const releaseTarget = hostTarget();
+    const rawRequested: string[] = [];
+
+    const result = await installLatest({
+      version: "2.9.2",
+      force: true,
+      layout,
+      dlBase: "https://example.test/releases",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/SHA256SUMS.archives")) {
+          return new Response(sumsFor(releaseTarget.archiveName, "a".repeat(64)));
+        }
+        if (url.endsWith("/SHA256SUMS")) {
+          return new Response(sumsFor(releaseTarget.out, "b".repeat(64)));
+        }
+        if (url.endsWith(`/${releaseTarget.archiveName}`)) {
+          return new Response("unavailable", { status: 500 });
+        }
+        if (url.endsWith(`/${releaseTarget.out}`)) rawRequested.push(url);
+        return new Response("missing", { status: 404 });
+      },
+    });
+
+    expect(result).toMatchObject({ status: "failed", error: "Download failed with HTTP 500" });
+    expect(rawRequested).toEqual([]);
+    await expectLauncherPointsTo(layout.launcherPath, previousPath);
+    expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("1.0.0");
+    expect(existsSync(stagingDirForVersion(layout, "2.9.2"))).toBe(false);
   });
 
   test("present malformed archive manifest fails closed without raw fallback", async () => {

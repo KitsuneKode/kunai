@@ -180,6 +180,8 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           }
         }
 
+        let expectedArchive: string | null | undefined;
+        let archiveDownload: Awaited<ReturnType<typeof downloadToFile>> | undefined;
         if (
           archiveManifestAvailable &&
           releaseTarget &&
@@ -188,17 +190,36 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           stagedArchive
         ) {
           const archiveSums = await readFile(stagedArchiveChecksums, "utf8");
-          const expectedArchive = pickChecksum(archiveSums, archiveName);
+          expectedArchive = pickChecksum(archiveSums, archiveName);
           if (!expectedArchive) throw new Error(`No checksum entry for ${archiveName}`);
-          const archiveDownload = await downloadToFile({
-            url: archiveUrl,
-            destinationPath: stagedArchive,
-            fetchImpl,
-            policy: {
-              ...DEFAULT_BINARY_DOWNLOAD_POLICY,
-              maxBytes: releaseTarget.maxArchiveBytes,
-            },
-          });
+          try {
+            archiveDownload = await downloadToFile({
+              url: archiveUrl,
+              destinationPath: stagedArchive,
+              fetchImpl,
+              policy: {
+                ...DEFAULT_BINARY_DOWNLOAD_POLICY,
+                maxBytes: releaseTarget.maxArchiveBytes,
+              },
+            });
+          } catch (error) {
+            if (error instanceof DownloadError && (error.status === 404 || error.status === 410)) {
+              archiveManifestAvailable = false;
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        if (
+          archiveManifestAvailable &&
+          archiveDownload &&
+          expectedArchive &&
+          releaseTarget &&
+          archiveName &&
+          archiveUrl &&
+          stagedArchive
+        ) {
           if (!verifyChecksum(archiveDownload.sha256, expectedArchive)) {
             throw new Error(`Checksum mismatch for ${archiveName}`);
           }
