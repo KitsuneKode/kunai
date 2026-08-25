@@ -87,7 +87,9 @@ function betterThan(a: ParsedWrapper, b: ParsedWrapper): boolean {
 }
 
 function readPathEntries(): readonly string[] {
-  const raw = process.env.PATH ?? "";
+  // Windows environment variables are case-insensitive to the OS but not to
+  // `process.env` in every runtime, and `Path` is the conventional casing there.
+  const raw = process.env.PATH ?? process.env.Path ?? "";
   const entries: string[] = [];
   for (const dir of raw.split(PATH_DELIMITER)) {
     if (!dir) continue;

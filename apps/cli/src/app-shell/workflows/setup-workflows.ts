@@ -12,6 +12,7 @@ import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { probeCapabilities } from "@/ui";
 
 import { runSetupFlow } from "../setup-shell";
+import { connectNamedTracker } from "./shell-workflows";
 
 export type { SetupWizardResult } from "@/app/bootstrap/startup-setup";
 
@@ -65,14 +66,18 @@ export async function runSetupWizard({
   const snapshot = container.capabilitySnapshot ?? (await probeCapabilities());
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
-  const { result } = runSetupFlow(snapshot);
+  const { result } = runSetupFlow(snapshot, {
+    downloadPath: current.downloadPath || defaultDownloadPath,
+    // `[r]` re-probes rather than making the user quit and relaunch after
+    // installing something in another pane.
+    onRecheck: () => probeCapabilities(),
+  });
   const { outcome, prefs } = await result;
   // One writer: the service owns what a consent choice means in config, and
   // `consentPatch` is pure so it folds into the single batched update below.
-  // Aborting is not a consent choice. Preserve whatever the user already had;
-  // only reaching the analytics slide may change it.
+  //
   // Two ways to reach "leave it alone": aborting, and finishing without ever
-  // reaching the consent slide. Neither is a consent decision, and writing
+  // reaching the consent screen. Neither is a consent decision, and writing
   // `disabled` for either would silently opt out a user who had opted in and
   // then reran setup.
   const analyticsPatch =
@@ -102,6 +107,20 @@ export async function runSetupWizard({
       downloadOnboardingDismissed: true,
       downloadsEnabled,
       downloadPath,
+      defaultMode: prefs.mode,
+      defaultDownloadQuality: prefs.downloadQuality,
+      autoNext: prefs.autoNext,
+      skipIntro: prefs.skipIntro,
+      skipCredits: prefs.skipCredits,
+      // Presence is a local IPC connection, so it can be switched on here.
+      // AniList and TMDB are not: both need a browser round-trip, which runs
+      // after this commit so a failed handoff never costs the whole wizard.
+      presenceProvider: prefs.presenceDiscord ? "discord" : current.presenceProvider,
+      sync: {
+        ...current.sync,
+        anilist: { ...current.sync.anilist, enabled: prefs.connectAniList },
+        tmdb: { ...current.sync.tmdb, enabled: prefs.connectTmdb },
+      },
       ...analyticsPatch,
       // Audio reaches all three lanes. It previously landed on anime only,
       // while the slide asked which audio Kunai should prefer generally — so a
@@ -129,6 +148,35 @@ export async function runSetupWizard({
   // startup task may have raised, or the shell would also show the upgrader
   // banner and they would be told twice in one session.
   container.analyticsDisclosurePending = false;
+
+  // Actually link the accounts the user asked for.
+  //
+  // This runs *after* config commits and outside the wizard's own lifetime, so
+  // a browser that never opens costs an account link and not the whole setup.
+  // Without it the screen-5 toggles were cosmetic: they wrote
+  // `sync.<tracker>.enabled` and nothing ever opened, which is the silent
+  // no-op this plan exists to remove rather than reproduce.
+  if (outcome !== "aborted") {
+    for (const [tracker, wanted] of [
+      ["anilist", prefs.connectAniList],
+      ["tmdb", prefs.connectTmdb],
+    ] as const) {
+      if (!wanted) continue;
+      try {
+        await connectNamedTracker(container, tracker);
+      } catch (error) {
+        container.diagnosticsService.record({
+          category: "session",
+          message: `Setup could not finish linking ${tracker}`,
+          context: { error: String(error) },
+        });
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: `${tracker} not linked — run /sync-connect-${tracker} to try again.`,
+        });
+      }
+    }
+  }
 
   container.diagnosticsService.record({
     category: "session",

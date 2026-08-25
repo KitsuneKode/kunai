@@ -69,13 +69,17 @@ or a download artifact was validated.
 
 ## Usage analytics
 
-Anonymous usage analytics are **off by default**. You can explicitly enable or
-disable them in **Settings → General → Usage analytics**.
+Anonymous usage analytics are **yours to turn on or off at any time**, in
+**Settings → General → Usage analytics**.
 
-On a fresh install, setup offers an explicit choice. Existing installs get one
-non-blocking recommendation explaining the payload; that notice does not enable
-analytics, create an id, or send anything. No analytics requests run before you
-enable it, in a non-interactive terminal, or when `DO_NOT_TRACK=1` or `CI=true`.
+On a fresh install, setup asks you directly. It recommends turning analytics on
+and pre-selects that option — it counts unique installs and versions, never
+people — but nothing is enabled until you confirm it on that screen. Skipping
+setup leaves analytics **off**: no default, accept-all, or non-interactive path
+can turn it on for you. Existing installs get one non-blocking recommendation
+explaining the payload; that notice does not enable analytics, create an id, or
+send anything. No analytics requests run before you enable it, in a
+non-interactive terminal, or when `DO_NOT_TRACK=1` or `CI=true`.
 
 When on, Kunai sends at most one tiny ping per day:
 

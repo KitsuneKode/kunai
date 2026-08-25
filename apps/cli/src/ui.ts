@@ -3,6 +3,15 @@ import { join } from "node:path";
 
 import type { ImageCapability } from "@/image";
 import { detectImageCapability } from "@/image";
+import {
+  buildRemediationLines,
+  CURL_IMPERSONATE_INSTALL,
+  CURL_INSTALL,
+  FFMPEG_INSTALL,
+  MPV_INSTALL,
+  YT_DLP_INSTALL,
+  type PlatformInstall,
+} from "@/infra/os/install-commands";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -14,12 +23,16 @@ export interface CapabilityIssue {
   readonly id:
     | "mpv-missing"
     | "yt-dlp-missing"
+    | "ffmpeg-missing"
     | "curl-missing"
     | "curl-impersonate-missing"
     | "poster-rendering-unavailable";
   readonly severity: CapabilitySeverity;
   readonly message: string;
+  /** Every platform's command, labelled. Generated from `install`. */
   readonly remediation: readonly string[];
+  /** Structured source for `remediation`, so one surface can show one line. */
+  readonly install: PlatformInstall;
 }
 
 /**
@@ -92,19 +105,6 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
 }
 
 /**
- * Verified against upstream on 2026-08-25. curl-impersonate has **no** package
- * on Windows, Debian, or Fedora — only Homebrew (a tap, not core) and Arch — so
- * everywhere else has to be the releases page. A plausible-looking
- * `apt install curl-impersonate` would be a command that does not exist, which
- * is worse than no hint at all.
- */
-const CURL_IMPERSONATE_REMEDIATION = [
-  "macOS:  brew install lexiforest/tap/curl-impersonate",
-  "Arch:   sudo pacman -S curl-impersonate",
-  "Other:  prebuilt binaries at https://github.com/lexiforest/curl-impersonate/releases",
-] as const;
-
-/**
  * Read-only dependency/capability probe. Never persists notice state.
  * Prefer this for doctor and other inspection-only callers.
  */
@@ -144,12 +144,8 @@ export async function probeCapabilities(
       // Missing mpv blocks playback only — setup and non-playback shell still mount.
       severity: "degraded",
       message: "mpv not found — required for playback (shell still available).",
-      remediation: [
-        "Arch:   sudo pacman -S mpv",
-        "Debian: sudo apt install mpv",
-        "macOS:  brew install mpv",
-        "Windows: winget install --id mpv-player.mpv-CI.MSVC -e",
-      ],
+      install: MPV_INSTALL,
+      remediation: buildRemediationLines(MPV_INSTALL),
     });
   }
 
@@ -160,14 +156,27 @@ export async function probeCapabilities(
       message: requireYtDlp
         ? "yt-dlp not found — required for YouTube mode playback and downloads."
         : "yt-dlp not found — YouTube playback and downloads require yt-dlp.",
-      remediation: [
-        "Arch:   sudo pacman -S yt-dlp",
-        "Debian: sudo apt install yt-dlp",
-        "Fedora: sudo dnf install yt-dlp",
-        "Windows: winget install yt-dlp",
-        "macOS:  brew install yt-dlp",
-        "Other:  pip install yt-dlp",
-      ],
+      install: YT_DLP_INSTALL,
+      remediation: buildRemediationLines(YT_DLP_INSTALL),
+    });
+  }
+
+  // Named for the package a user can actually install. `ffprobe` is the binary
+  // we probe, but it ships inside ffmpeg and no platform packages it alone.
+  //
+  // The consequence is also bigger than the old "validates downloaded files"
+  // copy admitted: every yt-dlp format selector Kunai uses is a merge
+  // (`bv*+ba/b`, `bestvideo[height<=N]+bestaudio`, `--merge-output-format mp4`),
+  // and merging needs ffmpeg. Without it yt-dlp silently falls back to a single
+  // progressive stream, so quality quietly caps rather than anything failing.
+  if (!ffprobe) {
+    issues.push({
+      id: "ffmpeg-missing",
+      severity: "degraded",
+      message:
+        "ffmpeg not found — yt-dlp cannot merge separate video and audio, so YouTube and downloads quietly cap at a lower quality.",
+      install: FFMPEG_INSTALL,
+      remediation: buildRemediationLines(FFMPEG_INSTALL),
     });
   }
 
@@ -180,13 +189,12 @@ export async function probeCapabilities(
       severity: "degraded",
       message:
         "curl not found — AniDB (the default anime provider) sits behind Cloudflare and needs it; anime search may return nothing without it.",
+      install: CURL_INSTALL,
       remediation: [
-        "Arch:   sudo pacman -S curl",
-        "Debian: sudo apt install curl",
-        "Fedora: sudo dnf install curl",
-        "macOS:  brew install curl",
-        "Windows: curl.exe ships with Windows 10 1803+",
-        ...CURL_IMPERSONATE_REMEDIATION,
+        ...buildRemediationLines(CURL_INSTALL),
+        "",
+        "Better — a curl-impersonate build matches a real browser handshake:",
+        ...buildRemediationLines(CURL_IMPERSONATE_INSTALL),
       ],
     });
   } else if (!curl.impersonates) {
@@ -199,7 +207,8 @@ export async function probeCapabilities(
       severity: "degraded",
       message:
         "Only plain curl found — Cloudflare fingerprints the TLS handshake, so AniDB and Miruro may still be challenged. A curl-impersonate build matches a real browser.",
-      remediation: [...CURL_IMPERSONATE_REMEDIATION],
+      install: CURL_IMPERSONATE_INSTALL,
+      remediation: buildRemediationLines(CURL_IMPERSONATE_INSTALL),
     });
   }
 

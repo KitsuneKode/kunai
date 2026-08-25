@@ -62,10 +62,15 @@ describe("analytics payload documentation drift", () => {
       }
     });
 
-    test(`${label} states explicit opt-in and a disabled default`, () => {
+    test(`${label} states that consent is a keystroke and no skip can grant it`, () => {
+      // Setup now *recommends* analytics and pre-selects it, so "off by
+      // default" is no longer the property to assert — the guarantee that
+      // actually protects people is narrower and stronger: only a keystroke on
+      // the consent screen may enable it, and no skip, accept-all, or
+      // non-interactive path can. That is what these docs must keep saying.
       const body = prose(path).toLowerCase();
-      expect(body).toMatch(/opt[- ]in|explicitly enable/);
-      expect(body).toMatch(/off by default|defaults to off/);
+      expect(body).toMatch(/keystroke|confirm|explicit choice|explicitly enable/);
+      expect(body).toMatch(/no skip|skipping setup leaves|may enable it|can turn it on for you/);
     });
 
     test(`${label} states the small-cell floor without promising joint anonymity`, () => {

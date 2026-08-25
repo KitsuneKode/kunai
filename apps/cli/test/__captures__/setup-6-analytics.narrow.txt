@@ -1,0 +1,24 @@
+# setup-6-analytics · narrow (72×34)
+  🦊 Kunai · usage ping                                      setup 6⁄7
+────────────────────────────────────────────────────────────────────────
+
+
+  Help Kunai know it's being used
+  Recommended. Nothing is sent until you confirm here.
+
+  ▌ Turn it on   ← recommended
+      One ping a day. Counts unique installs, not people.
+    Keep it off
+      No network calls. No install id stored on disk.
+
+  Privacy first, by construction
+    { "installId": "<sha256 of a local id>", "version": "0.3.0",
+      "os": "linux", "arch": "x64", "ts": 0 }
+    Never: titles · queries · providers · URLs · paths · your IP
+    The raw id never leaves this machine. Off in /settings deletes it.
+  ● ● ● ● ● ● ○
+
+────────────────────────────────────────────────────────────────────────
+  [enter]  confirm  ·  [↑↓]  choose  ·  [s]  keep it off  ·  [b] Setu
+                                                                 p
+   back
