@@ -142,65 +142,40 @@ test("accepting recommended defaults without reaching consent leaves an opt-in a
 });
 
 test("a fresh install that never reaches consent stays unset, with no install id", async () => {
-  // The primary direction of the opt-in contract, and the one the recommended-
-  // first consent slide makes worth pinning: analytics leads and is marked
-  // recommended, so nothing but a keystroke on that slide may enable it. A
-  // fresh install that skips setup, or accepts defaults before the slide is
-  // reached, must come out `unset` with no `installId` written at all —
-  // `unset` is not `disabled`, and a config Kunai never wrote is the only
-  // honest record of a decision the user never made.
-  let config = { ...DEFAULT_CONFIG };
-  const patches: Partial<typeof config>[] = [];
-  const container = {
-    config: {
-      getRaw: () => config,
-      update: async (patch: Partial<typeof config>) => {
-        patches.push(patch);
-        config = { ...config, ...patch };
-      },
-      save: async () => undefined,
-    },
-    capabilitySnapshot: {
-      mpv: true,
-      ffprobe: true,
-      ytDlp: true,
-      curl: { present: true, impersonates: true, profile: "chrome150" },
-      image: {
-        terminal: "unknown",
-        protocol: "none",
-        renderer: "none",
-        available: false,
-        reason: "test fixture",
-      },
-      issues: [],
-    },
-    usageAnalytics: {
-      consentPatch: (choice: "enabled" | "disabled") =>
-        choice === "enabled"
-          ? { analytics: "enabled" as const, installId: "generated-install-id" }
-          : { analytics: "disabled" as const, installId: "" },
-    },
-    diagnosticsService: { record: () => undefined },
-    analyticsDisclosurePending: false,
-  } as unknown as Container;
+  // The primary direction of the opt-in contract, and the one the
+  // recommended-first consent slide makes worth pinning: analytics leads and is
+  // marked recommended, so nothing but a keystroke on that screen may enable it.
+  // A fresh install that accepts defaults before reaching the slide must come
+  // out `unset` with no `installId` -- `unset` is not `disabled`, and a config
+  // Kunai never wrote is the only honest record of a decision never made.
+  const patches: Record<string, unknown>[] = [];
+  const { container, config } = fakeContainer();
+  Object.assign(config, {
+    analytics: DEFAULT_CONFIG.analytics,
+    installId: DEFAULT_CONFIG.installId,
+  });
+  const realUpdate = container.config.update.bind(container.config);
+  container.config.update = async (patch: Record<string, unknown>) => {
+    patches.push(patch);
+    return realUpdate(patch as never);
+  };
 
   const pending = runSetupWizard({ container, force: true });
   expect(
     forceCloseRootContent({
       outcome: "defaults",
-      prefs: {
-        audio: "original",
-        subtitle: "en",
-        downloadsEnabled: true,
-        analyticsChoice: "unchanged",
-      },
-    }),
+      prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
+      answeredScreens: 0,
+    } satisfies SetupFlowPayload),
   ).toBe(true);
 
   await expect(pending).resolves.toBe("completed");
-  expect(config.analytics).toBe(DEFAULT_CONFIG.analytics);
-  expect(config.installId).toBe(DEFAULT_CONFIG.installId);
-  // Stronger than the values above: no write may even mention analytics, so a
-  // future patch cannot satisfy this by writing `unset` back over itself.
+  // Widened: the fixture types these as the literals it was built with, and the
+  // assertion is precisely that they never moved off the factory values.
+  const written = config as { analytics: string; installId: string };
+  expect(written.analytics).toBe(DEFAULT_CONFIG.analytics);
+  expect(written.installId).toBe(DEFAULT_CONFIG.installId);
+  // Stronger than comparing values: no write may even mention analytics, so a
+  // later change cannot satisfy this by writing `unset` back over itself.
   expect(patches.some((patch) => "analytics" in patch || "installId" in patch)).toBe(false);
 });
