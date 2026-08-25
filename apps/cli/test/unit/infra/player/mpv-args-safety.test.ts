@@ -68,7 +68,7 @@ describe("mpv URL safety", () => {
     expect(args.some((arg) => /[\r\n]/.test(arg))).toBe(false);
   });
 
-  test("disables tls-verify for mp4upload referers (ani-cli parity)", () => {
+  test("disables tls-verify only for an mp4upload stream host (ani-cli parity)", () => {
     const args = buildMpvArgs(
       {
         url: "https://www6.mp4upload.com/d/file.mp4",
@@ -80,6 +80,35 @@ describe("mpv URL safety", () => {
     );
     expect(args).toContain("--tls-verify=no");
     expect(args).toContain("--referrer=https://www.mp4upload.com");
+  });
+
+  test("does not let an mp4upload Referer disable TLS for another stream host", () => {
+    const args = buildMpvArgs(
+      {
+        url: "https://cdn.example/d/file.mp4",
+        headers: { Referer: "https://www.mp4upload.com", "User-Agent": "kunai" },
+        subtitle: null,
+        displayTitle: "Unrelated CDN",
+      },
+      null,
+    );
+    expect(args).not.toContain("--tls-verify=no");
+    expect(args).toContain("--referrer=https://www.mp4upload.com");
+  });
+
+  test("keeps TLS verification and HTTP headers for malformed mp4upload-like hosts", () => {
+    const args = buildMpvArgs(
+      {
+        url: "https://.mp4upload.com/d/file.mp4",
+        headers: { Referer: "https://www.mp4upload.com", "User-Agent": "kunai" },
+        subtitle: null,
+        displayTitle: "Malformed Mp4Upload host",
+      },
+      null,
+    );
+    expect(args).not.toContain("--tls-verify=no");
+    expect(args).toContain("--referrer=https://www.mp4upload.com");
+    expect(args).toContain("--user-agent=kunai");
   });
 
   test("skips local subtitle targets on remote playback", () => {
