@@ -6,6 +6,7 @@ import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
 import { docsSiteUrl } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
           <TooltipProvider>{children}</TooltipProvider>
         </RootProvider>
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
