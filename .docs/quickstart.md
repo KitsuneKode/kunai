@@ -21,10 +21,18 @@ Use this doc for setup, local execution, and common environment issues. Architec
 - `ffprobe` optional—used only for quick validation of finished files, not downloading
 - `curl` for anime mode: AniDB is the default anime provider and sits behind
   Cloudflare, which frequently blocks Bun's own fetch. Without a `curl` on
-  `PATH`, anime search can come back empty. A curl-impersonate build
-  (`curl_chrome136`, `curl_firefox135`, …) is preferred where available, since it
-  matches a browser TLS handshake; plain `curl` is used otherwise. `kunai doctor`
-  reports this as `curl=ok` / `curl=missing`.
+  `PATH`, anime search can come back empty — and **plain curl is often not
+  enough**, because Cloudflare fingerprints the TLS handshake, not just the
+  User-Agent. Kunai discovers curl-impersonate wrappers from `PATH`
+  (`curl_<browser><version>`, e.g. `curl_chrome150`) and picks the newest desktop
+  build automatically; plain `curl` is the fallback. `kunai doctor` distinguishes
+  the three states: `curl=ok (chrome150)`, `curl=plain (no CF bypass)`, and
+  `curl=missing`.
+
+  Install curl-impersonate with `brew install lexiforest/tap/curl-impersonate`
+  (macOS) or `sudo pacman -S curl-impersonate` (Arch). There is no Debian,
+  Fedora, or Windows package — use the prebuilt binaries at
+  <https://github.com/lexiforest/curl-impersonate/releases>.
 
 Deeper reference for terminal graphics, env overrides, and testing: [.docs/poster-image-rendering.md](poster-image-rendering.md).
 

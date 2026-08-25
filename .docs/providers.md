@@ -983,10 +983,13 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
   envelope (`?e=base64url({path,method,query,body,version})`, e.g.
   `{"path":"episodes","query":{"anilistId":"21"},"version":"0.2.0"}`) answers
   200 with `x-obfuscated: 2` while plain curl gets CF HTML — intermittent by
-  network. The curl fallback now reuses the AniDB curl-impersonate candidate
-  list (`shared/curl-impersonate.ts`): with `curl_chrome136`/`curl_firefox135`
-  installed, the pipe request carries a browser TLS fingerprint and clears the
-  gate. Without an impersonate build, a WAF 403 is expected behavior, not a bug.
+  network. The curl fallback reuses the shared AniDB resolver
+  (`shared/curl-impersonate.ts`), which **discovers** impersonate wrappers from
+  `PATH` rather than matching a hardcoded list — newest desktop build wins,
+  ranked family-first (chrome → firefox → safari → edge), with mobile and tor
+  builds excluded. With any current build installed the pipe request carries a
+  browser TLS fingerprint and clears the gate. Without an impersonate build, a
+  WAF 403 is expected behavior, not a bug.
 - **Per-server failures are not provider failures.** Miruro's site marks single
   servers under maintenance ("Some servers are under maintenance. Please switch
   servers if needed.") while others keep working. Kunai mirrors that: after the

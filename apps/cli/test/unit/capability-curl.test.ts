@@ -3,36 +3,63 @@ import { describe, expect, test } from "bun:test";
 import { __testing, probeCapabilities } from "@/ui";
 
 /**
- * A PATH stub: every listed command resolves, everything else is absent.
+ * A synthetic PATH: the listed commands are the only executables that exist.
  *
- * The real probe reads the host's PATH, so without this seam these assertions
- * would depend on whatever the developer happens to have installed.
+ * Both seams are injected together on purpose. `which` alone is no longer
+ * enough now that curl-impersonate builds are *discovered* by listing PATH
+ * rather than looked up by name — leaving `listPathEntries` to its default
+ * would let whatever the developer happens to have installed decide the result,
+ * which is exactly the non-determinism this stub exists to prevent.
  */
 function pathWith(...commands: readonly string[]) {
-  return (command: string) => (commands.includes(command) ? `/usr/bin/${command}` : null);
+  return {
+    which: (command: string) => (commands.includes(command) ? `/usr/bin/${command}` : null),
+    listPathEntries: () => commands,
+  };
 }
 
 describe("probeCapabilities — curl for the default anime provider", () => {
-  test("reports curl present when plain curl is on PATH", async () => {
-    const snapshot = await probeCapabilities({ which: pathWith("curl") });
+  test("reports plain curl as present but not impersonating", async () => {
+    const snapshot = await probeCapabilities(pathWith("curl"));
 
-    expect(snapshot.curl).toBe(true);
+    expect(snapshot.curl.present).toBe(true);
+    expect(snapshot.curl.impersonates).toBe(false);
+    expect(snapshot.curl.profile).toBeNull();
     expect(snapshot.issues.map((issue) => issue.id)).not.toContain("curl-missing");
   });
 
-  test("reports curl present when only a curl-impersonate build is on PATH", async () => {
-    // AniDB prefers an impersonate build over plain curl, so probing for the
-    // literal "curl" would report missing on a host that is fully capable.
-    const snapshot = await probeCapabilities({ which: pathWith("curl_chrome136") });
+  test("reports an impersonate build with the profile it selected", async () => {
+    const snapshot = await probeCapabilities(pathWith("curl_chrome150"));
 
-    expect(snapshot.curl).toBe(true);
+    expect(snapshot.curl).toEqual({
+      present: true,
+      impersonates: true,
+      profile: "chrome150",
+    });
     expect(snapshot.issues.map((issue) => issue.id)).not.toContain("curl-missing");
+    expect(snapshot.issues.map((issue) => issue.id)).not.toContain("curl-impersonate-missing");
+  });
+
+  // The regression that motivated widening this field. Plain curl exists on
+  // nearly every machine, so the old boolean reported "ready" while Cloudflare
+  // challenged every request and anime search silently returned nothing.
+  test("raises a degraded issue when only plain curl is available", async () => {
+    const snapshot = await probeCapabilities(pathWith("curl", "mpv"));
+
+    const issue = snapshot.issues.find((c) => c.id === "curl-impersonate-missing");
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe("degraded");
+    // The remediation must be actionable and must not invent a package that
+    // does not exist — upstream ships no Debian, Fedora, or Windows package.
+    expect(issue?.remediation.join("\n")).toContain("brew install lexiforest/tap/curl-impersonate");
+    expect(issue?.remediation.join("\n")).toContain("pacman -S curl-impersonate");
+    expect(issue?.remediation.join("\n")).not.toContain("apt install curl-impersonate");
   });
 
   test("raises a degraded issue when no curl variant exists", async () => {
-    const snapshot = await probeCapabilities({ which: pathWith("mpv", "yt-dlp", "ffprobe") });
+    const snapshot = await probeCapabilities(pathWith("mpv", "yt-dlp", "ffprobe"));
 
-    expect(snapshot.curl).toBe(false);
+    expect(snapshot.curl.present).toBe(false);
     const issue = snapshot.issues.find((candidate) => candidate.id === "curl-missing");
     expect(issue).toBeDefined();
     // Anime is one mode, so a missing curl degrades rather than blocks the shell.
@@ -41,32 +68,46 @@ describe("probeCapabilities — curl for the default anime provider", () => {
     // gives the user no reason to care.
     expect(issue?.message).toContain("AniDB");
     expect(issue?.remediation.length).toBeGreaterThan(0);
+    // Only one curl issue at a time, or the notice reads as two problems.
+    expect(snapshot.issues.map((i) => i.id)).not.toContain("curl-impersonate-missing");
   });
 
   test("probes each dependency independently", async () => {
-    const snapshot = await probeCapabilities({ which: pathWith("curl") });
+    const snapshot = await probeCapabilities(pathWith("curl"));
 
     expect(snapshot.mpv).toBe(false);
     expect(snapshot.ytDlp).toBe(false);
     expect(snapshot.ffprobe).toBe(false);
-    expect(snapshot.curl).toBe(true);
+    expect(snapshot.curl.present).toBe(true);
   });
 
   test("defaults to the real PATH when no probe is injected", async () => {
     const snapshot = await probeCapabilities();
 
-    expect(typeof snapshot.curl).toBe("boolean");
+    expect(typeof snapshot.curl.present).toBe("boolean");
+    expect(typeof snapshot.curl.impersonates).toBe("boolean");
   });
 
-  test("the probed flag reaches the capability fingerprint", async () => {
+  test("the probed capability reaches the capability fingerprint", async () => {
     // The fingerprint decides whether the remediation notice is shown again, so
     // a curl that appears or disappears has to change it — otherwise the user
     // installs curl and is still told it is missing, or vice versa.
-    const withCurl = await probeCapabilities({ which: pathWith("curl") });
-    const withoutCurl = await probeCapabilities({ which: pathWith("mpv") });
+    const withCurl = await probeCapabilities(pathWith("curl"));
+    const withoutCurl = await probeCapabilities(pathWith("mpv"));
 
     expect(__testing.capabilityFingerprint(withCurl)).not.toBe(
       __testing.capabilityFingerprint(withoutCurl),
+    );
+  });
+
+  // Installing curl-impersonate alongside an existing plain curl changes what
+  // Kunai can do, so it has to re-show the notice rather than staying quiet.
+  test("upgrading from plain curl to an impersonate build changes the fingerprint", async () => {
+    const plain = await probeCapabilities(pathWith("curl"));
+    const impersonating = await probeCapabilities(pathWith("curl", "curl_chrome150"));
+
+    expect(__testing.capabilityFingerprint(plain)).not.toBe(
+      __testing.capabilityFingerprint(impersonating),
     );
   });
 });

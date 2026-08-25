@@ -293,31 +293,94 @@ describe("anidb curl selection", () => {
   // which fingerprints the TLS handshake, so a browser UA over curl's own
   // handshake still gets challenged -- and a challenge page parses to zero
   // search results, which is a release blocker for the default provider.
+  /** A synthetic PATH: `names` are the only executables visible. */
+  function onPath(names: readonly string[]) {
+    const present = new Set(names);
+    return {
+      which: (cmd: string) => (present.has(cmd) ? `/usr/bin/${cmd}` : null),
+      listPathEntries: () => names,
+    };
+  }
+
   test("prefers the newest curl-impersonate build over plain curl", () => {
-    const present = new Set(["curl", "curl_chrome116", "curl_firefox135"]);
-    expect(resolveAnidbCurl((cmd) => (present.has(cmd) ? `/usr/bin/${cmd}` : null))).toEqual({
-      path: "/usr/bin/curl_firefox135",
+    expect(resolveAnidbCurl(onPath(["curl", "curl_chrome116", "curl_chrome150"]))).toEqual({
+      path: "/usr/bin/curl_chrome150",
       impersonates: true,
+      profile: "chrome150",
     });
   });
 
-  test("falls back through older impersonate builds before plain curl", () => {
-    const present = new Set(["curl", "curl_ff117"]);
-    expect(resolveAnidbCurl((cmd) => (present.has(cmd) ? `/usr/bin/${cmd}` : null))).toEqual({
-      path: "/usr/bin/curl_ff117",
+  // The bug this whole resolver was rewritten for. The old design hardcoded
+  // ["curl_firefox135", "curl_chrome136", "curl_chrome116", "curl_ff117"], so a
+  // machine carrying only builds newer than that list matched nothing and fell
+  // through to plain curl -- silently losing Cloudflare bypass while capability
+  // reporting still showed a green tick.
+  test("discovers builds newer than any list could have been written against", () => {
+    const future = ["curl", "curl_chrome199", "curl_firefox210"];
+    expect(resolveAnidbCurl(onPath(future))).toEqual({
+      path: "/usr/bin/curl_chrome199",
       impersonates: true,
+      profile: "chrome199",
+    });
+  });
+
+  // Safari's 260 and Chrome's 150 are not on one scale, so family is the outer
+  // ranking key and version only orders builds within a family.
+  test("ranks family before version so a high Safari number cannot outrank Chrome", () => {
+    expect(resolveAnidbCurl(onPath(["curl_safari260", "curl_chrome150"]))).toEqual({
+      path: "/usr/bin/curl_chrome150",
+      impersonates: true,
+      profile: "chrome150",
+    });
+  });
+
+  test("orders a revision suffix above the bare version", () => {
+    expect(resolveAnidbCurl(onPath(["curl_chrome133", "curl_chrome133a"]))).toEqual({
+      path: "/usr/bin/curl_chrome133a",
+      impersonates: true,
+      profile: "chrome133a",
+    });
+  });
+
+  // A desktop CLI presenting a phone's handshake is a mismatch a fingerprinter
+  // can notice, so mobile wrappers are skipped even when they are the newest.
+  test("skips mobile builds in favour of an older desktop one", () => {
+    expect(resolveAnidbCurl(onPath(["curl", "curl_chrome131_android", "curl_chrome116"]))).toEqual({
+      path: "/usr/bin/curl_chrome116",
+      impersonates: true,
+      profile: "chrome116",
+    });
+  });
+
+  test("never selects a tor build", () => {
+    expect(resolveAnidbCurl(onPath(["curl", "curl_tor145"]))).toEqual({
+      path: "/usr/bin/curl",
+      impersonates: false,
+      profile: null,
     });
   });
 
   test("marks plain curl as non-impersonating so cipher flags are applied", () => {
-    expect(resolveAnidbCurl((cmd) => (cmd === "curl" ? "/usr/bin/curl" : null))).toEqual({
+    expect(resolveAnidbCurl(onPath(["curl"]))).toEqual({
       path: "/usr/bin/curl",
       impersonates: false,
+      profile: null,
     });
   });
 
+  test("falls back to plain curl when a discovered wrapper is not executable", () => {
+    // Listed on PATH but `which` cannot resolve it -- a dangling symlink or a
+    // non-executable file. Discovery must not strand the caller with nothing.
+    expect(
+      resolveAnidbCurl({
+        which: (cmd: string) => (cmd === "curl" ? "/usr/bin/curl" : null),
+        listPathEntries: () => ["curl", "curl_chrome150"],
+      }),
+    ).toEqual({ path: "/usr/bin/curl", impersonates: false, profile: null });
+  });
+
   test("reports no curl at all so the caller can fall back to fetch", () => {
-    expect(resolveAnidbCurl(() => null)).toBeNull();
+    expect(resolveAnidbCurl(onPath([]))).toBeNull();
   });
 
   // ani-cli sets cipher flags only on Darwin. Windows curl.exe links Schannel,

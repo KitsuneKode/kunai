@@ -5,6 +5,8 @@ import {
   curlCipherArgs,
   isCloudflareChallengeText,
   resolveCurlCandidate,
+  type CurlCandidate,
+  type CurlEnvironment,
 } from "../shared/curl-impersonate";
 import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
 import { markupToPlainText } from "../shared/markup-text";
@@ -108,21 +110,22 @@ export type AnidbEpisodeStreamResolution = {
 };
 
 /**
- * curl-impersonate resolution lives in `shared/curl-impersonate.ts` (Miruro's
- * Cloudflare pipe fallback uses the same candidates). Keep the anidb-named
- * exports as thin delegates for the existing consumers.
+ * curl-impersonate resolution lives in `shared/curl-impersonate.ts`, which
+ * discovers wrappers from PATH rather than matching a fixed list (Miruro's
+ * Cloudflare pipe fallback shares it). Keep the anidb-named exports as thin
+ * delegates for the existing consumers.
  */
 export const anidbCipherArgs = curlCipherArgs;
 
-export function resolveAnidbCurl(
-  which: (command: string) => string | null = Bun.which,
-): { readonly path: string; readonly impersonates: boolean } | null {
-  return resolveCurlCandidate(which);
+export function resolveAnidbCurl(environment: Partial<CurlEnvironment> = {}): CurlCandidate | null {
+  return resolveCurlCandidate(environment);
 }
 
 /**
- * anidb.app HTML/JSON often CF-blocks Bun fetch. Prefer curl with a browser UA
- * (ani-cli uses curl / curl-impersonate; plain curl works on this machine).
+ * anidb.app HTML/JSON often CF-blocks Bun fetch. Prefer curl with a browser UA.
+ * An impersonate build is used when one is on PATH; plain curl is the fallback
+ * and is frequently still challenged, since Cloudflare fingerprints the TLS
+ * handshake rather than trusting the User-Agent.
  */
 export async function anidbFetchText(
   url: string,

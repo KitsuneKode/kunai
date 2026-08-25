@@ -11,10 +11,33 @@ import { getKunaiPaths } from "@kunai/storage";
 export type CapabilitySeverity = "fatal" | "degraded";
 
 export interface CapabilityIssue {
-  readonly id: "mpv-missing" | "yt-dlp-missing" | "curl-missing" | "poster-rendering-unavailable";
+  readonly id:
+    | "mpv-missing"
+    | "yt-dlp-missing"
+    | "curl-missing"
+    | "curl-impersonate-missing"
+    | "poster-rendering-unavailable";
   readonly severity: CapabilitySeverity;
   readonly message: string;
   readonly remediation: readonly string[];
+}
+
+/**
+ * What kind of curl AniDB and Miruro can actually drive.
+ *
+ * A boolean was not enough and the gap was user-visible: plain curl is present
+ * on nearly every machine, so `curl: true` reported "anime search ready" while
+ * Cloudflare challenged every request and search came back empty with no
+ * diagnostic anywhere. Presence and capability are different facts; both are
+ * carried.
+ */
+export interface CurlCapability {
+  /** Any usable curl — plain or an impersonate build. */
+  readonly present: boolean;
+  /** True only when a curl-impersonate build was selected. */
+  readonly impersonates: boolean;
+  /** Selected browser profile (`chrome150`), or `null` for plain curl / none. */
+  readonly profile: string | null;
 }
 
 export interface CapabilitySnapshot {
@@ -23,11 +46,11 @@ export interface CapabilitySnapshot {
   readonly ffprobe: boolean;
   readonly ytDlp: boolean;
   /**
-   * A curl the AniDB provider can use — plain `curl` or a curl-impersonate
-   * build. AniDB is the default anime provider and anidb.app sits behind
-   * Cloudflare, so this is a real dependency of the default route, not a nicety.
+   * The curl the AniDB provider can use. AniDB is the default anime provider and
+   * anidb.app sits behind Cloudflare, so this is a real dependency of the
+   * default route, not a nicety — and plain curl frequently is not enough.
    */
-  readonly curl: boolean;
+  readonly curl: CurlCapability;
   readonly image: ImageCapability;
   readonly issues: readonly CapabilityIssue[];
 }
@@ -45,7 +68,8 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .map((issue) => `${issue.id}:${issue.severity}`)
     .sort()
     .join(",");
-  return `mpv:${snapshot.mpv ? "1" : "0"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${snapshot.curl ? "1" : "0"}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
+  const curlBits = `${snapshot.curl.present ? "1" : "0"}:${snapshot.curl.profile ?? "plain"}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -68,6 +92,19 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
 }
 
 /**
+ * Verified against upstream on 2026-08-25. curl-impersonate has **no** package
+ * on Windows, Debian, or Fedora — only Homebrew (a tap, not core) and Arch — so
+ * everywhere else has to be the releases page. A plausible-looking
+ * `apt install curl-impersonate` would be a command that does not exist, which
+ * is worse than no hint at all.
+ */
+const CURL_IMPERSONATE_REMEDIATION = [
+  "macOS:  brew install lexiforest/tap/curl-impersonate",
+  "Arch:   sudo pacman -S curl-impersonate",
+  "Other:  prebuilt binaries at https://github.com/lexiforest/curl-impersonate/releases",
+] as const;
+
+/**
  * Read-only dependency/capability probe. Never persists notice state.
  * Prefer this for doctor and other inspection-only callers.
  */
@@ -76,6 +113,8 @@ export async function probeCapabilities(
     requireYtDlp?: boolean;
     /** PATH lookup seam; defaults to the real one. Injected by tests. */
     which?: (command: string) => string | null;
+    /** PATH listing seam for curl-impersonate discovery. Injected by tests. */
+    listPathEntries?: () => readonly string[];
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
@@ -84,10 +123,19 @@ export async function probeCapabilities(
   const mpv = Boolean(which("mpv"));
   const ffprobe = Boolean(which("ffprobe"));
   const ytDlp = Boolean(which("yt-dlp"));
-  // Ask the provider which binaries it can actually drive: it prefers a
-  // curl-impersonate build over plain curl, so probing for the literal "curl"
-  // would report missing on a host that is fully capable.
-  const curl = resolveAnidbCurl(which) !== null;
+  // Ask the provider which binary it would actually drive rather than probing
+  // for the literal "curl": it discovers curl-impersonate builds from PATH and
+  // prefers them, so a literal probe both under-reports a capable host and
+  // over-reports one carrying only plain curl.
+  const resolvedCurl = resolveAnidbCurl({
+    which,
+    ...(options.listPathEntries ? { listPathEntries: options.listPathEntries } : {}),
+  });
+  const curl: CurlCapability = {
+    present: resolvedCurl !== null,
+    impersonates: resolvedCurl?.impersonates ?? false,
+    profile: resolvedCurl?.profile ?? null,
+  };
   const image = detectImageCapability();
 
   if (!mpv) {
@@ -123,7 +171,7 @@ export async function probeCapabilities(
     });
   }
 
-  if (!curl) {
+  if (!curl.present) {
     issues.push({
       id: "curl-missing",
       // Anime is one mode, so this degrades that route rather than blocking the
@@ -138,8 +186,20 @@ export async function probeCapabilities(
         "Fedora: sudo dnf install curl",
         "macOS:  brew install curl",
         "Windows: curl.exe ships with Windows 10 1803+",
-        "Best:   install a curl-impersonate build to match a browser TLS handshake",
+        ...CURL_IMPERSONATE_REMEDIATION,
       ],
+    });
+  } else if (!curl.impersonates) {
+    issues.push({
+      id: "curl-impersonate-missing",
+      // Plain curl is present, so this is not "missing a dependency" — it is a
+      // capability gap that only shows up as empty anime search results. It was
+      // previously invisible: `curl: true` reported ready and the user had no
+      // way to learn why AniDB returned nothing.
+      severity: "degraded",
+      message:
+        "Only plain curl found — Cloudflare fingerprints the TLS handshake, so AniDB and Miruro may still be challenged. A curl-impersonate build matches a real browser.",
+      remediation: [...CURL_IMPERSONATE_REMEDIATION],
     });
   }
 
