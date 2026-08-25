@@ -246,8 +246,35 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * development bundle is 2,953,713 bytes, 36,367 below main's existing 2_920
  * KiB cap. Discord containment therefore does not raise the final ratchet.
  * This budget still applies only to the unpublished development bundle.
+ *
+ * Raised from 2_920 on 2026-08-25 for the native release train. `main` measured
+ * 2,988,548 bytes against the 2,990,080-byte cap -- 1.5 KiB of headroom, so the
+ * next change of any size was going to trip it regardless of what that change
+ * was.
+ *
+ * The whole remaining train was measured rather than the one PR that failed:
+ * building its tip (#183, containing #184, #204, #182 and #183) against its
+ * base gives 2,983,756 vs 2,967,004 bytes -- 16,752 bytes, 16.4 KiB. Nearly all
+ * of it is #184 alone (16,747 bytes measured separately); #204, #182 and #183
+ * are installer scripts, release workflows and attestation, which never enter
+ * the CLI graph. The 16.4 KiB is ordinary feature code: archive-aware rollback,
+ * version metadata, and the install/uninstall/upgrade paths that consume
+ * verified archives.
+ *
+ * 2_976 leaves ~41 KiB after the train lands, which restores real headroom
+ * rather than clearing one change. The security/reliability PRs still queued
+ * behind it are small bounded fixes and will be measured on their own terms if
+ * they ever approach this number again.
+ *
+ * Worth restating because it is what makes this safe: this number guards
+ * `dist/kunai.js`, which is published nowhere and is not the source of the
+ * compiled binaries either -- `compileBinaryBuildOptions` compiles from
+ * `src/main.ts`. What a user installs from npm is the ~9 KiB launcher, held by
+ * NPM_PACK_PACKED_BUDGET_BYTES / NPM_PACK_UNPACKED_BUDGET_BYTES, which this
+ * change does not touch and which the exact-tarball verification added in #166
+ * has since made stricter.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_920;
+export const NPM_BUNDLE_BUDGET_KB = 2_976;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
