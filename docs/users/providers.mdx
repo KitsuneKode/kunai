@@ -258,7 +258,7 @@ What it does not do:
 - Kunai does not host or proxy video. There is no video-relay configuration; stream URLs always stay direct.
 - The relay does not bypass provider login or DRM.
 
-Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct fetches. To use a relay you operate, set `baseUrl` (and optional token) in `/settings` or `config.json` to **your** origin — Kunai never ships a public relay URL. `fallbackToDirect: true` lets a broken relay degrade to direct fetches where the provider is not geo-blocked. Env overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`.
+Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct fetches. To use a relay you operate, set `baseUrl` in `/settings` or `config.json` to **your** origin — Kunai never ships a public relay URL. An internet relay requires a matching bearer `token`; only a relay bound to numeric loopback may run without one. `fallbackToDirect: true` degrades to direct fetches after relay network or authorization-policy failures where the provider is not geo-blocked. Env overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`.
 
 Source-checkout smoke and Vercel deploy steps: [Debugging workflow](/docs/developer/debugging-workflow) and `apps/relay-server/README.md`.
 

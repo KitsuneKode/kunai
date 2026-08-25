@@ -92,13 +92,27 @@ export KUNAI_RELAY_TOKEN=...
 ## Safety Model
 
 - Only `POST /rpc/:providerId` and `GET /health` are implemented in v1.
+- Internet deployments reject missing, duplicate, or incorrect bearer credentials
+  before reading the RPC request body. `OPTIONS` remains a body-free CORS preflight.
 - Upstream URLs must match the selected provider manifest `relayProfile`.
-- Private, loopback, link-local, localhost, and non-HTTP(S) upstreams are rejected before fetch.
-- Unsafe headers such as `Authorization`, `Cookie`, `Host`, and `X-Forwarded-*` are never forwarded upstream.
-- Redirects are followed only after each target is validated against the same provider allowlist.
+- Private, loopback, link-local, localhost, and non-HTTP(S) upstreams are rejected
+  before a socket opens. DNS names are resolved once per hop, the complete answer
+  set is rejected if any address is non-public, and the connection is pinned to a
+  vetted address while retaining the original HTTP `Host` and TLS SNI.
+- Client relay credentials, cookies, `Host`, and `X-Forwarded-*` headers are never
+  forwarded upstream. Provider credentials required by an initial request are
+  stripped if a redirect changes origin.
+- Redirects are followed only after each target is validated against the same
+  provider allowlist and receives a fresh pinned DNS lookup. HTTPS-to-HTTP
+  redirects are rejected.
+- GET and HEAD may try another already-vetted DNS address after a connection-level
+  failure before any response. POST is never replayed after an ambiguous attempt.
 - Metadata request bodies default to 64 KiB max; metadata responses default to 2 MiB max.
+- The upstream deadline covers DNS resolution and socket/response work.
 - Relay-generated errors are structured JSON with stable `error.code` values for CLI diagnostics.
-- Upstream response cookies and bodies are not logged or exposed beyond the filtered RPC response.
+- Server diagnostics contain only stable provider/hostname/phase/family/count/error
+  fields. URL paths, queries, addresses, headers, bodies, tokens, and raw errors are
+  never logged. Upstream response cookies remain filtered from the RPC response.
 - Stream/video relaying is intentionally not active by default. mpv receives the final CDN URL and fetches directly.
 
 This app is fail-closed. If a provider host is missing from `relayProfile`, update
@@ -109,8 +123,9 @@ the provider manifest and tests instead of adding a server-side exception route.
 Relay use is controlled by client config, not a server default:
 
 - Empty `providerRelay.baseUrl` means direct provider fetches only.
-- `fallbackToDirect: true` lets a broken user relay degrade back to direct
-  fetches in non-geo-blocked regions.
+- `fallbackToDirect: true` degrades to direct fetches after relay network or
+  relay authorization-policy failures in non-geo-blocked regions. Arbitrary
+  upstream HTTP failures are returned unchanged rather than replayed directly.
 - Per-provider `providerRelay.providers[providerId].enabled = false` disables
   relay routing for one provider without changing the relay deployment.
 - Clearing `providerRelay.baseUrl` or unsetting `KUNAI_RELAY_BASE_URL` is the
@@ -131,6 +146,8 @@ For a Vercel preview, also verify `/health`, an unauthorized RPC when
 ## Post-Deploy Smoke
 
 1. `GET /health` returns `200`.
-2. Unauthorized RPC returns `401` when `RELAY_TOKEN` is set.
+2. Unauthorized RPC returns `401`; an internet deployment without `RELAY_TOKEN`
+   returns `503 relay-not-configured`.
 3. Disallowed hosts return `403 host-not-allowed`.
-4. `KUNAI_RELAY_BASE_URL=<preview-url> bun run test:live:relay-allanime` resolves a stream.
+4. `KUNAI_RELAY_BASE_URL=<preview-url> KUNAI_RELAY_TOKEN=<same-token> bun run test:live:relay-allanime`
+   resolves a stream.

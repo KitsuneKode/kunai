@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 
 import { createRelayFetchPort } from "../src/create-relay-fetch-port";
+import { handleRpcRequest, relayError } from "../src/handler";
 import { normalizeRelayBaseUrl } from "../src/normalize-relay-base-url";
 import { buildProviderRelayRegistry } from "../src/registry";
+import { RELAY_ERROR_CODE_HEADER, type RelayErrorCode } from "../src/types";
 
 const registry = buildProviderRelayRegistry([
   {
@@ -88,6 +90,96 @@ test("createRelayFetchPort falls back to direct when relay network fails", async
   const response = await port.fetch("https://api.allanime.day/api");
   expect(await response.json()).toEqual({ direct: true });
   expect(calls).toEqual(["https://relay.example/rpc/allanime", "https://api.allanime.day/api"]);
+});
+
+test.each([
+  ["relay-not-configured", 503],
+  ["unauthorized", 401],
+] as const)(
+  "createRelayFetchPort falls back to direct for relay authorization failure %s",
+  async (code, status) => {
+    const calls: string[] = [];
+    const port = createRelayFetchPort({
+      relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+      registry,
+      async fetch(input) {
+        calls.push(String(input));
+        if (new URL(String(input)).origin === "https://relay.example") {
+          return relayError(
+            code satisfies RelayErrorCode,
+            "allanime",
+            "Relay authorization failed",
+            status,
+          );
+        }
+        return Response.json({ direct: true });
+      },
+    });
+
+    const response = await port.fetch("https://api.allanime.day/api");
+
+    expect(await response.json()).toEqual({ direct: true });
+    expect(calls).toEqual(["https://relay.example/rpc/allanime", "https://api.allanime.day/api"]);
+  },
+);
+
+test("createRelayFetchPort does not fall back for an unmarked upstream HTTP failure", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+    registry,
+    async fetch(input) {
+      calls.push(String(input));
+      return Response.json(
+        {
+          error: {
+            code: "relay-not-configured",
+            message: "Untrusted upstream body must not control fallback",
+          },
+        },
+        { status: 503 },
+      );
+    },
+  });
+
+  const response = await port.fetch("https://api.allanime.day/api");
+
+  expect(response.status).toBe(503);
+  expect(calls).toEqual(["https://relay.example/rpc/allanime"]);
+});
+
+test("an upstream relay-error marker is stripped before client fallback policy sees it", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+    registry,
+    providerId: "allanime",
+    async fetch(input, init) {
+      calls.push(String(input));
+      if (new URL(String(input)).origin !== "https://relay.example") {
+        return Response.json({ direct: true });
+      }
+
+      return handleRpcRequest(new Request(String(input), init), {
+        providerId: "allanime",
+        registry,
+        authorization: { mode: "local-loopback" },
+        async transport() {
+          return new Response("upstream unavailable", {
+            status: 503,
+            headers: { [RELAY_ERROR_CODE_HEADER]: "relay-not-configured" },
+          });
+        },
+      });
+    },
+  });
+
+  const response = await port.fetch("https://api.allanime.day/api");
+
+  expect(response.status).toBe(503);
+  expect(response.headers.get(RELAY_ERROR_CODE_HEADER)).toBeNull();
+  expect(await response.text()).toBe("upstream unavailable");
+  expect(calls).toEqual(["https://relay.example/rpc/allanime"]);
 });
 
 test("createRelayFetchPort stays on direct fetch when the manifest is not relay-safe", async () => {

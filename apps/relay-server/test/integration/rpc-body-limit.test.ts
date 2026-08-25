@@ -16,12 +16,22 @@ import { createServer, type Server } from "node:http";
 
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from "@kunai/relay";
 
-import handler from "../../api/rpc/[providerId]";
+import { createRelayRpcHandler } from "../../api/rpc/[providerId]";
 
 let server: Server;
 let base: string;
+let upstreamCalls = 0;
+
+const RELAY_TOKEN = "integration-secret";
 
 beforeAll(async () => {
+  const handler = createRelayRpcHandler({
+    readToken: () => RELAY_TOKEN,
+    async transport() {
+      upstreamCalls++;
+      throw new Error("unexpected upstream fetch");
+    },
+  });
   server = createServer((req, res) => {
     // Mirrors the platform's file-based route parameter.
     void handler(Object.assign(req, { query: { providerId: "allanime" } }), res);
@@ -34,10 +44,12 @@ afterAll(() => {
   server.close();
 });
 
-function post(body: string) {
+function post(body: string, authorization: string | null = `Bearer ${RELAY_TOKEN}`) {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (authorization) headers.authorization = authorization;
   return fetch(`${base}/rpc/allanime`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers,
     body,
   });
 }
@@ -78,6 +90,7 @@ describe("relay rpc body limit", () => {
         socket.write(
           "POST /rpc/allanime HTTP/1.1\r\n" +
             "Host: 127.0.0.1\r\n" +
+            `Authorization: Bearer ${RELAY_TOKEN}\r\n` +
             "Content-Type: application/json\r\n" +
             "Content-Length: 10000000\r\n\r\n",
         );
@@ -99,12 +112,71 @@ describe("relay rpc body limit", () => {
     expect(status).toContain("413");
   }, 20000);
 
-  test("a body under the ceiling still reaches the shared handler", async () => {
+  test.each([
+    ["missing", null],
+    ["wrong", "Bearer wrong-token"],
+  ])("%s bearer receives 401 without upstream work", async (_label, authorization) => {
+    upstreamCalls = 0;
+    const response = await post(
+      JSON.stringify({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
+      authorization,
+    );
+
+    expect(response.status).toBe(401);
+    expect(upstreamCalls).toBe(0);
+  });
+
+  test("missing bearer is rejected from headers without waiting for its body", async () => {
+    const { port } = server.address() as { port: number };
+    const status = await readStatusFromIncompleteRequest(
+      port,
+      "POST /rpc/allanime HTTP/1.1\r\n" +
+        "Host: 127.0.0.1\r\n" +
+        "Content-Type: application/json\r\n" +
+        "Content-Length: 10000000\r\n\r\n",
+    );
+
+    expect(status).toContain("401");
+  }, 20000);
+
+  test("duplicate bearer headers are rejected without waiting for the body", async () => {
+    const { port } = server.address() as { port: number };
+    const status = await readStatusFromIncompleteRequest(
+      port,
+      "POST /rpc/allanime HTTP/1.1\r\n" +
+        "Host: 127.0.0.1\r\n" +
+        `Authorization: Bearer ${RELAY_TOKEN}\r\n` +
+        "Authorization: Bearer attacker\r\n" +
+        "Content-Type: application/json\r\n" +
+        "Content-Length: 10000000\r\n\r\n",
+    );
+
+    expect(status).toContain("401");
+  }, 20000);
+
+  test("an exact bearer under the ceiling reaches normal envelope validation", async () => {
     // Malformed on purpose: the point is that it is judged on its contents
     // rather than rejected for its size, so the fix did not simply refuse
     // everything.
     const response = await post(JSON.stringify({ not: "a relay envelope" }));
 
-    expect(response.status).not.toBe(413);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "bad-request" } });
   });
 });
+
+async function readStatusFromIncompleteRequest(port: number, requestHead: string): Promise<string> {
+  const { connect } = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, "127.0.0.1", () => socket.write(requestHead));
+    socket.on("data", (chunk) => {
+      resolve(chunk.toString("utf8").split("\r\n")[0] ?? "");
+      socket.destroy();
+    });
+    socket.on("error", reject);
+    socket.setTimeout(5000, () => {
+      socket.destroy();
+      reject(new Error("no response before the unfinished request body"));
+    });
+  });
+}

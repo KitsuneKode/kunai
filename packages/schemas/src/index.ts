@@ -34,6 +34,7 @@ export const relayErrorCodeSchema = z.enum([
   "body-too-large",
   "response-too-large",
   "redirect-not-allowed",
+  "relay-not-configured",
   "unauthorized",
   "upstream-timeout",
   "upstream-error",

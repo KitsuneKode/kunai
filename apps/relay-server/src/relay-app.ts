@@ -1,16 +1,18 @@
-import { handleRpcRequest, relayError, type RelayFetch } from "@kunai/relay";
+import {
+  handleRpcRequest,
+  relayError,
+  type RelayAuthorizationPolicy,
+  type RelayTransport,
+} from "@kunai/relay";
 
 import { relayRegistry } from "./provider-registry";
 
 export interface RelayAppEnv {
-  readonly relayToken?: string;
-  readonly fetch?: RelayFetch;
+  readonly authorization: RelayAuthorizationPolicy;
+  readonly transport?: RelayTransport;
 }
 
-export async function handleRelayRequest(
-  request: Request,
-  env: RelayAppEnv = {},
-): Promise<Response> {
+export async function handleRelayRequest(request: Request, env: RelayAppEnv): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.pathname === "/health") {
@@ -26,8 +28,8 @@ export async function handleRelayRequest(
     return handleRpcRequest(request, {
       providerId: decodeURIComponent(rpcMatch[1]),
       registry: relayRegistry,
-      token: env.relayToken,
-      fetch: env.fetch,
+      authorization: env.authorization,
+      transport: env.transport,
     });
   }
 

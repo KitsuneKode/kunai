@@ -1,14 +1,16 @@
-import { handleRelayRequest } from "../src/relay-app";
+import {
+  createRelayDevServerOptions,
+  resolveRelayDevelopmentPolicy,
+} from "../src/relay-runtime-policy";
 
-const port = Number(process.env.PORT ?? 8787);
-
-Bun.serve({
-  port,
-  fetch(request) {
-    return handleRelayRequest(request, {
-      relayToken: process.env.RELAY_TOKEN,
-    });
-  },
+const policy = resolveRelayDevelopmentPolicy({
+  PORT: process.env.PORT,
+  RELAY_HOST: process.env.RELAY_HOST,
+  RELAY_TOKEN: process.env.RELAY_TOKEN,
 });
+const options = createRelayDevServerOptions(policy);
 
-console.log(`kunai relay dev server listening on http://127.0.0.1:${port}`);
+Bun.serve(options);
+
+const displayHostname = policy.hostname.includes(":") ? `[${policy.hostname}]` : policy.hostname;
+console.log(`kunai relay dev server listening on http://${displayHostname}:${policy.port}`);

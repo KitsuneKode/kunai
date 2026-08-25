@@ -1,21 +1,41 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { filterForwardHeaders, mergeRelayHeaders, RelayValidationError } from "./forward-headers";
+import {
+  createPinnedRelayTransport,
+  isPublicRelayAddress,
+  writeRelayDiagnostic,
+} from "./pinned-transport";
 import { parseHttpUrl } from "./registry";
 import {
   DEFAULT_MAX_REDIRECTS,
   DEFAULT_MAX_REQUEST_BODY_BYTES,
   DEFAULT_MAX_RESPONSE_BODY_BYTES,
   DEFAULT_RELAY_TIMEOUT_MS,
-  type RelayFetch,
+  RELAY_ERROR_CODE_HEADER,
   type RelayErrorCode,
   type RelayHandlerOptions,
   type RelayRpcErrorBody,
   type RelayRpcRequest,
   type RelayMethod,
+  type RelayTransport,
 } from "./types";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const CROSS_ORIGIN_SENSITIVE_HEADERS = [
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+  "x-aa-boot",
+  "x-session-token",
+] as const;
+const REQUEST_BODY_HEADERS = [
+  "content-encoding",
+  "content-language",
+  "content-length",
+  "content-location",
+  "content-type",
+] as const;
 const RELAY_RESPONSE_HEADERS = [
   "content-type",
   "content-length",
@@ -32,8 +52,19 @@ export async function handleRpcRequest(
     return relayError("method-not-allowed", options.providerId, "RPC route requires POST", 405);
   }
 
-  if (options.token && !isAuthorized(request, options.token)) {
-    return relayError("unauthorized", options.providerId, "Relay token is required", 401);
+  if (options.authorization.mode === "bearer") {
+    const token = options.authorization.token.trim();
+    if (!token) {
+      return relayError(
+        "relay-not-configured",
+        options.providerId,
+        "Relay authorization is not configured",
+        503,
+      );
+    }
+    if (!isRelayBearerAuthorized(request.headers.get("authorization"), token)) {
+      return relayError("unauthorized", options.providerId, "Relay token is required", 401);
+    }
   }
 
   const provider = options.registry.get(options.providerId);
@@ -108,8 +139,17 @@ export async function handleRpcRequest(
   }
 
   try {
+    const maxResponseBodyBytes =
+      provider.profile.maxResponseBodyBytes ?? DEFAULT_MAX_RESPONSE_BODY_BYTES;
     const upstream = await fetchWithValidatedRedirects({
-      fetchImpl: options.fetch ?? fetch,
+      fetchImpl:
+        options.transport ??
+        createPinnedRelayTransport({
+          providerId: options.providerId,
+          diagnostics: options.diagnostics ?? writeRelayDiagnostic,
+          maxRequestBodyBytes: maxBodyBytes,
+          maxResponseBodyBytes,
+        }),
       providerId: options.providerId,
       registry: options.registry,
       url: upstreamUrl,
@@ -124,7 +164,7 @@ export async function handleRpcRequest(
 
     return await relayUpstreamResponse(
       upstream,
-      provider.profile.maxResponseBodyBytes ?? DEFAULT_MAX_RESPONSE_BODY_BYTES,
+      maxResponseBodyBytes,
       options.providerId,
       rpc.method,
     );
@@ -187,7 +227,7 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 }
 
 async function fetchWithValidatedRedirects(input: {
-  readonly fetchImpl: RelayFetch;
+  readonly fetchImpl: RelayTransport;
   readonly providerId: string;
   readonly registry: RelayHandlerOptions["registry"];
   readonly url: URL;
@@ -198,15 +238,17 @@ async function fetchWithValidatedRedirects(input: {
   let currentUrl = input.url;
   let method = input.init.method ?? "GET";
   let body = input.init.body;
+  const headers = new Headers(input.init.headers);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort("relay upstream timeout"), input.timeoutMs);
 
-  for (let redirectCount = 0; redirectCount <= input.maxRedirects; redirectCount++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort("relay upstream timeout"), input.timeoutMs);
-    try {
+  try {
+    for (let redirectCount = 0; redirectCount <= input.maxRedirects; redirectCount++) {
       const response = await input.fetchImpl(currentUrl, {
         ...input.init,
         method,
         body,
+        headers,
         redirect: "manual",
         signal: controller.signal,
       });
@@ -220,24 +262,46 @@ async function fetchWithValidatedRedirects(input: {
           502,
         );
       }
-      currentUrl = new URL(location, currentUrl);
-      if (!input.registry.isHostAllowed(input.providerId, currentUrl, "metadata")) {
+      const redirectUrl = new URL(location, currentUrl);
+      if (currentUrl.protocol === "https:" && redirectUrl.protocol === "http:") {
+        throw new RelayValidationError(
+          "redirect-not-allowed",
+          "HTTPS upstream cannot redirect to HTTP",
+          502,
+        );
+      }
+      if (
+        isUnsafeHostname(redirectUrl.hostname) ||
+        !input.registry.isHostAllowed(input.providerId, redirectUrl, "metadata")
+      ) {
         throw new RelayValidationError(
           "redirect-not-allowed",
           "Upstream redirect target is not allowed",
           502,
         );
       }
-      if (response.status === 303) {
+      if (redirectUrl.origin !== currentUrl.origin) {
+        for (const name of CROSS_ORIGIN_SENSITIVE_HEADERS) headers.delete(name);
+      }
+      currentUrl = redirectUrl;
+      if (redirectRewritesToGet(response.status, method)) {
         method = "GET";
         body = undefined;
+        for (const name of REQUEST_BODY_HEADERS) headers.delete(name);
       }
-    } finally {
-      clearTimeout(timeout);
     }
-  }
 
-  throw new RelayValidationError("redirect-not-allowed", "Too many upstream redirects", 502);
+    throw new RelayValidationError("redirect-not-allowed", "Too many upstream redirects", 502);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function redirectRewritesToGet(status: number, method: string): boolean {
+  return (
+    ((status === 301 || status === 302) && method === "POST") ||
+    (status === 303 && method !== "GET" && method !== "HEAD")
+  );
 }
 
 async function relayUpstreamResponse(
@@ -305,6 +369,7 @@ export function relayError(
     status,
     headers: {
       "Access-Control-Allow-Origin": "*",
+      [RELAY_ERROR_CODE_HEADER]: code,
     },
   });
 }
@@ -321,8 +386,10 @@ function corsPreflightResponse(): Response {
   });
 }
 
-function isAuthorized(request: Request, token: string): boolean {
-  const authorization = request.headers.get("authorization");
+export function isRelayBearerAuthorized(
+  authorization: string | null | undefined,
+  token: string,
+): boolean {
   if (!authorization) return false;
   const expected = `Bearer ${token}`;
   const given = Buffer.from(authorization, "utf8");
@@ -332,72 +399,26 @@ function isAuthorized(request: Request, token: string): boolean {
   return given.length === wanted.length && timingSafeEqual(given, wanted);
 }
 
-/**
- * The dotted-quad an IPv6 literal embeds, or null when it embeds none.
- *
- * Covers both spellings of the `::ffff:` mapping — the dotted tail the user
- * types and the two hex groups WHATWG normalizes it into — plus the deprecated
- * IPv4-compatible `::a.b.c.d` form, which normalizes the same way.
- */
-function embeddedIpv4(ipv6: string): string | null {
-  const dotted = /^::(?:ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/.exec(ipv6);
-  if (dotted?.[1]) return dotted[1];
-
-  const hex = /^::(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(ipv6);
-  if (!hex?.[1] || !hex[2]) return null;
-  const high = Number.parseInt(hex[1], 16);
-  const low = Number.parseInt(hex[2], 16);
-  // `::1` and `::` are loopback/unspecified, not IPv4 — leave them to the
-  // literal checks so their meaning is not silently reinterpreted.
-  if (high === 0) return null;
-  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
-}
-
+/** Reject literal targets before registry or DNS work; names are checked again after resolution. */
 function isUnsafeHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
   if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
-  if (normalized === "0.0.0.0") return true;
-  if (normalized.includes(":")) {
-    // WHATWG URL keeps brackets on IPv6 literals ("[::1]"); strip them so
-    // loopback, unspecified, link-local, and unique-local all match.
-    const ipv6 =
-      normalized.startsWith("[") && normalized.endsWith("]") ? normalized.slice(1, -1) : normalized;
-    // An IPv4-mapped address is an IPv4 address, and the prefix checks below
-    // cannot see it: WHATWG rewrites `::ffff:169.254.169.254` — the cloud
-    // metadata endpoint — to the hex form `::ffff:a9fe:a9fe`, which matches
-    // none of them. Judge the address it embeds.
-    const mapped = embeddedIpv4(ipv6);
-    if (mapped) return isUnsafeHostname(mapped);
-    // Link-local is fe80::/10, not fe80::/16 — `fe90::`, `fea0::` and `feb0::`
-    // are link-local too and a `fe80:` prefix test misses all three.
-    return (
-      ipv6 === "::1" ||
-      ipv6 === "::" ||
-      /^fe[89ab][0-9a-f]?:/.test(ipv6) ||
-      ipv6.startsWith("fc") ||
-      ipv6.startsWith("fd")
-    );
-  }
-
-  const octets = normalized.split(".").map((part) => Number(part));
-  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part))) return false;
-  const [a, b] = octets;
-  if (a === undefined || b === undefined) return false;
-  return (
-    a === 0 || // 0.0.0.0/8 — "this network"; 0.0.0.0 alone is not the whole range.
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) || // CGNAT, routable inside carrier networks.
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168)
-  );
+  const literal =
+    normalized.startsWith("[") && normalized.endsWith("]") ? normalized.slice(1, -1) : normalized;
+  return isIPLiteral(literal) && !isPublicRelayAddress(literal);
 }
 
-function isAbortLike(error: unknown): boolean {
+function isIPLiteral(hostname: string): boolean {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) || hostname.includes(":");
+}
+
+function isAbortLike(cause: unknown): boolean {
+  if (!(cause instanceof Error)) return String(cause).toLowerCase().includes("timeout");
+  const code = "code" in cause ? String(cause.code) : "";
   return (
-    (error instanceof DOMException && error.name === "AbortError") ||
-    String(error).toLowerCase().includes("timeout")
+    cause.name === "AbortError" ||
+    code === "ABORT_ERR" ||
+    cause.message.toLowerCase().includes("timeout")
   );
 }
 

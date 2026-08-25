@@ -1,5 +1,5 @@
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
-import type { RelayRpcRequest } from "./types";
+import { RELAY_ERROR_CODE_HEADER, type RelayRpcRequest } from "./types";
 import type { RelayFetchPort, RelayFetchPortOptions } from "./types";
 
 type RelayHeadersInit = ConstructorParameters<typeof Headers>[0];
@@ -38,12 +38,16 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
       }
 
       try {
-        return await fetchImpl(relayUrl, {
+        const response = await fetchImpl(relayUrl, {
           method: "POST",
           headers,
           body: JSON.stringify(requestInfo),
           signal: init?.signal,
         });
+        if (fallbackToDirect && isRelayAuthorizationFailure(response)) {
+          return fetchImpl(input, init);
+        }
+        return response;
       } catch (error) {
         if (!fallbackToDirect) throw error;
         return fetchImpl(input, init);
@@ -53,6 +57,14 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
 }
 
 export { normalizeRelayBaseUrl } from "./normalize-relay-base-url";
+
+function isRelayAuthorizationFailure(response: Response): boolean {
+  const code = response.headers.get(RELAY_ERROR_CODE_HEADER);
+  return (
+    (response.status === 503 && code === "relay-not-configured") ||
+    (response.status === 401 && code === "unauthorized")
+  );
+}
 
 async function toRelayRequest(
   input: string | URL | Request,
