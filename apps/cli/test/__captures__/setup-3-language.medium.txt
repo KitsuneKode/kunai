@@ -1,0 +1,21 @@
+# setup-3-language · medium (100×34)
+  🦊 Kunai · language                                                                    setup 3⁄7
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+          Language
+          Applies to anime, shows, and films alike. Change either per episode.
+
+          Audio                                   Subtitles
+          ▌ Original                              ▌ English
+            English                                 Pick each time
+            Japanese                                None
+            Any dub                                 Arabic
+                                                    German
+                                                    Spanish
+                                                    French
+                                                    Japanese
+          ● ● ● ○ ○ ○ ○
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  [enter]  confirm  ·  [↑↓]  choose  ·  [tab]  audio / subs  ·  [b]  back                    Setup

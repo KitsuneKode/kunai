@@ -3340,7 +3340,15 @@ async function handleSyncDisconnect(container: Container): Promise<"handled"> {
   return "handled";
 }
 
-async function connectNamedTracker(
+/**
+ * Exported so setup can run the *real* connect after it commits config.
+ *
+ * The setup toggle used to write `sync.anilist.enabled` and stop there, which
+ * made it a control that looked like it linked an account and did not — the
+ * house silent-no-op. Setup calls this once the wizard closes, so a browser
+ * handoff that fails costs an account link rather than the whole wizard.
+ */
+export async function connectNamedTracker(
   container: Container,
   tracker: "anilist" | "tmdb",
 ): Promise<void> {

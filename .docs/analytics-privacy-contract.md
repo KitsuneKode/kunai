@@ -12,9 +12,19 @@ Read this before touching `apps/cli/src/services/analytics/`,
 
 ## Consent and identifier
 
-- Usage analytics is **explicit opt-in**. A fresh install is `unset`; setup
-  defaults to off and only an explicit enable may persist `enabled` or create an
-  identifier.
+- Usage analytics is **user-controlled and keystroke-gated**. A fresh install is
+  `unset`. Setup **recommends** analytics and pre-selects it, with copy that says
+  what is and is not sent — but only an explicit choice made on the consent
+  screen may persist `enabled` or create an identifier.
+- **No skip path may enable it.** `s` on the consent screen selects off, and `S`
+  (accept all remaining defaults) stops on that screen rather than passing
+  through it. `unchanged` — the state when the screen was never reached — must
+  never collapse into `disabled` either, or rerunning setup and pressing
+  accept-all would silently opt OUT someone who had opted in.
+- This generalizes: **no skip, accept-all, or non-interactive path may perform an
+  outward-facing action** — analytics, tracker OAuth, or presence IPC. A
+  recommendation the user pressed a key on is consent; a default they never saw
+  is not.
 - Existing installs may see a one-time, non-blocking recommendation. It lists
   the payload and points to Settings, but does not grant consent, enable
   analytics, create an id, or send a request.
