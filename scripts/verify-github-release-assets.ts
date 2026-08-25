@@ -6,7 +6,9 @@
 //   bun run scripts/verify-github-release-assets.ts              # latest (names + sizes)
 //   bun run scripts/verify-github-release-assets.ts v0.3.0
 //   bun run scripts/verify-github-release-assets.ts v0.3.0 \
-//     --expect-draft --expected-version 0.3.0
+//     --expect-draft --expected-version 0.3.0 \
+//     --attestation-repo KitsuneKode/kunai \
+//     --attestation-source-digest <40-character-commit-sha>
 // =============================================================================
 
 import { spawnSync } from "node:child_process";
@@ -19,7 +21,11 @@ import {
   assertCompleteReleaseAssetSet,
   type ReleaseAssetDescriptor,
 } from "./release-asset-contract";
-import { verifyReleaseArtifactDirectory } from "./verify-release-artifact-directory";
+import { verifyNativeAttestations } from "./verify-native-attestations";
+import {
+  smokeReleaseLinuxX64,
+  verifyReleaseArtifactDirectory,
+} from "./verify-release-artifact-directory";
 
 type GhReleaseView = {
   readonly isDraft?: boolean;
@@ -27,25 +33,52 @@ type GhReleaseView = {
   readonly assets?: readonly { readonly name?: string; readonly size?: number }[];
 };
 
-function parseArgs(argv: readonly string[]): {
-  tag: string | undefined;
-  expectDraft: boolean;
-  expectedVersion: string | undefined;
-} {
+type GitHubReleaseAssetArguments = {
+  readonly tag: string | undefined;
+  readonly expectDraft: boolean;
+  readonly expectPublic: boolean;
+  readonly expectedVersion: string | undefined;
+  readonly attestationRepository: string | undefined;
+  readonly attestationSourceDigest: string | undefined;
+};
+
+function parseArgs(argv: readonly string[]): GitHubReleaseAssetArguments {
   let tag: string | undefined;
   let expectDraft = false;
+  let expectPublic = false;
   let expectedVersion: string | undefined;
+  let attestationRepository: string | undefined;
+  let attestationSourceDigest: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
+    const arg = argv[i];
+    if (arg === undefined) break;
     if (arg === "--expect-draft") {
       expectDraft = true;
+      continue;
+    }
+    if (arg === "--expect-public") {
+      expectPublic = true;
       continue;
     }
     if (arg === "--expected-version") {
       expectedVersion = argv[++i];
       if (!expectedVersion) {
         throw new Error("[release-assets] --expected-version requires a semver value");
+      }
+      continue;
+    }
+    if (arg === "--attestation-repo") {
+      attestationRepository = argv[++i];
+      if (!attestationRepository) {
+        throw new Error("[release-assets] --attestation-repo requires owner/name");
+      }
+      continue;
+    }
+    if (arg === "--attestation-source-digest") {
+      attestationSourceDigest = argv[++i];
+      if (!attestationSourceDigest) {
+        throw new Error("[release-assets] --attestation-source-digest requires a Git commit SHA");
       }
       continue;
     }
@@ -58,7 +91,48 @@ function parseArgs(argv: readonly string[]): {
     tag = arg;
   }
 
-  return { tag, expectDraft, expectedVersion };
+  if (Boolean(attestationRepository) !== Boolean(attestationSourceDigest)) {
+    throw new Error(
+      "[release-assets] --attestation-repo and --attestation-source-digest are required together",
+    );
+  }
+  if (attestationRepository && !expectedVersion) {
+    throw new Error("[release-assets] attestation verification requires --expected-version");
+  }
+  if (expectedVersion && (!attestationRepository || !attestationSourceDigest)) {
+    throw new Error(
+      "[release-assets] --expected-version requires --attestation-repo and --attestation-source-digest before version smoke",
+    );
+  }
+  if (expectDraft && expectPublic) {
+    throw new Error("[release-assets] --expect-draft and --expect-public are mutually exclusive");
+  }
+
+  return {
+    tag,
+    expectDraft,
+    expectPublic,
+    expectedVersion,
+    attestationRepository,
+    attestationSourceDigest,
+  };
+}
+
+export function assertExpectedReleaseState(
+  isDraft: boolean | undefined,
+  expected: "draft" | "public" | undefined,
+  tag?: string,
+): void {
+  if (expected === "draft" && isDraft !== true) {
+    throw new Error(
+      `[release-assets] expected draft release${tag ? ` for ${tag}` : ""}, got isDraft=${String(isDraft)}`,
+    );
+  }
+  if (expected === "public" && isDraft !== false) {
+    throw new Error(
+      `[release-assets] expected public release${tag ? ` for ${tag}` : ""}, got isDraft=${String(isDraft)}`,
+    );
+  }
 }
 
 function viewRelease(tag: string | undefined): GhReleaseView {
@@ -71,6 +145,9 @@ function viewRelease(tag: string | undefined): GhReleaseView {
     const detail = (result.stderr || result.stdout || "gh release view failed").trim();
     throw new Error(`[release-assets] ${detail}`);
   }
+  // SAFETY: `gh release view --json isDraft,tagName,assets` owns this local
+  // machine-readable shape; all asset names/counts/sizes are checked by the
+  // exact release contract before downloaded bytes are trusted.
   return JSON.parse(result.stdout) as GhReleaseView;
 }
 
@@ -78,7 +155,7 @@ function descriptorsFromRelease(release: GhReleaseView): ReleaseAssetDescriptor[
   const assets = release.assets ?? [];
   return assets.map((asset) => ({
     name: String(asset.name ?? ""),
-    size: typeof asset.size === "number" ? asset.size : 0,
+    size: Number.isFinite(asset.size) ? (asset.size ?? 0) : 0,
   }));
 }
 
@@ -92,17 +169,68 @@ function downloadReleaseAssets(tag: string, directory: string): void {
   }
 }
 
-async function main(): Promise<void> {
-  const { tag, expectDraft, expectedVersion } = parseArgs(process.argv.slice(2));
-  const release = viewRelease(tag);
+type DownloadedReleaseVerification = {
+  readonly directory: string;
+  readonly expectedVersion: string;
+  readonly attestationRepository: string | undefined;
+  readonly attestationSourceDigest: string | undefined;
+};
 
-  if (expectDraft && release.isDraft !== true) {
+type DownloadedReleaseVerificationDependencies = {
+  readonly verifyDirectory: typeof verifyReleaseArtifactDirectory;
+  readonly verifyAttestations: typeof verifyNativeAttestations;
+  readonly smokeLinuxX64: typeof smokeReleaseLinuxX64;
+};
+
+const downloadedReleaseVerificationDependencies: DownloadedReleaseVerificationDependencies = {
+  verifyDirectory: verifyReleaseArtifactDirectory,
+  verifyAttestations: verifyNativeAttestations,
+  smokeLinuxX64: smokeReleaseLinuxX64,
+};
+
+/**
+ * Verify untrusted release downloads without ever executing them before their
+ * workflow and source-commit identity is authenticated.
+ */
+export async function verifyDownloadedReleaseAssets(
+  input: DownloadedReleaseVerification,
+  dependencies: DownloadedReleaseVerificationDependencies = downloadedReleaseVerificationDependencies,
+): Promise<void> {
+  if (!input.attestationRepository || !input.attestationSourceDigest) {
     throw new Error(
-      `[release-assets] expected draft release` +
-        (tag ? ` for ${tag}` : "") +
-        `, got isDraft=${String(release.isDraft)}`,
+      "[release-assets] --expected-version requires complete attestation arguments before version smoke",
     );
   }
+
+  await dependencies.verifyDirectory({
+    directory: input.directory,
+    expectedVersion: input.expectedVersion,
+    skipVersionSmoke: true,
+  });
+  dependencies.verifyAttestations({
+    directory: input.directory,
+    repository: input.attestationRepository,
+    sourceDigest: input.attestationSourceDigest,
+  });
+  dependencies.smokeLinuxX64(input.directory, input.expectedVersion);
+}
+
+async function main(): Promise<void> {
+  const {
+    tag,
+    expectDraft,
+    expectPublic,
+    expectedVersion,
+    attestationRepository,
+    attestationSourceDigest,
+  } = parseArgs(process.argv.slice(2));
+  const release = viewRelease(tag);
+
+  assertExpectedReleaseState(
+    release.isDraft,
+    expectDraft ? "draft" : expectPublic ? "public" : undefined,
+    tag,
+  );
 
   const descriptors = descriptorsFromRelease(release);
   assertCompleteReleaseAssetSet(descriptors);
@@ -117,9 +245,11 @@ async function main(): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), "kunai-gh-release-assets-"));
     try {
       downloadReleaseAssets(downloadTag, tempDir);
-      await verifyReleaseArtifactDirectory({
+      await verifyDownloadedReleaseAssets({
         directory: tempDir,
         expectedVersion,
+        attestationRepository,
+        attestationSourceDigest,
       });
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
@@ -130,7 +260,9 @@ async function main(): Promise<void> {
     `[release-assets] OK — ${REQUIRED_RELEASE_ASSET_NAMES.length} required assets present` +
       (tag ? ` on ${tag}` : " on latest") +
       (expectDraft ? " (draft)" : "") +
+      (expectPublic ? " (public)" : "") +
       (expectedVersion ? ` / verified v${expectedVersion}` : "") +
+      (attestationRepository ? " / provenance verified" : "") +
       ".",
   );
 }

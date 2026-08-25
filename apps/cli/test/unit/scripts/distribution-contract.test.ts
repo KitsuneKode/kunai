@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,6 +22,10 @@ import {
   assertRequiredReleaseAssets,
 } from "../../../../../scripts/release-asset-contract";
 import { shouldWriteReleaseChecksums } from "../../../../../scripts/release-binary-checksums";
+import {
+  assertExpectedReleaseState,
+  verifyDownloadedReleaseAssets,
+} from "../../../../../scripts/verify-github-release-assets";
 import { verifyReleaseArtifactDirectory } from "../../../../../scripts/verify-release-artifact-directory";
 import { buildReleaseArchives } from "../../../scripts/build-release-archives";
 import { buildNpmPublishManifest } from "../../../scripts/write-npm-publish-manifest";
@@ -66,7 +79,7 @@ describe("distribution release-asset contract", () => {
       assertCompleteReleaseAssetSet(
         completeSizedAssets().map((asset) =>
           asset.name === archive.archiveName
-            ? { ...asset, size: archive.maxArchiveBytes + 1 }
+            ? { name: asset.name, size: archive.maxArchiveBytes + 1 }
             : asset,
         ),
       ),
@@ -74,7 +87,9 @@ describe("distribution release-asset contract", () => {
     expect(() =>
       assertCompleteReleaseAssetSet(
         completeSizedAssets().map((asset) =>
-          asset.name === archive.out ? { ...asset, size: archive.maxBinaryBytes + 1 } : asset,
+          asset.name === archive.out
+            ? { name: asset.name, size: archive.maxBinaryBytes + 1 }
+            : asset,
         ),
       ),
     ).toThrow(/size budget.*kunai-linux-x64/i);
@@ -164,6 +179,13 @@ describe("release workflow candidate-before-publication contract", () => {
   const publisher = readFileSync(join(REPO_ROOT, "scripts/publish-npm-release.ts"), "utf8");
   const versionPr = () => extractWorkflowJob(release, "version-pr");
   const candidate = () => extractWorkflowJob(release, "candidate");
+  const nativeProvenanceGate = () => extractWorkflowJob(release, "native-provenance-gate");
+  const nativeSmoke = () => extractWorkflowJob(release, "native-smoke");
+  const nativePlatformsGate = () => extractWorkflowJob(release, "native-platforms-gate");
+  const installerSmoke = () => extractWorkflowJob(release, "installer-smoke");
+  const installerGate = () => extractWorkflowJob(release, "installer-gate");
+  const readmeCommandsGate = () => extractWorkflowJob(release, "readme-commands-gate");
+  const liveProvidersGate = () => extractWorkflowJob(release, "live-providers-gate");
   const confirmation = () => extractWorkflowJob(release, "confirmation");
   const publish = () => extractWorkflowJob(release, "publish");
   const metadata = () => extractWorkflowJob(release, "metadata");
@@ -178,6 +200,43 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(pushJob).not.toContain("bun publish");
     expect(pushJob).not.toContain("changeset publish");
     expect(pushJob).not.toContain("bun run release");
+  });
+
+  test("workflow permissions deny by default and grant only each job's required scope", () => {
+    expect(release).toMatch(/^permissions:\s*\{\}\s*$/m);
+    expect(versionPr()).toMatch(
+      /permissions:\s*\n\s+contents:\s*write\s*\n\s+pull-requests:\s*write/,
+    );
+    for (const job of [nativePlatformsGate(), installerSmoke(), installerGate()]) {
+      expect(job).toMatch(/permissions:\s*\n\s+contents:\s*read/);
+      expect(job).not.toMatch(/(?:contents|pull-requests):\s*write/);
+    }
+    expect(liveProvidersGate()).toMatch(
+      /permissions:\s*\n\s+contents:\s*read\s*\n\s+actions:\s*read/,
+    );
+
+    const jobsWithContentsWrite = [
+      versionPr(),
+      candidate(),
+      nativeProvenanceGate(),
+      nativeSmoke(),
+      nativePlatformsGate(),
+      installerSmoke(),
+      installerGate(),
+      readmeCommandsGate(),
+      liveProvidersGate(),
+      confirmation(),
+      publish(),
+      metadata(),
+    ].filter((job) => /contents:\s*write/.test(job));
+    expect(jobsWithContentsWrite).toEqual([versionPr(), publish(), metadata()]);
+  });
+
+  test("cross-run provider evidence download has actions read without inherited write access", () => {
+    const live = liveProvidersGate();
+    expect(live).toContain('gh run download "${PROVIDER_SIGNOFF_RUN_ID}"');
+    expect(live).toMatch(/permissions:[\s\S]*actions:\s*read/);
+    expect(live).not.toMatch(/(?:contents|pull-requests|actions):\s*write/);
   });
 
   // The publish step is `bun run release` (scripts/publish-npm-release.ts),
@@ -228,14 +287,181 @@ describe("release workflow candidate-before-publication contract", () => {
     const cand = candidate();
     const stage = cand.indexOf("Stage candidate upload directory");
     const exactVerify = cand.indexOf("verify-release-artifact-directory.ts", stage);
+    const attestStep = cand.indexOf("- name: Attest exact native candidate", exactVerify);
+    const attest = cand.indexOf("actions/attest@", attestStep);
     const upload = cand.indexOf("- name: Upload candidate artifacts");
 
     expect(cand).toContain(".candidate-upload/native");
     expect(stage).toBeGreaterThanOrEqual(0);
     expect(exactVerify).toBeGreaterThan(stage);
-    expect(upload).toBeGreaterThan(exactVerify);
-    expect(cand.slice(exactVerify, upload)).not.toContain("- name:");
+    expect(attestStep).toBeGreaterThan(exactVerify);
+    expect(attest).toBeGreaterThan(attestStep);
+    expect(upload).toBeGreaterThan(attest);
+    expect(cand.slice(exactVerify, attestStep)).not.toContain("- name:");
     expect(cand).toContain(".candidate-upload/native/SHA256SUMS");
+  });
+
+  test("candidate attests the exact native payload with narrowly scoped OIDC permissions", () => {
+    const cand = candidate();
+    expect(release).toContain('- "scripts/verify-native-attestations.ts"');
+    expect(cand).toMatch(
+      /permissions:[\s\S]*contents:\s*read[\s\S]*id-token:\s*write[\s\S]*attestations:\s*write[\s\S]*artifact-metadata:\s*write/,
+    );
+    expect(cand).toContain(
+      "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # actions/attest@v4",
+    );
+    expect(cand).toContain("subject-path: .candidate-upload/native/*");
+  });
+
+  test("downloaded native candidates are provenance-gated before any execution job", () => {
+    const cand = candidate();
+    const provenance = nativeProvenanceGate();
+    expect(cand).toContain("id: upload-candidate");
+    expect(cand).toContain(
+      "candidate_artifact_id: ${{ steps.upload-candidate.outputs.artifact-id }}",
+    );
+    expect(provenance).toMatch(/needs:\s*candidate/);
+    expect(provenance).toMatch(/permissions:[\s\S]*contents:\s*read[\s\S]*attestations:\s*read/);
+    expect(provenance).toContain(
+      "artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}",
+    );
+    expect(provenance).toContain('merge-multiple: "true"');
+    expect(provenance).toContain("verify-release-artifact-directory.ts");
+    expect(provenance).toContain("verify-native-attestations.ts");
+    expect(provenance).toContain('--source-digest "${GITHUB_SHA}"');
+
+    for (const executionJob of [nativeSmoke(), readmeCommandsGate()]) {
+      expect(executionJob).toMatch(/needs:\s*\[candidate, native-provenance-gate\]/);
+      expect(executionJob).toMatch(/permissions:\s*\n\s+contents:\s*read/);
+      expect(executionJob.indexOf("download-artifact")).toBeGreaterThanOrEqual(0);
+      expect(executionJob).toContain(
+        "artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}",
+      );
+      expect(executionJob).toContain('merge-multiple: "true"');
+    }
+
+    const smoke = nativeSmoke();
+    expect(smoke.indexOf("verify-release-artifact-directory.ts")).toBeLessThan(
+      smoke.indexOf("Exercise exact preserved archive"),
+    );
+    const readme = readmeCommandsGate();
+    expect(readme.indexOf("verify-release-artifact-directory.ts")).toBeLessThan(
+      readme.indexOf("Execute README quick-start commands"),
+    );
+
+    const confirm = confirmation();
+    expect(confirm).toMatch(/needs:[\s\S]*native-provenance-gate/);
+    expect(confirm).toContain(
+      "candidate_artifact_id: ${{ needs.candidate.outputs.candidate_artifact_id }}",
+    );
+    expect(publish()).toContain(
+      "artifact-ids: ${{ needs.confirmation.outputs.candidate_artifact_id }}",
+    );
+
+    expect(release.indexOf("  native-provenance-gate:")).toBeLessThan(
+      release.indexOf("  native-smoke:"),
+    );
+    expect(release.indexOf("  native-provenance-gate:")).toBeLessThan(
+      release.indexOf("  readme-commands-gate:"),
+    );
+  });
+
+  test("both musl candidates install their preserved archive through production install.sh", () => {
+    const smoke = nativeSmoke();
+    expect(smoke).toContain("smoke-preserved-musl-installer.sh");
+    expect(smoke).toContain("KUNAI_MUSL_BINARY");
+    expect(smoke).toContain("KUNAI_RELEASE_CANDIDATE_VERSION");
+    expect(smoke).toContain("kunai-linux-x64-musl");
+    expect(smoke).toContain("kunai-linux-arm64-musl");
+
+    const installerSmokeSource = readFileSync(
+      join(REPO_ROOT, ".github/scripts/smoke-preserved-musl-installer.sh"),
+      "utf8",
+    );
+    expect(installerSmokeSource).toContain("install.sh");
+    expect(installerSmokeSource).toContain("apps/cli/test/docker/native-installer/Dockerfile");
+    expect(installerSmokeSource).toContain("SHA256SUMS.archives");
+    expect(installerSmokeSource).toContain("archiveSha256");
+    expect(installerSmokeSource).toContain("archiveSourceUrl");
+    expect(installerSmokeSource).toContain("--version");
+    expect(installerSmokeSource).toContain("--help");
+    expect(installerSmokeSource).toContain('test ! -e "$FIXTURE_VERSION_DIR/$ASSET"');
+    expect(installerSmokeSource).toContain("--network none");
+  });
+
+  test("release-asset byte smoke is ordered after provenance and refuses incomplete provenance", async () => {
+    const calls: string[] = [];
+    await verifyDownloadedReleaseAssets(
+      {
+        directory: "/tmp/release-assets",
+        expectedVersion: "0.3.0",
+        attestationRepository: "KitsuneKode/kunai",
+        attestationSourceDigest: "a".repeat(40),
+      },
+      {
+        verifyDirectory: async (options) => {
+          calls.push(`bytes:${String(options.skipVersionSmoke)}`);
+        },
+        verifyAttestations: () => {
+          calls.push("provenance");
+        },
+        smokeLinuxX64: () => {
+          calls.push("execute");
+        },
+      },
+    );
+    expect(calls).toEqual(["bytes:true", "provenance", "execute"]);
+
+    const unsafeCalls: string[] = [];
+    await expect(
+      verifyDownloadedReleaseAssets(
+        {
+          directory: "/tmp/release-assets",
+          expectedVersion: "0.3.0",
+          attestationRepository: undefined,
+          attestationSourceDigest: undefined,
+        },
+        {
+          verifyDirectory: async () => {
+            unsafeCalls.push("bytes");
+          },
+          verifyAttestations: () => {
+            unsafeCalls.push("provenance");
+          },
+          smokeLinuxX64: () => {
+            unsafeCalls.push("execute");
+          },
+        },
+      ),
+    ).rejects.toThrow(/expected-version.*attestation/i);
+    expect(unsafeCalls).toEqual([]);
+  });
+
+  test("failed release provenance verification prevents downloaded byte execution", async () => {
+    const calls: string[] = [];
+    await expect(
+      verifyDownloadedReleaseAssets(
+        {
+          directory: "/tmp/release-assets",
+          expectedVersion: "0.3.0",
+          attestationRepository: "KitsuneKode/kunai",
+          attestationSourceDigest: "a".repeat(40),
+        },
+        {
+          verifyDirectory: async () => {
+            calls.push("bytes");
+          },
+          verifyAttestations: () => {
+            calls.push("provenance");
+            throw new Error("attestation rejected");
+          },
+          smokeLinuxX64: () => {
+            calls.push("execute");
+          },
+        },
+      ),
+    ).rejects.toThrow(/attestation rejected/);
+    expect(calls).toEqual(["bytes", "provenance"]);
   });
 
   test("publication downloads the preserved tarball/binaries", () => {
@@ -260,6 +486,19 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(draftVerify).toBeGreaterThanOrEqual(0);
     expect(promote).toBeGreaterThan(draftVerify);
     expect(pub.indexOf("verify-github-release-assets.ts")).toBeGreaterThanOrEqual(0);
+    expect(pub.match(/--attestation-repo/g)).toHaveLength(2);
+    expect(pub.match(/--attestation-source-digest/g)).toHaveLength(2);
+    expect(pub).toContain("--expect-public");
+  });
+
+  test("release-state verification fails closed for draft and public boundaries", () => {
+    expect(() => assertExpectedReleaseState(true, "draft", "v0.3.0")).not.toThrow();
+    expect(() => assertExpectedReleaseState(false, "public", "v0.3.0")).not.toThrow();
+    expect(() => assertExpectedReleaseState(false, "draft", "v0.3.0")).toThrow(/expected draft/i);
+    expect(() => assertExpectedReleaseState(true, "public", "v0.3.0")).toThrow(/expected public/i);
+    expect(() => assertExpectedReleaseState(undefined, "public", "v0.3.0")).toThrow(
+      /expected public/i,
+    );
   });
 
   test("metadata publication follows public verification", () => {
@@ -298,26 +537,48 @@ describe("release workflow candidate-before-publication contract", () => {
   test("confirmation directly verifies the preserved native payload immediately before gating", () => {
     const confirm = confirmation();
     const verify = confirm.indexOf("verify-release-artifact-directory.ts");
+    const attest = confirm.indexOf("verify-native-attestations.ts", verify);
     const gate = confirm.indexOf("- name: Run confirmation gate");
 
     expect(confirm).not.toContain("Stage binaries for confirmation");
     expect(confirm).toContain(".release-download/native");
     expect(verify).toBeGreaterThanOrEqual(0);
-    expect(gate).toBeGreaterThan(verify);
-    expect(confirm.slice(verify, gate)).not.toContain("- name:");
+    expect(attest).toBeGreaterThan(verify);
+    expect(gate).toBeGreaterThan(attest);
     expect(confirm).toContain('--expected-version "${VERSION}"');
     expect(confirm).toContain("--binary-dir .release-download/native");
+  });
+
+  test("confirmation and publication verify native provenance against the exact source commit", () => {
+    for (const job of [confirmation(), publish()]) {
+      expect(job).toMatch(/permissions:[\s\S]*attestations:\s*read/);
+      expect(job).toContain("verify-native-attestations.ts");
+      expect(job).toContain('--repo "${GITHUB_REPOSITORY}"');
+      expect(job).toContain('--source-digest "${GITHUB_SHA}"');
+    }
+  });
+
+  test("publication verifies provenance before its first irreversible publish", () => {
+    const pub = publish();
+    const exactVerify = pub.indexOf("Reverify protected native publication input");
+    const provenance = pub.indexOf("Verify native provenance before npm publication", exactVerify);
+    const npmPublish = pub.search(PUBLISH_STEP);
+
+    expect(exactVerify).toBeGreaterThanOrEqual(0);
+    expect(provenance).toBeGreaterThan(exactVerify);
+    expect(npmPublish).toBeGreaterThan(provenance);
   });
 
   test("protected publication reverifies native bytes immediately before draft creation", () => {
     const pub = publish();
     const createDraft = pub.indexOf("- name: Create draft GitHub release");
     const exactVerify = pub.lastIndexOf("verify-release-artifact-directory.ts", createDraft);
+    const attest = pub.lastIndexOf("verify-native-attestations.ts", createDraft);
 
     expect(pub).toContain(".release-download/native");
     expect(exactVerify).toBeGreaterThanOrEqual(0);
-    expect(createDraft).toBeGreaterThan(exactVerify);
-    expect(pub.slice(exactVerify, createDraft)).not.toContain("- name:");
+    expect(attest).toBeGreaterThan(exactVerify);
+    expect(createDraft).toBeGreaterThan(attest);
     for (const name of REQUIRED_RELEASE_ASSET_NAMES) {
       expect(pub).toContain(`.release-download/native/${name}`);
     }
@@ -560,6 +821,45 @@ describe("verifyReleaseArtifactDirectory", () => {
       }
     }
   });
+
+  test("rejects unexpected directories instead of filtering them out", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-directory-"));
+    try {
+      writeCompleteReleaseFixture(dir);
+      mkdirSync(join(dir, "unexpected-directory"));
+
+      await expect(
+        verifyReleaseArtifactDirectory({
+          directory: dir,
+          expectedVersion: "9.9.9",
+          skipVersionSmoke: true,
+        }),
+      ).rejects.toThrow(/unexpected non-regular/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "rejects unexpected symlinks instead of following them",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-symlink-"));
+      try {
+        writeCompleteReleaseFixture(dir);
+        symlinkSync("kunai-linux-x64", join(dir, "unexpected-symlink"));
+
+        await expect(
+          verifyReleaseArtifactDirectory({
+            directory: dir,
+            expectedVersion: "9.9.9",
+            skipVersionSmoke: true,
+          }),
+        ).rejects.toThrow(/unexpected non-regular/i);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("rejects SHA256SUMS with the wrong row count", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));

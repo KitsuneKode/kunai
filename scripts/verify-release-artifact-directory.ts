@@ -10,7 +10,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { verifyBuiltReleaseArchives } from "../apps/cli/scripts/build-release-archives";
@@ -32,25 +32,26 @@ function fileSha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-function listReleaseFiles(directory: string): readonly { name: string; size: number }[] {
+export function listRegularReleaseFiles(
+  directory: string,
+): readonly { name: string; size: number }[] {
   return readdirSync(directory)
-    .filter((name) => {
-      try {
-        return statSync(join(directory, name)).isFile();
-      } catch {
-        return false;
+    .sort()
+    .map((name) => {
+      const stat = lstatSync(join(directory, name));
+      if (!stat.isFile()) {
+        throw new Error(`[release-assets] unexpected non-regular entry: ${name}`);
       }
-    })
-    .map((name) => ({
-      name,
-      size: statSync(join(directory, name)).size,
-    }));
+      return { name, size: stat.size };
+    });
 }
 
-function smokeLinuxX64(binPath: string, expectedVersion: string): void {
+export function smokeReleaseLinuxX64(directory: string, expectedVersion: string): void {
   if (process.platform !== "linux" || process.arch !== "x64") {
     return;
   }
+
+  const binPath = join(directory, "kunai-linux-x64");
 
   // GitHub artifact and release downloads intentionally do not preserve Unix
   // executable mode. Restoring the mode changes filesystem metadata, not the
@@ -103,7 +104,7 @@ function smokeLinuxX64(binPath: string, expectedVersion: string): void {
 export async function verifyReleaseArtifactDirectory(
   input: VerifyReleaseArtifactDirectoryInput,
 ): Promise<void> {
-  const files = listReleaseFiles(input.directory);
+  const files = listRegularReleaseFiles(input.directory);
   assertCompleteReleaseAssetSet(files);
 
   verifyChecksumManifest(input.directory, "SHA256SUMS", REQUIRED_BINARY_ASSET_NAMES);
@@ -111,7 +112,7 @@ export async function verifyReleaseArtifactDirectory(
   verifyBuiltReleaseArchives(input.directory);
 
   if (!input.skipVersionSmoke) {
-    smokeLinuxX64(join(input.directory, "kunai-linux-x64"), input.expectedVersion);
+    smokeReleaseLinuxX64(input.directory, input.expectedVersion);
   }
 }
 
