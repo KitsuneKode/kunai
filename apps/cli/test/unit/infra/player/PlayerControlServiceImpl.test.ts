@@ -46,6 +46,86 @@ test("PlayerControlServiceImpl reports false when no player is active", async ()
   expect(await service.stopCurrentPlayback("nothing-active")).toBe(false);
 });
 
+test("PlayerControlServiceImpl clears every stop-backed intent rejected before delivery", async () => {
+  const requests: ReadonlyArray<
+    readonly [string, (service: PlayerControlServiceImpl) => Promise<boolean>]
+  > = [
+    ["stop", async (service) => await service.stopCurrentPlayback()],
+    ["refresh", async (service) => await service.refreshCurrentPlayback()],
+    ["recover", async (service) => await service.recoverCurrentPlayback()],
+    ["recompute", async (service) => await service.recomputeCurrentPlayback()],
+    ["fallback", async (service) => await service.fallbackCurrentPlayback()],
+    ["next", async (service) => await service.nextCurrentPlayback()],
+    ["previous", async (service) => await service.previousCurrentPlayback()],
+    ["back-to-search", async (service) => await service.returnToSearchFromPlayback()],
+    [
+      "pick-episode",
+      async (service) => await service.selectCurrentPlaybackEpisode({ season: 2, episode: 4 }),
+    ],
+    ["episode-source", async (service) => await service.switchEpisodePlaybackSource("local")],
+  ];
+
+  for (const [name, request] of requests) {
+    const service = makeService();
+
+    expect(await request(service), name).toBe(false);
+    expect(service.consumeLastAction(), name).toBeNull();
+    expect(service.consumePendingStreamSelection(), name).toBeNull();
+    expect(service.consumePendingEpisodeSelection(), name).toBeNull();
+    expect(service.consumePendingEpisodeSourceOverride(), name).toBeNull();
+  }
+});
+
+test("PlayerControlServiceImpl preserves a stream selection queued during player bootstrap", async () => {
+  const service = makeService();
+
+  expect(
+    await service.selectCurrentPlaybackStream("pick-stream", {
+      sourceId: null,
+      streamId: "stream-720",
+    }),
+  ).toBe(true);
+  expect(service.consumeLastAction()).toBe("pick-stream");
+  expect(service.consumePendingStreamSelection()).toEqual({
+    sourceId: null,
+    streamId: "stream-720",
+  });
+});
+
+test("PlayerControlServiceImpl clears a picked episode when file-stop delivery fails", async () => {
+  const service = makeService();
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async stopCurrentFile() {
+      throw new Error("file-stop failed");
+    },
+  });
+
+  await expect(
+    service.selectCurrentPlaybackEpisode({ season: 4, episode: 10 }, "confirmed-episode"),
+  ).rejects.toThrow("file-stop failed");
+  expect(service.consumeLastAction()).toBeNull();
+  expect(service.consumePendingEpisodeSelection()).toBeNull();
+});
+
+test("PlayerControlServiceImpl clears a recover source override when delivery fails", async () => {
+  const service = makeService();
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async stopCurrentFile() {
+      throw new Error("recover delivery failed");
+    },
+  });
+
+  await expect(service.switchEpisodePlaybackSource("online", "switch-to-online")).rejects.toThrow(
+    "recover delivery failed",
+  );
+  expect(service.consumeLastAction()).toBeNull();
+  expect(service.consumePendingEpisodeSourceOverride()).toBeNull();
+});
+
 test("PlayerControlServiceImpl records refresh recover and fallback as stop-backed intents", async () => {
   const stoppedReasons: string[] = [];
   const stoppedCurrentReasons: string[] = [];
@@ -223,6 +303,78 @@ test("PlayerControlServiceImpl coalesces rapid episode navigation so the latest 
   expect(service.consumeLastAction()).toBe("previous");
   expect(stoppedCurrentReasons).toEqual(["next-key"]);
   expect(overlays).toEqual(["Kunai · Loading next episode…", "Kunai · Loading previous episode…"]);
+});
+
+test("PlayerControlServiceImpl clears a newer intent when its coalesced file-stop fails", async () => {
+  const stopStarted = Promise.withResolvers<void>();
+  const stopRelease = Promise.withResolvers<void>();
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async stopCurrentFile() {
+      stopStarted.resolve();
+      await stopRelease.promise;
+      throw new Error("episode delivery failed");
+    },
+  });
+
+  const pickedEpisode = service.selectCurrentPlaybackEpisode(
+    { season: 3, episode: 7 },
+    "episode-key",
+  );
+  await stopStarted.promise;
+  const previous = service.previousCurrentPlayback("previous-key");
+  const pickedOutcome = pickedEpisode.then(
+    () => "delivered",
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+  const previousOutcome = previous.then(
+    () => "delivered",
+    (error) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  stopRelease.resolve();
+  expect(await pickedOutcome).toBe("episode delivery failed");
+  expect(await previousOutcome).toBe("episode delivery failed");
+
+  expect(service.consumeLastAction()).toBeNull();
+  expect(service.consumePendingEpisodeSelection()).toBeNull();
+});
+
+test("PlayerControlServiceImpl does not let an older failure erase an intent delivered to a newer player", async () => {
+  const stopStarted = Promise.withResolvers<void>();
+  const stopRelease = Promise.withResolvers<void>();
+  const service = makeService();
+
+  service.setActive({
+    id: "player-1",
+    async stop() {},
+    async stopCurrentFile() {
+      stopStarted.resolve();
+      await stopRelease.promise;
+      throw new Error("episode delivery failed");
+    },
+  });
+
+  const pickedEpisode = service.selectCurrentPlaybackEpisode(
+    { season: 3, episode: 7 },
+    "episode-key",
+  );
+  await stopStarted.promise;
+  service.setActive({
+    id: "player-2",
+    async stop() {},
+    async stopCurrentFile() {},
+  });
+  expect(await service.previousCurrentPlayback("previous-key")).toBe(true);
+
+  stopRelease.resolve();
+  await expect(pickedEpisode).rejects.toThrow("episode delivery failed");
+
+  expect(service.consumeLastAction()).toBe("previous");
+  expect(service.consumePendingEpisodeSelection()).toBeNull();
 });
 
 test("PlayerControlServiceImpl preserves pending picker selections when active player is cleared", async () => {
