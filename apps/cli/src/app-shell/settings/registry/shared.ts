@@ -1,3 +1,7 @@
+import {
+  AUDIO_PREFERENCE_OPTIONS,
+  SUBTITLE_PREFERENCE_OPTIONS,
+} from "@/domain/media/media-preferences";
 import { getConfigMetadata } from "@/services/persistence/config-metadata";
 import type {
   DiscoverMode,
@@ -10,16 +14,9 @@ import type { StartupPriority } from "@kunai/types";
 
 import type { EnumOption } from "../types";
 
-export const SUBTITLE_SETTINGS_OPTIONS: readonly EnumOption[] = [
-  { value: "en", label: "English" },
-  { value: "interactive", label: "Pick interactively" },
-  { value: "none", label: "None" },
-  { value: "ar", label: "Arabic" },
-  { value: "fr", label: "French" },
-  { value: "de", label: "German" },
-  { value: "es", label: "Spanish" },
-  { value: "ja", label: "Japanese" },
-];
+// Setup and settings share one catalog (`domain/media/media-preferences.ts`).
+// Keeping a second copy here is what let the two surfaces drift apart.
+export const SUBTITLE_SETTINGS_OPTIONS: readonly EnumOption[] = SUBTITLE_PREFERENCE_OPTIONS;
 
 export const YOUTUBE_QUALITY_SETTINGS_OPTIONS: readonly EnumOption[] = [
   { value: "1080p", label: "1080p", detail: "Default — balances quality and bandwidth" },
@@ -30,12 +27,7 @@ export const YOUTUBE_QUALITY_SETTINGS_OPTIONS: readonly EnumOption[] = [
   { value: "480p", label: "480p", detail: "SD ceiling" },
 ];
 
-export const AUDIO_SETTINGS_OPTIONS: readonly EnumOption[] = [
-  { value: "original", label: "Original", detail: "Prefer original/native audio" },
-  { value: "en", label: "English", detail: "Prefer English audio when available" },
-  { value: "ja", label: "Japanese", detail: "Prefer Japanese audio when available" },
-  { value: "dub", label: "Dub", detail: "Prefer dubbed audio when available" },
-];
+export const AUDIO_SETTINGS_OPTIONS: readonly EnumOption[] = AUDIO_PREFERENCE_OPTIONS;
 
 export const ANIME_TITLE_SETTINGS_OPTIONS: readonly EnumOption[] = [
   { value: "english", label: "English", detail: "Prefer localized English titles when known" },
