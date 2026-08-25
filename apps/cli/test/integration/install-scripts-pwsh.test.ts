@@ -15,6 +15,11 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
+import type { InstallManifest } from "@/services/update/install-manifest";
+import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
+import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
+
+import { createReleaseArchive } from "../../scripts/build-release-archives";
 import {
   createInstallerSandbox,
   installCommandShim,
@@ -27,6 +32,21 @@ import {
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_PS1 = join(REPO_ROOT, "install.ps1");
+
+function readInstallerManifest(configDir: string): InstallManifest {
+  return JSON.parse(readFileSync(join(configDir, "install.json"), "utf8"));
+}
+
+async function readInstallerVersionMetadata(dataDir: string, version: string) {
+  const result = await verifyStoredVersion(
+    { versionsDir: join(dataDir, "versions"), binaryFileName: "kunai.exe" },
+    version,
+  );
+  if (result.status !== "verified") {
+    throw new Error(`Installer wrote invalid ${version} metadata: ${result.detail}`);
+  }
+  return result.metadata;
+}
 
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
@@ -131,6 +151,114 @@ async function runInstallPs1Async(
 
 function hostWindowsAsset(): string {
   return process.arch === "arm64" ? "kunai-windows-arm64.exe" : "kunai-windows-x64.exe";
+}
+
+function hostWindowsTarget() {
+  const asset = hostWindowsAsset();
+  const target = RELEASE_BINARY_TARGETS.find((candidate) => candidate.out === asset);
+  if (!target) throw new Error(`Missing release target for ${asset}`);
+  return target;
+}
+
+function rewriteZipNames(archive: Uint8Array, replacement: string): Uint8Array {
+  const output = new Uint8Array(archive);
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  const localNameLength = view.getUint16(26, true);
+  const name = new TextEncoder().encode(
+    replacement.padEnd(localNameLength, "x").slice(0, localNameLength),
+  );
+  output.set(name, 30);
+  const centralOffset = 30 + localNameLength + view.getUint32(18, true);
+  output.set(name, centralOffset + 46);
+  return output;
+}
+
+function rewriteZipLocalName(archive: Uint8Array, replacement: string): Uint8Array {
+  const output = new Uint8Array(archive);
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  const localNameLength = view.getUint16(26, true);
+  const name = new TextEncoder().encode(
+    replacement.padEnd(localNameLength, "x").slice(0, localNameLength),
+  );
+  output.set(name, 30);
+  return output;
+}
+
+function prefixZipArchive(archive: Uint8Array): Uint8Array {
+  const source = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+  const centralOffset = 30 + source.getUint16(26, true) + source.getUint32(18, true);
+  const output = new Uint8Array(archive.length + 1);
+  output[0] = 0x0a;
+  output.set(archive, 1);
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  view.setUint32(centralOffset + 1 + 42, 1, true);
+  view.setUint32(output.length - 22 + 16, centralOffset + 1, true);
+  return output;
+}
+
+function appendZipTrailingData(archive: Uint8Array): Uint8Array {
+  const output = new Uint8Array(archive.length + 1);
+  output.set(archive);
+  output[archive.length] = 0x0a;
+  return output;
+}
+
+function invalidZipArchive(
+  kind:
+    | "absolute"
+    | "case-variant"
+    | "corrupt"
+    | "crc"
+    | "extra"
+    | "local-traversal"
+    | "missing"
+    | "prefix"
+    | "reparse"
+    | "symlink"
+    | "trailing"
+    | "traversal"
+    | "wrong",
+  canonical: Uint8Array,
+): Uint8Array {
+  if (kind === "corrupt") return new TextEncoder().encode("not-a-zip-archive");
+  if (kind === "missing") {
+    const empty = new Uint8Array(22);
+    new DataView(empty.buffer).setUint32(0, 0x06054b50, true);
+    return empty;
+  }
+  if (kind === "absolute") return rewriteZipNames(canonical, "C:\\kunai.exe");
+  if (kind === "case-variant") {
+    const view = new DataView(canonical.buffer, canonical.byteOffset, canonical.byteLength);
+    const localNameLength = view.getUint16(26, true);
+    const current = new TextDecoder().decode(canonical.subarray(30, 30 + localNameLength));
+    return rewriteZipNames(canonical, current.toUpperCase());
+  }
+  if (kind === "local-traversal") return rewriteZipLocalName(canonical, "../evil.exe");
+  if (kind === "prefix") return prefixZipArchive(canonical);
+  if (kind === "trailing") return appendZipTrailingData(canonical);
+  if (kind === "traversal") return rewriteZipNames(canonical, "../kunai.exe");
+  if (kind === "wrong") return rewriteZipNames(canonical, "wrong.exe");
+  const output = new Uint8Array(canonical);
+  const view = new DataView(output.buffer, output.byteOffset, output.byteLength);
+  const centralOffset = 30 + view.getUint16(26, true) + view.getUint32(18, true);
+  if (kind === "crc") {
+    const invalidCrc = (view.getUint32(14, true) ^ 1) >>> 0;
+    view.setUint32(14, invalidCrc, true);
+    view.setUint32(centralOffset + 16, invalidCrc, true);
+    return output;
+  }
+  if (kind === "extra") {
+    view.setUint16(output.length - 14, 2, true);
+    view.setUint16(output.length - 12, 2, true);
+    return output;
+  }
+  const attributes = view.getUint32(centralOffset + 38, true);
+  view.setUint32(
+    centralOffset + 38,
+    kind === "symlink" ? (0o120777 << 16) >>> 0 : attributes | 0x400,
+    true,
+  );
+  return output;
 }
 
 describePwsh("install.ps1 dry-run", () => {
@@ -282,6 +410,366 @@ describePwsh("install.ps1 activation identity", () => {
 });
 
 describePwsh("install.ps1 release asset failures", () => {
+  test("installs the verified zip member and records archive provenance", async () => {
+    const target = hostWindowsTarget();
+    const body = "MZ-archived-kunai";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-archive-ok");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${binaryDigest}  ${target.out}\n`,
+          },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+
+          expect(result.status, `${result.stderr}${result.stdout}`).toBe(0);
+          expect(evidence.requests).toEqual([
+            "/download/v9.8.7/SHA256SUMS.archives",
+            `/download/v9.8.7/${target.archiveName}`,
+            "/download/v9.8.7/SHA256SUMS",
+          ]);
+          expect(
+            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai.exe"), "utf8"),
+          ).toBe(body);
+          const manifest = readInstallerManifest(sandbox.configDir);
+          expect(manifest).toMatchObject({
+            schemaVersion: 2,
+            artifactName: target.out,
+            artifactSha256: binaryDigest,
+            artifactSizeBytes: Buffer.byteLength(body),
+            artifactSourceUrl: `${baseUrl}/download/v9.8.7/${target.out}`,
+            archiveName: target.archiveName,
+            archiveSha256: archiveDigest,
+            archiveSizeBytes: archive.length,
+            archiveSourceUrl: `${baseUrl}/download/v9.8.7/${target.archiveName}`,
+          });
+          const metadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
+          expect(metadata).toMatchObject({
+            artifactName: target.out,
+            artifactSha256: binaryDigest,
+            sizeBytes: Buffer.byteLength(body),
+            sourceUrl: `${baseUrl}/download/v9.8.7/${target.out}`,
+            archiveName: target.archiveName,
+            archiveSha256: archiveDigest,
+            archiveSizeBytes: archive.length,
+            archiveSourceUrl: `${baseUrl}/download/v9.8.7/${target.archiveName}`,
+          });
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.each([
+    "absolute",
+    "case-variant",
+    "corrupt",
+    "crc",
+    "extra",
+    "local-traversal",
+    "missing",
+    "prefix",
+    "reparse",
+    "symlink",
+    "trailing",
+    "traversal",
+    "wrong",
+  ] as const)("rejects a %s zip archive without raw fallback or residue", async (kind) => {
+    const target = hostWindowsTarget();
+    const body = "MZ-safe-windows-binary";
+    const canonical = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archive = invalidZipArchive(kind, canonical);
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox(`install-ps1-archive-${kind}`);
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${binaryDigest}  ${target.out}\n`,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body: "LEGACY-RAW-MUST-NOT-RUN" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+
+          expect(result.status).not.toBe(0);
+          if (kind === "crc") expect(result.stderr).toMatch(/CRC/i);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+          expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects a case-variant checksum asset identity", async () => {
+    const target = hostWindowsTarget();
+    const body = "MZ-case-sensitive-checksum-name";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-checksum-case-variant");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName.toUpperCase()}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${binaryDigest}  ${target.out}\n`,
+          },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+
+          expect(result.status).not.toBe(0);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects zip checksum mismatch without raw fallback", async () => {
+    const target = hostWindowsTarget();
+    const archive = createReleaseArchive(target, new TextEncoder().encode("MZ-mismatch"));
+    const sandbox = createInstallerSandbox("install-ps1-archive-mismatch");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${"0".repeat(64)}  ${target.archiveName}\n`,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body: "legacy" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toContain(
+            `Checksum mismatch for ${target.archiveName}`,
+          );
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects extracted binary checksum mismatch without raw fallback or residue", async () => {
+    const target = hostWindowsTarget();
+    const body = "MZ-archive-member";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-extracted-mismatch");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${archiveDigest}  ${target.archiveName}\n`,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${"0".repeat(64)}  ${target.out}\n`,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body: "LEGACY-RAW-MUST-NOT-RUN" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+
+          expect(result.status).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toContain(
+            `Checksum mismatch for extracted ${target.out}`,
+          );
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+          expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects zip archive and decompressed size bombs and cleans staging", async () => {
+    const target = hostWindowsTarget();
+    const body = "MZ-binary-larger-than-four-bytes";
+    const archive = createReleaseArchive(target, new TextEncoder().encode(body));
+    const archiveDigest = createHash("sha256").update(archive).digest("hex");
+    const binaryDigest = createHash("sha256").update(body).digest("hex");
+    for (const [label, env] of [
+      ["archive", { KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES: "8" }],
+      ["decompressed", { KUNAI_EXTRACTED_BINARY_MAX_BYTES: "4" }],
+    ] as const) {
+      const sandbox = createInstallerSandbox(`install-ps1-${label}-bomb`);
+      try {
+        await withReleaseFixture(
+          {
+            [`/download/v9.8.7/${target.archiveName}`]: { body: archive },
+            "/download/v9.8.7/SHA256SUMS.archives": {
+              body: `${archiveDigest}  ${target.archiveName}\n`,
+            },
+            "/download/v9.8.7/SHA256SUMS": {
+              body: `${binaryDigest}  ${target.out}\n`,
+            },
+          },
+          async (baseUrl) => {
+            const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+              ...sandbox.env,
+              ...env,
+              KUNAI_DL_BASE: baseUrl,
+              KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
+            });
+            expect(result.status).not.toBe(0);
+            expect(`${result.stderr}${result.stdout}`).toMatch(/size|budget|exceeds/i);
+            expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+          },
+        );
+      } finally {
+        sandbox.cleanup();
+      }
+    }
+  });
+
+  test.each([
+    ["checksum", 404],
+    ["checksum", 410],
+    ["archive", 404],
+    ["archive", 410],
+  ] as const)(
+    "falls back to the legacy raw zip asset only for %s HTTP %i",
+    async (missing, status) => {
+      const target = hostWindowsTarget();
+      const body = "MZ-legacy-raw-fallback";
+      const canonical = createReleaseArchive(target, new TextEncoder().encode(body));
+      const archiveDigest = createHash("sha256").update(canonical).digest("hex");
+      const binaryDigest = createHash("sha256").update(body).digest("hex");
+      const sandbox = createInstallerSandbox(`install-ps1-fallback-${missing}-${status}`);
+      try {
+        await withReleaseFixture(
+          {
+            [`/download/v9.8.7/${target.archiveName}`]:
+              missing === "archive" ? { status } : { body: canonical },
+            "/download/v9.8.7/SHA256SUMS.archives":
+              missing === "checksum"
+                ? { status }
+                : { body: `${archiveDigest}  ${target.archiveName}\n` },
+            "/download/v9.8.7/SHA256SUMS": {
+              body: `${binaryDigest}  ${target.out}\n`,
+            },
+            [`/download/v9.8.7/${target.out}`]: { body },
+          },
+          async (baseUrl, evidence) => {
+            const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+              ...sandbox.env,
+              KUNAI_DL_BASE: baseUrl,
+            });
+            expect(result.status, `${result.stderr}${result.stdout}`).toBe(0);
+            expect(evidence.requests).toContain(`/download/v9.8.7/${target.out}`);
+            expect(
+              readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai.exe"), "utf8"),
+            ).toBe(body);
+          },
+        );
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
+
+  test("does not use raw fallback for archive checksum HTTP 500", async () => {
+    const target = hostWindowsTarget();
+    const sandbox = createInstallerSandbox("install-ps1-archive-500");
+    try {
+      await withReleaseFixture(
+        {
+          "/download/v9.8.7/SHA256SUMS.archives": { status: 500 },
+          [`/download/v9.8.7/${target.out}`]: { body: "legacy" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
+          });
+          expect(result.status).not.toBe(0);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("does not use raw fallback when the archive checksum download stalls", async () => {
+    const target = hostWindowsTarget();
+    const sandbox = createInstallerSandbox("install-ps1-archive-stall");
+    try {
+      await withReleaseFixture(
+        {
+          "/download/v9.8.7/SHA256SUMS.archives": {
+            body: `${"a".repeat(64)}  ${target.archiveName}\n`,
+            chunkDelayMs: 150,
+            chunkSize: 1,
+          },
+          [`/download/v9.8.7/${target.out}`]: { body: "legacy" },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
+            KUNAI_DOWNLOAD_STALL_MS: "50",
+          });
+          expect(result.status).not.toBe(0);
+          expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
+          expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("pins a resolved latest binary and checksum to the immutable release URL", async () => {
     const asset = hostWindowsAsset();
     const body = "MZ-latest-fixture-payload";
@@ -309,14 +797,13 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(result.stdout).toContain("PATH activation is environment-managed");
           expect(evidence.requests).toEqual([
             "/releases/latest",
+            "/download/v9.8.7/SHA256SUMS.archives",
             "/download/v9.8.7/SHA256SUMS",
             `/download/v9.8.7/${asset}`,
           ]);
           expect(evidence.requests.some((path) => path.includes("/latest/download"))).toBe(false);
 
-          const metadata = JSON.parse(
-            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
-          ) as { sourceUrl: string };
+          const metadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(metadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
         },
       );
@@ -427,15 +914,14 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(result.status).toBe(0);
           expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
           expect(evidence.requests).toEqual([
+            "/download/v9.8.7/SHA256SUMS.archives",
             "/download/v9.8.7/SHA256SUMS",
             `/download/v9.8.7/${asset}`,
           ]);
           expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(true);
 
-          const manifest = JSON.parse(
-            readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-          ) as Record<string, unknown>;
-          expect(manifest.schemaVersion).toBe(1);
+          const manifest = readInstallerManifest(sandbox.configDir);
+          expect(manifest.schemaVersion).toBe(2);
           expect(manifest.method).toBe("binary");
           expect(manifest.activeVersion).toBe("9.8.7");
           expect(manifest.preferredChannel).toBe("stable");
@@ -445,11 +931,11 @@ describePwsh("install.ps1 release asset failures", () => {
           );
           expect(manifest.downloadBaseUrl).toBe(baseUrl);
           expect(manifest.artifactSha256).toBe(digest);
+          expect(manifest.artifactName).toBe(asset);
+          expect(manifest.artifactSizeBytes).toBe(Buffer.byteLength(body));
           expect(Array.isArray(manifest.managedPaths)).toBe(true);
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
-          const versionMetadata = JSON.parse(
-            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
-          ) as { sourceUrl: string };
+          const versionMetadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(versionMetadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
         },
       );
@@ -793,10 +1279,9 @@ describePwsh("install.ps1 lifecycle contract", () => {
         expect(launcherBeforeRelease).toBe(false);
         expect(manifestBeforeRelease).toBe(false);
 
-        const manifest = JSON.parse(
-          readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-        ) as { activeVersion: string; versionedPath: string };
-        expect(versions).toContain(manifest.activeVersion as (typeof versions)[number]);
+        const manifest = readInstallerManifest(sandbox.configDir);
+        expect(new Set<string>(versions).has(manifest.activeVersion)).toBe(true);
+        if (!manifest.versionedPath) throw new Error("Binary manifest omitted versionedPath");
         expect(manifest.versionedPath).toBe(
           join(sandbox.dataDir, "versions", manifest.activeVersion, "kunai.exe"),
         );
@@ -1263,9 +1748,7 @@ describePwsh("install.ps1 package activeVersion", () => {
 
       const result = runInstallPs1(["-Method", "npm", "-Yes"], env);
       expect(result.status).toBe(0);
-      const manifest = JSON.parse(
-        readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-      ) as { activeVersion: string; method: string; launcherPath: string };
+      const manifest = readInstallerManifest(sandbox.configDir);
       expect(manifest.method).toBe("npm-global");
       expect(manifest.activeVersion).toBe("4.5.6");
       expect(manifest.activeVersion).not.toBe("latest");
@@ -1346,9 +1829,7 @@ describePwsh("install.ps1 package activeVersion", () => {
         const result = runInstallPs1(["-Method", method, "-Yes", "-Version", "4.5.6"], env);
         expect(result.status).toBe(0);
         expect(readFileSync(argvLog, "utf8").trim()).toBe(`install -g @kitsunekode/kunai@4.5.6`);
-        const manifest = JSON.parse(
-          readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-        ) as { activeVersion: string; launcherPath: string };
+        const manifest = readInstallerManifest(sandbox.configDir);
         expect(manifest.activeVersion).toBe("4.5.6");
         // Each channel records its own owner's absolute launcher, not "kunai".
         expect(manifest.launcherPath).toBe(

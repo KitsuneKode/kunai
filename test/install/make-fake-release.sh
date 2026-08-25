@@ -59,6 +59,21 @@ for asset in "${ASSETS[@]}"; do
 done
 rm -f "$stub"
 
+# Exercise the current archive-first installer path. Each tarball has exactly
+# one root member whose name matches the raw compatibility asset, just like the
+# canonical release archives. `ustar` avoids implementation-specific metadata
+# entries on both GNU tar and the BSD tar shipped by macOS.
+ARCHIVES=()
+for asset in "${ASSETS[@]}"; do
+	archive="$asset.tar.gz"
+	# macOS bsdtar pads compressed archives after the gzip member, which makes
+	# strict gzip readers report trailing data. Stream the canonical ustar into
+	# gzip instead so the compressed container ends exactly with its footer.
+	COPYFILE_DISABLE=1 tar -b 1 --format=ustar -cf - -C "$DL_DIR" "$asset" |
+		gzip -n >"$DL_DIR/$archive"
+	ARCHIVES+=("$archive")
+done
+
 # Two-field format: install.sh selects with `awk '$2==asset {print $1}'`.
 # macOS has no `sha256sum` — this harness runs there too, so prefer it when
 # present and fall back to BSD `shasum`, whose output format is identical.
@@ -68,6 +83,11 @@ rm -f "$stub"
 		sha256sum "${ASSETS[@]}" >SHA256SUMS
 	else
 		shasum -a 256 "${ASSETS[@]}" >SHA256SUMS
+	fi
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "${ARCHIVES[@]}" >SHA256SUMS.archives
+	else
+		shasum -a 256 "${ARCHIVES[@]}" >SHA256SUMS.archives
 	fi
 )
 

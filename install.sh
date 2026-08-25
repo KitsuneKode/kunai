@@ -21,7 +21,7 @@
 #   {dataDir}/transactions/{id}.json     install transaction
 #   {cacheDir}/staging/{semver}/txn-…    unique download staging
 #   {binDir}/kunai                       launcher symlink -> versioned binary
-#   {configDir}/install.json             schema-1 ownership manifest
+#   {configDir}/install.json             schema-2 ownership/provenance manifest
 set -euo pipefail
 
 KUNAI_REPO="${KUNAI_REPO:-https://github.com/KitsuneKode/kunai.git}"
@@ -37,6 +37,9 @@ DOWNLOAD_TOTAL_SECONDS="${KUNAI_DOWNLOAD_TOTAL_SECONDS:-300}"
 DOWNLOAD_SPEED_TIME="${KUNAI_DOWNLOAD_SPEED_TIME:-30}"
 DOWNLOAD_SPEED_LIMIT="${KUNAI_DOWNLOAD_SPEED_LIMIT:-1}"
 DOWNLOAD_MAX_BYTES="${KUNAI_DOWNLOAD_MAX_BYTES:-268435456}"
+DOWNLOAD_ARCHIVE_MAX_BYTES="${KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES:-67108864}"
+EXTRACTED_BINARY_MAX_BYTES="${KUNAI_EXTRACTED_BINARY_MAX_BYTES:-134217728}"
+ARCHIVE_TAR_COMMAND="${KUNAI_ARCHIVE_TAR_COMMAND:-tar}"
 DOWNLOAD_CHECKSUM_MAX_BYTES="${KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES:-1048576}"
 DOWNLOAD_MAX_ATTEMPTS="${KUNAI_DOWNLOAD_MAX_ATTEMPTS:-3}"
 DOWNLOAD_RETRY_BASE_MS="${KUNAI_DOWNLOAD_RETRY_BASE_MS:-1000}"
@@ -54,6 +57,7 @@ INSTALL_PRESERVE_LAUNCHER_SNAPSHOT=0
 LAUNCHER_SNAPSHOT_KIND="missing"
 LAUNCHER_SNAPSHOT_TARGET=""
 LAUNCHER_SNAPSHOT_BACKUP=""
+BOUNDED_DOWNLOAD_HTTP_STATUS=""
 
 case "$(uname -s)" in
 Darwin) HOST_OS="darwin" ;;
@@ -329,6 +333,7 @@ bounded_download() {
 	local url="$1" dest="$2" max_bytes="$3" label="${4:-download}"
 	local attempt=1 code curl_rc remaining started elapsed delay_ms
 	started="$(date +%s)"
+	BOUNDED_DOWNLOAD_HTTP_STATUS=""
 
 	while [[ "$attempt" -le "$DOWNLOAD_MAX_ATTEMPTS" ]]; do
 		elapsed=$(($(date +%s) - started))
@@ -354,6 +359,7 @@ bounded_download() {
 				-w "%{http_code}" \
 				"$url"
 		)" || curl_rc=$?
+		BOUNDED_DOWNLOAD_HTTP_STATUS="$code"
 		if [[ "$curl_rc" -ne 0 ]]; then
 			rm -f "$dest"
 			if [[ "$attempt" -ge "$DOWNLOAD_MAX_ATTEMPTS" ]]; then
@@ -415,11 +421,126 @@ bounded_download() {
 	return 1
 }
 
+checksum_for_asset() {
+	local manifest="$1" asset="$2"
+	awk -v asset="$asset" '
+		$2 == asset {
+			found++
+			if (NF != 2 || length($1) != 64 || $1 !~ /^[0-9A-Fa-f]+$/) invalid = 1
+			digest = tolower($1)
+		}
+		END {
+			if (found != 1 || invalid) exit 1
+			print digest
+		}
+	' "$manifest"
+}
+
+extract_release_tar_gz() {
+	local archive="$1" tar_path="$2" expected="$3" output="$4"
+	local tar_budget read_blocks gzip_status dd_status tar_size name prefix type size_field size
+	local checksum_field stored_checksum header_sum checksum_sum actual_checksum expected_tar_size
+	local -a pipeline_status
+
+	require gzip
+	require "$ARCHIVE_TAR_COMMAND"
+	require od
+
+	tar_budget=$((512 + ((EXTRACTED_BINARY_MAX_BYTES + 511) / 512) * 512 + 1024))
+	# macOS /usr/bin/head does not provide GNU `head -c`. Read one 512-byte
+	# block beyond the budget with dd instead; fullblock is required because
+	# count otherwise measures short pipe reads rather than complete blocks.
+	# Tar streams are block-aligned, so an oversized container crosses the bound.
+	read_blocks=$(((tar_budget + 512) / 512))
+	set +o pipefail
+	gzip -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" iflag=fullblock 2>/dev/null
+	pipeline_status=("${PIPESTATUS[@]}")
+	gzip_status="${pipeline_status[0]}"
+	dd_status="${pipeline_status[1]}"
+	set -o pipefail
+	tar_size="$(wc -c <"$tar_path" | tr -d ' ')"
+	if [[ "$tar_size" -gt "$tar_budget" ]]; then
+		err "Archive decompressed size exceeds the $tar_budget byte budget."
+		return 1
+	fi
+	if [[ "$gzip_status" -ne 0 || "$dd_status" -ne 0 ]]; then
+		err "Archive decompression failed (gzip status $gzip_status, bounded reader status $dd_status)."
+		return 1
+	fi
+	if [[ "$tar_size" -lt 1536 || $((tar_size % 512)) -ne 0 ]]; then
+		err "Archive is not a valid one-member tar container."
+		return 1
+	fi
+
+	name="$(dd if="$tar_path" bs=1 count=100 2>/dev/null | tr -d '\000')"
+	prefix="$(dd if="$tar_path" bs=1 skip=345 count=155 2>/dev/null | tr -d '\000')"
+	type="$(od -An -tu1 -j 156 -N 1 "$tar_path" | tr -d '[:space:]')"
+	if [[ -n "$prefix" || "$name" == /* || "$name" == *"/"* || "$name" == *"\\"* || "$name" == . || "$name" == .. ]]; then
+		err "Archive contains an unsafe traversal or absolute-path entry."
+		return 1
+	fi
+	if [[ "$name" != "$expected" ]]; then
+		err "Archive contains unexpected entry '$name'; expected '$expected'."
+		return 1
+	fi
+	if [[ "$type" != 0 && "$type" != 48 ]]; then
+		err "Archive entry must be a regular file; links are forbidden."
+		return 1
+	fi
+
+	size_field="$(dd if="$tar_path" bs=1 skip=124 count=12 2>/dev/null | tr -d '\000 ')"
+	if [[ -z "$size_field" || "$size_field" == *[!0-7]* ]]; then
+		err "Archive has an invalid tar entry size."
+		return 1
+	fi
+	size=$((8#$size_field))
+	if [[ "$size" -le 0 || "$size" -gt "$EXTRACTED_BINARY_MAX_BYTES" ]]; then
+		err "Extracted binary size $size exceeds the $EXTRACTED_BINARY_MAX_BYTES byte budget."
+		return 1
+	fi
+
+	checksum_field="$(dd if="$tar_path" bs=1 skip=148 count=8 2>/dev/null | tr -d '\000 ')"
+	if [[ -z "$checksum_field" || "$checksum_field" == *[!0-7]* ]]; then
+		err "Archive has an invalid tar header checksum."
+		return 1
+	fi
+	stored_checksum=$((8#$checksum_field))
+	header_sum="$(od -An -tu1 -N 512 "$tar_path" | awk '{ for (i = 1; i <= NF; i++) sum += $i } END { print sum + 0 }')"
+	checksum_sum="$(od -An -tu1 -j 148 -N 8 "$tar_path" | awk '{ for (i = 1; i <= NF; i++) sum += $i } END { print sum + 0 }')"
+	actual_checksum=$((header_sum - checksum_sum + 256))
+	if [[ "$stored_checksum" -ne "$actual_checksum" ]]; then
+		err "Archive has an invalid tar header checksum."
+		return 1
+	fi
+
+	expected_tar_size=$((512 + ((size + 511) / 512) * 512 + 1024))
+	if [[ "$tar_size" -ne "$expected_tar_size" ]]; then
+		err "Release archive must contain exactly one regular file."
+		return 1
+	fi
+	if od -An -v -tu1 -j "$((512 + size))" "$tar_path" |
+		awk '{ for (i = 1; i <= NF; i++) if ($i != 0) found = 1 } END { exit found ? 0 : 1 }'; then
+		err "Archive contains non-zero padding, extra entries, or trailing data."
+		return 1
+	fi
+	if ! "$ARCHIVE_TAR_COMMAND" -xOf "$tar_path" "$expected" >"$output" 2>/dev/null; then
+		err "Could not extract the verified archive member."
+		return 1
+	fi
+	if [[ "$(wc -c <"$output" | tr -d ' ')" -ne "$size" ]]; then
+		err "Extracted binary size does not match the tar header."
+		return 1
+	fi
+}
+
 write_manifest() {
 	local method="$1" version="$2" launcher="$3" versionpath="${4:-}" target="${5:-}" sha256="${6:-}"
-	local previous="${7:-}" now installed_at managed_json tmp manifest_path
+	local previous="${7:-}" artifact_name="${8:-}" artifact_size="${9:-}"
+	local artifact_source_url="${10:-}" archive_name="${11:-}" archive_sha256="${12:-}"
+	local archive_size="${13:-}" archive_source_url="${14:-}"
+	local now installed_at managed_json tmp manifest_path
 	if [[ "$DRY" == 1 ]]; then
-		info "[dry-run] would write schema-1 manifest ($method) to $CONFIG_DIR/install.json"
+		info "[dry-run] would write schema-2 manifest ($method) to $CONFIG_DIR/install.json"
 		return
 	fi
 	mkdir -p "$CONFIG_DIR" || return 1
@@ -442,7 +563,7 @@ write_manifest() {
 	tmp="${manifest_path}.tmp-$$"
 	{
 		printf '{\n'
-		printf '  "schemaVersion": 1,\n'
+		printf '  "schemaVersion": 2,\n'
 		printf '  "method": "%s",\n' "$(json_escape "$method")"
 		printf '  "activeVersion": "%s",\n' "$(json_escape "$version")"
 		printf '  "preferredChannel": "stable",\n'
@@ -459,6 +580,21 @@ write_manifest() {
 		fi
 		if [[ -n "$sha256" ]]; then
 			printf '  "artifactSha256": "%s",\n' "$(json_escape "$sha256")"
+		fi
+		if [[ -n "$artifact_name" ]]; then
+			printf '  "artifactName": "%s",\n' "$(json_escape "$artifact_name")"
+		fi
+		if [[ -n "$artifact_size" ]]; then
+			printf '  "artifactSizeBytes": %s,\n' "$artifact_size"
+		fi
+		if [[ -n "$artifact_source_url" ]]; then
+			printf '  "artifactSourceUrl": "%s",\n' "$(json_escape "$artifact_source_url")"
+		fi
+		if [[ -n "$archive_name" ]]; then
+			printf '  "archiveName": "%s",\n' "$(json_escape "$archive_name")"
+			printf '  "archiveSha256": "%s",\n' "$(json_escape "$archive_sha256")"
+			printf '  "archiveSizeBytes": %s,\n' "$archive_size"
+			printf '  "archiveSourceUrl": "%s",\n' "$(json_escape "$archive_source_url")"
 		fi
 		printf '  "downloadBaseUrl": "%s",\n' "$(json_escape "$KUNAI_DL_BASE")"
 		printf '  "installedAt": "%s",\n' "$(json_escape "$installed_at")"
@@ -477,21 +613,28 @@ write_manifest() {
 
 write_version_metadata() {
 	local version="$1" target="$2" artifact="$3" sha256="$4" size="$5" source_url="$6" path="$7"
+	local archive_name="${8:-}" archive_sha256="${9:-}" archive_size="${10:-}" archive_source_url="${11:-}"
 	local tmp
 	tmp="${path}.tmp-$$"
-	cat >"$tmp" <<JSON
-{
-  "schemaVersion": 1,
-  "version": "$(json_escape "$version")",
-  "target": "$(json_escape "$target")",
-  "artifactName": "$(json_escape "$artifact")",
-  "artifactSha256": "$(json_escape "$sha256")",
-  "sizeBytes": $size,
-  "sourceUrl": "$(json_escape "$source_url")",
-  "verification": "release-checksum",
-  "installedAt": "$(iso_now)"
-}
-JSON
+	{
+		printf '{\n'
+		printf '  "schemaVersion": 1,\n'
+		printf '  "version": "%s",\n' "$(json_escape "$version")"
+		printf '  "target": "%s",\n' "$(json_escape "$target")"
+		printf '  "artifactName": "%s",\n' "$(json_escape "$artifact")"
+		printf '  "artifactSha256": "%s",\n' "$(json_escape "$sha256")"
+		printf '  "sizeBytes": %s,\n' "$size"
+		printf '  "sourceUrl": "%s",\n' "$(json_escape "$source_url")"
+		if [[ -n "$archive_name" ]]; then
+			printf '  "archiveName": "%s",\n' "$(json_escape "$archive_name")"
+			printf '  "archiveSha256": "%s",\n' "$(json_escape "$archive_sha256")"
+			printf '  "archiveSizeBytes": %s,\n' "$archive_size"
+			printf '  "archiveSourceUrl": "%s",\n' "$(json_escape "$archive_source_url")"
+		fi
+		printf '  "verification": "release-checksum",\n'
+		printf '  "installedAt": "%s"\n' "$(iso_now)"
+		printf '}\n'
+	} >"$tmp"
 	mv -f "$tmp" "$path"
 }
 
@@ -1187,8 +1330,9 @@ read_previous_active_version() {
 }
 
 install_binary() {
-	local os arch translated asset base url sums resolved_version version_path versions_dir
-	local staging txn_id txn_path lock_path staged_bin staged_sums want got size_bytes
+	local os arch translated asset archive base url sums archive_url archive_sums resolved_version version_path versions_dir
+	local staging txn_id txn_path lock_path staged_bin staged_sums staged_archive staged_archive_sums staged_tar
+	local want got size_bytes archive_want archive_got archive_size archive_source_url archive_available archive_name_used
 	local target previous activation_previous kind metadata_path
 	local activation_lock_path
 
@@ -1230,14 +1374,19 @@ install_binary() {
 	base="$KUNAI_DL_BASE/download/v$resolved_version"
 	url="$base/$asset"
 	sums="$base/SHA256SUMS"
+	archive="${asset}.tar.gz"
+	archive_url="$base/$archive"
+	archive_sums="$base/SHA256SUMS.archives"
 
 	versions_dir="$DATA_DIR/versions"
 	version_path="$versions_dir/$resolved_version/kunai"
 
 	if [[ "$DRY" == 1 ]]; then
 		info "Downloading $asset (v$resolved_version) ..."
-		info "[dry-run] curl (bounded) $url -o <staging>/$asset"
-		info "[dry-run] curl (bounded) $sums -o <staging>/SHA256SUMS"
+		info "[dry-run] curl (bounded) $archive_sums -o <staging>/SHA256SUMS.archives"
+		info "[dry-run] curl (bounded) $archive_url -o <staging>/$archive"
+		info "[dry-run] verify archive, safely extract $asset, then verify against $sums"
+		info "[dry-run] raw compatibility fallback is allowed only for archive HTTP 404/410"
 		write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "$target"
 		info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
 		path_hint "$BIN_DIR"
@@ -1260,6 +1409,9 @@ install_binary() {
 	activation_lock_path="$DATA_DIR/locks/activation.lock"
 	staged_bin="$staging/$asset"
 	staged_sums="$staging/SHA256SUMS"
+	staged_archive="$staging/$archive"
+	staged_archive_sums="$staging/SHA256SUMS.archives"
+	staged_tar="$staging/$asset.tar"
 	metadata_path="$versions_dir/$resolved_version/version.json"
 	INSTALL_TXN_PATH="$txn_path"
 	INSTALL_VERSION_LOCK_PATH="$lock_path"
@@ -1300,33 +1452,79 @@ install_binary() {
 	begin_transaction "$txn_id" "$kind" "$resolved_version" "$staging" "$txn_path"
 
 	info "Downloading $asset (v$resolved_version) ..."
+	archive_available=1
+	archive_got=""
+	archive_size=""
+	archive_source_url=""
+	archive_name_used=""
+	if ! bounded_download "$archive_sums" "$staged_archive_sums" "$DOWNLOAD_CHECKSUM_MAX_BYTES" "SHA256SUMS.archives"; then
+		if [[ "$BOUNDED_DOWNLOAD_HTTP_STATUS" == 404 || "$BOUNDED_DOWNLOAD_HTTP_STATUS" == 410 ]]; then
+			archive_available=0
+			info "Archive checksums are unavailable for v$resolved_version; using the legacy raw asset."
+		else
+			download_failed_hint "SHA256SUMS.archives"
+			exit 1
+		fi
+	fi
+
+	if [[ "$archive_available" == 1 ]]; then
+		if ! archive_want="$(checksum_for_asset "$staged_archive_sums" "$archive")"; then
+			err "SHA256SUMS.archives must contain exactly one valid entry for $archive."
+			exit 1
+		fi
+		if ! bounded_download "$archive_url" "$staged_archive" "$DOWNLOAD_ARCHIVE_MAX_BYTES" "$archive"; then
+			if [[ "$BOUNDED_DOWNLOAD_HTTP_STATUS" == 404 || "$BOUNDED_DOWNLOAD_HTTP_STATUS" == 410 ]]; then
+				archive_available=0
+				info "Archive asset is unavailable for v$resolved_version; using the legacy raw asset."
+			else
+				download_failed_hint "$archive"
+				exit 1
+			fi
+		fi
+	fi
+
+	if [[ "$archive_available" == 1 ]]; then
+		archive_got="$(sha256_of "$staged_archive")"
+		if [[ "$archive_want" != "$archive_got" ]]; then
+			err "Checksum mismatch for $archive (expected $archive_want, got $archive_got)."
+			exit 1
+		fi
+		archive_name_used="$archive"
+	fi
+
 	if ! bounded_download "$sums" "$staged_sums" "$DOWNLOAD_CHECKSUM_MAX_BYTES" "SHA256SUMS"; then
 		download_failed_hint "SHA256SUMS"
 		exit 1
 	fi
-	if ! bounded_download "$url" "$staged_bin" "$DOWNLOAD_MAX_BYTES" "$asset"; then
-		download_failed_hint "$asset"
+	if ! want="$(checksum_for_asset "$staged_sums" "$asset")"; then
+		err "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries; the release is incomplete."
 		exit 1
 	fi
 
+	if [[ "$archive_available" == 1 ]]; then
+		if ! extract_release_tar_gz "$staged_archive" "$staged_tar" "$asset" "$staged_bin"; then
+			exit 1
+		fi
+		archive_size="$(wc -c <"$staged_archive" | tr -d ' ')"
+		archive_source_url="$archive_url"
+	else
+		if ! bounded_download "$url" "$staged_bin" "$DOWNLOAD_MAX_BYTES" "$asset"; then
+			download_failed_hint "$asset"
+			exit 1
+		fi
+	fi
 	if [[ ! -s "$staged_bin" ]]; then
-		err "Downloaded asset $asset is empty; the release is incomplete."
-		download_failed_hint "$asset"
+		err "Downloaded or extracted asset $asset is empty; the release is incomplete."
 		exit 1
 	fi
-
-	want="$(awk -v a="$asset" '$2==a {print $1}' "$staged_sums")"
 	got="$(sha256_of "$staged_bin")"
 	size_bytes="$(wc -c <"$staged_bin" | tr -d ' ')"
-
-	if [[ -z "$want" ]]; then
-		err "SHA256SUMS has no entry for $asset; the release is incomplete."
-		download_failed_hint "$asset"
+	if [[ "$size_bytes" -gt "$EXTRACTED_BINARY_MAX_BYTES" ]]; then
+		err "Binary size $size_bytes exceeds the $EXTRACTED_BINARY_MAX_BYTES byte budget."
 		exit 1
 	fi
-
 	if [[ "$want" != "$got" ]]; then
-		err "Checksum mismatch for $asset (expected $want, got $got)."
+		err "Checksum mismatch for extracted $asset (expected $want, got $got)."
 		exit 1
 	fi
 
@@ -1336,7 +1534,8 @@ install_binary() {
 	install -m 0755 "$staged_bin" "$version_tmp"
 	mv -f "$version_tmp" "$version_path"
 
-	write_version_metadata "$resolved_version" "$target" "$asset" "$got" "$size_bytes" "$url" "$metadata_path"
+	write_version_metadata "$resolved_version" "$target" "$asset" "$got" "$size_bytes" "$url" "$metadata_path" \
+		"$archive_name_used" "$archive_got" "$archive_size" "$archive_source_url"
 
 	if [[ "$os" == darwin ]]; then
 		xattr -d com.apple.quarantine "$version_path" 2>/dev/null || true
@@ -1381,7 +1580,8 @@ install_binary() {
 	if [[ -n "$activation_previous" && "$activation_previous" != "$resolved_version" ]]; then
 		prev_arg="$activation_previous"
 	fi
-	if ! write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "$target" "$got" "$prev_arg"; then
+	if ! write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "$target" "$got" "$prev_arg" \
+		"$asset" "$size_bytes" "$url" "$archive_name_used" "$archive_got" "$archive_size" "$archive_source_url"; then
 		err "Could not publish install.json; restoring the previous launcher."
 		if ! restore_launcher_snapshot "$BIN_DIR/kunai"; then
 			err "Launcher restoration failed; inspect $LAUNCHER_SNAPSHOT_BACKUP before retrying."

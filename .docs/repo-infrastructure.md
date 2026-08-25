@@ -150,13 +150,15 @@ bits. The build reconstructs and byte-compares each archive after preservation,
 then release confirmation and publication reverify the same bytes without a
 rebuild.
 
-The TypeScript native updater now consumes the platform archive, independently
-verifies its transport hash and its extracted raw-binary hash, and keeps a
-404/410-only raw fallback for releases published before archives existed. It
-uses an in-process, bounded one-member parser rather than an external tar/zip
-command. The Bash and PowerShell installers still follow the functional legacy
-raw-asset path until their later stacked consumption slice lands. Issue #132
-and 0.3.0 release dispatch remain blocked on that cross-language parity.
+The TypeScript native updater and the Bash/PowerShell installers consume the
+platform archive, independently verify its transport hash and extracted
+raw-binary hash, and keep a 404/410-only raw fallback for releases published
+before archives existed. TypeScript uses an in-process bounded parser,
+PowerShell uses bounded .NET zip streams, and Bash validates a bounded tar
+container before streaming its one expected member through the host `tar`.
+Malformed archives and all other download/integrity failures fail closed. The
+archive-consuming updater and installers are stacked on the final activation-lock
+protocol; release promotion and attestation remain downstream protected gates.
 
 ### Windows parity
 

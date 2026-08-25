@@ -43,8 +43,8 @@ variants/gates fail validation.
 | ID                              | Gate    | Contract                                          |
 | ------------------------------- | ------- | ------------------------------------------------- |
 | `full-lifecycle`                | PR      | install → upgrade → doctor → rollback → uninstall |
-| `clean-install`                 | PR      | empty HOME → schema-1 layout, no residue          |
-| `checksum-rejection`            | PR      | corrupt asset fails; no launcher/manifest         |
+| `clean-install`                 | PR      | empty HOME → schema-2 archive layout, no residue  |
+| `checksum-rejection`            | PR      | corrupt archive fails; no launcher/manifest       |
 | `reinstall-idempotent`          | nightly | same-version reinstall stays consistent           |
 | `upgrade-rollback`              | nightly | retention + dry-run + default/`--to`              |
 | `stale-lock-recovery`           | nightly | dead lock/txn do not block install                |
