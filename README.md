@@ -483,6 +483,8 @@ Kunai ships a default Discord application client id; override it in Settings or
   machine, and you can rotate it any time from Settings. Preview with
   `/analytics show`.
   Honour `DO_NOT_TRACK=1` / `CI=true` as hard blocks on send and enable.
+  Your IP address is never read — the ingest has no code path that reads a
+  client address, so there is nothing to log or rate-limit on.
   The ingest stores HMAC-hashed ids for daily/lifetime aggregates only; public
   docs may show yesterday’s opt-in actives and an exact lifetime total.
 - Kunai checks for a newer published version on startup and notifies you in-shell — updating is a quick reinstall (see [Uninstall](#uninstall) / [Quick Start](#quick-start)).

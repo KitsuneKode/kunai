@@ -92,6 +92,9 @@ When on, Kunai sends at most one tiny ping per day:
   never transmitted — so the value above is a 64-character hex digest, never a
   UUID
 - Never titles, queries, providers, stream URLs, or file paths
+- **Your IP address is never read.** Not collected and discarded — the ingest
+  has no code path that reads a client address at all, so there is nothing to
+  log, rate-limit on, or hand over
 - Turning it off **deletes the install id from disk**. The id exists only while
   analytics is enabled
 - **Settings → General → Rotate install id** replaces the id with a fresh random
