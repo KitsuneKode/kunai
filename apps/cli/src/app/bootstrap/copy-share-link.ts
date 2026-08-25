@@ -1,1 +1,4 @@
-export { copyShareLinkForContext } from "@/infra/share/copy-share-link";
+export {
+  buildShareLinkArtifactsForContext,
+  copyShareLinkForContext,
+} from "@/infra/share/copy-share-link";

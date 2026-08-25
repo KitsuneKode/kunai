@@ -1,6 +1,6 @@
 # Share: web fallback, short codes, and QR
 
-**Status:** not started · **Owner:** unassigned · **Prereq:** none
+**Status:** implemented 2026-08-24 · **Owner:** release train · **Prereq:** none
 
 A handoff for one agent. The `kunai://` link format is **already built and
 good** — do not redesign it. This plan adds the three things missing for

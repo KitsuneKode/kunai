@@ -24,7 +24,6 @@ import {
 } from "@/app-shell/root-library-playback-bridge";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
-import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
@@ -38,13 +37,11 @@ import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngin
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
-import {
-  encodePlaybackTargetRef,
-  parsePlaybackTargetRef,
-} from "@/domain/share/playback-target-ref";
+import { parsePlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo as PlaybackEpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 import { copyToClipboard, readClipboard } from "@/infra/clipboard";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
+import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
 import { openExternalUrlAndWait, defaultKunaiDocsUrl } from "@/infra/shell/open-external-url";
 import {
   readLatestHistoryByTitle,
@@ -870,6 +867,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   "mark-anime": (c) => handleMarkKind(c, "anime"),
   "mark-series": (c) => handleMarkKind(c, "series"),
   share: (c) => handleShare(c),
+  "share-qr": (c) => handleShare(c, { qr: true }),
   bookmark: (c) => handleBookmark(c),
   follow: (c) => handleAttentionPreference(c, "following"),
   unfollow: (c) => handleAttentionPreference(c, "implicit"),
@@ -1826,8 +1824,11 @@ async function handleMarkKind(container: Container, kind: "anime" | "series"): P
   return "handled";
 }
 
-/** Copy a shareable kunai:// link for the current title (+episode) to the clipboard. */
-async function handleShare(container: Container): Promise<"handled"> {
+/** Copy a browser-safe share link for the current title (+episode) to the clipboard. */
+async function handleShare(
+  container: Container,
+  options: { readonly qr?: boolean } = {},
+): Promise<"handled"> {
   const state = container.stateManager.getState();
   const title = state.currentTitle;
   if (!title) {
@@ -1871,27 +1872,36 @@ async function handleShare(container: Container): Promise<"handled"> {
     startSeconds = choice === "resume" ? resumeSeconds : undefined;
   }
 
-  const ref = buildShareRefFromTitleContext({
-    title,
-    mode,
-    episode: episode ? { season: episode.season, episode: episode.episode } : undefined,
-    startSeconds,
-    providerId: state.provider,
-  });
-  if (!ref) {
+  const shared = await copyShareLinkForContext(
+    {
+      title,
+      mode,
+      episode: episode ? { season: episode.season, episode: episode.episode } : undefined,
+      startSeconds,
+      providerId: state.provider,
+    },
+    copyToClipboard,
+  );
+  if (!shared) {
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: "Could not build a share link for this title.",
     });
     return "handled";
   }
-  const url = encodePlaybackTargetRef(ref);
-  const copied = await copyToClipboard(url);
+  if (options.qr) {
+    const { openShareQrShell } = await import("@/app-shell/share-qr-shell");
+    await openShareQrShell({
+      title: title.name,
+      url: shared.qrUrl,
+      shortCode: shared.shortCode,
+    });
+  }
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
-    note: copied
-      ? `Share link for "${title.name}" copied — open with kunai open or /watch.`
-      : `Share link (copy manually): ${url}`,
+    note: shared.copied
+      ? `Web share link for "${title.name}" copied${shared.shortCode ? ` · code ${shared.shortCode}` : ""}.`
+      : `Share link (copy manually): ${shared.webUrl}`,
   });
   return "handled";
 }
@@ -2157,14 +2167,14 @@ function resolveCurrentMediaKind(state: SessionState): MediaKind {
   return title?.type === "movie" ? "movie" : "series";
 }
 
-/** Open a kunai:// share link from the clipboard. */
+/** Open a Kunai app link, HTTPS share link, or compact code from the clipboard. */
 async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
   const clip = await readClipboard();
   const ref = clip ? parsePlaybackTargetRef(clip) : null;
   if (!ref) {
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "No Kunai share link on the clipboard. Copy a kunai:// link, then run /watch.",
+      note: "No Kunai share link on the clipboard. Copy an https://, kunai://, or k1 code, then run /watch.",
     });
     return "handled";
   }

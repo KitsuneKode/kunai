@@ -1,10 +1,10 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "7eecb6ece14ab8a587bc8254fb10a9de38b892c37d251aaf31e9b88009e039ed",
-  "docsContentFingerprint": "ea0948f8b9fc1f498bcebec01a48978aa48752098014156bbbc680bad2000e69",
+  "cliSourceFingerprint": "f79e2dda398a63e861fe7e83a3d79c8afbc4b5fddfb889e2d668a6cf3d9d5f81",
+  "docsContentFingerprint": "c5442c7f9a98211a85bcdd4780026c21daa57f6704956a93272b675f73e7a18d",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 81,
+  "commandCount": 82,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
   "providers": [
     {
@@ -452,7 +452,13 @@
       "id": "share",
       "label": "Share This",
       "aliases": ["share", "share-link", "share-code"],
-      "description": "Copy a catalog-anchored kunai:// share link for the current title"
+      "description": "Copy a browser-safe HTTPS share link for the current title"
+    },
+    {
+      "id": "share-qr",
+      "label": "Share This as QR",
+      "aliases": ["share --qr", "share-qr", "qr"],
+      "description": "Show a scannable HTTPS share QR and copy the full link"
     },
     {
       "id": "bookmark",

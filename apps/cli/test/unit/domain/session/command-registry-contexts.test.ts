@@ -26,6 +26,7 @@ describe("command registry contexts", () => {
       "mark-anime",
       "mark-series",
       "share",
+      "share-qr",
       "bookmark",
       "follow",
       "unfollow",
@@ -104,6 +105,7 @@ describe("command registry contexts", () => {
       "mark-anime",
       "mark-series",
       "share",
+      "share-qr",
       "bookmark",
       "follow",
       "unfollow",
@@ -194,6 +196,11 @@ describe("command registry contexts", () => {
     expect(parseCommand("/mute")?.id).toBe("mute");
     expect(parseCommand("/mark-watched")?.id).toBe("mark-watched");
     expect(parseCommand("/watched")?.id).toBe("mark-watched");
+  });
+
+  test("resolves the QR flag form to the QR share action", () => {
+    expect(parseCommand("/share --qr")?.id).toBe("share-qr");
+    expect(parseCommand("/share-qr")?.id).toBe("share-qr");
   });
 
   test("keeps root overlay command order focused on first-run actions", () => {

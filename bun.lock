@@ -70,6 +70,7 @@
       "dependencies": {
         "@base-ui/react": "catalog:web",
         "@kunai/design": "workspace:*",
+        "@kunai/types": "workspace:*",
         "@tabler/icons-react": "catalog:web",
         "@vercel/analytics": "^2.0.1",
         "@vercel/speed-insights": "^2.0.0",
