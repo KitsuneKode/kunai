@@ -4,8 +4,85 @@ import {
   buildMpvIpcCommand,
   MPV_INITIAL_PROPERTIES,
   MPV_OBSERVED_PROPERTIES,
+  openMpvIpcSession,
   parseMpvIpcLine,
 } from "@/infra/player/mpv-ipc";
+
+type FakeSocketState = { onClose: (() => void) | null };
+
+type CloseTimerHarness = {
+  readonly scheduled: Array<{ id: number; callback: () => void; delayMs: number }>;
+  readonly cleared: number[];
+  readonly timers: {
+    setTimeout(callback: () => void, delayMs: number): number;
+    clearTimeout(handle: unknown): void;
+  };
+};
+
+function createCloseTimerHarness(): CloseTimerHarness {
+  const scheduled: CloseTimerHarness["scheduled"] = [];
+  const cleared: number[] = [];
+  return {
+    scheduled,
+    cleared,
+    timers: {
+      setTimeout(callback, delayMs) {
+        const id = scheduled.length + 1;
+        scheduled.push({ id, callback, delayMs });
+        return id;
+      },
+      clearTimeout(handle) {
+        if (typeof handle !== "number") throw new Error("unexpected timer handle");
+        cleared.push(handle);
+      },
+    },
+  };
+}
+
+async function withFakeMpvSocket(
+  closeOnEnd: boolean,
+  run: (counts: { readonly end: () => number; readonly terminate: () => number }) => Promise<void>,
+): Promise<void> {
+  const bun = Bun as unknown as { connect: typeof Bun.connect };
+  const originalConnect = bun.connect;
+  let endCount = 0;
+  let terminateCount = 0;
+  bun.connect = (async (rawOptions: unknown) => {
+    const options = rawOptions as {
+      data: FakeSocketState;
+      socket: {
+        close(socket: FakeSocket): void;
+      };
+    };
+    const socket: FakeSocket = {
+      data: options.data,
+      readyState: 1,
+      write() {},
+      end() {
+        endCount++;
+        if (closeOnEnd) options.socket.close(socket);
+      },
+      terminate() {
+        terminateCount++;
+      },
+    };
+    return socket;
+  }) as typeof Bun.connect;
+
+  try {
+    await run({ end: () => endCount, terminate: () => terminateCount });
+  } finally {
+    bun.connect = originalConnect;
+  }
+}
+
+type FakeSocket = {
+  data: FakeSocketState;
+  readyState: number;
+  write(data: string): void;
+  end(): void;
+  terminate(): void;
+};
 
 describe("mpv-ipc", () => {
   test("builds newline-delimited ipc commands without a request id", () => {
@@ -71,6 +148,61 @@ describe("mpv-ipc", () => {
       request_id: 12,
       error: "success",
       data: true,
+    });
+  });
+
+  test("clean socket close clears the 200ms terminate fallback", async () => {
+    const clock = createCloseTimerHarness();
+
+    await withFakeMpvSocket(true, async (counts) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+        closeTimers: clock.timers,
+      });
+
+      await session.close();
+
+      expect(clock.scheduled.map(({ id, delayMs }) => ({ id, delayMs }))).toEqual([
+        { id: 1, delayMs: 200 },
+      ]);
+      expect(clock.cleared).toEqual([1]);
+      expect(counts.end()).toBe(1);
+      expect(counts.terminate()).toBe(0);
+    });
+  });
+
+  test("terminate fallback resolves close exactly once when close never arrives", async () => {
+    const clock = createCloseTimerHarness();
+
+    await withFakeMpvSocket(false, async (counts) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+        closeTimers: clock.timers,
+      });
+
+      let resolutionCount = 0;
+      const closePromise = session.close().then(() => {
+        resolutionCount++;
+        return undefined;
+      });
+      expect(clock.scheduled.map(({ id, delayMs }) => ({ id, delayMs }))).toEqual([
+        { id: 1, delayMs: 200 },
+      ]);
+
+      clock.scheduled[0]?.callback();
+      await closePromise;
+      expect(counts.end()).toBe(1);
+      expect(counts.terminate()).toBe(1);
+      expect(resolutionCount).toBe(1);
+
+      clock.scheduled[0]?.callback();
+      await Promise.resolve();
+      expect(counts.terminate()).toBe(1);
+      expect(resolutionCount).toBe(1);
     });
   });
 });

@@ -36,11 +36,39 @@ test("Windows pipe path uses backslashes, never the forward-slash spelling", () 
   expect(path).not.toContain("/");
 });
 
-test("builds a unix socket endpoint off Windows", () => {
-  const endpoint = createMpvIpcEndpoint("abc123", "linux");
+test("builds a unix socket endpoint with simulated POSIX filesystem facts off Windows", () => {
+  const endpoint = createMpvIpcEndpoint("abc123", "linux", {
+    env: { TMPDIR: "/tmp" },
+    directoryOperations: {
+      makeDirectory() {},
+      lstat() {
+        return {
+          directory: true,
+          symbolicLink: false,
+          mode: 0o700,
+          uid: 1000,
+          device: 1,
+          inode: 2,
+        };
+      },
+      stat() {
+        return {
+          directory: true,
+          symbolicLink: false,
+          mode: 0o700,
+          uid: 1000,
+          device: 1,
+          inode: 2,
+        };
+      },
+      currentUid() {
+        return 1000;
+      },
+    },
+  });
 
   expect(endpoint.kind).toBe("unix_socket");
-  expect(endpoint.path).toContain("kunai-mpv-abc123.sock");
+  expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc123.sock");
   expect(mpvIpcTransportTag(endpoint)).toBe("unix");
   expect(shouldUnlinkUnixSocket(endpoint)).toBe(true);
 });
