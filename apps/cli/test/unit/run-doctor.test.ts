@@ -21,7 +21,7 @@ function emptyCapabilities(): CapabilitySnapshot {
     mpv: true,
     ffprobe: true,
     ytDlp: true,
-    curl: true,
+    curl: { present: true, impersonates: true, profile: "chrome150" },
     image: {
       terminal: "unknown",
       protocol: "none",

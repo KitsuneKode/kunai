@@ -10,7 +10,7 @@ const MISSING_MPV: CapabilitySnapshot = {
   mpv: false,
   ffprobe: false,
   ytDlp: true,
-  curl: true,
+  curl: { present: true, impersonates: true, profile: "chrome150" },
   image: {
     terminal: "unknown",
     protocol: "none",

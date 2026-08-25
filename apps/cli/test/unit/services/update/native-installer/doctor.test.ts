@@ -36,7 +36,7 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
     mpv: true,
     ffprobe: true,
     ytDlp: true,
-    curl: true,
+    curl: { present: true, impersonates: true, profile: "chrome150" },
     image: {
       terminal: "unknown",
       protocol: "none",

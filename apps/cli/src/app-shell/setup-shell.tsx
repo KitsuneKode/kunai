@@ -255,12 +255,20 @@ function SystemSlide({
       install: "Install ffprobe from your platform media-tools package when needed",
     },
     {
-      name: "curl",
-      status: snapshot.curl ? "ok" : "optional-missing",
-      detail: snapshot.curl
-        ? "Anime search ready"
-        : "Needed by AniDB, the default anime provider — anime search may return nothing",
-      install: "brew install curl  ·  pacman -S curl  ·  apt install curl",
+      // Three states, not two. Plain curl exists nearly everywhere, so folding
+      // it in with an impersonate build showed a green tick on a machine whose
+      // anime search would come back empty — the failure this row exists to
+      // warn about. `snapshot.curl` is an object now: never test it for
+      // truthiness, which is always true and silently reports "ok".
+      name: "curl-impersonate",
+      status: snapshot.curl.impersonates ? "ok" : "optional-missing",
+      detail: snapshot.curl.impersonates
+        ? `Anime search ready — matching ${snapshot.curl.profile}`
+        : snapshot.curl.present
+          ? "Only plain curl — Cloudflare may still block AniDB and Miruro"
+          : "No curl at all — AniDB, the default anime provider, needs one",
+      install:
+        "brew install lexiforest/tap/curl-impersonate  ·  pacman -S curl-impersonate  ·  else: github.com/lexiforest/curl-impersonate/releases",
     },
     {
       name: "posters",

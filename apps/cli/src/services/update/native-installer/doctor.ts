@@ -4,7 +4,7 @@ import { dirname as nodeDirname, win32 } from "node:path";
 
 const { W_OK } = fsConstants;
 
-import type { CapabilitySnapshot } from "@/ui";
+import type { CapabilitySnapshot, CurlCapability } from "@/ui";
 
 import {
   inspectInstallManifest,
@@ -594,6 +594,16 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
 }
 
 /** Human-readable doctor output covering the same fields as the JSON report. */
+/**
+ * `ok` is reserved for a curl that can actually clear a Cloudflare challenge.
+ * Plain curl reports `plain` rather than `ok`, because reporting it as healthy
+ * is what let an empty AniDB search look like a working install.
+ */
+function describeCurl(curl: CurlCapability): string {
+  if (!curl.present) return "missing";
+  return curl.impersonates ? `ok (${curl.profile ?? "impersonate"})` : "plain (no CF bypass)";
+}
+
 export function formatDoctorReportText(report: DoctorReport): string {
   const lines: string[] = [];
   lines.push("Kunai doctor");
@@ -684,7 +694,10 @@ export function formatDoctorReportText(report: DoctorReport): string {
   lines.push("");
   lines.push("Dependencies");
   lines.push(
-    `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${report.dependencies.curl ? "ok" : "missing"}`,
+    // curl reports what it can actually do, not merely that it exists: plain
+    // curl is present nearly everywhere and still gets challenged by Cloudflare,
+    // so `curl=ok` on its own was a misleading line in a health report.
+    `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${describeCurl(report.dependencies.curl)}`,
   );
   lines.push("");
   lines.push("Storage");
