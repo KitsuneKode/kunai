@@ -2000,7 +2000,6 @@ async function readUtf8Stream(reader: {
   }
 }
 
-
 function buildDownloadQueueAggregateMessage(failures: readonly unknown[]): string {
   const summaries = failures.map((failure) => {
     const name = redactDownloadQueueAggregateText(

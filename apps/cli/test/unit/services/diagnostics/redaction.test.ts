@@ -164,3 +164,46 @@ describe("opaque query values", () => {
     );
   });
 });
+
+describe("Kunai's own identifiers survive redaction", () => {
+  test("a job UUID stays readable in a diagnostic context", () => {
+    // Regression: the opaque-value heuristic redacted every canonical UUID.
+    // A v4 uuid is 36 chars of hex, mixes letters and digits, and its last
+    // group is always exactly OPAQUE_MIN_UNBROKEN_RUN long — so it cleared
+    // every gate by a single character and `jobId` came back "[redacted]",
+    // removing the one field that answers "which job failed?".
+    expect(
+      redactDiagnosticValue({
+        source: "download-manager",
+        jobId: "b3c1d4a1-4d8b-4b66-ad78-7d5adc2a0e8d",
+      }),
+    ).toEqual({
+      source: "download-manager",
+      jobId: "b3c1d4a1-4d8b-4b66-ad78-7d5adc2a0e8d",
+    });
+  });
+
+  test("every uuid version Kunai can generate is preserved", () => {
+    for (const id of [
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      "00000000-0000-4000-8000-000000000000",
+      "FFFFFFFF-FFFF-4FFF-BFFF-FFFFFFFFFFFF",
+    ]) {
+      expect(redactDiagnosticValue({ id })).toEqual({ id });
+    }
+  });
+
+  test("the exemption is shape-bound and still redacts real secrets", () => {
+    // The point of the carve-out is that a bearer token cannot wear a uuid's
+    // shape: its entropy arrives as one unbroken run. If this ever passes
+    // through, the exemption has been widened too far.
+    for (const secret of [
+      "dQw4w9WgXcQ1a2b3c4d5e6f7g8h9i0jK",
+      "b3c1d4a14d8b4b66ad787d5adc2a0e8d",
+      "b3c1d4a1-4d8b-4b66-ad78-7d5adc2a0e8dEXTRA",
+    ]) {
+      expect(redactDiagnosticValue({ token: secret })).toEqual({ token: "[redacted]" });
+    }
+  });
+});
