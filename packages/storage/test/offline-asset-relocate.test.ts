@@ -1,6 +1,10 @@
 import { afterAll, expect, test } from "bun:test";
 
-import { DownloadJobsRepository, OfflineAssetsRepository } from "../src/index";
+import {
+  DownloadJobsRepository,
+  OfflineAssetsRepository,
+  type OfflineAssetInput,
+} from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
 const stores = createTempStoreRegistry();
@@ -18,15 +22,17 @@ function harness() {
   const jobs = new DownloadJobsRepository(db);
   const assets = new OfflineAssetsRepository(db);
 
-  function addAsset(titleId: string, overrides: Record<string, unknown> = {}) {
+  function addAsset(titleId: string, overrides: Partial<OfflineAssetInput> = {}) {
     const now = new Date().toISOString();
-    const originJobId = (overrides.originJobId as string | undefined) ?? `job-${titleId}`;
+    const originJobId = overrides.originJobId ?? `job-${titleId}`;
     if (!jobs.get(originJobId)) {
       jobs.enqueue({
         id: originJobId,
         titleId,
         titleName: "Obsession",
         mediaKind: "movie",
+        season: overrides.season ?? 1,
+        episode: overrides.episode ?? 1,
         providerId: "videasy",
         mode: "series",
         streamUrl: "",

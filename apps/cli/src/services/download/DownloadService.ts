@@ -29,6 +29,7 @@ import {
   runYtDlpProcess,
 } from "@kunai/providers/youtube";
 import {
+  DownloadJobAdmissionConflictError,
   externalIdsToAliases,
   getKunaiPaths,
   type DownloadArtifactStatus,
@@ -380,31 +381,41 @@ export class DownloadService {
 
     const mediaKind = resolveEnqueueMediaKind(input);
 
-    this.deps.repo.enqueue({
-      id,
-      titleId: canonicalTitleId,
-      externalIds: input.title.externalIds,
-      titleName: input.title.name,
-      mediaKind,
-      contentType: input.title.type,
-      season: input.episode?.season,
-      episode: input.episode?.episode,
-      providerId: input.providerId,
-      mode: input.mode,
-      subLang,
-      animeLang,
-      selectedSourceId: input.selectedSourceId,
-      selectedStreamId: input.selectedStreamId,
-      selectedQualityLabel: input.selectedQualityLabel ?? input.qualityPreference,
-      streamUrl: input.stream?.url ?? "",
-      headers: input.stream?.headers ?? {},
-      outputPath,
-      tempPath,
-      posterUrl: input.posterUrl ?? input.title.posterUrl,
-      createdAt: now,
-      updatedAt: now,
-      completedAt: undefined,
-    });
+    try {
+      this.deps.repo.enqueue({
+        id,
+        titleId: canonicalTitleId,
+        externalIds: input.title.externalIds,
+        titleName: input.title.name,
+        mediaKind,
+        contentType: input.title.type,
+        season: input.episode?.season,
+        episode: input.episode?.episode,
+        providerId: input.providerId,
+        mode: input.mode,
+        subLang,
+        animeLang,
+        selectedSourceId: input.selectedSourceId,
+        selectedStreamId: input.selectedStreamId,
+        selectedQualityLabel: input.selectedQualityLabel ?? input.qualityPreference,
+        streamUrl: input.stream?.url ?? "",
+        headers: input.stream?.headers ?? {},
+        outputPath,
+        tempPath,
+        posterUrl: input.posterUrl ?? input.title.posterUrl,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: undefined,
+      });
+    } catch (error) {
+      if (error instanceof DownloadJobAdmissionConflictError) {
+        throw new DownloadEnqueueRejectedError(
+          "duplicate-intent",
+          "A playable or active offline copy already exists for this episode.",
+        );
+      }
+      throw error;
+    }
 
     // Register the download's identity so a later playback read can find its
     // assets under any id form. Without this a title that was only ever
@@ -503,7 +514,17 @@ export class DownloadService {
       await this.repairSidecars(job);
       return;
     }
-    this.deps.repo.requeue(jobId, new Date().toISOString());
+    try {
+      this.deps.repo.requeue(jobId, new Date().toISOString());
+    } catch (error) {
+      if (error instanceof DownloadJobAdmissionConflictError) {
+        throw new DownloadEnqueueRejectedError(
+          "duplicate-intent",
+          "A playable or active offline copy already exists for this episode.",
+        );
+      }
+      throw error;
+    }
   }
 
   async repairRepairableSidecars(limit = 100): Promise<DownloadRepairSummary> {

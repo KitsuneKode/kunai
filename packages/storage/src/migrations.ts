@@ -681,6 +681,60 @@ export const dataMigrations: readonly Migration[] = [
         ON history_progress(title_id, updated_at DESC);
     `,
   },
+  {
+    id: "036_data_download_job_unique_intent",
+    database: "data",
+    sql: `
+      -- Download admission is a durable invariant, not a read-then-write
+      -- convention. Preserve the strongest existing artifact for each intent
+      -- and quarantine only the duplicate rows before adding the constraint.
+      WITH ranked AS (
+        SELECT rowid,
+               ROW_NUMBER() OVER (
+                 PARTITION BY
+                   title_id,
+                   CASE WHEN season IS NULL THEN 'null' ELSE 'value:' || CAST(season AS TEXT) END,
+                   CASE WHEN episode IS NULL THEN 'null' ELSE 'value:' || CAST(episode AS TEXT) END
+                 ORDER BY
+                   CASE
+                     WHEN status IN ('completed', 'completed-with-notes', 'repairable')
+                       AND artifact_status IN ('missing', 'invalid-file') THEN 1
+                     ELSE 0
+                   END,
+                   CASE status
+                     WHEN 'completed' THEN 0
+                     WHEN 'completed-with-notes' THEN 1
+                     WHEN 'repairable' THEN 2
+                     WHEN 'running' THEN 3
+                     WHEN 'queued' THEN 4
+                     ELSE 5
+                   END,
+                   CASE WHEN completed_at IS NULL THEN 1 ELSE 0 END,
+                   completed_at DESC,
+                   created_at ASC,
+                   rowid ASC
+               ) AS duplicate_rank
+        FROM download_jobs
+        WHERE status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable')
+      )
+      UPDATE download_jobs
+      SET status = 'aborted',
+          failure_kind = 'duplicate-intent-migrated',
+          error_message = 'Duplicate download intent quarantined during storage migration',
+          next_retry_at = NULL
+      WHERE rowid IN (
+        SELECT rowid FROM ranked WHERE duplicate_rank > 1
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_download_jobs_blocking_intent
+        ON download_jobs(
+          title_id,
+          CASE WHEN season IS NULL THEN 'null' ELSE 'value:' || CAST(season AS TEXT) END,
+          CASE WHEN episode IS NULL THEN 'null' ELSE 'value:' || CAST(episode AS TEXT) END
+        )
+        WHERE status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable');
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
