@@ -1,0 +1,25 @@
+# setup-5-library · narrow (72×34)
+  🦊 Kunai · downloads & accounts                            setup 5⁄7
+────────────────────────────────────────────────────────────────────────
+
+
+  Downloads & accounts
+  Accounts are linked after setup, so a browser hiccup never traps you
+   here.
+
+  ▌ ○ Download for offline
+        ~/.local/share/kunai
+    ↻ Download quality — 1080p
+        turn on downloads first — then space cycles quality
+
+  While we're here
+    ○ AniList
+        Track watch progress on your list
+    ○ TMDB
+        Track shows and films
+    ○ Discord presence
+        Show friends what you're watching
+────────────────────────────────────────────────────────────────────────
+  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]     Setup
+
+   recommended  ·  [b]  back

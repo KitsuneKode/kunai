@@ -17,6 +17,18 @@ const PR4_CAPTURE_FAMILIES = [
   "calendar-rows",
   "library-empty",
   "library-populated",
+  // The setup redesign owns its seven screens, so they answer to the same
+  // width budget. A row that overflows does not truncate in Ink — it wraps,
+  // which breaks column alignment and inserts blank lines between rows. That
+  // is exactly how the dependency screen looked at 72 columns before the
+  // column budget became responsive.
+  "setup-1-deps",
+  "setup-2-mode",
+  "setup-3-language",
+  "setup-4-playback",
+  "setup-5-library",
+  "setup-6-analytics",
+  "setup-7-done",
 ] as const;
 
 /**

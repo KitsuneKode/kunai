@@ -1,27 +1,59 @@
 import { describe, expect, test } from "bun:test";
 
-import { AnalyticsSlide } from "@/app-shell/setup-shell";
+import { SetupShell } from "@/app-shell/setup-shell";
+import { AnalyticsScreen } from "@/app-shell/setup/AnalyticsScreen";
+import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
 import packageJson from "../../../package.json" with { type: "json" };
-import { captureFrame } from "../../harness/render-capture";
+import { captureFrame, render } from "../../harness/render-capture";
 
 /**
  * 80x24 deliberately: the smallest terminal we expect, and the size at which
  * the footer hint is first at risk of being clipped.
  */
 function frame(selectedIndex = 0): string {
-  return captureFrame(<AnalyticsSlide width={80} rows={24} selectedIndex={selectedIndex} />, {
+  return captureFrame(<AnalyticsScreen selectedIndex={selectedIndex} />, {
     columns: 80,
     rows: 24,
   });
 }
 
-describe("analytics consent slide", () => {
+const READY: CapabilitySnapshot = {
+  mpv: true,
+  ffprobe: true,
+  ytDlp: true,
+  curl: { present: true, impersonates: true, profile: "chrome150" },
+  image: {
+    terminal: "ghostty",
+    protocol: "kitty",
+    renderer: "kitty-native",
+    available: true,
+    reason: "test fixture",
+  },
+  issues: [],
+};
+
+/** The whole shell, driven to the consent screen, so the frame is included. */
+function consentFrameInShell(): string {
+  const handle = render(<SetupShell snapshot={READY} finish={() => {}} />, {
+    columns: 80,
+    rows: 24,
+  });
+  for (let i = 0; i < 5; i += 1) handle.stdin.enqueue("\r");
+  const rendered = handle.lastFrame();
+  handle.unmount();
+  return rendered;
+}
+
+describe("analytics consent screen", () => {
   test("offers a key that keeps analytics off without leaving setup", () => {
     // The one escape hatch that must never be lost to clipping: `s` here means
-    // "keep it off", not "skip the wizard".
-    expect(frame()).toContain("keep it off");
+    // "keep it off", not "skip the wizard". The footer belongs to the frame
+    // now, so this is asserted against the whole shell rather than the screen.
+    const rendered = consentFrameInShell();
+    expect(rendered).toContain("usage ping");
+    expect(rendered).toContain("keep it off");
   });
 
   test("shows the exact payload inline, not behind another command", () => {
@@ -44,7 +76,7 @@ describe("analytics consent slide", () => {
   });
 
   test("still offers keeping it off, and says nothing is sent until confirmed", () => {
-    // Recommending is not deciding. The slide has to state plainly that the
+    // Recommending is not deciding. The screen has to state plainly that the
     // keystroke is what enables it, or a pre-selected option reads as opt-out.
     const rendered = frame();
     expect(rendered).toContain("Keep it off");
@@ -73,18 +105,14 @@ describe("analytics consent slide", () => {
     expect(frame()).toContain("never leaves this machine");
   });
 
-  test("reduced motion renders the static petal only", () => {
-    const prior = process.env.KUNAI_REDUCED_MOTION;
-    process.env.KUNAI_REDUCED_MOTION = "1";
-    try {
-      const rendered = frame();
-      expect(rendered).toContain("❀");
-      // Non-static bloom frames must never appear when motion is suppressed.
-      expect(rendered).not.toContain("❁");
-      expect(rendered).not.toContain("✾");
-    } finally {
-      if (prior === undefined) delete process.env.KUNAI_REDUCED_MOTION;
-      else process.env.KUNAI_REDUCED_MOTION = prior;
+  test("carries no motion at all", () => {
+    // A petal used to bloom here, under text a person is reading to make a
+    // privacy decision, while the screen that actually probes the machine had
+    // none. `design-system.md` warns against motion under text being read, so
+    // the animation moved to the dependency screen and none belongs here.
+    const rendered = frame();
+    for (const bloomFrame of ["❀", "✿", "❁", "✾"]) {
+      expect(rendered).not.toContain(bloomFrame);
     }
   });
 });

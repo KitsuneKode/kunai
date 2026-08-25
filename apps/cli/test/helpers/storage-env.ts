@@ -26,3 +26,26 @@ export function storageRootEnv(dir: string): Record<string, string> {
     USERPROFILE: dir,
   };
 }
+
+/**
+ * Point this process's storage roots at `dir` and return the undo.
+ *
+ * `getKunaiPaths` reads `process.env` (and `homedir()`, which reads `HOME`) on
+ * every call rather than memoizing, so an in-process swap is enough for a test
+ * that drives real code writing real files — no subprocess needed. Restoring
+ * exactly what was there, including keys that were unset, keeps one test file
+ * from leaking a storage root into the next one in the same worker.
+ */
+export function applyStorageRootEnv(dir: string): () => void {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(storageRootEnv(dir))) {
+    previous.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  return () => {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+}

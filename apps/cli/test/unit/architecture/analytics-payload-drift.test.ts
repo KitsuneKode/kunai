@@ -62,10 +62,15 @@ describe("analytics payload documentation drift", () => {
       }
     });
 
-    test(`${label} states explicit opt-in and a disabled default`, () => {
+    test(`${label} states that consent is a keystroke and no skip can grant it`, () => {
+      // Setup now *recommends* analytics and pre-selects it, so "off by
+      // default" is no longer the property to assert — the guarantee that
+      // actually protects people is narrower and stronger: only a keystroke on
+      // the consent screen may enable it, and no skip, accept-all, or
+      // non-interactive path can. That is what these docs must keep saying.
       const body = prose(path).toLowerCase();
-      expect(body).toMatch(/opt[- ]in|explicitly enable/);
-      expect(body).toMatch(/off by default|defaults to off/);
+      expect(body).toMatch(/keystroke|confirm|explicit choice|explicitly enable/);
+      expect(body).toMatch(/no skip|skipping setup leaves|may enable it|can turn it on for you/);
     });
 
     test(`${label} states the small-cell floor without promising joint anonymity`, () => {
@@ -77,6 +82,16 @@ describe("analytics payload documentation drift", () => {
 
     test(`${label} states that the notice cannot send before consent`, () => {
       expect(prose(path).toLowerCase()).toMatch(/before consent|notice does not.*send/);
+    });
+
+    test(`${label} points at the settings switch that reverses the choice`, () => {
+      // The consent screen is a moment; Settings is the standing control. A doc
+      // that pins the keystroke gate but never says the decision is reversible
+      // describes a one-way door Kunai does not have.
+      expect(prose(path).toLowerCase()).toMatch(/settings/);
+      expect(prose(path).toLowerCase()).toMatch(
+        /any time|anytime|at will|enable or disable|enable\/disable/,
+      );
     });
 
     test(`${label} states that turning it off deletes the install id`, () => {

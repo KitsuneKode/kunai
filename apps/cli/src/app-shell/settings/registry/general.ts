@@ -1,5 +1,9 @@
 import { rotateInstallId } from "@/services/analytics/install-id";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import {
+  preSetupSnapshotExists,
+  readPreSetupSnapshot,
+} from "@/services/persistence/pre-setup-snapshot";
 
 import { formatRelativeTime } from "../../media-panel-model";
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
@@ -44,6 +48,9 @@ const DEFAULT_MODE_OPTIONS = [
 ] as const;
 
 export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] {
+  // Read once per page build, not per row render — the gate below closes over
+  // the answer so opening Settings costs a single `existsSync`.
+  const snapshotExists = preSetupSnapshotExists();
   return [
     {
       kind: "section",
@@ -110,6 +117,26 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
         });
         await actionCtx.container.config.save();
         return `New install id ${next.slice(0, 8)}… — earlier pings cannot be linked to it.`;
+      },
+    },
+    {
+      kind: "action",
+      id: "restorePreSetupConfig",
+      label: "Undo the last setup run",
+      detail: "Restore every setting exactly as it was before setup last wrote to it",
+      // Existence is read once, while the page is built, rather than on every
+      // row render. A row offering to restore a file that is not there is worse
+      // than no row, so it simply is not offered.
+      gate: { predicate: () => snapshotExists },
+      run: async (actionCtx) => {
+        const snapshot = await readPreSetupSnapshot();
+        if (!snapshot) return "No saved configuration to restore.";
+        // Restored whole and exactly, onboarding gate included: "undo the setup
+        // run" means the run, not a curated subset of it that leaves the user
+        // guessing which parts came back.
+        await actionCtx.container.config.update(snapshot);
+        await actionCtx.container.config.save();
+        return "Restored the settings saved before your last setup run.";
       },
     },
   ];

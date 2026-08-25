@@ -471,13 +471,20 @@ Kunai ships a default Discord application client id; override it in Settings or
 - `kunai --debug` for verbose traces during troubleshooting.
 - `/export-diagnostics` generates a redacted JSON snapshot for issue reports.
 - `/report-issue` opens GitHub issue triage guidance.
-- Opt-in usage analytics (`/analytics`) is off until you consent. Fresh installs
-  send nothing. When enabled, the ping is `{ installId, version, os, arch, ts }`
+- Usage analytics (`/analytics`) sends nothing until you consent. Setup
+  recommends it and pre-selects it on the consent slide, but only a keypress
+  there enables it — skipping, accepting all defaults, or any non-interactive
+  run leaves it exactly as it was. Declining is one keypress, and
+  **Settings → General → Usage analytics** flips it either way later; turning it
+  off deletes the install id. When enabled, the ping is
+  `{ installId, version, os, arch, ts }`
   only — never titles, queries, providers, URLs, or paths. `installId` on the
   wire is a `sha256` of a local random id; the id itself never leaves your
   machine, and you can rotate it any time from Settings. Preview with
   `/analytics show`.
   Honour `DO_NOT_TRACK=1` / `CI=true` as hard blocks on send and enable.
+  Your IP address is never read — the ingest has no code path that reads a
+  client address, so there is nothing to log or rate-limit on.
   The ingest stores HMAC-hashed ids for daily/lifetime aggregates only; public
   docs may show yesterday’s opt-in actives and an exact lifetime total.
 - Kunai checks for a newer published version on startup and notifies you in-shell — updating is a quick reinstall (see [Uninstall](#uninstall) / [Quick Start](#quick-start)).
@@ -530,13 +537,23 @@ KUNAI_IMAGE_DEBUG=1                     # Verbose poster logging
 
 Run `/setup` or `kunai --setup` for a guided walkthrough (seven slides):
 
-1. Welcome
-2. System check — mpv, yt-dlp, ffprobe, curl, and poster renderer status
-3. Audio language preference
-4. Subtitle language preference
-5. Downloads — enable or disable the queue
-6. Analytics — explicit opt-in (off unless you enable it)
-7. Tips — command palette, search, discovery, stream recovery, and rerunning setup
+1. Dependencies — mpv, yt-dlp, ffmpeg, curl-impersonate, and the poster
+   renderer, each with the install command for _this_ machine
+2. What you watch — shows, anime, or YouTube
+3. Language — preferred audio and subtitles, applied to every lane
+4. Playback — autoplay, skip intros, skip credits
+5. Downloads & accounts — queue quality, AniList, TMDB, Discord presence
+6. Usage ping — recommended and pre-selected, one keypress to decline
+7. Ready — what was chosen, and anything still outstanding
+
+Every control starts from what you already have configured, so rerunning setup
+shows your settings rather than factory defaults and can never quietly undo
+them. `s` takes the current slide's recommendation, `S` takes every remaining
+one, and `esc` leaves — asking first once you have answered something.
+
+The usage ping is the one exception to `S`: accept-all never turns it on, and
+nothing but a keypress on that slide can. Change it any time in
+**Settings → General → Usage analytics**; turning it off deletes the install id.
 
 Download location and finer preferences live in the [settings panel](#settings-panel).
 

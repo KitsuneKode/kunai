@@ -33,6 +33,7 @@ import {
   ANALYTICS_NOTICE_VISIBLE_MS,
 } from "./AnalyticsDisclosureBanner";
 import { useBrowseDestinationLabel } from "./browse-destination";
+import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
 import { recordRender } from "./diagnostics/render-trace";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
@@ -1203,6 +1204,14 @@ function AppRoot({ container }: { container: Container }) {
       </TransientRowSlot>
       {showAnalyticsNotice ? (
         <AnalyticsDisclosureBanner width={Math.max(36, shellWidth - 2)} />
+      ) : null}
+      {container.capabilitySnapshot ? (
+        <CapabilityIssueStrip
+          snapshot={container.capabilitySnapshot}
+          mode={state.mode}
+          downloadsEnabled={container.config.downloadsEnabled}
+          width={Math.max(36, shellWidth - 2)}
+        />
       ) : null}
       <Box marginTop={1} flexDirection="column" flexGrow={1}>
         <RootContentBody

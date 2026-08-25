@@ -1,0 +1,16 @@
+# setup-4-playback · medium (100×34)
+  🦊 Kunai · playback                                                                    setup 4⁄7
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+          How playback should feel
+          All three are easy to change later.
+
+          ▌ ◉ Play the next episode automatically
+                Keeps a binge going without a keystroke
+            ◉ Skip intros
+                Uses AniSkip and IntroDB timings when they exist
+            ◉ Skip credits
+                Jumps the end card and rolls on
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [b]  back      Setup
