@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-08-24"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -70,7 +70,7 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - Progress is parsed from yt-dlp newline output and persisted for shell diagnostics/UI.
 - Download-only mode resolves a playable stream without launching mpv.
 - Selected poster URL and IntroDB/AniSkip timing are persisted at enqueue time when available.
-- Completed downloads persist local file size and, when `ffprobe` is available, playable duration after artifact validation.
+- Completed downloads persist local file size and, when `ffprobe` is available, playable duration after artifact validation. The optional probe has a 30-second deadline, then graceful termination and bounded force-kill cleanup; a probe timeout fails validation without publishing its temporary artifact or deleting a previously published file as corrupt.
 - Offline artwork caching is best-effort and post-completion; artwork failure must never fail or delay a completed download.
 - Thumbnail sidecars are written through a temporary file and renamed only after a non-empty image exists.
 - External subtitle/artwork sidecars are repairable metadata, not proof the video failed. If the video artifact validates but an expected sidecar is missing, the job becomes `repairable` and `/downloads` can retry just the sidecar path without re-running `yt-dlp`.
