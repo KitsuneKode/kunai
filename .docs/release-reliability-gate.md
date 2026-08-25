@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-08-24"
 ---
 
 # Kunai Release Reliability Gate
@@ -36,8 +36,14 @@ Expected result:
 - unit and integration tests report 0 failures
 - typecheck exits 0
 - build writes `apps/cli/dist/kunai.js` and the host compiled binary under `apps/cli/dist/bin/`
-- package check rejects `dist/bin/**`, analyze metafiles, and oversized tarballs (npm ships JS + assets only)
+- package check rejects `dist/bin/**`, source/maps, analyze metafiles, lifecycle scripts, dependency drift, and oversized launcher tarballs
 - release dry-run completes build, checks, and packability without publishing
+
+The release workflow additionally opens the exact preserved
+`.release-candidate/kunai-npm.tgz` after `release:pack`, both before candidate
+upload and after protected-job download. It must contain only `package.json`,
+`LICENSE`, `README.md`, and `dist/npm-launcher.mjs` under `package/`; publication
+uses those same verified bytes rather than repacking them.
 
 ## Changelog Gate
 

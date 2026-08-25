@@ -75,6 +75,22 @@ describeWithNode("npm pack guard with binaries on disk", () => {
       expect(pack.status, `${pack.stdout ?? ""}${pack.stderr ?? ""}`).toBe(0);
       expect(existsSync(RELEASE_TARBALL)).toBe(true);
       expect(statSync(RELEASE_TARBALL).size).toBeGreaterThan(0);
+
+      const exact = spawnSync(
+        "bun",
+        [
+          "run",
+          "scripts/verify-npm-pack.ts",
+          "--tarball",
+          RELEASE_TARBALL,
+          "--expected-version",
+          manifest.version,
+        ],
+        { cwd: CLI_ROOT, encoding: "utf8" },
+      );
+      const exactOutput = `${exact.stdout ?? ""}${exact.stderr ?? ""}`;
+      expect(exact.status, exactOutput).toBe(0);
+      expect(exactOutput).toContain("[pkg:check] exact tarball ok");
     } finally {
       await rm(STUB_BIN, { force: true });
       await rm(RELEASE_TARBALL, { force: true });
