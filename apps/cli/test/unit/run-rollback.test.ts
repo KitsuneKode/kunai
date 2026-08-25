@@ -76,7 +76,7 @@ describe("runRollback", () => {
         versionedPath: versionBinaryPath(layout, "2.0.0"),
         downloadBaseUrl: "https://example.test/releases",
       },
-      layout.configDir,
+      layout,
     );
 
     const lines: string[] = [];
@@ -109,7 +109,7 @@ describe("runRollback", () => {
         versionedPath: versionBinaryPath(layout, "2.0.0"),
         downloadBaseUrl: "https://example.test/releases",
       },
-      layout.configDir,
+      layout,
     );
 
     const lines: string[] = [];
@@ -137,7 +137,7 @@ describe("runRollback", () => {
         launcherPath: layout.launcherPath,
         downloadBaseUrl: "https://example.test/releases",
       },
-      layout.configDir,
+      layout,
     );
 
     const errors: string[] = [];

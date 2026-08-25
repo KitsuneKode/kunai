@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 
 import {
   readInstallManifest,
-  writeInstallManifest,
+  withInstallManifestPublication,
+  writeInstallManifestUnderActivation,
   type InstallManifest,
   type WriteInstallManifestInput,
 } from "./install-manifest";
@@ -36,6 +37,7 @@ export interface RunUpgradePorts {
    */
   readonly inspectPackageInstall: (method: "npm" | "bun") => Promise<PackageInstallEvidence | null>;
   readonly writeInstallManifest: (manifest: WriteInstallManifestInput) => Promise<void>;
+  readonly withManifestPublication: <T>(version: string, fn: () => Promise<T>) => Promise<T | null>;
 }
 
 const defaultPorts: RunUpgradePorts = {
@@ -43,7 +45,8 @@ const defaultPorts: RunUpgradePorts = {
   resolveLatestVersion,
   runCommand: (command) => Bun.spawn([...command], { stdout: "inherit", stderr: "inherit" }).exited,
   inspectPackageInstall,
-  writeInstallManifest,
+  writeInstallManifest: (manifest) => writeInstallManifestUnderActivation(manifest),
+  withManifestPublication: (version, fn) => withInstallManifestPublication(version, fn),
 };
 
 /**
@@ -100,36 +103,43 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
   }
 
   if (plan.kind === "exec") {
-    const code = await ports.runCommand(plan.command);
-    if (code !== 0) return code;
+    const result = await ports.withManifestPublication(opts.currentVersion, async () => {
+      const code = await ports.runCommand(plan.command);
+      if (code !== 0) return code;
 
-    // `planUpgrade` only emits exec for the two package-manager channels.
-    if (channel !== "npm-global" && channel !== "bun-global") {
-      console.error(`Unexpected package-manager upgrade plan for channel ${channel}.`);
-      return 1;
-    }
+      // `planUpgrade` only emits exec for the two package-manager channels.
+      if (channel !== "npm-global" && channel !== "bun-global") {
+        console.error(`Unexpected package-manager upgrade plan for channel ${channel}.`);
+        return 1;
+      }
 
-    // Record what the package manager actually installed, never what we asked
-    // for: a manifest that claims an unverified version silently corrupts every
-    // later upgrade comparison and version display.
-    const method = channel === "npm-global" ? "npm" : "bun";
-    const evidence = await ports.inspectPackageInstall(method);
-    const observed = evidence ? normalizeRequestedVersion(evidence.version) : null;
-    if (!observed) {
-      console.error("Could not verify the upgraded Kunai version; install manifest not updated.");
-      return 1;
-    }
+      // Record what the package manager actually installed, never what we asked
+      // for: a manifest that claims an unverified version silently corrupts every
+      // later upgrade comparison and version display.
+      const method = channel === "npm-global" ? "npm" : "bun";
+      const evidence = await ports.inspectPackageInstall(method);
+      const observed = evidence ? normalizeRequestedVersion(evidence.version) : null;
+      if (!observed) {
+        console.error("Could not verify the upgraded Kunai version; install manifest not updated.");
+        return 1;
+      }
 
-    await ports.writeInstallManifest({
-      method: channel,
-      activeVersion: observed,
-      launcherPath: evidence?.launcherPath ?? binPath,
-      downloadBaseUrl: dlBase,
+      await ports.writeInstallManifest({
+        method: channel,
+        activeVersion: observed,
+        launcherPath: evidence?.launcherPath ?? binPath,
+        downloadBaseUrl: dlBase,
+      });
+      if (observed !== latest) {
+        console.log(`Installed ${observed} (resolved latest was ${latest}).`);
+      }
+      return 0;
     });
-    if (observed !== latest) {
-      console.log(`Installed ${observed} (resolved latest was ${latest}).`);
+    if (result === null) {
+      console.error("Package upgrade blocked: another launcher/manifest publication is active.");
+      return 1;
     }
-    return 0;
+    return result;
   }
 
   // Binary channel: migrate flat installs, then use versioned native installer.

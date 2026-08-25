@@ -384,6 +384,19 @@ function Write-Manifest(
   Write-Info "Recorded install method ($MethodName)."
 }
 
+function Invoke-WithManifestPublication([string]$Ver, [scriptblock]$Action) {
+  if ($DryRun) { & $Action; return }
+  $lockPath = Join-Path $LocksDir 'activation.lock'
+  New-Item -ItemType Directory -Force -Path $LocksDir | Out-Null
+  $ownerId = Acquire-ActivationLock $Ver $lockPath
+  try {
+    & $Action
+  }
+  finally {
+    Release-ActivationLock $lockPath $ownerId
+  }
+}
+
 function Write-VersionMetadata {
   param(
     [string]$Ver,
@@ -844,6 +857,7 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
         if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
           throw "Could not create activation lock at $LockPath"
         }
+        New-Item -ItemType Directory -Force -Path (Split-Path $LockPath) | Out-Null
         Wait-ActivationLockPoll $timer
         continue
       }
@@ -1432,59 +1446,68 @@ Write-Host 'Kunai installer' -ForegroundColor Cyan
 switch ($Method) {
   'binary' { Install-Binary }
   'npm' {
-    Require-Cmd 'node' 'Install Node.js before using -Method npm.'
-    Require-Cmd 'npm' 'Install npm before using -Method npm.'
-    $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
-    if ($resolved -eq 'latest') {
-      Invoke-Step "npm install -g $Package" { & npm install -g $Package }
+    $publicationVersion = if ($Version -eq 'latest') { '0.0.0' } else { Get-NormalizedVersion $Version }
+    Invoke-WithManifestPublication $publicationVersion {
+      Require-Cmd 'node' 'Install Node.js before using -Method npm.'
+      Require-Cmd 'npm' 'Install npm before using -Method npm.'
+      $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
+      if ($resolved -eq 'latest') {
+        Invoke-Step "npm install -g $Package" { & npm install -g $Package }
+      }
+      else {
+        Invoke-Step "npm install -g $Package@$resolved" { & npm install -g "$Package@$resolved" }
+      }
+      $resolved = Complete-PackageActiveVersion 'npm' $resolved
+      Write-Manifest 'npm-global' $resolved (Resolve-OwnedPackageLauncher 'npm')
     }
-    else {
-      Invoke-Step "npm install -g $Package@$resolved" { & npm install -g "$Package@$resolved" }
-    }
-    $resolved = Complete-PackageActiveVersion 'npm' $resolved
-    Write-Manifest 'npm-global' $resolved (Resolve-OwnedPackageLauncher 'npm')
   }
   'bun' {
-    Require-Cmd 'bun' 'Install Bun before using -Method bun.'
-    $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
-    if ($resolved -eq 'latest') {
-      Invoke-Step "bun install -g $Package" { & bun install -g $Package }
+    $publicationVersion = if ($Version -eq 'latest') { '0.0.0' } else { Get-NormalizedVersion $Version }
+    Invoke-WithManifestPublication $publicationVersion {
+      Require-Cmd 'bun' 'Install Bun before using -Method bun.'
+      $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
+      if ($resolved -eq 'latest') {
+        Invoke-Step "bun install -g $Package" { & bun install -g $Package }
+      }
+      else {
+        Invoke-Step "bun install -g $Package@$resolved" { & bun install -g "$Package@$resolved" }
+      }
+      $resolved = Complete-PackageActiveVersion 'bun' $resolved
+      Write-Manifest 'bun-global' $resolved (Resolve-OwnedPackageLauncher 'bun')
     }
-    else {
-      Invoke-Step "bun install -g $Package@$resolved" { & bun install -g "$Package@$resolved" }
-    }
-    $resolved = Complete-PackageActiveVersion 'bun' $resolved
-    Write-Manifest 'bun-global' $resolved (Resolve-OwnedPackageLauncher 'bun')
   }
   'source' {
-    Require-Cmd 'git' 'Install Git before using -Method source.'
-    Require-Cmd 'bun' 'Install Bun before using -Method source.'
-    $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
-    $src = if ($env:KUNAI_SOURCE_DIR) { $env:KUNAI_SOURCE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\src' }
-    if (Test-Path (Join-Path $src '.git')) {
-      Invoke-Step "git pull Kunai in $src" { & git -C $src pull --ff-only }
-    }
-    else {
-      Invoke-Step "git clone Kunai into $src" { & git clone --depth 1 'https://github.com/KitsuneKode/kunai.git' $src }
-    }
-    if (-not $DryRun) {
-      Push-Location $src
-      try {
-        Invoke-Step 'bun install' { & bun install }
-        Invoke-Step 'bun run build' { & bun run build }
-        Invoke-Step 'bun run link:global' { & bun run link:global }
+    $publicationVersion = if ($Version -eq 'latest') { '0.0.0' } else { Get-NormalizedVersion $Version }
+    Invoke-WithManifestPublication $publicationVersion {
+      Require-Cmd 'git' 'Install Git before using -Method source.'
+      Require-Cmd 'bun' 'Install Bun before using -Method source.'
+      $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
+      $src = if ($env:KUNAI_SOURCE_DIR) { $env:KUNAI_SOURCE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\src' }
+      if (Test-Path (Join-Path $src '.git')) {
+        Invoke-Step "git pull Kunai in $src" { & git -C $src pull --ff-only }
       }
-      finally {
-        Pop-Location
+      else {
+        Invoke-Step "git clone Kunai into $src" { & git clone --depth 1 'https://github.com/KitsuneKode/kunai.git' $src }
       }
+      if (-not $DryRun) {
+        Push-Location $src
+        try {
+          Invoke-Step 'bun install' { & bun install }
+          Invoke-Step 'bun run build' { & bun run build }
+          Invoke-Step 'bun run link:global' { & bun run link:global }
+        }
+        finally {
+          Pop-Location
+        }
+      }
+      else {
+        Invoke-Step 'bun install' { }
+        Invoke-Step 'bun run build' { }
+        Invoke-Step 'bun run link:global' { }
+      }
+      $resolved = Complete-PackageActiveVersion 'source' $resolved
+      Write-Manifest 'source' $resolved 'kunai'
     }
-    else {
-      Invoke-Step 'bun install' { }
-      Invoke-Step 'bun run build' { }
-      Invoke-Step 'bun run link:global' { }
-    }
-    $resolved = Complete-PackageActiveVersion 'source' $resolved
-    Write-Manifest 'source' $resolved 'kunai'
   }
 }
 

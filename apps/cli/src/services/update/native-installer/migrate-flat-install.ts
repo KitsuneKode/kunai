@@ -3,7 +3,7 @@ import { copyFile, mkdir, rename } from "node:fs/promises";
 
 import {
   readInstallManifest,
-  writeInstallManifest,
+  writeInstallManifestUnderActivation,
   type InstallManifest,
 } from "../install-manifest";
 import { parseCanonicalVersion } from "../version";
@@ -89,7 +89,7 @@ export async function migrateFlatInstall(input: {
 
       const downloadBaseUrl =
         activeManifest?.downloadBaseUrl ?? "https://github.com/KitsuneKode/kunai/releases";
-      await writeInstallManifest(
+      await writeInstallManifestUnderActivation(
         {
           method: "binary",
           activeVersion: version,
@@ -97,7 +97,7 @@ export async function migrateFlatInstall(input: {
           versionedPath: targetPath,
           downloadBaseUrl,
         },
-        layout.configDir,
+        layout,
       );
 
       return { migrated: true, versionPath: targetPath } as const;

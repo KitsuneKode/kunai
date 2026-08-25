@@ -99,6 +99,38 @@ describe("version metadata", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  test("archive transport provenance round-trips with raw artifact provenance", async () => {
+    const { root, layout } = await makeLayout();
+    const bytes = new Uint8Array([4, 3, 2, 1]);
+    const metadata = baseMetadata({
+      artifactSha256: createHash("sha256").update(bytes).digest("hex"),
+      sourceUrl: "https://example.test/v1.2.3/kunai-linux-x64-gnu",
+      archiveName: "kunai-linux-x64-gnu.tar.gz",
+      archiveSha256: "b".repeat(64),
+      archiveSizeBytes: 321,
+      archiveSourceUrl: "https://example.test/v1.2.3/kunai-linux-x64-gnu.tar.gz",
+    });
+    await seedBinary(layout, "1.2.3", bytes);
+    await writeInstalledVersionMetadata(layout, metadata);
+
+    expect(await verifyStoredVersion(layout, "1.2.3")).toEqual({
+      status: "verified",
+      metadata,
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("refuses incomplete archive transport provenance", async () => {
+    const { root, layout } = await makeLayout();
+    await expect(
+      writeInstalledVersionMetadata(
+        layout,
+        baseMetadata({ archiveName: "kunai-linux-x64-gnu.tar.gz" }),
+      ),
+    ).rejects.toThrow(/metadata.*schema|archive provenance/i);
+    await rm(root, { recursive: true, force: true });
+  });
+
   test("reports missing binary and metadata distinctly", async () => {
     const { root, layout } = await makeLayout();
 

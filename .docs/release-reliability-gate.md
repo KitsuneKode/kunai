@@ -55,10 +55,26 @@ missing, duplicate, unexpected, empty, oversized, hash-mismatched, or
 non-canonical assets. A canonical archive has one entry whose name is the raw
 asset name and no directory prefix; tar metadata is normalized with executable
 mode `0755`, while zip records that Unix mode but Windows extraction does not
-promise to restore it. Archive consumers are intentionally outside the first
-creation/verification slice. This builder slice does not close issue #132 and
-does not yet reduce user downloads: 0.3.0 release dispatch remains blocked until
-the installer/updater archive-consumption stack lands and is verified.
+promise to restore it.
+
+The TypeScript native updater consumes these archives. It verifies the archive
+against `SHA256SUMS.archives`, parses tar/gzip or zip in-process without invoking
+an OS extractor, permits exactly one expected regular-file member, bounds both
+compressed and decompressed bytes, and then verifies that member against the
+legacy raw `SHA256SUMS` before version-store or launcher activation. Missing
+archive manifests on an older release fall back to its raw compatibility asset;
+a present but malformed or mismatched archive fails closed. Native
+`install.json` is schema 2 and records both archive transport and extracted
+binary provenance. Per-version `version.json` records the raw artifact as
+`artifactName`, `artifactSha256`, `sizeBytes`, and `sourceUrl`; archive installs
+add the all-or-none `archiveName`, `archiveSha256`, `archiveSizeBytes`, and
+`archiveSourceUrl` quartet. Rollback republishes both groups into `install.json`
+(`artifactSizeBytes` and `artifactSourceUrl` are the manifest spellings).
+Schema-1 manifest migration is an explicit startup transition: it acquires the
+version and activation locks, which exclude uninstall through the lifecycle
+guard, then re-reads before publishing so a newer activation is not overwritten
+and a removed manifest is not recreated. The shell and PowerShell installer
+archive-consumption slices remain release blockers for issue #132.
 
 ## Native Installer Activation Gate
 
@@ -131,6 +147,8 @@ bun run --cwd apps/cli test:file -- \
   test/unit/services/update/native-installer/activation-lock.test.ts \
   test/unit/services/update/native-installer/version-lock.test.ts \
   test/unit/services/update/native-installer/install-latest.test.ts \
+  test/unit/services/update/native-installer/release-archive.test.ts \
+  test/unit/install-manifest.test.ts \
   test/unit/services/update/native-installer/migrate-flat-install.test.ts \
   test/unit/services/update/native-installer/rollback.test.ts \
   test/unit/services/update/native-installer/native-uninstall.test.ts \

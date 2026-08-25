@@ -15,7 +15,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 
-import { readInstallManifest, writeInstallManifest } from "@/services/update/install-manifest";
+import {
+  readInstallManifest,
+  writeInstallManifest,
+  writeInstallManifestUnderActivation,
+} from "@/services/update/install-manifest";
 import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
 import {
   getInstallLayoutPaths,
@@ -133,7 +137,7 @@ async function seedBinaryManifest(
       target: "linux-x64-gnu",
       ...(previousVersion ? { previousVersion } : {}),
     },
-    layout.configDir,
+    layout,
   );
 }
 
@@ -271,6 +275,77 @@ describePosixOnly("executeRollback activation and refusal", () => {
     expect(manifest?.preferredChannel).toBe("stable");
   });
 
+  test("archive A to B to rollback A restores A transport and raw artifact provenance", async () => {
+    const { layout } = await makeRoot();
+    const rawAUrl = "https://example.test/download/v1.0.0/kunai-linux-x64-gnu";
+    const archiveAUrl = `${rawAUrl}.tar.gz`;
+    const archiveASha = "a".repeat(64);
+    const archiveAPath = await seedVerifiedVersion(layout, "1.0.0", "archive-a", {
+      sourceUrl: rawAUrl,
+      archiveName: "kunai-linux-x64-gnu.tar.gz",
+      archiveSha256: archiveASha,
+      archiveSizeBytes: 123,
+      archiveSourceUrl: archiveAUrl,
+    });
+    const rawBUrl = "https://example.test/download/v2.0.0/kunai-linux-x64-gnu";
+    const archiveBUrl = `${rawBUrl}.tar.gz`;
+    const archiveBSha = "b".repeat(64);
+    const archiveBPath = await seedVerifiedVersion(layout, "2.0.0", "archive-b", {
+      sourceUrl: rawBUrl,
+      archiveName: "kunai-linux-x64-gnu.tar.gz",
+      archiveSha256: archiveBSha,
+      archiveSizeBytes: 456,
+      archiveSourceUrl: archiveBUrl,
+    });
+    const metadataA = await readFile(
+      join(layout.versionsDir, "1.0.0", "version.json"),
+      "utf8",
+    ).then((raw) => JSON.parse(raw) as InstalledVersionMetadata);
+
+    await symlink(archiveBPath, layout.launcherPath);
+    await writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "2.0.0",
+        previousVersion: "1.0.0",
+        launcherPath: layout.launcherPath,
+        versionedPath: archiveBPath,
+        downloadBaseUrl: "https://example.test/releases",
+        target: "linux-x64-gnu",
+        artifactName: "kunai-linux-x64-gnu",
+        artifactSha256: createHash("sha256").update("archive-b").digest("hex"),
+        artifactSizeBytes: 9,
+        artifactSourceUrl: rawBUrl,
+        archiveName: "kunai-linux-x64-gnu.tar.gz",
+        archiveSha256: archiveBSha,
+        archiveSizeBytes: 456,
+        archiveSourceUrl: archiveBUrl,
+      },
+      layout,
+    );
+
+    expect(await executeRollback(layout)).toMatchObject({
+      status: "rolled-back",
+      fromVersion: "2.0.0",
+      toVersion: "1.0.0",
+    });
+    expect(await readlink(layout.launcherPath)).toBe(archiveAPath);
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      activeVersion: "1.0.0",
+      previousVersion: "2.0.0",
+      versionedPath: archiveAPath,
+      target: metadataA.target,
+      artifactName: metadataA.artifactName,
+      artifactSha256: metadataA.artifactSha256,
+      artifactSizeBytes: metadataA.sizeBytes,
+      artifactSourceUrl: rawAUrl,
+      archiveName: "kunai-linux-x64-gnu.tar.gz",
+      archiveSha256: archiveASha,
+      archiveSizeBytes: 123,
+      archiveSourceUrl: archiveAUrl,
+    });
+  });
+
   test("explicit --to validates strictly and activates that version", async () => {
     const { layout } = await makeRoot();
     await seedVerifiedVersion(layout, "1.0.0", "v1");
@@ -331,7 +406,7 @@ describePosixOnly("executeRollback activation and refusal", () => {
         launcherPath: layout.launcherPath,
         downloadBaseUrl: "https://example.test/releases",
       },
-      layout.configDir,
+      layout,
     );
     before = await snapshotTree(root);
     expect(await executeRollback(layout)).toMatchObject({ status: "refused", code: "non-native" });
@@ -394,5 +469,94 @@ describePosixOnly("executeRollback activation and refusal", () => {
     } finally {
       if (activation.acquired) await activation.release();
     }
+  });
+
+  test("refuses when package ownership replaces the native manifest after planning", async () => {
+    const { layout } = await makeRoot();
+    await seedVerifiedVersion(layout, "1.0.0", "old");
+    const activePath = await seedVerifiedVersion(layout, "2.0.0", "new");
+    await symlink(activePath, layout.launcherPath);
+    await seedBinaryManifest(layout, "2.0.0", "1.0.0");
+
+    const activation = await tryAcquireActivationLock(layout, "9.9.9");
+    expect(activation.acquired).toBe(true);
+    let announceActivationAttempt!: () => void;
+    const activationAttempted = new Promise<void>((resolve) => {
+      announceActivationAttempt = resolve;
+    });
+    const rollingBack = executeRollback(layout, {
+      onActivationAcquireAttempt: announceActivationAttempt,
+    });
+    try {
+      await activationAttempted;
+      await writeInstallManifestUnderActivation(
+        {
+          method: "bun-global",
+          activeVersion: "9.9.9",
+          launcherPath: layout.launcherPath,
+          downloadBaseUrl: "https://registry.npmjs.org",
+        },
+        layout,
+      );
+    } finally {
+      if (activation.acquired) await activation.release();
+    }
+
+    expect(await rollingBack).toMatchObject({
+      status: "refused",
+      code: "ownership-changed",
+    });
+    expect(await readlink(layout.launcherPath)).toBe(activePath);
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      method: "bun-global",
+      activeVersion: "9.9.9",
+    });
+  });
+
+  test("refuses when a different native publication replaces the same active version", async () => {
+    const { layout } = await makeRoot();
+    await seedVerifiedVersion(layout, "1.0.0", "old");
+    const activePath = await seedVerifiedVersion(layout, "2.0.0", "new");
+    await symlink(activePath, layout.launcherPath);
+    await seedBinaryManifest(layout, "2.0.0", "1.0.0");
+
+    const activation = await tryAcquireActivationLock(layout, "9.9.9");
+    expect(activation.acquired).toBe(true);
+    let announceActivationAttempt!: () => void;
+    const activationAttempted = new Promise<void>((resolve) => {
+      announceActivationAttempt = resolve;
+    });
+    const rollingBack = executeRollback(layout, {
+      onActivationAcquireAttempt: announceActivationAttempt,
+    });
+    try {
+      await activationAttempted;
+      await writeInstallManifestUnderActivation(
+        {
+          method: "binary",
+          activeVersion: "2.0.0",
+          previousVersion: "1.0.0",
+          launcherPath: layout.launcherPath,
+          versionedPath: activePath,
+          downloadBaseUrl: "https://replacement.example.test/releases",
+          observedProvenance: "replacement-native-publication",
+        },
+        layout,
+      );
+    } finally {
+      if (activation.acquired) await activation.release();
+    }
+
+    expect(await rollingBack).toMatchObject({
+      status: "refused",
+      code: "ownership-changed",
+    });
+    expect(await readlink(layout.launcherPath)).toBe(activePath);
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      method: "binary",
+      activeVersion: "2.0.0",
+      downloadBaseUrl: "https://replacement.example.test/releases",
+      observedProvenance: "replacement-native-publication",
+    });
   });
 });

@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 
+import type { InstallManifest } from "../install-manifest";
 import { parseCanonicalVersion } from "../version";
 import { versionBinaryPath, versionMetadataPath, type InstallLayoutPaths } from "./install-layout";
 
@@ -16,6 +17,10 @@ export interface InstalledVersionMetadata {
   readonly artifactSha256: string;
   readonly sizeBytes: number;
   readonly sourceUrl: string;
+  readonly archiveName?: string;
+  readonly archiveSha256?: string;
+  readonly archiveSizeBytes?: number;
+  readonly archiveSourceUrl?: string;
   readonly verification: "release-checksum" | "legacy-unverified";
   readonly installedAt: string;
 }
@@ -39,6 +44,27 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+function archiveProvenanceIsValid(value: Record<string, unknown>): boolean {
+  const fields = [
+    value.archiveName,
+    value.archiveSha256,
+    value.archiveSizeBytes,
+    value.archiveSourceUrl,
+  ];
+  const present = fields.filter((field) => field !== undefined).length;
+  if (present === 0) return true;
+  return (
+    present === fields.length &&
+    isNonEmptyString(value.archiveName) &&
+    isNonEmptyString(value.archiveSha256) &&
+    /^[a-fA-F0-9]{64}$/.test(value.archiveSha256) &&
+    typeof value.archiveSizeBytes === "number" &&
+    Number.isSafeInteger(value.archiveSizeBytes) &&
+    value.archiveSizeBytes > 0 &&
+    isNonEmptyString(value.archiveSourceUrl)
+  );
+}
+
 function parseMetadata(raw: unknown): InstalledVersionMetadata | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as Record<string, unknown>;
@@ -57,6 +83,7 @@ function parseMetadata(raw: unknown): InstalledVersionMetadata | null {
     return null;
   }
   if (!isNonEmptyString(value.sourceUrl)) return null;
+  if (!archiveProvenanceIsValid(value)) return null;
   if (typeof value.verification !== "string" || !VERIFICATIONS.has(value.verification)) {
     return null;
   }
@@ -72,6 +99,16 @@ function parseMetadata(raw: unknown): InstalledVersionMetadata | null {
     artifactSha256: value.artifactSha256.toLowerCase(),
     sizeBytes: value.sizeBytes,
     sourceUrl: value.sourceUrl,
+    ...(typeof value.archiveName === "string" ? { archiveName: value.archiveName } : {}),
+    ...(typeof value.archiveSha256 === "string"
+      ? { archiveSha256: value.archiveSha256.toLowerCase() }
+      : {}),
+    ...(typeof value.archiveSizeBytes === "number"
+      ? { archiveSizeBytes: value.archiveSizeBytes }
+      : {}),
+    ...(typeof value.archiveSourceUrl === "string"
+      ? { archiveSourceUrl: value.archiveSourceUrl }
+      : {}),
     verification: value.verification as InstalledVersionMetadata["verification"],
     installedAt: value.installedAt,
   };
@@ -88,13 +125,79 @@ export async function writeInstalledVersionMetadata(
   if (metadata.schemaVersion !== 1) {
     throw new Error(`Unsupported version metadata schema: ${metadata.schemaVersion}`);
   }
+  const normalized = parseMetadata({ ...metadata, version: canonical });
+  if (!normalized) {
+    throw new Error("Installed version metadata failed schema validation");
+  }
   const path = versionMetadataPath(layout, canonical);
   await mkdir(dirname(path), { recursive: true });
-  await writeAtomicJson(path, {
+  await writeAtomicJson(path, normalized);
+}
+
+/**
+ * Repair the exact archive metadata shape emitted before version.json carried
+ * transport provenance. The manifest migration owns both version and
+ * activation locks, so this cannot race a replacement publication.
+ */
+export async function migrateArchiveVersionMetadata(
+  layout: Pick<InstallLayoutPaths, "versionsDir" | "binaryFileName">,
+  manifest: Pick<
+    InstallManifest,
+    | "activeVersion"
+    | "artifactName"
+    | "artifactSha256"
+    | "artifactSizeBytes"
+    | "artifactSourceUrl"
+    | "archiveName"
+    | "archiveSha256"
+    | "archiveSizeBytes"
+    | "archiveSourceUrl"
+  >,
+): Promise<boolean> {
+  if (
+    !manifest.artifactName ||
+    !manifest.artifactSha256 ||
+    manifest.artifactSizeBytes === undefined ||
+    !manifest.artifactSourceUrl ||
+    !manifest.archiveName ||
+    !manifest.archiveSha256 ||
+    manifest.archiveSizeBytes === undefined ||
+    !manifest.archiveSourceUrl
+  ) {
+    return false;
+  }
+
+  const path = versionMetadataPath(layout, manifest.activeVersion);
+  if (!existsSync(path)) return false;
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    return false;
+  }
+  const metadata = parseMetadata(raw);
+  if (
+    !metadata ||
+    metadata.version !== manifest.activeVersion ||
+    metadata.archiveName !== undefined ||
+    metadata.artifactName !== manifest.artifactName ||
+    metadata.artifactSha256 !== manifest.artifactSha256.toLowerCase() ||
+    metadata.sizeBytes !== manifest.artifactSizeBytes ||
+    metadata.sourceUrl !== manifest.archiveSourceUrl
+  ) {
+    return false;
+  }
+
+  await writeInstalledVersionMetadata(layout, {
     ...metadata,
-    version: canonical,
-    artifactSha256: metadata.artifactSha256.toLowerCase(),
+    sourceUrl: manifest.artifactSourceUrl,
+    archiveName: manifest.archiveName,
+    archiveSha256: manifest.archiveSha256,
+    archiveSizeBytes: manifest.archiveSizeBytes,
+    archiveSourceUrl: manifest.archiveSourceUrl,
   });
+  return true;
 }
 
 export async function verifyStoredVersion(

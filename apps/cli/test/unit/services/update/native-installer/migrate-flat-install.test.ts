@@ -41,7 +41,7 @@ async function seedFlatInstall() {
       launcherPath: layout.launcherPath,
       downloadBaseUrl: "https://example.test/releases",
     },
-    layout.configDir,
+    layout,
   );
   const manifest = await readInstallManifest(layout.configDir);
   if (!manifest) throw new Error("Expected seeded flat install manifest");

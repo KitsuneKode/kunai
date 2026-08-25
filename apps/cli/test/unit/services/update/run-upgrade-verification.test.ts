@@ -43,6 +43,7 @@ function createPorts(overrides: Partial<RunUpgradePorts> = {}): {
       written.push(manifest);
       return Promise.resolve();
     },
+    withManifestPublication: async (_version, fn) => fn(),
     ...overrides,
   };
   return { ports, written, commands };

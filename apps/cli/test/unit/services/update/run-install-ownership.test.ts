@@ -1,13 +1,28 @@
-import { afterAll, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, expect, mock, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import {
+  readInstallManifest,
+  withInstallManifestPublication,
+  writeInstallManifestUnderActivation,
+} from "@/services/update/install-manifest";
 import type { InstallDiagnostic } from "@/services/update/native-installer/install-diagnostic";
+import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import type { PackageInspectionPorts, RunInstallPorts } from "@/services/update/run-install";
 
 const UPDATE_ROOT = join(import.meta.dir, "../../../../src/services/update");
 const installLatest = mock(async () => ({ status: "installed" as const, version: "0.3.0" }));
 const checkInstall = mock(async () => []);
 const getInstallDiagnostics = mock(async (): Promise<InstallDiagnostic[]> => []);
+const made: string[] = [];
+const withTestPublication = async <T>(_version: string, fn: () => Promise<T>): Promise<T> => fn();
+
+afterEach(() => {
+  for (const path of made.splice(0)) rmSync(path, { recursive: true, force: true });
+});
 
 // Capture the real module before mocking so we can put it back afterwards.
 // The native-installer index re-exports install-diagnostic; a leaked module
@@ -94,6 +109,7 @@ test("records the observed installed version only after a successful package ins
   const manifests: Array<{ activeVersion: string }> = [];
 
   const code = await runInstall(["--method", "npm"], {
+    withManifestPublication: withTestPublication,
     runCommand: async (command) => {
       events.push(`command:${command.join(" ")}`);
       return 0;
@@ -117,6 +133,74 @@ test("records the observed installed version only after a successful package ins
   expect(manifests).toEqual([expect.objectContaining({ activeVersion: "4.5.6" })]);
 });
 
+test("holds launcher and manifest publication ownership across package command and verification", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kunai-package-publication-"));
+  made.push(root);
+  const layout = getInstallLayoutPaths({
+    configDir: join(root, "config"),
+    dataDir: join(root, "data"),
+    cacheDir: join(root, "cache"),
+    launcherPath: join(root, "bin", "kunai"),
+    platform: "linux",
+  });
+  await mkdir(join(root, "bin"), { recursive: true });
+  let releasePackage!: () => void;
+  const packageGate = new Promise<void>((resolve) => {
+    releasePackage = resolve;
+  });
+  let commandStarted!: () => void;
+  const commandEntered = new Promise<void>((resolve) => {
+    commandStarted = resolve;
+  });
+  let nativeActivated = false;
+
+  const install = runInstall(["--method", "npm", "4.5.6"], {
+    withManifestPublication: (version, fn) => withInstallManifestPublication(version, fn, layout),
+    runCommand: async () => {
+      commandStarted();
+      await packageGate;
+      await Bun.write(layout.launcherPath, "package-launcher");
+      return 0;
+    },
+    inspectPackageInstall: async () => ({
+      version: "4.5.6",
+      launcherPath: layout.launcherPath,
+    }),
+    writeInstallManifest: (manifest) => writeInstallManifestUnderActivation(manifest, layout),
+  });
+  await commandEntered;
+
+  const native = withInstallManifestPublication(
+    "9.9.9",
+    async () => {
+      nativeActivated = true;
+      await Bun.write(layout.launcherPath, "native-launcher");
+      await writeInstallManifestUnderActivation(
+        {
+          method: "binary",
+          activeVersion: "9.9.9",
+          launcherPath: layout.launcherPath,
+          versionedPath: join(layout.versionsDir, "9.9.9", "kunai"),
+          downloadBaseUrl: "https://example.test/releases",
+        },
+        layout,
+      );
+    },
+    layout,
+  );
+  await Bun.sleep(25);
+  expect(nativeActivated).toBe(false);
+
+  releasePackage();
+  expect(await install).toBe(0);
+  await native;
+  expect(await Bun.file(layout.launcherPath).text()).toBe("native-launcher");
+  expect(await readInstallManifest(layout.configDir)).toMatchObject({
+    method: "binary",
+    activeVersion: "9.9.9",
+  });
+});
+
 test("rejects an incomplete injected port object before invoking any command", async () => {
   const events: string[] = [];
   const incompletePorts = {
@@ -133,6 +217,7 @@ test("rejects an incomplete injected port object before invoking any command", a
 test("rejects invalid package versions before commands or manifest writes", async () => {
   const events: string[] = [];
   const code = await runInstall(["--method", "bun", "../4.5.6"], {
+    withManifestPublication: withTestPublication,
     runCommand: async () => {
       events.push("command");
       return 0;
@@ -153,6 +238,7 @@ test("rejects invalid package versions before commands or manifest writes", asyn
 test("does not observe or write a manifest after a package-manager failure", async () => {
   const events: string[] = [];
   const code = await runInstall(["--method", "npm", "4.5.6"], {
+    withManifestPublication: withTestPublication,
     runCommand: async (command) => {
       events.push(`command:${command.join(" ")}`);
       return 17;
@@ -176,6 +262,7 @@ test.each([
 ] as const)("does not write a manifest for %s", async (_label, observedVersion) => {
   const events: string[] = [];
   const code = await runInstall(["--method", "bun", "4.5.6"], {
+    withManifestPublication: withTestPublication,
     runCommand: async () => {
       events.push("command");
       return 0;

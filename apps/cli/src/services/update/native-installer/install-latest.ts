@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { readInstallManifest, writeInstallManifest } from "../install-manifest";
+import { readInstallManifest, writeInstallManifestUnderActivation } from "../install-manifest";
 import { fetchLatestVersion } from "../latest-version";
 import {
   detectPlatform,
@@ -17,6 +18,7 @@ import { cleanupOldVersions } from "./cleanup-versions";
 import {
   DEFAULT_BINARY_DOWNLOAD_POLICY,
   DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
+  DownloadError,
   downloadToFile,
   type FetchLike,
 } from "./download";
@@ -36,6 +38,7 @@ import {
   updateLauncher,
 } from "./launcher";
 import { isMuslEnvironmentSync } from "./musl";
+import { extractReleaseArchive } from "./release-archive";
 import {
   beginInstallTransaction,
   cleanupAbandonedTransactions,
@@ -99,6 +102,9 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
   const tag = `v${resolved}`;
   const downloadUrl = `${dlBase}/download/${tag}/${assetName}`;
   const checksumUrl = `${dlBase}/download/${tag}/SHA256SUMS`;
+  const archiveName = releaseTarget?.archiveName;
+  const archiveUrl = archiveName ? `${dlBase}/download/${tag}/${archiveName}` : undefined;
+  const archiveChecksumUrl = `${dlBase}/download/${tag}/SHA256SUMS.archives`;
   const versionPath = versionBinaryPath(layout, resolved);
 
   if (!options.force && existsSync(versionPath) && manifest?.activeVersion === resolved) {
@@ -127,6 +133,8 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
 
       const stagedBinary = join(staging, assetName);
       const stagedChecksums = join(staging, "SHA256SUMS");
+      const stagedArchiveChecksums = join(staging, "SHA256SUMS.archives");
+      const stagedArchive = archiveName ? join(staging, archiveName) : undefined;
 
       try {
         await downloadToFile({
@@ -141,15 +149,107 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           throw new Error(`No checksum entry for ${assetName}`);
         }
 
-        const downloaded = await downloadToFile({
-          url: downloadUrl,
-          destinationPath: stagedBinary,
-          fetchImpl,
-          policy: DEFAULT_BINARY_DOWNLOAD_POLICY,
-        });
+        let artifactSha256: string;
+        let artifactSizeBytes: number;
+        let archiveProvenance:
+          | {
+              readonly archiveName: string;
+              readonly archiveSha256: string;
+              readonly archiveSizeBytes: number;
+              readonly archiveSourceUrl: string;
+            }
+          | undefined;
 
-        if (!verifyChecksum(downloaded.sha256, expected)) {
-          throw new Error(`Checksum mismatch for ${assetName}`);
+        let archiveManifestAvailable = Boolean(
+          releaseTarget && archiveName && archiveUrl && stagedArchive,
+        );
+        if (archiveManifestAvailable) {
+          try {
+            await downloadToFile({
+              url: archiveChecksumUrl,
+              destinationPath: stagedArchiveChecksums,
+              fetchImpl,
+              policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
+            });
+          } catch (error) {
+            if (error instanceof DownloadError && (error.status === 404 || error.status === 410)) {
+              archiveManifestAvailable = false;
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        let expectedArchive: string | null | undefined;
+        let archiveDownload: Awaited<ReturnType<typeof downloadToFile>> | undefined;
+        if (
+          archiveManifestAvailable &&
+          releaseTarget &&
+          archiveName &&
+          archiveUrl &&
+          stagedArchive
+        ) {
+          const archiveSums = await readFile(stagedArchiveChecksums, "utf8");
+          expectedArchive = pickChecksum(archiveSums, archiveName);
+          if (!expectedArchive) throw new Error(`No checksum entry for ${archiveName}`);
+          try {
+            archiveDownload = await downloadToFile({
+              url: archiveUrl,
+              destinationPath: stagedArchive,
+              fetchImpl,
+              policy: {
+                ...DEFAULT_BINARY_DOWNLOAD_POLICY,
+                maxBytes: releaseTarget.maxArchiveBytes,
+              },
+            });
+          } catch (error) {
+            if (error instanceof DownloadError && (error.status === 404 || error.status === 410)) {
+              archiveManifestAvailable = false;
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        if (
+          archiveManifestAvailable &&
+          archiveDownload &&
+          expectedArchive &&
+          releaseTarget &&
+          archiveName &&
+          archiveUrl &&
+          stagedArchive
+        ) {
+          if (!verifyChecksum(archiveDownload.sha256, expectedArchive)) {
+            throw new Error(`Checksum mismatch for ${archiveName}`);
+          }
+
+          const archiveBytes = new Uint8Array(await Bun.file(stagedArchive).arrayBuffer());
+          const binaryBytes = extractReleaseArchive(archiveBytes, releaseTarget);
+          artifactSha256 = createHash("sha256").update(binaryBytes).digest("hex");
+          artifactSizeBytes = binaryBytes.length;
+          if (!verifyChecksum(artifactSha256, expected)) {
+            throw new Error(`Checksum mismatch for extracted ${assetName}`);
+          }
+          await Bun.write(stagedBinary, binaryBytes);
+          archiveProvenance = {
+            archiveName,
+            archiveSha256: archiveDownload.sha256,
+            archiveSizeBytes: archiveDownload.sizeBytes,
+            archiveSourceUrl: archiveUrl,
+          };
+        } else {
+          const downloaded = await downloadToFile({
+            url: downloadUrl,
+            destinationPath: stagedBinary,
+            fetchImpl,
+            policy: DEFAULT_BINARY_DOWNLOAD_POLICY,
+          });
+          if (!verifyChecksum(downloaded.sha256, expected)) {
+            throw new Error(`Checksum mismatch for ${assetName}`);
+          }
+          artifactSha256 = downloaded.sha256;
+          artifactSizeBytes = downloaded.sizeBytes;
         }
 
         await mkdir(dirname(versionPath), { recursive: true });
@@ -160,9 +260,10 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           version: resolved,
           target: releaseTarget?.id ?? `${os}-${arch}`,
           artifactName: assetName,
-          artifactSha256: downloaded.sha256,
-          sizeBytes: downloaded.sizeBytes,
+          artifactSha256,
+          sizeBytes: artifactSizeBytes,
           sourceUrl: downloadUrl,
+          ...archiveProvenance,
           verification: "release-checksum",
           installedAt: new Date().toISOString(),
         });
@@ -171,6 +272,16 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           // Another version may have activated while this version downloaded.
           // Re-read shared state only after winning the cross-version lock.
           const activeManifest = await readInstallManifest(layout.configDir);
+          const ownershipChanged =
+            activeManifest?.method !== undefined && activeManifest.method !== "binary";
+          const nativeInstallWasRemoved = manifest !== null && activeManifest === null;
+          const nativeInstallWasNeverOwner =
+            manifest?.method !== undefined && manifest.method !== "binary";
+          if (ownershipChanged || nativeInstallWasRemoved || nativeInstallWasNeverOwner) {
+            throw new Error(
+              "Install ownership changed while downloading; refusing to replace a non-native publication",
+            );
+          }
           const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
           const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
           let preserveSnapshot = false;
@@ -180,7 +291,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
               launcherPath,
               versionPath,
             });
-            await writeInstallManifest(
+            await writeInstallManifestUnderActivation(
               {
                 method: "binary",
                 activeVersion: resolved,
@@ -188,12 +299,16 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
                 versionedPath: versionPath,
                 downloadBaseUrl: dlBase,
                 target: releaseTarget?.id ?? `${os}-${arch}`,
-                artifactSha256: downloaded.sha256,
+                artifactName: assetName,
+                artifactSha256,
+                artifactSizeBytes,
+                artifactSourceUrl: downloadUrl,
+                ...archiveProvenance,
                 ...(activeManifest?.activeVersion && activeManifest.activeVersion !== resolved
                   ? { previousVersion: activeManifest.activeVersion }
                   : {}),
               },
-              layout.configDir,
+              layout,
             );
           } catch (manifestError) {
             try {

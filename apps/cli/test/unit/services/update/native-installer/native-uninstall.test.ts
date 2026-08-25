@@ -98,7 +98,7 @@ async function seedManagedUnixInstall(
       downloadBaseUrl: "https://example.test/releases",
       artifactSha256: sha256,
     },
-    layout.configDir,
+    layout,
   );
   return { path, sha256 };
 }
@@ -327,7 +327,7 @@ describe("nativeUninstall refusal", () => {
         downloadBaseUrl: "https://example.test/releases",
         artifactSha256: sha256,
       },
-      layout.configDir,
+      layout,
     );
 
     const result = await nativeUninstall({ layout, platform: "linux" });
@@ -350,7 +350,7 @@ describe("nativeUninstall refusal", () => {
         downloadBaseUrl: "https://example.test/releases",
         artifactSha256: sha256,
       },
-      layout.configDir,
+      layout,
     );
 
     const ok = await nativeUninstall({ layout, platform: "win32" });
@@ -369,7 +369,7 @@ describe("nativeUninstall refusal", () => {
         downloadBaseUrl: "https://example.test/releases",
         artifactSha256: seeded.sha256,
       },
-      layout2.configDir,
+      layout2,
     );
 
     const blocked = await nativeUninstall({ layout: layout2, platform: "win32" });

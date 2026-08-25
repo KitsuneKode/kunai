@@ -4,7 +4,10 @@ import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
 
+import { withActivationLock, type ActivationLockOptions } from "./native-installer/activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";
+import { withVersionLock } from "./native-installer/version-lock";
+import { migrateArchiveVersionMetadata } from "./native-installer/version-metadata";
 import { parseCanonicalVersion } from "./version";
 
 /**
@@ -12,12 +15,12 @@ import { parseCanonicalVersion } from "./version";
  * route to the correct mechanism and never fight another installer.
  * Authoritative when present; otherwise callers fall back to `detectInstallMethod`.
  */
-export const INSTALL_MANIFEST_SCHEMA_VERSION = 1 as const;
+export const INSTALL_MANIFEST_SCHEMA_VERSION = 2 as const;
 
 export type InstallManifestMethod = "binary" | "npm-global" | "bun-global" | "source";
 
 export interface InstallManifest {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly method: InstallManifestMethod;
   readonly observedProvenance?: string;
   readonly activeVersion: string;
@@ -27,7 +30,14 @@ export interface InstallManifest {
   readonly versionedPath?: string;
   readonly managedPaths: readonly string[];
   readonly target?: string;
+  readonly artifactName?: string;
   readonly artifactSha256?: string;
+  readonly artifactSizeBytes?: number;
+  readonly artifactSourceUrl?: string;
+  readonly archiveName?: string;
+  readonly archiveSha256?: string;
+  readonly archiveSizeBytes?: number;
+  readonly archiveSourceUrl?: string;
   readonly downloadBaseUrl: string;
   readonly installedAt: string;
   readonly updatedAt: string;
@@ -51,6 +61,13 @@ export type InstallManifestInspection =
       readonly manifest: InstallManifest;
     };
 
+export type InstallManifestMigrationResult =
+  | { readonly status: "migrated" | "unchanged"; readonly manifest: InstallManifest }
+  | { readonly status: "deferred"; readonly manifest: InstallManifest }
+  | { readonly status: "missing" }
+  | { readonly status: "invalid"; readonly reason: InstallManifestInvalidReason }
+  | { readonly status: "lock-contention" };
+
 export type WriteInstallManifestInput = {
   readonly method: InstallManifestMethod;
   readonly activeVersion: string;
@@ -60,7 +77,14 @@ export type WriteInstallManifestInput = {
   readonly previousVersion?: string;
   readonly observedProvenance?: string;
   readonly target?: string;
+  readonly artifactName?: string;
   readonly artifactSha256?: string;
+  readonly artifactSizeBytes?: number;
+  readonly artifactSourceUrl?: string;
+  readonly archiveName?: string;
+  readonly archiveSha256?: string;
+  readonly archiveSizeBytes?: number;
+  readonly archiveSourceUrl?: string;
   readonly managedPaths?: readonly string[];
 };
 
@@ -81,6 +105,27 @@ type LegacyInstallManifest = {
 /** True when this is a native binary install with a versioned store path. */
 export function isVersionedBinaryManifest(manifest: InstallManifest): boolean {
   return manifest.method === "binary" && Boolean(manifest.versionedPath);
+}
+
+/** Identity used by removers to avoid deleting a replacement publication. */
+export function sameInstallManifestPublication(
+  left: InstallManifest,
+  right: InstallManifest,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function sameInstallManifestMigrationSource(
+  left: InstallManifest,
+  right: InstallManifest,
+): boolean {
+  // Legacy manifests have no updatedAt, so each read synthesizes a fresh one.
+  // Ignore only that derived field while still detecting a replacement of any
+  // ownership, path, version, or provenance field during migration planning.
+  return sameInstallManifestPublication(
+    { ...left, updatedAt: "migration-source" },
+    { ...right, updatedAt: "migration-source" },
+  );
 }
 
 /** Derive ownership roots Kunai may manage for a native binary install. */
@@ -123,36 +168,125 @@ export async function inspectInstallManifest(
   return inspectLegacySchema(record as LegacyInstallManifest, configDir);
 }
 
-/**
- * Read the install ownership record. Atomically migrates valid legacy schema.
- * Never writes for invalid / unsupported / missing manifests.
- */
+/** Read the install ownership record without mutating it. */
 export async function readInstallManifest(
   configDir = getKunaiPaths().configDir,
 ): Promise<InstallManifest | null> {
   const inspection = await inspectInstallManifest(configDir);
   if (inspection.status !== "loaded") return null;
-  if (inspection.needsMigration) {
-    await persistManifest(inspection.manifest, configDir);
-  }
   return inspection.manifest;
+}
+
+/**
+ * Publish a schema migration only while lifecycle, version, and activation
+ * ownership exclude uninstall and competing native activation. The manifest is
+ * re-read inside the locks so a replacement is preserved and a removal is not
+ * recreated from a stale snapshot.
+ */
+export async function migrateInstallManifest(
+  layout: InstallLayoutPaths = getInstallLayoutPaths(),
+): Promise<InstallManifestMigrationResult> {
+  const observed = await inspectInstallManifest(layout.configDir);
+  if (observed.status === "missing") return { status: "missing" };
+  if (observed.status === "invalid") return observed;
+  if (!observed.needsMigration) {
+    return { status: "unchanged", manifest: observed.manifest };
+  }
+  if (observed.manifest.method !== "binary") {
+    return { status: "deferred", manifest: observed.manifest };
+  }
+
+  const migrated = await withVersionLock(layout, observed.manifest.activeVersion, async () => {
+    return withActivationLock(layout, observed.manifest.activeVersion, async () => {
+      const current = await inspectInstallManifest(layout.configDir);
+      if (current.status === "missing") return { status: "missing" } as const;
+      if (current.status === "invalid") return current;
+      if (!sameInstallManifestMigrationSource(current.manifest, observed.manifest)) {
+        if (!current.needsMigration) {
+          return { status: "unchanged", manifest: current.manifest } as const;
+        }
+        return { status: "deferred", manifest: current.manifest } as const;
+      }
+      if (!current.needsMigration) {
+        return { status: "unchanged", manifest: current.manifest } as const;
+      }
+
+      if (
+        current.manifest.archiveName &&
+        !(await migrateArchiveVersionMetadata(layout, current.manifest))
+      ) {
+        throw new Error(
+          `Archive version metadata unavailable for install manifest migration (${current.manifest.activeVersion})`,
+        );
+      }
+      await persistManifest(current.manifest, layout.configDir);
+      return { status: "migrated", manifest: current.manifest } as const;
+    });
+  });
+
+  return migrated ?? { status: "lock-contention" };
 }
 
 export async function writeInstallManifest(
   partial: WriteInstallManifestInput,
-  configDir = getKunaiPaths().configDir,
+  layout: InstallLayoutPaths = getInstallLayoutPaths({ launcherPath: partial.launcherPath }),
+  activationOptions: ActivationLockOptions = {},
 ): Promise<void> {
+  validateWriteProvenance(partial);
+  const activeVersion = parseCanonicalVersion(partial.activeVersion);
+  if (!activeVersion) {
+    throw new Error(`Invalid install manifest version: ${partial.activeVersion}`);
+  }
+  if (partial.previousVersion !== undefined && !parseCanonicalVersion(partial.previousVersion)) {
+    throw new Error(`Invalid install manifest previousVersion: ${partial.previousVersion}`);
+  }
+  const published = await withActivationLock(
+    layout,
+    activeVersion,
+    () => writeInstallManifestUnderActivation(partial, layout),
+    activationOptions,
+  );
+  if (published === null) {
+    throw new Error(`Install manifest publication lock held while publishing ${activeVersion}`);
+  }
+}
+
+/** Hold the shared launcher/manifest publication boundary across a compound operation. */
+export async function withInstallManifestPublication<T>(
+  version: string,
+  fn: () => Promise<T>,
+  layout: InstallLayoutPaths = getInstallLayoutPaths(),
+): Promise<T | null> {
+  return withActivationLock(layout, version, fn);
+}
+
+/**
+ * Publish while the caller already owns the activation lock.
+ *
+ * Native lifecycle paths use this primitive after acquiring locks in the only
+ * supported order: lifecycle/version -> activation -> manifest I/O. Package
+ * publishers use `writeInstallManifest`, which acquires activation directly.
+ */
+export async function writeInstallManifestUnderActivation(
+  partial: WriteInstallManifestInput,
+  layout: InstallLayoutPaths = getInstallLayoutPaths({ launcherPath: partial.launcherPath }),
+): Promise<void> {
+  validateWriteProvenance(partial);
   const activeVersion = parseCanonicalVersion(partial.activeVersion);
   if (!activeVersion) {
     throw new Error(`Invalid install manifest version: ${partial.activeVersion}`);
   }
 
-  const layout = getInstallLayoutPaths({
-    configDir,
+  // Ownership validation remains based on the persisted config/launcher pair;
+  // the supplied full layout selects the publication lock root. In production
+  // those roots agree, while isolated tests can use a writable lock root
+  // without teaching a config-only reader an unverifiable dataDir override.
+  const ownershipLayout = getInstallLayoutPaths({
+    configDir: layout.configDir,
     launcherPath: partial.launcherPath,
   });
-  const managedPaths = partial.managedPaths ?? deriveManagedPaths(partial.method, layout);
-  if (!managedPathsAreSafe(managedPaths, layout, partial.method)) {
+  const managedPaths = partial.managedPaths ?? deriveManagedPaths(partial.method, ownershipLayout);
+  if (!managedPathsAreSafe(managedPaths, ownershipLayout, partial.method)) {
     throw new Error("Refusing to write install manifest with unsafe managedPaths");
   }
 
@@ -164,7 +298,7 @@ export async function writeInstallManifest(
     }
   }
 
-  const existing = await inspectInstallManifest(configDir);
+  const existing = await inspectInstallManifest(layout.configDir);
   const now = new Date().toISOString();
   const installedAt = existing.status === "loaded" ? existing.manifest.installedAt : now;
 
@@ -182,10 +316,63 @@ export async function writeInstallManifest(
     ...(previousVersion ? { previousVersion } : {}),
     ...(partial.observedProvenance ? { observedProvenance: partial.observedProvenance } : {}),
     ...(partial.target ? { target: partial.target } : {}),
+    ...(partial.artifactName ? { artifactName: partial.artifactName } : {}),
     ...(partial.artifactSha256 ? { artifactSha256: partial.artifactSha256 } : {}),
+    ...(partial.artifactSizeBytes !== undefined
+      ? { artifactSizeBytes: partial.artifactSizeBytes }
+      : {}),
+    ...(partial.artifactSourceUrl ? { artifactSourceUrl: partial.artifactSourceUrl } : {}),
+    ...(partial.archiveName ? { archiveName: partial.archiveName } : {}),
+    ...(partial.archiveSha256 ? { archiveSha256: partial.archiveSha256 } : {}),
+    ...(partial.archiveSizeBytes !== undefined
+      ? { archiveSizeBytes: partial.archiveSizeBytes }
+      : {}),
+    ...(partial.archiveSourceUrl ? { archiveSourceUrl: partial.archiveSourceUrl } : {}),
   };
 
-  await persistManifest(full, configDir);
+  await persistManifest(full, layout.configDir);
+}
+
+function validateWriteProvenance(partial: WriteInstallManifestInput): void {
+  if (!archiveProvenanceComplete(partial)) {
+    throw new Error("Archive provenance must include name, checksum, size, and source URL");
+  }
+  if (!archiveHasArtifactProvenance(partial)) {
+    throw new Error("Archive installs must include extracted binary provenance");
+  }
+  if (
+    !optionalString(partial.artifactName) ||
+    !optionalSha256(partial.artifactSha256) ||
+    !optionalSize(partial.artifactSizeBytes) ||
+    !optionalString(partial.artifactSourceUrl) ||
+    !optionalString(partial.archiveName) ||
+    !optionalSha256(partial.archiveSha256) ||
+    !optionalSize(partial.archiveSizeBytes) ||
+    !optionalString(partial.archiveSourceUrl)
+  ) {
+    throw new Error("Invalid install manifest artifact provenance");
+  }
+}
+
+/** Startup-only wrapper: expected contention is quiet; corrupt state and I/O fail nonfatally. */
+export async function migrateInstallManifestAtStartup(
+  options: {
+    readonly migrate?: () => Promise<InstallManifestMigrationResult>;
+    readonly warn?: (message: string) => void;
+  } = {},
+): Promise<void> {
+  const migrate = options.migrate ?? (() => migrateInstallManifest());
+  const warn = options.warn ?? ((message: string) => console.warn(message));
+  try {
+    const result = await migrate();
+    if (result.status === "invalid") {
+      warn(`Kunai install manifest migration skipped invalid install.json (${result.reason}).`);
+    }
+  } catch (error) {
+    warn(
+      `Kunai install manifest migration failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function joinManifestPath(configDir: string): string {
@@ -209,7 +396,7 @@ function inspectCurrentSchema(
   if (typeof schemaVersion !== "number" || !Number.isInteger(schemaVersion)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
-  if (schemaVersion !== INSTALL_MANIFEST_SCHEMA_VERSION) {
+  if (schemaVersion !== 1 && schemaVersion !== INSTALL_MANIFEST_SCHEMA_VERSION) {
     return { status: "invalid", reason: "unsupported-schema" };
   }
 
@@ -254,6 +441,36 @@ function inspectCurrentSchema(
   ) {
     return { status: "invalid", reason: "invalid-shape" };
   }
+  if (!archiveProvenanceComplete(record)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  const predecessorArtifactSourceUrl =
+    schemaVersion === INSTALL_MANIFEST_SCHEMA_VERSION &&
+    record.archiveName !== undefined &&
+    record.artifactSourceUrl === undefined &&
+    typeof record.artifactName === "string"
+      ? `${record.downloadBaseUrl.replace(/\/+$/, "")}/download/v${record.activeVersion}/${record.artifactName}`
+      : undefined;
+  if (!archiveHasArtifactProvenance(record, predecessorArtifactSourceUrl !== undefined)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  if (!optionalString(record.artifactName) || !optionalSha256(record.artifactSha256)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  if (!optionalSize(record.artifactSizeBytes)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  if (!optionalString(record.artifactSourceUrl)) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
+  if (
+    !optionalString(record.archiveName) ||
+    !optionalSha256(record.archiveSha256) ||
+    !optionalSize(record.archiveSizeBytes) ||
+    !optionalString(record.archiveSourceUrl)
+  ) {
+    return { status: "invalid", reason: "invalid-shape" };
+  }
 
   const layout = getInstallLayoutPaths({
     configDir,
@@ -264,7 +481,7 @@ function inspectCurrentSchema(
   }
 
   const manifest: InstallManifest = {
-    schemaVersion: 1,
+    schemaVersion: INSTALL_MANIFEST_SCHEMA_VERSION,
     method: typedMethod,
     activeVersion: record.activeVersion,
     preferredChannel: "stable",
@@ -281,10 +498,31 @@ function inspectCurrentSchema(
       ? { observedProvenance: record.observedProvenance }
       : {}),
     ...(typeof record.target === "string" ? { target: record.target } : {}),
+    ...(typeof record.artifactName === "string" ? { artifactName: record.artifactName } : {}),
     ...(typeof record.artifactSha256 === "string" ? { artifactSha256: record.artifactSha256 } : {}),
+    ...(typeof record.artifactSizeBytes === "number"
+      ? { artifactSizeBytes: record.artifactSizeBytes }
+      : {}),
+    ...(typeof record.artifactSourceUrl === "string"
+      ? { artifactSourceUrl: record.artifactSourceUrl }
+      : predecessorArtifactSourceUrl
+        ? { artifactSourceUrl: predecessorArtifactSourceUrl }
+        : {}),
+    ...(typeof record.archiveName === "string" ? { archiveName: record.archiveName } : {}),
+    ...(typeof record.archiveSha256 === "string" ? { archiveSha256: record.archiveSha256 } : {}),
+    ...(typeof record.archiveSizeBytes === "number"
+      ? { archiveSizeBytes: record.archiveSizeBytes }
+      : {}),
+    ...(typeof record.archiveSourceUrl === "string"
+      ? { archiveSourceUrl: record.archiveSourceUrl }
+      : {}),
   };
 
-  return { status: "loaded", needsMigration: false, manifest };
+  return {
+    status: "loaded",
+    needsMigration: schemaVersion === 1 || predecessorArtifactSourceUrl !== undefined,
+    manifest,
+  };
 }
 
 function inspectLegacySchema(
@@ -354,4 +592,58 @@ function managedPathsAreSafe(
     if (!ok) return false;
   }
   return true;
+}
+
+function optionalString(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && value.length > 0);
+}
+
+function optionalSha256(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value));
+}
+
+function optionalSize(value: unknown): boolean {
+  return (
+    value === undefined || (typeof value === "number" && Number.isSafeInteger(value) && value > 0)
+  );
+}
+
+function archiveProvenanceComplete(value: {
+  readonly archiveName?: unknown;
+  readonly archiveSha256?: unknown;
+  readonly archiveSizeBytes?: unknown;
+  readonly archiveSourceUrl?: unknown;
+}): boolean {
+  const fields = [
+    value.archiveName,
+    value.archiveSha256,
+    value.archiveSizeBytes,
+    value.archiveSourceUrl,
+  ];
+  const present = fields.filter((field) => field !== undefined).length;
+  return present === 0 || present === fields.length;
+}
+
+function archiveHasArtifactProvenance(
+  value: {
+    readonly archiveName?: unknown;
+    readonly artifactName?: unknown;
+    readonly artifactSha256?: unknown;
+    readonly artifactSizeBytes?: unknown;
+    readonly artifactSourceUrl?: unknown;
+  },
+  allowMissingSourceUrl = false,
+): boolean {
+  if (value.archiveName === undefined) return true;
+  return (
+    typeof value.artifactName === "string" &&
+    value.artifactName.length > 0 &&
+    typeof value.artifactSha256 === "string" &&
+    /^[a-fA-F0-9]{64}$/.test(value.artifactSha256) &&
+    typeof value.artifactSizeBytes === "number" &&
+    Number.isSafeInteger(value.artifactSizeBytes) &&
+    value.artifactSizeBytes > 0 &&
+    (allowMissingSourceUrl ||
+      (typeof value.artifactSourceUrl === "string" && value.artifactSourceUrl.length > 0))
+  );
 }
