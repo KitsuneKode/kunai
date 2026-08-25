@@ -4,7 +4,12 @@ import { win32 } from "node:path";
 import { inspectInstallManifest, type InstallManifest } from "../install-manifest";
 import { detectInstallMethod } from "../install-method";
 import { findKunaiPathCandidates } from "../path-candidates";
-import { getInstallLayoutPaths } from "./install-layout";
+import { inspectActivationLock } from "./activation-lock";
+import {
+  activationLockPath,
+  getInstallLayoutPaths,
+  type InstallLayoutPaths,
+} from "./install-layout";
 
 export type InstallDiagnostic = {
   readonly level: "info" | "warn" | "error";
@@ -17,6 +22,8 @@ export type GetInstallDiagnosticsInput = {
   readonly pathExt?: string;
   readonly platform?: NodeJS.Platform;
   readonly fileExists?: (path: string) => boolean;
+  /** Test seam for inspecting an isolated install root. */
+  readonly layout?: InstallLayoutPaths;
   /** Test seam only. Production uses read-only `inspectInstallManifest`. */
   readonly readManifest?: () => Promise<InstallManifest | null>;
 };
@@ -47,6 +54,13 @@ export async function getInstallDiagnostics(
   const platform = input.platform ?? process.platform;
   const pathValue = input.pathValue ?? process.env.PATH ?? "";
   const manifest = await loadManifestForDiagnostics(input.readManifest);
+  const diagnosticLayout =
+    input.layout ??
+    getInstallLayoutPaths({
+      launcherPath: manifest?.method === "binary" ? manifest.launcherPath : undefined,
+      platform,
+    });
+  const activationLock = await inspectActivationLock(diagnosticLayout);
   const detected = detectInstallMethod({ fileExists, platform });
   const pathCandidates = findKunaiPathCandidates({
     pathValue,
@@ -55,6 +69,17 @@ export async function getInstallDiagnostics(
     fileExists,
   });
   const messages: InstallDiagnostic[] = [];
+
+  if (activationLock.status === "stale") {
+    const path = activationLockPath(diagnosticLayout);
+    messages.push({
+      level: "warn",
+      code: "stale-activation-lock",
+      message: activationLock.content
+        ? `Stale installer activation lock at ${path} (owner pid ${activationLock.content.pid} is not running).`
+        : `Stale installer activation lock at ${path} (metadata is unreadable).`,
+    });
+  }
 
   const pathWinner = pathCandidates[0];
   if (pathWinner) {
@@ -74,7 +99,7 @@ export async function getInstallDiagnostics(
   }
 
   if (manifest?.method === "binary") {
-    const layout = getInstallLayoutPaths({ launcherPath: manifest.launcherPath, platform });
+    const layout = diagnosticLayout;
     if (manifest.versionedPath && !fileExists(manifest.versionedPath)) {
       messages.push({
         level: "error",

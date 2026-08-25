@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { InstallManifest } from "@/services/update/install-manifest";
 import { getInstallDiagnostics } from "@/services/update/native-installer/install-diagnostic";
+import {
+  activationLockPath,
+  getInstallLayoutPaths,
+} from "@/services/update/native-installer/install-layout";
 
 const binaryManifest: InstallManifest = {
   schemaVersion: 1,
@@ -64,5 +71,49 @@ describe("getInstallDiagnostics", () => {
     expect(diagnostics[2]?.message).toBe(
       "Native launcher /home/k/.local/bin/kunai is shadowed by /usr/local/bin/kunai.",
     );
+  });
+
+  test("reports a stale shared activation lock without reclaiming it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-install-diagnostic-lock-"));
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      configDir: join(root, "config"),
+      launcherPath: join(root, "bin", "kunai"),
+      platform: "linux",
+    });
+    await mkdir(layout.locksDir, { recursive: true });
+    const path = activationLockPath(layout);
+    await writeFile(
+      path,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        scope: "activation",
+        pid: 2_147_483_646,
+        version: "1.0.0",
+        execPath: "/tmp/dead-installer",
+        ownerId: "dead-owner",
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+        hostname: hostname().trim().toLowerCase(),
+        processStartId: null,
+      })}\n`,
+    );
+
+    try {
+      const diagnostics = await getInstallDiagnostics({
+        layout,
+        pathValue: "",
+        fileExists: () => false,
+        readManifest: async () => null,
+      });
+      expect(diagnostics).toContainEqual({
+        level: "warn",
+        code: "stale-activation-lock",
+        message: `Stale installer activation lock at ${path} (owner pid 2147483646 is not running).`,
+      });
+      expect(await Bun.file(path).exists()).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

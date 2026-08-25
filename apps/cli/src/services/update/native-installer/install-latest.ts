@@ -12,6 +12,7 @@ import {
 } from "../platform-assets";
 import { pickChecksum, verifyChecksum } from "../self-replace";
 import { normalizeRequestedVersion, parseCanonicalVersion } from "../version";
+import { withActivationLock } from "./activation-lock";
 import { cleanupOldVersions } from "./cleanup-versions";
 import {
   DEFAULT_BINARY_DOWNLOAD_POLICY,
@@ -27,7 +28,13 @@ import {
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
-import { atomicInstallBinaryFromFile, updateLauncher } from "./launcher";
+import {
+  atomicInstallBinaryFromFile,
+  captureLauncherSnapshot,
+  discardLauncherSnapshot,
+  restoreLauncherSnapshot,
+  updateLauncher,
+} from "./launcher";
 import { isMuslEnvironmentSync } from "./musl";
 import {
   beginInstallTransaction,
@@ -160,30 +167,60 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           installedAt: new Date().toISOString(),
         });
 
-        const launcherPath = manifest?.launcherPath ?? layout.launcherPath;
-        await updateLauncher({
-          launcherPath,
-          versionPath,
-        });
+        const activated = await withActivationLock(layout, resolved, async () => {
+          // Another version may have activated while this version downloaded.
+          // Re-read shared state only after winning the cross-version lock.
+          const activeManifest = await readInstallManifest(layout.configDir);
+          const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
+          const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
+          let preserveSnapshot = false;
 
-        await writeInstallManifest(
-          {
-            method: "binary",
-            activeVersion: resolved,
-            launcherPath,
-            versionedPath: versionPath,
-            downloadBaseUrl: dlBase,
-            target: releaseTarget?.id ?? `${os}-${arch}`,
-            artifactSha256: downloaded.sha256,
-            ...(manifest?.activeVersion && manifest.activeVersion !== resolved
-              ? { previousVersion: manifest.activeVersion }
-              : {}),
-          },
-          layout.configDir,
-        );
+          try {
+            await updateLauncher({
+              launcherPath,
+              versionPath,
+            });
+            await writeInstallManifest(
+              {
+                method: "binary",
+                activeVersion: resolved,
+                launcherPath,
+                versionedPath: versionPath,
+                downloadBaseUrl: dlBase,
+                target: releaseTarget?.id ?? `${os}-${arch}`,
+                artifactSha256: downloaded.sha256,
+                ...(activeManifest?.activeVersion && activeManifest.activeVersion !== resolved
+                  ? { previousVersion: activeManifest.activeVersion }
+                  : {}),
+              },
+              layout.configDir,
+            );
+          } catch (manifestError) {
+            try {
+              await restoreLauncherSnapshot(launcherSnapshot);
+            } catch (restoreError) {
+              preserveSnapshot = true;
+              const recoveryFailure = new Error(
+                "Install manifest commit and launcher restoration both failed",
+                { cause: restoreError },
+              );
+              Object.assign(recoveryFailure, { errors: [manifestError, restoreError] });
+              throw recoveryFailure;
+            }
+            throw manifestError;
+          } finally {
+            if (!preserveSnapshot) {
+              await discardLauncherSnapshot(launcherSnapshot).catch(() => {});
+            }
+          }
+        });
 
         await finishInstallTransaction(layout, transaction.id);
         await removeStagingAndPruneParents(staging, layout.stagingRoot);
+
+        if (activated === null) {
+          return { status: "skipped" as const, reason: "lock-contention" as const };
+        }
 
         void cleanupOldVersions(layout);
 

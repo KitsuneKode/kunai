@@ -8,6 +8,7 @@ import {
   type InstallManifest,
 } from "../install-manifest";
 import { parseCanonicalVersion } from "../version";
+import { withActivationLock } from "./activation-lock";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
@@ -67,6 +68,8 @@ export type RollbackOptions = {
   readonly to?: string;
   readonly dryRun?: boolean;
   readonly layout?: InstallLayoutPaths;
+  /** Test/embedding seam; production uses the shared lock default. */
+  readonly activationLockTimeoutMs?: number;
 };
 
 async function listInstalledVersions(
@@ -284,8 +287,7 @@ export async function executeRollback(
     };
   }
 
-  const { candidate, fromVersion } = plan;
-  const previousLauncherTarget = await readLauncherTarget(layout.launcherPath);
+  const { candidate } = plan;
 
   try {
     const locked = await withVersionLock(
@@ -307,45 +309,70 @@ export async function executeRollback(
             );
           }
 
-          await updateLauncher({
-            launcherPath: layout.launcherPath,
-            versionPath: candidate.versionPath,
-          });
+          const activated = await withActivationLock(
+            layout,
+            candidate.version,
+            async () => {
+              const manifest = (await readInstallManifest(layout.configDir)) as InstallManifest;
+              if (manifest.activeVersion === candidate.version) {
+                return {
+                  status: "refused" as const,
+                  code: "already-active" as const,
+                  reason: `Version ${candidate.version} is already active`,
+                };
+              }
+              const previousLauncherTarget =
+                (await readLauncherTarget(manifest.launcherPath)) ??
+                manifest.versionedPath ??
+                versionBinaryPath(layout, manifest.activeVersion);
 
-          const manifest = (await readInstallManifest(layout.configDir)) as InstallManifest;
-          try {
-            await writeInstallManifest(
-              {
-                method: "binary",
-                activeVersion: candidate.version,
-                previousVersion: fromVersion,
+              await updateLauncher({
                 launcherPath: manifest.launcherPath,
-                versionedPath: candidate.versionPath,
-                downloadBaseUrl: manifest.downloadBaseUrl,
-                target: candidate.target,
-                artifactSha256: candidate.artifactSha256,
-                managedPaths: manifest.managedPaths,
-                ...(manifest.observedProvenance
-                  ? { observedProvenance: manifest.observedProvenance }
-                  : {}),
-              },
-              layout.configDir,
-            );
-          } catch (manifestError) {
-            await restoreLauncher(
-              layout.launcherPath,
-              previousLauncherTarget ?? versionBinaryPath(layout, fromVersion),
-              process.platform,
-            );
-            throw manifestError;
+                versionPath: candidate.versionPath,
+              });
+
+              try {
+                await writeInstallManifest(
+                  {
+                    method: "binary",
+                    activeVersion: candidate.version,
+                    previousVersion: manifest.activeVersion,
+                    launcherPath: manifest.launcherPath,
+                    versionedPath: candidate.versionPath,
+                    downloadBaseUrl: manifest.downloadBaseUrl,
+                    target: candidate.target,
+                    artifactSha256: candidate.artifactSha256,
+                    managedPaths: manifest.managedPaths,
+                    ...(manifest.observedProvenance
+                      ? { observedProvenance: manifest.observedProvenance }
+                      : {}),
+                  },
+                  layout.configDir,
+                );
+              } catch (manifestError) {
+                await restoreLauncher(
+                  manifest.launcherPath,
+                  previousLauncherTarget,
+                  process.platform,
+                );
+                throw manifestError;
+              }
+
+              return {
+                status: "rolled-back" as const,
+                fromVersion: manifest.activeVersion,
+                toVersion: candidate.version,
+              };
+            },
+            { timeoutMs: options.activationLockTimeoutMs },
+          );
+
+          if (activated === null) {
+            throw new Error(`Activation lock held while rolling back to ${candidate.version}`);
           }
 
           await finishInstallTransaction(layout, transaction.id);
-          return {
-            status: "rolled-back" as const,
-            fromVersion,
-            toVersion: candidate.version,
-          };
+          return activated;
         } catch (error) {
           await finishInstallTransaction(layout, transaction.id).catch(() => {});
           throw error;
@@ -365,7 +392,7 @@ export async function executeRollback(
     return locked;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (/locked|Install lock held/i.test(message)) {
+    if (/locked|(?:Install|Activation) lock held/i.test(message)) {
       return {
         status: "refused",
         code: "locked",

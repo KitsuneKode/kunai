@@ -60,6 +60,89 @@ creation/verification slice. This builder slice does not close issue #132 and
 does not yet reduce user downloads: 0.3.0 release dispatch remains blocked until
 the installer/updater archive-consumption stack lands and is verified.
 
+## Native Installer Activation Gate
+
+Native install, in-process update, rollback, and uninstall share one short
+cross-language activation lock at `{dataDir}/locks/activation.lock`. The Bash,
+PowerShell, and TypeScript implementations exclusively create the same schema-1
+JSON record (`schemaVersion`, `scope`, `pid`, `version`, `execPath`, `ownerId`,
+`acquiredAt`, `hostname`, `processStartId`). A live local owner is waited on for
+a bounded interval; fresh live-PID records receive a one-second grace before
+process-start validation so Windows contenders do not spawn a probe storm; PID
+reuse is then rejected when a process-start identity is available. A valid
+foreign-host owner is never declared dead from a local PID probe, and unreadable
+metadata receives a short grace period before reclaim.
+The acquisition deadline starts before ownership identity is collected or a
+same-process contender waits its turn. Every retry sleeps for at most the real
+time remaining; failed reclaim attempts return to that same deadline instead of
+hot-looping. Poll values at or below zero are clamped to one millisecond in all
+three implementations. A zero timeout still permits one uncontended exclusive
+create, but never waits. External process-start probes are bounded where the
+runtime must launch a helper process.
+Stale/corrupt reclamation first publishes a unique token-owned reclaim claim.
+Claimants elect one reclaimer by lexical claim order, then that owner re-reads
+and atomically renames the canonical file to quarantine for validation. It
+publishes its successor lock before removing the claim, so the canonical path
+never becomes an acquisition window and no contender can delete a newer owner
+through a read/delete race. Release uses the same token-owned quarantine rule.
+Claims publish through uniquely named `.reclaim-tmp.*` files outside the
+`.reclaim.*` election namespace. Current and legacy temp names never enter
+election; dead-owner or aged-corrupt temp residue is cleaned without removing a
+live writer. PowerShell compares raw observations, process-start identities,
+and owner tokens with ordinal case-sensitive equality, and its successor-create
+retry checks the same acquisition stopwatch before each create and sleep.
+TypeScript release cleanup and Bash quarantine restoration report failures and
+leave the evidence in place; neither path treats failed cleanup as a successful
+release or reclaim.
+
+The activation critical section contains only the shared launcher replacement
+and `install.json` publication. Artifact download, checksum verification,
+versioned binary installation, and `version.json` publication remain under the
+independent per-version lock and must complete without holding the activation
+lock. If manifest publication fails after launcher replacement, the previous
+launcher is restored before the activation lock is released. The lifecycle lock
+also excludes new installs while uninstall is active. Its purge-safe guard at
+`{dataDir}.lifecycle.lock` remains outside the removable data root; uninstall
+holds that guard through the final root operation and never sweeps another
+owner's lock after releasing it. Lifecycle acquisition first takes the shared
+activation lock and holds it while inspecting or reclaiming lifecycle residue,
+through purge, and until the external guard is released. This lock order makes
+stale-guard classification and replacement a single-winner operation; uninstall
+must not acquire activation a second time inside the lifecycle critical section.
+If purge already removed the activation path, owner-aware release is a safe
+no-op; other cleanup errors remain visible. Both lifecycle paths use a schema-1
+`lifecycle` record with the same normalized `hostname` and `processStartId`
+identity fields.
+A valid foreign-host lifecycle owner blocks without a local PID probe. On the
+same host, a dead PID or a mismatched available process-start identity is stale;
+an unavailable identity fails closed while the PID is live. Pre-schema records
+remain compatible through legacy local-PID liveness. Empty, unreadable, or
+incomplete schema-intent lifecycle records block for a 250-millisecond
+partial-write grace, then become recoverable if unchanged or aged past that
+grace, so a writer cannot be deleted mid-publication and crash residue does not
+block forever.
+TypeScript likewise surfaces failure to remove an owner-matching lifecycle
+guard; pruning the empty compatibility lock directory remains best-effort.
+
+Run the focused cross-language contract before changing installer activation:
+
+```sh
+bun run --cwd apps/cli test:file -- \
+  test/unit/services/update/native-installer/activation-lock.test.ts \
+  test/unit/services/update/native-installer/version-lock.test.ts \
+  test/unit/services/update/native-installer/install-latest.test.ts \
+  test/unit/services/update/native-installer/migrate-flat-install.test.ts \
+  test/unit/services/update/native-installer/rollback.test.ts \
+  test/unit/services/update/native-installer/native-uninstall.test.ts \
+  test/unit/services/update/native-installer/install-diagnostic.test.ts \
+  test/integration/install-scripts.test.ts \
+  test/integration/install-scripts-pwsh.test.ts
+```
+
+The PowerShell integration suite skips when `pwsh` is unavailable locally;
+Windows CI remains the required native-platform parity run. `kunai doctor`
+reports stale activation ownership without mutating the lock.
+
 ## Changelog Gate
 
 User-facing changes need a changeset before release:

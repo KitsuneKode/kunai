@@ -16,6 +16,8 @@
 #   {dataDir}/versions/{semver}/kunai     versioned binary
 #   {dataDir}/versions/{semver}/version.json  per-version metadata
 #   {dataDir}/locks/{semver}.lock         install lock
+#   {dataDir}/locks/activation.lock       shared launcher/manifest lock
+#   {dataDir}.lifecycle.lock              purge-safe uninstall guard
 #   {dataDir}/transactions/{id}.json     install transaction
 #   {cacheDir}/staging/{semver}/txn-…    unique download staging
 #   {binDir}/kunai                       launcher symlink -> versioned binary
@@ -38,12 +40,31 @@ DOWNLOAD_MAX_BYTES="${KUNAI_DOWNLOAD_MAX_BYTES:-268435456}"
 DOWNLOAD_CHECKSUM_MAX_BYTES="${KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES:-1048576}"
 DOWNLOAD_MAX_ATTEMPTS="${KUNAI_DOWNLOAD_MAX_ATTEMPTS:-3}"
 DOWNLOAD_RETRY_BASE_MS="${KUNAI_DOWNLOAD_RETRY_BASE_MS:-1000}"
+ACTIVATION_LOCK_TIMEOUT_MS="${KUNAI_ACTIVATION_LOCK_TIMEOUT_MS:-10000}"
+ACTIVATION_LOCK_POLL_MS="${KUNAI_ACTIVATION_LOCK_POLL_MS:-50}"
+ACTIVATION_LOCK_CORRUPT_GRACE_MS="${KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS:-250}"
+ACTIVATION_LOCK_OWNER_ID=""
+INSTALL_TXN_PATH=""
+INSTALL_VERSION_LOCK_PATH=""
+INSTALL_STAGING_PATH=""
+INSTALL_ACTIVATION_LOCK_PATH=""
+INSTALL_ACTIVATION_LOCK_HELD=0
+INSTALL_LAUNCHER_ACTIVATED=0
+INSTALL_PRESERVE_LAUNCHER_SNAPSHOT=0
+LAUNCHER_SNAPSHOT_KIND="missing"
+LAUNCHER_SNAPSHOT_TARGET=""
+LAUNCHER_SNAPSHOT_BACKUP=""
 
 case "$(uname -s)" in
 Darwin) HOST_OS="darwin" ;;
 Linux) HOST_OS="linux" ;;
 *) HOST_OS="unknown" ;;
 esac
+
+[[ "$ACTIVATION_LOCK_TIMEOUT_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_TIMEOUT_MS=10000
+[[ "$ACTIVATION_LOCK_POLL_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_POLL_MS=50
+[[ "$ACTIVATION_LOCK_CORRUPT_GRACE_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_CORRUPT_GRACE_MS=250
+((ACTIVATION_LOCK_POLL_MS > 0)) || ACTIVATION_LOCK_POLL_MS=1
 
 if [[ "$HOST_OS" == "darwin" ]]; then
 	CONFIG_DIR="${KUNAI_CONFIG_DIR:-$HOME/Library/Application Support/kunai}"
@@ -401,7 +422,7 @@ write_manifest() {
 		info "[dry-run] would write schema-1 manifest ($method) to $CONFIG_DIR/install.json"
 		return
 	fi
-	mkdir -p "$CONFIG_DIR"
+	mkdir -p "$CONFIG_DIR" || return 1
 	manifest_path="$CONFIG_DIR/install.json"
 	now="$(iso_now)"
 	installed_at="$now"
@@ -443,8 +464,14 @@ write_manifest() {
 		printf '  "installedAt": "%s",\n' "$(json_escape "$installed_at")"
 		printf '  "updatedAt": "%s"\n' "$(json_escape "$now")"
 		printf '}\n'
-	} >"$tmp"
-	mv -f "$tmp" "$manifest_path"
+	} >"$tmp" || {
+		rm -f "$tmp"
+		return 1
+	}
+	if ! mv -f "$tmp" "$manifest_path"; then
+		rm -f "$tmp"
+		return 1
+	fi
 	info "Recorded install method ($method) in $manifest_path"
 }
 
@@ -468,11 +495,82 @@ JSON
 	mv -f "$tmp" "$path"
 }
 
+read_lifecycle_lock() {
+	local raw="$1" process_start_raw
+	LIFECYCLE_READ_SCHEMA="$(printf '%s\n' "$raw" | sed -n 's/.*"schemaVersion"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+	LIFECYCLE_READ_SCOPE="$(printf '%s\n' "$raw" | sed -n 's/.*"scope"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_PID="$(printf '%s\n' "$raw" | sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+	LIFECYCLE_READ_VERSION="$(printf '%s\n' "$raw" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_EXEC_PATH="$(printf '%s\n' "$raw" | sed -n 's/.*"execPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_OWNER="$(printf '%s\n' "$raw" | sed -n 's/.*"ownerId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_ACQUIRED_AT="$(printf '%s\n' "$raw" | sed -n 's/.*"acquiredAt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	LIFECYCLE_READ_HOSTNAME="$(printf '%s\n' "$raw" | sed -n 's/.*"hostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | tr '[:upper:]' '[:lower:]')"
+	LIFECYCLE_READ_PROCESS_START="$(printf '%s\n' "$raw" | sed -n 's/.*"processStartId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	process_start_raw="$(printf '%s\n' "$raw" | sed -n 's/.*"processStartId"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p' | head -1)"
+	[[ "$LIFECYCLE_READ_PID" =~ ^[1-9][0-9]*$ ]] || return 2
+	if [[ -z "$LIFECYCLE_READ_SCHEMA$LIFECYCLE_READ_SCOPE$LIFECYCLE_READ_HOSTNAME$process_start_raw" ]]; then
+		LIFECYCLE_READ_MODERN=0
+		return 0
+	fi
+	LIFECYCLE_READ_MODERN=1
+	[[ "$LIFECYCLE_READ_SCHEMA" == 1 && "$LIFECYCLE_READ_SCOPE" == lifecycle ]] || return 2
+	[[ "$LIFECYCLE_READ_VERSION" == 0.0.0 ]] || return 2
+	[[ -n "$LIFECYCLE_READ_EXEC_PATH" && -n "$LIFECYCLE_READ_OWNER" ]] || return 2
+	[[ "$LIFECYCLE_READ_ACQUIRED_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || return 2
+	[[ -n "$LIFECYCLE_READ_HOSTNAME" ]] || return 2
+	[[ "$process_start_raw" == null || -n "$LIFECYCLE_READ_PROCESS_START" ]] || return 2
+}
+
+lifecycle_lock_blocks() {
+	local lock_path="$1" raw reread status local_hostname current_start
+	raw="$(cat "$lock_path" 2>/dev/null || true)"
+	if read_lifecycle_lock "$raw"; then
+		status=0
+	else
+		status=$?
+	fi
+	if ((status == 2)); then
+		activation_lock_sleep 250
+		reread="$(cat "$lock_path" 2>/dev/null || true)"
+		[[ "$reread" == "$raw" ]] || return 0
+		if ! read_lifecycle_lock "$reread"; then
+			return 1
+		fi
+	fi
+	if [[ "$LIFECYCLE_READ_MODERN" == 1 ]]; then
+		local_hostname="$(activation_lock_hostname)"
+		[[ "$LIFECYCLE_READ_HOSTNAME" == "$local_hostname" ]] || return 0
+		if kill -0 "$LIFECYCLE_READ_PID" 2>/dev/null || ps -p "$LIFECYCLE_READ_PID" >/dev/null 2>&1; then
+			if [[ -n "$LIFECYCLE_READ_PROCESS_START" ]]; then
+				current_start="$(activation_lock_process_start_id "$LIFECYCLE_READ_PID")"
+				[[ -n "$current_start" && "$current_start" != "$LIFECYCLE_READ_PROCESS_START" ]] && return 1
+			fi
+			return 0
+		fi
+		return 1
+	fi
+	if kill -0 "$LIFECYCLE_READ_PID" 2>/dev/null || ps -p "$LIFECYCLE_READ_PID" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
 acquire_version_lock() {
 	local version="$1" lock_path="$2"
+	local lifecycle_path lifecycle_guard_path lifecycle_candidate holder
 	mkdir -p "$(dirname "$lock_path")"
+	lifecycle_path="$(dirname "$lock_path")/lifecycle.lock"
+	lifecycle_guard_path="${DATA_DIR}.lifecycle.lock"
+	for lifecycle_candidate in "$lifecycle_guard_path" "$lifecycle_path"; do
+		if [[ -f "$lifecycle_candidate" ]]; then
+			if lifecycle_lock_blocks "$lifecycle_candidate"; then
+				holder="$LIFECYCLE_READ_PID"
+				err "Install lifecycle lock held by pid $holder; uninstall is in progress"
+				return 1
+			fi
+		fi
+	done
 	if [[ -f "$lock_path" ]]; then
-		local holder
 		holder="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$lock_path" | head -1)"
 		if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
 			err "Install lock held by pid $holder for version $version"
@@ -483,6 +581,18 @@ acquire_version_lock() {
 	cat >"$lock_path" <<JSON
 {"pid":$$,"version":"$(json_escape "$version")","execPath":"install.sh","acquiredAt":"$(iso_now)"}
 JSON
+	# Close the race with lifecycle acquisition. If uninstall won after the
+	# first check, relinquish our version lock before any download or mutation.
+	for lifecycle_candidate in "$lifecycle_guard_path" "$lifecycle_path"; do
+		if [[ -f "$lifecycle_candidate" ]]; then
+			if lifecycle_lock_blocks "$lifecycle_candidate"; then
+				holder="$LIFECYCLE_READ_PID"
+				release_version_lock "$lock_path"
+				err "Install lifecycle lock held by pid $holder; uninstall is in progress"
+				return 1
+			fi
+		fi
+	done
 }
 
 release_version_lock() {
@@ -492,6 +602,356 @@ release_version_lock() {
 	holder="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$lock_path" | head -1)"
 	if [[ "$holder" == "$$" ]]; then
 		rm -f "$lock_path"
+	fi
+}
+
+activation_lock_sleep() {
+	local milliseconds="$1" seconds
+	seconds="$(awk -v ms="$milliseconds" 'BEGIN { printf "%.3f", ms / 1000 }')"
+	sleep "$seconds"
+}
+
+activation_lock_now_ms() {
+	local value seconds
+	value="$(date +%s%3N 2>/dev/null || true)"
+	if [[ "$value" =~ ^[0-9]+$ ]]; then
+		printf '%s' "$value"
+		return
+	fi
+	if have perl; then
+		perl -MTime::HiRes=time -e 'printf "%.0f", time() * 1000'
+		return
+	fi
+	seconds="$(date +%s)"
+	printf '%s000' "$seconds"
+}
+
+activation_lock_poll_until() {
+	local deadline="$1" now remaining delay
+	now="$(activation_lock_now_ms)"
+	remaining=$((deadline - now))
+	((remaining > 0)) || return 1
+	delay="$ACTIVATION_LOCK_POLL_MS"
+	((delay <= remaining)) || delay="$remaining"
+	((delay > 0)) || delay=1
+	activation_lock_sleep "$delay"
+}
+
+activation_lock_hostname() {
+	local value
+	value="$(hostname 2>/dev/null || uname -n 2>/dev/null || true)"
+	printf '%s' "$value" | awk '{$1=$1; print}' | tr '[:upper:]' '[:lower:]'
+}
+
+activation_lock_process_start_id() {
+	local pid="$1" raw rest value
+	if [[ -r "/proc/$pid/stat" ]]; then
+		raw="$(cat "/proc/$pid/stat" 2>/dev/null || true)"
+		if [[ "$raw" == *") "* ]]; then
+			rest="${raw##*) }"
+			# Fields after comm begin with field 3; starttime is field 22.
+			# shellcheck disable=SC2086
+			set -- $rest
+			value="${20:-}"
+			[[ -n "$value" ]] && printf 'linux-proc:%s' "$value"
+		fi
+		return
+	fi
+	if [[ "$HOST_OS" == darwin ]]; then
+		value="$(ps -o lstart= -p "$pid" 2>/dev/null | awk '{$1=$1; print}' || true)"
+		[[ -n "$value" ]] && printf 'darwin-ps:%s' "$value"
+	fi
+}
+
+read_activation_lock() {
+	local raw="$1" process_start_raw
+	ACTIVATION_READ_SCHEMA="$(printf '%s\n' "$raw" | sed -n 's/.*"schemaVersion"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+	ACTIVATION_READ_SCOPE="$(printf '%s\n' "$raw" | sed -n 's/.*"scope"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	ACTIVATION_READ_PID="$(printf '%s\n' "$raw" | sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+	ACTIVATION_READ_VERSION="$(printf '%s\n' "$raw" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	ACTIVATION_READ_EXEC_PATH="$(printf '%s\n' "$raw" | sed -n 's/.*"execPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	ACTIVATION_READ_OWNER="$(printf '%s\n' "$raw" | sed -n 's/.*"ownerId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	ACTIVATION_READ_ACQUIRED_AT="$(printf '%s\n' "$raw" | sed -n 's/.*"acquiredAt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	ACTIVATION_READ_HOSTNAME="$(printf '%s\n' "$raw" | sed -n 's/.*"hostname"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 | tr '[:upper:]' '[:lower:]')"
+	ACTIVATION_READ_PROCESS_START="$(printf '%s\n' "$raw" | sed -n 's/.*"processStartId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+	process_start_raw="$(printf '%s\n' "$raw" | sed -n 's/.*"processStartId"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p' | head -1)"
+
+	[[ "$ACTIVATION_READ_SCHEMA" == 1 ]] || return 1
+	[[ "$ACTIVATION_READ_SCOPE" == activation ]] || return 1
+	[[ "$ACTIVATION_READ_PID" =~ ^[1-9][0-9]*$ ]] || return 1
+	parse_canonical_version "$ACTIVATION_READ_VERSION" >/dev/null 2>&1 || return 1
+	[[ -n "$ACTIVATION_READ_EXEC_PATH" && -n "$ACTIVATION_READ_OWNER" ]] || return 1
+	[[ "$ACTIVATION_READ_ACQUIRED_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] || return 1
+	[[ -n "$ACTIVATION_READ_HOSTNAME" ]] || return 1
+	[[ "$process_start_raw" == null || -n "$ACTIVATION_READ_PROCESS_START" ]] || return 1
+}
+
+activation_lock_owner_is_stale() {
+	local local_hostname current_start
+	local_hostname="$(activation_lock_hostname)"
+	# A foreign-host PID has no meaning locally. Preserve it until the bounded
+	# acquisition timeout instead of reclaiming a possibly-live remote owner.
+	[[ "$ACTIVATION_READ_HOSTNAME" == "$local_hostname" ]] || return 1
+	if kill -0 "$ACTIVATION_READ_PID" 2>/dev/null || ps -p "$ACTIVATION_READ_PID" >/dev/null 2>&1; then
+		if [[ -n "$ACTIVATION_READ_PROCESS_START" ]]; then
+			current_start="$(activation_lock_process_start_id "$ACTIVATION_READ_PID")"
+			[[ -n "$current_start" && "$current_start" != "$ACTIVATION_READ_PROCESS_START" ]] && return 0
+		fi
+		return 1
+	fi
+	return 0
+}
+
+activation_reclaim_temp_is_stale() {
+	local temp_path="$1" raw modified now
+	raw="$(cat "$temp_path" 2>/dev/null || true)"
+	if read_activation_lock "$raw"; then
+		activation_lock_owner_is_stale
+		return
+	fi
+	# Invalid partial writes have no usable owner identity. Give an active writer
+	# at least the corrupt grace before treating the uniquely named temp as
+	# abandoned. Preserve it when this platform cannot report modification time.
+	modified="$(stat -c %Y "$temp_path" 2>/dev/null || stat -f %m "$temp_path" 2>/dev/null || true)"
+	[[ "$modified" =~ ^[0-9]+$ ]] || return 1
+	now="$(date +%s)"
+	((now * 1000 - modified * 1000 >= ACTIVATION_LOCK_CORRUPT_GRACE_MS))
+}
+
+first_activation_reclaim_claim() {
+	local lock_path="$1" claim temp raw
+	# Temp publications are never election claims. Clean both the current
+	# out-of-namespace form and the legacy in-prefix form whose crash residue
+	# otherwise blocked every future activation.
+	for temp in "${lock_path}.reclaim-tmp."* "${lock_path}.reclaim."*.tmp.*; do
+		[[ -f "$temp" ]] || continue
+		activation_reclaim_temp_is_stale "$temp" && rm -f "$temp"
+	done
+	for claim in "${lock_path}.reclaim."*; do
+		[[ -f "$claim" ]] || continue
+		raw="$(cat "$claim" 2>/dev/null || true)"
+		if read_activation_lock "$raw" && activation_lock_owner_is_stale; then
+			# Claim names contain a random owner token and are never reused.
+			rm -f "$claim"
+			continue
+		fi
+		printf '%s\n' "$claim"
+	done | sort | head -1
+}
+
+create_activation_reclaim_claim() {
+	local lock_path="$1" owner_id="$2" record="$3" claim_path temp_path
+	claim_path="${lock_path}.reclaim.${owner_id}"
+	temp_path="${lock_path}.reclaim-tmp.${owner_id}.$$.$RANDOM"
+	(
+		umask 077
+		printf '%s\n' "$record" >"$temp_path"
+	) || return 1
+	if ! mv "$temp_path" "$claim_path" 2>/dev/null; then
+		rm -f "$temp_path"
+		return 1
+	fi
+	printf '%s' "$claim_path"
+}
+
+restore_activation_quarantine() {
+	local quarantine_path="$1" lock_path="$2"
+	# A hard link is an exclusive restore: it can never overwrite a canonical
+	# path created by a newer owner while reclamation was being validated.
+	if ln "$quarantine_path" "$lock_path" 2>/dev/null; then
+		rm -f "$quarantine_path"
+		return 0
+	fi
+	# EEXIST means a newer canonical owner won and must be preserved. Any
+	# hard-link failure while canonical is absent is fail-closed: the observed
+	# owner remains in quarantine and this contender must not activate.
+	[[ -e "$lock_path" ]] && return 0
+	return 1
+}
+
+reclaim_activation_lock() {
+	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4" successor_raw="$5" deadline="$6"
+	local quarantine_path quarantined_raw
+	quarantine_path="${lock_path}.quarantine.${owner_id}.${RANDOM}"
+	while [[ -e "$quarantine_path" ]]; do
+		quarantine_path="${lock_path}.quarantine.${owner_id}.${RANDOM}"
+	done
+	if ! mv "$lock_path" "$quarantine_path" 2>/dev/null; then
+		return 1
+	fi
+	quarantined_raw="$(cat "$quarantine_path" 2>/dev/null || true)"
+	if [[ "$quarantined_raw" != "$observed_raw" ]]; then
+		restore_activation_quarantine "$quarantine_path" "$lock_path" || return 2
+		return 1
+	fi
+	if read_activation_lock "$quarantined_raw"; then
+		if ! activation_lock_owner_is_stale; then
+			restore_activation_quarantine "$quarantine_path" "$lock_path" || return 2
+			return 1
+		fi
+	elif [[ "$allow_corrupt" != 1 ]]; then
+		restore_activation_quarantine "$quarantine_path" "$lock_path" || return 2
+		return 1
+	fi
+	rm -f "$quarantine_path"
+	local attempt=0
+	while ((attempt < 20)); do
+		(($(activation_lock_now_ms) < deadline)) || return 1
+		if (
+			set -o noclobber
+			umask 077
+			printf '%s\n' "$successor_raw" >"$lock_path"
+		) 2>/dev/null; then
+			return 0
+		fi
+		activation_lock_sleep 1
+		attempt=$((attempt + 1))
+	done
+	return 1
+}
+
+claim_and_reclaim_activation_lock() {
+	local lock_path="$1" observed_raw="$2" allow_corrupt="$3" owner_id="$4" successor_raw="$5" deadline="$6"
+	local claim_path first_claim current_raw result=1
+	claim_path="$(create_activation_reclaim_claim "$lock_path" "$owner_id" "$successor_raw")" || return 1
+	first_claim="$(first_activation_reclaim_claim "$lock_path")"
+	if [[ "$first_claim" == "$claim_path" ]]; then
+		current_raw="$(cat "$lock_path" 2>/dev/null || true)"
+		if [[ "$current_raw" == "$observed_raw" ]]; then
+			if reclaim_activation_lock "$lock_path" "$current_raw" "$allow_corrupt" "$owner_id" "$successor_raw" "$deadline"; then
+				result=0
+			else
+				result=$?
+			fi
+		fi
+	fi
+	rm -f "$claim_path"
+	return "$result"
+}
+
+# Cross-language activation lock shared by install.sh, install.ps1, and the
+# in-process native updater. Bash noclobber makes creation atomic (O_EXCL);
+# every implementation uses the same JSON fields and token-checked release.
+acquire_activation_lock() {
+	local version="$1" lock_path="$2"
+	local deadline corrupt_since=0 holder="" raw local_hostname process_start process_start_json activation_record reclaim_result attempted=0
+
+	deadline=$(($(activation_lock_now_ms) + ACTIVATION_LOCK_TIMEOUT_MS))
+	mkdir -p "$(dirname "$lock_path")"
+	ACTIVATION_LOCK_OWNER_ID="$$-$(date +%s)-$RANDOM"
+	local_hostname="$(activation_lock_hostname)"
+	process_start="$(activation_lock_process_start_id "$$")"
+	if [[ -n "$process_start" ]]; then
+		process_start_json="\"$(json_escape "$process_start")\""
+	else
+		process_start_json=null
+	fi
+	activation_record="$(printf '{"schemaVersion":1,"scope":"activation","pid":%s,"version":"%s","execPath":"install.sh","ownerId":"%s","acquiredAt":"%s","hostname":"%s","processStartId":%s}' \
+		"$$" "$(json_escape "$version")" "$(json_escape "$ACTIVATION_LOCK_OWNER_ID")" "$(iso_now)" "$(json_escape "$local_hostname")" "$process_start_json")"
+
+	while :; do
+		if ((attempted == 1 && $(activation_lock_now_ms) >= deadline)); then
+			if [[ -n "$holder" ]]; then
+				err "Activation lock held by pid $holder while activating version $version"
+			else
+				err "Activation lock held while activating version $version"
+			fi
+			return 1
+		fi
+		attempted=1
+		if [[ -n "$(first_activation_reclaim_claim "$lock_path")" ]]; then
+			if (($(activation_lock_now_ms) >= deadline)); then
+				err "Activation reclamation is already in progress for version $version"
+				return 1
+			fi
+			activation_lock_poll_until "$deadline" || continue
+			continue
+		fi
+		if (
+			set -o noclobber
+			umask 077
+			printf '%s\n' "$activation_record" >"$lock_path"
+		) 2>/dev/null; then
+			if [[ -z "$(first_activation_reclaim_claim "$lock_path")" ]]; then
+				return 0
+			fi
+			release_activation_lock "$lock_path" "$ACTIVATION_LOCK_OWNER_ID"
+			continue
+		fi
+		if [[ ! -e "$lock_path" ]]; then
+			if (($(activation_lock_now_ms) >= deadline)); then
+				err "Could not create activation lock at $lock_path"
+				return 1
+			fi
+			activation_lock_poll_until "$deadline" || continue
+			continue
+		fi
+
+		raw="$(cat "$lock_path" 2>/dev/null || true)"
+
+		if read_activation_lock "$raw"; then
+			corrupt_since=0
+			holder="$ACTIVATION_READ_PID"
+			if activation_lock_owner_is_stale; then
+				if claim_and_reclaim_activation_lock "$lock_path" "$raw" 0 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" "$deadline"; then
+					return 0
+				else
+					reclaim_result=$?
+					if ((reclaim_result == 2)); then
+						err "Could not restore activation lock quarantine at $lock_path; refusing activation"
+						return 1
+					fi
+				fi
+			fi
+		else
+			holder=""
+			if ((corrupt_since == 0)); then
+				corrupt_since="$(activation_lock_now_ms)"
+			elif (($(activation_lock_now_ms) - corrupt_since >= ACTIVATION_LOCK_CORRUPT_GRACE_MS)); then
+				if claim_and_reclaim_activation_lock "$lock_path" "$raw" 1 "$ACTIVATION_LOCK_OWNER_ID" "$activation_record" "$deadline"; then
+					return 0
+				else
+					reclaim_result=$?
+					if ((reclaim_result == 2)); then
+						err "Could not restore activation lock quarantine at $lock_path; refusing activation"
+						return 1
+					fi
+				fi
+				corrupt_since=0
+			fi
+		fi
+
+		if (($(activation_lock_now_ms) >= deadline)); then
+			if [[ -n "$holder" ]]; then
+				err "Activation lock held by pid $holder while activating version $version"
+			else
+				err "Activation lock held while activating version $version"
+			fi
+			return 1
+		fi
+		activation_lock_poll_until "$deadline" || true
+	done
+}
+
+release_activation_lock() {
+	local lock_path="$1" owner_id="$2" current_owner quarantine_path
+	[[ -f "$lock_path" ]] || return 0
+	[[ -n "$owner_id" ]] || return 0
+	quarantine_path="${lock_path}.quarantine.${owner_id}.release.${RANDOM}"
+	while [[ -e "$quarantine_path" ]]; do
+		quarantine_path="${lock_path}.quarantine.${owner_id}.release.${RANDOM}"
+	done
+	if ! mv "$lock_path" "$quarantine_path" 2>/dev/null; then
+		return 0
+	fi
+	current_owner="$(sed -n 's/.*"ownerId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$quarantine_path" 2>/dev/null | head -1)"
+	if [[ "$current_owner" == "$owner_id" ]]; then
+		rm -f "$quarantine_path"
+	else
+		if ! restore_activation_quarantine "$quarantine_path" "$lock_path"; then
+			err "Could not restore activation lock quarantine at $lock_path; ownership remains quarantined"
+			return 1
+		fi
 	fi
 }
 
@@ -547,6 +1007,46 @@ activate_launcher() {
 	rm -f "$tmp_link"
 	ln -sfn "$version_path" "$tmp_link"
 	mv -f "$tmp_link" "$launcher"
+}
+
+snapshot_launcher() {
+	local launcher="$1"
+	LAUNCHER_SNAPSHOT_KIND="missing"
+	LAUNCHER_SNAPSHOT_TARGET=""
+	LAUNCHER_SNAPSHOT_BACKUP="${launcher}.activation-backup.$$"
+	rm -f "$LAUNCHER_SNAPSHOT_BACKUP"
+	if [[ -L "$launcher" ]]; then
+		LAUNCHER_SNAPSHOT_KIND="symlink"
+		LAUNCHER_SNAPSHOT_TARGET="$(readlink "$launcher")" || return 1
+	elif [[ -e "$launcher" ]]; then
+		LAUNCHER_SNAPSHOT_KIND="file"
+		cp -p "$launcher" "$LAUNCHER_SNAPSHOT_BACKUP" || return 1
+	fi
+}
+
+restore_launcher_snapshot() {
+	local launcher="$1" tmp_link
+	case "$LAUNCHER_SNAPSHOT_KIND" in
+	symlink)
+		tmp_link="${launcher}.restore.$$"
+		rm -f "$tmp_link"
+		ln -s "$LAUNCHER_SNAPSHOT_TARGET" "$tmp_link" || return 1
+		mv -f "$tmp_link" "$launcher" || return 1
+		;;
+	file)
+		[[ -f "$LAUNCHER_SNAPSHOT_BACKUP" ]] || return 1
+		mv -f "$LAUNCHER_SNAPSHOT_BACKUP" "$launcher" || return 1
+		;;
+	missing) rm -f "$launcher" ;;
+	*) return 1 ;;
+	esac
+}
+
+discard_launcher_snapshot() {
+	[[ -n "$LAUNCHER_SNAPSHOT_BACKUP" ]] && rm -f "$LAUNCHER_SNAPSHOT_BACKUP"
+	LAUNCHER_SNAPSHOT_KIND="missing"
+	LAUNCHER_SNAPSHOT_TARGET=""
+	LAUNCHER_SNAPSHOT_BACKUP=""
 }
 
 detect_musl() {
@@ -688,7 +1188,8 @@ read_previous_active_version() {
 install_binary() {
 	local os arch translated asset base url sums resolved_version version_path versions_dir
 	local staging txn_id txn_path lock_path staged_bin staged_sums want got size_bytes
-	local target previous kind metadata_path cleanup_done=0
+	local target previous activation_previous kind metadata_path
+	local activation_lock_path
 
 	os="$(detect_os)"
 	arch="$(detect_arch)"
@@ -755,18 +1256,36 @@ install_binary() {
 	txn_id="$(date +%s)-$$"
 	txn_path="$DATA_DIR/transactions/${txn_id}.json"
 	lock_path="$DATA_DIR/locks/${resolved_version}.lock"
+	activation_lock_path="$DATA_DIR/locks/activation.lock"
 	staged_bin="$staging/$asset"
 	staged_sums="$staging/SHA256SUMS"
 	metadata_path="$versions_dir/$resolved_version/version.json"
+	INSTALL_TXN_PATH="$txn_path"
+	INSTALL_VERSION_LOCK_PATH="$lock_path"
+	INSTALL_STAGING_PATH="$staging"
+	INSTALL_ACTIVATION_LOCK_PATH="$activation_lock_path"
+	INSTALL_ACTIVATION_LOCK_HELD=0
+	INSTALL_LAUNCHER_ACTIVATED=0
+	INSTALL_PRESERVE_LAUNCHER_SNAPSHOT=0
 
 	cleanup_install_state() {
-		[[ "$cleanup_done" == 1 ]] && return
-		cleanup_done=1
-		finish_transaction "$txn_path" 2>/dev/null || true
-		release_version_lock "$lock_path" 2>/dev/null || true
-		rm -rf "$staging" 2>/dev/null || true
+		if [[ "$INSTALL_ACTIVATION_LOCK_HELD" == 1 ]]; then
+			if [[ "$INSTALL_LAUNCHER_ACTIVATED" == 1 ]]; then
+				if ! restore_launcher_snapshot "$BIN_DIR/kunai" 2>/dev/null; then
+					INSTALL_PRESERVE_LAUNCHER_SNAPSHOT=1
+				fi
+			fi
+			release_activation_lock "$INSTALL_ACTIVATION_LOCK_PATH" "$ACTIVATION_LOCK_OWNER_ID" 2>/dev/null || true
+			INSTALL_ACTIVATION_LOCK_HELD=0
+		fi
+		if [[ "$INSTALL_PRESERVE_LAUNCHER_SNAPSHOT" != 1 ]]; then
+			discard_launcher_snapshot 2>/dev/null || true
+		fi
+		finish_transaction "$INSTALL_TXN_PATH" 2>/dev/null || true
+		release_version_lock "$INSTALL_VERSION_LOCK_PATH" 2>/dev/null || true
+		rm -rf "$INSTALL_STAGING_PATH" 2>/dev/null || true
 		# Prune empty version/staging parents left by mkdir -p.
-		rmdir "$(dirname "$staging")" 2>/dev/null || true
+		rmdir "$(dirname "$INSTALL_STAGING_PATH")" 2>/dev/null || true
 		rmdir "$CACHE_DIR/staging" 2>/dev/null || true
 	}
 	trap cleanup_install_state EXIT
@@ -817,7 +1336,6 @@ install_binary() {
 	mv -f "$version_tmp" "$version_path"
 
 	write_version_metadata "$resolved_version" "$target" "$asset" "$got" "$size_bytes" "$url" "$metadata_path"
-	activate_launcher "$version_path" "$BIN_DIR/kunai"
 
 	if [[ "$os" == darwin ]]; then
 		xattr -d com.apple.quarantine "$version_path" 2>/dev/null || true
@@ -843,18 +1361,44 @@ install_binary() {
 		info "Cleared macOS quarantine when present (Gatekeeper may still prompt on first launch)."
 	fi
 
-	local prev_arg=""
-	if [[ -n "$previous" && "$previous" != "$resolved_version" ]]; then
-		prev_arg="$previous"
+	acquire_activation_lock "$resolved_version" "$activation_lock_path" || exit 1
+	INSTALL_ACTIVATION_LOCK_HELD=1
+	# Another version may have activated during this download. Read shared state
+	# under the cross-version lock before publishing the launcher and manifest.
+	activation_previous="$(read_previous_active_version || true)"
+	if ! snapshot_launcher "$BIN_DIR/kunai"; then
+		err "Could not snapshot the current launcher before activation."
+		exit 1
 	fi
-	write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "$target" "$got" "$prev_arg"
+	if ! activate_launcher "$version_path" "$BIN_DIR/kunai"; then
+		err "Could not activate the launcher for version $resolved_version."
+		exit 1
+	fi
+	INSTALL_LAUNCHER_ACTIVATED=1
+
+	local prev_arg=""
+	if [[ -n "$activation_previous" && "$activation_previous" != "$resolved_version" ]]; then
+		prev_arg="$activation_previous"
+	fi
+	if ! write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "$target" "$got" "$prev_arg"; then
+		err "Could not publish install.json; restoring the previous launcher."
+		if ! restore_launcher_snapshot "$BIN_DIR/kunai"; then
+			err "Launcher restoration failed; inspect $LAUNCHER_SNAPSHOT_BACKUP before retrying."
+			INSTALL_PRESERVE_LAUNCHER_SNAPSHOT=1
+		fi
+		INSTALL_LAUNCHER_ACTIVATED=0
+		exit 1
+	fi
+	INSTALL_LAUNCHER_ACTIVATED=0
+	discard_launcher_snapshot
+	release_activation_lock "$activation_lock_path" "$ACTIVATION_LOCK_OWNER_ID"
+	INSTALL_ACTIVATION_LOCK_HELD=0
 
 	finish_transaction "$txn_path"
 	release_version_lock "$lock_path"
 	rm -rf "$staging"
 	rmdir "$(dirname "$staging")" 2>/dev/null || true
 	rmdir "$CACHE_DIR/staging" 2>/dev/null || true
-	cleanup_done=1
 	trap - EXIT
 
 	info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"

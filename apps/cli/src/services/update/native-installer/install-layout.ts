@@ -194,6 +194,19 @@ export function lockFilePath(
   return joinerForLayoutPath(layout.locksDir)(layout.locksDir, `${canonical}.lock`);
 }
 
+/** Shared launcher/manifest activation lock: `{dataDir}/locks/activation.lock`. */
+export function activationLockPath(layout: Pick<InstallLayoutPaths, "locksDir">): string {
+  return joinerForLayoutPath(layout.locksDir)(layout.locksDir, "activation.lock");
+}
+
+/**
+ * Purge-safe uninstall guard, intentionally outside `{dataDir}` so removing
+ * the managed data root cannot drop serialization before uninstall finishes.
+ */
+export function lifecycleGuardPath(layout: Pick<InstallLayoutPaths, "dataDir">): string {
+  return `${layout.dataDir}.lifecycle.lock`;
+}
+
 /** Per-version metadata sidecar: `{dataDir}/versions/{semver}/version.json`. */
 export function versionMetadataPath(
   layout: Pick<InstallLayoutPaths, "versionsDir">,
