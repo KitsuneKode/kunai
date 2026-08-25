@@ -498,7 +498,6 @@ export type RelayErrorCode =
 
 export interface RelayProfile {
   readonly upstreamHosts: readonly string[];
-  readonly videoRelayHosts?: readonly string[];
   readonly maxRequestBodyBytes?: number;
   readonly maxResponseBodyBytes?: number;
   readonly defaultHeaders?: Readonly<Record<string, string>>;
@@ -507,7 +506,6 @@ export interface RelayProfile {
 
 export interface ProviderRelayProviderConfig {
   readonly enabled?: boolean;
-  readonly videoFallback?: boolean;
 }
 
 export interface ProviderRelayConfig {

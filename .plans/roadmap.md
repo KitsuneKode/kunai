@@ -90,22 +90,22 @@ archive and put only the residue here.
 Numbered plans from an external audit. They keep their original numbers because
 the K-reconciliation below and the commit history both cite them by id.
 
-| Plan                                                | Remaining work                                                            | Status                                              |
-| --------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------- |
-| [006](./006-startup-defer-network-and-providers.md) | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)    |
-| [008](./008-tui-timer-and-poster-perf.md)           | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)          |
-| [010](./010-characterization-tests-for-giants.md)   | Characterization net for private `AppRoot`                                | BLOCKED (needs a full-container harness)            |
-| [011](./011-split-shell-workflows.md)               | Split `shell-workflows.ts`                                                | BLOCKED by 010                                      |
-| [012](./012-decompose-playback-phase.md)            | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                      |
-| [013](./013-split-ink-shell-host-surface.md)        | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                      |
-| [014](./014-enforce-layering-boundaries.md)         | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)                |
-| [015](./015-retire-legacy-flat-modules.md)          | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                              |
-| [021](./021-provider-contract-enforcement.md)       | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 are the release slice            |
-| [022](./022-shell-interaction-coherence.md)         | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                               |
-| [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                                       | TODO; narrow misleading global `--dry-run` for K-16 |
-| [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles                 |
-| [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete   |
-| [043](./043-history-key-migration-transaction.md)   | Transactional legacy history-key migration                                | TODO; independent data-migration PR                 |
+| Plan                                                | Remaining work                                                            | Status                                            |
+| --------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
+| [006](./006-startup-defer-network-and-providers.md) | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)  |
+| [008](./008-tui-timer-and-poster-perf.md)           | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
+| [010](./010-characterization-tests-for-giants.md)   | Characterization net for private `AppRoot`                                | BLOCKED (needs a full-container harness)          |
+| [011](./011-split-shell-workflows.md)               | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
+| [012](./012-decompose-playback-phase.md)            | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
+| [013](./013-split-ink-shell-host-surface.md)        | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
+| [014](./014-enforce-layering-boundaries.md)         | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)              |
+| [015](./015-retire-legacy-flat-modules.md)          | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                            |
+| [021](./021-provider-contract-enforcement.md)       | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 release slice complete         |
+| [022](./022-shell-interaction-coherence.md)         | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                             |
+| [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
+| [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles               |
+| [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
+| [043](./043-history-key-migration-transaction.md)   | Transactional legacy history-key migration                                | TODO; independent data-migration PR               |
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
@@ -117,18 +117,18 @@ findings are fixed below, and its suggested first week would redo landed work.
 It is deliberately ignored by Git and agent indexes. This table replaces its
 status claims.
 
-Count: **14 fixed, 3 open** (K-04, K-08, K-16).
+Count: **17 fixed, 0 open**.
 
 | Finding | Current status | Evidence / owner                                                                                                                                                       |
 | ------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | K-01    | FIXED          | Exact Bun connect strings remain covered by network/TMDB regression tests.                                                                                             |
 | K-02    | FIXED          | PR #48 exports every diagnostic category in support bundles.                                                                                                           |
 | K-03    | FIXED          | PR #42 preserves sticky offline truth and search failure copy.                                                                                                         |
-| K-04    | OPEN           | `providerRelay.videoFallback` persists, but `rewriteStreamUrlForRelay` has no production reader. Remove the unused promise in plan 021; do not add shared video relay. |
+| K-04    | FIXED          | Removed the unread video fallback flag, media-host allowlist, and URL rewrite helper. Relay configuration is metadata-only; no shared video relay was added.           |
 | K-05    | FIXED          | PR #46 preserves the working Windows launcher across activation failure.                                                                                               |
 | K-06    | FIXED          | Session phase moves from ready to playing only inside the confirmed `playback-started` callback.                                                                       |
 | K-07    | FIXED          | PR #27 restores playing after progress resumes and rejects stale mpv work.                                                                                             |
-| K-08    | OPEN           | Contract conformance still baselines two known orphaned relay contracts; plan 021 with K-04.                                                                           |
+| K-08    | FIXED          | Removed the retired video-relay symbol and its baseline. Geo-block detection remains separately named as plan 021 Stage 2 debt rather than hidden in a generic pair.   |
 | K-09    | FIXED          | PR #45 preserves the last-known-good atomic JSON target on Windows.                                                                                                    |
 | K-10    | FIXED          | This reconciliation removes stale top-level TODO/checklist authorities, archives landed plans, and corrects provider/poster docs.                                      |
 | K-11    | FIXED          | Auto-advance reads one exact queue head before catalog planning, so play-next interrupts before countdown while ordinary rows wait.                                    |
@@ -136,15 +136,14 @@ Count: **14 fixed, 3 open** (K-04, K-08, K-16).
 | K-13    | FIXED          | One-shot IPC bootstrap failure terminates and reaps its owned child; generation tests prevent clearing a replacement control.                                          |
 | K-14    | FIXED          | PR #37 gives slow installer suites an explicit reachable timeout budget.                                                                                               |
 | K-15    | FIXED          | PR #44 structurally contains recursive staging cleanup.                                                                                                                |
-| K-16    | OPEN           | Global help still promises `--dry-run` changes nothing while the reader only guards protocol install/rollback; plan 023.                                               |
+| K-16    | FIXED          | PR #144 added a pure launch-plan reader that exits before locks, storage, container bootstrap, probes, or dependency checks; protocol and rollback plans remain valid. |
 | K-17    | FIXED          | PR #53: AllAnime and Miruro prefer a proven season-relative episode; absolute-only inputs retain absolute routing.                                                     |
 
 ## Release-focused train
 
 1. The docs/truth reconciliation and plan 047 lifecycle slice are complete.
-2. Provider routing plan 046 is complete. Execute plan 021 K-04/K-08 removal
-   and plan 023 K-16 narrowing together only if the diff stays reviewable.
-   Keep separate commits so any provider change can be reverted alone.
+2. Provider routing plan 046 and the plan 021 K-04/K-08 release slice are
+   complete. PR #144 completed K-16 without narrowing valid launch previews.
 3. Execute plan 043 as its own migration PR.
 4. The rebased tracker-sync implementation and plan 032's deterministic work
    are complete. Keep sync experimental until the disposable-account live smoke

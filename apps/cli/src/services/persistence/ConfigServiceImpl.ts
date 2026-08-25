@@ -91,16 +91,13 @@ function normalizeProviderRelayConfig(value: unknown): ProviderRelayConfig {
   if (!value || typeof value !== "object") return DEFAULT_CONFIG.providerRelay;
   const raw = value as Partial<ProviderRelayConfig>;
   const baseUrl = normalizeRelayBaseUrl(raw.baseUrl);
-  const providers: Record<string, { enabled?: boolean; videoFallback?: boolean }> = {};
+  const providers: Record<string, { enabled?: boolean }> = {};
   if (raw.providers && typeof raw.providers === "object") {
     for (const [providerId, providerConfig] of Object.entries(raw.providers)) {
       if (!providerId.trim() || !providerConfig || typeof providerConfig !== "object") continue;
       providers[providerId.trim()] = {
         ...(typeof providerConfig.enabled === "boolean"
           ? { enabled: providerConfig.enabled }
-          : null),
-        ...(typeof providerConfig.videoFallback === "boolean"
-          ? { videoFallback: providerConfig.videoFallback }
           : null),
       };
     }

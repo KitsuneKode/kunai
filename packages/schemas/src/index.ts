@@ -101,7 +101,6 @@ export const providerRelayConfigSchema = z.object({
       z.string(),
       z.object({
         enabled: z.boolean().optional(),
-        videoFallback: z.boolean().optional(),
       }),
     )
     .optional(),

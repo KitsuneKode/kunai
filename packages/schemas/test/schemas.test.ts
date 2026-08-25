@@ -31,7 +31,7 @@ test("relay schemas validate config rpc requests and structured errors", () => {
     token: "secret",
     fallbackToDirect: true,
     providers: {
-      allanime: { enabled: true, videoFallback: false },
+      allanime: { enabled: true, videoFallback: true },
     },
   });
   const request = relayRpcRequestSchema.parse({
@@ -49,6 +49,7 @@ test("relay schemas validate config rpc requests and structured errors", () => {
   });
 
   expect(config.providers?.allanime?.enabled).toBe(true);
+  expect(config.providers?.allanime).toEqual({ enabled: true });
   expect(request.method).toBe("POST");
   expect(error.error.code).toBe("host-not-allowed");
 });

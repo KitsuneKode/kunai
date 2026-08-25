@@ -41,9 +41,8 @@ judgment.
   logic.** Check parity against the reference implementation before changing
   crypto or decoder constants, and document any deliberate divergence in
   [.docs/providers.md](.docs/providers.md).
-- **Relay is metadata-only by default.** Do not route video through it unless
-  `videoFallback` is explicitly enabled and the host is in
-  `relayProfile.videoRelayHosts`. `packages/relay` is the single shared
+- **Relay is metadata-only.** It has no media route or video fallback contract;
+  stream URLs always stay direct. `packages/relay` is the single shared
   implementation; `apps/relay-server` stays a thin adapter.
 - **Kunai must never ship a shared public relay URL.** `providerRelay.baseUrl`
   is empty by default and user-owned.

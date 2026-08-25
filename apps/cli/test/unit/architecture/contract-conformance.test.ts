@@ -33,9 +33,12 @@ function collectSourceFiles(rootRelative: string): string[] {
 const PRODUCTION_ROOTS = [
   "apps/cli/src",
   "packages/core/src",
+  "packages/config/src",
   "packages/relay/src",
+  "packages/schemas/src",
   "packages/storage/src",
   "packages/providers/src",
+  "packages/types/src",
 ];
 
 /**
@@ -68,6 +71,21 @@ describe("contract conformance", () => {
     );
 
     expect(discardedQueuePasses).toEqual([]);
+  });
+
+  test("retired video relay contracts stay absent from production", () => {
+    const RETIRED_VIDEO_RELAY_CONTRACTS = [
+      "rewriteStreamUrlForRelay",
+      "videoFallback",
+      "videoRelayHosts",
+    ] as const;
+    const found = RETIRED_VIDEO_RELAY_CONTRACTS.flatMap((symbol) =>
+      PRODUCTION_SOURCES.filter(({ text }) => new RegExp(`\\b${symbol}\\b`).test(text)).map(
+        ({ file }) => `${symbol}: ${file}`,
+      ),
+    );
+
+    expect(found, "metadata-only relay must not regain a video-proxy promise").toEqual([]);
   });
 
   /**
@@ -256,27 +274,16 @@ describe("contract conformance", () => {
   test("declared contract surfaces have a production reader", () => {
     const CONTRACT_SYMBOLS: readonly { symbol: string; definedIn: readonly string[] }[] = [
       {
-        symbol: "rewriteStreamUrlForRelay",
-        definedIn: ["packages/relay/src/rewrite-stream-url.ts"],
-      },
-      {
         symbol: "detectGeoBlockedProviderResponse",
         definedIn: ["packages/relay/src/detect-geo-block.ts"],
       },
     ];
 
     // DEBT (2026-07-21): declared, wired to nothing.
-    // - rewriteStreamUrlForRelay: `providerRelay.videoFallback` is parsed and
-    //   persisted, but Settings never shows it and no caller rewrites the stream
-    //   URL. Do not add a `/stream/` handler here (K-04). Enabling the flag is a
-    //   placebo.
     // - detectGeoBlockedProviderResponse: geo-blocking is the failure the relay
     //   exists for and nothing detects it; its allow-list also names "allmanga",
     //   which is the module name, not the provider id ("allanime").
-    const KNOWN_ORPHANED_CONTRACTS = new Set([
-      "rewriteStreamUrlForRelay",
-      "detectGeoBlockedProviderResponse",
-    ]);
+    const KNOWN_ORPHANED_CONTRACTS = new Set(["detectGeoBlockedProviderResponse"]);
 
     const orphaned: string[] = [];
     const revived: string[] = [];

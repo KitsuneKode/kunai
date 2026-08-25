@@ -201,9 +201,8 @@ The repository already has places for the missing data:
    Keep volatile stream tokens out of committed fixtures.
 8. **Relay is metadata-only.** `createRelayFetchPort` and `handleRpcRequest` now
    consult `manifest.relaySafe`. AllManga and Videasy declare `true` for metadata
-   RPC (the Settings toggle use case). Video URL rewrite is still unused:
-   `videoFallback` is persisted with no production reader and no `/stream/`
-   handler — do not enable it (roadmap K-04).
+   RPC (the Settings toggle use case). Stream URLs stay direct; there is no
+   media route or video fallback configuration.
 
 ## Request Budget
 

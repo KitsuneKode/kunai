@@ -793,9 +793,8 @@ The cost model matters as much as the data, because this runs in front of the ep
   after the block lifted.
 - AniDB is relay-registered (`/rpc/anidb`, settings toggle). Metadata HTML/JSON uses `context.fetch`
   with curl fallback. HLS ladder expansion uses the same path so a relay miss does not collapse
-  qualities to a silent `auto` row. Video remains direct from `hls.anidb.app`. `videoFallback` is
-  still parsed and persisted, but has no production reader and no `/stream/` handler — do not
-  enable it.
+  qualities to a silent `auto` row. Video remains direct from `hls.anidb.app`; the relay has no
+  media route or video fallback configuration.
 
 ### AniDB metadata and language evidence
 

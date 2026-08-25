@@ -5,5 +5,4 @@ export * from "./forward-headers";
 export * from "./handler";
 export * from "./registry";
 export * from "./resolve-relay-config";
-export * from "./rewrite-stream-url";
 export * from "./types";

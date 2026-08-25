@@ -29,14 +29,12 @@ export function buildProviderRelayRegistry(
         entry.profile.upstreamHosts.some((host) => hostMatches(parsed.hostname, host)),
       );
     },
-    isHostAllowed(providerId, url, kind) {
+    isHostAllowed(providerId, url) {
       const parsed = parseHttpUrl(url);
       if (!parsed) return false;
       const entry = providers.find((candidate) => candidate.providerId === providerId);
       if (!entry) return false;
-      const hosts =
-        kind === "metadata" ? entry.profile.upstreamHosts : (entry.profile.videoRelayHosts ?? []);
-      return hosts.some((host) => hostMatches(parsed.hostname, host));
+      return entry.profile.upstreamHosts.some((host) => hostMatches(parsed.hostname, host));
     },
   };
 }
