@@ -1,8 +1,15 @@
 import { useDotMatrixAnimation, DotMatrixGrid } from "@/app-shell/dot-matrix-loader";
+import {
+  AUDIO_PREFERENCE_OPTIONS,
+  RECOMMENDED_AUDIO_PREFERENCE,
+  RECOMMENDED_SUBTITLE_PREFERENCE,
+  SUBTITLE_PREFERENCE_OPTIONS,
+} from "@/domain/media/media-preferences";
 import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
+import packageJson from "../../package.json" with { type: "json" };
 import {
   BLOOM_FRAMES,
   reducedMotionEnabled,
@@ -39,41 +46,62 @@ const SLIDE_ORDER: Slide[] = [
 /** Step counter + indicator + padding above each slide body. */
 const SETUP_CHROME_ROWS = 5;
 
-export type SetupFlowResult = "completed" | "skipped";
+/**
+ * The consent screen must describe *this* machine. It used to print the literal
+ * `"version": "0.3.0", "os": "linux", "arch": "x64"`, which made the one screen
+ * that has to be exactly true a false statement on macOS and Windows.
+ */
+const KUNAI_VERSION: string = packageJson.version;
+
+/**
+ * Three outcomes, because "skipped" was doing two incompatible jobs.
+ *
+ * - `completed` — the user answered every step.
+ * - `defaults`  — the user waved past some or all of it. The recommended
+ *   configuration is written. Previously this wrote *nothing*: `skip()` built
+ *   prefs and the caller discarded them, so skipping setup left the install
+ *   unconfigured while telling the user it was set up.
+ * - `aborted`   — esc. Nothing is written but the onboarding version, so a
+ *   deliberate bail-out never rewrites settings the user already had.
+ */
+export type SetupFlowResult = "completed" | "defaults" | "aborted";
 
 export interface SetupPrefs {
   audio: string;
   subtitle: string;
   downloadsEnabled: boolean;
-  /** Setup-time analytics choice before DO_NOT_TRACK / CI resolution. */
-  analyticsChoice: "enabled" | "disabled";
+  /**
+   * Setup-time analytics choice before DO_NOT_TRACK / CI resolution.
+   *
+   * `unchanged` is not "off" — it means the consent slide was never reached, so
+   * whatever the user already had must survive. Collapsing it into `disabled`
+   * would silently opt out someone who had previously opted in and then reran
+   * setup and pressed accept-all. Only a keystroke on the consent slide moves
+   * this value, in either direction.
+   */
+  analyticsChoice: "enabled" | "disabled" | "unchanged";
 }
 
 // ─── Option data ──────────────────────────────────────────────────────────────
 
-const AUDIO_OPTS = [
-  {
-    value: "original",
-    label: "Original",
-    detail: "Use the native language from the provider",
-  },
-  { value: "en", label: "English dub", detail: "Prefer English audio when available" },
-  { value: "ja", label: "Japanese", detail: "Prefer Japanese audio (anime-first)" },
-  { value: "dub", label: "Any dub", detail: "Prefer any dubbed track over original" },
-] as const;
+// One catalog, shared with `/settings` — see `domain/media/media-preferences.ts`.
+const AUDIO_OPTS = AUDIO_PREFERENCE_OPTIONS;
+const SUBTITLE_OPTS = SUBTITLE_PREFERENCE_OPTIONS;
 
-const SUBTITLE_OPTS = [
-  { value: "en", label: "English", detail: "English subtitles by default" },
-  { value: "none", label: "None", detail: "No subtitles unless you enable per-episode" },
-  {
-    value: "interactive",
-    label: "Ask me each time",
-    detail: "Pick subtitles interactively per episode",
-  },
-  { value: "ja", label: "Japanese", detail: "Japanese subtitles" },
-  { value: "es", label: "Spanish", detail: "Spanish subtitles" },
-  { value: "fr", label: "French", detail: "French subtitles" },
-] as const;
+/** Index of the recommended value, or 0 when it somehow left the catalog. */
+function recommendedIndex(
+  options: readonly { readonly value: string }[],
+  recommended: string,
+): number {
+  const index = options.findIndex((option) => option.value === recommended);
+  return index >= 0 ? index : 0;
+}
+
+const DOWNLOADS_ON_INDEX = 0;
+const DOWNLOADS_OFF_INDEX = 1;
+/** "Turn it on" leads the consent slide — see AnalyticsSlide for why. */
+const ANALYTICS_ON_INDEX = 0;
+const ANALYTICS_OFF_INDEX = 1;
 
 // ─── Shared layout helpers ────────────────────────────────────────────────────
 
@@ -94,7 +122,8 @@ function SlideLayout({
   // paddingTop, hint) and this container adds a paddingTop of its own. At a
   // reserve of 4 the box overflows by exactly one row and the hint line is
   // clipped at every terminal height — which on the analytics slide would
-  // silently drop "skip (keeps it off)", the one line that must never be lost.
+  // silently drop "[s] keep it off", the one escape hatch that must never be
+  // lost from a consent screen.
   const contentHeight = Math.max(4, rows - 5);
   return (
     <Box
@@ -165,7 +194,8 @@ function WelcomeSlide({ width, rows }: { width: number; rows: number }) {
         <FooterHint
           parts={[
             { key: "Enter", label: "start setup" },
-            { key: "s", label: "skip to search" },
+            { key: "S", label: "use recommended" },
+            { key: "esc", label: "skip setup" },
           ]}
         />
       }
@@ -294,7 +324,7 @@ function SystemSlide({
           <FooterHint
             parts={[
               { key: "Enter", label: "continue anyway" },
-              { key: "s", label: "skip setup" },
+              { key: "S", label: "use recommended" },
             ]}
           />
         ) : (
@@ -302,7 +332,7 @@ function SystemSlide({
             parts={[
               { key: "Enter", label: "next" },
               { key: "←/b", label: "back" },
-              { key: "s", label: "skip" },
+              { key: "S", label: "use recommended" },
             ]}
           />
         )
@@ -383,7 +413,7 @@ function PickerSlide({
             { key: "Enter", label: "confirm & next" },
             { key: "↑↓", label: "choose" },
             { key: "←/b", label: "back" },
-            { key: "s", label: "skip" },
+            { key: "s", label: "use recommended" },
           ]}
         />
       }
@@ -450,7 +480,7 @@ function DownloadsSlide({
             { key: "Enter", label: "confirm & next" },
             { key: "↑↓", label: "choose" },
             { key: "←/b", label: "back" },
-            { key: "s", label: "skip" },
+            { key: "s", label: "use recommended" },
           ]}
         />
       }
@@ -521,14 +551,18 @@ export function AnalyticsSlide({
   const bloom = still ? STATIC_PETAL : (BLOOM_FRAMES[tick % BLOOM_FRAMES.length] ?? STATIC_PETAL);
   const sidePetal = still || tick % 2 === 0 ? "✿" : " ";
 
+  // Recommended first, and index 0 is now "on". `s` on this slide still selects
+  // OFF and no accept-all path reaches it — see ANALYTICS_ON_INDEX and the
+  // input handler. A recommendation the user pressed a key on is consent; a
+  // default they never saw is not.
   const opts = [
     {
-      label: "Keep analytics off",
-      detail: "No network calls. No install id stored on disk.",
+      label: "Turn it on",
+      detail: "One ping a day. Counts unique installs, not people.",
     },
     {
-      label: "Turn on analytics",
-      detail: "Sends one bounded anonymous ping per day.",
+      label: "Keep it off",
+      detail: "No network calls. No install id stored on disk.",
     },
   ];
 
@@ -541,7 +575,7 @@ export function AnalyticsSlide({
           parts={[
             { key: "Enter", label: "confirm" },
             { key: "←/b", label: "back" },
-            { key: "s", label: "skip (keeps it off)" },
+            { key: "s", label: "keep it off" },
           ]}
         />
       }
@@ -556,10 +590,7 @@ export function AnalyticsSlide({
         <Text color={palette.dim}>{sidePetal}</Text>
       </Box>
 
-      <SlideTitle
-        text=""
-        sub="Off by default. Turn it on only if you want to share bounded anonymous usage."
-      />
+      <SlideTitle text="" sub="Recommended. Nothing is sent until you confirm here." />
 
       <Box flexDirection="column">
         {opts.map((opt, i) => {
@@ -574,7 +605,7 @@ export function AnalyticsSlide({
               <Box flexDirection="column">
                 <Text color={palette.text} bold={selected}>
                   {opt.label}
-                  {i === 0 ? "   ← default" : ""}
+                  {i === ANALYTICS_ON_INDEX ? "   ← recommended" : ""}
                 </Text>
                 <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
                   {"  "}
@@ -587,13 +618,18 @@ export function AnalyticsSlide({
       </Box>
 
       <Box flexDirection="column" marginTop={1} paddingLeft={2}>
-        <Text color={palette.muted}>Exactly what is sent</Text>
+        <Text color={palette.muted}>Exactly what is sent, from this machine</Text>
         <Text color={palette.text}>
-          {'{ "installId": "<sha256 of a local id>", "version": "0.3.0",'}
+          {`{ "installId": "<sha256 of a local id>", "version": "${KUNAI_VERSION}",`}
         </Text>
-        <Text color={palette.text}>{'  "os": "linux", "arch": "x64", "ts": 0 }'}</Text>
+        <Text color={palette.text}>
+          {`  "os": "${process.platform}", "arch": "${process.arch}", "ts": 0 }`}
+        </Text>
         <Text color={palette.dim} dimColor>
-          Never: titles · queries · providers · URLs · paths
+          Never: titles · queries · providers · URLs · paths · your IP
+        </Text>
+        <Text color={palette.dim} dimColor>
+          The raw id never leaves this machine. Off in /settings deletes it.
         </Text>
       </Box>
     </SlideLayout>
@@ -679,11 +715,24 @@ export function SetupShell({
   const { cols, rows } = useShellDimensions();
 
   const [slideIdx, setSlideIdx] = useState(0);
-  const [audioIdx, setAudioIdx] = useState(0);
-  const [subtitleIdx, setSubtitleIdx] = useState(0);
-  const [downloadsIdx, setDownloadsIdx] = useState(0);
-  // Index 0 keeps analytics off. Enabling must be an explicit setup choice.
-  const [analyticsIdx, setAnalyticsIdx] = useState(0);
+  // Every picker opens on its recommended option, so Enter-through produces the
+  // configuration the defaults table promises rather than whatever sits first.
+  const [audioIdx, setAudioIdx] = useState(() =>
+    recommendedIndex(AUDIO_OPTS, RECOMMENDED_AUDIO_PREFERENCE),
+  );
+  const [subtitleIdx, setSubtitleIdx] = useState(() =>
+    recommendedIndex(SUBTITLE_OPTS, RECOMMENDED_SUBTITLE_PREFERENCE),
+  );
+  // Downloads follow what is installed. Defaulting to "Enable" on a machine
+  // with no yt-dlp pre-selected the one option that cannot work.
+  const [downloadsIdx, setDownloadsIdx] = useState(() =>
+    snapshot.ytDlp ? DOWNLOADS_ON_INDEX : DOWNLOADS_OFF_INDEX,
+  );
+  // Index 0 is "turn it on" — the recommendation. It is only ever committed by
+  // a keystroke on this slide: `s` selects off, and accept-all stops here.
+  const [analyticsIdx, setAnalyticsIdx] = useState(ANALYTICS_ON_INDEX);
+  /** True once the user has actually seen the consent slide. */
+  const [analyticsSeen, setAnalyticsSeen] = useState(false);
 
   const slide = SLIDE_ORDER[slideIdx] as Slide;
   const isPickerSlide =
@@ -692,20 +741,31 @@ export function SetupShell({
     slide === "downloads" ||
     slide === "analytics";
 
-  function buildPrefs(): SetupPrefs {
+  /**
+   * `consented` is passed explicitly rather than read from state because the
+   * accept-all path has to build prefs for slides the user never reached, and
+   * analytics is the one value a never-reached slide must not be able to set.
+   */
+  function buildPrefs(consented: boolean): SetupPrefs {
     return {
-      audio: AUDIO_OPTS[audioIdx]?.value ?? "original",
-      subtitle: SUBTITLE_OPTS[subtitleIdx]?.value ?? "en",
-      downloadsEnabled: downloadsIdx === 0,
-      analyticsChoice: analyticsIdx === 1 ? "enabled" : "disabled",
+      audio: AUDIO_OPTS[audioIdx]?.value ?? RECOMMENDED_AUDIO_PREFERENCE,
+      subtitle: SUBTITLE_OPTS[subtitleIdx]?.value ?? RECOMMENDED_SUBTITLE_PREFERENCE,
+      downloadsEnabled: downloadsIdx === DOWNLOADS_ON_INDEX,
+      analyticsChoice: !consented
+        ? "unchanged"
+        : analyticsIdx === ANALYTICS_ON_INDEX
+          ? "enabled"
+          : "disabled",
     };
   }
 
   function advance() {
     if (slideIdx < SLIDE_ORDER.length - 1) {
+      const next = SLIDE_ORDER[slideIdx + 1];
+      if (next === "analytics") setAnalyticsSeen(true);
       setSlideIdx((current) => current + 1);
     } else {
-      finish("completed", buildPrefs());
+      finish("completed", buildPrefs(analyticsSeen));
     }
   }
 
@@ -713,30 +773,53 @@ export function SetupShell({
     if (slideIdx > 0) setSlideIdx((i) => i - 1);
   }
 
-  function skip() {
-    finish("skipped", buildPrefs());
+  /**
+   * Accept every remaining step's recommendation and finish.
+   *
+   * Analytics is deliberately excluded when the consent slide has not been
+   * reached: a blanket "yes to everything" is not consent to send data. This is
+   * the outward-facing rule — no skip path may enable analytics, start an OAuth
+   * handoff, or touch presence IPC.
+   */
+  function acceptRemainingDefaults() {
+    finish("defaults", buildPrefs(analyticsSeen));
+  }
+
+  /** esc — leave settings exactly as they were. */
+  function abort() {
+    finish("aborted", buildPrefs(false));
   }
 
   useInput((input, key) => {
     if (key.escape) {
-      skip();
+      abort();
       return;
     }
 
-    if (input === "s" || input === "S") {
-      // On the analytics slide, `s` accepts the safe default and continues
-      // setup without turning analytics on.
+    // `S` — accept every remaining recommendation and finish. On the consent
+    // slide it advances instead of passing through, so analytics is never
+    // enabled by a keystroke aimed at everything else.
+    if (input === "S") {
       if (slide === "analytics") {
-        setAnalyticsIdx(0);
+        setAnalyticsIdx(ANALYTICS_OFF_INDEX);
         advance();
         return;
       }
-      skip();
+      acceptRemainingDefaults();
+      return;
+    }
+
+    // `s` — take this step's recommendation and move on. It no longer ends the
+    // wizard: waving past one question you do not care about should not cost
+    // you the rest of setup.
+    if (input === "s") {
+      if (slide === "analytics") setAnalyticsIdx(ANALYTICS_OFF_INDEX);
+      advance();
       return;
     }
 
     if (input === "q" || input === "Q") {
-      skip();
+      abort();
       return;
     }
 
@@ -870,13 +953,15 @@ export function runSetupFlow(snapshot: CapabilitySnapshot): {
     renderContent: (finish) => (
       <SetupShell snapshot={snapshot} finish={(outcome, prefs) => finish({ outcome, prefs })} />
     ),
+    // Ink teardown settles here. That is not a user decision, so it must not
+    // write settings — `aborted` leaves the existing config alone.
     fallbackValue: {
-      outcome: "skipped",
+      outcome: "aborted",
       prefs: {
-        audio: "original",
-        subtitle: "en",
+        audio: RECOMMENDED_AUDIO_PREFERENCE,
+        subtitle: RECOMMENDED_SUBTITLE_PREFERENCE,
         downloadsEnabled: false,
-        analyticsChoice: "disabled",
+        analyticsChoice: "unchanged",
       },
     },
   });
