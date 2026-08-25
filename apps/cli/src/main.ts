@@ -644,6 +644,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     process.stdout.write(`${await formatVersionLine(KUNAI_VERSION)}\n`);
     return;
   }
+  // Asking for the wizard where nothing can drive it is a mistake worth naming.
+  // Silently continuing would leave the user believing setup ran; mounting it
+  // anyway would block on a keystroke that can never arrive.
+  if (args.setup && !(process.stdin.isTTY && process.stdout.isTTY)) {
+    console.error(
+      "kunai --setup needs an interactive terminal. Run it directly rather than through a pipe, and unset CI if it is set.",
+    );
+    process.exitCode = 1;
+    return;
+  }
   if (args.installProtocolHandler) {
     const { buildProtocolHandlerInstallPlan, installKunaiProtocolHandler } =
       await import("./infra/os/protocol-handler");
@@ -747,8 +757,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       };
     }
   })();
+  // Interactivity is part of the question: this decides whether `checkDeps`
+  // stays silent because the wizard will show the same information visually. In
+  // a pipe the wizard never mounts, so the console remediation is the only
+  // channel left and must not be suppressed.
+  const setupIsInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const onboardingWillRun = shouldRunSetupWizard({
     force: args.setup,
+    interactive: setupIsInteractive,
     config: {
       onboardingVersion: configJson.onboardingVersion ?? 0,
       downloadOnboardingDismissed: configJson.downloadOnboardingDismissed ?? false,

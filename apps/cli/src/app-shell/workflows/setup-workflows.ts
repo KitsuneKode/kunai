@@ -2,7 +2,11 @@ import { dirname, join } from "node:path";
 
 import { chooseFromListShell } from "@/app-shell/pickers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
-import { shouldRunSetupWizard, type SetupWizardResult } from "@/app/bootstrap/startup-setup";
+import {
+  ONBOARDING_VERSION,
+  shouldRunSetupWizard,
+  type SetupWizardResult,
+} from "@/app/bootstrap/startup-setup";
 import type { Container } from "@/container";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { probeCapabilities } from "@/ui";
@@ -65,30 +69,43 @@ export async function runSetupWizard({
   const { outcome, prefs } = await result;
   // One writer: the service owns what a consent choice means in config, and
   // `consentPatch` is pure so it folds into the single batched update below.
-  // Aborting a rerun is not a consent choice. Preserve whatever the user had
-  // already chosen; only completing the analytics slide may change it.
+  // Aborting is not a consent choice. Preserve whatever the user already had;
+  // only reaching the analytics slide may change it.
+  // Two ways to reach "leave it alone": aborting, and finishing without ever
+  // reaching the consent slide. Neither is a consent decision, and writing
+  // `disabled` for either would silently opt out a user who had opted in and
+  // then reran setup.
   const analyticsPatch =
-    outcome === "skipped" ? {} : container.usageAnalytics.consentPatch(prefs.analyticsChoice);
+    outcome === "aborted" || prefs.analyticsChoice === "unchanged"
+      ? {}
+      : container.usageAnalytics.consentPatch(prefs.analyticsChoice);
 
-  if (outcome === "skipped") {
+  if (outcome === "aborted") {
+    // esc, `q`, or an Ink teardown. Record that onboarding was offered so the
+    // wizard does not ambush the next launch, and touch nothing else.
     await container.config.update({
-      onboardingVersion: 2,
+      onboardingVersion: ONBOARDING_VERSION,
       downloadOnboardingDismissed: true,
-      ...analyticsPatch,
     });
     await container.config.save();
   } else {
+    // `completed` and `defaults` write the same shape. That is the point:
+    // skipping used to build prefs and discard them here, leaving the install
+    // unconfigured while telling the user setup was done.
     const downloadsEnabled = prefs.downloadsEnabled;
     const downloadPath = downloadsEnabled
       ? current.downloadPath || defaultDownloadPath
       : current.downloadPath;
 
     await container.config.update({
-      onboardingVersion: 2,
+      onboardingVersion: ONBOARDING_VERSION,
       downloadOnboardingDismissed: true,
       downloadsEnabled,
       downloadPath,
       ...analyticsPatch,
+      // Audio reaches all three lanes. It previously landed on anime only,
+      // while the slide asked which audio Kunai should prefer generally — so a
+      // user who chose English still got original audio for films and shows.
       animeLanguageProfile: {
         ...current.animeLanguageProfile,
         audio: prefs.audio,
@@ -96,10 +113,12 @@ export async function runSetupWizard({
       },
       seriesLanguageProfile: {
         ...current.seriesLanguageProfile,
+        audio: prefs.audio,
         subtitle: prefs.subtitle,
       },
       movieLanguageProfile: {
         ...current.movieLanguageProfile,
+        audio: prefs.audio,
         subtitle: prefs.subtitle,
       },
     });
@@ -113,15 +132,22 @@ export async function runSetupWizard({
 
   container.diagnosticsService.record({
     category: "session",
-    message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
+    message:
+      outcome === "completed"
+        ? "Setup wizard completed"
+        : outcome === "defaults"
+          ? "Setup wizard accepted recommended defaults"
+          : "Setup wizard aborted",
     context: {
       outcome,
       force,
-      analytics: outcome === "skipped" ? current.analytics : analyticsPatch.analytics,
+      analytics: analyticsPatch.analytics ?? current.analytics,
     },
   });
 
-  return outcome === "completed" ? "completed" : "skipped";
+  // `defaults` reports as completed to the caller: a recommended configuration
+  // was written, which is what "completed" means to everything downstream.
+  return outcome === "aborted" ? "cancelled" : "completed";
 }
 
 function closeActiveOverlays(container: Container): void {
