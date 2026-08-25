@@ -15,11 +15,16 @@ redaction rules, and export behavior.
 
 ## Fast Debug Loop
 
-Run with debug logs enabled:
+For redacted developer logs on stderr without creating `logs.txt`, redirect the
+environment-only debug stream:
 
 ```sh
-KITSUNE_DEBUG=1 bun run src/main.ts --debug 2> debug.log
+KITSUNE_DEBUG=1 bun run src/main.ts 2> debug.log
 ```
+
+Use `--debug` instead when you want the same debug events persisted to
+`./logs.txt`. Kunai suppresses debug writes to an interactive terminal while
+Ink owns it, but a redirected stderr stream remains active.
 
 Inspect the relevant stage:
 

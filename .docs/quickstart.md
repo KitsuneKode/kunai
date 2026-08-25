@@ -161,7 +161,7 @@ Filters stack in one structured state. Unsupported filters are reported as local
 
 | Var                           | Effect                                                            |
 | ----------------------------- | ----------------------------------------------------------------- |
-| `KITSUNE_DEBUG=1`             | Enable debug JSON logs to stderr                                  |
+| `KITSUNE_DEBUG=1`             | Enable redacted structured debug logs on stderr, without logs.txt |
 | `KUNAI_DISCORD_CLIENT_ID`     | Discord application id for optional `presenceProvider: "discord"` |
 | `KUNAI_VIDEASY_SESSION_TOKEN` | Optional user-provided Videasy browser session token for VidKing  |
 | `KUNAI_RELAY_BASE_URL`        | Optional user-owned provider RPC relay base URL for metadata APIs |
