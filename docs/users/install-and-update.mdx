@@ -15,7 +15,7 @@ Kunai supports **zero-prerequisite compiled binaries** (default), global package
 Default — downloads a verified release binary into a versioned store and links `~/.local/bin/kunai`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 ```
 
 Or from an existing Kunai binary:
@@ -36,7 +36,7 @@ On-disk layout (binary channel):
 Dry run first when you want to inspect actions without creating directories or downloading:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash -s -- --dry-run
 ```
 
 If a release asset is missing or empty, the installer prints recovery options (`--method npm`, `--method bun`, `--method source`, or pin `--version X.Y.Z`).
@@ -52,7 +52,7 @@ Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-a
 <Tab value="Windows">
 
 ```powershell
-irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+irm https://kunai.kitsunekode.in/install.ps1 | iex
 ```
 
 Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`.
@@ -220,7 +220,7 @@ You can snooze automatic checks for seven days or disable them from the update p
 
 ```sh
 apk add mpv yt-dlp ffmpeg
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup
 ```

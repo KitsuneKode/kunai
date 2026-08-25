@@ -9,7 +9,7 @@ const README_PATH = join(REPO_ROOT, "README.md");
 
 /** Canonical Quick Start journey — installer followed by Verify commands. */
 const EXPECTED_QUICK_START = [
-  "curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash",
+  "curl -fsSL https://kunai.kitsunekode.in/install.sh | bash",
   "kunai --version",
   "mpv --version",
   "kunai --setup",

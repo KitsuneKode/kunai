@@ -33,7 +33,7 @@ Missing `yt-dlp` or `ffprobe` should degrade gracefully — setup and diagnostic
 Recommended install (self-contained binary — Bun runtime embedded; you do not need Bun installed):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 mpv --version
 kunai --setup
@@ -64,7 +64,7 @@ Alpine and other musl hosts use the `kunai-linux-*-musl` release assets. `instal
 
 ```sh
 apk add mpv yt-dlp ffmpeg
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup
 ```
@@ -77,7 +77,7 @@ Ensure `~/.local/bin` is on your shell `PATH` after install. Treat this as a nor
 Recommended install (beta binaries):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --setup
 ```
 
@@ -102,7 +102,7 @@ Kunai uses `open` for browser and folder handoffs. Protocol registration is Linu
 Recommended install (PowerShell; x64 beta, ARM64 experimental):
 
 ```powershell
-irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+irm https://kunai.kitsunekode.in/install.ps1 | iex
 kunai --setup
 ```
 
@@ -126,7 +126,7 @@ WSL is a **Linux** environment. Install the Linux binary and Linux tools inside 
 ```sh
 # Inside WSL (Ubuntu/Debian example)
 sudo apt install mpv yt-dlp ffmpeg
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup
 ```

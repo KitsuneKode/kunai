@@ -60,8 +60,7 @@ export const README_QUICK_START_IDS = [
 
 export type ReadmeQuickStartId = (typeof README_QUICK_START_IDS)[number];
 
-const CANONICAL_INSTALL =
-  "curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash";
+const CANONICAL_INSTALL = "curl -fsSL https://kunai.kitsunekode.in/install.sh | bash";
 
 /**
  * Extract the canonical Quick Start journey from README markdown.
@@ -222,8 +221,13 @@ exit 0
 }
 
 /**
- * curl shim: rewrite raw.githubusercontent.com kunai install.sh URLs to the
- * local fixture HTTP server. All other URLs pass through to real curl.
+ * curl shim: rewrite the published install.sh URL to the local fixture HTTP
+ * server. All other URLs pass through to real curl.
+ *
+ * Both forms are matched. `kunai.kitsunekode.in/install.sh` is what the README
+ * documents; it redirects to the raw GitHub URL, which is still what an older
+ * quoted command uses -- and a shim that only knew the new one would let a
+ * stale command reach the network instead of the fixture.
  */
 export function installCurlShim(shimDir: string, fixtureBaseUrl: string): void {
   const realCurl = Bun.which("curl");
@@ -240,7 +244,7 @@ REAL_CURL=${JSON.stringify(realCurl)}
 FIXTURE=${JSON.stringify(fixtureBaseUrl.replace(/\/$/, ""))}
 for arg do
   case "$arg" in
-    https://raw.githubusercontent.com/KitsuneKode/kunai/*/install.sh)
+    https://kunai.kitsunekode.in/install.sh|https://raw.githubusercontent.com/KitsuneKode/kunai/*/install.sh)
       arg="$FIXTURE/install.sh"
       ;;
   esac

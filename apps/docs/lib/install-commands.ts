@@ -5,10 +5,9 @@
  * Source checkout is contributor-oriented.
  */
 export const NATIVE_INSTALL_SH =
-  "curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash" as const;
+  "curl -fsSL https://kunai.kitsunekode.in/install.sh | bash" as const;
 
-export const NATIVE_INSTALL_PS1 =
-  "irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex" as const;
+export const NATIVE_INSTALL_PS1 = "irm https://kunai.kitsunekode.in/install.ps1 | iex" as const;
 
 export const NPM_PACKAGE_NAME = "@kitsunekode/kunai" as const;
 export const NPM_PACKAGE_URL = `https://www.npmjs.com/package/${NPM_PACKAGE_NAME}` as const;

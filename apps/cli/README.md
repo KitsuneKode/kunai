@@ -96,7 +96,7 @@ Alpine:
 
 ```bash
 apk add mpv yt-dlp ffmpeg
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup
 ```
