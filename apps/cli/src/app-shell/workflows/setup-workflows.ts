@@ -8,6 +8,10 @@ import {
   type SetupWizardResult,
 } from "@/app/bootstrap/startup-setup";
 import type { Container } from "@/container";
+import {
+  setupPatchIsRestorable,
+  writePreSetupSnapshot,
+} from "@/services/persistence/pre-setup-snapshot";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { probeCapabilities } from "@/ui";
 import type { KitsuneConfig } from "@kunai/config";
@@ -160,7 +164,7 @@ export async function runSetupWizard({
       ? current.downloadPath || defaultDownloadPath
       : current.downloadPath;
 
-    await container.config.update({
+    const patch = {
       onboardingVersion: ONBOARDING_VERSION,
       downloadOnboardingDismissed: true,
       downloadsEnabled,
@@ -209,8 +213,27 @@ export async function runSetupWizard({
         audio: prefs.audio,
         subtitle: prefs.subtitle,
       },
-    });
+    } satisfies Partial<KitsuneConfig>;
+
+    // One restore point, and only when this run actually changes something the
+    // user would miss. Best effort throughout: a snapshot that cannot be
+    // written must not stop setup from finishing, so the failure is recorded
+    // and the run continues.
+    const worthSaving = setupPatchIsRestorable(current, patch);
+    const snapshotted = worthSaving && (await writePreSetupSnapshot(current));
+    if (worthSaving && !snapshotted) {
+      container.diagnosticsService.record({
+        category: "session",
+        message: "Setup could not save a pre-setup configuration snapshot",
+      });
+    }
+
+    await container.config.update(patch);
     await container.config.save();
+    // A restore point nobody knows about is not a feature.
+    if (snapshotted) {
+      note(container, "Your previous settings were saved — restore them from /settings.");
+    }
   }
 
   // The wizard IS the disclosure for this user. Clear the pending flag the

@@ -1,10 +1,33 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { forceCloseRootContent } from "@/app-shell/root-content-state";
 import type { SetupFlowPayload } from "@/app-shell/setup-shell";
 import { runSetupWizard } from "@/app-shell/workflows/setup-workflows";
 import type { Container } from "@/container";
+import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { DEFAULT_CONFIG } from "@kunai/config";
+
+import { applyStorageRootEnv } from "../../helpers/storage-env";
+
+// A completing run now writes a restore point beside the real config, so this
+// file owns a throwaway storage root rather than touching the developer's
+// profile to assert something about analytics.
+let storageRoot = "";
+let restoreEnv: () => void = () => undefined;
+
+beforeAll(() => {
+  storageRoot = mkdtempSync(join(tmpdir(), "kunai-setup-consent-"));
+  restoreEnv = applyStorageRootEnv(storageRoot);
+  mkdirSync(getKunaiPaths().configDir, { recursive: true });
+});
+
+afterAll(() => {
+  restoreEnv();
+  rmSync(storageRoot, { recursive: true, force: true });
+});
 
 /**
  * The analytics contract's guardrails, driven through the real wizard: only a
