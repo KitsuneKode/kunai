@@ -33,6 +33,29 @@ const config = {
       // `/telemetry` was the old name for this page. In Kunai, "telemetry" means
       // local mpv playback state; the opt-in phone-home is "analytics".
       { source: "/telemetry", destination: "/analytics", permanent: true },
+
+      // Branded install entry points. These are what the README, the docs and
+      // anyone quoting them will use, so they have to keep working long after
+      // this deploy -- which is exactly why they redirect instead of serving a
+      // copy. A copy would need its own freshness gate and could silently drift
+      // from the script the repo actually ships; a redirect always resolves to
+      // the current `main`, and there is no second source of truth to keep in
+      // sync.
+      //
+      // Temporary, not permanent: a 301 is cached indefinitely by browsers and
+      // proxies, so moving these later (to a CDN, or to a release-pinned path)
+      // would strand every client that had already cached the old target.
+      // `curl -fsSL` and PowerShell `irm` both follow redirects by default.
+      {
+        source: "/install.sh",
+        destination: "https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh",
+        permanent: false,
+      },
+      {
+        source: "/install.ps1",
+        destination: "https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1",
+        permanent: false,
+      },
     ];
   },
 };

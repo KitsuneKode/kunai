@@ -16,13 +16,13 @@ Self-contained binary — no Bun or Node needed (mpv is still required for playb
 **Linux / macOS**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+irm https://kunai.kitsunekode.in/install.ps1 | iex
 ```
 
 Then:
@@ -101,12 +101,12 @@ by OS** (`install.sh` vs `install.ps1`).
 
 ```bash
 # Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+irm https://kunai.kitsunekode.in/install.ps1 | iex
 ```
 
 > **Unsigned beta binaries** — Windows SmartScreen may warn on first run;
@@ -119,8 +119,8 @@ irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
 Inspect first (no dirs created), pin a version, or pick a channel:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --version 0.3.0
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash -s -- --dry-run
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash -s -- --version 0.3.0
 ```
 
 Keep it current with `kunai upgrade`; remove it with ownership-aware `kunai uninstall`
@@ -218,7 +218,7 @@ winget install yt-dlp Gyan.FFmpeg
 
 ```bash
 apk add mpv yt-dlp ffmpeg
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup
 ```
@@ -234,7 +234,7 @@ Do not mix Windows-native `kunai.exe` / `mpv.exe` / `%APPDATA%` with WSL PATH or
 ```bash
 # Inside WSL (Debian/Ubuntu example)
 sudo apt install mpv yt-dlp ffmpeg
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup
 ```
