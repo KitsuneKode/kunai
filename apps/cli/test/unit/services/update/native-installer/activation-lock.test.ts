@@ -16,6 +16,19 @@ import {
 const made: string[] = [];
 const RECLAIM_TEST_TIMEOUT_MS = process.platform === "win32" ? 1_000 : 100;
 
+/**
+ * Acquisition budget for tests that assert the lock is *retained*.
+ *
+ * These wait out the deadline on purpose -- the assertion is `acquired: false`
+ * -- so the budget is a floor on how long the attempt runs, never a claim about
+ * how fast the machine is. A hardcoded 40ms was tight enough that a loaded
+ * Windows runner overshot it (measured 50.57ms) and failed a test that had
+ * proven exactly what it set out to prove. The bound below still catches a real
+ * hang, which is the only failure this timing can honestly detect.
+ */
+const RETAIN_TEST_TIMEOUT_MS = process.platform === "win32" ? 400 : 40;
+const RETAIN_TEST_MAX_ELAPSED_MS = process.platform === "win32" ? 5_000 : 1_000;
+
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
   if (process.platform === "darwin") return "darwin-ps:impossible";
@@ -468,12 +481,12 @@ describe("activation lock", () => {
 
       const startedAt = performance.now();
       const lock = await tryAcquireActivationLock(layout, "2.0.0", {
-        timeoutMs: 40,
+        timeoutMs: RETAIN_TEST_TIMEOUT_MS,
         pollMs: 5,
       });
 
       expect(lock).toEqual({ acquired: false, holderPid: process.pid });
-      expect(performance.now() - startedAt).toBeLessThan(1_000);
+      expect(performance.now() - startedAt).toBeLessThan(RETAIN_TEST_MAX_ELAPSED_MS);
       expect(JSON.parse(await readFile(path, "utf8")).ownerId).toBe("aged-live-owner");
     },
   );
