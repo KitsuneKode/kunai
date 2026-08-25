@@ -686,12 +686,18 @@ read_previous_active_version() {
 }
 
 install_binary() {
-	local os arch asset base url sums resolved_version version_path versions_dir
+	local os arch translated asset base url sums resolved_version version_path versions_dir
 	local staging txn_id txn_path lock_path staged_bin staged_sums want got size_bytes
 	local target previous kind metadata_path cleanup_done=0
 
 	os="$(detect_os)"
 	arch="$(detect_arch)"
+	# Rosetta reports its translated process as x86_64; only Apple's exact
+	# translated marker is enough evidence to select the native arm64 build.
+	if [[ "$os" == darwin && "$arch" == x64 ]]; then
+		translated="$(sysctl -n sysctl.proc_translated 2>/dev/null || true)"
+		[[ "$translated" == 1 ]] && arch="arm64"
+	fi
 	if [[ "$os" == unknown || "$arch" == unknown ]]; then
 		err "No prebuilt binary for this OS/arch ($(uname -s)/$(uname -m))."
 		err "Supported: linux|darwin x x64|arm64. Try --method npm or --method source."
@@ -705,6 +711,7 @@ install_binary() {
 		target="${os}-${arch}"
 		[[ "$os" == linux ]] && target="linux-${arch}-gnu"
 	fi
+	[[ "$DRY" == 1 ]] && info "Detected native target: $target"
 
 	# Validate pinned versions before any filesystem mutation or network I/O.
 	if [[ "$VERSION" != latest ]]; then
