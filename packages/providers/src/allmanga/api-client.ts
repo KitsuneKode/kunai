@@ -213,14 +213,24 @@ const HEX: Record<string, string> = {
 const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Mp4", "Luf-Mp4", "Ak"]);
 const MP4UPLOAD_REFERER = "https://www.mp4upload.com";
 export const ALLMANGA_BASELINE_ADAPTER_WAIT_BUDGET_MS = 1_500;
-const akDeferredRegistry = new Map<string, AllMangaAkDeferredDescriptor>();
+const ALLMANGA_AK_DEFERRED_TTL_MS = 5 * 60_000;
+const ALLMANGA_AK_DEFERRED_MAX_ENTRIES = 128;
+let providerCacheNow = Date.now;
+const readProviderCacheClock = () => providerCacheNow();
+const akDeferredRegistry = new TTLCache<string, AllMangaAkDeferredDescriptor>(
+  ALLMANGA_AK_DEFERRED_TTL_MS,
+  {
+    maxEntries: ALLMANGA_AK_DEFERRED_MAX_ENTRIES,
+    now: readProviderCacheClock,
+  },
+);
 let akDeferredCounter = 0;
 
 export function registerAllMangaAkDeferredDescriptor(
   descriptor: AllMangaAkDeferredDescriptor,
 ): string {
   akDeferredCounter += 1;
-  const locator = `allmanga-ak:${Date.now().toString(36)}-${akDeferredCounter.toString(36)}`;
+  const locator = `allmanga-ak:${providerCacheNow().toString(36)}-${akDeferredCounter.toString(36)}`;
   akDeferredRegistry.set(locator, descriptor);
   return locator;
 }
@@ -233,6 +243,14 @@ export function resolveAllMangaAkDeferredLocator(
 
 export function releaseAllMangaAkDeferredLocator(locator: string): void {
   akDeferredRegistry.delete(locator);
+}
+
+export function setAllMangaProviderCacheClockForTest(now: () => number): void {
+  showCatalogCache.clear();
+  sourceCache.clear();
+  akDeferredRegistry.clear();
+  akDeferredCounter = 0;
+  providerCacheNow = now;
 }
 
 export function hexDecode(encoded: string): string {
@@ -506,15 +524,21 @@ export type ShowCatalogInfo = {
 };
 
 /** Cache extended show metadata per showId. TTL same 45s as episode detail. */
-const showCatalogCache = new TTLCache<string, ShowCatalogInfo>(AVAILABLE_EPISODES_DETAIL_TTL_MS);
+const showCatalogCache = new TTLCache<string, ShowCatalogInfo>(AVAILABLE_EPISODES_DETAIL_TTL_MS, {
+  now: readProviderCacheClock,
+});
 
 /** Cache source resolve results per show+episode+mode. TTL 5 minutes. */
-const sourceCache = new TTLCache<string, StreamLink[]>(300_000);
+const sourceCache = new TTLCache<string, StreamLink[]>(300_000, {
+  now: readProviderCacheClock,
+});
 
 export function clearAllMangaProviderCachesForTest(): void {
   showCatalogCache.clear();
   sourceCache.clear();
   akDeferredRegistry.clear();
+  akDeferredCounter = 0;
+  providerCacheNow = Date.now;
   cachedCryptoMaterial = null;
   cryptoMaterialOverrideForTest = null;
   retrySleep = (ms, signal) => sleepAbortable(ms, signal);
@@ -701,7 +725,18 @@ export async function resolveEpisodeSources(opts: {
   // Check source cache (episode string + mode → StreamLink[])
   const cacheKey = `${showId}:${epStr}:${mode}:${sourceLane}`;
   const cached = sourceCache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    const deferredLocators = cached.flatMap((link) =>
+      link.deferredLocator ? [link.deferredLocator] : [],
+    );
+    if (deferredLocators.length === 0) return cached;
+
+    // Deferred Ak handles are one-consumer capabilities. A materializer releases
+    // its handle after playback, so replaying this cache entry would return a
+    // dead stream. Evict defensively for entries created by older code too.
+    sourceCache.delete(cacheKey);
+    for (const locator of deferredLocators) releaseAllMangaAkDeferredLocator(locator);
+  }
 
   // GET with persisted query + aaReq attestation (mkissa buildId scheme).
   // Without aaReq the API returns AA_CRYPTO_MISSING; a rotated key/epoch/build
@@ -874,7 +909,9 @@ export async function resolveEpisodeSources(opts: {
   const result = [...direct, ...apiLinks].sort(
     (left, right) => (parseInt(right.quality) || 0) - (parseInt(left.quality) || 0),
   );
-  if (result.length > 0) sourceCache.set(cacheKey, result);
+  if (result.length > 0 && result.every((link) => !link.deferredLocator)) {
+    sourceCache.set(cacheKey, result);
+  }
   return result;
 }
 
