@@ -84,6 +84,16 @@ describe("analytics payload documentation drift", () => {
       expect(prose(path).toLowerCase()).toMatch(/before consent|notice does not.*send/);
     });
 
+    test(`${label} points at the settings switch that reverses the choice`, () => {
+      // The consent screen is a moment; Settings is the standing control. A doc
+      // that pins the keystroke gate but never says the decision is reversible
+      // describes a one-way door Kunai does not have.
+      expect(prose(path).toLowerCase()).toMatch(/settings/);
+      expect(prose(path).toLowerCase()).toMatch(
+        /any time|anytime|at will|enable or disable|enable\/disable/,
+      );
+    });
+
     test(`${label} states that turning it off deletes the install id`, () => {
       expect(prose(path).toLowerCase()).toMatch(
         /delet\w+ (it|the install id)|install id.*delet|clears `?installid`?/,

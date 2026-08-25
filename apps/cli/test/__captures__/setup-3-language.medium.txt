@@ -4,18 +4,18 @@
 
 
           Language
-          Applies to anime, shows, and films alike. Change either per episode.
+          Applies to anime, shows, films, and YouTube alike. Change either per episode.
 
-          Audio                                   Subtitles
+          ❯ Audio                                   Subtitles
           ▌ Original                              ▌ English
             English                                 Pick each time
             Japanese                                None
             Any dub                                 Arabic
-                                                    German
-                                                    Spanish
+           Use the language the title was made      German
+            in                                      Spanish
                                                     French
                                                     Japanese
-          ● ● ● ○ ○ ○ ○
 
+          tab switches columns · ↑↓ chooses
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-  [enter]  confirm  ·  [↑↓]  choose  ·  [tab]  audio / subs  ·  [b]  back                    Setup
+  [enter]  confirm  ·  [s]  recommended  ·  [b]  back                                        Setup

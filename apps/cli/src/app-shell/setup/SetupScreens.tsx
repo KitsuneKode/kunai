@@ -146,6 +146,9 @@ export function dependencyFooter(hasFix: boolean): readonly FooterKey[] {
     ...(hasFix ? [{ key: "d", label: "how to fix" }] : []),
     { key: "r", label: "recheck" },
     { key: "S", label: "use recommended" },
+    // The one destructive key the grammar names. Deeper screens rely on the
+    // two-press guard; here quitting has cost nothing yet, so it is safe to show.
+    { key: "esc", label: "quit" },
   ];
 }
 
@@ -174,6 +177,58 @@ export function ModeScreen({ selected }: { readonly selected: number }) {
 
 // ─── 3 · Language ─────────────────────────────────────────────────────────────
 
+/**
+ * One column of the language screen. The header carries a `❯` when focused —
+ * header color alone did not survive glare or color-blindness, and the arrow
+ * keys move whichever column this marker names. The focused option's detail
+ * renders under its label: the catalog's explanations were written for the
+ * person deciding, and bare labels like "Pick each time" drop exactly the
+ * context a first-run user needs (#233).
+ */
+function LanguageColumn({
+  heading,
+  focused,
+  options,
+  index,
+}: {
+  readonly heading: string;
+  readonly focused: boolean;
+  readonly options: readonly { value: string; label: string; detail: string }[];
+  readonly index: number;
+}) {
+  const active = options[index];
+  return (
+    <Box flexDirection="column" width="45%">
+      <Text color={focused ? palette.accent : palette.dim} bold>
+        {focused ? "❯ " : "  "}
+        {heading}
+      </Text>
+      {options.map((option, i) => (
+        <Box key={option.value}>
+          <Text
+            color={
+              focused && i === index
+                ? palette.accent
+                : i === index
+                  ? palette.accentDim
+                  : palette.dim
+            }
+          >
+            {i === index ? "▌ " : "  "}
+          </Text>
+          <Text color={i === index ? palette.text : palette.muted}>{option.label}</Text>
+        </Box>
+      ))}
+      {focused && active ? (
+        <Box>
+          <Text color={palette.dim}>{"  "}</Text>
+          <Text color={palette.muted}>{active.detail}</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
 export function LanguageScreen({
   audioOptions,
   subtitleOptions,
@@ -191,51 +246,26 @@ export function LanguageScreen({
     <Box flexDirection="column">
       <ScreenTitle
         text="Language"
-        sub="Applies to anime, shows, and films alike. Change either per episode."
+        sub="Applies to anime, shows, films, and YouTube alike. Change either per episode."
       />
       <Box gap={4}>
-        <Box flexDirection="column" width="45%">
-          <Text color={focus === "audio" ? palette.accent : palette.dim} bold>
-            Audio
-          </Text>
-          {audioOptions.map((option, i) => (
-            <Box key={option.value}>
-              <Text
-                color={
-                  focus === "audio" && i === audioIndex
-                    ? palette.accent
-                    : i === audioIndex
-                      ? palette.accentDim
-                      : palette.dim
-                }
-              >
-                {i === audioIndex ? "▌ " : "  "}
-              </Text>
-              <Text color={i === audioIndex ? palette.text : palette.muted}>{option.label}</Text>
-            </Box>
-          ))}
-        </Box>
-        <Box flexDirection="column" width="45%">
-          <Text color={focus === "subtitle" ? palette.accent : palette.dim} bold>
-            Subtitles
-          </Text>
-          {subtitleOptions.map((option, i) => (
-            <Box key={option.value}>
-              <Text
-                color={
-                  focus === "subtitle" && i === subtitleIndex
-                    ? palette.accent
-                    : i === subtitleIndex
-                      ? palette.accentDim
-                      : palette.dim
-                }
-              >
-                {i === subtitleIndex ? "▌ " : "  "}
-              </Text>
-              <Text color={i === subtitleIndex ? palette.text : palette.muted}>{option.label}</Text>
-            </Box>
-          ))}
-        </Box>
+        <LanguageColumn
+          heading="Audio"
+          focused={focus === "audio"}
+          options={audioOptions}
+          index={audioIndex}
+        />
+        <LanguageColumn
+          heading="Subtitles"
+          focused={focus === "subtitle"}
+          options={subtitleOptions}
+          index={subtitleIndex}
+        />
+      </Box>
+      <Box marginTop={1}>
+        <Text color={palette.dim} dimColor>
+          tab switches columns · ↑↓ chooses
+        </Text>
       </Box>
     </Box>
   );
@@ -330,14 +360,19 @@ export function LibraryScreen({
           selected={selected === 0}
           {...(ytDlpReady
             ? {}
-            : { disabledNote: "yt-dlp not found — install it to start a queue" })}
+            : { disabledNote: "yt-dlp not found — install it, then turn this on" })}
         />
         <ToggleRow
           kind="cycle"
           label={`Download quality — ${toggles.downloadQuality}`}
-          detail="space cycles 1080p · best · 720p · 480p"
+          detail={`space cycles ${DOWNLOAD_QUALITIES.join(" · ")}`}
           on={toggles.downloadsEnabled}
           selected={selected === 1}
+          // A cycle row under a switch that is off is a dead control; saying so
+          // beats letting space spin a value nothing uses yet (#233).
+          {...(toggles.downloadsEnabled
+            ? {}
+            : { disabledNote: "turn on downloads first — then space cycles quality" })}
         />
       </Box>
 

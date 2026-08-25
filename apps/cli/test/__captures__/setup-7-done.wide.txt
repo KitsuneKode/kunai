@@ -7,7 +7,7 @@
                               You're all set
                               Shows & movies · Original audio · English subtitles
 
-                              ✓ Downloads on          1080p
+                              △ Downloads off         stream-only · change in /settings
                               ✓ Auto-skip             intros and credits
                               ✓ Autoplay on           next episode rolls on
                               ✓ Usage ping on         change any time in /settings
@@ -15,7 +15,5 @@
                               Try these first
                                 type a title, or /discover · /calendar · /random
                                 press / any time for commands
-                              ● ● ● ● ● ● ●
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   [enter]  start watching  ·  [b]  change something                                                                                  Setup

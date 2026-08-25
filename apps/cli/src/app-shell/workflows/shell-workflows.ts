@@ -93,6 +93,7 @@ import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
 import { promptPlaylistName } from "./playlist-name-prompt";
 import { openSetupWizardFromShell } from "./setup-workflows";
+import { connectNamedTracker } from "./tracker-connect";
 
 export function waitForOverlayClose(
   stateManager: import("@/domain/session/SessionStateManager").SessionStateManager,
@@ -3338,43 +3339,4 @@ async function handleSyncDisconnect(container: Container): Promise<"handled"> {
     note: `Disconnected from ${adapter.displayName}.`,
   });
   return "handled";
-}
-
-/**
- * Exported so setup can run the *real* connect after it commits config.
- *
- * The setup toggle used to write `sync.anilist.enabled` and stop there, which
- * made it a control that looked like it linked an account and did not — the
- * house silent-no-op. Setup calls this once the wizard closes, so a browser
- * handoff that fails costs an account link rather than the whole wizard.
- */
-export async function connectNamedTracker(
-  container: Container,
-  tracker: "anilist" | "tmdb",
-): Promise<void> {
-  const adapter = container.syncService.adapters.find((candidate) => candidate.id === tracker);
-  if (!adapter) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: `Sync service ${tracker} is not available.`,
-    });
-    return;
-  }
-  const result = await adapter.connect({
-    signal: new AbortController().signal,
-    onPrompt: (note) => container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note }),
-  });
-  if (!result.ok) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: `Failed: ${result.error}`,
-    });
-    return;
-  }
-  const resumed = container.syncService.resumeAfterReauth(adapter.id);
-  if (resumed > 0) container.syncService.deliverSoon();
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: `Connected to ${adapter.displayName}.`,
-  });
 }

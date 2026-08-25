@@ -6,10 +6,10 @@
           Downloads & accounts
           Accounts are linked after setup, so a browser hiccup never traps you here.
 
-          ▌ ◉ Download for offline
+          ▌ ○ Download for offline
                 ~/.local/share/kunai
             ↻ Download quality — 1080p
-                space cycles 1080p · best · 720p · 480p
+                turn on downloads first — then space cycles quality
 
           While we're here
             ○ AniList
@@ -18,7 +18,5 @@
                 Track shows and films
             ○ Discord presence
                 Show friends what you're watching
-          ● ● ● ● ● ○ ○
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [b]  back                           Setup
+  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [b]  back      Setup

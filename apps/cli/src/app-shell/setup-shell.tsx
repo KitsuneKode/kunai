@@ -7,7 +7,12 @@
 //
 // Layout and grammar: `.reference/design/cli/kunai-sakura-systems.html` and
 // `01-shell-footer-contract.md`. Skip contract: `s` takes this step's
-// recommendation, `S` takes every remaining one, `esc` aborts without writing.
+// recommendation, `S` takes every remaining one. `esc`/`q` discard and quit —
+// but only once nothing is decided yet; past screen one they ask first.
+//
+// Every control hydrates from the current config (`SetupInitialState`), so a
+// rerun shows what is really set and completing writes back exactly what the
+// screens showed — rerunning can never silently sever a linked account.
 // =============================================================================
 
 import {
@@ -17,7 +22,7 @@ import {
   SUBTITLE_PREFERENCE_OPTIONS,
 } from "@/domain/media/media-preferences";
 import type { CapabilitySnapshot } from "@/ui";
-import { Box, useInput } from "ink";
+import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -39,7 +44,8 @@ import {
   type SummaryLine,
 } from "./setup/SetupScreens";
 import { ViewportResizeGate } from "./shell-primitives";
-import { useShellDimensions } from "./use-viewport-policy";
+import { palette } from "./shell-theme";
+import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,6 +119,53 @@ export interface SetupPrefs {
   analyticsChoice: "enabled" | "disabled" | "unchanged";
 }
 
+/**
+ * What every control starts from.
+ *
+ * `runSetupWizard` builds this from the live config so a rerun shows what is
+ * really set. The factory default here is only what an untouched install would
+ * answer; hydrating from it instead of hardcoded literals is what stops a rerun
+ * from silently severing a linked tracker or rewriting a preference the user
+ * already made (#228).
+ */
+export interface SetupInitialState {
+  readonly mode: "series" | "anime" | "youtube";
+  readonly audio: string;
+  readonly subtitle: string;
+  readonly autoNext: boolean;
+  readonly skipIntro: boolean;
+  readonly skipCredits: boolean;
+  readonly downloadsEnabled: boolean;
+  readonly downloadQuality: string;
+  readonly anilistSync: boolean;
+  readonly tmdbSync: boolean;
+  readonly presenceDiscord: boolean;
+}
+
+export const FACTORY_INITIAL_STATE: SetupInitialState = {
+  mode: "series",
+  audio: RECOMMENDED_AUDIO_PREFERENCE,
+  subtitle: RECOMMENDED_SUBTITLE_PREFERENCE,
+  autoNext: true,
+  skipIntro: true,
+  skipCredits: true,
+  downloadsEnabled: false,
+  downloadQuality: "1080p",
+  anilistSync: false,
+  tmdbSync: false,
+  presenceDiscord: false,
+};
+
+/** The value `s` ("use recommended") restores on a screen, per screen kind. */
+const MODE_RECOMMENDED = "series";
+const DOWNLOAD_QUALITY_RECOMMENDED = "1080p";
+
+/** Index of `value`, or 0 when it somehow left the list — never -1. */
+function indexOfValue(values: readonly string[], value: string): number {
+  const index = values.indexOf(value);
+  return index >= 0 ? index : 0;
+}
+
 /** Index of the recommended value, or 0 when it somehow left the catalog. */
 function recommendedIndex(
   options: readonly { readonly value: string }[],
@@ -131,48 +184,83 @@ export function SetupShell({
   finish,
   onRecheck,
   downloadPath = "your data directory",
+  initial = FACTORY_INITIAL_STATE,
 }: {
   snapshot: CapabilitySnapshot;
-  finish: (result: SetupFlowResult, prefs: SetupPrefs) => void;
+  /** Called with the outcome, the chosen prefs, and how deep the user got. */
+  finish: (result: SetupFlowResult, prefs: SetupPrefs, answeredScreens: number) => void;
   /** Re-probe the machine. Absent in tests that do not exercise `[r]`. */
   onRecheck?: () => Promise<CapabilitySnapshot>;
   downloadPath?: string;
+  /** Current configuration, hydrated into every control. See #228. */
+  initial?: SetupInitialState;
 }) {
   // Columns only. The frame takes its height from its container via flexGrow —
   // sizing to `stdout.rows` is what pushed the footer off the bottom of the
   // screen, because setup mounts inside the app shell's box, not the terminal.
   const { cols } = useShellDimensions();
+  // Same policy the gate below renders against. While it is too small the
+  // screens are not visible, so keystrokes must not steer screens the user
+  // cannot see.
+  const viewport = useDebouncedViewportPolicy("picker");
 
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [rechecking, setRechecking] = useState(false);
   const [screenIdx, setScreenIdx] = useState(0);
+  /** Deepest screen reached — an abort after this point was a real decision. */
+  const deepestRef = React.useRef(0);
+  const [confirmingAbort, setConfirmingAbort] = useState(false);
 
   const [depIdx, setDepIdx] = useState(0);
   const [showFix, setShowFix] = useState(false);
-  const [modeIdx, setModeIdx] = useState(0);
+  const [modeIdx, setModeIdx] = useState(() =>
+    indexOfValue(
+      MODE_OPTIONS.map((o) => o.value),
+      initial.mode,
+    ),
+  );
   const [audioIdx, setAudioIdx] = useState(() =>
-    recommendedIndex(AUDIO_PREFERENCE_OPTIONS, RECOMMENDED_AUDIO_PREFERENCE),
+    recommendedIndex(AUDIO_PREFERENCE_OPTIONS, initial.audio),
   );
   const [subtitleIdx, setSubtitleIdx] = useState(() =>
-    recommendedIndex(SUBTITLE_PREFERENCE_OPTIONS, RECOMMENDED_SUBTITLE_PREFERENCE),
+    recommendedIndex(SUBTITLE_PREFERENCE_OPTIONS, initial.subtitle),
   );
   const [langFocus, setLangFocus] = useState<"audio" | "subtitle">("audio");
   const [playbackIdx, setPlaybackIdx] = useState(0);
-  const [autoNext, setAutoNext] = useState(true);
-  const [skipIntro, setSkipIntro] = useState(true);
-  const [skipCredits, setSkipCredits] = useState(true);
+  const [autoNext, setAutoNext] = useState(initial.autoNext);
+  const [skipIntro, setSkipIntro] = useState(initial.skipIntro);
+  const [skipCredits, setSkipCredits] = useState(initial.skipCredits);
   const [libraryIdx, setLibraryIdx] = useState(0);
-  // Downloads follow what is installed. Defaulting to on where yt-dlp is absent
-  // pre-selected the one option that cannot work.
-  const [downloadsEnabled, setDownloadsEnabled] = useState(snapshot.ytDlp);
-  const [qualityIdx, setQualityIdx] = useState(0);
-  const [connectAniList, setConnectAniList] = useState(false);
-  const [connectTmdb, setConnectTmdb] = useState(false);
-  const [presenceDiscord, setPresenceDiscord] = useState(false);
-  // Index 0 is "turn it on" — the recommendation. Only ever committed by a
-  // keystroke on that screen: `s` selects off, and accept-all stops there.
+  // Hydrated from config, then clamped to what is installed: a preference saved
+  // while yt-dlp existed must not come back pointing at a queue that cannot run
+  // — same clamp `[r]` applies when a recheck sees yt-dlp disappear.
+  const [downloadsEnabled, setDownloadsEnabled] = useState(
+    initial.downloadsEnabled && snapshot.ytDlp,
+  );
+  const [qualityIdx, setQualityIdx] = useState(() =>
+    indexOfValue(DOWNLOAD_QUALITIES, initial.downloadQuality),
+  );
+  const [connectAniList, setConnectAniList] = useState(initial.anilistSync);
+  const [connectTmdb, setConnectTmdb] = useState(initial.tmdbSync);
+  const [presenceDiscord, setPresenceDiscord] = useState(initial.presenceDiscord);
+  // The cursor on the consent screen. Index 0 is "turn it on" — the
+  // recommendation, per the analytics contract. A cursor is not an answer.
   const [analyticsIdx, setAnalyticsIdx] = useState(ANALYTICS_ON_INDEX);
-  const [analyticsSeen, setAnalyticsSeen] = useState(false);
+  /**
+   * The consent screen's *committed* answer, written only by a key pressed
+   * while that screen is showing.
+   *
+   * This used to be an `analyticsSeen` boolean flipped on arrival, with the
+   * live cursor read at finish time. Arriving is not consenting: walking onto
+   * the screen, pressing left to go back, and then pressing `S` elsewhere
+   * finished the wizard with the cursor still parked on the pre-selected
+   * "turn it on" — a skip path that opted the user in, which the contract in
+   * AGENTS.md forbids outright. Recording the decision instead of the visit
+   * closes that whole class: nothing but a keystroke on the consent screen can
+   * move this, in either direction.
+   */
+  const [analyticsDecision, setAnalyticsDecision] =
+    useState<SetupPrefs["analyticsChoice"]>("unchanged");
 
   const tick = useFrameTick(rechecking, RECHECK_TICK_MS);
   const screen = SCREEN_ORDER[screenIdx] as Screen;
@@ -183,7 +271,12 @@ export function SetupShell({
 
   const mode = MODE_OPTIONS[modeIdx]?.value ?? "series";
 
-  function buildPrefs(consented: boolean): SetupPrefs {
+  /**
+   * `analyticsChoice` is passed in rather than derived: every caller has to say
+   * out loud which consent answer it is committing, and the only value that can
+   * ever be `enabled` is one the consent screen recorded.
+   */
+  function buildPrefs(analyticsChoice: SetupPrefs["analyticsChoice"]): SetupPrefs {
     return {
       mode,
       audio: AUDIO_PREFERENCE_OPTIONS[audioIdx]?.value ?? RECOMMENDED_AUDIO_PREFERENCE,
@@ -196,28 +289,25 @@ export function SetupShell({
       connectAniList,
       connectTmdb,
       presenceDiscord,
-      analyticsChoice: !consented
-        ? "unchanged"
-        : analyticsIdx === ANALYTICS_ON_INDEX
-          ? "enabled"
-          : "disabled",
+      analyticsChoice,
     };
   }
 
   function advance() {
     if (screenIdx < SCREEN_ORDER.length - 1) {
-      const next = SCREEN_ORDER[screenIdx + 1];
-      if (next === "analytics") setAnalyticsSeen(true);
       setShowFix(false);
+      setConfirmingAbort(false);
+      deepestRef.current = Math.max(deepestRef.current, screenIdx + 1);
       setScreenIdx((current) => current + 1);
     } else {
-      finish("completed", buildPrefs(analyticsSeen));
+      finish("completed", buildPrefs(analyticsDecision), deepestRef.current);
     }
   }
 
   function back() {
     if (screenIdx > 0) {
       setShowFix(false);
+      setConfirmingAbort(false);
       setScreenIdx((i) => i - 1);
     }
   }
@@ -231,11 +321,74 @@ export function SetupShell({
    * action.
    */
   function acceptRemainingDefaults() {
-    finish("defaults", buildPrefs(analyticsSeen));
+    finish("defaults", buildPrefs(analyticsDecision), deepestRef.current);
   }
 
   function abort() {
-    finish("aborted", buildPrefs(false));
+    finish("aborted", buildPrefs("unchanged"), deepestRef.current);
+  }
+
+  /**
+   * Record the consent screen's answer. The only writer of `analyticsDecision`,
+   * and it is only ever called from a key handler that has already established
+   * the consent screen is the one showing — that narrowness is the guarantee.
+   * The cursor follows the decision so the screen and the record agree if the
+   * user steps back onto it.
+   */
+  function commitAnalytics(choice: "enabled" | "disabled") {
+    setAnalyticsIdx(choice === "enabled" ? ANALYTICS_ON_INDEX : ANALYTICS_OFF_INDEX);
+    setAnalyticsDecision(choice);
+  }
+
+  /**
+   * Leaving is free before anything is decided; afterwards it costs a confirm,
+   * because one stray esc at screen six must not throw away five screens of
+   * answers (#230). The caller still decides what an abort means for the
+   * onboarding gate — `answeredScreens` tells it whether the user ever engaged.
+   */
+  function requestAbort() {
+    if (deepestRef.current === 0 && screenIdx === 0) {
+      abort();
+      return;
+    }
+    setConfirmingAbort(true);
+  }
+
+  /**
+   * `s` — take this step's recommendation and move on. The footer promises
+   * "use recommended", so the handler has to actually apply it: resetting only
+   * the current screen's decision, never a standing one (#231).
+   */
+  function applyScreenRecommendation() {
+    switch (screen) {
+      case "mode":
+        setModeIdx(
+          indexOfValue(
+            MODE_OPTIONS.map((o) => o.value),
+            MODE_RECOMMENDED,
+          ),
+        );
+        break;
+      case "language":
+        setAudioIdx(recommendedIndex(AUDIO_PREFERENCE_OPTIONS, RECOMMENDED_AUDIO_PREFERENCE));
+        setSubtitleIdx(
+          recommendedIndex(SUBTITLE_PREFERENCE_OPTIONS, RECOMMENDED_SUBTITLE_PREFERENCE),
+        );
+        break;
+      case "playback":
+        setAutoNext(true);
+        setSkipIntro(true);
+        setSkipCredits(true);
+        break;
+      case "library":
+        // Only the quality resets. Downloads, account links, and presence are
+        // standing decisions: "recommended" for those is whatever the user
+        // already has, which is what hydration loaded.
+        setQualityIdx(indexOfValue(DOWNLOAD_QUALITIES, DOWNLOAD_QUALITY_RECOMMENDED));
+        break;
+      default:
+        break;
+    }
   }
 
   function recheck() {
@@ -281,26 +434,48 @@ export function SetupShell({
       return;
     }
     if (screen === "library") {
-      if (libraryIdx === 0) setDownloadsEnabled((v) => !v);
-      else if (libraryIdx === 1) setQualityIdx((i) => (i + 1) % DOWNLOAD_QUALITIES.length);
-      else if (libraryIdx === 2) setConnectAniList((v) => !v);
+      // A row whose note explains it cannot work must not flip when pressed —
+      // an on glyph next to "install yt-dlp" is two statements disagreeing.
+      if (libraryIdx === 0) {
+        if (snapshot.ytDlp) setDownloadsEnabled((v) => !v);
+        return;
+      }
+      if (libraryIdx === 1) {
+        if (downloadsEnabled) setQualityIdx((i) => (i + 1) % DOWNLOAD_QUALITIES.length);
+        return;
+      }
+      if (libraryIdx === 2) setConnectAniList((v) => !v);
       else if (libraryIdx === 3) setConnectTmdb((v) => !v);
       else setPresenceDiscord((v) => !v);
     }
   }
 
   useInput((input, key) => {
-    if (key.escape) {
-      abort();
+    // Below the viewport minimum the screens are not rendered; keys would steer
+    // decisions the user cannot see.
+    if (viewport.tooSmall) return;
+
+    // Abort is a two-keystroke decision once anything has been answered. The
+    // confirming keypress is consumed: whatever it was, it does not also act.
+    if (confirmingAbort) {
+      if (key.escape || input === "q" || input === "Q") abort();
+      else setConfirmingAbort(false);
+      return;
+    }
+
+    if (key.escape || input === "q" || input === "Q") {
+      requestAbort();
       return;
     }
 
     // `S` — accept every remaining recommendation and finish. On the consent
     // screen it advances instead of passing through, so analytics is never
-    // enabled by a keystroke aimed at everything else.
+    // enabled by a keystroke aimed at everything else. Anywhere else it
+    // finishes carrying whatever the consent screen has actually recorded,
+    // which for a user who never answered it is `unchanged`.
     if (input === "S") {
       if (screen === "analytics") {
-        setAnalyticsIdx(ANALYTICS_OFF_INDEX);
+        commitAnalytics("disabled");
         advance();
         return;
       }
@@ -310,14 +485,12 @@ export function SetupShell({
 
     // `s` — take this step's recommendation and move on. It no longer ends the
     // wizard: waving past one question should not cost you the rest of setup.
+    // On the consent screen "recommended" is deliberately inverted: the
+    // contract says a skip may never opt anyone in.
     if (input === "s") {
-      if (screen === "analytics") setAnalyticsIdx(ANALYTICS_OFF_INDEX);
+      if (screen === "analytics") commitAnalytics("disabled");
+      else applyScreenRecommendation();
       advance();
-      return;
-    }
-
-    if (input === "q" || input === "Q") {
-      abort();
       return;
     }
 
@@ -333,6 +506,11 @@ export function SetupShell({
     }
 
     if (key.return) {
+      // Confirming on the consent screen is the one keystroke allowed to say
+      // "enabled", and it says whatever the cursor is on when it is pressed.
+      if (screen === "analytics") {
+        commitAnalytics(analyticsIdx === ANALYTICS_ON_INDEX ? "enabled" : "disabled");
+      }
       advance();
       return;
     }
@@ -415,10 +593,19 @@ export function SetupShell({
         {screen === "analytics" ? <AnalyticsScreen selectedIndex={analyticsIdx} /> : null}
         {screen === "done" ? (
           <DoneScreen
-            headline={describeChoice(buildPrefs(analyticsSeen))}
-            summary={summaryLines(buildPrefs(analyticsSeen))}
+            headline={describeChoice(buildPrefs(analyticsDecision))}
+            summary={summaryLines(buildPrefs(analyticsDecision))}
             outstanding={outstandingLines(depRows)}
           />
+        ) : null}
+
+        {confirmingAbort ? (
+          <Box marginTop={1}>
+            <Text color={palette.danger} bold>
+              Press esc again to quit without saving
+            </Text>
+            <Text color={palette.muted}> — any other key stays.</Text>
+          </Box>
         ) : null}
       </SetupFrame>
     </ViewportResizeGate>
@@ -438,21 +625,19 @@ function buildFooter(
         { key: "enter", label: "confirm" },
         { key: "↑↓", label: "choose" },
         ...back,
-        { key: "s", label: "use recommended" },
+        { key: "s", label: "recommended" },
       ];
     case "language":
-      return [
-        { key: "enter", label: "confirm" },
-        { key: "↑↓", label: "choose" },
-        { key: "tab", label: "audio / subs" },
-        ...back,
-      ];
+      // tab and ↑↓ are named in the screen body, right where they act; the
+      // footer keeps only the decisions.
+      return [{ key: "enter", label: "confirm" }, { key: "s", label: "recommended" }, ...back];
     case "playback":
     case "library":
       return [
         { key: "space", label: "toggle" },
         { key: "↑↓", label: "choose" },
         { key: "enter", label: "next" },
+        { key: "s", label: "recommended" },
         ...back,
       ];
     case "analytics":
@@ -511,10 +696,18 @@ function summaryLines(prefs: SetupPrefs): readonly SummaryLine[] {
   // pending rather than done — saying "connected" before the browser has even
   // opened would be the kind of small lie that erodes the rest.
   if (prefs.connectAniList) {
-    lines.push({ ok: false, label: "AniList", detail: "opening your browser to finish linking…" });
+    lines.push({
+      ok: false,
+      label: "AniList",
+      detail: "opens after setup — your browser finishes the link",
+    });
   }
   if (prefs.connectTmdb) {
-    lines.push({ ok: false, label: "TMDB", detail: "opening your browser to finish linking…" });
+    lines.push({
+      ok: false,
+      label: "TMDB",
+      detail: "opens after setup — your browser finishes the link",
+    });
   }
   if (prefs.presenceDiscord) {
     lines.push({
@@ -539,48 +732,54 @@ export { AnalyticsScreen } from "./setup/AnalyticsScreen";
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/** What the wizard hands its caller, wherever it ends. */
+export type SetupFlowPayload = {
+  outcome: SetupFlowResult;
+  prefs: SetupPrefs;
+  /**
+   * How deep the user got before finishing or leaving. An abort at 0 means
+   * setup was offered and declined untouched — the caller must not treat that
+   * as onboarding (#230).
+   */
+  answeredScreens: number;
+};
+
 export function runSetupFlow(
   snapshot: CapabilitySnapshot,
   options: {
     readonly onRecheck?: () => Promise<CapabilitySnapshot>;
     readonly downloadPath?: string;
+    /** Current configuration to hydrate the controls from. See #228. */
+    readonly initial?: SetupInitialState;
   } = {},
 ): {
-  result: Promise<{ outcome: SetupFlowResult; prefs: SetupPrefs }>;
+  result: Promise<SetupFlowPayload>;
 } {
-  const mounted = mountRootContent<{ outcome: SetupFlowResult; prefs: SetupPrefs }>({
+  const mounted = mountRootContent<SetupFlowPayload>({
     kind: "picker",
     renderContent: (finish) => (
       <SetupShell
         snapshot={snapshot}
-        finish={(outcome, prefs) => finish({ outcome, prefs })}
+        finish={(outcome, prefs, answeredScreens) => finish({ outcome, prefs, answeredScreens })}
         {...(options.onRecheck ? { onRecheck: options.onRecheck } : {})}
         {...(options.downloadPath ? { downloadPath: options.downloadPath } : {})}
+        {...(options.initial ? { initial: options.initial } : {})}
       />
     ),
     // Ink teardown settles here. That is not a user decision, so it must not
-    // write settings — `aborted` leaves the existing config alone.
+    // write settings — `aborted` with zero answers leaves both the existing
+    // config and the onboarding gate alone.
     fallbackValue: {
       outcome: "aborted",
       prefs: {
-        mode: "series",
-        audio: RECOMMENDED_AUDIO_PREFERENCE,
-        subtitle: RECOMMENDED_SUBTITLE_PREFERENCE,
-        autoNext: true,
-        skipIntro: true,
-        skipCredits: true,
-        downloadsEnabled: false,
-        downloadQuality: "1080p",
-        connectAniList: false,
-        connectTmdb: false,
-        presenceDiscord: false,
+        ...FACTORY_INITIAL_STATE,
+        connectAniList: FACTORY_INITIAL_STATE.anilistSync,
+        connectTmdb: FACTORY_INITIAL_STATE.tmdbSync,
         analyticsChoice: "unchanged",
       },
+      answeredScreens: 0,
     },
   });
 
   return { result: mounted.result };
 }
-
-/** Unused Box import guard — the frame owns layout now. */
-void Box;

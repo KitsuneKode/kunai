@@ -12,7 +12,5 @@
               AniList catalog, sub and dub
             YouTube
               Search and play from YouTube
-          ● ● ○ ○ ○ ○ ○
-
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-  [enter]  confirm  ·  [↑↓]  choose  ·  [b]  back  ·  [s]  use recommended                   Setup
+  [enter]  confirm  ·  [↑↓]  choose  ·  [b]  back  ·  [s]  recommended                       Setup

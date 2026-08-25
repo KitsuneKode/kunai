@@ -39,22 +39,11 @@ export function setupContentWidth(width: number): number {
 /**
  * One progress fact, not two.
  *
- * The old chrome printed `❮ step 1 of 7 ❯` *and* `● ○ ○ ○ ○ ○ ○` — the same
- * information twice, stacked above every screen, where the screen's actual job
- * was not. `00-principles.md`: do not repeat the same fact in header, body, and
- * footer. The count lives in the header; the dots sit quietly under the body.
+ * The header bar carries `setup N⁄7`. An earlier draft also rendered a dot
+ * strip under the body — the same fact twice on every screen, which is what
+ * `00-principles.md` says not to do. The header count stays because it is
+ * position plus destination ("3⁄7"); a second rendering added nothing.
  */
-function StepDots({ total, current }: { readonly total: number; readonly current: number }) {
-  return (
-    <Box justifyContent="center" gap={1}>
-      {Array.from({ length: total }, (_, i) => (
-        <Text key={i} color={i <= current ? palette.accent : palette.line}>
-          {i <= current ? "●" : "○"}
-        </Text>
-      ))}
-    </Box>
-  );
-}
 
 function FrameBar({
   width,
@@ -79,8 +68,14 @@ function FrameBar({
       paddingX={2}
       justifyContent="space-between"
     >
-      <Box>{left}</Box>
-      <Box>{right}</Box>
+      {/* The left slot owns the squeeze: when its keys exceed the line they
+          wrap inside this box instead of shoving the right label out of the
+          frame. Without flexShrink here, a fifth key hint pushed "Setup" past
+          the edge and Ink split it mid-word. */}
+      <Box flexGrow={1} flexShrink={1}>
+        {left}
+      </Box>
+      <Box flexShrink={0}>{right}</Box>
     </Box>
   );
 }
@@ -160,10 +155,6 @@ export function SetupFrame({
           top half looking abandoned, and the eye starts high. */}
       <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={2}>
         {children}
-      </Box>
-
-      <Box width={width} paddingX={gutter} marginBottom={1}>
-        <StepDots total={totalSteps} current={step} />
       </Box>
 
       <FrameBar

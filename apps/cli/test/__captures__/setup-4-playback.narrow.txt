@@ -12,9 +12,7 @@
         Uses AniSkip and IntroDB timings when they exist
     ◉ Skip credits
         Jumps the end card and rolls on
-  ● ● ● ● ○ ○ ○
-
 ────────────────────────────────────────────────────────────────────────
-  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [b]     Setu
-                                                                 p
-   back
+  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]     Setup
+
+   recommended  ·  [b]  back
