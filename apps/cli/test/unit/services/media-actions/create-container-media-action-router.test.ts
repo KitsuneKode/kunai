@@ -192,7 +192,7 @@ describe("queueDownloadFromMediaItem authoritative kind", () => {
           enqueued.push(input);
           return { id: `job-${enqueued.length}` };
         },
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: { get: () => undefined, upsert: () => {} },
       offlineRunwayService: { enqueueEvaluation: () => {} },

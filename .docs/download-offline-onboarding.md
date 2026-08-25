@@ -69,6 +69,12 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - Abort terminates active download processes (`yt-dlp`), deletes temporary files, and persists an aborted job state.
 - App shutdown pauses active downloads, cleans temporary workers, and leaves jobs retryable.
 - Failed jobs retry with bounded backoff and then surface as failed when retry limits are exhausted.
+- Background queue triggers enter through one supervised seam. An unexpected
+  reconciliation, repository, filesystem, or worker failure records a redacted
+  download diagnostic and cannot terminate playback or the CLI.
+- Explicitly awaited queue processing and drain calls still reject on unexpected
+  failures so download-only mode, shutdown, tests, and operators receive honest
+  failure semantics.
 - Quit with active downloads asks whether to keep, wait, or cancel; Ctrl+C and signals use the same cleanup path.
 - Progress is parsed from yt-dlp newline output and persisted for shell diagnostics/UI.
 - Download-only mode resolves a playable stream without launching mpv.

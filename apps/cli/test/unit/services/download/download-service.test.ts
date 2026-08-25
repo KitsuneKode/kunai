@@ -1655,6 +1655,397 @@ describe("DownloadService", () => {
     expect(recovered?.errorMessage).toBe("download paused by recovery shutdown");
   });
 
+  test("supervises startup reconciliation failures without an unhandled rejection", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      diagnostics: {
+        record: (event) => events.push(event as unknown as Record<string, unknown>),
+      },
+    });
+    const secretUrl =
+      "https://cdn.example.test/private/manifest.m3u8?token=sentinel-secret-never-log";
+    const listRunningSpy = spyOn(repo, "listRunning").mockImplementation(() => {
+      throw new Error(`simulated SQLite failure while reading ${secretUrl}`);
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      expect(service.kickQueue("startup")).toBeUndefined();
+      await waitUntil(() => events.length === 1);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(unhandled).toEqual([]);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.category).toBe("download");
+      expect(events[0]?.operation).toBe("download.queue.pass.failed");
+      expect(events[0]?.context).toMatchObject({
+        source: "startup",
+        stage: "reconcile",
+        status: "failed",
+        severity: "degraded",
+      });
+      const serialized = JSON.stringify(events);
+      expect(serialized).not.toContain(secretUrl);
+      expect(serialized).not.toContain("sentinel-secret-never-log");
+      expect(serialized).toContain("[redacted]");
+      expect(serialized.length).toBeLessThan(2_000);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      listRunningSpy.mockRestore();
+    }
+  });
+
+  test("contains diagnostic and logger failures inside the supervised queue boundary", async () => {
+    let reporterCalls = 0;
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      diagnostics: {
+        record: () => {
+          reporterCalls += 1;
+          throw new Error("diagnostics sink unavailable");
+        },
+      },
+      logger: {
+        debug() {},
+        info() {},
+        warn() {
+          throw new Error("logger unavailable");
+        },
+        error() {},
+        fatal() {},
+        child() {
+          return this;
+        },
+      },
+    });
+    const listRunningSpy = spyOn(repo, "listRunning").mockImplementation(() => {
+      throw new Error("simulated SQLite failure");
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      service.kickQueue("startup");
+      await waitUntil(() => reporterCalls === 1);
+      await Bun.sleep(0);
+      await Bun.sleep(0);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      listRunningSpy.mockRestore();
+    }
+  });
+
+  test("resets a failed supervised pass so a later kick completes queued work", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      diagnostics: {
+        record: (event) => events.push(event as unknown as Record<string, unknown>),
+      },
+    });
+    const originalListRunning = repo.listRunning.bind(repo);
+    let failReconciliation = true;
+    const listRunningSpy = spyOn(repo, "listRunning").mockImplementation((limit) => {
+      if (failReconciliation) throw new Error("simulated SQLite failure");
+      return originalListRunning(limit);
+    });
+
+    service.kickQueue("startup");
+    await waitUntil(() => events.length === 1);
+    failReconciliation = false;
+    spawnSpy.mockImplementation((command: string[]) => {
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:queue-retry", type: "movie", name: "Queue Retry" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+
+    service.kickQueue("download-intent");
+    await waitUntil(() => repo.get(job.id)?.status === "completed");
+
+    expect(repo.get(job.id)?.status).toBe("completed");
+    listRunningSpy.mockRestore();
+  });
+
+  test("records the known worker and job when a queue worker fails unexpectedly", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      diagnostics: {
+        record: (event) => events.push(event as unknown as Record<string, unknown>),
+      },
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:worker-context", type: "movie", name: "Worker Context" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    const markRunningSpy = spyOn(repo, "markRunning").mockImplementation(() => {
+      throw new Error(
+        "simulated SQLite claim failure https://cdn.example.test/file?token=worker-secret",
+      );
+    });
+
+    service.kickQueue("download-manager");
+    await waitUntil(() => events.length === 1);
+
+    expect(events[0]?.context).toMatchObject({
+      source: "download-manager",
+      stage: "worker",
+      workerIndex: 0,
+      jobId: job.id,
+    });
+    expect(JSON.stringify(events)).not.toContain("worker-secret");
+    markRunningSpy.mockRestore();
+  });
+
+  test("attributes a failed second claim after another process wins the first job", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      diagnostics: {
+        record: (event) => events.push(event as unknown as Record<string, unknown>),
+      },
+      configService: {
+        downloadsEnabled: true,
+        downloadPath: tempDir,
+        maxConcurrentDownloads: 1,
+      } as ConfigService,
+    });
+    const firstJob = await service.enqueue({
+      title: { id: "tmdb:claim-a", type: "movie", name: "Claim A" },
+      stream: { url: "https://example.com/a.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    const secondJob = await service.enqueue({
+      title: { id: "tmdb:claim-b", type: "movie", name: "Claim B" },
+      stream: { url: "https://example.com/b.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    const originalMarkRunning = repo.markRunning.bind(repo);
+    const claimedJobIds: string[] = [];
+    const markRunningSpy = spyOn(repo, "markRunning").mockImplementation((jobId, updatedAt) => {
+      claimedJobIds.push(jobId);
+      if (claimedJobIds.length === 1) {
+        // Simulate another Kunai process winning this row between selection and
+        // our compare-and-set. The durable update makes the recursive pass pick B.
+        expect(originalMarkRunning(jobId, updatedAt)).toBe(true);
+        return false;
+      }
+      throw new Error("simulated SQLite claim failure for job B");
+    });
+
+    service.kickQueue("download-manager");
+    await waitUntil(() => events.length === 1);
+
+    expect(claimedJobIds).toEqual([firstJob.id, secondJob.id]);
+    expect(events[0]?.context).toMatchObject({
+      source: "download-manager",
+      stage: "worker",
+      workerIndex: 0,
+      jobId: secondJob.id,
+    });
+    markRunningSpy.mockRestore();
+  });
+
+  test("keeps processQueue and drainQueue failures explicit for awaited callers", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    await service.enqueue({
+      title: { id: "tmdb:awaited-failure", type: "movie", name: "Awaited Failure" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    const listRunningSpy = spyOn(repo, "listRunning").mockImplementation(() => {
+      throw new Error("simulated SQLite failure");
+    });
+
+    await expect(service.processQueue()).rejects.toThrow("simulated SQLite failure");
+    await expect(service.drainQueue()).rejects.toThrow("simulated SQLite failure");
+    listRunningSpy.mockRestore();
+  });
+
+  test("waits for sibling queue workers before rejecting and reopening admission", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      configService: {
+        downloadsEnabled: true,
+        downloadPath: tempDir,
+        maxConcurrentDownloads: 2,
+      } as ConfigService,
+    });
+    const workerFailure = new Error("worker A failed");
+    let calls = 0;
+    let siblingProgress = 0;
+    let releaseSibling!: () => void;
+    let markSiblingStarted!: () => void;
+    const siblingStarted = new Promise<void>((resolve) => {
+      markSiblingStarted = resolve;
+    });
+    const processNextSpy = spyOn(service, "processNextQueued").mockImplementation(() => {
+      calls += 1;
+      if (calls === 1) return Promise.reject(workerFailure);
+      if (calls === 2) {
+        markSiblingStarted();
+        return new Promise((resolve) => {
+          releaseSibling = () => {
+            siblingProgress += 1;
+            resolve(null);
+          };
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    let settled = false;
+    const running = service.processQueue();
+    void running.then(
+      () => {
+        settled = true;
+        return undefined;
+      },
+      () => {
+        settled = true;
+        return undefined;
+      },
+    );
+    await siblingStarted;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    await service.processQueue();
+    expect(calls).toBe(2);
+
+    releaseSibling();
+    await expect(running).rejects.toBe(workerFailure);
+    expect(siblingProgress).toBe(1);
+
+    let laterPassCalls = 0;
+    processNextSpy.mockImplementation(() => {
+      laterPassCalls += 1;
+      return Promise.resolve(null);
+    });
+    await service.processQueue();
+    expect(laterPassCalls).toBe(2);
+    processNextSpy.mockRestore();
+  });
+
+  test("aggregates multiple worker failures with a bounded redacted message", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      configService: {
+        downloadsEnabled: true,
+        downloadPath: tempDir,
+        maxConcurrentDownloads: 2,
+      } as ConfigService,
+    });
+    const processNextSpy = spyOn(service, "processNextQueued").mockImplementationOnce(() =>
+      Promise.reject(
+        new Error(
+          "worker A failed https://cdn.example.test/one.m3u8?token=sentinel-secret-never-log",
+        ),
+      ),
+    );
+    processNextSpy.mockImplementationOnce(() =>
+      Promise.reject(new Error("worker B failed ".repeat(100))),
+    );
+
+    let failure: unknown;
+    try {
+      await service.processQueue();
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toHaveLength(2);
+    expect((failure as Error).message).not.toContain("sentinel-secret-never-log");
+    expect((failure as Error).message.length).toBeLessThan(500);
+    processNextSpy.mockRestore();
+  });
+
+  test("redacts and bounds hostile error names in an aggregate worker summary", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      configService: {
+        downloadsEnabled: true,
+        downloadPath: tempDir,
+        maxConcurrentDownloads: 2,
+      } as ConfigService,
+    });
+    const namedFailure = new Error("worker A failed");
+    namedFailure.name = "https://x.test/?token=hostile-name-secret";
+    const longNamedFailure = new Error("worker B failed");
+    longNamedFailure.name = "E".repeat(200);
+    const processNextSpy = spyOn(service, "processNextQueued")
+      .mockImplementationOnce(() => Promise.reject(namedFailure))
+      .mockImplementationOnce(() => Promise.reject(longNamedFailure));
+
+    let failure: unknown;
+    try {
+      await service.processQueue();
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([namedFailure, longNamedFailure]);
+    expect((failure as Error).message).not.toContain("hostile-name");
+    expect((failure as Error).message).toContain("token=[redacted]");
+    expect((failure as Error).message).not.toContain("E".repeat(41));
+    expect((failure as Error).message.length).toBeLessThan(500);
+    processNextSpy.mockRestore();
+  });
+
   test("does not recover a freshly heartbeating job owned by another process", async () => {
     const enqueueService = buildService({
       repo,
@@ -1745,6 +2136,8 @@ describe("DownloadService", () => {
 
     service.beginShutdown("download paused by shutdown");
     await service.processQueue();
+    service.kickQueue("startup");
+    await Promise.resolve();
 
     // The queued job must not be claimed after shutdown began.
     expect(spawnSpy).not.toHaveBeenCalled();
@@ -1808,6 +2201,7 @@ function buildService({
   ffprobeAvailable = false,
   ffprobeDeadline,
   diagnostics,
+  logger,
   configService,
   titleAliases = { upsertAliases() {} },
 }: {
@@ -1820,6 +2214,7 @@ function buildService({
   ffprobeAvailable?: boolean;
   ffprobeDeadline?: ConstructorParameters<typeof DownloadService>[0]["ffprobeDeadline"];
   diagnostics?: ConstructorParameters<typeof DownloadService>[0]["diagnostics"];
+  logger?: ConstructorParameters<typeof DownloadService>[0]["logger"];
   configService?: ConfigService;
   titleAliases?: ConstructorParameters<typeof DownloadService>[0]["titleAliases"];
 }): DownloadService {
@@ -1837,7 +2232,7 @@ function buildService({
     ytDlpAvailable,
     ffprobeAvailable,
     diagnostics,
-    logger: {
+    logger: logger ?? {
       debug() {},
       info() {},
       warn() {},

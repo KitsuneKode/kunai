@@ -64,7 +64,7 @@ function createService(overrides: Record<string, unknown> = {}) {
         enqueued.push(input);
         return {} as never;
       },
-      processQueue: async () => {},
+      kickQueue: () => {},
     },
     scheduler: { enqueue: () => {}, drain: async () => ({}) as never },
     ...overrides,
@@ -114,7 +114,7 @@ describe("OfflineRunwayService", () => {
         enqueue: async () => {
           throw new DownloadEnqueueRejectedError("insufficient-disk", "full");
         },
-        processQueue: async () => {},
+        kickQueue: () => {},
       },
     });
 
@@ -157,7 +157,7 @@ describe("OfflineRunwayService", () => {
           enqueued.push(input);
           return {} as never;
         },
-        processQueue: async () => {},
+        kickQueue: () => {},
       },
     });
 

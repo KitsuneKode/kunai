@@ -15,7 +15,9 @@ import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
+import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
+import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
 import {
   cacheOfflinePosterArtwork,
   resolveOfflinePosterArtifactPath,
@@ -74,6 +76,9 @@ const FFPROBE_TERMINATION_GRACE_MS = 2_500;
 const FFPROBE_FORCE_WAIT_MS = 2_500;
 const FFPROBE_IO_CLEANUP_MS = 250;
 const YTDLP_HEADER_CRLF_PATTERN = /[\r\n]/g;
+const DOWNLOAD_QUEUE_FAILURE_NAME_MAX_LENGTH = 40;
+const DOWNLOAD_QUEUE_FAILURE_MESSAGE_MAX_LENGTH = 160;
+const DOWNLOAD_QUEUE_AGGREGATE_MESSAGE_MAX_LENGTH = 1_000;
 
 /** Sanitized yt-dlp argv tail: validated stream URL, scrubbed headers, `--` before positional URL. */
 export function buildYtDlpDownloadStreamArgs(
@@ -173,11 +178,33 @@ export type DownloadEvent =
   | { type: "aborted"; jobId: string }
   | { type: "deleted"; jobId: string };
 
+export type DownloadQueueKickSource =
+  | "startup"
+  | "download-intent"
+  | "shell-download"
+  | "download-manager"
+  | "offline-repair"
+  | "offline-runway";
+
 type DownloadEventListener = (event: DownloadEvent) => void;
 
 type ManagedProcess = {
   readonly exited: Promise<number>;
   kill(signal?: NodeJS.Signals | number): void;
+};
+
+type DownloadQueuePassStage = "resume-paused" | "reconcile" | "worker";
+
+type DownloadQueueFailureContext = {
+  readonly stage: DownloadQueuePassStage;
+  readonly workerIndex?: number;
+  readonly workerFailures?: number;
+  readonly jobId?: string;
+};
+
+type DownloadQueueWorkerContext = {
+  readonly workerIndex: number;
+  jobId?: string;
 };
 
 type ActiveDownloadProcess = {
@@ -225,6 +252,7 @@ type DownloadSidecarResult = {
 
 export class DownloadService {
   private queueWorkerRunning = false;
+  private lastQueuePassFailureContext: DownloadQueueFailureContext | undefined;
   private reconciledStartupJobs = false;
   private shutdownRequested = false;
   private readonly cancellationRequests = new Map<
@@ -580,7 +608,10 @@ export class DownloadService {
     return { checked: jobs.length, repaired, stillRepairable, failed };
   }
 
-  async processNextQueued(): Promise<DownloadJobRecord | null> {
+  async processNextQueued(
+    queueContext?: DownloadQueueWorkerContext,
+  ): Promise<DownloadJobRecord | null> {
+    if (queueContext) queueContext.jobId = undefined;
     const eligibility = this.getEnqueueEligibility();
     if (!eligibility.allowed) {
       return null;
@@ -591,6 +622,7 @@ export class DownloadService {
     if (!next) {
       return null;
     }
+    if (queueContext) queueContext.jobId = next.id;
     // Claim synchronously (no await before this) so a concurrent worker's
     // selectEligibleQueuedJob skips this job until it is markRunning or released.
     this.claimedJobIds.add(next.id);
@@ -600,9 +632,9 @@ export class DownloadService {
     // drive or a dropped network share. That throw used to escape past the
     // claim: `claimedJobIds` still held the id, `selectEligibleQueuedJob` skips
     // claimed ids forever, and the job became unstartable for the rest of the
-    // session while still showing as queued. It also reached every
-    // `void processQueue()` call site as an unhandled rejection, which
-    // `main.ts` escalates to a fatal shutdown.
+    // session while still showing as queued. Before queue supervision, it also
+    // reached discarded `processQueue()` promises as an unhandled rejection,
+    // which `main.ts` escalates to a fatal shutdown.
     let storage: Awaited<ReturnType<DownloadService["evaluateStorageForPath"]>>;
     try {
       storage = await this.evaluateStorageForPath(
@@ -659,7 +691,7 @@ export class DownloadService {
         this.claimedJobIds.delete(next.id);
         // Another process won the durable claim after our read. Its update makes
         // this row ineligible, so continue with the next queued candidate.
-        return await this.processNextQueued();
+        return await this.processNextQueued(queueContext);
       }
       stopHeartbeat = this.startHeartbeat(next.id);
     } catch (error) {
@@ -746,16 +778,30 @@ export class DownloadService {
     }
   }
 
+  /**
+   * The only non-awaited queue entry point. Production callers that merely
+   * nudge background work use this seam so an unexpected repository or worker
+   * rejection remains diagnosable without reaching the CLI-wide fatal policy.
+   */
+  kickQueue(source: DownloadQueueKickSource): void {
+    void this.processQueue().catch((error: unknown) => {
+      this.reportQueuePassFailure(source, error);
+    });
+  }
+
   async processQueue(): Promise<void> {
     if (this.queueWorkerRunning || this.shutdownRequested) {
       return;
     }
     this.queueWorkerRunning = true;
+    this.lastQueuePassFailureContext = undefined;
+    let stage: DownloadQueuePassStage = "resume-paused";
     try {
       if (!this.reconciledStartupJobs) {
         this.resumeEligiblePausedJobs();
         this.reconciledStartupJobs = true;
       }
+      stage = "reconcile";
       await this.reconcileInterruptedJobs();
       // Run up to `maxConcurrentDownloads` workers in parallel; each drains the
       // queue (claim → download) until no eligible job remains. The atomic claim
@@ -764,14 +810,104 @@ export class DownloadService {
         1,
         Math.min(5, Math.trunc(this.deps.config.maxConcurrentDownloads) || 1),
       );
-      const worker = async (): Promise<void> => {
-        while (!this.shutdownRequested && (await this.processNextQueued())) {
+      stage = "worker";
+      const workerContexts = Array.from(
+        { length: limit },
+        (_, workerIndex): DownloadQueueWorkerContext => ({ workerIndex }),
+      );
+      const worker = async (context: DownloadQueueWorkerContext): Promise<void> => {
+        while (!this.shutdownRequested && (await this.processNextQueued(context))) {
           // keep pulling jobs
         }
       };
-      await Promise.all(Array.from({ length: limit }, () => worker()));
+      const results = await Promise.allSettled(workerContexts.map((context) => worker(context)));
+      const failures: Array<{
+        readonly reason: unknown;
+        readonly context: DownloadQueueWorkerContext;
+      }> = [];
+      for (const [workerIndex, result] of results.entries()) {
+        const context = workerContexts[workerIndex];
+        if (result.status === "rejected" && context) {
+          failures.push({ reason: result.reason as unknown, context });
+        }
+      }
+      if (failures.length === 1) {
+        const [failure] = failures;
+        if (failure) {
+          this.lastQueuePassFailureContext = {
+            stage: "worker",
+            workerIndex: failure.context.workerIndex,
+            jobId: failure.context.jobId,
+          };
+          throw failure.reason;
+        }
+      }
+      if (failures.length > 1) {
+        const aggregate = new AggregateError(
+          failures.map((failure) => failure.reason),
+          buildDownloadQueueAggregateMessage(failures.map((failure) => failure.reason)),
+        );
+        this.lastQueuePassFailureContext = {
+          stage: "worker",
+          workerFailures: failures.length,
+        };
+        throw aggregate;
+      }
+    } catch (error) {
+      this.lastQueuePassFailureContext ??= { stage };
+      throw error;
     } finally {
       this.queueWorkerRunning = false;
+    }
+  }
+
+  private reportQueuePassFailure(source: DownloadQueueKickSource, error: unknown): void {
+    const failureContext = this.lastQueuePassFailureContext ?? { stage: "worker" as const };
+    this.lastQueuePassFailureContext = undefined;
+    let event: ReturnType<typeof buildDownloadDiagnosticEvent>;
+    try {
+      event = buildDownloadDiagnosticEvent({
+        operation: "download.queue.pass.failed",
+        stage: failureContext.stage,
+        status: "failed",
+        severity: "degraded",
+        failureClass: "storage",
+        recommendedAction: "export-diagnostics",
+        message: "Background download queue pass failed",
+        correlation: failureContext.jobId ? { downloadJobId: failureContext.jobId } : undefined,
+        context: {
+          source,
+          workerIndex: failureContext.workerIndex,
+          workerFailures: failureContext.workerFailures,
+          jobId: failureContext.jobId,
+          errorName: error instanceof Error ? error.name : typeof error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+      });
+    } catch {
+      try {
+        this.deps.logger.warn("Background download queue pass failed", {
+          source,
+          stage: failureContext.stage,
+        });
+      } catch {
+        // The supervisor itself must remain non-throwing.
+      }
+      return;
+    }
+
+    try {
+      if (this.deps.diagnostics) {
+        this.deps.diagnostics.record(event);
+        return;
+      }
+    } catch {
+      // Fall through to the already-redacted logger context.
+    }
+    try {
+      this.deps.logger.warn(event.message, event.context);
+    } catch {
+      // A broken reporting side channel cannot create a second rejection.
     }
   }
 
@@ -1862,6 +1998,33 @@ async function readUtf8Stream(reader: {
   } finally {
     reader.releaseLock();
   }
+}
+
+
+function buildDownloadQueueAggregateMessage(failures: readonly unknown[]): string {
+  const summaries = failures.map((failure) => {
+    const name = redactDownloadQueueAggregateText(
+      failure instanceof Error ? failure.name : typeof failure,
+      DOWNLOAD_QUEUE_FAILURE_NAME_MAX_LENGTH,
+    );
+    const rawMessage = failure instanceof Error ? failure.message : String(failure);
+    const message = redactDownloadQueueAggregateText(
+      rawMessage,
+      DOWNLOAD_QUEUE_FAILURE_MESSAGE_MAX_LENGTH,
+    );
+    return `${name}: ${message}`;
+  });
+  // AggregateError.errors intentionally retains the original reasons for
+  // awaited callers; only its human-readable summary crosses logging/UI seams.
+  return redactDownloadQueueAggregateText(
+    `Multiple download queue workers failed (${failures.length}): ${summaries.join("; ")}`,
+    DOWNLOAD_QUEUE_AGGREGATE_MESSAGE_MAX_LENGTH,
+  );
+}
+
+function redactDownloadQueueAggregateText(value: string, maxStringLength: number): string {
+  const redacted = redactDiagnosticValue(value, { maxStringLength });
+  return typeof redacted === "string" ? redacted : "unknown failure";
 }
 
 export function analyzeDownloadFailure(message: string): DownloadFailureAnalysis {

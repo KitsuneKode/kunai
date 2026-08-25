@@ -96,7 +96,7 @@ function gatedContainer(entries: readonly OfflineLibraryEntry[]) {
       deleteJob: () => undefined,
       abort: async () => undefined,
       retry: async () => undefined,
-      processQueue: async () => undefined,
+      kickQueue: () => undefined,
       repairRepairableSidecars: async () => ({
         checked: 0,
         repaired: 0,

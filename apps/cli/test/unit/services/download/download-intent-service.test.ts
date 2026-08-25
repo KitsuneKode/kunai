@@ -151,7 +151,7 @@ describe("commitDownloadIntent", () => {
           enqueues += 1;
           return { id: "job" };
         },
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       diagnosticsService: { record: () => {} },
       stateManager: {
@@ -186,7 +186,7 @@ describe("commitDownloadIntent", () => {
           enqueues += 1;
           return { id: `job-${enqueues}` };
         },
-        processQueue: () => {
+        kickQueue: () => {
           processed += 1;
         },
       },
@@ -232,7 +232,7 @@ describe("commitDownloadIntent", () => {
           if (enqueues === 2) throw new Error("rejected");
           return { id: "job-1" };
         },
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: {
         get: () => undefined,
@@ -279,7 +279,7 @@ describe("commitDownloadIntent authoritative kind", () => {
           enqueued.push(input);
           return { id: `job-${enqueued.length}` };
         },
-        processQueue: () => {},
+        kickQueue: () => {},
       },
       offlineTitlePolicies: { get: () => undefined, upsert: () => {} },
       offlineRunwayService: { enqueueEvaluation: () => {} },

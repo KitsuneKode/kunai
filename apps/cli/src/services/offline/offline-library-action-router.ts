@@ -146,7 +146,7 @@ export async function routeOfflineLibraryGroupAction(
         inspected: entries.length,
       }),
     });
-    if (repairEntries.length > 0) void container.downloadService.processQueue();
+    if (repairEntries.length > 0) container.downloadService.kickQueue("offline-repair");
     return "refresh";
   }
 

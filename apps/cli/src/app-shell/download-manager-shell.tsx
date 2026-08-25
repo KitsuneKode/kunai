@@ -357,7 +357,7 @@ export function DownloadManagerContent({
             .then(() => {
               refresh();
               if (job.status !== "repairable") {
-                void container.downloadService.processQueue();
+                container.downloadService.kickQueue("download-manager");
               }
               return undefined;
             })
