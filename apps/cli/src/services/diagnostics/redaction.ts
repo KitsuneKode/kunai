@@ -138,7 +138,27 @@ function redactUrl(value: string): string {
 const OPAQUE_MIN_LENGTH = 16;
 const OPAQUE_MIN_UNBROKEN_RUN = 12;
 
+/**
+ * A canonical UUID — Kunai's own job, download, and correlation ids.
+ *
+ * These are generated locally by `crypto.randomUUID()`, identify nothing but a
+ * row in the user's own database, and are the primary key for correlating a
+ * failure across a trace. Redacting them removes the one field that makes a
+ * support bundle answer "which job?" while protecting nothing.
+ *
+ * They are also structurally distinguishable from a bearer token rather than
+ * merely allow-listed by name: 8-4-4-4-12 hex with a version nibble, so the
+ * longest unbroken run is always exactly 12. A CDN token that happened to be
+ * dash-separated into identical groups would still be an id-shaped string; a
+ * real one never is, because its entropy arrives as one long run.
+ */
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export function isOpaqueQueryValue(value: string): boolean {
+  // Checked before the length gate on purpose: a UUID clears every other test
+  // here — 36 chars, hex alphabet, mixed classes, and a trailing run of exactly
+  // OPAQUE_MIN_UNBROKEN_RUN — so it is redacted by one character of margin.
+  if (CANONICAL_UUID.test(value)) return false;
   if (value.length < OPAQUE_MIN_LENGTH) return false;
   // Base64url / hex alphabet, plus any padding the CDN left on.
   if (!/^[A-Za-z0-9_.~=-]+$/.test(value)) return false;
