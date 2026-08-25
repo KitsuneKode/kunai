@@ -40,6 +40,53 @@ The feature must not make startup slower or more fragile.
 
 Layering rule: UI asks services for capability/state; services do not render UI.
 
+## Setup Wizard Behavior
+
+Seven screens, in order: dependencies, mode, language, playback, downloads &
+accounts, usage ping, done. Implementation is
+`apps/cli/src/app-shell/setup-shell.tsx`; the write map is
+`runSetupWizard` in `apps/cli/src/app-shell/workflows/setup-workflows.ts`.
+
+- **Every control hydrates from the live config.** `wizardInitialStateFromConfig`
+  reads mode, language, playback toggles, download enablement and quality,
+  `sync.<tracker>.enabled`, and the presence provider. A rerun therefore shows
+  what is really set, and completing it writes back exactly what the screens
+  showed. Hydrated download enablement is clamped to whether `yt-dlp` is
+  actually present, the same clamp `[r]` re-probe applies.
+- **`s` applies this screen's recommendation and advances.** It resets only the
+  current screen's decision — mode to shows, language to original/en, playback to
+  all on, quality to 1080p. Standing decisions (account links, downloads
+  enablement, presence) have no recommendation other than what the user already
+  has, so `s` never flips one.
+- **`S` accepts every remaining recommendation and finishes.** On the consent
+  screen it stops instead of passing through.
+- **`esc`/`q` discard.** Free from the first screen, because nothing has been
+  decided; past it they ask once and a second press confirms. Any other key
+  stands the prompt down and is consumed.
+- **The onboarding gate moves only when the user engaged.** An abort from the
+  first screen leaves `onboardingVersion` below the onboarded floor so the next
+  launch offers setup again; an abort after answering records the offer and
+  touches nothing else.
+- **The language answer reaches all four lanes** — anime, series, movie, and
+  YouTube — for both audio and subtitles. Writing three of them was what made
+  screen 3 configure every lane except the one a YouTube user had just picked.
+- **Analytics is keystroke-gated.** Consent is recorded when the user presses a
+  key on the consent screen, never when they arrive on it. Arriving and stepping
+  back leaves the value `unchanged`, which is neither an opt-in nor an opt-out.
+  See [analytics-privacy-contract.md](analytics-privacy-contract.md).
+- **Account links run after config commits, and only report success.**
+  `sync.<tracker>.enabled` flips true only once `connect()` returns ok, so a
+  standing "yes" in config always has a token behind it. An already-connected
+  adapter short-circuits rather than opening a second browser round-trip, and no
+  abort path connects anything.
+- **One restore point per setup run.** Before a completing run writes, the
+  current config is copied to `config.json.pre-setup.bak` — but only when the
+  patch actually changes a field the user would miss (`RESTORABLE_SETUP_FIELDS`
+  in `apps/cli/src/services/persistence/pre-setup-snapshot.ts`). Onboarding
+  bookkeeping and analytics consent are deliberately not among them. The write is
+  best effort and never blocks setup; `/settings` → General → *Undo the last
+  setup run* restores it.
+
 ## Desired Download Behavior
 
 - Downloads use **`yt-dlp`**; **`ffprobe`** on `PATH` is optional for validating completed artifacts.
