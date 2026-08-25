@@ -150,9 +150,20 @@ Job **`candidate`** (no publish):
 
 1. Asserts `inputs.version` equals `apps/cli/package.json` `version`
 2. `bun run ci` → `build` → `pkg:check` → real npm global install → `guard` → `release:notes:check`
-3. Builds all 8 release binaries, verifies them, runs compiled binary smoke
+3. Builds all 8 release binaries plus their deterministic archives, verifies
+   the exact 18 native assets, and runs compiled binary smoke
 4. `bun run release:pack` → `.release-candidate/kunai-npm.tgz`
-5. Uploads artifact `kunai-release-candidate-<version>` (8 binaries + `SHA256SUMS` + `kunai-npm.tgz`, 14-day retention)
+5. Uploads artifact `kunai-release-candidate-<version>` (8 archives + 8 raw
+   binaries + `SHA256SUMS` + `SHA256SUMS.archives` + preserved npm artifacts,
+   14-day retention)
+
+For the 0.3.0 compatibility bridge, legacy `SHA256SUMS` continues to hash raw
+standalone binaries so already-published installers and updaters remain
+functional. `SHA256SUMS.archives` hashes archives. Archive creation is only the
+first stacked layer: this slice does not close issue #132 or reduce user
+downloads. Installers and the in-app updater still consume raw assets until the
+archive-aware follow-up lands. Do not dispatch a release from the
+archive-creation layer alone.
 
 `release:pack` is:
 
@@ -185,7 +196,7 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 3. `bun publish .release-candidate/kunai-npm.tgz --access public`
 4. Retries `npm view @kitsunekode/kunai@<version>` until visible
 5. Creates annotated tag `v<version>` and pushes it
-6. Creates a **draft** GitHub release (`make_latest: false`) with the nine required assets
+6. Creates a **draft** GitHub release (`make_latest: false`) with the 18 required native assets
 7. `bun run scripts/verify-github-release-assets.ts <tag> --expect-draft …`
 8. Promotes: `gh release edit <tag> --draft=false --latest`
 9. Verifies the public release assets again
@@ -238,11 +249,17 @@ git push
 - **CI** (`.github/workflows/ci.yml`): parallel Turbo jobs; installer Docker smoke when installer paths change.
 - `version:packages` runs `changeset version`, mirrors changelog, and regenerates `.release/kunai-v*.md` / `.json` via `bun run release:notes`.
 
-**npm vs GitHub Release artifacts:** npm publishes the preserved `kunai-npm.tgz` (allowlisted `dist/kunai.js` + `dist/assets/**`). Standalone binaries ship only via the GitHub release — `bun run pkg:check` fails if `dist/bin/` appears in the npm tarball.
+**npm vs GitHub Release artifacts:** npm publishes the preserved
+`kunai-npm.tgz` (allowlisted launcher files only). The eight archives and eight
+raw standalone binaries ship only via the GitHub release — `bun run pkg:check`
+fails if `dist/bin/` appears in the npm tarball.
 
 ## GitHub release tags
 
-Prefer tag `vX.Y.Z` created by the **publish** job with the nine required assets (8 binaries + `SHA256SUMS`). Release notes body comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate `@kitsunekode/kunai@X.Y.Z` releases with empty bodies.
+Prefer tag `vX.Y.Z` created by the **publish** job with the 18 required native
+assets (8 archives + 8 raw binaries + 2 checksum manifests). Release notes body
+comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate
+`@kitsunekode/kunai@X.Y.Z` releases with empty bodies.
 
 ## Local release utilities
 

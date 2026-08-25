@@ -592,8 +592,11 @@ jobs:
           retention-days: 1
           path: |
             apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-x64.tar.gz
             apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
             apps/cli/dist/bin/SHA256SUMS
+            apps/cli/dist/bin/SHA256SUMS.archives
 
   installer-docker:
     name: Native installer ${{ matrix.scenario }} / ${{ matrix.variant }}
