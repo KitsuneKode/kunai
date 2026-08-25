@@ -96,6 +96,60 @@ describe("resolveAllMangaShowId", () => {
     expect(showId).toBe("bxCKTnota29uSRnZw");
   });
 
+  test("fails closed before catalog lookup when a numeric id has no AniList metadata", async () => {
+    using fetchMock = mockAllMangaBridgeFetch("unexpected");
+    const result = await allmangaProviderModule.resolve(
+      {
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+        title: {
+          id: "20431",
+          kind: "anime",
+          title: "Hozuki's Coolheadedness",
+        },
+      },
+      TEST_CONTEXT,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      providerId: "allanime",
+      code: "unsupported-title",
+      message: "AllManga title bridge requires an AniList ID for numeric catalog ID 20431",
+      retryable: false,
+    });
+    expect(fetchMock.requests).toEqual([]);
+  });
+
+  test("diagnoses a confirmed bridge miss without sending the AniList id to the catalog", async () => {
+    using fetchMock = mockAllMangaBridgeFetch("empty");
+    const result = await resolveCatalogAllMangaEpisode();
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({
+      code: "unsupported-title",
+      message: "AllManga title bridge found no provider-native show for AniList ID 20431",
+      retryable: false,
+    });
+    expect(fetchMock.catalogRequests).toEqual([]);
+  });
+
+  test("diagnoses bridge transport failure before provider-native catalog lookup", async () => {
+    using fetchMock = mockAllMangaBridgeFetch("transport-error");
+    const result = await resolveCatalogAllMangaEpisode();
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({
+      code: "network-error",
+      message: "AllManga title bridge could not check AniList ID 20431",
+      retryable: true,
+    });
+    expect(fetchMock.catalogRequests).toEqual([]);
+  });
+
   test("bridges catalog anilist ids to opaque show ids via search", async () => {
     clearAllMangaAnilistBridgeCacheForTest();
     const originalFetch = globalThis.fetch;
@@ -1320,6 +1374,70 @@ async function resolveEvidenceEpisode(
     },
     { now: nowFixture, signal: new AbortController().signal },
   );
+}
+
+async function resolveCatalogAllMangaEpisode(): Promise<ProviderResolveResult> {
+  return allmangaProviderModule.resolve(
+    {
+      episode: { episode: 1 },
+      mediaKind: "anime",
+      preferredAudioLanguage: "ja",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+      title: {
+        id: "20431",
+        kind: "anime",
+        title: "Hozuki's Coolheadedness",
+        anilistId: "20431",
+        externalIds: { anilistId: "20431" },
+      },
+    },
+    TEST_CONTEXT,
+  );
+}
+
+function mockAllMangaBridgeFetch(
+  outcome: "empty" | "transport-error" | "unexpected",
+): Disposable & {
+  readonly requests: readonly string[];
+  readonly catalogRequests: readonly string[];
+} {
+  clearAllMangaAnilistBridgeCacheForTest();
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  const catalogRequests: string[] = [];
+  // SAFETY: This deterministic test stub implements the fetch call shape exercised here.
+  globalThis.fetch = (async (request, init) => {
+    const url = String(request);
+    requests.push(url);
+    if (outcome === "unexpected") {
+      return new Response("unexpected request", { status: 500 });
+    }
+    if (url.includes("graphql.anilist.co")) {
+      return jsonResponse({
+        data: {
+          Media: {
+            title: { romaji: "Hoozuki no Reitetsu" },
+          },
+        },
+      });
+    }
+
+    const body = String(init?.body ?? "");
+    if (body.includes("show(_id:$id)")) catalogRequests.push(body);
+    return outcome === "transport-error"
+      ? new Response("upstream unavailable", { status: 503 })
+      : jsonResponse({ data: { shows: { edges: [] } } });
+  }) as typeof fetch;
+
+  return {
+    requests,
+    catalogRequests,
+    [Symbol.dispose]() {
+      globalThis.fetch = originalFetch;
+      clearAllMangaAnilistBridgeCacheForTest();
+    },
+  };
 }
 
 async function mockAllMangaFetch(

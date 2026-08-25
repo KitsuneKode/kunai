@@ -15,6 +15,13 @@ const ANILIST_BRIDGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const anilistBridgeCache = new TTLCache<string, string>(ANILIST_BRIDGE_CACHE_TTL_MS);
 
+export class AllMangaBridgeTransportError extends Error {
+  constructor(anilistId: string) {
+    super(`AllManga title bridge could not check AniList ID ${anilistId}`);
+    this.name = "AllMangaBridgeTransportError";
+  }
+}
+
 export function clearAllMangaAnilistBridgeCacheForTest(): void {
   anilistBridgeCache.clear();
 }
@@ -35,7 +42,7 @@ export function isCatalogIdPassedAsShowId(showId: string, anilistId?: string): b
 export async function resolveAllMangaShowId(
   input: Pick<ProviderResolveInput, "title" | "preferredAudioLanguage">,
   context: ProviderRuntimeContext,
-): Promise<string> {
+): Promise<string | null> {
   const rawId = input.title.id.replace(/^allanime:/, "").trim();
   const anilistId = input.title.externalIds?.anilistId ?? input.title.anilistId ?? undefined;
   const providerId = context.providerId ?? "allanime";
@@ -60,7 +67,7 @@ export async function resolveAllMangaShowId(
   }
 
   if (!anilistId) {
-    return rawId;
+    return null;
   }
 
   const bridged = await bridgeAllMangaShowIdFromAnilist(
@@ -80,7 +87,7 @@ export async function resolveAllMangaShowId(
     return bridged;
   }
 
-  return rawId;
+  return null;
 }
 
 async function bridgeAllMangaShowIdFromAnilist(
@@ -91,6 +98,7 @@ async function bridgeAllMangaShowIdFromAnilist(
 ): Promise<string | null> {
   const animeLang = resolveAnimeAudioIntent(preferredAudioLanguage).catalogMode;
   const queries = await buildAllMangaBridgeQueries(anilistId, displayTitle, context.signal);
+  let transportFailed = false;
 
   for (const query of queries) {
     const matches = await searchAllManga(
@@ -107,11 +115,16 @@ async function bridgeAllMangaShowIdFromAnilist(
     // Treating the two the same made a timeout look like a confirmed miss and
     // sent the caller on to the next query -- or out of the loop -- as though
     // the catalog had answered.
-    if (matches === null) continue;
+    if (matches === null) {
+      transportFailed = true;
+      continue;
+    }
 
     const idMatch = matches.find((result) => String(result.aniListId) === anilistId);
     if (idMatch?.id) return idMatch.id;
   }
+
+  if (transportFailed) throw new AllMangaBridgeTransportError(anilistId);
 
   return null;
 }
