@@ -4,6 +4,10 @@
     {
       "source": "/metrics/daily.json",
       "destination": "/api/metrics/daily"
+    },
+    {
+      "source": "/metrics/series.json",
+      "destination": "/api/metrics/series"
     }
   ],
   "crons": [
@@ -23,6 +27,9 @@
       "maxDuration": 5
     },
     "api/metrics/admin.ts": {
+      "maxDuration": 10
+    },
+    "api/metrics/series.ts": {
       "maxDuration": 10
     }
   },
