@@ -47,7 +47,11 @@ function niceCeiling(value: number): number {
 export function TrendPlot({ points, caption }: Props) {
   if (points.length === 0) return null;
 
-  const max = niceCeiling(Math.max(...points.map((p) => p.activeInstalls), 1));
+  // Two different numbers, and the caption must not confuse them: `peak` is the
+  // highest value actually observed, `axisMax` is the round ceiling drawn above
+  // it so the line has headroom.
+  const peak = Math.max(...points.map((p) => p.activeInstalls), 0);
+  const axisMax = niceCeiling(Math.max(peak, 1));
   const plotW = VIEW_W - PAD_L - PAD_R;
   const plotH = VIEW_H - PAD_T - PAD_B;
 
@@ -55,7 +59,7 @@ export function TrendPlot({ points, caption }: Props) {
   // where the marker would sit half outside the axis.
   const offsets = dayOffsets(points.map((p) => p.day));
   const x = (i: number) => PAD_L + (offsets[i] ?? 0) * plotW;
-  const y = (v: number) => PAD_T + plotH - (v / max) * plotH;
+  const y = (v: number) => PAD_T + plotH - (v / axisMax) * plotH;
 
   const line = points
     .map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(p.activeInstalls)}`)
@@ -93,8 +97,7 @@ export function TrendPlot({ points, caption }: Props) {
         <span>{last?.day}</span>
       </div>
       <figcaption className="text-muted-foreground text-xs">
-        {caption} Peak {max === 4 ? Math.max(...points.map((p) => p.activeInstalls)) : max} on this
-        axis.
+        {caption} Peak {peak} active, on an axis to {axisMax}.
       </figcaption>
     </figure>
   );
