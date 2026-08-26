@@ -84,6 +84,12 @@ The 0.2.6 development cycle was versioned but never published, so its work reach
 - **Native installer.** Self-contained binaries with a versioned layout and
   channel-aware `kunai upgrade` / `kunai uninstall`.
 
+Retire the dead Videasy seed mirror and cover every production provider in the live matrix. `api.wingsdatabase.com` is NXDOMAIN on public resolvers and could never win the seed race, so it only spent a request slot and then occupied the host penalty box after every cold resolve. The live matrix now exercises all seven registered providers, including the default anime lane, which it previously skipped.
+
+Give the Discord presence card a play button distinct from the catalog link. For a movie, or an anime known only by an AniList id, the poster, title, state row, and single button all resolved to one identical URL, and the play target was reachable only as presence text. Presence now leads with **Play on Kunai** over the https web-share route, and links the state row only when the episode page is a different destination.
+
+Make `kunai diagnostics recent` readable in a terminal. A new `pretty` format groups events under a date heading, prints each session id once per run, and renders context as `key=value`. It is the default only when stdout is a terminal, so a pipe or redirect still receives `jsonl`. Colour follows the terminal and respects `NO_COLOR` and `--no-color`.
+
 Reject untrusted or downgraded HLS relay redirects before requesting them, and bound yt-dlp streaming output.
 
 Bound GitHub and npm update-metadata requests to 15 seconds, use the injected request path for every install channel, and reject malformed registry versions.
