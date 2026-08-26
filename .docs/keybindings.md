@@ -173,6 +173,79 @@ automatic segment skipping for the current title/session so you can watch intros
 or outros without changing your permanent preferences. The mpv skip banner and
 manual skip key can still offer finite known segments while autoskip is paused.
 
+## Up Next Queue
+
+| Key       | Action                           |
+| --------- | -------------------------------- |
+| `Enter`   | Play the selected item now       |
+| `J` / `K` | Move item down / up one slot     |
+| `g` / `G` | Move to top (play next) / bottom |
+| `x`       | Remove the selected item         |
+| `c` / `C` | Clear queue / clear played       |
+| `r`       | Restore your last queue          |
+
+## History
+
+| Key            | Action                                     |
+| -------------- | ------------------------------------------ |
+| `Enter`        | Resume the highlighted title               |
+| `q`            | Add the highlighted title to Up Next       |
+| `m`            | Open title actions for the highlighted row |
+| `w`            | Toggle watched for the highlighted row     |
+| `Tab` / `⇧Tab` | Cycle history tabs (Shift reverses)        |
+| `←` / `→`      | Cycle type filter (← reverse, → forward)   |
+| `x`            | Delete episode progress                    |
+| `⇧X`           | Delete whole title from history            |
+
+## Notifications
+
+| Key       | Action                              |
+| --------- | ----------------------------------- |
+| `Enter`   | Run the primary notification action |
+| `a`       | Open all notification actions       |
+| `s`       | Cycle notification sort             |
+| `r`       | Mark selected notification as read  |
+| `d`       | Delete selected notification        |
+| `A`       | Mark all notifications as read      |
+| `x`       | Archive the selected notification   |
+| `C`       | Clear archived notifications        |
+| `[` / `]` | Previous / next page                |
+| `Tab`     | Switch Active / Archive             |
+
+## Stats
+
+| Key            | Action                                                                    |
+| -------------- | ------------------------------------------------------------------------- |
+| `Tab` / `⇧Tab` | Next / previous stats tab (Overview · Titles · Insights)                  |
+| `r` / `⇧R`     | Cycle range forward / back (All time · Last 7d · Last 30d)                |
+| `←` / `→`      | Cycle media type forward / back (All · Anime · Series · Movies · YouTube) |
+| `1`–`3`        | Jump straight to a range                                                  |
+| `s`            | Copy a shareable summary                                                  |
+| `e`            | Export stats to a file                                                    |
+| `q`            | Back                                                                      |
+
+## Library
+
+| Key     | Action                    |
+| ------- | ------------------------- |
+| `Enter` | Open selected title       |
+| `x`     | Delete offline title      |
+| `p`     | Toggle cleanup protection |
+| `Tab`   | Switch Library / Up Next  |
+
+The library has no title-control menu key. `m` was registered for one and shown
+in the footer, but no handler read it — the keystroke fell through to the filter
+input. The binding was removed rather than wired: `openTitleControlMenu` drives
+its own picker from a phase, so reaching it from inside the mounted library
+overlay needs a phase/shell seam and a decision about what the menu offers for an
+offline entry.
+
+## Outside The Ink Shell
+
+`Ctrl+Shift+S` copies the share link during mpv playback. It is bound in the mpv
+Lua bridge (`apps/cli/assets/mpv/kunai-bridge.lua`), not in `keybindings.ts`, so
+it does not appear in the `?` overlay or any footer.
+
 ## Collision Notes
 
 | Key | Collision risk                                          | Decision                                                                             |

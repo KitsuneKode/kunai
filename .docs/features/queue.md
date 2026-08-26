@@ -37,7 +37,11 @@ The current shell exposes:
 - `/notifications`: `Enter` restores recoverable Up Next sessions or queues new episode notices
 - `/history`: `q` adds the selected history item to Up Next without replacing playback
 - search, trending, and recommendation browse rows: `q` adds the highlighted row to Up Next without opening it
-- post-playback recommendation rail: `1`, `2`, or `3` adds the visible pick to Up Next without leaving the post-playback controls
+- post-playback recommendation rail: `1`, `2`, or `3` **plays** that pick immediately
+  (`post-play-view.ts` → `{ type: "recommendation" }`). The shifted variants `!`, `@`, `#`
+  open that pick's action menu, which is where adding to Up Next lives
+  (`{ type: "recommendation-actions" }`). This doc previously described the shifted
+  behaviour against the unshifted keys.
 - post-playback recommendation actions: `i` opens details/download actions; download requires confirmation before provider resolution
 
 ## Restore API

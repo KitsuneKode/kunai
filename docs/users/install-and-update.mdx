@@ -197,6 +197,7 @@ Kunai runs a **cached, non-blocking** background update check at startup.
 
 - **Binary installs:** when `autoApplyBinaryUpdates` is enabled (default), Kunai downloads and stages the new version under `versions/` automatically. Restart Kunai to run the new binary. Toggle this from `/update`.
 - **npm/bun/source:** notify-only — run `kunai upgrade` or your package manager manually.
+- **Turning it off:** set `updateChecksEnabled` to `false` in `config.json` (default `true`) and Kunai stops checking entirely — no background request, and no update notice.
 
 Manual check from the shell:
 
