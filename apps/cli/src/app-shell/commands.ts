@@ -45,6 +45,8 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "mark-up-to-episode",
   "playlists",
   "up-next",
+  "playlist-add",
+  "queue-season",
   "stats",
   "search",
   "recommendation",

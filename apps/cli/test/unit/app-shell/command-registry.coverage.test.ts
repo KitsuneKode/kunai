@@ -97,12 +97,9 @@ describe("command registry — full surface coverage", () => {
       "clear-cache",
       "clear-history",
       "favorites",
-      "playlist-add",
-      "queue-season",
       "sync-connect-anilist",
       "sync-connect-tmdb",
       "sync-disconnect",
-      "sync",
     ]);
     const realMissing = missing.filter((id) => !KNOWN_HANDLER_ONLY.has(id));
     expect(realMissing).toEqual([]);
@@ -166,6 +163,8 @@ describe("command registry — full surface coverage", () => {
     const postPlay = resolveCommandContext(baseState(), "postPlayback").map((c) => c.id);
     expect(postPlay).toContain("recommendation");
     expect(postPlay).toContain("calendar");
+    expect(postPlay).toContain("playlist-add");
+    expect(postPlay).toContain("queue-season");
   });
 
   test("every command id has a non-empty label and at least one alias", () => {

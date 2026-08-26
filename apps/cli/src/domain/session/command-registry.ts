@@ -114,6 +114,7 @@ export const COMMAND_CONTEXTS = {
     "history",
     "setup",
     "settings",
+    "sync",
     "providers",
     "presence",
     "analytics",
@@ -155,6 +156,8 @@ export const COMMAND_CONTEXTS = {
     // queue could not be seen or edited during the one activity that consumes
     // it. `openRootQueueSelection` already handles being opened over playback.
     "up-next",
+    "playlist-add",
+    "queue-season",
     "next",
     "previous",
     "toggle-autoplay",
@@ -206,6 +209,8 @@ export const COMMAND_CONTEXTS = {
     "watchlist",
     "playlists",
     "up-next",
+    "playlist-add",
+    "queue-season",
     "stats",
     "recommendation",
     "calendar",

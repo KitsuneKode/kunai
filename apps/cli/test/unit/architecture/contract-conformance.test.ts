@@ -95,15 +95,12 @@ describe("contract conformance", () => {
    * surface can never be typed, however complete its handler and aliases are.
    */
   test("every registered command is offered by at least one palette context", () => {
-    // DEBT (2026-07-21): implemented + aliased, reachable from no palette surface.
-    // `sync*` means the AniList/TMDB integration has no entry point at all.
+    // Nested `/sync-connect-*` stay under `/sync`. `/favorites` is ADR-retired.
+    // `/image-pane` has no handler. `/clear-history` is deliberately buried.
     const KNOWN_UNREACHABLE_COMMANDS = new Set([
       "clear-history",
       "favorites",
       "image-pane",
-      "playlist-add",
-      "queue-season",
-      "sync",
       "sync-connect-anilist",
       "sync-connect-tmdb",
       "sync-disconnect",
@@ -163,15 +160,7 @@ describe("contract conformance", () => {
       }
     }
 
-    // DEBT (2026-08-13): the same defect as the `/sync` nudge this test was
-    // written for — copy naming a command no palette offers — but in the
-    // discover//filters//playlist-add surfaces rather than tracker sync, so
-    // each belongs to whoever wires that command up. Fixing one means deleting
-    // its entry.
-    const KNOWN_DEAD_INSTRUCTIONS = new Set<string>([
-      'apps/cli/src/app-shell/details-panel.ts: "/playlist-add" -> playlist-add',
-      'apps/cli/src/app-shell/workflows/shell-workflows.ts: "/playlist-add" -> playlist-add',
-    ]);
+    const KNOWN_DEAD_INSTRUCTIONS = new Set<string>([]);
 
     expect(
       found.filter((entry) => !KNOWN_DEAD_INSTRUCTIONS.has(entry)),
