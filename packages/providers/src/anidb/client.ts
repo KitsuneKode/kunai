@@ -181,23 +181,54 @@ export async function anidbFetchText(
     ...anidbCipherArgs(curl.impersonates),
     url,
   ];
-  const proc = Bun.spawn(args, {
-    stdout: "pipe",
-    stderr: "pipe",
-    signal: options.signal,
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (exitCode !== 0) {
-    throw new Error(stderr.trim() || `curl exit ${exitCode}`);
-  }
+  const stdout = await runAnidbCurlWithRetry(args, options.signal);
   if (isCloudflareChallengeText(stdout)) {
     throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
   }
   return stdout;
+}
+
+const ANIDB_CURL_TIMEOUT_EXIT_CODE = 28;
+
+/**
+ * AniDB TTFB from constrained networks sits close to the curl budget, so a lone
+ * timed-out attempt is usually transient congestion rather than a dead route.
+ * Retry once on exit 28 (`--max-time` exceeded) only: every other exit code
+ * (DNS, refused, TLS) fails deterministically and a retry would just double the
+ * latency before the same error.
+ */
+export async function runAnidbCurlWithRetry(
+  args: readonly string[],
+  signal?: AbortSignal,
+  spawnOnce: (
+    args: readonly string[],
+    signal?: AbortSignal,
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number }> = defaultSpawnOnce,
+): Promise<string> {
+  let result = await spawnOnce(args, signal);
+  if (result.exitCode === ANIDB_CURL_TIMEOUT_EXIT_CODE) {
+    result = await spawnOnce(args, signal);
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr.trim() || `curl exit ${result.exitCode}`);
+  }
+  return result.stdout;
+}
+
+function defaultSpawnOnce(
+  args: readonly string[],
+  signal?: AbortSignal,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const proc = Bun.spawn([...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+    signal,
+  });
+  return Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]).then(([stdout, stderr, exitCode]) => ({ stdout, stderr, exitCode }));
 }
 
 export async function searchAnidb(
