@@ -95,8 +95,18 @@ export const VIDKING_API_BASE = "https://api.videasy.to";
  * Hosts are interchangeable; seed must be fetched from the same host used for sources.
  */
 export const WINGS_API_BASE = "https://api.speedracelight.com";
-/** Mirror host still serving the same seed + enc=2 contract. */
-export const WINGS_API_FALLBACK_BASE = "https://api.wingsdatabase.com";
+/**
+ * Every host serving the seed + enc=2 contract, in preference order.
+ *
+ * The old `api.wingsdatabase.com` mirror was removed on 2026-08-26. The name is
+ * NXDOMAIN on public resolvers (Cloudflare and Google both answer Status 3) and
+ * the surviving apex does not serve `/seed`, so it could never win the race — it
+ * only spent a request slot and then sat in the five-minute penalty box after
+ * every cold resolve, which reads as a healthy pair while offering no
+ * redundancy at all. The transport still races N hosts: add a mirror back to
+ * this list when one exists rather than reintroducing a second constant.
+ */
+export const WINGS_API_BASES: readonly string[] = [WINGS_API_BASE];
 /** TMDB proxy on the old domain (redirects to api.videasy.to/3). */
 export const VIDEASY_DB_BASE = "https://api.videasy.to/3";
 
@@ -1399,21 +1409,22 @@ export function fetchWingsdatabaseSeedForTest(
   mediaId: number,
   context: ProviderRuntimeContext,
   signal?: AbortSignal,
+  hosts: readonly string[] = WINGS_API_BASES,
 ): Promise<WingsSeedTransport | undefined> {
-  return fetchWingsdatabaseSeed(mediaId, context, signal);
+  return fetchWingsdatabaseSeed(mediaId, context, signal, hosts);
 }
 
 /**
  * Test seam: which hosts currently carry a failure penalty.
  *
  * Request order alone cannot prove this — when every host is penalized the
- * transport deliberately races them all rather than giving up, so "both hosts
- * were contacted" is true both when nothing was blamed and when everything was.
+ * transport deliberately races them all rather than giving up, so "every host
+ * was contacted" is true both when nothing was blamed and when everything was.
  */
-export function wingsPenalizedHostsForTest(): readonly string[] {
-  return [WINGS_API_BASE, WINGS_API_FALLBACK_BASE].filter((base) =>
-    Boolean(wingsHostFailureCache.get(base)),
-  );
+export function wingsPenalizedHostsForTest(
+  hosts: readonly string[] = WINGS_API_BASES,
+): readonly string[] {
+  return hosts.filter((base) => Boolean(wingsHostFailureCache.get(base)));
 }
 
 /** Test seam: module-scoped transport state must not leak between test cases. */
@@ -1431,6 +1442,7 @@ async function fetchWingsdatabaseSeed(
   mediaId: number,
   context: ProviderRuntimeContext,
   signal?: AbortSignal,
+  hosts: readonly string[] = WINGS_API_BASES,
 ): Promise<WingsSeedTransport | undefined> {
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const effectiveSignal = signal ?? context.signal;
@@ -1441,16 +1453,16 @@ async function fetchWingsdatabaseSeed(
     referer: "https://www.cineby.at/",
   } as const;
 
+  // A preferred host only leads when it is still one of the configured hosts —
+  // a retired mirror must not be resurrected by a cache entry that outlived it.
   const preferredBase = wingsPreferredHostCache.get(mediaId);
-  const bases = preferredBase
-    ? [
-        preferredBase,
-        ...[WINGS_API_BASE, WINGS_API_FALLBACK_BASE].filter((base) => base !== preferredBase),
-      ]
-    : [WINGS_API_BASE, WINGS_API_FALLBACK_BASE];
+  const bases =
+    preferredBase && hosts.includes(preferredBase)
+      ? [preferredBase, ...hosts.filter((base) => base !== preferredBase)]
+      : [...hosts];
 
-  // Prefer cached seeds (order: last working host, primary, fallback); every
-  // fallback stays an indivisible host+seed pair.
+  // Prefer cached seeds (order: last working host, then the configured hosts);
+  // every fallback stays an indivisible host+seed pair.
   const uncached: string[] = [];
   for (const apiBase of bases) {
     const cachedSeed = wingsSeedCache.get(wingsSeedCacheKey(apiBase, mediaId));

@@ -35,7 +35,14 @@ const passthroughEndpointHealth: EndpointHealthPort = {
 };
 
 describe("videasy preferred source fallback", () => {
-  test("keeps a Wings fallback seed and encrypted source request on the same host", async () => {
+  /**
+   * A seed is only valid for the host that issued it, so the encrypted source
+   * request must follow the seed's host. This pins the pairing on the single
+   * configured host; multi-host failover — who wins, who is blamed, and who must
+   * not be — is covered with injected hosts in `videasy-wings-seed-race.test.ts`,
+   * which is what keeps this assertion from depending on a live mirror.
+   */
+  test("keeps the Wings seed and encrypted source request on the same host", async () => {
     const requestedUrls: string[] = [];
     const context = {
       now: () => "2026-07-16T00:00:00.000Z",
@@ -48,9 +55,6 @@ describe("videasy preferred source fallback", () => {
           const url = String(input);
           requestedUrls.push(url);
           if (url === "https://api.speedracelight.com/seed?mediaId=987654") {
-            return new Response("", { status: 503 });
-          }
-          if (url === "https://api.wingsdatabase.com/seed?mediaId=987654") {
             return new Response(
               JSON.stringify({ seed: "test-seed.vAlIdS33dString", ttlMs: 30_000 }),
             );
@@ -77,7 +81,9 @@ describe("videasy preferred source fallback", () => {
       new URL(url).pathname.startsWith("/neon2/"),
     );
     expect(sourceRequests.length).toBeGreaterThan(0);
-    expect(sourceRequests.every((url) => new URL(url).host === "api.wingsdatabase.com")).toBe(true);
+    expect(sourceRequests.every((url) => new URL(url).host === "api.speedracelight.com")).toBe(
+      true,
+    );
   });
 
   test("deprecated Helium/1movies source id is recognized; legacy Videasy endpoints also deprecated", () => {

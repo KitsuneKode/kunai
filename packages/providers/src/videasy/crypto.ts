@@ -3,7 +3,7 @@
  *
  * Extracted from player.videasy.to (chunk decrypt path used by cineby.at /
  * cineplay.to). The old Videasy API used WASM + AES; the current
- * `api.speedracelight.com` / `api.wingsdatabase.com` path uses seed + enc=2
+ * `api.speedracelight.com` path uses seed + enc=2
  * with a custom PRNG XOR cipher and "mvm1" magic-byte validation.
  *
  * Flow:
