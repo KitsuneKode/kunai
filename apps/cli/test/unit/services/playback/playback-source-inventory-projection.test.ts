@@ -591,3 +591,75 @@ test("availableAudioModesFromTrace exposes dual sub/dub rows only when trace con
   });
   expect(single).toEqual([]);
 });
+
+/**
+ * `Intl.DisplayNames.of` throws `RangeError: argument is not a language id` for
+ * anything that is not a well-formed BCP-47 tag. Several values that reach the
+ * projection are not: YouTube's `a.en` auto-caption codes, `none` from the
+ * default series subtitle profile, and `live_chat`. An unguarded call turned a
+ * decorative label into an unhandled rejection that killed the resolve.
+ */
+test("labels malformed language tags instead of throwing on them", () => {
+  const malformed = ["a.en", "none", "auto", "live_chat", "en_US", "N/A", "--"];
+
+  const view = projectPlaybackSourceInventory({
+    status: "resolved",
+    providerId: "youtube",
+    selectedStreamId: "stream-a",
+    streams: [stream({ id: "stream-a", providerId: "youtube", sourceId: "source-a" })],
+    subtitles: malformed.map((language, index) => ({
+      id: `sub-${index}`,
+      providerId: "youtube",
+      sourceId: "source-a",
+      url: `https://subs.example/${index}.vtt`,
+      language,
+      source: "provider" as const,
+      confidence: 0.5,
+      cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" as const },
+    })),
+    trace: trace(),
+    failures: [],
+  });
+
+  // Every malformed tag still produced a row rather than aborting the projection.
+  for (const [index] of malformed.entries()) {
+    expect(
+      view.subtitleOptions.find((option) => option.id === `subtitle:sub-${index}`),
+    ).toBeDefined();
+  }
+
+  // A dotted auto-caption code still resolves to the real language name.
+  const auto = view.subtitleOptions.find((option) => option.id === "subtitle:sub-0");
+  expect(auto?.label).toContain("English");
+
+  // An unmappable tag degrades to the raw value rather than disappearing.
+  const none = view.subtitleOptions.find((option) => option.id === "subtitle:sub-1");
+  expect(none?.label).toContain("NONE");
+});
+
+test("well-formed language tags keep their specific display names", () => {
+  const view = projectPlaybackSourceInventory({
+    status: "resolved",
+    providerId: "rivestream",
+    selectedStreamId: "stream-a",
+    streams: [stream({ id: "stream-a", providerId: "rivestream", sourceId: "source-a" })],
+    subtitles: [
+      {
+        id: "sub-en-us",
+        providerId: "rivestream",
+        sourceId: "source-a",
+        url: "https://subs.example/en-us.vtt",
+        language: "en-US",
+        source: "provider" as const,
+        confidence: 0.9,
+        cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" as const },
+      },
+    ],
+    trace: trace(),
+    failures: [],
+  });
+
+  expect(
+    view.subtitleOptions.find((option) => option.id === "subtitle:sub-en-us")?.label,
+  ).toContain("American English");
+});

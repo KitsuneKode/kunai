@@ -991,8 +991,38 @@ function subtitleDeliveryLabel(delivery: PlaybackSubtitleOptionView["delivery"])
 
 function formatLanguageLabel(language: string | undefined): string {
   if (!language) return "unknown";
-  const displayName = new Intl.DisplayNames(["en"], { type: "language" }).of(language);
-  return displayName ?? language.toUpperCase();
+  return languageDisplayName(language) ?? language.toUpperCase();
+}
+
+/**
+ * `Intl.DisplayNames.of` throws `RangeError` on anything that is not a
+ * well-formed BCP-47 tag, and several values that reach here are not:
+ * `none` from the default subtitle profile, `auto`, and YouTube's `a.en`
+ * auto-caption codes. This label is decoration on an inventory row — it must
+ * never take down a resolve, which is what an unguarded call did.
+ *
+ * Progressively less specific candidates are tried so a tag that *is* valid
+ * keeps its precise name (`en-US` stays "American English") while
+ * `a.en` still resolves to "English" rather than being shouted back as `A.EN`.
+ */
+function languageDisplayName(tag: string): string | undefined {
+  const normalized = tag.trim();
+  if (!normalized) return undefined;
+  const afterDot = normalized.includes(".")
+    ? normalized.slice(normalized.lastIndexOf(".") + 1)
+    : normalized;
+  const base = afterDot.toLowerCase().split(/[-_]/)[0] ?? "";
+
+  for (const candidate of [normalized, afterDot, base]) {
+    if (!candidate) continue;
+    try {
+      const name = new Intl.DisplayNames(["en"], { type: "language" }).of(candidate);
+      if (name) return name;
+    } catch {
+      // Not a language id. Fall through to the next, less specific candidate.
+    }
+  }
+  return undefined;
 }
 
 function sortByStateThenLabel<T extends { state: PlaybackInventoryOptionState; label: string }>(
