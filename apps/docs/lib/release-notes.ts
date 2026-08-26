@@ -31,7 +31,7 @@ export type ReleaseNotesArtifact = {
 /**
  * Every release artifact the site renders, newest first.
  *
- * Baked from `.release/*.json` at build time by `scripts/sync-repo-content.ts`.
+ * Baked from `.release/*.json` at build time by `apps/docs/scripts/sync-repo-content.ts`.
  * This module used to `readdirSync` that directory at request time, which
  * static tracing cannot follow — see that script's header.
  */
