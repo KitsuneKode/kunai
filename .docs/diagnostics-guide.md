@@ -56,9 +56,28 @@ Export a redacted support bundle with `/export-diagnostics`. The exported JSON i
 For agent-friendly local inspection without launching the shell:
 
 ```sh
+kunai diagnostics recent                            # pretty in a terminal, jsonl when piped
 kunai diagnostics recent --format jsonl --limit 200
 kunai diagnostics recent --format markdown --limit 50
+kunai diagnostics recent --no-color                 # pretty without ANSI
 ```
+
+`--format` accepts `pretty`, `jsonl`, or `markdown`. With no `--format`, the
+command prints `pretty` to a terminal and `jsonl` everywhere else, so a redirect
+or a pipe into `jq` keeps the machine format it has always produced.
+
+`pretty` groups events under a date heading, prints each session id once per run
+rather than on every line, and renders context as `key=value`. It keeps every
+context key — a diagnostics reader that drops fields is worse than a noisy one —
+but sorts the ones that repeat on nearly every event (`status`, `severity`,
+`recommendedAction`, `spanFamily`) last. Colour follows the terminal and is
+disabled by `NO_COLOR` or `--no-color`; `--color` forces it back on for a pipe
+that wants escapes.
+
+`pretty` also samples oversized context values — arrays past three entries and
+strings past 160 characters — and states how much it left out, because a single
+`skippedReasons` array can otherwise run to two thousand characters on one line.
+`jsonl` and `markdown` stay lossless, so use them when the full value matters.
 
 The command reads the same redacted cache-DB events used by `/diagnostics` and
 support bundles. JSONL is an export/readout format, not the canonical store.

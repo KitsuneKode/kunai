@@ -98,6 +98,7 @@ MAINTENANCE
   kunai doctor --json          Print the same report as JSON
   kunai uninstall              Remove kunai (add --purge to also delete user data)
   kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
+                               (--format pretty|jsonl|markdown, --limit N, --no-color)
   kunai completion <shell>     Print a shell completion script (bash|zsh|fish|powershell)
 
 Inside the app, press / for the command palette and ? for keyboard help.

@@ -50,13 +50,24 @@ redacted, without launching the shell. Useful when attaching evidence to an
 issue.
 
 ```bash
-kunai diagnostics recent                        # JSONL, most recent first
+kunai diagnostics recent                        # readable output, most recent first
+kunai diagnostics recent --format jsonl         # one JSON object per line
 kunai diagnostics recent --format markdown      # human-readable table
 kunai diagnostics recent --limit 50             # cap how many events print
+kunai diagnostics recent --no-color             # readable output without colour
 ```
 
-`--format` accepts `jsonl` (default) or `markdown`. Events come from the local
-cache database; nothing is uploaded.
+`--format` accepts `pretty`, `jsonl`, or `markdown`. Without `--format`, Kunai
+prints the readable `pretty` output to a terminal and `jsonl` when the output is
+piped or redirected, so `kunai diagnostics recent > report.jsonl` and
+`kunai diagnostics recent | jq` behave exactly as before.
+
+Colour follows the terminal and turns off under `NO_COLOR` or `--no-color`. Use
+`--color` to keep it through a pipe.
+
+To stay readable, `pretty` shortens very long context values and says how much it
+left out. `--format jsonl` and `--format markdown` always print them in full.
+Events come from the local cache database; nothing is uploaded.
 
 ## Shell completions
 
