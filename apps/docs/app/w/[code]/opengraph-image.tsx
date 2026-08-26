@@ -62,6 +62,9 @@ export default async function ShareOpenGraphImage({
   );
 }
 
+/** Characters one headline line fits at the card's type size. */
+const LINE_BUDGET = 22;
+
 /**
  * Break a title across at most two lines near its middle.
  *
@@ -71,10 +74,18 @@ export default async function ShareOpenGraphImage({
  */
 export function splitHeadline(title: string): string[] {
   const trimmed = title.trim();
-  if (trimmed.length <= 22) return [trimmed];
+  if (trimmed.length <= LINE_BUDGET) return [trimmed];
 
   const words = trimmed.split(/\s+/);
-  if (words.length === 1) return [trimmed.slice(0, 22), trimmed.slice(22, 44)];
+  if (words.length === 1) {
+    // One unbroken token cannot wrap. Cutting it silently would drop the tail
+    // without the reader ever knowing the title continued, so the ellipsis is
+    // part of the contract, not decoration.
+    if (trimmed.length <= LINE_BUDGET * 2) {
+      return [trimmed.slice(0, LINE_BUDGET), trimmed.slice(LINE_BUDGET)];
+    }
+    return [trimmed.slice(0, LINE_BUDGET), `${trimmed.slice(LINE_BUDGET, LINE_BUDGET * 2 - 1)}…`];
+  }
 
   // Balance the two lines rather than filling the first: a title split as
   // "Attack on" / "Titan" reads better than "Attack on Titan: The Final" / "Season".
@@ -89,5 +100,12 @@ export function splitHeadline(title: string): string[] {
       best = cut;
     }
   }
-  return [words.slice(0, best).join(" "), words.slice(best).join(" ")];
+  const head = words.slice(0, best).join(" ");
+  const tail = words.slice(best).join(" ");
+  return [truncate(head), truncate(tail)];
+}
+
+/** Cut an over-long line, marking it so a dropped tail is never silent. */
+function truncate(line: string): string {
+  return line.length <= LINE_BUDGET ? line : `${line.slice(0, LINE_BUDGET - 1)}…`;
 }

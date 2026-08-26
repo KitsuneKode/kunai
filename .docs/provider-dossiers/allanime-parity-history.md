@@ -12,7 +12,7 @@ Dated incidents behind the ani-cli parity policy in
 repeatedly: the crypto and endpoint history is what makes the next break
 diagnosable. Newest last.
 
-### AllAnime NEED_CAPTCHA (2026-08-13)
+## AllAnime NEED_CAPTCHA (2026-08-13)
 
 The "valid episode catalog, zero extracted streams" symptom is **not** a crypto or
 parity defect. Measured against the production constants (`api.mkissa.net` +
@@ -55,7 +55,7 @@ HMAC `x-aa-boot`, and AES-256-GCM are the verified contract. The older build 81
 or 119 material, epoch/partB query construction, and AES-CTR decryption must not
 be restored.
 
-### AllAnime via user relay (2026-08-17)
+## AllAnime via user relay (2026-08-17)
 
 With a user-owned relay in place, AllAnime works end-to-end. `bun run
 test:live:relay-allanime` passes with real streams (e.g. `video.wixstatic.com`
@@ -100,7 +100,7 @@ row to characterize. Per that gate, `resolveDirectStreamReferer()` is unchanged.
 mp4upload keeps its dedicated referer and scoped `--tls-verify=no`; TLS
 verification is not broadened to any other host.
 
-### AllAnime crypto rotation 119 → 140 (2026-08-24)
+## AllAnime crypto rotation 119 → 140 (2026-08-24)
 
 The bootstrap started answering `{error:"unknown_build_id"}` (HTTP 404) — build
 **119 is retired**, current build id is **140**. This rotation also changed the
@@ -145,7 +145,7 @@ Note: ani-cli v5 (2026-08-01) left AllAnime/mkissa for **anidb.app** and deleted
 entirely, so **there is no upstream parity reference left** for this provider — the "compare against
 ani-cli" step above applies to AniDB only. For mkissa crypto the live JS chunk is the sole source of
 truth. Kunai keeps AllManga as a registered secondary anime source with `anidb` as the
-default anime provider. See [.docs/research/anidb-provider-dossier.md](./research/anidb-provider-dossier.md).
+default anime provider. See [.docs/research/anidb-provider-dossier.md](../research/anidb-provider-dossier.md).
 
 Parity tip: for AniDB compare against local ani-cli `master`. For mkissa crypto, the live JS chunk is the source of truth when ani-cli no longer tracks it. The API rate-limits bursts (~3s), so stale-material recovery re-bootstraps keys instead of retry-storming.
 

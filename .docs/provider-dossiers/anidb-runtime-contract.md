@@ -10,7 +10,7 @@ lastReviewed: "2026-08-26"
 Catalog capabilities live in [anidb-metadata-capabilities.md](./anidb-metadata-capabilities.md).
 This file holds the runtime behaviour that used to sit in `.docs/providers.md`.
 
-### AniDB catalog search compatibility
+## AniDB catalog search compatibility
 
 Advanced AniDB discovery uses the explicitly declared compatible AniList catalog
 (`compatibleProviders` in `apps/cli/src/services/search/definitions/`), retaining AniList identity
@@ -19,7 +19,7 @@ no compatible catalog exists, `SearchRoutingService` returns either a diagnosed 
 fallback or an `unsupported` result carrying filter evidence, each with
 `attemptedDefaultFallback: false`.
 
-### AniDB browse parsing
+## AniDB browse parsing
 
 `packages/providers/src/anidb/browse-parser.ts` is the single parser for both markup generations,
 used by search and resolve so they cannot drift apart:
@@ -41,7 +41,7 @@ used by search and resolve so they cannot drift apart:
   card has no year — Kunai does not invent one. Placeholder `img` srcs (`placeholder.svg`) and
   non-http(s) srcs are dropped. Relative posters resolve against `https://anidb.app/`.
 
-### AniDB metadata and language evidence
+## AniDB metadata and language evidence
 
 The active `anidb.app` episode endpoint is a stream catalog, not a rich episode metadata catalog:
 it currently returns episode ids, numbers, and filler flags. `anidb.listEpisodes()` first follows
@@ -84,7 +84,7 @@ The cost model matters as much as the data, because this runs in front of the ep
   qualities to a silent `auto` row. Video remains direct from `hls.anidb.app`; the relay has no
   media route or video fallback configuration.
 
-### AniDB season routing and episode numbering
+## AniDB season routing and episode numbering
 
 AniDB models each season as its own title, so `routeAnidbSeason()` in
 `packages/providers/src/anidb/season-routing.ts` decides identity and numbering from evidence:

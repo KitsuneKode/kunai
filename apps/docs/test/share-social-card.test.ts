@@ -28,6 +28,26 @@ describe("splitHeadline", () => {
   test("surrounding whitespace never becomes a line", () => {
     expect(splitHeadline("   Dune   ")).toEqual(["Dune"]);
   });
+
+  test("a single token past two lines is marked, never silently cut", () => {
+    const long = "Pneumonoultramicroscopicsilicovolcanoconiosisandmore";
+    expect(long.length).toBeGreaterThan(44);
+    const lines = splitHeadline(long);
+    expect(lines).toHaveLength(2);
+    // The reader must be able to tell the title continued.
+    expect(lines[1]?.endsWith("\u2026")).toBe(true);
+  });
+
+  test("a single token that fits two lines keeps every character", () => {
+    const exact = "a".repeat(44);
+    expect(splitHeadline(exact).join("")).toBe(exact);
+  });
+
+  test("a long word run is marked rather than overflowing the card", () => {
+    const lines = splitHeadline(`${"alpha ".repeat(12)}omega`);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(22);
+  });
 });
 
 describe("share presentation is shared with the landing page", () => {

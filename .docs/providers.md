@@ -336,7 +336,7 @@ Move a provider away from Playwright only when research shows at least one of th
 - the page exposes a stable JSON or AJAX endpoint for servers or source links
 - the embed URL can be derived deterministically without executing site JS
 - the final stream request can be reproduced with normal headers and referers
-- the remaining browser step is just a last-mile embed scrape, which fits the hybrid `ApiProvider + embedScraper` pattern
+- the remaining browser step is just a last-mile embed scrape, small enough to reproduce over plain HTTP
 
 Keep Playwright when the real stream only appears after runtime JS, player boot code, anti-bot challenges, or click-driven state that cannot be reproduced cheaply and reliably over plain HTTP.
 
@@ -488,8 +488,9 @@ it live, and release signoff derives its cases from that list plus the configure
 anime priority (`animeProvider: "anidb"`, `animeProviderPriority: ["anidb"]`).
 The priority list is ordering, not an allowlist: registered `allanime` and
 `miruro` modules remain available after AniDB and are manually selectable. See
-"AllAnime NEED_CAPTCHA" below and the Miruro pipe contract for their network
-failure modes.
+[the AllAnime parity history](./provider-dossiers/allanime-parity-history.md) and
+[the Miruro dossier](./provider-dossiers/miruro.md) for their network failure
+modes.
 
 | ID           | Content Types | Runtime     | Module Location                               |
 | ------------ | ------------- | ----------- | --------------------------------------------- |
@@ -517,7 +518,8 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
 - **AllAnime and Miruro episode numbering** — when a request carries both a
   season-relative `episode` and `absoluteEpisode`, their APIs receive the
   season-relative value. Absolute numbering is used only for an absolute-only
-  request. AniDB keeps its separate catalog-proven routing policy below.
+  request. AniDB keeps its separate catalog-proven routing policy in
+  [its runtime contract](./provider-dossiers/anidb-runtime-contract.md).
 - **AllAnime provider-native episode identity** — episode catalog rows remain
   1-based in Kunai, but each row carries its exact AllAnime string (including
   `0`, duplicate values, and `OVA` / `SP` labels) through the CLI catalog
