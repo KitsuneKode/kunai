@@ -29,6 +29,33 @@ const RECLAIM_TEST_TIMEOUT_MS = process.platform === "win32" ? 1_000 : 100;
 const RETAIN_TEST_TIMEOUT_MS = process.platform === "win32" ? 400 : 40;
 const RETAIN_TEST_MAX_ELAPSED_MS = process.platform === "win32" ? 5_000 : 1_000;
 
+/**
+ * Budgets for the eight-process serialization test.
+ *
+ * That test spawns eight cold runtimes that contend for one lock and are
+ * released one at a time, so its wall-clock horizon is eight process startups
+ * plus eight serialized critical sections -- entirely a function of how fast the
+ * machine is, and nothing to do with whether the lock is correct. The previous
+ * hardcoded 5s handshake deadline and 5s per-worker acquire timeout timed real
+ * process startup, not the lock: a loaded Windows runner that needed longer
+ * failed a test that had already proven mutual exclusion (measured 7.5s).
+ *
+ * These are generous floors -- a correct run finishes in well under a second --
+ * so a breach means a genuine hang, the only failure this timing can honestly
+ * detect. Both stay under the 20s bun per-test timeout the suite runs with (the
+ * test itself is given a larger explicit ceiling below), and both are overridable
+ * for exceptionally slow CI without editing code.
+ */
+const CONTENTION_WORKERS = 8;
+const CONTENTION_HANDSHAKE_DEADLINE_MS =
+  Number(process.env.KUNAI_TEST_ACTIVATION_HANDSHAKE_MS) ||
+  (process.platform === "win32" ? 15_000 : 8_000);
+const CONTENTION_ACQUIRE_TIMEOUT_MS =
+  Number(process.env.KUNAI_TEST_ACTIVATION_ACQUIRE_MS) ||
+  (process.platform === "win32" ? 15_000 : 8_000);
+/** Bun per-test ceiling for the eight-process test; only a real hang reaches it. */
+const CONTENTION_TEST_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 30_000;
+
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
   if (process.platform === "darwin") return "darwin-ps:impossible";
@@ -246,32 +273,34 @@ describe("activation lock", () => {
     expect(maximumInside).toBe(1);
   });
 
-  test("serializes eight separate processes reclaiming the same stale lock", async () => {
-    const layout = await makeLayout();
-    const path = activationLockPath(layout);
-    const criticalPath = join(dirname(path), "activation-critical-section");
-    const violationPath = join(dirname(path), "activation-overlap-detected");
-    const startPath = join(dirname(path), "activation-workers-start");
-    await writeFile(
-      path,
-      `${JSON.stringify({
-        schemaVersion: 1,
-        scope: "activation",
-        pid: 2_147_483_646,
-        version: "1.0.0",
-        execPath: "/tmp/dead-installer",
-        ownerId: "dead-owner",
-        acquiredAt: "2020-01-01T00:00:00.000Z",
-        hostname: hostname().toLowerCase(),
-        processStartId: null,
-      })}\n`,
-    );
+  test(
+    "serializes eight separate processes reclaiming the same stale lock",
+    async () => {
+      const layout = await makeLayout();
+      const path = activationLockPath(layout);
+      const criticalPath = join(dirname(path), "activation-critical-section");
+      const violationPath = join(dirname(path), "activation-overlap-detected");
+      const startPath = join(dirname(path), "activation-workers-start");
+      await writeFile(
+        path,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          scope: "activation",
+          pid: 2_147_483_646,
+          version: "1.0.0",
+          execPath: "/tmp/dead-installer",
+          ownerId: "dead-owner",
+          acquiredAt: "2020-01-01T00:00:00.000Z",
+          hostname: hostname().toLowerCase(),
+          processStartId: null,
+        })}\n`,
+      );
 
-    const modulePath = join(
-      import.meta.dir,
-      "../../../../../src/services/update/native-installer/activation-lock.ts",
-    );
-    const worker = `
+      const modulePath = join(
+        import.meta.dir,
+        "../../../../../src/services/update/native-installer/activation-lock.ts",
+      );
+      const worker = `
       import { existsSync } from "node:fs";
       import { mkdir, rm, writeFile } from "node:fs/promises";
       import { join } from "node:path";
@@ -297,58 +326,73 @@ describe("activation lock", () => {
           while (!existsSync(releasePath)) await Bun.sleep(5);
           if (ownsSentinel) await rm(process.env.KUNAI_TEST_CRITICAL_PATH, { recursive: true });
         },
-        { timeoutMs: process.platform === "win32" ? 5_000 : 2_000, pollMs: 1 },
+        { timeoutMs: Number(process.env.KUNAI_TEST_ACQUIRE_TIMEOUT_MS), pollMs: 1 },
       );
       process.exit(result === null ? 2 : 0);
     `;
-    const processes = Array.from({ length: 8 }, (_, index) =>
-      Bun.spawn([process.execPath, "-e", worker], {
-        cwd: join(import.meta.dir, "../../../../.."),
-        env: {
-          ...process.env,
-          KUNAI_TEST_LOCKS_DIR: layout.locksDir,
-          KUNAI_TEST_VERSION: `3.0.${index}`,
-          KUNAI_TEST_WORKER_ID: String(index),
-          KUNAI_TEST_START_PATH: startPath,
-          KUNAI_TEST_CRITICAL_PATH: criticalPath,
-          KUNAI_TEST_VIOLATION_PATH: violationPath,
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-      }),
-    );
-
-    const waitForWorkerCount = async (prefix: string, expected: number): Promise<void> => {
-      const deadlineAt = Date.now() + 5_000;
-      while (Date.now() < deadlineAt) {
-        const count = (await readdir(layout.locksDir)).filter((name) =>
-          name.startsWith(prefix),
-        ).length;
-        if (count >= expected) return;
-        await Bun.sleep(5);
-      }
-      throw new Error(`Timed out waiting for ${expected} ${prefix} handshakes`);
-    };
-
-    await waitForWorkerCount("activation-worker-ready-", 8);
-    await writeFile(startPath, "start");
-    const released = new Set<string>();
-    for (let enteredCount = 1; enteredCount <= 8; enteredCount += 1) {
-      await waitForWorkerCount("activation-worker-entered-", enteredCount);
-      expect(existsSync(violationPath)).toBe(false);
-      const entered = (await readdir(layout.locksDir)).filter((name) =>
-        name.startsWith("activation-worker-entered-"),
+      const processes = Array.from({ length: CONTENTION_WORKERS }, (_, index) =>
+        Bun.spawn([process.execPath, "-e", worker], {
+          cwd: join(import.meta.dir, "../../../../.."),
+          env: {
+            ...process.env,
+            KUNAI_TEST_LOCKS_DIR: layout.locksDir,
+            KUNAI_TEST_VERSION: `3.0.${index}`,
+            KUNAI_TEST_WORKER_ID: String(index),
+            KUNAI_TEST_START_PATH: startPath,
+            KUNAI_TEST_CRITICAL_PATH: criticalPath,
+            KUNAI_TEST_VIOLATION_PATH: violationPath,
+            KUNAI_TEST_ACQUIRE_TIMEOUT_MS: String(CONTENTION_ACQUIRE_TIMEOUT_MS),
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        }),
       );
-      const next = entered.find((name) => !released.has(name));
-      if (!next) throw new Error("Missing newly entered activation worker");
-      released.add(next);
-      await writeFile(join(layout.locksDir, next.replace("entered", "release")), "release");
-    }
-    const statuses = await Promise.all(processes.map((process) => process.exited));
 
-    expect(statuses).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
-    expect(existsSync(violationPath)).toBe(false);
-  });
+      const waitForWorkerCount = async (prefix: string, expected: number): Promise<void> => {
+        const deadlineAt = Date.now() + CONTENTION_HANDSHAKE_DEADLINE_MS;
+        while (Date.now() < deadlineAt) {
+          const count = (await readdir(layout.locksDir)).filter((name) =>
+            name.startsWith(prefix),
+          ).length;
+          if (count >= expected) return;
+          await Bun.sleep(5);
+        }
+        // A breach of this generous budget is a genuine hang, not a slow runner, so
+        // name what is stuck: which worker ids reached this handshake and how each
+        // process exited. A worker that exited 2 timed out acquiring the lock; any
+        // other non-zero (or a crash) is a real defect, not a timing artifact.
+        const seen = (await readdir(layout.locksDir))
+          .filter((name) => name.startsWith(prefix))
+          .map((name) => name.slice(prefix.length))
+          .sort();
+        const exits = processes.map((p, index) => `${index}:${p.exitCode ?? "running"}`);
+        throw new Error(
+          `Timed out after ${CONTENTION_HANDSHAKE_DEADLINE_MS}ms waiting for ${expected} ${prefix} handshakes; ` +
+            `saw ${seen.length} [${seen.join(",")}]; worker exit codes [${exits.join(", ")}]`,
+        );
+      };
+
+      await waitForWorkerCount("activation-worker-ready-", CONTENTION_WORKERS);
+      await writeFile(startPath, "start");
+      const released = new Set<string>();
+      for (let enteredCount = 1; enteredCount <= CONTENTION_WORKERS; enteredCount += 1) {
+        await waitForWorkerCount("activation-worker-entered-", enteredCount);
+        expect(existsSync(violationPath)).toBe(false);
+        const entered = (await readdir(layout.locksDir)).filter((name) =>
+          name.startsWith("activation-worker-entered-"),
+        );
+        const next = entered.find((name) => !released.has(name));
+        if (!next) throw new Error("Missing newly entered activation worker");
+        released.add(next);
+        await writeFile(join(layout.locksDir, next.replace("entered", "release")), "release");
+      }
+      const statuses = await Promise.all(processes.map((process) => process.exited));
+
+      expect(statuses).toEqual(Array.from({ length: CONTENTION_WORKERS }, () => 0));
+      expect(existsSync(violationPath)).toBe(false);
+    },
+    CONTENTION_TEST_TIMEOUT_MS,
+  );
 
   test("defers process-start validation for a fresh live reclaim claim", async () => {
     const layout = await makeLayout();
