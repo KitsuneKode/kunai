@@ -1,7 +1,15 @@
 #!/usr/bin/env bun
 // Verify the published npm tarball stays small and never includes compiled binaries.
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -126,83 +134,15 @@ export function assertNpmPublishManifest(
   }
 }
 
-export type NpmPackDryRun = {
-  readonly paths: string[];
-  readonly packedBytes: number;
-  readonly unpackedBytes: number;
-};
-
-/** Parse `npm pack --dry-run --ignore-scripts` stdout (npm notice format). */
-export function parseNpmPackDryRun(stdout: string): NpmPackDryRun {
-  const paths: string[] = [];
-  let packedBytes = 0;
-  let unpackedBytes = 0;
-  let inContents = false;
-
-  for (const line of stdout.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.endsWith("Tarball Contents")) {
-      inContents = true;
-      continue;
-    }
-    if (trimmed.endsWith("Tarball Details")) {
-      inContents = false;
-      continue;
-    }
-    if (inContents) {
-      const match = /^npm notice\s+(\S+)\s+(.+)$/.exec(line);
-      if (match?.[2]) {
-        paths.push(match[2].trim());
-      }
-      continue;
-    }
-    const packed = /^npm notice package size:\s+(.+)$/i.exec(trimmed);
-    if (packed?.[1]) {
-      packedBytes = parseNpmSize(packed[1]);
-      continue;
-    }
-    const unpacked = /^npm notice unpacked size:\s+(.+)$/i.exec(trimmed);
-    if (unpacked?.[1]) {
-      unpackedBytes = parseNpmSize(unpacked[1]);
-    }
-  }
-
-  return { paths, packedBytes, unpackedBytes };
-}
-
-function parseNpmSize(raw: string): number {
-  const match = /^([\d.]+)\s*([kmgt]?i?b)$/i.exec(raw.trim());
-  if (!match?.[1] || !match[2]) return 0;
-  const value = Number.parseFloat(match[1]);
-  if (!Number.isFinite(value)) return 0;
-  const unit = match[2].toLowerCase();
-  const multiplier =
-    unit === "kb"
-      ? 1_000
-      : unit === "kib"
-        ? 1024
-        : unit === "mb"
-          ? 1_000_000
-          : unit === "mib"
-            ? 1024 * 1024
-            : unit === "gb"
-              ? 1_000_000_000
-              : unit === "gib"
-                ? 1024 * 1024 * 1024
-                : 1;
-  return Math.round(value * multiplier);
-}
-
-export function verifyNpmPackDryRun(stdout: string): NpmPackDryRun {
-  const summary = parseNpmPackDryRun(stdout);
-  assertNpmPackContents(summary.paths);
-  assertNpmPackBudgets(summary.packedBytes, summary.unpackedBytes);
-  return summary;
-}
-
 type RawTarMember = {
   readonly archivePath: string;
   readonly size: number;
+};
+
+export type NpmPackSummary = {
+  readonly paths: string[];
+  readonly packedBytes: number;
+  readonly unpackedBytes: number;
 };
 
 function readTarString(bytes: Uint8Array, offset: number, length: number): string {
@@ -306,7 +246,7 @@ function rawTarMembers(compressedBytes: Uint8Array): readonly RawTarMember[] {
 export async function verifyPreservedNpmTarball(
   tarballPath: string,
   expectedVersion: string,
-): Promise<NpmPackDryRun> {
+): Promise<NpmPackSummary> {
   let packedBytes: number;
   let compressedBytes: Uint8Array;
   try {
@@ -412,6 +352,35 @@ type VerifyNpmPackArgs =
   | { readonly mode: "dry-run" }
   | { readonly mode: "tarball"; readonly path: string; readonly expectedVersion: string };
 
+export function buildNpmPackCommand({
+  args,
+  npmPath,
+  nodePath,
+  npmCliPath,
+}: {
+  readonly args: readonly string[];
+  readonly npmPath: string | null;
+  readonly nodePath: string | null;
+  readonly npmCliPath: string | null;
+}): string[] {
+  if (nodePath && npmCliPath) return [nodePath, npmCliPath, ...args];
+  return [npmPath ?? "npm", ...args];
+}
+
+function resolveNpmCliPath(npmPath: string | null): string | null {
+  if (!npmPath) return null;
+  if (process.platform === "win32") {
+    const candidate = join(dirname(npmPath), "node_modules", "npm", "bin", "npm-cli.js");
+    return existsSync(candidate) ? candidate : null;
+  }
+  try {
+    const resolved = realpathSync(npmPath);
+    return resolved.endsWith("npm-cli.js") && existsSync(resolved) ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseArgs(args: readonly string[], sourceVersion: string): VerifyNpmPackArgs {
   if (args.length === 0) return { mode: "dry-run" };
   let path: string | undefined;
@@ -451,24 +420,23 @@ async function main(): Promise<void> {
     return;
   }
 
-  const args = ["pack", "--dry-run", "--ignore-scripts"];
-  let command = [Bun.which("npm") ?? "npm", ...args];
-  if (process.platform === "win32") {
-    const node = Bun.which("node");
-    const npm = Bun.which("npm");
-    const npmCli = npm ? join(dirname(npm), "node_modules", "npm", "bin", "npm-cli.js") : null;
-    // npm is a .cmd shim on Windows. Executing its JS entrypoint with the
-    // resolved Node binary avoids shell/shim ambiguity in Bun.spawnSync.
-    if (node && npmCli && existsSync(npmCli)) command = [node, npmCli, ...args];
-  }
-
+  const packDirectory = mkdtempSync(join(tmpdir(), "kunai-npm-pack-output-"));
   const cacheDirectory = mkdtempSync(join(tmpdir(), "kunai-npm-pack-cache-"));
+  const args = ["pack", "--ignore-scripts", "--pack-destination", packDirectory];
+  const npmPath = Bun.which("npm");
+  const command = buildNpmPackCommand({
+    args,
+    npmPath,
+    nodePath: Bun.which("node"),
+    npmCliPath: resolveNpmCliPath(npmPath),
+  });
+
   const result = (() => {
     try {
       return Bun.spawnSync(command, {
         cwd: NPM_PUBLISH_ROOT,
-        stdout: "pipe",
-        stderr: "pipe",
+        stdout: "ignore",
+        stderr: "inherit",
         env: {
           ...process.env,
           // Keep verification hermetic: npm otherwise writes to the user's cache,
@@ -480,10 +448,8 @@ async function main(): Promise<void> {
       rmSync(cacheDirectory, { recursive: true, force: true });
     }
   })();
-  const decoder = new TextDecoder();
-  const output = `${decoder.decode(result.stdout)}${decoder.decode(result.stderr)}`;
   if (result.exitCode !== 0) {
-    console.error(output);
+    rmSync(packDirectory, { recursive: true, force: true });
     process.exit(result.exitCode ?? 1);
   }
 
@@ -492,10 +458,23 @@ async function main(): Promise<void> {
     "generated npm publish manifest",
   );
   assertNpmPublishManifest(manifest, sourceManifest.version);
-  const summary = verifyNpmPackDryRun(output);
-  console.log(
-    `[pkg:check] ok — ${summary.paths.length} files, packed ${formatBuildSize(summary.packedBytes)} / ${formatBuildSize(NPM_PACK_PACKED_BUDGET_BYTES)}, unpacked ${formatBuildSize(summary.unpackedBytes)} / ${formatBuildSize(NPM_PACK_UNPACKED_BUDGET_BYTES)}`,
-  );
+  try {
+    const tarballs = readdirSync(packDirectory).filter((entry) => entry.endsWith(".tgz"));
+    if (tarballs.length !== 1 || !tarballs[0]) {
+      throw new Error(
+        `[pkg:check] npm pack must produce exactly one tarball, received ${tarballs.length}.`,
+      );
+    }
+    const summary = await verifyPreservedNpmTarball(
+      join(packDirectory, tarballs[0]),
+      sourceManifest.version,
+    );
+    console.log(
+      `[pkg:check] ok — ${summary.paths.length} files, packed ${formatBuildSize(summary.packedBytes)} / ${formatBuildSize(NPM_PACK_PACKED_BUDGET_BYTES)}, unpacked ${formatBuildSize(summary.unpackedBytes)} / ${formatBuildSize(NPM_PACK_UNPACKED_BUDGET_BYTES)}`,
+    );
+  } finally {
+    rmSync(packDirectory, { recursive: true, force: true });
+  }
 }
 
 if (import.meta.path === Bun.main) {
