@@ -23,9 +23,9 @@ export async function generateMetadata({ params }: ReleaseTagPageProps): Promise
     return { title: "Release not found" };
   }
 
-  // A staged artifact can carry an empty summary — the removed v0.2.6 artifact
-  // did — which rendered the page with a blank meta description. Fall back to a
-  // real sentence rather than shipping an empty tag.
+  // A staged artifact can carry an empty summary, which rendered the page with
+  // a blank meta description. Fall back to a real sentence rather than shipping
+  // an empty tag.
   const summary = release.summary.replace(/\s+/g, " ").trim();
   const withdrawn = release.status === "withdrawn";
   const description = withdrawn

@@ -36,12 +36,13 @@ describe("release notes artifacts", () => {
   });
 
   /**
-   * The published line is 0.2.5 → 0.3.0. The old `0.2.6` artifact was removed:
-   * that cycle was versioned but never published (the release workflow could not
-   * find its own composite action), and its work reaches users for the first
-   * time inside 0.3.0, where the changelog folds it in. Shipping a standalone
-   * 0.2.6 entry would advertise a version that has no tag, no binaries, and no
-   * npm release.
+   * The published line is contiguous: 0.2.5 then 0.3.0.
+   *
+   * A cycle between them was versioned and had notes written, but the release
+   * workflow could not find its own composite action, so it produced no tag, no
+   * binaries, and no npm release. Its work was folded into 0.3.0. Keeping a
+   * standalone artifact for it would advertise a version nobody can install, so
+   * this pins that no such gap reappears.
    */
   test("no release artifact sits between 0.2.5 and 0.3.0", () => {
     expect(getReleaseByTag("0.2.6")).toBeNull();

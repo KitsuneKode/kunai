@@ -117,9 +117,9 @@ function sectionItemsFromMarkdownBody(body: string): string[] {
 }
 
 /**
- * Prefer explicit `sections`. An artifact can carry none — the removed 0.2.6
- * artifact did — so derive display sections from `changelogBody` markdown
- * headings, falling back to summary paragraphs.
+ * Prefer explicit `sections`. An artifact can carry none, so derive display
+ * sections from `changelogBody` markdown headings, falling back to summary
+ * paragraphs.
  */
 export function displaySectionsForRelease(
   release: ReleaseNotesArtifact,

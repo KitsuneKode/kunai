@@ -181,10 +181,9 @@ describe("0.3.0 public truth contract", () => {
   });
 
   /**
-   * A staged candidate must never read as shipped. This used to name 0.2.6 —
-   * that artifact was removed, because it was versioned but never published and
-   * its work now reaches users inside 0.3.0. The invariant outlived the example,
-   * so it follows the current staged candidate instead of a fixed version.
+   * A staged candidate must never read as shipped. This used to name a fixed
+   * version whose artifact has since been removed; the invariant outlived the
+   * example, so it follows the current staged candidate instead.
    */
   test("the staged candidate is not latest or published", () => {
     const staged = getReleaseByTag("0.3.0");
@@ -198,7 +197,7 @@ describe("0.3.0 public truth contract", () => {
     );
   });
 
-  test("the removed 0.2.6 cycle is not advertised anywhere public", () => {
+  test("no unpublished version is advertised anywhere public", () => {
     expect(getReleaseByTag("0.2.6")).toBeNull();
 
     const publicCopy = combinedPublicDocs().toLowerCase();
