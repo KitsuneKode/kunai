@@ -5,26 +5,24 @@ export const MIRURO_PROVIDER_ID = "miruro" as const;
 /**
  * The one Miruro server order. Discovery ranking, fallback construction when the
  * pipe returns no provider map, and the known-catalog placeholder rows all read
- * this list — three lists that disagreed was how a known-bad server ended up
- * ahead of a good one in the picker.
+ * this list.
  *
- * `kiwi` streams come from the uwucdn.top/owocdn.top CDN with a kwik.cx referral
- * and serve real video, so it leads. `bonk`'s CDN (ibyteimg.com) is image-only
- * and returns PNG placeholders for segments, so it goes last. Everything between
- * follows the API's own discovery order.
+ * `pewe` (AniDB HLS) and `moo` (AnimeGG MP4) are fast and reliable (~300-500ms),
+ * followed by `bee` (Anikoto) and `ally` (AllManga). Stalling/444-returning
+ * servers (`kiwi`, `hop`) go to the end so they do not block faster candidates.
  */
 export const MIRURO_SERVER_TRY_ORDER = [
-  "kiwi",
   "pewe",
-  "bee",
-  "hop",
   "moo",
+  "bee",
+  "ally",
+  "bonk",
   "dune",
   "ANIMEKAI",
   "ANIMEZ",
   "ZORO",
-  "ally",
-  "bonk",
+  "kiwi",
+  "hop",
 ] as const;
 
 export const miruroManifest = defineProviderManifest({
