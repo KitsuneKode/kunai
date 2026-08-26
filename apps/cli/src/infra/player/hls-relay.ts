@@ -84,19 +84,48 @@ function assertRelayUpstreamUrl(url: string): URL {
   return parsed;
 }
 
-function curlFetch(
+export type HlsRelayCurlResponse = {
+  readonly status: number;
+  readonly contentType: string;
+  readonly body: Buffer;
+  readonly redirectUrl: string | null;
+};
+
+export type HlsRelayCurlRequest = (url: string) => Promise<HlsRelayCurlResponse>;
+
+export async function fetchHlsRelayUpstream(
+  url: string,
+  request: HlsRelayCurlRequest,
+): Promise<HlsRelayCurlResponse> {
+  let currentUrl = url;
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
+    const current = assertRelayUpstreamUrl(currentUrl);
+    const response = await request(currentUrl);
+    if (response.status < 300 || response.status >= 400 || !response.redirectUrl) {
+      return response;
+    }
+    if (redirectCount === 3) {
+      throw new Error("upstream redirected too many times");
+    }
+    const redirect = assertRelayUpstreamUrl(response.redirectUrl);
+    if (current.protocol === "https:" && redirect.protocol === "http:") {
+      throw new Error("HTTPS upstream cannot redirect to HTTP");
+    }
+    currentUrl = response.redirectUrl;
+  }
+  throw new Error("upstream redirected too many times");
+}
+
+function curlFetchOnce(
   url: string,
   referer: string,
   origin: string,
-): Promise<{ status: number; contentType: string; body: Buffer }> {
+): Promise<HlsRelayCurlResponse> {
   assertRelayUpstreamUrl(url);
   return new Promise((resolve, reject) => {
     const proc = spawn("curl", [
       "-sS",
       "--http2",
-      "-L",
-      "--max-redirs",
-      "3",
       "-A",
       AGENT,
       "-H",
@@ -108,7 +137,7 @@ function curlFetch(
       "--max-time",
       "25",
       "-w",
-      `\n${CURL_META_MARKER}%{http_code}\n%{content_type}`,
+      `\n${CURL_META_MARKER}%{http_code}\n%{content_type}\n%{redirect_url}`,
       "--",
       url,
     ]);
@@ -186,15 +215,20 @@ function curlFetch(
       const contentType =
         (metaLines[1] ?? "application/octet-stream").split(";")[0]?.trim() ||
         "application/octet-stream";
+      const redirectUrl = metaLines[2]?.trim() || null;
       if (!Number.isFinite(status) || status <= 0) {
         reject(new Error(`curl invalid status trailer: ${metaLines[0] ?? ""}`));
         return;
       }
-      resolve({ status, contentType, body });
+      resolve({ status, contentType, body, redirectUrl });
     });
     // Spawn failure (curl missing, ENOMEM): there is no process to kill.
     proc.on("error", (err: Error) => fail(err, false));
   });
+}
+
+function curlFetch(url: string, referer: string, origin: string): Promise<HlsRelayCurlResponse> {
+  return fetchHlsRelayUpstream(url, (currentUrl) => curlFetchOnce(currentUrl, referer, origin));
 }
 
 export function toB64Url(buf: Buffer): string {

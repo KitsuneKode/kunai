@@ -52,6 +52,24 @@ describe("spawnYtDlpWithTimeout", () => {
 });
 
 describe("runYtDlpProcess", () => {
+  test("rejects and kills yt-dlp when a stdout line exceeds the streaming cap", async () => {
+    const killSignals: (string | number | undefined)[] = [];
+    const proc = createFakeProcess({
+      stdout: streamFromText("x".repeat(64 * 1024 + 1)),
+      stderr: streamFromText(""),
+      onKill: (signal) => killSignals.push(signal),
+    });
+
+    const handle = runYtDlpProcess({
+      args: ["--newline"],
+      exitGraceMs: 5,
+      spawn: () => proc,
+    });
+
+    await expect(handle.completed).rejects.toThrow("yt-dlp stdout exceeded 65536 bytes");
+    expect(killSignals.length).toBeGreaterThan(0);
+  });
+
   test("invokes stdout line callbacks and returns exit metadata", async () => {
     const lines: string[] = [];
     const proc = createFakeProcess({

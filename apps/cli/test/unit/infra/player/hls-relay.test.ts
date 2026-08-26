@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  fetchHlsRelayUpstream,
   fromB64Url,
   looksLikeHlsPlaylist,
   rewriteHlsPlaylistForRelay,
@@ -13,6 +14,49 @@ const RELAY = "http://127.0.0.1:9";
 const BASE = "https://vault-06.uwucdn.top/path/to/index.m3u8?token=abc%2B%2F%3D";
 
 describe("hls-relay gating", () => {
+  test("rejects a redirect before requesting a non-allowlisted target", async () => {
+    const requested: string[] = [];
+
+    await expect(
+      fetchHlsRelayUpstream("https://vault-06.uwucdn.top/start.m3u8", async (url) => {
+        requested.push(url);
+        return url.endsWith("start.m3u8")
+          ? {
+              status: 302,
+              contentType: "text/plain",
+              body: Buffer.alloc(0),
+              redirectUrl: "http://169.254.169.254/latest/meta-data/",
+            }
+          : {
+              status: 200,
+              contentType: "text/plain",
+              body: Buffer.from("secret"),
+              redirectUrl: null,
+            };
+      }),
+    ).rejects.toThrow("upstream host not allowlisted");
+
+    expect(requested).toEqual(["https://vault-06.uwucdn.top/start.m3u8"]);
+  });
+
+  test("rejects an HTTPS redirect downgrade before the second request", async () => {
+    const requested: string[] = [];
+
+    await expect(
+      fetchHlsRelayUpstream("https://vault-06.uwucdn.top/start.m3u8", async (url) => {
+        requested.push(url);
+        return {
+          status: 302,
+          contentType: "text/plain",
+          body: Buffer.alloc(0),
+          redirectUrl: "http://vault-06.uwucdn.top/plaintext.m3u8",
+        };
+      }),
+    ).rejects.toThrow("HTTPS upstream cannot redirect to HTTP");
+
+    expect(requested).toEqual(["https://vault-06.uwucdn.top/start.m3u8"]);
+  });
+
   test("streamNeedsHlsRelay matches only uwucdn/owocdn hosts", () => {
     expect(streamNeedsHlsRelay("https://vault-06.uwucdn.top/x/index.m3u8")).toBe(true);
     expect(streamNeedsHlsRelay("https://vault-15.owocdn.top/x/index.m3u8")).toBe(true);
