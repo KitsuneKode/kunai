@@ -610,9 +610,8 @@ export function buildDiscordActivity(
   };
   const buttons = buildDiscordPresenceButtons(activity, privacy);
   const urlFields = buildDiscordActivityUrlFields(activity, privacy);
-  const playableRef = urlFields.playable_ref;
   const stateLine = appendWatchSessionSuffix(
-    buildDiscordPlaybackStateLine(activity, progressLabel, playableRef),
+    buildDiscordPlaybackStateLine(activity, progressLabel),
     activity.paused === true,
     context,
   );
@@ -630,19 +629,25 @@ export function buildDiscordActivity(
   };
 }
 
+/**
+ * The state row is read at a glance, so it carries only what a reader can use:
+ * position for a movie, episode for a series.
+ *
+ * It used to have the encoded `kunai://play?...` ref appended to it, from when
+ * that ref could not be a button. Discord truncates the row, so a long ref cut
+ * off mid-query and pushed out the progress it was sitting next to. The ref now
+ * has a real button and stays in `playable_ref` for anything reading the
+ * payload, so it no longer belongs in the visible text.
+ */
 function buildDiscordPlaybackStateLine(
   activity: PresencePlaybackActivity,
   progressLabel: string | null,
-  playableRef?: string,
 ): string {
   if (activity.title.type === "movie") {
     if (activity.paused) {
-      return appendPlayablePresenceRef(
-        progressLabel ? `Paused at ${progressLabel}` : "Paused",
-        playableRef,
-      );
+      return progressLabel ? `Paused at ${progressLabel}` : "Paused";
     }
-    return appendPlayablePresenceRef(activity.title.year ?? "Movie", playableRef);
+    return activity.title.year ?? "Movie";
   }
 
   const episodeName = activity.episode.name?.trim();
@@ -650,20 +655,14 @@ function buildDiscordPlaybackStateLine(
   const episodeLabel = episodeName ? `${numbered} · ${episodeName}` : numbered;
   if (activity.paused) {
     if (hasDiscordPlaybackTimeline(activity)) {
-      return appendPlayablePresenceRef(episodeLabel, playableRef);
+      return episodeLabel;
     }
-    return appendPlayablePresenceRef(
-      compact([episodeLabel, progressLabel ? `Paused at ${progressLabel}` : "Paused"]).join(" · "),
-      playableRef,
+    return compact([episodeLabel, progressLabel ? `Paused at ${progressLabel}` : "Paused"]).join(
+      " · ",
     );
   }
 
-  return appendPlayablePresenceRef(episodeLabel, playableRef);
-}
-
-function appendPlayablePresenceRef(line: string, playableRef?: string): string {
-  if (!playableRef) return line;
-  return `${line} · ${playableRef}`;
+  return episodeLabel;
 }
 
 function hasDiscordPlaybackTimeline(

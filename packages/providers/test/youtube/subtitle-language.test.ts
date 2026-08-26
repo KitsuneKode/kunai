@@ -94,6 +94,26 @@ describe("boundYoutubeSubtitleTracks", () => {
     ]);
   });
 
+  test("matches yt-dlp dotted auto-caption tags to the preferred language", () => {
+    const tracks: readonly Track[] = [
+      { language: "a.en", source: "auto" },
+      { language: "a.fr", source: "auto" },
+    ];
+
+    expect(boundYoutubeSubtitleTracks(tracks, "en").map((track) => track.language)).toEqual([
+      "a.en",
+    ]);
+  });
+
+  test("drops yt-dlp live chat metadata even when it is reported as a manual subtitle", () => {
+    const tracks: readonly Track[] = [
+      { language: "en", source: "manual" },
+      { language: "live_chat", source: "manual" },
+    ];
+
+    expect(boundYoutubeSubtitleTracks(tracks, "en").map((track) => track.language)).toEqual(["en"]);
+  });
+
   test("falls back to English when no language is configured", () => {
     const tracks: readonly Track[] = [
       { language: "en", source: "auto" },

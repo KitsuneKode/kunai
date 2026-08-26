@@ -265,6 +265,45 @@ describe("PresenceServiceImpl", () => {
     expect(JSON.stringify(payload)).not.toContain("signed-provider.example");
   });
 
+  /**
+   * The ref used to be appended to the visible state row, from when it could not
+   * be a button. Discord truncates that row, so a long ref cut off mid-query and
+   * crowded out the progress beside it. It now has a button and stays in
+   * `playable_ref`, so the visible text must stay clean.
+   */
+  test("keeps the encoded ref out of the visible state row", () => {
+    const activity = {
+      mode: "series" as const,
+      title: {
+        id: "tmdb:969681",
+        type: "movie" as const,
+        name: "Spider-Man: Brand New Day",
+        externalIds: { tmdbId: "969681" },
+      },
+      episode: { season: 1, episode: 1 },
+      providerId: "videasy",
+      startedAtMs: 1000,
+      positionSeconds: 16,
+      durationSeconds: 8220,
+      paused: true,
+    };
+
+    const payload = buildDiscordActivity(activity, "full");
+
+    expect(String(payload.state)).not.toContain("kunai://");
+    expect(String(payload.state)).not.toContain("cat=tmdb");
+    expect(String(payload.state)).toContain("Paused at");
+    // Still exposed for anything reading the payload, and as a real button.
+    expect(payload.playable_ref).toContain("kunai://play?");
+    expect(payload.buttons).toEqual([
+      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full") as string },
+      {
+        label: "View on TMDB",
+        url: "https://www.themoviedb.org/movie/969681",
+      },
+    ]);
+  });
+
   test("adds catalog buttons when ids are known", () => {
     const activity = {
       mode: "series" as const,
