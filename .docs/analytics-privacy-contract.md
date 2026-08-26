@@ -93,6 +93,28 @@ small-cell suppression, not a claim of joint k-anonymity across the separately
 published version, OS, and architecture tables. `daily_rollup.computed_at` is
 the public `updatedAt`, so a stale value signals cron failure.
 
+### The day-by-day series
+
+`/metrics/series.json` publishes the same aggregates over a window (90 days by
+default, 180 maximum, `?days=` clamped). It reads `daily_rollup`, which
+retention never prunes, so it collects nothing new and changes no payload.
+
+**Suppression is applied across the whole window, not per day.** A bucket that
+falls below the floor on any day in the window is folded into `other` on every
+day of it. Suppressing per day would let a bucket near the floor blink in and
+out, and the blink is itself a signal about a small population — the snapshot
+discloses "under five" once, a per-day series would disclose it at every
+boundary crossing. A day where a bucket is simply absent does not disqualify it:
+a version that did not exist yet is not a small cell, and treating absence as
+zero would hide every new release.
+
+The elimination guard runs per day on the surviving buckets, exactly as it does
+for the snapshot, so a closed dimension is never recoverable by subtraction.
+
+`lifetimeInstalls` is retention-adjusted and therefore **not monotonic**. It may
+fall when `lifetime_retired` absorbs pruned installs; a consumer charting it as
+a cumulative line will show a dip that is correct data, not a bug.
+
 The ingest body is capped at 512 bytes and a real install is limited by the
 `(day, install_hash)` primary key. Before production enablement, configure a
 Vercel firewall/request-rate rule that does not use application IP collection,

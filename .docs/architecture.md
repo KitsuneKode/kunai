@@ -84,7 +84,7 @@ A module existing under `packages/providers/src/` does **not** make it a product
 
 Legacy Playwright provider shapes remain under `.archive/legacy/apps/cli/src/providers/` for reference only. They are not part of the active beta runtime.
 
-Use [.docs/providers.md](.docs/providers.md) for provider-specific details.
+Use [.docs/providers.md](./providers.md) for provider-specific details.
 
 For new providers or major provider hardening, do not jump straight from this doc into code. Use:
 

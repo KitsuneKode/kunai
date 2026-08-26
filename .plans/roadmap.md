@@ -71,9 +71,10 @@ archive and put only the residue here.
 
 ### Docs
 
-| Track              | Remaining                                                                                                                            | Plan                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| User docs overhaul | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md) |
+| Track                           | Remaining                                                                                                                            | Plan                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Analytics series + social cards | Serve the retained `daily_rollup` history, adoption/trend charts, per-share OG images                                                | [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md) |
+| User docs overhaul              | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md)                               |
 
 ### Structure
 
