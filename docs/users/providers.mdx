@@ -262,20 +262,10 @@ Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct
 
 ### Deploying Your Own Relay
 
-You can run your own relay either locally on your network or deploy it to a free serverless host like Vercel:
+To bypass ISP/regional geo-blocking or IP-based bot gates (`NEED_CAPTCHA`), your relay needs to execute from an external IP address (such as a free cloud serverless host):
 
-#### Option A: Run Locally or on a Home Server
-If running on a machine in your local network:
-```sh
-git clone https://github.com/KitsuneKode/kunai.git
-cd kunai
-bun install
-bun run dev:relay
-```
-The relay server will start at `http://127.0.0.1:8787`.
-
-#### Option B: Deploy to Vercel (Free Serverless)
-From the repository root:
+#### Option A: Deploy to Vercel (Recommended — Free Serverless)
+Deploying to Vercel routes your metadata requests through Vercel's global edge network on a fresh datacenter IP:
 ```sh
 cd apps/relay-server
 vercel env add RELAY_TOKEN        # enter a secure random secret token
@@ -283,6 +273,16 @@ vercel build --prod --yes
 bun run vercel:bundle-output
 vercel deploy --prebuilt --prod
 ```
+
+#### Option B: Run Locally or on a Remote Home Server (Development / Testing)
+If running on a remote machine or for local development:
+```sh
+git clone https://github.com/KitsuneKode/kunai.git
+cd kunai
+bun install
+bun run dev:relay
+```
+The local dev server listens at `http://127.0.0.1:8787`.
 
 ### Configuring Kunai to Use Your Relay
 
