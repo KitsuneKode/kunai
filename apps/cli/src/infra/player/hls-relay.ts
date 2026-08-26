@@ -93,25 +93,29 @@ export type HlsRelayCurlResponse = {
 
 export type HlsRelayCurlRequest = (url: string) => Promise<HlsRelayCurlResponse>;
 
+export type HlsRelayUpstreamResponse = HlsRelayCurlResponse & {
+  readonly effectiveUrl: string;
+};
+
 export async function fetchHlsRelayUpstream(
   url: string,
   request: HlsRelayCurlRequest,
-): Promise<HlsRelayCurlResponse> {
+): Promise<HlsRelayUpstreamResponse> {
   let currentUrl = url;
   for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
     const current = assertRelayUpstreamUrl(currentUrl);
-    const response = await request(currentUrl);
+    const response = await request(current.href);
     if (response.status < 300 || response.status >= 400 || !response.redirectUrl) {
-      return response;
+      return { ...response, effectiveUrl: current.href };
     }
     if (redirectCount === 3) {
       throw new Error("upstream redirected too many times");
     }
-    const redirect = assertRelayUpstreamUrl(response.redirectUrl);
+    const redirect = assertRelayUpstreamUrl(new URL(response.redirectUrl, current).href);
     if (current.protocol === "https:" && redirect.protocol === "http:") {
       throw new Error("HTTPS upstream cannot redirect to HTTP");
     }
-    currentUrl = response.redirectUrl;
+    currentUrl = redirect.href;
   }
   throw new Error("upstream redirected too many times");
 }
@@ -227,7 +231,11 @@ function curlFetchOnce(
   });
 }
 
-function curlFetch(url: string, referer: string, origin: string): Promise<HlsRelayCurlResponse> {
+function curlFetch(
+  url: string,
+  referer: string,
+  origin: string,
+): Promise<HlsRelayUpstreamResponse> {
   return fetchHlsRelayUpstream(url, (currentUrl) => curlFetchOnce(currentUrl, referer, origin));
 }
 
@@ -360,7 +368,7 @@ export function startHlsRelay(
           if (looksLikeHlsPlaylist(r.body)) {
             const rewritten = rewriteHlsPlaylistForRelay(
               r.body.toString("utf-8"),
-              srcUrl,
+              r.effectiveUrl,
               relayOrigin,
             );
             return new Response(rewritten, {
@@ -403,7 +411,7 @@ export function startHlsRelay(
           if (r.status === 200 && looksLikeHlsPlaylist(r.body)) {
             const rewritten = rewriteHlsPlaylistForRelay(
               r.body.toString("utf-8"),
-              srcUrl,
+              r.effectiveUrl,
               relayOrigin,
             );
             return new Response(rewritten, {

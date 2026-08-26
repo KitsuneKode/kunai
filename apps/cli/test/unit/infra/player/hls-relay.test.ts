@@ -57,6 +57,71 @@ describe("hls-relay gating", () => {
     expect(requested).toEqual(["https://vault-06.uwucdn.top/start.m3u8"]);
   });
 
+  test("returns the final URL so relative playlist entries use the redirected base", async () => {
+    const response = await fetchHlsRelayUpstream(
+      "https://vault-06.uwucdn.top/old/master.m3u8",
+      async (url) =>
+        url.includes("/old/")
+          ? {
+              status: 302,
+              contentType: "text/plain",
+              body: Buffer.alloc(0),
+              redirectUrl: "https://vault-06.uwucdn.top/new/master.m3u8",
+            }
+          : {
+              status: 200,
+              contentType: "application/vnd.apple.mpegurl",
+              body: Buffer.from("#EXTM3U\nsegment.ts\n"),
+              redirectUrl: null,
+            },
+    );
+
+    expect(response.effectiveUrl).toBe("https://vault-06.uwucdn.top/new/master.m3u8");
+    const rewritten = rewriteHlsPlaylistForRelay(
+      response.body.toString("utf-8"),
+      response.effectiveUrl,
+      RELAY,
+    );
+    expect(rewritten).toContain(
+      `/s/${toB64Url(Buffer.from("https://vault-06.uwucdn.top/new/segment.ts"))}`,
+    );
+  });
+
+  test("allows three redirects but refuses a fourth", async () => {
+    const request = async (url: string) => {
+      const step = Number(new URL(url).searchParams.get("step") ?? "0");
+      return step < 3
+        ? {
+            status: 302,
+            contentType: "text/plain",
+            body: Buffer.alloc(0),
+            redirectUrl: `https://vault-06.uwucdn.top/next.m3u8?step=${step + 1}`,
+          }
+        : {
+            status: 200,
+            contentType: "application/vnd.apple.mpegurl",
+            body: Buffer.from("#EXTM3U\n"),
+            redirectUrl: null,
+          };
+    };
+
+    await expect(
+      fetchHlsRelayUpstream("https://vault-06.uwucdn.top/start.m3u8", request),
+    ).resolves.toMatchObject({ status: 200 });
+
+    await expect(
+      fetchHlsRelayUpstream("https://vault-06.uwucdn.top/start.m3u8", async (url) => {
+        const step = Number(new URL(url).searchParams.get("step") ?? "0");
+        return {
+          status: 302,
+          contentType: "text/plain",
+          body: Buffer.alloc(0),
+          redirectUrl: `https://vault-06.uwucdn.top/next.m3u8?step=${step + 1}`,
+        };
+      }),
+    ).rejects.toThrow("upstream redirected too many times");
+  });
+
   test("streamNeedsHlsRelay matches only uwucdn/owocdn hosts", () => {
     expect(streamNeedsHlsRelay("https://vault-06.uwucdn.top/x/index.m3u8")).toBe(true);
     expect(streamNeedsHlsRelay("https://vault-15.owocdn.top/x/index.m3u8")).toBe(true);
