@@ -260,7 +260,57 @@ What it does not do:
 
 Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct fetches. To use a relay you operate, set `baseUrl` in `/settings` or `config.json` to **your** origin — Kunai never ships a public relay URL. An internet relay requires a matching bearer `token`; only a relay bound to numeric loopback may run without one. `fallbackToDirect: true` degrades to direct fetches after relay network or authorization-policy failures where the provider is not geo-blocked. Env overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`.
 
-Source-checkout smoke and Vercel deploy steps: [Debugging workflow](/docs/developer/debugging-workflow) and `apps/relay-server/README.md`.
+### Deploying Your Own Relay
+
+You can run your own relay either locally on your network or deploy it to a free serverless host like Vercel:
+
+#### Option A: Run Locally or on a Home Server
+If running on a machine in your local network:
+```sh
+git clone https://github.com/KitsuneKode/kunai.git
+cd kunai
+bun install
+bun run dev:relay
+```
+The relay server will start at `http://127.0.0.1:8787`.
+
+#### Option B: Deploy to Vercel (Free Serverless)
+From the repository root:
+```sh
+cd apps/relay-server
+vercel env add RELAY_TOKEN        # enter a secure random secret token
+vercel build --prod --yes
+bun run vercel:bundle-output
+vercel deploy --prebuilt --prod
+```
+
+### Configuring Kunai to Use Your Relay
+
+1. **Via Kunai UI:**
+   Open Kunai, press `/`, type `/settings`, scroll down to **Provider Relay**, and enter:
+   - **Base URL:** `https://your-relay.vercel.app` (or `http://127.0.0.1:8787` for local)
+   - **Bearer Token:** Your secret `RELAY_TOKEN` (leave blank for local loopback)
+   - **Fallback to direct:** Enabled (`true`)
+
+2. **Via `config.json`:**
+   In your configuration file (`~/.config/kunai/config.json` on Linux):
+   ```json
+   {
+     "providerRelay": {
+       "baseUrl": "https://your-relay.vercel.app",
+       "token": "your-secret-token",
+       "fallbackToDirect": true
+     }
+   }
+   ```
+
+3. **Via Environment Variables:**
+   ```sh
+   export KUNAI_RELAY_BASE_URL="https://your-relay.vercel.app"
+   export KUNAI_RELAY_TOKEN="your-secret-token"
+   ```
+
+Source-checkout smoke and verification steps: [Debugging workflow](/docs/developer/debugging-workflow) and `apps/relay-server/README.md`.
 
 ## When providers fail (expected behavior)
 
