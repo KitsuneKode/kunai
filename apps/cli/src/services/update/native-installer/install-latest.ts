@@ -86,7 +86,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
   const resolved =
     options.version && options.version !== "latest"
       ? normalizeRequestedVersion(options.version)
-      : parseCanonicalVersion((await fetchLatestVersion(fetchImpl as typeof fetch)) ?? "");
+      : parseCanonicalVersion((await fetchLatestVersion(fetchImpl)) ?? "");
   if (!resolved) {
     return { status: "failed", error: "Could not resolve target version." };
   }

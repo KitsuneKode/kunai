@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   fetchLatestVersion,
+  type MetadataFetch,
   parseVersionFromTag,
   resolveReleasesApiUrl,
 } from "@/services/update/latest-version";
@@ -20,8 +21,8 @@ test("parseVersionFromTag rejects leading zeros and prerelease tags", () => {
   expect(parseVersionFromTag("1.2.3+build")).toBeNull();
 });
 
-function fakeFetch(status: number, body: unknown): typeof fetch {
-  return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+function fakeFetch(status: number, body: object): MetadataFetch {
+  return async () => new Response(JSON.stringify(body), { status });
 }
 
 test("strips the leading v from the tag", async () => {
@@ -44,8 +45,32 @@ test("resolveReleasesApiUrl honors KUNAI_RELEASES_API override", () => {
 });
 
 test("returns null when fetch throws", async () => {
-  const throwing = (async () => {
+  const throwing: MetadataFetch = async () => {
     throw new Error("network down");
-  }) as unknown as typeof fetch;
+  };
   expect(await fetchLatestVersion(throwing)).toBeNull();
+});
+
+test("applies a metadata request deadline by default", async () => {
+  let requestSignal: AbortSignal | null | undefined;
+  const inspectingFetch: MetadataFetch = async (_input, init) => {
+    requestSignal = init?.signal;
+    return new Response(JSON.stringify({ tag_name: "v1.4.2" }), { status: 200 });
+  };
+
+  expect(await fetchLatestVersion(inspectingFetch)).toBe("1.4.2");
+  expect(requestSignal).toBeInstanceOf(AbortSignal);
+});
+
+test("forwards an injected abort signal", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let requestSignal: AbortSignal | null | undefined;
+  const inspectingFetch: MetadataFetch = async (_input, init) => {
+    requestSignal = init?.signal;
+    throw new Error("aborted");
+  };
+
+  expect(await fetchLatestVersion(inspectingFetch, undefined, controller.signal)).toBeNull();
+  expect(requestSignal).toBe(controller.signal);
 });

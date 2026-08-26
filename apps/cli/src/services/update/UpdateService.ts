@@ -1,8 +1,11 @@
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import type { InstallMethod } from "./install-method";
 import { updateGuidanceForInstallMethod } from "./install-method";
+import { type MetadataFetch, UPDATE_METADATA_TIMEOUT_MS } from "./latest-version";
 import { shouldRunUpdateCheck, updateCheckCachePatch } from "./update-check-cache";
+import { parseCanonicalVersion } from "./version";
 
 export type UpdateCheckStatus =
   | "disabled"
@@ -150,16 +153,25 @@ export class UpdateService {
   }
 }
 
-export async function fetchLatestKunaiVersion(): Promise<string> {
-  const response = await fetch("https://registry.npmjs.org/@kitsunekode%2fkunai/latest");
+export async function fetchLatestKunaiVersion(
+  fetchImpl: MetadataFetch = fetch,
+  signal: AbortSignal = withTimeoutSignal(undefined, UPDATE_METADATA_TIMEOUT_MS),
+): Promise<string> {
+  const response = await fetchImpl("https://registry.npmjs.org/@kitsunekode%2fkunai/latest", {
+    headers: { "user-agent": "kunai-cli" },
+    signal,
+  });
   if (!response.ok) {
     throw new Error(`npm registry returned ${response.status}`);
   }
+  // SAFETY: JSON stays untrusted; the version is type-checked and parsed canonically below.
   const payload = (await response.json()) as { version?: unknown };
-  if (typeof payload.version !== "string" || !payload.version.trim()) {
-    throw new Error("npm registry response did not include a version");
+  const version =
+    typeof payload.version === "string" ? parseCanonicalVersion(payload.version.trim()) : null;
+  if (!version) {
+    throw new Error("npm registry response did not include a stable canonical version");
   }
-  return payload.version;
+  return version;
 }
 
 function normalizeVersion(version: string): string {

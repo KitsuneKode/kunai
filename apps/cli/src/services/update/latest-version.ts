@@ -1,6 +1,14 @@
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+
 import { parsePublishedVersionTag } from "./version";
 
 const DEFAULT_RELEASES_API = "https://api.github.com/repos/KitsuneKode/kunai/releases/latest";
+export const UPDATE_METADATA_TIMEOUT_MS = 15_000;
+
+export type MetadataFetch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
 
 export function resolveReleasesApiUrl(): string {
   return process.env.KUNAI_RELEASES_API?.trim() || DEFAULT_RELEASES_API;
@@ -21,12 +29,17 @@ export function parseVersionFromTag(tag: string | undefined): string | null {
  * injectable for tests.
  */
 export async function fetchLatestVersion(
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: MetadataFetch = fetch,
   url: string = resolveReleasesApiUrl(),
+  signal: AbortSignal = withTimeoutSignal(undefined, UPDATE_METADATA_TIMEOUT_MS),
 ): Promise<string | null> {
   try {
-    const res = await fetchImpl(url, { headers: { "user-agent": "kunai-cli" } });
+    const res = await fetchImpl(url, {
+      headers: { "user-agent": "kunai-cli" },
+      signal,
+    });
     if (!res.ok) return null;
+    // SAFETY: JSON stays untrusted; parseVersionFromTag strictly validates the only field consumed.
     const body = (await res.json()) as { tag_name?: string };
     return parseVersionFromTag(body.tag_name);
   } catch {
