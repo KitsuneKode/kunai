@@ -1842,6 +1842,9 @@ describe("DownloadService", () => {
         downloadsEnabled: true,
         downloadPath: tempDir,
         maxConcurrentDownloads: 1,
+        // Match buildService's default: keep admission deterministic instead of
+        // reading the real volume's free space (a full disk would fail this test).
+        offlineFreeSpaceReserveBytes: 0,
       } as ConfigService,
     });
     const firstJob = await service.enqueue({
