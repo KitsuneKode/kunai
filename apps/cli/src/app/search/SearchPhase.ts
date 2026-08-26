@@ -107,6 +107,7 @@ import {
   titleInfoFromQueuePlaybackLaunch,
 } from "@/app-shell/root-queue-bridge";
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
+import { warmTopAnimeEpisodeCache } from "@/services/providers/warm-episode-cache";
 
 export { SEARCH_BROWSE_COMMAND_IDS };
 
@@ -142,6 +143,28 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   name = "search";
   private hasQueuedStartupReleaseReconciliation = false;
   private hasHealedHistoryMetadata = false;
+  /** Titles already warmed this session, so a search never re-fetches one. */
+  private readonly warmedAnimeEpisodeCaches = new Set<string>();
+
+  /**
+   * Warm the top anime result's episode catalog in the background so the
+   * Cloudflare-gated fetch is already paid when the user picks it. Anime mode
+   * only; a series/movie search has no such cost.
+   */
+  private warmAnimeEpisodesForResults(
+    context: PhaseContext,
+    results: readonly SearchResult[],
+  ): void {
+    const { providerRegistry, config } = context.container;
+    if (context.container.stateManager.getState().mode !== "anime") return;
+    warmTopAnimeEpisodeCache({
+      results,
+      provider: providerRegistry.getDefault(true),
+      audioPreference: config.animeLanguageProfile.audio,
+      subtitlePreference: config.animeLanguageProfile.subtitle,
+      warmed: this.warmedAnimeEpisodeCaches,
+    });
+  }
 
   constructor(
     private readonly dependencies: SearchPhaseDependencies = DEFAULT_SEARCH_PHASE_DEPENDENCIES,
@@ -376,6 +399,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
           initialSearchError = undefined;
           const results = search.results;
+          this.warmAnimeEpisodesForResults(context, results);
           pendingSearchEvidence = search.evidence;
           pendingSearchWarnings = searchIntent.warnings;
 
@@ -744,6 +768,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             }
             initialSearchError = undefined;
             const results = search.results;
+            this.warmAnimeEpisodesForResults(context, results);
 
             logger.info("Search complete", {
               query,
