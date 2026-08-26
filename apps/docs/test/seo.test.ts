@@ -7,9 +7,14 @@ import { BUN_GLOBAL_INSTALL } from "../lib/install-commands";
 import { source } from "../lib/source";
 
 const DOCS_APP_ROOT = path.resolve(import.meta.dir, "..");
+const PUBLISHED_DOCS_ROOT = path.resolve(DOCS_APP_ROOT, "../../docs");
 
-function readDocFile(page: { readonly data: { readonly info: { readonly fullPath: string } } }) {
-  return fs.readFileSync(path.resolve(DOCS_APP_ROOT, page.data.info.fullPath), "utf-8");
+function docFilePath(page: { readonly data: { readonly info: { readonly path: string } } }) {
+  return path.resolve(PUBLISHED_DOCS_ROOT, page.data.info.path);
+}
+
+function readDocFile(page: { readonly data: { readonly info: { readonly path: string } } }) {
+  return fs.readFileSync(docFilePath(page), "utf-8");
 }
 
 function readFrontmatter(filePath: string): { title?: string; description?: string } {
@@ -48,8 +53,7 @@ describe("docs SEO drift", () => {
     const descriptions = new Set<string>();
 
     for (const page of pages) {
-      const filePath = path.resolve(DOCS_APP_ROOT, page.data.info.fullPath);
-      const { title, description } = readFrontmatter(filePath);
+      const { title, description } = readFrontmatter(docFilePath(page));
 
       expect(title && title.length > 0).toBe(true);
       expect(description && description.length > 0).toBe(true);
