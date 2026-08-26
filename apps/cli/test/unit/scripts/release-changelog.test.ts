@@ -6,6 +6,7 @@ import {
   parseChangesetEntries,
   parseRootChangelogEntry,
   parseTopCliChangelogEntry,
+  upsertRootChangelogEntry,
 } from "../../../../../scripts/release-changelog.ts";
 
 describe("compareSemver", () => {
@@ -62,7 +63,7 @@ describe("parseTopCliChangelogEntry", () => {
     const entry = parseTopCliChangelogEntry(content);
     expect(entry?.version).toBe("0.2.6");
     expect(entry?.body).toContain("Provider flavor picker fix");
-    expect(entry?.body).toContain("### Highlights");
+    expect(entry?.body).toContain("### Highlights\n\n- More servers visible");
     expect(entry?.body).not.toMatch(/^  - More servers/m);
   });
 
@@ -119,6 +120,29 @@ describe("parseTopCliChangelogEntry", () => {
     expect(entry?.body).toContain("Fix installer ownership");
     expect(entry?.body).toContain("Fix queue resume ordering");
     expect(entry?.body).toContain("Fix share link parsing");
+  });
+
+  test("keeps nested section headings without truncating later changeset groups", () => {
+    const entry = parseTopCliChangelogEntry(`
+## 0.3.0
+
+### Minor Changes
+
+- abc123: Add queue recovery.
+
+  ### Features
+
+  Queue claims now survive a restart.
+
+### Patch Changes
+
+- def456: Fix installer ownership.
+`);
+
+    expect(entry?.body).toContain("Add queue recovery");
+    expect(entry?.body).toContain("### Features");
+    expect(entry?.body).toContain("Queue claims now survive a restart");
+    expect(entry?.body).toContain("Fix installer ownership");
   });
 
   test("strips HTML comments from changeset bodies", () => {
@@ -235,6 +259,15 @@ describe("parseChangesetEntries", () => {
     expect(changes[0]?.body).toBe("Add queue recovery.");
     expect(changes[1]?.body).toBe("Fix installer ownership.");
   });
+
+  test("removes both PR and commit attribution links from a changeset summary", () => {
+    const changes = parseChangesetEntries(`### Patch Changes
+
+- [#246](https://github.com/KitsuneKode/kunai/pull/246) [\`bf55a67\`](https://github.com/KitsuneKode/kunai/commit/bf55a67) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Bound relay downloads.
+`);
+
+    expect(changes[0]?.body).toBe("Bound relay downloads.");
+  });
 });
 
 describe("parseRootChangelogEntry", () => {
@@ -252,5 +285,35 @@ Older.
     const entry = parseRootChangelogEntry(content, "v0.2.5");
     expect(entry?.version).toBe("0.2.5");
     expect(entry?.body).toBe("Already mirrored.");
+  });
+});
+
+describe("upsertRootChangelogEntry", () => {
+  test("replaces an already-staged release and preserves older entries", () => {
+    const current = `# Changelog
+
+## v0.3.0
+
+Old staged notes.
+
+## v0.2.5
+
+Published notes.
+`;
+
+    const updated = upsertRootChangelogEntry(current, {
+      version: "0.3.0",
+      body: "Complete staged notes.",
+    });
+
+    expect(updated).toContain("## v0.3.0\n\nComplete staged notes.");
+    expect(updated).not.toContain("Old staged notes.");
+    expect(updated).toContain("## v0.2.5\n\nPublished notes.");
+    expect(
+      upsertRootChangelogEntry(updated, {
+        version: "0.3.0",
+        body: "Complete staged notes.",
+      }),
+    ).toBe(updated);
   });
 });

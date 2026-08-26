@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { parseRootChangelogEntry, parseTopCliChangelogEntry } from "./release-changelog.ts";
+import { parseTopCliChangelogEntry, upsertRootChangelogEntry } from "./release-changelog.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const CLI_CHANGELOG = join(REPO_ROOT, "apps/cli/CHANGELOG.md");
@@ -41,25 +41,10 @@ function main(): void {
     return;
   }
 
-  const rootKey = `v${top.version}`;
   const rootContent = existsSync(ROOT_CHANGELOG) ? readFileSync(ROOT_CHANGELOG, "utf8") : null;
-  if (rootContent !== null && parseRootChangelogEntry(rootContent, rootKey) !== null) {
-    console.log(`[sync-root-changelog] Root already has ${rootKey}. Skipping.`);
-    return;
-  }
-
-  const newSection = `## ${rootKey}\n\n${top.body}\n`;
-  let newRoot: string;
-  if (rootContent === null) {
-    newRoot = `# Changelog\n\n${newSection}\n`;
-  } else if (/^# Changelog\s*$/m.test(rootContent)) {
-    newRoot = rootContent.replace(/^(# Changelog[ \t]*\n+)/, `$1${newSection}\n`);
-  } else {
-    newRoot = `# Changelog\n\n${newSection}\n\n${rootContent}`;
-  }
-
+  const newRoot = upsertRootChangelogEntry(rootContent, top);
   writeFileSync(ROOT_CHANGELOG, newRoot, "utf8");
-  console.log(`[sync-root-changelog] Wrote ${rootKey} to root CHANGELOG.md`);
+  console.log(`[sync-root-changelog] Synced v${top.version} to root CHANGELOG.md`);
 }
 
 main();

@@ -44,7 +44,13 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function sliceChangelogSection(content: string, header: string): string | null {
+type ChangelogSectionRange = {
+  readonly headerStart: number;
+  readonly bodyStart: number;
+  readonly bodyEnd: number;
+};
+
+function findChangelogSection(content: string, header: string): ChangelogSectionRange | null {
   const headerRe = new RegExp(`^## ${escapeRegex(header)}\\s*$`, "m");
   const match = headerRe.exec(content);
   if (!match || match.index === undefined) return null;
@@ -52,7 +58,12 @@ function sliceChangelogSection(content: string, header: string): string | null {
   const bodyStart = match.index + match[0].length;
   const nextHeader = /\n## (?:v)?\d+\.\d+\.\d+\s*$/m.exec(content.slice(bodyStart));
   const bodyEnd = nextHeader ? bodyStart + nextHeader.index : content.length;
-  return content.slice(bodyStart, bodyEnd).trim();
+  return { headerStart: match.index, bodyStart, bodyEnd };
+}
+
+function sliceChangelogSection(content: string, header: string): string | null {
+  const range = findChangelogSection(content, header);
+  return range ? content.slice(range.bodyStart, range.bodyEnd).trim() : null;
 }
 
 const CHANGESET_GROUPS: readonly {
@@ -141,14 +152,14 @@ function stripHtmlComments(text: string): string {
   return current;
 }
 
-/** Extracts the content of a single `### <heading>` group up to the next `### ` heading. */
+/** Extracts one changeset wrapper group without treating nested release-note headings as wrappers. */
 function sliceChangesetGroup(content: string, heading: string): string | null {
   const headingRe = new RegExp(`^### ${escapeRegex(heading)}\\s*$`, "m");
   const match = headingRe.exec(content);
   if (!match || match.index === undefined) return null;
 
   const rest = content.slice(match.index + match[0].length);
-  const nextHeading = /^### .+$/m.exec(rest);
+  const nextHeading = /^### (?:Major Changes|Minor Changes|Patch Changes)\s*$/m.exec(rest);
   const end = nextHeading?.index ?? rest.length;
   return rest.slice(0, end).trim();
 }
@@ -195,7 +206,9 @@ function renderChangesetEntry(block: string): string {
 
 /** Removes changeset attribution from an entry's summary line. */
 function cleanEntrySummary(summary: string): string {
-  let s = summary.replace(/^\[[^\]]*\]\([^)]*\)\s*/, "");
+  let s = summary;
+  const leadingLink = /^\[[^\]]*\]\([^)]*\)\s*/;
+  while (leadingLink.test(s)) s = s.replace(leadingLink, "");
   if (s.startsWith("Thanks ")) {
     const bangIdx = s.indexOf("! - ");
     if (bangIdx >= 0) s = s.slice(bangIdx + 4);
@@ -211,9 +224,11 @@ function cleanEntrySummary(summary: string): string {
  * `### Highlights` is left untouched.
  */
 function promoteNestedHeadings(text: string): string {
-  return text.replace(/^(#{3,6})(\s)/gm, (_match, hashes: string, space: string) => {
-    return "#".repeat(Math.max(3, hashes.length - 1)) + space;
-  });
+  return text
+    .replace(/^(#{3,6})(\s)/gm, (_match, hashes: string, space: string) => {
+      return "#".repeat(Math.max(3, hashes.length - 1)) + space;
+    })
+    .replace(/^(#{3,6}[ \t]+.+)\n(?=[^\r\n]*\S)/gm, "$1\n\n");
 }
 
 /** Parses a specific `## vX.Y.Z` entry from the root changelog (if present). */
@@ -221,4 +236,21 @@ export function parseRootChangelogEntry(content: string, rootKey: string): Chang
   const rawBody = sliceChangelogSection(content, rootKey);
   if (rawBody === null) return null;
   return { version: rootKey.replace(/^v/, ""), body: rawBody.trim() };
+}
+
+/** Insert or replace the root entry for a staged package changelog release. */
+export function upsertRootChangelogEntry(content: string | null, entry: ChangelogEntry): string {
+  const rootKey = `v${entry.version}`;
+  const newSection = `## ${rootKey}\n\n${entry.body.trim()}\n`;
+  if (content === null) return `# Changelog\n\n${newSection}`;
+
+  const existing = findChangelogSection(content, rootKey);
+  if (existing) {
+    return `${content.slice(0, existing.headerStart)}${newSection}${content.slice(existing.bodyEnd)}`;
+  }
+
+  if (/^# Changelog\s*$/m.test(content)) {
+    return content.replace(/^(# Changelog[ \t]*\n+)/, `$1${newSection}\n`);
+  }
+  return `# Changelog\n\n${newSection}\n${content}`;
 }

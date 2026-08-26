@@ -15,15 +15,43 @@ import {
 } from "../../../scripts/build-shared";
 import {
   assertNpmPublishManifest,
-  parseNpmPackDryRun,
+  buildNpmPackCommand,
   type NpmPublishManifest,
   verifyPreservedNpmTarball,
-  verifyNpmPackDryRun,
 } from "../../../scripts/verify-npm-pack";
 import { RELEASE_BINARY_TARGETS } from "../../../src/services/update/platform-assets";
 
 const TEST_VERSION = "9.8.7";
 const TAR_BLOCK_BYTES = 512;
+
+describe("buildNpmPackCommand", () => {
+  test("runs npm's JavaScript entrypoint through Node when it is available", () => {
+    expect(
+      buildNpmPackCommand({
+        args: ["pack", "--dry-run"],
+        npmPath: "/toolchain/bin/npm",
+        nodePath: "/toolchain/bin/node",
+        npmCliPath: "/toolchain/lib/node_modules/npm/bin/npm-cli.js",
+      }),
+    ).toEqual([
+      "/toolchain/bin/node",
+      "/toolchain/lib/node_modules/npm/bin/npm-cli.js",
+      "pack",
+      "--dry-run",
+    ]);
+  });
+
+  test("falls back to the npm executable when its JavaScript entrypoint is unavailable", () => {
+    expect(
+      buildNpmPackCommand({
+        args: ["pack"],
+        npmPath: "/toolchain/bin/npm",
+        nodePath: null,
+        npmCliPath: null,
+      }),
+    ).toEqual(["/toolchain/bin/npm", "pack"]);
+  });
+});
 
 function writeTarOctal(header: Buffer, offset: number, length: number, value: number): void {
   header.write(`${value.toString(8).padStart(length - 1, "0")}\0`, offset, length, "ascii");
@@ -195,40 +223,6 @@ describe("assertNpmPackBudgets", () => {
     expect(() => assertNpmPackBudgets(1024, NPM_PACK_UNPACKED_BUDGET_BYTES + 1)).toThrow(
       "unpacked tarball",
     );
-  });
-});
-
-describe("parseNpmPackDryRun", () => {
-  test("parses npm notice output", () => {
-    const stdout = `
-npm notice Tarball Contents
-npm notice 1.1kB LICENSE
-npm notice 2.5MB dist/npm-launcher.mjs
-npm notice 262.9kB package.json
-npm notice Tarball Details
-npm notice package size: 1.2 MB
-npm notice unpacked size: 3.1 MB
-`;
-    const summary = parseNpmPackDryRun(stdout);
-    expect(summary.paths).toEqual(["LICENSE", "dist/npm-launcher.mjs", "package.json"]);
-    expect(summary.packedBytes).toBeGreaterThan(1_000_000);
-    expect(summary.unpackedBytes).toBeGreaterThan(3_000_000);
-  });
-});
-
-describe("verifyNpmPackDryRun", () => {
-  test("accepts a small allowlisted pack listing", () => {
-    const stdout = `
-npm notice Tarball Contents
-npm notice 1.1kB LICENSE
-npm notice 6.0kB README.md
-npm notice 6.5kB dist/npm-launcher.mjs
-npm notice 5.6kB package.json
-npm notice Tarball Details
-npm notice package size: 7.2 kB
-npm notice unpacked size: 19.4 kB
-`;
-    expect(() => verifyNpmPackDryRun(stdout)).not.toThrow();
   });
 });
 
