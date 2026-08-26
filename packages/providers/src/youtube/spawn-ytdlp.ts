@@ -2,7 +2,7 @@ const DEFAULT_YTDLP_TIMEOUT_MS = 45_000;
 const DEFAULT_YTDLP_STDOUT_LIMIT_BYTES = 16 * 1024 * 1024;
 const DEFAULT_YTDLP_STDERR_LIMIT_BYTES = 1024 * 1024;
 const DEFAULT_YTDLP_EXIT_GRACE_MS = 2_500;
-const DEFAULT_STREAMING_STDERR_LIMIT_BYTES = 64 * 1024;
+const DEFAULT_STREAMING_OUTPUT_LIMIT_BYTES = 64 * 1024;
 
 export type YtDlpProcess = {
   readonly stdout: ReadableStream<Uint8Array>;
@@ -46,6 +46,8 @@ export type RunYtDlpProcessHandle = {
 };
 
 const defaultYtDlpSpawn: YtDlpSpawn = (command) =>
+  // SAFETY: pipe/ignore stdio makes Bun.spawn expose the stdout, stderr,
+  // exited, and kill members consumed by YtDlpProcess.
   Bun.spawn([...command], {
     stdout: "pipe",
     stderr: "pipe",
@@ -64,7 +66,7 @@ export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProces
   let terminated = false;
   let forceKillId: ReturnType<typeof setTimeout> | undefined;
   const exitGraceMs = options.exitGraceMs ?? DEFAULT_YTDLP_EXIT_GRACE_MS;
-  const maxStderrBytes = options.maxStderrBytes ?? DEFAULT_STREAMING_STDERR_LIMIT_BYTES;
+  const maxStderrBytes = options.maxStderrBytes ?? DEFAULT_STREAMING_OUTPUT_LIMIT_BYTES;
 
   const terminate = () => {
     if (terminated) return;
@@ -84,6 +86,8 @@ export function runYtDlpProcess(options: RunYtDlpProcessOptions): RunYtDlpProces
   const stdoutPromise = readStreamLines({
     stream: proc.stdout,
     signal: ioController.signal,
+    maxBytes: DEFAULT_STREAMING_OUTPUT_LIMIT_BYTES,
+    label: "yt-dlp stdout",
     onLine: (line) => options.onStdoutLine?.(line),
   });
   const stderrPromise = readStreamLines({
@@ -264,7 +268,7 @@ async function readStreamLines(options: {
   const reader = options.stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let bytes = 0;
+  let pendingLineBytes = 0;
   const cancelReader = () => {
     void reader.cancel(options.signal.reason).catch(() => undefined);
   };
@@ -276,9 +280,17 @@ async function readStreamLines(options: {
       const { done, value } = await reader.read();
       if (done) break;
       if (options.maxBytes !== undefined) {
-        bytes += value.byteLength;
-        if (bytes > options.maxBytes) {
-          throw new Error(`${options.label ?? "yt-dlp stream"} exceeded ${options.maxBytes} bytes`);
+        for (const byte of value) {
+          if (byte === 0x0a) {
+            pendingLineBytes = 0;
+            continue;
+          }
+          pendingLineBytes += 1;
+          if (pendingLineBytes > options.maxBytes) {
+            throw new Error(
+              `${options.label ?? "yt-dlp stream"} exceeded ${options.maxBytes} bytes`,
+            );
+          }
         }
       }
       buffer += decoder.decode(value, { stream: true });

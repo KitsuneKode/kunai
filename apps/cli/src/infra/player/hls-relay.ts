@@ -84,34 +84,133 @@ function assertRelayUpstreamUrl(url: string): URL {
   return parsed;
 }
 
-function curlFetch(
+export type HlsRelayCurlResponse = {
+  readonly status: number;
+  readonly contentType: string;
+  readonly body: Buffer;
+  readonly redirectUrl: string | null;
+  /** Complete curl stdout, including the fixed metadata trailer. */
+  readonly receivedBytes?: number;
+};
+
+export type HlsRelayCurlBudget = {
+  readonly maxResponseBytes: number;
+  readonly bodyLimitBytes: number;
+  readonly curlTimeoutMs: number;
+  readonly watchdogTimeoutMs: number;
+};
+
+export type HlsRelayCurlRequest = (
+  url: string,
+  budget: HlsRelayCurlBudget,
+) => Promise<HlsRelayCurlResponse>;
+
+export type HlsRelayFetchOptions = {
+  readonly now?: () => number;
+  readonly maxResponseBytes?: number;
+  readonly curlTimeoutMs?: number;
+  readonly watchdogTimeoutMs?: number;
+};
+
+export type HlsRelayUpstreamResponse = HlsRelayCurlResponse & {
+  readonly effectiveUrl: string;
+};
+
+export async function fetchHlsRelayUpstream(
+  url: string,
+  request: HlsRelayCurlRequest,
+  options: HlsRelayFetchOptions = {},
+): Promise<HlsRelayUpstreamResponse> {
+  // Redirect-chain budgets are elapsed-time limits. A wall-clock correction
+  // must not restore time to later hops, so production uses a monotonic clock.
+  const now = options.now ?? (() => performance.now());
+  const startedAt = now();
+  const bodyLimitBytes = options.maxResponseBytes ?? MAX_UPSTREAM_BODY_BYTES;
+  const curlTimeoutMs = options.curlTimeoutMs ?? 25_000;
+  const watchdogTimeoutMs = options.watchdogTimeoutMs ?? CURL_WATCHDOG_MS;
+  let remainingResponseBytes = bodyLimitBytes;
+
+  const remainingMs = (limitMs: number) => Math.max(0, limitMs - Math.max(0, now() - startedAt));
+  const assertWithinDeadline = () => {
+    if (remainingMs(curlTimeoutMs) <= 0) {
+      throw new Error(`upstream redirect chain exceeded ${curlTimeoutMs}ms`);
+    }
+  };
+
+  let currentUrl = url;
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
+    assertWithinDeadline();
+    const current = assertRelayUpstreamUrl(currentUrl);
+    const response = await request(current.href, {
+      maxResponseBytes: remainingResponseBytes,
+      bodyLimitBytes,
+      curlTimeoutMs: remainingMs(curlTimeoutMs),
+      watchdogTimeoutMs: remainingMs(watchdogTimeoutMs),
+    });
+    const receivedBytes = response.receivedBytes ?? response.body.length;
+    if (!Number.isSafeInteger(receivedBytes) || receivedBytes < 0) {
+      throw new Error("upstream response reported an invalid byte count");
+    }
+    if (receivedBytes > remainingResponseBytes) {
+      throw new Error(`upstream body exceeded ${bodyLimitBytes} bytes`);
+    }
+    remainingResponseBytes -= receivedBytes;
+    assertWithinDeadline();
+    if (response.status < 300 || response.status >= 400 || !response.redirectUrl) {
+      return { ...response, effectiveUrl: current.href };
+    }
+    if (redirectCount === 3) {
+      throw new Error("upstream redirected too many times");
+    }
+    const redirect = assertRelayUpstreamUrl(new URL(response.redirectUrl, current).href);
+    if (current.protocol === "https:" && redirect.protocol === "http:") {
+      throw new Error("HTTPS upstream cannot redirect to HTTP");
+    }
+    currentUrl = redirect.href;
+  }
+  throw new Error("upstream redirected too many times");
+}
+
+export function buildHlsRelayCurlArgs(
   url: string,
   referer: string,
   origin: string,
-): Promise<{ status: number; contentType: string; body: Buffer }> {
+  budget: HlsRelayCurlBudget,
+): string[] {
+  return [
+    // curl only honors --disable/-q as a config-file guard when it is the first
+    // argument. Without it, a user's `location` setting can follow a redirect
+    // before Kunai validates the next hop.
+    "-q",
+    "-sS",
+    "--no-location",
+    "--http2",
+    "-A",
+    AGENT,
+    "-H",
+    `Referer: ${referer}`,
+    "-H",
+    `Origin: ${origin}`,
+    "-H",
+    "Accept: */*",
+    "--max-time",
+    (Math.max(1, budget.curlTimeoutMs) / 1_000).toFixed(3),
+    "-w",
+    `\n${CURL_META_MARKER}%{http_code}\n%{content_type}\n%{redirect_url}`,
+    "--",
+    url,
+  ];
+}
+
+function curlFetchOnce(
+  url: string,
+  referer: string,
+  origin: string,
+  budget: HlsRelayCurlBudget,
+): Promise<HlsRelayCurlResponse> {
   assertRelayUpstreamUrl(url);
   return new Promise((resolve, reject) => {
-    const proc = spawn("curl", [
-      "-sS",
-      "--http2",
-      "-L",
-      "--max-redirs",
-      "3",
-      "-A",
-      AGENT,
-      "-H",
-      `Referer: ${referer}`,
-      "-H",
-      `Origin: ${origin}`,
-      "-H",
-      "Accept: */*",
-      "--max-time",
-      "25",
-      "-w",
-      `\n${CURL_META_MARKER}%{http_code}\n%{content_type}`,
-      "--",
-      url,
-    ]);
+    const proc = spawn("curl", buildHlsRelayCurlArgs(url, referer, origin, budget));
     let chunks: Buffer[] = [];
     let totalBytes = 0;
     let stderr = "";
@@ -131,18 +230,21 @@ function curlFetch(
     // is running: a stopped process, or a shim that never execs curl, leaves
     // this promise pending forever and the request handler awaiting it. This is
     // the backstop, deliberately above curl's own limit so curl reports first.
-    const watchdog = setTimeout(() => {
-      fail(new Error(`curl did not exit within ${CURL_WATCHDOG_MS}ms`));
-    }, CURL_WATCHDOG_MS);
+    const watchdog = setTimeout(
+      () => {
+        fail(new Error(`curl did not exit within ${budget.watchdogTimeoutMs}ms`));
+      },
+      Math.max(1, budget.watchdogTimeoutMs),
+    );
 
     proc.stdout.on("data", (d: Buffer) => {
       if (settled) return;
       totalBytes += d.length;
-      if (totalBytes > MAX_UPSTREAM_BODY_BYTES) {
+      if (totalBytes > budget.maxResponseBytes) {
         // Drop the buffered body before rejecting; holding 64 MiB until the
         // rejection unwinds is the opposite of what the cap is for.
         chunks = [];
-        fail(new Error(`upstream body exceeded ${MAX_UPSTREAM_BODY_BYTES} bytes`));
+        fail(new Error(`upstream body exceeded ${budget.bodyLimitBytes} bytes`));
         return;
       }
       chunks.push(d);
@@ -186,15 +288,26 @@ function curlFetch(
       const contentType =
         (metaLines[1] ?? "application/octet-stream").split(";")[0]?.trim() ||
         "application/octet-stream";
+      const redirectUrl = metaLines[2]?.trim() || null;
       if (!Number.isFinite(status) || status <= 0) {
         reject(new Error(`curl invalid status trailer: ${metaLines[0] ?? ""}`));
         return;
       }
-      resolve({ status, contentType, body });
+      resolve({ status, contentType, body, redirectUrl, receivedBytes: buf.length });
     });
     // Spawn failure (curl missing, ENOMEM): there is no process to kill.
     proc.on("error", (err: Error) => fail(err, false));
   });
+}
+
+function curlFetch(
+  url: string,
+  referer: string,
+  origin: string,
+): Promise<HlsRelayUpstreamResponse> {
+  return fetchHlsRelayUpstream(url, (currentUrl, budget) =>
+    curlFetchOnce(currentUrl, referer, origin, budget),
+  );
 }
 
 export function toB64Url(buf: Buffer): string {
@@ -318,7 +431,7 @@ export function startHlsRelay(
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
-              host: new URL(srcUrl).hostname,
+              host: new URL(r.effectiveUrl).hostname,
               message: `upstream ${r.status}`,
             });
             return new Response(`upstream ${r.status}`, { status: r.status });
@@ -326,7 +439,7 @@ export function startHlsRelay(
           if (looksLikeHlsPlaylist(r.body)) {
             const rewritten = rewriteHlsPlaylistForRelay(
               r.body.toString("utf-8"),
-              srcUrl,
+              r.effectiveUrl,
               relayOrigin,
             );
             return new Response(rewritten, {
@@ -360,7 +473,7 @@ export function startHlsRelay(
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
-              host: new URL(srcUrl).hostname,
+              host: new URL(r.effectiveUrl).hostname,
               message: `upstream ${r.status}`,
             });
           }
@@ -369,7 +482,7 @@ export function startHlsRelay(
           if (r.status === 200 && looksLikeHlsPlaylist(r.body)) {
             const rewritten = rewriteHlsPlaylistForRelay(
               r.body.toString("utf-8"),
-              srcUrl,
+              r.effectiveUrl,
               relayOrigin,
             );
             return new Response(rewritten, {

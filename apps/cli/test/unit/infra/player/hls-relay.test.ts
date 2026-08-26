@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildHlsRelayCurlArgs,
+  fetchHlsRelayUpstream,
   fromB64Url,
   looksLikeHlsPlaylist,
   rewriteHlsPlaylistForRelay,
@@ -13,6 +15,231 @@ const RELAY = "http://127.0.0.1:9";
 const BASE = "https://vault-06.uwucdn.top/path/to/index.m3u8?token=abc%2B%2F%3D";
 
 describe("hls-relay gating", () => {
+  test("disables curl config and redirect following before every other argument", () => {
+    const args = buildHlsRelayCurlArgs(
+      "https://vault-06.uwucdn.top/start.m3u8",
+      "https://kwik.cx/",
+      "https://kwik.cx",
+      {
+        maxResponseBytes: 1024,
+        bodyLimitBytes: 1024,
+        curlTimeoutMs: 25_000,
+        watchdogTimeoutMs: 30_000,
+      },
+    );
+
+    expect(args[0]).toBe("-q");
+    expect(args).toContain("--no-location");
+    expect(args).not.toContain("-L");
+    expect(args).not.toContain("--location");
+    expect(args.at(-1)).toBe("https://vault-06.uwucdn.top/start.m3u8");
+  });
+
+  test("rejects a redirect before requesting a non-allowlisted target", async () => {
+    const requested: string[] = [];
+
+    await expect(
+      fetchHlsRelayUpstream("https://vault-06.uwucdn.top/start.m3u8", async (url) => {
+        requested.push(url);
+        return url.endsWith("start.m3u8")
+          ? {
+              status: 302,
+              contentType: "text/plain",
+              body: Buffer.alloc(0),
+              redirectUrl: "http://169.254.169.254/latest/meta-data/",
+            }
+          : {
+              status: 200,
+              contentType: "text/plain",
+              body: Buffer.from("secret"),
+              redirectUrl: null,
+            };
+      }),
+    ).rejects.toThrow("upstream host not allowlisted");
+
+    expect(requested).toEqual(["https://vault-06.uwucdn.top/start.m3u8"]);
+  });
+
+  test("rejects an HTTPS redirect downgrade before the second request", async () => {
+    const requested: string[] = [];
+
+    await expect(
+      fetchHlsRelayUpstream("https://vault-06.uwucdn.top/start.m3u8", async (url) => {
+        requested.push(url);
+        return {
+          status: 302,
+          contentType: "text/plain",
+          body: Buffer.alloc(0),
+          redirectUrl: "http://vault-06.uwucdn.top/plaintext.m3u8",
+        };
+      }),
+    ).rejects.toThrow("HTTPS upstream cannot redirect to HTTP");
+
+    expect(requested).toEqual(["https://vault-06.uwucdn.top/start.m3u8"]);
+  });
+
+  test("returns the final URL so relative playlist entries use the redirected base", async () => {
+    const response = await fetchHlsRelayUpstream(
+      "https://vault-06.uwucdn.top/old/master.m3u8",
+      async (url) =>
+        url.includes("/old/")
+          ? {
+              status: 302,
+              contentType: "text/plain",
+              body: Buffer.alloc(0),
+              redirectUrl: "https://vault-06.uwucdn.top/new/master.m3u8",
+            }
+          : {
+              status: 200,
+              contentType: "application/vnd.apple.mpegurl",
+              body: Buffer.from("#EXTM3U\nsegment.ts\n"),
+              redirectUrl: null,
+            },
+    );
+
+    expect(response.effectiveUrl).toBe("https://vault-06.uwucdn.top/new/master.m3u8");
+    const rewritten = rewriteHlsPlaylistForRelay(
+      response.body.toString("utf-8"),
+      response.effectiveUrl,
+      RELAY,
+    );
+    expect(rewritten).toContain(
+      `/s/${toB64Url(Buffer.from("https://vault-06.uwucdn.top/new/segment.ts"))}`,
+    );
+  });
+
+  test("allows three redirects but refuses a fourth", async () => {
+    const request = async (url: string) => {
+      const step = Number(new URL(url).searchParams.get("step") ?? "0");
+      return step < 3
+        ? {
+            status: 302,
+            contentType: "text/plain",
+            body: Buffer.alloc(0),
+            redirectUrl: `https://vault-06.uwucdn.top/next.m3u8?step=${step + 1}`,
+          }
+        : {
+            status: 200,
+            contentType: "application/vnd.apple.mpegurl",
+            body: Buffer.from("#EXTM3U\n"),
+            redirectUrl: null,
+          };
+    };
+
+    await expect(
+      fetchHlsRelayUpstream("https://vault-06.uwucdn.top/start.m3u8", request),
+    ).resolves.toMatchObject({ status: 200 });
+
+    await expect(
+      fetchHlsRelayUpstream("https://vault-06.uwucdn.top/start.m3u8", async (url) => {
+        const step = Number(new URL(url).searchParams.get("step") ?? "0");
+        return {
+          status: 302,
+          contentType: "text/plain",
+          body: Buffer.alloc(0),
+          redirectUrl: `https://vault-06.uwucdn.top/next.m3u8?step=${step + 1}`,
+        };
+      }),
+    ).rejects.toThrow("upstream redirected too many times");
+  });
+
+  test("shares response bytes and deadlines across every redirect hop", async () => {
+    let now = 1_000;
+    const observed: Array<{
+      readonly maxResponseBytes: number;
+      readonly curlTimeoutMs: number;
+      readonly watchdogTimeoutMs: number;
+    }> = [];
+
+    const response = await fetchHlsRelayUpstream(
+      "https://vault-06.uwucdn.top/start.m3u8?step=0",
+      async (url, budget) => {
+        observed.push({
+          maxResponseBytes: budget.maxResponseBytes,
+          curlTimeoutMs: budget.curlTimeoutMs,
+          watchdogTimeoutMs: budget.watchdogTimeoutMs,
+        });
+        now += 5_000;
+        const step = Number(new URL(url).searchParams.get("step") ?? "0");
+        return step < 2
+          ? {
+              status: 302,
+              contentType: "text/plain",
+              body: Buffer.alloc(20),
+              redirectUrl: `https://vault-06.uwucdn.top/next.m3u8?step=${step + 1}`,
+              receivedBytes: 30,
+            }
+          : {
+              status: 200,
+              contentType: "application/vnd.apple.mpegurl",
+              body: Buffer.from("#EXTM3U\n"),
+              redirectUrl: null,
+              receivedBytes: 10,
+            };
+      },
+      {
+        now: () => now,
+        maxResponseBytes: 100,
+        curlTimeoutMs: 25_000,
+        watchdogTimeoutMs: 30_000,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(observed).toEqual([
+      { maxResponseBytes: 100, curlTimeoutMs: 25_000, watchdogTimeoutMs: 30_000 },
+      { maxResponseBytes: 70, curlTimeoutMs: 20_000, watchdogTimeoutMs: 25_000 },
+      { maxResponseBytes: 40, curlTimeoutMs: 15_000, watchdogTimeoutMs: 20_000 },
+    ]);
+  });
+
+  test("rejects redirect bodies that exceed the shared response budget", async () => {
+    let requests = 0;
+
+    await expect(
+      fetchHlsRelayUpstream(
+        "https://vault-06.uwucdn.top/start.m3u8",
+        async () => {
+          requests += 1;
+          return {
+            status: 302,
+            contentType: "text/plain",
+            body: Buffer.alloc(60),
+            redirectUrl: "https://vault-06.uwucdn.top/next.m3u8",
+            receivedBytes: 60,
+          };
+        },
+        { maxResponseBytes: 100 },
+      ),
+    ).rejects.toThrow("upstream body exceeded 100 bytes");
+
+    expect(requests).toBe(2);
+  });
+
+  test("rejects a redirect chain after one shared curl deadline", async () => {
+    let now = 10_000;
+    let requests = 0;
+
+    await expect(
+      fetchHlsRelayUpstream(
+        "https://vault-06.uwucdn.top/start.m3u8",
+        async () => {
+          requests += 1;
+          now += 13_000;
+          return {
+            status: 302,
+            contentType: "text/plain",
+            body: Buffer.alloc(0),
+            redirectUrl: "https://vault-06.uwucdn.top/next.m3u8",
+          };
+        },
+        { now: () => now, curlTimeoutMs: 25_000, watchdogTimeoutMs: 30_000 },
+      ),
+    ).rejects.toThrow("upstream redirect chain exceeded 25000ms");
+
+    expect(requests).toBe(2);
+  });
+
   test("streamNeedsHlsRelay matches only uwucdn/owocdn hosts", () => {
     expect(streamNeedsHlsRelay("https://vault-06.uwucdn.top/x/index.m3u8")).toBe(true);
     expect(streamNeedsHlsRelay("https://vault-15.owocdn.top/x/index.m3u8")).toBe(true);
