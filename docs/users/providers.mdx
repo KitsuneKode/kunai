@@ -115,10 +115,10 @@ Search can return **videos, playlists, and channels**. Playlists and channels ar
 
 Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also editable from `/settings` → YouTube):
 
-| Key | Safe usage |
-| --- | --- |
+| Key                  | Safe usage                                                                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cookiesFromBrowser` | Browser name for yt-dlp `--cookies-from-browser` (for example `chrome`, `firefox`). Reads cookies from that browser profile on your machine. |
-| `cookiesFile` | **Absolute** path to a Netscape cookie file passed as yt-dlp `--cookies`. Relative paths are easy to mis-resolve — use an absolute path. |
+| `cookiesFile`        | **Absolute** path to a Netscape cookie file passed as yt-dlp `--cookies`. Relative paths are easy to mis-resolve — use an absolute path.     |
 
 Safety rules:
 
@@ -136,6 +136,7 @@ Safety rules:
 ### You select a title and episode
 
 Kunai builds a resolve request from your mode, language profiles, and any per-title provider preference.
+
 </Step>
 <Step>
 ### Kunai tries the default provider first
@@ -145,21 +146,25 @@ Your `provider` or `animeProvider` config key sets the session default. Startup 
 Falling back to another provider can change the available source inventory (quality ladder, sub/dub
 mix). Title and catalog identity never silently cross to another catalog: an advanced search with no
 compatible catalog is reported as unsupported rather than quietly answered by TMDB.
+
 </Step>
 <Step>
 ### Provider-local cycling
 
 Within one provider, Kunai may try multiple sources, servers, or variants before giving up. Diagnostics shows this as retry progress — not necessarily an error.
+
 </Step>
 <Step>
 ### Global fallback
 
 If the active provider is exhausted, skipped, or unhealthy for this request, Kunai moves to the next id in your priority list.
+
 </Step>
 <Step>
 ### Stream handoff
 
 The winning stream becomes mpv input with required headers and subtitle attachments. Inventory is cached for faster re-selection.
+
 </Step>
 </Steps>
 
@@ -193,26 +198,27 @@ See [Customization](/docs/users/customization).
 
 Kunai uses three distinct user-facing actions. They are not interchangeable.
 
-| Action | Keys / command | What happens |
-| --- | --- | --- |
-| **Recover** | `r`, `/recover` | Refresh current playback intent on the **active** provider — new resolve, cache revalidation, or mpv reload |
-| **Retry** (automatic) | — | Provider-local cycling through sources/variants before global fallback; shown in diagnostics timeline |
-| **Fallback provider** | `⇧F`, `/fallback` | Stop active provider; global engine picks **next compatible provider** |
-| **Recompute** | `/recompute` | Bypass stream cache and provider health memory for current episode |
+| Action                | Keys / command    | What happens                                                                                                |
+| --------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Recover**           | `r`, `/recover`   | Refresh current playback intent on the **active** provider — new resolve, cache revalidation, or mpv reload |
+| **Retry** (automatic) | —                 | Provider-local cycling through sources/variants before global fallback; shown in diagnostics timeline       |
+| **Fallback provider** | `⇧F`, `/fallback` | Stop active provider; global engine picks **next compatible provider**                                      |
+| **Recompute**         | `/recompute`      | Bypass stream cache and provider health memory for current episode                                          |
 
 <Callout type="idea" title="Recover before fallback">
-When a stream dies mid-playback, try recover first. Fallback switches providers and may change source quality or subtitles.
+  When a stream dies mid-playback, try recover first. Fallback switches providers and may change
+  source quality or subtitles.
 </Callout>
 
 ### Recovery mode setting
 
 `recoveryMode` in config changes default aggressiveness:
 
-| Mode | Behavior |
-| --- | --- |
-| `guided` (default) | Explain failures; suggest recover then fallback |
-| `fallback-first` | Prefer moving to next provider sooner after classified failures |
-| `manual` | Minimal automatic fallback; user drives `/recover` and `/fallback` |
+| Mode               | Behavior                                                           |
+| ------------------ | ------------------------------------------------------------------ |
+| `guided` (default) | Explain failures; suggest recover then fallback                    |
+| `fallback-first`   | Prefer moving to next provider sooner after classified failures    |
+| `manual`           | Minimal automatic fallback; user drives `/recover` and `/fallback` |
 
 ## Provider health and cache
 
@@ -260,55 +266,41 @@ What it does not do:
 
 Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct fetches. To use a relay you operate, set `baseUrl` in `/settings` or `config.json` to **your** origin — Kunai never ships a public relay URL. An internet relay requires a matching bearer `token`; only a relay bound to numeric loopback may run without one. `fallbackToDirect: true` degrades to direct fetches after relay network or authorization-policy failures where the provider is not geo-blocked. Env overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`.
 
-### Deploying Your Own Relay
+### Deploying your own relay
 
-To bypass ISP/regional geo-blocking or IP-based bot gates (`NEED_CAPTCHA`), your relay needs to execute from an external IP address (such as a free cloud serverless host):
+A relay only helps when it reaches the provider from a network that is not blocked. A captcha gate (`NEED_CAPTCHA`) or a regional block is tied to your IP, so the relay has to run somewhere else — a free serverless host, or a machine in an ungated region. Both deploy from a source checkout, since the relay imports the `@kunai/relay` and `@kunai/providers` workspace packages.
 
-#### Option A: Deploy to Vercel (Recommended — Free Serverless)
-Deploying to Vercel routes your metadata requests through Vercel's global edge network on a fresh datacenter IP:
+**On Vercel.** Full steps and the reason the bundle step is required are in `apps/relay-server/README.md`:
+
 ```sh
 cd apps/relay-server
-vercel env add RELAY_TOKEN        # enter a secure random secret token
+vercel env add RELAY_TOKEN   # a random secret; the relay refuses internet traffic without one
 vercel build --prod --yes
 bun run vercel:bundle-output
 vercel deploy --prebuilt --prod
 ```
 
-#### Option B: Run Locally or on a Remote Home Server (Development / Testing)
-If running on a remote machine or for local development:
+**Locally**, for development or a home server on an ungated network:
+
 ```sh
-git clone https://github.com/KitsuneKode/kunai.git
-cd kunai
-bun install
-bun run dev:relay
+bun run dev:relay            # listens on http://127.0.0.1:8787
 ```
-The local dev server listens at `http://127.0.0.1:8787`.
 
-### Configuring Kunai to Use Your Relay
+### Pointing Kunai at your relay
 
-1. **Via Kunai UI:**
-   Open Kunai, press `/`, type `/settings`, scroll down to **Provider Relay**, and enter:
-   - **Base URL:** `https://your-relay.vercel.app` (or `http://127.0.0.1:8787` for local)
-   - **Bearer Token:** Your secret `RELAY_TOKEN` (leave blank for local loopback)
-   - **Fallback to direct:** Enabled (`true`)
+Set the origin and token in any one of three places — `/settings` → Provider Relay, `config.json`, or the environment — and keep `fallbackToDirect` on so Kunai degrades to direct fetches when the relay is unreachable and the provider is not geo-blocked.
 
-2. **Via `config.json`:**
-   In your configuration file (`~/.config/kunai/config.json` on Linux):
-   ```json
-   {
-     "providerRelay": {
-       "baseUrl": "https://your-relay.vercel.app",
-       "token": "your-secret-token",
-       "fallbackToDirect": true
-     }
-   }
-   ```
+```json
+{
+  "providerRelay": {
+    "baseUrl": "https://your-relay.vercel.app",
+    "token": "your-secret-token",
+    "fallbackToDirect": true
+  }
+}
+```
 
-3. **Via Environment Variables:**
-   ```sh
-   export KUNAI_RELAY_BASE_URL="https://your-relay.vercel.app"
-   export KUNAI_RELAY_TOKEN="your-secret-token"
-   ```
+Environment overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`. Leave the token blank only for a relay bound to numeric loopback; any internet origin needs one.
 
 Source-checkout smoke and verification steps: [Debugging workflow](/docs/developer/debugging-workflow) and `apps/relay-server/README.md`.
 
