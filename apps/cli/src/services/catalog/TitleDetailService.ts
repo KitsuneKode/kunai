@@ -463,7 +463,7 @@ async function fetchTmdbDetail(
         playableSeasons.push({
           season: seasonNum,
           name: readString(seasonMeta.name) || `Season ${seasonNum}`,
-          episodeCount: Number(seasonMeta.episode_count) || undefined,
+          episodeCount: readEpisodeCount(seasonMeta.episode_count),
           year: seasonAirDate.split("-")[0] || undefined,
           posterUrl: posterPath ? tmdbImage(posterPath, "w342") : undefined,
         });
@@ -826,7 +826,7 @@ async function fetchAniListDetail(
   const rawStatus = readString(media.status).toLowerCase();
   const status = mapAniListStatus(rawStatus);
 
-  const episodeCount = typeof media.episodes === "number" ? media.episodes : undefined;
+  const episodeCount = readEpisodeCount(media.episodes);
   const runtimeMinutes = typeof media.duration === "number" ? media.duration : undefined;
   const format = readString(media.format) || undefined;
 
@@ -938,6 +938,21 @@ function extractAnilistId(id: string): string | null {
 // ---------------------------------------------------------------------------
 // Util
 // ---------------------------------------------------------------------------
+
+/**
+ * An episode count is a whole number of episodes.
+ *
+ * `Number(...)` and a bare `typeof === "number"` both let a fractional or
+ * absurd upstream value through, and it rendered verbatim in the details rail —
+ * "episodes 448.2" is never a thing a catalog can truthfully say. Anything that
+ * is not a positive integer is dropped so the row is omitted, which reads as
+ * "unknown" rather than as a wrong fact.
+ */
+function readEpisodeCount(value: unknown): number | undefined {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return undefined;
+  return parsed;
+}
 
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)

@@ -801,3 +801,65 @@ describe("anime detail stays coherent across catalogs", () => {
     }
   });
 });
+
+/**
+ * The details rail rendered "episodes 448.2".
+ *
+ * An episode count is a whole number of episodes, and the rail printed whatever
+ * the catalog handed it. `Number(...)` and a bare `typeof === "number"` both let
+ * a fractional value through, so a malformed upstream field became a confident
+ * wrong fact on screen. Anything that is not a positive integer is now dropped,
+ * which renders as an absent row — "unknown" rather than a lie.
+ */
+describe("episode counts are whole numbers", () => {
+  afterEach(() => {
+    clearTitleDetailCache();
+  });
+
+  test("drops a fractional AniList episode count instead of rendering it", async () => {
+    const restore = mockFetch((url) => {
+      if (url.includes("graphql.anilist.co"))
+        return jsonResponse({ data: { Media: anilistMediaPayload({ episodes: 448.2 }) } });
+      return null;
+    });
+
+    try {
+      const detail = await fetchTitleDetail("anilist:21", "series");
+      expect(detail.episodeCount).toBeUndefined();
+    } finally {
+      restore();
+    }
+  });
+
+  test("keeps a real AniList episode count", async () => {
+    const restore = mockFetch((url) => {
+      if (url.includes("graphql.anilist.co"))
+        return jsonResponse({ data: { Media: anilistMediaPayload({ episodes: 24 }) } });
+      return null;
+    });
+
+    try {
+      const detail = await fetchTitleDetail("anilist:21", "series");
+      expect(detail.episodeCount).toBe(24);
+    } finally {
+      restore();
+    }
+  });
+
+  test("rejects zero, negative, and non-numeric counts alike", async () => {
+    for (const episodes of [0, -5, "many", null, Number.NaN]) {
+      clearTitleDetailCache();
+      const restore = mockFetch((url) => {
+        if (url.includes("graphql.anilist.co"))
+          return jsonResponse({ data: { Media: anilistMediaPayload({ episodes }) } });
+        return null;
+      });
+      try {
+        const detail = await fetchTitleDetail("anilist:21", "series");
+        expect(detail.episodeCount).toBeUndefined();
+      } finally {
+        restore();
+      }
+    }
+  });
+});
