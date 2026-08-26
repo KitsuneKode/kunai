@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { getDefaultTtlMs, SourceInventoryRepository } from "@kunai/storage";
-import type {
-  CacheTtlClass,
-  MediaKind,
-  ProviderResolveResult,
-  ProviderRuntime,
-  StartupPriority,
+import {
+  encodeProviderEpisodeIdentity,
+  type ProviderEpisodeIdentity,
+  type ProviderResolveResult,
+  type ProviderRuntime,
+  type StartupPriority,
+  type CacheTtlClass,
+  type MediaKind,
 } from "@kunai/types";
 
 export const SOURCE_INVENTORY_SCHEMA_VERSION = "v5";
@@ -19,6 +21,7 @@ export type SourceInventoryCacheInput = {
   readonly season?: number;
   readonly episode?: number;
   readonly absoluteEpisode?: number;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly audioMode?: string;
   readonly subtitleLanguage?: string;
   readonly qualityPreference?: string;
@@ -193,6 +196,9 @@ export function buildSourceInventoryCachePreimage(input: SourceInventoryCacheInp
     normalizePart(input.season),
     normalizePart(input.episode),
     normalizePart(input.absoluteEpisode),
+    input.providerEpisodeIdentity
+      ? encodeProviderEpisodeIdentity(input.providerEpisodeIdentity)
+      : "none",
     normalizePart(input.audioMode),
     normalizePart(input.subtitleLanguage),
     normalizePart(input.qualityPreference),

@@ -8,6 +8,18 @@ import type {
 
 import type { OfflineTitleIdentity } from "./offline-title-identity";
 
+export type OfflineAssetRepositoryPort = Pick<
+  OfflineAssetsRepository,
+  | "get"
+  | "listTitleAssets"
+  | "listByTitleIds"
+  | "listNextReadyByTitleCursors"
+  | "markValidation"
+  | "deleteByOriginJobId"
+  | "deleteOrphaned"
+  | "upsertPlayable"
+>;
+
 export type RecordedOfflineStatus = {
   readonly titleId: string;
   readonly status: OfflineAssetState;
@@ -15,7 +27,7 @@ export type RecordedOfflineStatus = {
 
 export class OfflineAssetService {
   constructor(
-    private readonly assets: OfflineAssetsRepository,
+    private readonly assets: OfflineAssetRepositoryPort,
     private readonly titleIdentity: OfflineTitleIdentity,
   ) {}
 
@@ -76,6 +88,7 @@ export class OfflineAssetService {
       mediaKind: job.mediaKind,
       season: job.season,
       episode: job.episode,
+      providerEpisodeIdentity: job.providerEpisodeIdentity,
       profileKey: profileKeyForJob(job),
       originJobId: job.id,
       filePath: job.outputPath,

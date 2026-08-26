@@ -1,11 +1,13 @@
 import type {
   CachePolicy,
+  EpisodeIdentity,
   ProviderArtworkInfo,
   ProviderExternalIds,
   ProviderFailure,
   ProviderHealth,
   ProviderEndpointHealthRecord,
   ProviderLanguageEvidence,
+  ProviderEpisodeIdentity,
   ProviderRelayConfig,
   ProviderReleaseInfo,
   ProviderSourceCandidate,
@@ -168,15 +170,21 @@ export const titleIdentitySchema = z.object({
   externalIds: providerExternalIdsSchema.optional(),
 });
 
+export const providerEpisodeIdentitySchema = z.object({
+  providerId: z.string().min(1),
+  value: z.string().min(1),
+}) satisfies z.ZodType<ProviderEpisodeIdentity>;
+
 export const episodeIdentitySchema = z.object({
   season: z.number().int().positive().optional(),
   episode: z.number().int().positive().optional(),
   absoluteEpisode: z.number().int().positive().optional(),
+  providerEpisodeIdentity: providerEpisodeIdentitySchema.optional(),
   title: z.string().min(1).optional(),
   airDate: z.string().min(1).optional(),
   release: providerReleaseInfoSchema.optional(),
   artwork: providerArtworkInfoSchema.optional(),
-});
+}) satisfies z.ZodType<EpisodeIdentity>;
 
 export const streamCandidateSchema = z.object({
   id: z.string().min(1),

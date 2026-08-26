@@ -1,4 +1,8 @@
-import type { MediaKind } from "@kunai/types";
+import {
+  encodeProviderEpisodeIdentity,
+  type MediaKind,
+  type ProviderEpisodeIdentity,
+} from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
@@ -14,6 +18,7 @@ export interface OfflineAssetRecord {
   readonly mediaKind: MediaKind;
   readonly season?: number;
   readonly episode?: number;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly profileKey: string;
   readonly originJobId?: string;
   readonly filePath: string;
@@ -33,6 +38,7 @@ export interface OfflineAssetInput {
   readonly mediaKind: MediaKind;
   readonly season?: number;
   readonly episode?: number;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly profileKey: string;
   readonly originJobId?: string;
   readonly filePath: string;
@@ -76,6 +82,8 @@ interface OfflineAssetRow {
   media_kind: MediaKind;
   season: number | null;
   episode: number | null;
+  provider_episode_provider_id: string | null;
+  provider_episode_value: string | null;
   profile_key: string;
   origin_job_id: string | null;
   file_path: string;
@@ -101,10 +109,11 @@ export class OfflineAssetsRepository {
     this.db
       .query(
         `INSERT INTO offline_assets (
-           id, identity_key, title_id, title_name, media_kind, season, episode, profile_key,
+           id, identity_key, title_id, title_name, media_kind, season, episode,
+           provider_episode_provider_id, provider_episode_value, profile_key,
            origin_job_id, file_path, state, byte_size, duration_ms, timing_json,
            last_validated_at, protected, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(identity_key) DO UPDATE SET
            title_name = excluded.title_name,
            origin_job_id = excluded.origin_job_id,
@@ -125,6 +134,8 @@ export class OfflineAssetsRepository {
         input.mediaKind,
         input.season ?? null,
         input.episode ?? null,
+        input.providerEpisodeIdentity?.providerId ?? null,
+        input.providerEpisodeIdentity?.value ?? null,
         input.profileKey,
         input.originJobId ?? null,
         input.filePath,
@@ -210,6 +221,13 @@ export class OfflineAssetsRepository {
         mediaKind: row.media_kind,
         season: row.season ?? undefined,
         episode: row.episode ?? undefined,
+        providerEpisodeIdentity:
+          row.provider_episode_provider_id !== null && row.provider_episode_value !== null
+            ? {
+                providerId: row.provider_episode_provider_id,
+                value: row.provider_episode_value,
+              }
+            : undefined,
         profileKey: row.profile_key,
       });
       update.run(newTitleId, identityKey, now, row.id);
@@ -255,9 +273,10 @@ export class OfflineAssetsRepository {
               )
             )
         )
-        SELECT id, identity_key, title_id, title_name, media_kind, season, episode, profile_key,
-          origin_job_id, file_path, state, byte_size, duration_ms, timing_json, last_validated_at,
-          protected, created_at, updated_at
+        SELECT id, identity_key, title_id, title_name, media_kind, season, episode,
+          provider_episode_provider_id, provider_episode_value, profile_key, origin_job_id,
+          file_path, state, byte_size, duration_ms, timing_json, last_validated_at, protected,
+          created_at, updated_at
         FROM ranked
         WHERE row_number = 1
         ORDER BY title_id ASC`,
@@ -353,15 +372,22 @@ export class OfflineAssetsRepository {
 }
 
 export function createOfflineAssetIdentityKey(
-  input: Pick<OfflineAssetInput, "titleId" | "mediaKind" | "season" | "episode" | "profileKey">,
+  input: Pick<
+    OfflineAssetInput,
+    "titleId" | "mediaKind" | "season" | "episode" | "providerEpisodeIdentity" | "profileKey"
+  >,
 ): string {
-  return [
+  const parts = [
     input.titleId,
     input.mediaKind,
     input.season ?? "movie",
     input.episode ?? "movie",
     input.profileKey,
-  ].join(":");
+  ];
+  if (input.providerEpisodeIdentity) {
+    parts.push(encodeProviderEpisodeIdentity(input.providerEpisodeIdentity));
+  }
+  return parts.join(":");
 }
 
 function mapAssetRow(row: OfflineAssetRow): OfflineAssetRecord {
@@ -373,6 +399,13 @@ function mapAssetRow(row: OfflineAssetRow): OfflineAssetRecord {
     mediaKind: row.media_kind,
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
+    providerEpisodeIdentity:
+      row.provider_episode_provider_id !== null && row.provider_episode_value !== null
+        ? {
+            providerId: row.provider_episode_provider_id,
+            value: row.provider_episode_value,
+          }
+        : undefined,
     profileKey: row.profile_key,
     originJobId: row.origin_job_id ?? undefined,
     filePath: row.file_path,

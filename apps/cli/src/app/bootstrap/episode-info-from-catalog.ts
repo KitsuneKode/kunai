@@ -15,6 +15,7 @@ export function episodeInfoFromSelection(args: {
     return {
       season,
       episode,
+      providerEpisodeIdentity: match?.providerEpisodeIdentity,
       name: match?.name ?? match?.label,
       airDate: match?.airDate ?? match?.release?.airDate,
       overview: match?.overview ?? match?.detail,
@@ -44,6 +45,7 @@ export function episodeInfoFromAnimePickerOption(
   return {
     season,
     episode: option.index,
+    providerEpisodeIdentity: option.providerEpisodeIdentity,
     name: option.name ?? option.label,
     ...(option.previewImageUrl ? { artwork: { thumbnailUrl: option.previewImageUrl } } : {}),
   };

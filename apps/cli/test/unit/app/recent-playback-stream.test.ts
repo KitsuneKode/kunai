@@ -27,6 +27,7 @@ describe("recent playback stream", () => {
     };
     const recent: RecentPlaybackStreamRecord = {
       stream,
+      episode: { season: 1, episode: 2 },
       selectedProviderId: "vidking",
       resolvedProviderId: "vidking",
       provenance: "local",
@@ -45,33 +46,61 @@ describe("recent playback stream", () => {
     expect(recentPlaybackStreamKey("tmdb:1396", { season: 2, episode: 7 })).toBe("tmdb:1396:2:7");
   });
 
+  test("does not reuse a recent stream for a different provider-native episode at the same UI index", () => {
+    const nativeZero = {
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    };
+    const nativeOne = {
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+    };
+    const recent = {
+      stream,
+      episode: nativeZero,
+      selectedProviderId: "allanime",
+      resolvedProviderId: "allanime",
+      provenance: "fresh" as const,
+    };
+
+    expect(recentPlaybackStreamKey("anilist:1", nativeZero)).not.toBe(
+      recentPlaybackStreamKey("anilist:1", nativeOne),
+    );
+    expect(recentPlaybackStreamMatchesProvider(recent, "allanime", nativeOne)).toBe(false);
+  });
+
   test("matches a normal stream only for the selected and resolved provider", () => {
     const recent: RecentPlaybackStreamRecord = {
       stream,
+      episode: { season: 1, episode: 2 },
       selectedProviderId: "vidking",
       resolvedProviderId: "vidking",
       provenance: "fresh",
     };
 
-    expect(recentPlaybackStreamMatchesProvider(recent, "vidking")).toBe(true);
-    expect(recentPlaybackStreamMatchesProvider(recent, "rivestream")).toBe(false);
+    expect(recentPlaybackStreamMatchesProvider(recent, "vidking", recent.episode)).toBe(true);
+    expect(recentPlaybackStreamMatchesProvider(recent, "rivestream", recent.episode)).toBe(false);
   });
 
   test("matches fallback streams by the effective resolved provider", () => {
     const recent: RecentPlaybackStreamRecord = {
       stream,
+      episode: { season: 1, episode: 2 },
       selectedProviderId: "vidking",
       resolvedProviderId: "rivestream",
       provenance: "fallback",
     };
 
-    expect(recentPlaybackStreamMatchesProvider(recent, "rivestream")).toBe(true);
-    expect(recentPlaybackStreamMatchesProvider(recent, "vidking")).toBe(false);
+    expect(recentPlaybackStreamMatchesProvider(recent, "rivestream", recent.episode)).toBe(true);
+    expect(recentPlaybackStreamMatchesProvider(recent, "vidking", recent.episode)).toBe(false);
   });
 
   test("isRecentPlaybackStreamFresh exempts local provenance regardless of age", () => {
     const recent: RecentPlaybackStreamRecord = {
       stream: { ...stream, timestamp: 0 },
+      episode: { season: 1, episode: 2 },
       selectedProviderId: "vidking",
       resolvedProviderId: "vidking",
       provenance: "local",
@@ -95,6 +124,7 @@ describe("recent playback stream", () => {
     const now = 1_700_000_000_000;
     const fresh: RecentPlaybackStreamRecord = {
       stream: { ...stream, timestamp: now - 1_000 },
+      episode: { season: 1, episode: 2 },
       selectedProviderId: "vidking",
       resolvedProviderId: "vidking",
       provenance: "prefetch",

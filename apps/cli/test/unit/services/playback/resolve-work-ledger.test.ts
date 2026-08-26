@@ -41,6 +41,53 @@ describe("ResolveWorkLedger", () => {
     );
   });
 
+  test("separates provider-native episode identity in work identity", () => {
+    expect(
+      buildResolveWorkKey({
+        ...identity,
+        episode: {
+          ...identity.episode,
+          providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+        },
+      }),
+    ).not.toBe(
+      buildResolveWorkKey({
+        ...identity,
+        episode: {
+          ...identity.episode,
+          providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+        },
+      }),
+    );
+  });
+
+  test("separates provider-native episode identity in the redacted media identity hash", () => {
+    const nativeZero = createResolveWorkLedger({
+      identity: {
+        ...identity,
+        episode: {
+          ...identity.episode,
+          providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+        },
+      },
+      intent: "playback",
+      budgetLane: "user-blocking",
+    });
+    const nativeOne = createResolveWorkLedger({
+      identity: {
+        ...identity,
+        episode: {
+          ...identity.episode,
+          providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+        },
+      },
+      intent: "playback",
+      budgetLane: "user-blocking",
+    });
+
+    expect(nativeZero.state.mediaIdentityHash).not.toBe(nativeOne.state.mediaIdentityHash);
+  });
+
   test("records joined lane and intent separately from work identity", () => {
     const ledger = createResolveWorkLedger({
       identity,

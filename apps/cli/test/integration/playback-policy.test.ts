@@ -88,9 +88,17 @@ describe("resolveEpisodeAvailability", () => {
       isAnime: true,
       animeEpisodeCount: 12,
       animeEpisodes: [
-        { index: 1, label: "Episode 1" },
+        {
+          index: 1,
+          label: "Episode 0",
+          providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+        },
         { index: 11, label: "Episode 11" },
-        { index: 12, label: "Episode 12" },
+        {
+          index: 12,
+          label: "Episode 11",
+          providerEpisodeIdentity: { providerId: "allanime", value: "11" },
+        },
       ],
       loaders: {
         async loadSeasons() {
@@ -105,12 +113,14 @@ describe("resolveEpisodeAvailability", () => {
     expect(availability.nextEpisode).toEqual({
       season: 1,
       episode: 12,
-      name: "Episode 12",
+      providerEpisodeIdentity: { providerId: "allanime", value: "11" },
+      name: "Episode 11",
     });
     expect(availability.previousEpisode).toEqual({
       season: 1,
       episode: 1,
-      name: "Episode 1",
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      name: "Episode 0",
     });
     expect(availability.nextSeasonEpisode).toBeNull();
     expect(availability.upcomingNext).toBeNull();

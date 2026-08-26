@@ -4,6 +4,7 @@ import {
 } from "@/domain/playback/in-memory-stream-replay-policy";
 import type { EpisodeInfo, StreamInfo } from "@/domain/types";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import { encodeProviderEpisodeIdentity, providerEpisodeIdentitiesEqual } from "@kunai/types";
 
 export { MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS, isStreamTimestampFresh };
 
@@ -11,6 +12,7 @@ export type RecentPlaybackStreamProvenance = "fresh" | "cache" | "prefetch" | "f
 
 type RecentPlaybackStreamBase = {
   readonly stream: StreamInfo;
+  readonly episode: EpisodeInfo;
   readonly selectedProviderId: string;
   readonly resolvedProviderId: string;
 };
@@ -40,14 +42,28 @@ export function restoreRecentPlaybackStream(recent: RecentPlaybackStreamRecord):
 }
 
 export function recentPlaybackStreamKey(titleId: string, episode: EpisodeInfo): string {
-  return `${titleId}:${episode.season}:${episode.episode}`;
+  const providerIdentity = episode.providerEpisodeIdentity
+    ? `:${encodeProviderEpisodeIdentity(episode.providerEpisodeIdentity)}`
+    : "";
+  return `${titleId}:${episode.season}:${episode.episode}${providerIdentity}`;
 }
 
 export function recentPlaybackStreamMatchesProvider(
   recent: RecentPlaybackStreamRecord | undefined,
   effectiveProviderId: string,
+  requestedEpisode: EpisodeInfo,
 ): recent is RecentPlaybackStreamRecord {
   if (!recent) return false;
+  if (
+    recent.episode.season !== requestedEpisode.season ||
+    recent.episode.episode !== requestedEpisode.episode ||
+    !providerEpisodeIdentitiesEqual(
+      recent.episode.providerEpisodeIdentity,
+      requestedEpisode.providerEpisodeIdentity,
+    )
+  ) {
+    return false;
+  }
   if (recent.resolvedProviderId !== effectiveProviderId) return false;
   return recent.selectedProviderId === effectiveProviderId || recent.provenance === "fallback";
 }

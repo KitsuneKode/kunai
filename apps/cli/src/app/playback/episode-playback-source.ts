@@ -41,7 +41,7 @@ export async function resolveLocalEpisodePlayback(
     container.offlineTitleIdentity.resolveForTitle(title, mode),
     episode.season,
     episode.episode,
-    { mediaKind },
+    { mediaKind, providerEpisodeIdentity: episode.providerEpisodeIdentity },
   );
   if (!jobId) return null;
 

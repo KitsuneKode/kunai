@@ -6,6 +6,7 @@ import { resolveEffectiveStreamSelection } from "@/domain/playback/playback-sele
 import type { EpisodeInfo } from "@/domain/types";
 import type { EpisodePlaybackSelectionService } from "@/services/playback/EpisodePlaybackSelectionService";
 import type { TitlePlaybackSourceService } from "@/services/playback/TitlePlaybackSourceService";
+import { encodeProviderEpisodeIdentity } from "@kunai/types";
 
 export class PlaybackSelectionCoordinator {
   private readonly episodeByKey = new Map<string, StreamSelectionIntent>();
@@ -20,7 +21,10 @@ export class PlaybackSelectionCoordinator {
   ) {}
 
   episodeKey(providerId: string, episode: EpisodeInfo): string {
-    return `${providerId}:${this.deps.titleId}:${episode.season}:${episode.episode}`;
+    const providerEpisode = episode.providerEpisodeIdentity
+      ? `:${encodeProviderEpisodeIdentity(episode.providerEpisodeIdentity)}`
+      : "";
+    return `${providerId}:${this.deps.titleId}:${episode.season}:${episode.episode}${providerEpisode}`;
   }
 
   titleSourceKey(providerId: string): string {
@@ -37,6 +41,7 @@ export class PlaybackSelectionCoordinator {
         titleId: this.deps.titleId,
         season: episode.season,
         episode: episode.episode,
+        providerEpisodeIdentity: episode.providerEpisodeIdentity,
       })
       .catch(() => null);
 
@@ -97,6 +102,7 @@ export class PlaybackSelectionCoordinator {
         titleId: this.deps.titleId,
         season: episode.season,
         episode: episode.episode,
+        providerEpisodeIdentity: episode.providerEpisodeIdentity,
         sourceId: selection.sourceId,
         streamId: selection.streamId,
       })

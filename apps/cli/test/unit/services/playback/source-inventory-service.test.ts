@@ -105,6 +105,54 @@ describe("SourceInventoryService", () => {
     );
   });
 
+  test("separates provider-native episode identity in source inventory keys", () => {
+    const base = {
+      providerId: "allanime",
+      mediaKind: "anime" as const,
+      titleId: "native-show",
+      season: 1,
+      episode: 1,
+      audioMode: "original",
+      subtitleLanguage: "en",
+    };
+
+    expect(
+      buildSourceInventoryCacheKey({
+        ...base,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      }),
+    ).not.toBe(
+      buildSourceInventoryCacheKey({
+        ...base,
+        providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+      }),
+    );
+
+    expect(
+      buildSourceInventoryCacheKey({
+        ...base,
+        providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+      }),
+    ).not.toBe(
+      buildSourceInventoryCacheKey({
+        ...base,
+        providerEpisodeIdentity: { providerId: "allanime", value: "ova" },
+      }),
+    );
+
+    expect(
+      buildSourceInventoryCacheKey({
+        ...base,
+        providerEpisodeIdentity: { providerId: "allanime", value: " SP1 " },
+      }),
+    ).not.toBe(
+      buildSourceInventoryCacheKey({
+        ...base,
+        providerEpisodeIdentity: { providerId: "allanime", value: "SP1" },
+      }),
+    );
+  });
+
   test("keeps display-only metadata out of source inventory identity", () => {
     const base = {
       providerId: "vidking",

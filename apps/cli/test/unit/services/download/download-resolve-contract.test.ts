@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { DownloadService } from "@/services/download/DownloadService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
+import type { ProviderEpisodeIdentity } from "@kunai/types";
 
 const encoder = new TextEncoder();
 
@@ -20,7 +21,11 @@ function streamOf(text: string): ReadableStream<Uint8Array> {
 
 type ResolveInput = {
   readonly title: { readonly type: string; readonly name: string };
-  readonly episode?: { readonly season: number; readonly episode: number };
+  readonly episode?: {
+    readonly season: number;
+    readonly episode: number;
+    readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
+  };
   readonly mode?: string;
 };
 
@@ -139,6 +144,33 @@ describe("download resolve preserves stored identity", () => {
     expect(after?.mediaKind).toBe("video");
     expect(after?.season).toBeUndefined();
     expect(after?.episode).toBeUndefined();
+  });
+
+  test("an enqueued anime job re-resolves with its persisted provider-native episode identity", async () => {
+    const seen: ResolveInput[] = [];
+    const service = buildService(seen);
+
+    const job = await service.enqueue({
+      title: { id: "anilist:1", type: "series", name: "Native Anime", isAnime: true },
+      episode: {
+        season: 1,
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      },
+      providerId: "allanime",
+      mode: "anime",
+    });
+
+    await service.processQueue();
+
+    expect(seen[0]?.episode).toEqual({
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    });
+    expect(repo.get(job.id)).toMatchObject({
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    });
   });
 
   /**

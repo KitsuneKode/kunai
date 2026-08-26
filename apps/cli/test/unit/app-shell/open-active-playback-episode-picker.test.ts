@@ -4,9 +4,10 @@ import {
   type ActivePlaybackEpisodePickerDeps,
   openActivePlaybackEpisodePicker,
 } from "@/app-shell/ink-shell";
+import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import type { Container } from "@/container";
 import { SessionStateManagerImpl } from "@/domain/session/SessionStateManager";
-import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
 
 // Injected rather than mock.module'd: swapping the picker builder process-wide
 // leaked this stub's hardcoded "1 eps" subtitle into playback-episode-picker's
@@ -47,14 +48,17 @@ function createStateManager(): SessionStateManagerImpl {
   });
 }
 
-function createContainer(stateManager: SessionStateManagerImpl): Container {
+function createContainer(
+  stateManager: SessionStateManagerImpl,
+  selectCurrentPlaybackEpisode: (episode: EpisodeInfo) => Promise<void> = async () => {},
+): Container {
   return {
     stateManager,
     historyRepository: {
       listByTitle: () => [],
     },
     playerControl: {
-      selectCurrentPlaybackEpisode: mock(async () => {}),
+      selectCurrentPlaybackEpisode,
     },
   } as unknown as Container;
 }
@@ -96,5 +100,51 @@ describe("openActivePlaybackEpisodePicker", () => {
         animeEpisodes: undefined,
       }),
     );
+  });
+
+  test("selecting an active anime row sends its exact provider episode identity to playback", async () => {
+    const selectedEpisodes: EpisodeInfo[] = [];
+    const stateManager = createStateManager();
+    stateManager.dispatch({ type: "SET_MODE", mode: "anime", provider: "allanime" });
+    stateManager.dispatch({ type: "SELECT_TITLE", title: seriesTitle });
+    stateManager.dispatch({
+      type: "SELECT_EPISODE",
+      episode: {
+        season: 1,
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+      },
+    });
+    stateManager.dispatch({
+      type: "SET_CURRENT_ANIME_EPISODES",
+      episodes: [
+        {
+          index: 1,
+          label: "Episode 0",
+          providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+        },
+        {
+          index: 2,
+          label: "Episode 1",
+          providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+        },
+      ],
+    });
+    const container = createContainer(stateManager, async (episode) => {
+      selectedEpisodes.push(episode);
+    });
+
+    await openActivePlaybackEpisodePicker(container, "test-native-episode-picker", {
+      buildOptions: buildPlaybackEpisodePickerOptions,
+      openPicker: async (_manager, picker) => picker.options[0]?.value ?? null,
+    });
+
+    expect(selectedEpisodes).toEqual([
+      {
+        season: 1,
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      },
+    ]);
   });
 });

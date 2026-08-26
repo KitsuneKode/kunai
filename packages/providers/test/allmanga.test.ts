@@ -655,6 +655,11 @@ describe("resolveAnimeEpisodeString", () => {
     expect(resolveAnimeEpisodeString(["SP2", "SP1", "OVA"], 2)).toBe("SP1");
     expect(resolveAnimeEpisodeString(["SP2", "SP1", "OVA"], 3)).toBe("SP2");
   });
+
+  test("absolute-only numeric fallback remains available without a catalog selection", () => {
+    expect(resolveAnimeEpisodeString(["0", "1", "2"], 2)).toBe("2");
+    expect(resolveAnimeEpisodeString(["0", "1", "2"], 12)).toBe("12");
+  });
 });
 
 describe("extractRawSources", () => {
@@ -851,6 +856,130 @@ describe("AllManga provider evidence fixtures", () => {
     expect(JSON.stringify(preparationEvent)).not.toMatch(
       /partB|aaReq|x-aa-boot|token|https?:\/\//i,
     );
+  });
+
+  test("episode catalog preserves sorted provider-native identity for zero, duplicates, and specials", async () => {
+    using fetchMock = await mockAllMangaFetch({
+      catalogEpisodes: ["2", "0", "1", "1"],
+    });
+
+    const numericEpisodes = await allmangaProviderModule.listEpisodes?.(
+      {
+        title: {
+          id: "allanime:show-allmanga-evidence",
+          kind: "anime",
+          title: "Evidence Fox",
+        },
+        preferredAudioLanguage: "ja",
+      },
+      { now: nowFixture, signal: new AbortController().signal },
+    );
+
+    expect(
+      numericEpisodes?.map(({ index, detail, providerEpisodeIdentity }) => ({
+        index,
+        detail,
+        providerEpisodeIdentity,
+      })),
+    ).toEqual([
+      { index: 1, detail: "0", providerEpisodeIdentity: { providerId: "allanime", value: "0" } },
+      { index: 2, detail: "1", providerEpisodeIdentity: { providerId: "allanime", value: "1" } },
+      { index: 3, detail: "1", providerEpisodeIdentity: { providerId: "allanime", value: "1" } },
+      { index: 4, detail: "2", providerEpisodeIdentity: { providerId: "allanime", value: "2" } },
+    ]);
+
+    fetchMock.setCatalogEpisodes(["SP2", "SP1", "OVA"]);
+    clearAllMangaProviderCachesForTest();
+    const specialEpisodes = await allmangaProviderModule.listEpisodes?.(
+      {
+        title: {
+          id: "allanime:show-allmanga-evidence",
+          kind: "anime",
+          title: "Evidence Fox",
+        },
+        preferredAudioLanguage: "ja",
+      },
+      { now: nowFixture, signal: new AbortController().signal },
+    );
+
+    expect(
+      specialEpisodes?.map(({ index, label, providerEpisodeIdentity }) => ({
+        index,
+        label,
+        providerEpisodeIdentity,
+      })),
+    ).toEqual([
+      {
+        index: 1,
+        label: "Episode OVA",
+        providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+      },
+      {
+        index: 2,
+        label: "Episode SP1",
+        providerEpisodeIdentity: { providerId: "allanime", value: "SP1" },
+      },
+      {
+        index: 3,
+        label: "Episode SP2",
+        providerEpisodeIdentity: { providerId: "allanime", value: "SP2" },
+      },
+    ]);
+  });
+
+  test("selected zero-based catalog rows resolve their exact provider strings", async () => {
+    using fetchMock = await mockAllMangaFetch({ catalogEpisodes: ["2", "0", "1"] });
+
+    for (const [episode, value] of [
+      [1, "0"],
+      [2, "1"],
+      [3, "2"],
+    ] as const) {
+      const result = await resolveEvidenceEpisode({
+        episode: {
+          episode,
+          providerEpisodeIdentity: { providerId: "allanime", value },
+        },
+      });
+      expect(result.status).toBe("resolved");
+    }
+
+    clearAllMangaProviderCachesForTest();
+    setAllMangaCryptoMaterialForTest(BUNDLED_ALLMANGA_CRYPTO);
+    const absoluteOnlyResult = await resolveEvidenceEpisode({
+      episode: { absoluteEpisode: 2 },
+    });
+    expect(absoluteOnlyResult.status).toBe("resolved");
+    expect(fetchMock.requestedEpisodeStrings).toEqual(["0", "1", "2", "2"]);
+  });
+
+  test("fails closed when an explicit AllManga episode identity disappeared from the active catalog", async () => {
+    using fetchMock = await mockAllMangaFetch({ catalogEpisodes: ["1", "2"] });
+
+    const result = await resolveEvidenceEpisode({
+      episode: {
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      },
+    });
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "not-found", retryable: false });
+    expect(fetchMock.requestedEpisodeStrings).toEqual([]);
+  });
+
+  test("ignores a foreign provider identity and retains the numeric fallback", async () => {
+    using fetchMock = await mockAllMangaFetch({ catalogEpisodes: ["1", "2"] });
+
+    const result = await resolveEvidenceEpisode({
+      episode: {
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "miruro", value: "0" },
+      },
+    });
+
+    expect(result.status).toBe("resolved");
+    expect(fetchMock.requestedEpisodeStrings).toEqual(["1"]);
   });
 
   test("search result preserves provider-native ids artwork and language evidence", async () => {
@@ -1545,6 +1674,7 @@ async function mockAllMangaFetch(
     readonly slowBaselineDelayMs?: number;
     readonly liveCrypto?: boolean;
     readonly catalogGate?: Promise<void>;
+    readonly catalogEpisodes?: readonly string[];
   } = {},
 ): Promise<
   Disposable & {
@@ -1552,6 +1682,8 @@ async function mockAllMangaFetch(
     readonly startedRequests: readonly string[];
     readonly abortedAkRequests: number;
     readonly abortedBaselineRequests: number;
+    readonly requestedEpisodeStrings: readonly string[];
+    setCatalogEpisodes(episodes: readonly string[]): void;
   }
 > {
   clearAllMangaProviderCachesForTest();
@@ -1561,8 +1693,10 @@ async function mockAllMangaFetch(
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
   const startedRequests: string[] = [];
+  const requestedEpisodeStrings: string[] = [];
   let abortedAkRequests = 0;
   let abortedBaselineRequests = 0;
+  let catalogEpisodes = options.catalogEpisodes;
   const subFixture =
     options.subSourceFixture === "mixed-unselectable-baseline-ak" ||
     options.subSourceFixture === "baseline-ak" ||
@@ -1612,7 +1746,14 @@ async function mockAllMangaFetch(
       : await readFixture<unknown>(`${options.subSourceFixture ?? "sub-source-response"}.json`);
   const fixtures = {
     search: await readFixture<unknown>("search-response.json"),
-    catalog: await readFixture<unknown>("catalog-response.json"),
+    catalog: await readFixture<{
+      data: {
+        show: {
+          availableEpisodesDetail: { sub: string[]; dub: string[] };
+          availableEpisodes: { sub: number; dub: number };
+        };
+      };
+    }>("catalog-response.json"),
     sub: subFixture,
     dub: await readFixture<unknown>("dub-source-response.json"),
     ak: await readFixture<unknown>("ak-source-response.json"),
@@ -1687,9 +1828,16 @@ async function mockAllMangaFetch(
     const bodyText = typeof init?.body === "string" ? init.body : "";
     if (url.includes("variables=")) {
       const variablesMatch = /variables=([^&]+)/.exec(url);
+      // SAFETY: the mocked URL is produced by AllManga's typed GraphQL request builder.
       const variables = variablesMatch?.[1]
-        ? (JSON.parse(decodeURIComponent(variablesMatch[1])) as { translationType?: string })
+        ? (JSON.parse(decodeURIComponent(variablesMatch[1])) as {
+            episodeString?: string;
+            translationType?: string;
+          })
         : {};
+      if (variables.episodeString !== undefined) {
+        requestedEpisodeStrings.push(variables.episodeString);
+      }
       return jsonResponse(variables.translationType === "dub" ? fixtures.dub : fixtures.sub);
     }
     if (bodyText.includes("shows(search:")) {
@@ -1698,6 +1846,10 @@ async function mockAllMangaFetch(
     if (bodyText.includes("show(_id:$id)")) {
       startedRequests.push("catalog");
       await options.catalogGate;
+      if (catalogEpisodes) {
+        fixtures.catalog.data.show.availableEpisodesDetail.sub = [...catalogEpisodes];
+        fixtures.catalog.data.show.availableEpisodes.sub = catalogEpisodes.length;
+      }
       return jsonResponse(fixtures.catalog);
     }
     if (bodyText.includes("episode(showId:$showId")) {
@@ -1715,6 +1867,12 @@ async function mockAllMangaFetch(
     },
     get abortedBaselineRequests() {
       return abortedBaselineRequests;
+    },
+    get requestedEpisodeStrings() {
+      return requestedEpisodeStrings;
+    },
+    setCatalogEpisodes(episodes) {
+      catalogEpisodes = episodes;
     },
     [Symbol.dispose]() {
       globalThis.fetch = originalFetch;

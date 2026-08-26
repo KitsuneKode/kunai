@@ -4,7 +4,9 @@ import {
   buildSourceInventoryCacheInput,
   invalidateEpisodePlaybackCaches,
 } from "@/app/playback/playback-source-cache-invalidation";
+import type { CacheStore } from "@/services/persistence/CacheStore";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type { ProviderEpisodeIdentity } from "@kunai/types";
 
 const config = {
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
@@ -12,6 +14,17 @@ const config = {
   movieLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
   startupPriority: "balanced",
 } as KitsuneConfig;
+
+function cacheStoreWithDelete(deleteEntry: CacheStore["delete"]): CacheStore {
+  return {
+    ttl: 60_000,
+    get: async () => null,
+    set: async () => {},
+    delete: deleteEntry,
+    clear: async () => {},
+    prune: async () => {},
+  };
+}
 
 describe("playback-source-cache-invalidation", () => {
   test("buildSourceInventoryCacheInput maps series mode from title type", () => {
@@ -34,16 +47,32 @@ describe("playback-source-cache-invalidation", () => {
     );
   });
 
+  test("buildSourceInventoryCacheInput retains the exact provider-native episode identity", () => {
+    const inventoryInput = buildSourceInventoryCacheInput(
+      "allanime",
+      { id: "anilist:1", type: "series", name: "Native Anime" },
+      {
+        season: 1,
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      },
+      "anime",
+      config,
+    );
+
+    expect(inventoryInput).toMatchObject({
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    });
+  });
+
   test("invalidateEpisodePlaybackCaches clears resolve cache and source inventory", async () => {
     const deletedCacheKeys: string[] = [];
     const deletedInventory: string[] = [];
 
     await invalidateEpisodePlaybackCaches({
-      cacheStore: {
-        delete: async (key: string) => {
-          deletedCacheKeys.push(key);
-        },
-      } as never,
+      cacheStore: cacheStoreWithDelete(async (key) => {
+        deletedCacheKeys.push(key);
+      }),
       sourceInventory: {
         delete: async (input) => {
           deletedInventory.push(`${input.providerId}:${input.titleId}:${input.episode}`);
@@ -60,15 +89,37 @@ describe("playback-source-cache-invalidation", () => {
     expect(deletedInventory).toEqual(["vidking:1396:5"]);
   });
 
+  test("invalidateEpisodePlaybackCaches deletes the exact provider-native inventory row", async () => {
+    const deletedInventoryIdentities: Array<ProviderEpisodeIdentity | undefined> = [];
+
+    await invalidateEpisodePlaybackCaches({
+      cacheStore: cacheStoreWithDelete(async () => {}),
+      sourceInventory: {
+        delete: async (input) => {
+          deletedInventoryIdentities.push(input.providerEpisodeIdentity);
+        },
+      },
+      providerId: "allanime",
+      title: { id: "anilist:1", type: "series", name: "Native Anime" },
+      episode: {
+        season: 1,
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      },
+      mode: "anime",
+      config,
+    });
+
+    expect(deletedInventoryIdentities).toEqual([{ providerId: "allanime", value: "0" }]);
+  });
+
   test("invalidateEpisodePlaybackCaches clears base and selected source cache keys", async () => {
     const deletedCacheKeys: string[] = [];
 
     await invalidateEpisodePlaybackCaches({
-      cacheStore: {
-        delete: async (key: string) => {
-          deletedCacheKeys.push(key);
-        },
-      } as never,
+      cacheStore: cacheStoreWithDelete(async (key) => {
+        deletedCacheKeys.push(key);
+      }),
       sourceInventory: { delete: async () => {} },
       providerId: "vidking",
       title: { id: "1396", type: "series", name: "Breaking Bad" },

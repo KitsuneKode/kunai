@@ -1,5 +1,9 @@
 import type { EpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
-import type { StartupPriority } from "@kunai/types";
+import {
+  encodeProviderEpisodeIdentity,
+  providerEpisodeIdentitiesEqual,
+  type StartupPriority,
+} from "@kunai/types";
 
 /** Maximum extended handoff wait after concrete readiness progress. */
 export const EPISODE_PREFETCH_WAIT_BUDGET_MS = 8_000;
@@ -47,7 +51,10 @@ export type EpisodePrefetchProgress = {
 };
 
 export function episodePrefetchKey(titleId: string, episode: EpisodeInfo): string {
-  return `${titleId}:${episode.season}:${episode.episode}`;
+  const providerIdentity = episode.providerEpisodeIdentity
+    ? `:${encodeProviderEpisodeIdentity(episode.providerEpisodeIdentity)}`
+    : "";
+  return `${titleId}:${episode.season}:${episode.episode}${providerIdentity}`;
 }
 
 export function matchesEpisodePrefetchTarget(
@@ -58,6 +65,10 @@ export function matchesEpisodePrefetchTarget(
     target.titleId !== requested.titleId ||
     target.episode.season !== requested.episode.season ||
     target.episode.episode !== requested.episode.episode ||
+    !providerEpisodeIdentitiesEqual(
+      target.episode.providerEpisodeIdentity,
+      requested.episode.providerEpisodeIdentity,
+    ) ||
     target.providerId !== requested.providerId ||
     target.sourceId !== requested.sourceId ||
     target.streamId !== requested.streamId ||

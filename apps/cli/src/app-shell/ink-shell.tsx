@@ -22,9 +22,11 @@ import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
+import type { EpisodeInfo } from "@/domain/types";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { decodeProviderEpisodeIdentity, providerEpisodeIdentitiesEqual } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -248,6 +250,7 @@ async function openPlaybackStreamSelectionPicker(
           titleId: title.id,
           season: episode.season,
           episode: episode.episode,
+          providerEpisodeIdentity: episode.providerEpisodeIdentity,
           sourceId: resolved.sourceId,
           streamId: null,
         })
@@ -363,7 +366,11 @@ export async function openActivePlaybackEpisodePicker(
     if (!selection) return;
     if (
       selection.season === currentEpisode.season &&
-      selection.episode === currentEpisode.episode
+      selection.episode === currentEpisode.episode &&
+      providerEpisodeIdentitiesEqual(
+        selection.providerEpisodeIdentity,
+        currentEpisode.providerEpisodeIdentity,
+      )
     ) {
       return;
     }
@@ -1305,14 +1312,22 @@ function normalizeReservedCommandInput(nextValue: string): {
   };
 }
 
-function decodeEpisodeSelectionValue(value: string): { season: number; episode: number } | null {
-  const [seasonText, episodeText] = value.split(":");
+function decodeEpisodeSelectionValue(value: string): EpisodeInfo | null {
+  const firstSeparator = value.indexOf(":");
+  const secondSeparator = value.indexOf(":", firstSeparator + 1);
+  const seasonText = firstSeparator >= 0 ? value.slice(0, firstSeparator) : "";
+  const episodeText =
+    firstSeparator >= 0
+      ? value.slice(firstSeparator + 1, secondSeparator >= 0 ? secondSeparator : undefined)
+      : "";
   const season = Number.parseInt(seasonText ?? "", 10);
   const episode = Number.parseInt(episodeText ?? "", 10);
   if (!Number.isFinite(season) || !Number.isFinite(episode)) {
     return null;
   }
-  return { season, episode };
+  if (secondSeparator < 0) return { season, episode };
+  const providerEpisodeIdentity = decodeProviderEpisodeIdentity(value.slice(secondSeparator + 1));
+  return providerEpisodeIdentity ? { season, episode, providerEpisodeIdentity } : null;
 }
 
 function ListShell<T>({

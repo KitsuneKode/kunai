@@ -37,6 +37,11 @@
       "outputs": []
     },
     "generate": {
+      // apps/docs only. Writes generated-provenance.json, which is gitignored
+      // (uncommitted) and refreshed every run, so it is not a declared output.
+      // Caching this task replays its logs without recreating that file, leaving
+      // @kunai/docs#test unable to import it in a clean checkout. Must always run.
+      "cache": false,
       "outputs": []
     },
     "typecheck:app": {

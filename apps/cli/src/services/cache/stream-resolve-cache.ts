@@ -7,7 +7,7 @@
 
 import type { TitleInfo, EpisodeInfo, ShellMode } from "@/domain/types";
 import type { CoreProviderManifest } from "@kunai/core";
-import type { StartupPriority } from "@kunai/types";
+import { encodeProviderEpisodeIdentity, type StartupPriority } from "@kunai/types";
 
 /** Preimage for API-style resolves (hashed by CacheStore implementation). */
 export function buildApiStreamResolveCacheKey(input: {
@@ -91,7 +91,12 @@ function resolveToken(
     case "season":
       return normalizePart(input.episode.season);
     case "episode":
-      return normalizePart(input.episode.episode);
+      return input.episode.providerEpisodeIdentity
+        ? [
+            normalizePart(input.episode.episode),
+            encodeProviderEpisodeIdentity(input.episode.providerEpisodeIdentity),
+          ].join("-")
+        : normalizePart(input.episode.episode);
     case "audio":
       return normalizePart(input.audioPreference);
     case "subtitle":

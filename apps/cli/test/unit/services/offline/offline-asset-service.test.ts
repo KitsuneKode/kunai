@@ -39,7 +39,7 @@ function completedJob(patch: Partial<DownloadJobRecord> = {}): DownloadJobRecord
   };
 }
 
-test("OfflineAssetService adopts completed jobs without copying provider secrets", () => {
+test("OfflineAssetService adopts completed jobs with exact episode identity but no provider secrets", () => {
   let stored: OfflineAssetRecord | undefined;
   const service = new OfflineAssetService(
     {
@@ -58,9 +58,14 @@ test("OfflineAssetService adopts completed jobs without copying provider secrets
     passthroughIdentity,
   );
 
-  const adopted = service.adoptCompletedJob(completedJob());
+  const adopted = service.adoptCompletedJob(
+    completedJob({
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    }),
+  );
 
   expect(adopted?.filePath).toBe("/tmp/demo-e5.mp4");
+  expect(adopted?.providerEpisodeIdentity).toEqual({ providerId: "allanime", value: "0" });
   expect(JSON.stringify(adopted)).not.toContain("streamUrl");
   expect(JSON.stringify(adopted)).not.toContain("Referer");
   expect(service.peekStatusesByTitleIds(["anilist:1"])).toEqual([

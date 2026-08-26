@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { updateDownloadConfirmationProfile } from "@/app-shell/download-confirmation-profile";
 import { DownloadOnlyPhase } from "@/app/playback/DownloadOnlyPhase";
 import type { PhaseContext } from "@/app/session/Phase";
+import type { EnqueueDownloadInput } from "@/services/download/DownloadService";
 
 test("DownloadOnlyPhase does not discover provider episodes when downloads are disabled", async () => {
   let providerReads = 0;
@@ -417,7 +418,7 @@ test("DownloadOnlyPhase persists profile intent after a partially queued series 
  * episode checklist produced a synthetic season 1 / episode 1 that was then
  * persisted as the job's identity.
  */
-function titleLevelContext(mode: string, enqueued: Record<string, unknown>[]) {
+function titleLevelContext(mode: string, enqueued: EnqueueDownloadInput[]) {
   return {
     signal: new AbortController().signal,
     container: {
@@ -439,7 +440,7 @@ function titleLevelContext(mode: string, enqueued: Record<string, unknown>[]) {
       },
       downloadService: {
         getEnqueueEligibility: () => ({ allowed: true }),
-        enqueue: async (input: Record<string, unknown>) => {
+        enqueue: async (input: EnqueueDownloadInput) => {
           enqueued.push(input);
           return { id: `job-${enqueued.length}` };
         },
@@ -453,7 +454,7 @@ function titleLevelContext(mode: string, enqueued: Record<string, unknown>[]) {
 }
 
 test("DownloadOnlyPhase confirms a movie as one title item and never picks episodes", async () => {
-  const enqueued: Record<string, unknown>[] = [];
+  const enqueued: EnqueueDownloadInput[] = [];
   let confirmedKind: string | undefined;
   let confirmedItems: unknown;
   let pickCalls = 0;
@@ -483,7 +484,7 @@ test("DownloadOnlyPhase confirms a movie as one title item and never picks episo
 });
 
 test("DownloadOnlyPhase keeps an anime film title-level without losing anime identity", async () => {
-  const enqueued: Record<string, unknown>[] = [];
+  const enqueued: EnqueueDownloadInput[] = [];
   let confirmedKind: string | undefined;
   let confirmedItems: unknown;
   let pickCalls = 0;
@@ -520,7 +521,7 @@ test("DownloadOnlyPhase keeps an anime film title-level without losing anime ide
 });
 
 test("DownloadOnlyPhase treats youtube playback as a title-level video", async () => {
-  const enqueued: Record<string, unknown>[] = [];
+  const enqueued: EnqueueDownloadInput[] = [];
   let confirmedKind: string | undefined;
   let confirmedItems: unknown;
   let pickCalls = 0;
@@ -550,7 +551,7 @@ test("DownloadOnlyPhase treats youtube playback as a title-level video", async (
 });
 
 test("DownloadOnlyPhase maps an anime selection to an episode item", async () => {
-  const enqueued: Record<string, unknown>[] = [];
+  const enqueued: EnqueueDownloadInput[] = [];
   let confirmedKind: string | undefined;
   let confirmedItems: unknown;
 
@@ -571,4 +572,51 @@ test("DownloadOnlyPhase maps an anime selection to an episode item", async () =>
   expect(confirmedKind).toBe("anime");
   expect(confirmedItems).toEqual([{ kind: "episode", episode: { season: 1, episode: 3 } }]);
   expect(enqueued[0]).toMatchObject({ episode: { season: 1, episode: 3 }, mode: "anime" });
+});
+
+test("DownloadOnlyPhase feeds the exact provider anime catalog into episode selection", async () => {
+  const enqueued: EnqueueDownloadInput[] = [];
+  let catalogLoads = 0;
+
+  const phase = new DownloadOnlyPhase({
+    loadAnimeEpisodes: async () => {
+      catalogLoads += 1;
+      return [
+        {
+          index: 1,
+          label: "Episode OVA",
+          providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+        },
+      ];
+    },
+    pickEpisodes: async ({ animeEpisodes }) => {
+      const selected = animeEpisodes?.[0];
+      return selected
+        ? [
+            {
+              season: 1,
+              episode: selected.index,
+              name: selected.label,
+              providerEpisodeIdentity: selected.providerEpisodeIdentity,
+            },
+          ]
+        : null;
+    },
+    confirmProfile: async ({ profile }) => profile,
+  });
+
+  await phase.execute(
+    { title: { id: "anilist:1", type: "series", name: "Native Anime" } },
+    titleLevelContext("anime", enqueued),
+  );
+
+  expect(catalogLoads).toBe(1);
+  expect(enqueued[0]).toMatchObject({
+    episode: {
+      season: 1,
+      episode: 1,
+      name: "Episode OVA",
+      providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+    },
+  });
 });

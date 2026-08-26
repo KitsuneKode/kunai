@@ -1,6 +1,7 @@
 import { openChecklistShell, type ListOption } from "@/app-shell/checklist-shell";
 import { chooseSeasonFromOptions } from "@/app-shell/pickers";
 import { buildPickerActionContext } from "@/app-shell/workflows";
+import { episodeInfoFromAnimePickerOption } from "@/app/bootstrap/episode-info-from-catalog";
 import type { Container } from "@/container";
 import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
 import { fetchEpisodes, fetchSeriesData } from "@/tmdb";
@@ -21,7 +22,7 @@ function animeOptionsFromProviderList(
   episodes: readonly EpisodePickerOption[],
 ): ListOption<EpisodeInfo>[] {
   return episodes.map((ep) => ({
-    value: { season: 1, episode: ep.index, name: ep.name ?? ep.label },
+    value: episodeInfoFromAnimePickerOption(ep),
     label: ep.label,
     detail: ep.detail,
   }));

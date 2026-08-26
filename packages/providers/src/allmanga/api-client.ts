@@ -1,6 +1,6 @@
 import { createDecipheriv } from "node:crypto";
 
-import type { ProviderRuntimeContext } from "@kunai/types";
+import type { ProviderEpisodeIdentity, ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
 import {
@@ -27,6 +27,7 @@ import {
   fetchAllMangaCryptoMaterial,
   type AllMangaCryptoMaterial,
 } from "./crypto";
+import { ALLANIME_PROVIDER_ID } from "./manifest";
 
 export {
   ALLMANGA_BUILD_ID,
@@ -68,6 +69,7 @@ export type AllMangaSearchResult = {
 export type AllMangaEpisodeOption = {
   readonly index: number;
   readonly label: string;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly detail?: string;
   readonly totalEpisodeCount?: number;
   readonly externalIds?: {
@@ -968,6 +970,10 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
     .map((episodeString, index) => ({
       index: index + 1,
       label: `Episode ${episodeString}`,
+      providerEpisodeIdentity: {
+        providerId: ALLANIME_PROVIDER_ID,
+        value: episodeString,
+      },
       detail: episodeString,
       totalEpisodeCount: info.episodeCount,
       externalIds: {

@@ -1,9 +1,12 @@
+import { encodeProviderEpisodeIdentity, type ProviderEpisodeIdentity } from "@kunai/types";
+
 export type PlaybackDeadStreamScope = string;
 
 export type PlaybackDeadStreamScopeInput = {
   readonly titleId: string;
   readonly season?: number;
   readonly episode?: number;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly providerId: string;
 };
 
@@ -35,7 +38,13 @@ export function createDeadStreamUrlLedger(): DeadStreamUrlLedger {
 }
 
 export function playbackDeadStreamScopeKey(input: PlaybackDeadStreamScopeInput): string {
-  return [input.titleId, input.season ?? "movie", input.episode ?? "movie", input.providerId].join(
-    ":",
-  );
+  return [
+    input.titleId,
+    input.season ?? "movie",
+    input.episode ?? "movie",
+    input.providerId,
+    input.providerEpisodeIdentity
+      ? encodeProviderEpisodeIdentity(input.providerEpisodeIdentity)
+      : "none",
+  ].join(":");
 }

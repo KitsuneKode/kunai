@@ -9,6 +9,7 @@ import type {
   ProviderArtworkInfo,
   ProviderExternalIds,
   ProviderLanguageEvidence,
+  ProviderEpisodeIdentity,
   ProviderReleaseInfo,
   ProviderResolveResult as SharedProviderResolveResult,
   ResolveTrace as SharedResolveTrace,
@@ -86,6 +87,7 @@ export interface EpisodeInfo {
   readonly episode: number;
   /** Absolute anime episode identity when season/episode mapping is unavailable or secondary. */
   readonly absoluteEpisode?: number;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly name?: string;
   readonly airDate?: string;
   readonly overview?: string;
@@ -97,6 +99,7 @@ export interface EpisodeInfo {
 export interface EpisodePickerOption {
   readonly index: number;
   readonly label: string;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly name?: string;
   readonly detail?: string;
   readonly previewImageUrl?: string;

@@ -376,6 +376,7 @@ export class PlaybackResolveService {
       titleId: input.title.id,
       season: input.episode.season,
       episode: input.episode.episode,
+      providerEpisodeIdentity: input.episode.providerEpisodeIdentity,
       audioMode: input.audioPreference,
       subtitleLanguage: input.subtitlePreference,
       qualityPreference: input.qualityPreference,

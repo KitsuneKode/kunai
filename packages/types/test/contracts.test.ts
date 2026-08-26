@@ -17,7 +17,21 @@ import type {
   ProviderTraceEvent,
   ResolveTrace,
 } from "../src/index";
-import { getProviderResolveStatus, getProviderSourceInventory } from "../src/index";
+import {
+  decodeProviderEpisodeIdentity,
+  encodeProviderEpisodeIdentity,
+  getProviderResolveStatus,
+  getProviderSourceInventory,
+} from "../src/index";
+
+test("provider episode identity encoding is delimiter-safe and exact", () => {
+  const identity = { providerId: "all:anime", value: " OVA:Zero " };
+  const encoded = encodeProviderEpisodeIdentity(identity);
+
+  expect(decodeProviderEpisodeIdentity(encoded)).toEqual(identity);
+  expect(encodeProviderEpisodeIdentity({ ...identity, value: " ova:zero " })).not.toBe(encoded);
+  expect(decodeProviderEpisodeIdentity(`${encoded}:trailing`)).toBeUndefined();
+});
 
 test("provider resolve result requires trace and immutable candidate arrays", () => {
   const trace: ResolveTrace = {

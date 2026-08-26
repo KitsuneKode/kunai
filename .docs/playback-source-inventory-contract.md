@@ -95,6 +95,7 @@ provider result schema version (currently v5)
 media kind
 title id
 season / episode / absolute episode
+exact, case-sensitive provider-native episode identity when selected from a provider catalog
 audio mode or language, such as sub/dub
 subtitle language or none
 quality preference (temporary partition — see below)

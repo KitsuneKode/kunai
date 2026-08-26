@@ -169,10 +169,58 @@ export interface TitleIdentity {
   readonly externalIds?: ProviderExternalIds;
 }
 
+/** Exact provider-owned episode identity selected from a provider episode catalog. */
+export interface ProviderEpisodeIdentity {
+  readonly providerId: ProviderId;
+  readonly value: string;
+}
+
+/** Delimiter-safe, case-sensitive encoding for opaque provider episode identity. */
+export function encodeProviderEpisodeIdentity(identity: ProviderEpisodeIdentity): string {
+  return `${identity.providerId.length}:${identity.providerId}${identity.value.length}:${identity.value}`;
+}
+
+/** Parses an identity emitted by {@link encodeProviderEpisodeIdentity}. */
+export function decodeProviderEpisodeIdentity(
+  encoded: string,
+): ProviderEpisodeIdentity | undefined {
+  const providerLengthSeparator = encoded.indexOf(":");
+  if (providerLengthSeparator <= 0) return undefined;
+  const providerLengthText = encoded.slice(0, providerLengthSeparator);
+  if (!/^(0|[1-9]\d*)$/.test(providerLengthText)) return undefined;
+  const providerLength = Number.parseInt(providerLengthText, 10);
+  const providerStart = providerLengthSeparator + 1;
+  const providerEnd = providerStart + providerLength;
+  if (providerLength <= 0 || providerEnd >= encoded.length) return undefined;
+
+  const valueLengthSeparator = encoded.indexOf(":", providerEnd);
+  if (valueLengthSeparator <= providerEnd) return undefined;
+  const valueLengthText = encoded.slice(providerEnd, valueLengthSeparator);
+  if (!/^(0|[1-9]\d*)$/.test(valueLengthText)) return undefined;
+  const valueLength = Number.parseInt(valueLengthText, 10);
+  const valueStart = valueLengthSeparator + 1;
+  const valueEnd = valueStart + valueLength;
+  if (valueEnd !== encoded.length) return undefined;
+
+  return {
+    providerId: encoded.slice(providerStart, providerEnd),
+    value: encoded.slice(valueStart, valueEnd),
+  };
+}
+
+export function providerEpisodeIdentitiesEqual(
+  left: ProviderEpisodeIdentity | undefined,
+  right: ProviderEpisodeIdentity | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return left.providerId === right.providerId && left.value === right.value;
+}
+
 export interface EpisodeIdentity {
   readonly season?: number;
   readonly episode?: number;
   readonly absoluteEpisode?: number;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly title?: string;
   readonly airDate?: string;
   readonly release?: ProviderReleaseInfo;
@@ -610,6 +658,7 @@ export interface ProviderEpisodeListInput {
 export interface ProviderEpisodeOption {
   readonly index: number;
   readonly label: string;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   /** Canonical episode title when the provider catalog supplies one (separate from display label). */
   readonly name?: string;
   readonly detail?: string;
