@@ -15,7 +15,9 @@ Stop a malformed language tag from crashing playback, and clear the encoded ref 
   rejection as a stream was being resolved. Labels are now derived from
   progressively less specific candidates, so a valid tag keeps its precise name
   (`en-US` stays "American English"), `a.en` resolves to "English", and anything
-  unmappable degrades to the raw value instead of throwing.
+  unmappable degrades to the raw value instead of throwing. YouTube subtitle
+  filtering now also recognizes dotted auto-caption tags and drops its
+  `live_chat` metadata track before it can reach the picker.
 - **The Discord state row no longer carries the encoded `kunai://` ref.** It was
   appended there from when the ref could not be a button. Discord truncates that
   row, so a long ref cut off mid-query and crowded out the progress beside it.

@@ -112,8 +112,12 @@ const MAX_ATTACHED_SUBTITLE_TRACKS = 25;
 
 /** Does a yt-dlp caption language tag answer to the configured language? */
 function matchesPreferredLanguage(language: string, preferred: string): boolean {
-  // yt-dlp tags look like `en`, `en-US`, `en-orig`, `eng`, `zh-Hans`.
-  const base = language.trim().toLowerCase().split(/[-_]/)[0] ?? "";
+  // yt-dlp tags look like `en`, `en-US`, `en-orig`, `eng`, `zh-Hans`, or `a.en`.
+  const normalizedTag = language.trim().toLowerCase();
+  const afterDot = normalizedTag.includes(".")
+    ? normalizedTag.slice(normalizedTag.lastIndexOf(".") + 1)
+    : normalizedTag;
+  const base = afterDot.split(/[-_]/)[0] ?? "";
   if (!base) return false;
   const normalized = normalizeSubtitleLanguage(base) ?? base;
   return normalized === preferred || base === preferred || ISO_639_2_ALIASES[preferred] === base;
@@ -146,9 +150,10 @@ export function boundYoutubeSubtitleTracks<
 
   const kept = tracks.filter(
     (track) =>
-      track.source === "manual" ||
-      isOriginalLanguageTrack(track.language) ||
-      matchesPreferredLanguage(track.language, preferred),
+      track.language.trim().toLowerCase() !== "live_chat" &&
+      (track.source === "manual" ||
+        isOriginalLanguageTrack(track.language) ||
+        matchesPreferredLanguage(track.language, preferred)),
   );
   return kept.slice(0, MAX_ATTACHED_SUBTITLE_TRACKS);
 }
