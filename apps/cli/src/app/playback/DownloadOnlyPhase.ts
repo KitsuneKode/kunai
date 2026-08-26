@@ -2,7 +2,7 @@ import { openDownloadConfirmationShell } from "@/app-shell/download-confirmation
 import { pickEpisodesToDownload } from "@/app/bootstrap/download-episode-checklist";
 import type { Phase, PhaseContext, PhaseResult } from "@/app/session/Phase";
 import { isTitleLevelContent } from "@/domain/media/content-kind";
-import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types";
 import {
   buildDefaultDownloadProfile,
   commitDownloadIntent,
@@ -21,8 +21,14 @@ type DownloadOnlyPhaseDependencies = {
   readonly pickEpisodes?: (args: {
     readonly title: TitleInfo;
     readonly isAnime: boolean;
+    readonly animeEpisodes: readonly EpisodePickerOption[] | undefined;
     readonly container: PhaseContext["container"];
   }) => Promise<readonly EpisodeInfo[] | null>;
+  readonly loadAnimeEpisodes?: (args: {
+    readonly title: TitleInfo;
+    readonly container: PhaseContext["container"];
+    readonly signal: AbortSignal;
+  }) => Promise<readonly EpisodePickerOption[] | null | undefined>;
   readonly confirmProfile?: (args: {
     readonly title: TitleInfo;
     readonly mediaKind: MediaKind;
@@ -81,16 +87,48 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
     if (isTitleLevel) {
       items = [{ kind: "title" }];
     } else {
+      const shouldLoadAnimeEpisodes =
+        isAnime && (!this.deps.pickEpisodes || this.deps.loadAnimeEpisodes !== undefined);
+      const animeEpisodes = shouldLoadAnimeEpisodes
+        ? await (this.deps.loadAnimeEpisodes ?? loadProductionAnimeEpisodes)({
+            title: input.title,
+            container,
+            signal: context.signal,
+          })
+        : undefined;
+      if (shouldLoadAnimeEpisodes && animeEpisodes === null) {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: "Anime episode catalog is temporarily unavailable. Try again.",
+        });
+        return { status: "success", value: "back" };
+      }
+      if (shouldLoadAnimeEpisodes && animeEpisodes?.length === 0) {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: "No downloadable episodes were found for this anime.",
+        });
+        return { status: "success", value: "back" };
+      }
+      const selectableAnimeEpisodes = animeEpisodes ?? undefined;
       let episodes = this.deps.pickEpisodes
-        ? await this.deps.pickEpisodes({ title: input.title, isAnime, container })
+        ? await this.deps.pickEpisodes({
+            title: input.title,
+            isAnime,
+            animeEpisodes: selectableAnimeEpisodes,
+            container,
+          })
         : await pickEpisodesToDownload({
             title: input.title,
             isAnime,
-            animeEpisodes: undefined,
+            animeEpisodes: selectableAnimeEpisodes,
             container,
           });
 
       if (!episodes || episodes.length === 0) {
+        if (selectableAnimeEpisodes !== undefined) {
+          return { status: "success", value: "back" };
+        }
         const single = await pickSingleDownloadEpisodeFallback({
           title: input.title,
           isAnime,
@@ -135,6 +173,33 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
       profile,
     });
     return { status: "success", value: result.queuedCount > 0 ? "queued" : "back" };
+  }
+}
+
+async function loadProductionAnimeEpisodes({
+  title,
+  container,
+  signal,
+}: {
+  readonly title: TitleInfo;
+  readonly container: PhaseContext["container"];
+  readonly signal: AbortSignal;
+}): Promise<readonly EpisodePickerOption[] | null | undefined> {
+  const state = container.stateManager.getState();
+  const provider = container.providerRegistry.get(state.provider);
+  if (!provider) return null;
+  if (!provider.listEpisodes) return undefined;
+  try {
+    return await provider.listEpisodes(
+      {
+        title,
+        audioPreference: state.animeLanguageProfile.audio,
+        subtitlePreference: state.animeLanguageProfile.subtitle,
+      },
+      signal,
+    );
+  } catch {
+    return null;
   }
 }
 

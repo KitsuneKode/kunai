@@ -200,6 +200,7 @@ export function buildPlaybackRootLoadingShellState(
           container.offlineTitleIdentity.resolveForTitle(title, state.mode),
           episode.season,
           episode.episode,
+          episode.providerEpisodeIdentity,
         )
       ) {
         return "/play-local to use the downloaded copy";

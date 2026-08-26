@@ -257,6 +257,7 @@ export async function resolveEpisodeAvailability({
         ? {
             season: 1,
             episode: previousOption.index,
+            providerEpisodeIdentity: previousOption.providerEpisodeIdentity,
             name: previousOption.name ?? previousOption.label,
           }
         : previousFallbackEpisode,
@@ -264,6 +265,7 @@ export async function resolveEpisodeAvailability({
         ? {
             season: 1,
             episode: nextOption.index,
+            providerEpisodeIdentity: nextOption.providerEpisodeIdentity,
             name: nextOption.name ?? nextOption.label,
           }
         : null,

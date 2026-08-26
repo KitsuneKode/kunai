@@ -53,6 +53,58 @@ test("two repositories cannot admit the same blocking episode intent", () => {
   expect(first.listByTitle("tmdb:series", 10)).toHaveLength(1);
 });
 
+test("provider-native identity separates blocking intents at one UI position", () => {
+  const repo = new DownloadJobsRepository(stores.store("download-admission-native", "data"));
+  const nativeZero = {
+    providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+  } as const;
+  const nativeOne = {
+    providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+  } as const;
+
+  repo.enqueue(enqueueInput("native-zero", nativeZero));
+  repo.enqueue(enqueueInput("native-one", nativeOne));
+
+  expect(() => repo.enqueue(enqueueInput("native-zero-duplicate", nativeZero))).toThrow(
+    "A blocking download intent already exists",
+  );
+  expect(
+    repo.findBlockingEpisodeIntent({ titleId: "tmdb:series", season: 1, episode: 1 }),
+  ).toBeUndefined();
+  expect(
+    repo.findBlockingEpisodeIntent({
+      titleId: "tmdb:series",
+      season: 1,
+      episode: 1,
+      ...nativeOne,
+    })?.id,
+  ).toBe("native-one");
+  expect(repo.listByTitle("tmdb:series", 10)).toHaveLength(2);
+});
+
+test("legacy numeric and provider-native intents do not impersonate each other", () => {
+  const repo = new DownloadJobsRepository(stores.store("download-admission-legacy-native", "data"));
+
+  repo.enqueue(enqueueInput("legacy"));
+  repo.enqueue(
+    enqueueInput("native", {
+      providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+    }),
+  );
+
+  expect(
+    repo.findBlockingEpisodeIntent({ titleId: "tmdb:series", season: 1, episode: 1 })?.id,
+  ).toBe("legacy");
+  expect(
+    repo.findBlockingEpisodeIntent({
+      titleId: "tmdb:series",
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+    })?.id,
+  ).toBe("native");
+});
+
 test("constraint translation does not reread mutable winner state", () => {
   class NoRereadDownloadJobsRepository extends DownloadJobsRepository {
     override findBlockingEpisodeIntent(): never {
@@ -130,33 +182,70 @@ test("the admission migration preserves the best completed artifact and quaranti
   expect(migrationIndex).toBeGreaterThan(0);
   runMigrations(db, "data", dataMigrations.slice(0, migrationIndex));
 
-  const repo = new DownloadJobsRepository(db);
-  repo.enqueue(
-    enqueueInput("completed", {
-      outputPath: "/media/example-ready.mp4",
-      createdAt: "2026-08-24T00:00:00.000Z",
-      updatedAt: "2026-08-24T00:00:00.000Z",
-    }),
-  );
-  repo.complete("completed", "2026-08-24T00:01:00.000Z");
-  repo.enqueue(
-    enqueueInput("invalid-newer", {
-      outputPath: "/media/example-invalid.mp4",
-      createdAt: "2026-08-24T00:01:30.000Z",
-      updatedAt: "2026-08-24T00:01:30.000Z",
-    }),
-  );
-  repo.complete("invalid-newer", "2026-08-24T00:02:00.000Z");
-  repo.markArtifactValidated("invalid-newer", "invalid-file", "2026-08-24T00:02:30.000Z");
-  repo.enqueue(
-    enqueueInput("queued-newer", {
-      outputPath: "/media/example-queued.mp4",
-      createdAt: "2026-08-24T00:03:00.000Z",
-      updatedAt: "2026-08-24T00:03:00.000Z",
-    }),
-  );
+  const insertLegacy = (input: {
+    id: string;
+    status: "completed" | "queued";
+    artifactStatus: "ready" | "invalid-file" | "pending";
+    outputPath: string;
+    createdAt: string;
+    completedAt?: string;
+  }) => {
+    db.query(
+      `INSERT INTO download_jobs (
+        id, title_id, title_name, media_kind, season, episode, provider_id,
+        stream_url, headers_json, status, progress_percent, output_path, temp_path,
+        error_message, retry_count, artifact_status, created_at, updated_at, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      input.id,
+      "tmdb:series",
+      "Example",
+      "series",
+      1,
+      1,
+      "vidking",
+      "",
+      "{}",
+      input.status,
+      0,
+      input.outputPath,
+      `${input.outputPath}.tmp`,
+      null,
+      0,
+      input.artifactStatus,
+      input.createdAt,
+      input.completedAt ?? input.createdAt,
+      input.completedAt ?? null,
+    );
+  };
+
+  insertLegacy({
+    id: "completed",
+    status: "completed",
+    artifactStatus: "ready",
+    outputPath: "/media/example-ready.mp4",
+    createdAt: "2026-08-24T00:00:00.000Z",
+    completedAt: "2026-08-24T00:01:00.000Z",
+  });
+  insertLegacy({
+    id: "invalid-newer",
+    status: "completed",
+    artifactStatus: "invalid-file",
+    outputPath: "/media/example-invalid.mp4",
+    createdAt: "2026-08-24T00:01:30.000Z",
+    completedAt: "2026-08-24T00:02:00.000Z",
+  });
+  insertLegacy({
+    id: "queued-newer",
+    status: "queued",
+    artifactStatus: "pending",
+    outputPath: "/media/example-queued.mp4",
+    createdAt: "2026-08-24T00:03:00.000Z",
+  });
 
   runMigrations(db, "data");
+
+  const repo = new DownloadJobsRepository(db);
 
   expect(repo.get("completed")).toMatchObject({
     status: "completed",

@@ -2,12 +2,18 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
+import {
+  decodeProviderEpisodeIdentity,
+  encodeProviderEpisodeIdentity,
+  type ProviderEpisodeIdentity,
+} from "@kunai/types";
 
 export type EpisodePlaybackSelection = {
   readonly providerId: string;
   readonly titleId: string;
   readonly season: number;
   readonly episode: number;
+  readonly providerEpisodeIdentityEncoded?: string;
   readonly sourceId?: string;
   readonly streamId?: string;
   readonly updatedAt: string;
@@ -29,6 +35,7 @@ export class EpisodePlaybackSelectionService {
     readonly titleId: string;
     readonly season: number;
     readonly episode: number;
+    readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   }): Promise<EpisodePlaybackSelection | null> {
     await this.load();
     return this.selections.get(selectionKey(input)) ?? null;
@@ -39,6 +46,7 @@ export class EpisodePlaybackSelectionService {
     readonly titleId: string;
     readonly season: number;
     readonly episode: number;
+    readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
     readonly sourceId?: string | null;
     readonly streamId?: string | null;
   }): Promise<void> {
@@ -49,6 +57,9 @@ export class EpisodePlaybackSelectionService {
       titleId: input.titleId,
       season: input.season,
       episode: input.episode,
+      providerEpisodeIdentityEncoded: input.providerEpisodeIdentity
+        ? encodeProviderEpisodeIdentity(input.providerEpisodeIdentity)
+        : undefined,
       ...(input.sourceId ? { sourceId: input.sourceId } : {}),
       ...(input.streamId ? { streamId: input.streamId } : {}),
       updatedAt: new Date().toISOString(),
@@ -86,13 +97,25 @@ export class EpisodePlaybackSelectionService {
   }
 }
 
-function selectionKey(input: {
+type EpisodePlaybackSelectionKeyInput = {
   readonly providerId: string;
   readonly titleId: string;
   readonly season: number;
   readonly episode: number;
-}): string {
-  return [input.providerId, input.titleId, input.season, input.episode].join(":");
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
+  readonly providerEpisodeIdentityEncoded?: string;
+};
+
+function selectionKey(input: EpisodePlaybackSelectionKeyInput): string {
+  return [
+    input.providerId,
+    input.titleId,
+    input.season,
+    input.episode,
+    input.providerEpisodeIdentity
+      ? encodeProviderEpisodeIdentity(input.providerEpisodeIdentity)
+      : (input.providerEpisodeIdentityEncoded ?? "none"),
+  ].join(":");
 }
 
 function isSelection(value: unknown): value is EpisodePlaybackSelection {
@@ -104,6 +127,9 @@ function isSelection(value: unknown): value is EpisodePlaybackSelection {
     typeof candidate.season === "number" &&
     typeof candidate.episode === "number" &&
     typeof candidate.updatedAt === "string" &&
+    (candidate.providerEpisodeIdentityEncoded === undefined ||
+      decodeProviderEpisodeIdentity(String(candidate.providerEpisodeIdentityEncoded)) !==
+        undefined) &&
     (candidate.sourceId === undefined || typeof candidate.sourceId === "string") &&
     (candidate.streamId === undefined || typeof candidate.streamId === "string")
   );

@@ -380,6 +380,7 @@ export class DownloadService {
       titleId: canonicalTitleId,
       season: input.episode?.season,
       episode: input.episode?.episode,
+      providerEpisodeIdentity: input.episode?.providerEpisodeIdentity,
     });
     if (existing) {
       throw new DownloadEnqueueRejectedError(
@@ -419,6 +420,7 @@ export class DownloadService {
         contentType: input.title.type,
         season: input.episode?.season,
         episode: input.episode?.episode,
+        providerEpisodeIdentity: input.episode?.providerEpisodeIdentity,
         providerId: input.providerId,
         mode: input.mode,
         subLang,
@@ -519,6 +521,7 @@ export class DownloadService {
     readonly titleId: string;
     readonly season?: number;
     readonly episode?: number;
+    readonly providerEpisodeIdentity?: EpisodeInfo["providerEpisodeIdentity"];
   }): boolean {
     return this.deps.repo.findBlockingEpisodeIntent(input) !== undefined;
   }
@@ -1240,7 +1243,11 @@ export class DownloadService {
       },
       episode:
         job.season !== undefined && job.episode !== undefined
-          ? { season: job.season, episode: job.episode }
+          ? {
+              season: job.season,
+              episode: job.episode,
+              providerEpisodeIdentity: job.providerEpisodeIdentity,
+            }
           : undefined,
       providerId: job.providerId,
       mode,

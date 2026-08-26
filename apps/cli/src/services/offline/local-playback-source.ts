@@ -10,6 +10,7 @@ export type LocalPlaybackSource = {
   readonly providerId: string;
   readonly season?: number;
   readonly episode?: number;
+  readonly providerEpisodeIdentity?: DownloadJobRecord["providerEpisodeIdentity"];
   readonly filePath: string;
   readonly subtitlePath?: string;
   readonly subtitleLanguage?: string;
@@ -33,6 +34,7 @@ export function buildLocalPlaybackSource(
     providerId: job.providerId,
     season: job.season,
     episode: job.episode,
+    providerEpisodeIdentity: job.providerEpisodeIdentity,
     filePath: job.outputPath,
     subtitlePath: job.subtitlePath,
     subtitleLanguage: job.subtitleLanguage,

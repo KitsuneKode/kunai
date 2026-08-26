@@ -88,6 +88,72 @@ test("buildApiStreamResolveCacheKey separates startup priority", () => {
   );
 });
 
+test("buildApiStreamResolveCacheKey separates provider-native episode identities", () => {
+  const input = {
+    providerId: "allanime",
+    providerManifest: allanimeManifest,
+    title: { id: "native-show", type: "series" as const, name: "X" },
+    episode: { season: 1, episode: 1 },
+    mode: "anime" as const,
+    audioPreference: "original",
+    subtitlePreference: "en",
+  };
+
+  expect(
+    buildApiStreamResolveCacheKey({
+      ...input,
+      episode: {
+        ...input.episode,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      },
+    }),
+  ).not.toBe(
+    buildApiStreamResolveCacheKey({
+      ...input,
+      episode: {
+        ...input.episode,
+        providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+      },
+    }),
+  );
+
+  expect(
+    buildApiStreamResolveCacheKey({
+      ...input,
+      episode: {
+        ...input.episode,
+        providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+      },
+    }),
+  ).not.toBe(
+    buildApiStreamResolveCacheKey({
+      ...input,
+      episode: {
+        ...input.episode,
+        providerEpisodeIdentity: { providerId: "allanime", value: "ova" },
+      },
+    }),
+  );
+
+  expect(
+    buildApiStreamResolveCacheKey({
+      ...input,
+      episode: {
+        ...input.episode,
+        providerEpisodeIdentity: { providerId: "allanime", value: " SP1 " },
+      },
+    }),
+  ).not.toBe(
+    buildApiStreamResolveCacheKey({
+      ...input,
+      episode: {
+        ...input.episode,
+        providerEpisodeIdentity: { providerId: "allanime", value: "SP1" },
+      },
+    }),
+  );
+});
+
 test("buildApiStreamResolveCacheKey follows provider manifest key parts", () => {
   const key = buildApiStreamResolveCacheKey({
     providerId: "videasy",

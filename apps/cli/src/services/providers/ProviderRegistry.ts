@@ -130,6 +130,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
               return episodes.map((ep) => ({
                 index: ep.index,
                 label: ep.label,
+                providerEpisodeIdentity: ep.providerEpisodeIdentity,
                 name: ep.name,
                 detail: ep.detail,
                 previewImageUrl: ep.artwork?.thumbnailUrl,

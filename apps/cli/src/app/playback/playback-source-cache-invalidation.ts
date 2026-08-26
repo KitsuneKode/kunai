@@ -26,6 +26,7 @@ export function buildSourceInventoryCacheInput(
     titleId: title.id,
     season: episode.season,
     episode: episode.episode,
+    providerEpisodeIdentity: episode.providerEpisodeIdentity,
     audioMode: playbackAudioPreference(profileContext),
     subtitleLanguage: playbackSubtitlePreference(profileContext),
     qualityPreference: playbackQualityPreference(profileContext),

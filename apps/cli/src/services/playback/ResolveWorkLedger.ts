@@ -126,7 +126,12 @@ export function resolveWorkPurposeForIntent(intent: ResolveIntentKind): ResolveW
 export function buildResolveWorkKey(input: ResolveWorkIdentityInput): string {
   return `resolve:${hash({
     title: input.title.id,
-    episode: [input.episode.season, input.episode.episode],
+    episode: [
+      input.episode.season,
+      input.episode.episode,
+      input.episode.providerEpisodeIdentity?.providerId ?? null,
+      input.episode.providerEpisodeIdentity?.value ?? null,
+    ],
     mode: input.mode,
     providerId: input.providerId,
     audioPreference: input.audioPreference,
@@ -150,7 +155,12 @@ export function createResolveWorkLedger(input: {
       resolveWorkKey: buildResolveWorkKey(input.identity),
       mediaIdentityHash: hash({
         title: input.identity.title.id,
-        episode: [input.identity.episode.season, input.identity.episode.episode],
+        episode: [
+          input.identity.episode.season,
+          input.identity.episode.episode,
+          input.identity.episode.providerEpisodeIdentity?.providerId ?? null,
+          input.identity.episode.providerEpisodeIdentity?.value ?? null,
+        ],
         mode: input.identity.mode,
       }),
       purpose: input.identity.purpose,

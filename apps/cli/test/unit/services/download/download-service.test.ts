@@ -339,6 +339,41 @@ describe("DownloadService", () => {
     await expect(service.retry(failed.id)).rejects.toMatchObject({ code: "duplicate-intent" });
   });
 
+  test("download admission separates provider-native episodes at the same UI position", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const base = {
+      title: { id: "anilist:1", type: "series" as const, name: "Native Anime" },
+      providerId: "allanime",
+      mode: "anime" as const,
+    };
+    const nativeZero = {
+      ...base,
+      episode: {
+        season: 1,
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      },
+    };
+    const nativeOne = {
+      ...base,
+      episode: {
+        season: 1,
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+      },
+    };
+
+    await service.enqueue(nativeZero);
+    await service.enqueue(nativeOne);
+    await expect(service.enqueue(nativeZero)).rejects.toMatchObject({ code: "duplicate-intent" });
+    expect(repo.listQueued(10)).toHaveLength(2);
+  });
+
   test("processes successful queue entries", async () => {
     const service = buildService({
       repo,

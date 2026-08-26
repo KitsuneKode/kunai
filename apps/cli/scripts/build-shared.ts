@@ -266,6 +266,19 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * behind it are small bounded fixes and will be measured on their own terms if
  * they ever approach this number again.
  *
+ * Raised from 2_976 on 2026-08-26 for provider-native episode identity (#178).
+ * After chain A landed, `main` measured 3,044,391 bytes against the 3,047,424
+ * (2_976 KiB) cap -- only 3.0 KiB of headroom, so the next feature of any size
+ * was going to trip it. #178 measures 3,051,960 bytes: a 7,569-byte (7.4 KiB)
+ * step that threads provider-native episode identity through the
+ * playback->storage->offline->provider pipeline -- new identity types, a schema
+ * field, two storage migrations, and plumbing across ResolveWorkLedger,
+ * SourceInventoryService, OfflineAssetService, and the AllManga adapter. It is
+ * distributed feature code with no single blob and no duplication (verified
+ * against the analyzer). 3_000 leaves ~19.6 KiB of headroom, restoring real
+ * slack rather than clearing one change; #206/#207 are measured on their own
+ * terms if they ever approach this number.
+ *
  * Worth restating because it is what makes this safe: this number guards
  * `dist/kunai.js`, which is published nowhere and is not the source of the
  * compiled binaries either -- `compileBinaryBuildOptions` compiles from
@@ -274,7 +287,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_976;
+export const NPM_BUNDLE_BUDGET_KB = 3_000;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

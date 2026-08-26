@@ -2,6 +2,8 @@ import {
   buildOfflineAvailabilityIndex,
   type OfflineAvailabilityIndex,
 } from "@/domain/playback-source/offline-availability";
+import type { EpisodeInfo } from "@/domain/types";
+import { providerEpisodeIdentitiesEqual, type ProviderEpisodeIdentity } from "@kunai/types";
 
 import type { OfflineAssetService } from "./OfflineAssetService";
 
@@ -27,6 +29,7 @@ export function isEpisodeDownloaded(
   titleId: string,
   season?: number,
   episode?: number,
+  providerEpisodeIdentity?: ProviderEpisodeIdentity,
 ): boolean {
   return offlineAssetService
     .listTitleAssets(titleId)
@@ -34,7 +37,9 @@ export function isEpisodeDownloaded(
       (asset) =>
         asset.state === "ready" &&
         (season === undefined || asset.season === season) &&
-        (episode === undefined || asset.episode === episode),
+        (episode === undefined || asset.episode === episode) &&
+        (providerEpisodeIdentity === undefined ||
+          providerEpisodeIdentitiesEqual(asset.providerEpisodeIdentity, providerEpisodeIdentity)),
     );
 }
 
@@ -58,7 +63,7 @@ export function findNextReadyEpisode(
   offlineAssetService: OfflineAssetService,
   titleId: string,
   current: { readonly season: number; readonly episode: number },
-): { readonly season: number; readonly episode: number } | null {
+): EpisodeInfo | null {
   if (!titleId) return null;
   const next = offlineAssetService
     .listNextReadyByTitleCursors([{ titleId, season: current.season, episode: current.episode }])
@@ -78,7 +83,11 @@ export function findNextReadyEpisode(
   ) {
     return null;
   }
-  return { season: next.season, episode: next.episode };
+  return {
+    season: next.season,
+    episode: next.episode,
+    providerEpisodeIdentity: next.providerEpisodeIdentity,
+  };
 }
 
 export function findReadyJobIdForEpisode(
@@ -88,6 +97,7 @@ export function findReadyJobIdForEpisode(
   episode: number,
   options: {
     readonly mediaKind?: "movie" | "series" | "anime" | "video";
+    readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   } = {},
 ): string | undefined {
   return offlineAssetService
@@ -97,6 +107,11 @@ export function findReadyJobIdForEpisode(
         asset.state === "ready" &&
         (options.mediaKind === "movie" || options.mediaKind === "video"
           ? asset.mediaKind === options.mediaKind
-          : asset.season === season && asset.episode === episode),
+          : asset.season === season && asset.episode === episode) &&
+        (options.providerEpisodeIdentity === undefined ||
+          providerEpisodeIdentitiesEqual(
+            asset.providerEpisodeIdentity,
+            options.providerEpisodeIdentity,
+          )),
     )?.originJobId;
 }

@@ -182,6 +182,7 @@ export function episodeToCoreIdentity(
     season: episode.season,
     episode: episode.episode,
     absoluteEpisode: episode.absoluteEpisode,
+    providerEpisodeIdentity: episode.providerEpisodeIdentity,
     title: episode.name,
     airDate: episode.airDate,
     release: episode.release,

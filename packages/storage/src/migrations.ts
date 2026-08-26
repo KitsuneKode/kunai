@@ -735,6 +735,47 @@ export const dataMigrations: readonly Migration[] = [
         WHERE status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable');
     `,
   },
+  {
+    id: "037_data_download_job_provider_episode_identity",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN provider_episode_provider_id TEXT;
+      ALTER TABLE download_jobs ADD COLUMN provider_episode_value TEXT;
+    `,
+  },
+  {
+    id: "038_data_offline_asset_provider_episode_identity",
+    database: "data",
+    sql: `
+      ALTER TABLE offline_assets ADD COLUMN provider_episode_provider_id TEXT;
+      ALTER TABLE offline_assets ADD COLUMN provider_episode_value TEXT;
+    `,
+  },
+  {
+    id: "039_data_download_job_native_intent",
+    database: "data",
+    sql: `
+      -- Provider-native catalogs may move a different upstream row into the
+      -- same 1-based UI position. Keep those durable intents separate while
+      -- retaining the legacy numeric identity for rows with no native key.
+      DROP INDEX IF EXISTS idx_download_jobs_blocking_intent;
+      CREATE UNIQUE INDEX idx_download_jobs_blocking_intent
+        ON download_jobs(
+          title_id,
+          CASE WHEN season IS NULL THEN 'null' ELSE 'value:' || CAST(season AS TEXT) END,
+          CASE WHEN episode IS NULL THEN 'null' ELSE 'value:' || CAST(episode AS TEXT) END,
+          CASE
+            WHEN provider_episode_provider_id IS NULL THEN 'null'
+            ELSE 'value:' || provider_episode_provider_id
+          END,
+          CASE
+            WHEN provider_episode_value IS NULL THEN 'null'
+            ELSE 'value:' || provider_episode_value
+          END
+        )
+        WHERE status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable');
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

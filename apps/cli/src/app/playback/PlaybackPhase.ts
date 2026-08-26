@@ -1089,6 +1089,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             titleId: title.id,
             season: currentEpisode.season,
             episode: currentEpisode.episode,
+            providerEpisodeIdentity: currentEpisode.providerEpisodeIdentity,
             providerId: currentProvider.metadata.id,
           });
           const providerAttemptId = createCorrelationId("provider");
@@ -1571,7 +1572,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const recentKey = recentPlaybackStreamKey(title.id, currentEpisode);
             const recent = recentEpisodeStreams.get(recentKey);
             if (
-              recentPlaybackStreamMatchesProvider(recent, currentProvider.metadata.id) &&
+              recentPlaybackStreamMatchesProvider(
+                recent,
+                currentProvider.metadata.id,
+                currentEpisode,
+              ) &&
               recentStreamMatchesPreferred(recent, currentProvider.metadata.id, currentEpisode) &&
               isRecentPlaybackStreamFresh(recent)
             ) {
@@ -2185,11 +2190,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           recordStartupMark("stream-prepared", preparedStream);
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 
-          const episodeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
+          const episodeKey = recentPlaybackStreamKey(title.id, currentEpisode);
           if (streamProvenance === "local") {
             if (run.localPlaybackSource) {
               recentEpisodeStreams.set(episodeKey, {
                 stream: preparedStream,
+                episode: currentEpisode,
                 selectedProviderId: currentProvider.metadata.id,
                 resolvedProviderId,
                 provenance: "local",
@@ -2199,6 +2205,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           } else {
             recentEpisodeStreams.set(episodeKey, {
               stream: preparedStream,
+              episode: currentEpisode,
               selectedProviderId: currentProvider.metadata.id,
               resolvedProviderId,
               provenance: streamProvenance,
@@ -2608,6 +2615,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
+                providerEpisodeIdentity: currentEpisode.providerEpisodeIdentity,
                 providerId: invalidateProviderId,
               }),
               preparedStream.url,

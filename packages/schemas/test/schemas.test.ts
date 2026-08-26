@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  episodeIdentitySchema,
   providerArtworkInfoSchema,
   providerExternalIdsSchema,
   providerFailureSchema,
@@ -24,6 +25,33 @@ const cachePolicy = {
   scope: "local",
   keyParts: ["vidking", "movie", "tmdb:1"],
 } as const;
+
+test("episode identity schema preserves an exact provider-native episode value", () => {
+  const parsed = episodeIdentitySchema.parse({
+    season: 1,
+    episode: 1,
+    providerEpisodeIdentity: { providerId: "allanime", value: " OVA:Zero " },
+  });
+
+  expect(parsed.providerEpisodeIdentity).toEqual({
+    providerId: "allanime",
+    value: " OVA:Zero ",
+  });
+  expect(() =>
+    episodeIdentitySchema.parse({
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "", value: "0" },
+    }),
+  ).toThrow();
+  expect(() =>
+    episodeIdentitySchema.parse({
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "" },
+    }),
+  ).toThrow();
+});
 
 test("relay schemas validate config rpc requests and structured errors", () => {
   const config = providerRelayConfigSchema.parse({

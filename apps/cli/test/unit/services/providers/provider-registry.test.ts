@@ -1,7 +1,14 @@
 import { expect, test } from "bun:test";
 
+import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { ProviderRegistryImpl } from "@/services/providers/ProviderRegistry";
-import { defineProviderManifest, type CoreProviderModule, type ProviderEngine } from "@kunai/core";
+import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
+import {
+  createProviderEngine,
+  defineProviderManifest,
+  type CoreProviderModule,
+  type ProviderEngine,
+} from "@kunai/core";
 import type { ProviderEpisodeOption, ProviderSearchResult } from "@kunai/types";
 
 const manifest = defineProviderManifest({
@@ -241,5 +248,55 @@ test("listEpisodes receives the full title identity and language preferences", a
     release: { airDate: "2026-01-02" },
     previewImageUrl: "https://img.example/episode-1.jpg",
     artwork: { thumbnailUrl: "https://img.example/episode-1.jpg" },
+  });
+});
+
+test("provider episode identity survives the catalog adapter and selected resolve request", async () => {
+  const module: CoreProviderModule = {
+    providerId: "hooked",
+    manifest,
+    async resolve() {
+      throw new Error("resolve should not be called");
+    },
+    async listEpisodes(): Promise<ProviderEpisodeOption[]> {
+      return [
+        {
+          index: 1,
+          label: "Episode 0",
+          detail: "0",
+          providerEpisodeIdentity: { providerId: "hooked", value: "0" },
+        },
+      ];
+    },
+  };
+  const engine = createProviderEngine({ modules: [module] });
+  const registry = new ProviderRegistryImpl(engine);
+  const title = { id: "native-show", name: "Native Show", type: "series" as const };
+
+  const episodes = await registry.get("hooked")?.listEpisodes?.({ title });
+  const selected = episodeInfoFromSelection({
+    season: 1,
+    episode: 1,
+    isAnime: true,
+    titleId: title.id,
+    animeEpisodes: episodes ?? undefined,
+  });
+  const input = streamRequestToResolveInput(
+    {
+      title,
+      episode: selected,
+      audioPreference: "original",
+      subtitlePreference: "en",
+    },
+    "anime",
+    "play",
+    "provider-native",
+    "hooked",
+  );
+
+  expect(episodes?.[0]?.providerEpisodeIdentity).toEqual({ providerId: "hooked", value: "0" });
+  expect(input.episode).toMatchObject({
+    episode: 1,
+    providerEpisodeIdentity: { providerId: "hooked", value: "0" },
   });
 });

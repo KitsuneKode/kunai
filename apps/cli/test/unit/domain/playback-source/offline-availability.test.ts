@@ -41,6 +41,21 @@ describe("offline availability index", () => {
     expect(idx.readyCountForTitle("t3")).toBe(0);
   });
 
+  test("exact provider-native queries do not reuse another native row at the same UI index", () => {
+    const idx = buildOfflineAvailabilityIndex([
+      asset({
+        titleId: "t1",
+        season: 1,
+        episode: 1,
+        providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+      }),
+    ]);
+
+    expect(idx.isReady("t1", 1, 1, { providerId: "allanime", value: "0" })).toBe(true);
+    expect(idx.isReady("t1", 1, 1, { providerId: "allanime", value: "1" })).toBe(false);
+    expect(idx.isReady("t1", 1, 1)).toBe(true);
+  });
+
   test("movies (no season/episode) resolve by title", () => {
     const idx = buildOfflineAvailabilityIndex([
       asset({ titleId: "m1", mediaKind: "movie", state: "ready" }),

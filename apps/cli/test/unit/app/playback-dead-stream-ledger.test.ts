@@ -51,3 +51,22 @@ test("dead stream ledger dedupes URLs and can clear a scope", () => {
 
   expect(ledger.list(scope)).toEqual([]);
 });
+
+test("dead stream scopes separate exact provider-native episode identities", () => {
+  const base = {
+    titleId: "anilist:1",
+    season: 1,
+    episode: 1,
+    providerId: "allanime",
+  };
+  const nativeZero = {
+    ...base,
+    providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+  };
+  const nativeOne = {
+    ...base,
+    providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+  };
+
+  expect(playbackDeadStreamScopeKey(nativeZero)).not.toBe(playbackDeadStreamScopeKey(nativeOne));
+});

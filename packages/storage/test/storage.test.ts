@@ -612,6 +612,37 @@ test("offline asset manifest stores one durable playable identity without provid
   expect(JSON.stringify(second)).not.toContain("headers");
 });
 
+test("offline asset identity separates provider-native episodes at the same UI position", () => {
+  const db = migratedDataDb();
+  const repo = new OfflineAssetsRepository(db);
+  const base = {
+    titleId: "anilist:1",
+    titleName: "Native Anime",
+    mediaKind: "anime" as const,
+    season: 1,
+    episode: 1,
+    profileKey: "anime:sub:en:best",
+    state: "ready" as const,
+    updatedAt: "2026-08-24T00:00:00.000Z",
+  };
+
+  const nativeZero = repo.upsertPlayable({
+    ...base,
+    providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    filePath: "/tmp/native-zero.mp4",
+  });
+  const nativeOne = repo.upsertPlayable({
+    ...base,
+    providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+    filePath: "/tmp/native-one.mp4",
+  });
+
+  expect(nativeZero.id).not.toBe(nativeOne.id);
+  expect(nativeZero.providerEpisodeIdentity).toEqual({ providerId: "allanime", value: "0" });
+  expect(nativeOne.providerEpisodeIdentity).toEqual({ providerId: "allanime", value: "1" });
+  expect(repo.listTitleAssets("anilist:1")).toHaveLength(2);
+});
+
 test("offline asset refresh preserves explicit user protection", () => {
   const db = migratedDataDb();
   const repo = new OfflineAssetsRepository(db);

@@ -10,6 +10,7 @@ import {
 import { formatTimestamp, isFinished } from "@/services/continuation/history-progress";
 import { fetchEpisodes } from "@/tmdb";
 import type { HistoryProgress } from "@kunai/storage";
+import { encodeProviderEpisodeIdentity, type ProviderEpisodeIdentity } from "@kunai/types";
 
 /**
  * Cache key for a provider's episode catalog.
@@ -114,6 +115,7 @@ export async function buildPlaybackEpisodePickerOptions({
           baseDetail: entry.detail,
           previewBody: formatEpisodePreviewSynopsis(entry.name ? undefined : entry.detail),
           previewImageUrl: entry.previewImageUrl,
+          providerEpisodeIdentity: entry.providerEpisodeIdentity,
           releaseBadge: releaseBadges?.get(`1:${entry.index}`),
           offlineDownloaded: downloadedEpisodes?.has(`1:${entry.index}`),
           current: entry.index === currentEpisode.episode,
@@ -277,6 +279,7 @@ export function buildEpisodePickerOption({
   baseDetail,
   previewBody,
   previewImageUrl,
+  providerEpisodeIdentity,
   releaseBadge,
   offlineDownloaded,
   current,
@@ -288,6 +291,7 @@ export function buildEpisodePickerOption({
   baseDetail?: string;
   previewBody?: string;
   previewImageUrl?: string;
+  providerEpisodeIdentity?: ProviderEpisodeIdentity;
   releaseBadge?: string;
   offlineDownloaded?: boolean;
   current: boolean;
@@ -310,7 +314,9 @@ export function buildEpisodePickerOption({
     tone = "warning";
   }
   return {
-    value: `${season}:${episode}`,
+    value: providerEpisodeIdentity
+      ? `${season}:${episode}:${encodeProviderEpisodeIdentity(providerEpisodeIdentity)}`
+      : `${season}:${episode}`,
     label,
     // Row detail stays minimal (air date / release badge); the glyph carries state.
     detail: mergeEpisodeDetail(

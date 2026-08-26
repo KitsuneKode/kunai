@@ -71,4 +71,40 @@ describe("PlaybackSelectionCoordinator", () => {
       streamId: null,
     });
   });
+
+  test("persisted episode overrides do not alias different provider-native episodes", async () => {
+    dir = await mkdtemp(join(tmpdir(), "kunai-selection-"));
+    const path = join(dir, "episode-playback-selections.json");
+    const nativeZero = {
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    };
+    const nativeOne = {
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+    };
+    const writer = new PlaybackSelectionCoordinator({
+      titleId: "anilist:1",
+      episodePlaybackSelection: new EpisodePlaybackSelectionService(path),
+      titlePlaybackSource: new TitlePlaybackSourceService(join(dir, "title-sources.json")),
+    });
+    await writer.applyEpisodeSelection("allanime", nativeZero, {
+      sourceId: "source:native-zero",
+      streamId: null,
+    });
+
+    const reader = new PlaybackSelectionCoordinator({
+      titleId: "anilist:1",
+      episodePlaybackSelection: new EpisodePlaybackSelectionService(path),
+      titlePlaybackSource: new TitlePlaybackSourceService(join(dir, "title-sources.json")),
+    });
+    await reader.hydrateEpisode("allanime", nativeOne);
+
+    expect(reader.getEffective("allanime", nativeOne)).toEqual({
+      sourceId: null,
+      streamId: null,
+    });
+  });
 });

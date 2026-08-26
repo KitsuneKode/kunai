@@ -718,6 +718,19 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   season-relative `episode` and `absoluteEpisode`, their APIs receive the
   season-relative value. Absolute numbering is used only for an absolute-only
   request. AniDB keeps its separate catalog-proven routing policy below.
+- **AllAnime provider-native episode identity** — episode catalog rows remain
+  1-based in Kunai, but each row carries its exact AllAnime string (including
+  `0`, duplicate values, and `OVA` / `SP` labels) through the CLI catalog
+  adapter into `EpisodeIdentity.providerEpisodeIdentity`. AllAnime uses that
+  string only while it still belongs to the active catalog; requests without a
+  provider catalog selection retain the season-relative / absolute numeric
+  fallback. If an explicit AllAnime identity has disappeared from the current
+  AllAnime catalog, resolution fails closed instead of selecting by UI index.
+  The string is opaque: cache and work keys do not trim, case-fold,
+  or otherwise normalize it. Active episode selection, source preference,
+  prefetch/recent-stream reuse, cache invalidation, queued downloads, offline
+  artifact admission, and local playback retain the same identity so an older
+  row at the same UI index cannot supply the wrong stream.
 
 A catalog's own id space is numeric, so a non-numeric id is never accepted into the `anilistId` or
 `tmdbId` slot even when the active provider declares that catalog identity.

@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 
 import {
+  episodePrefetchKey,
   EpisodePrefetchHandle,
   isEpisodePrefetchEligible,
+  matchesEpisodePrefetchTarget,
   type EpisodePrefetchBundle,
 } from "@/app/playback/episode-prefetch";
 
@@ -82,6 +84,37 @@ test("prefetch bundle preserves resolved provider identity through consume", asy
   await Promise.resolve();
 
   expect(handle.takeReadyFor(target)?.resolvedProviderId).toBe("rivestream");
+});
+
+test("prefetch never aliases provider-native episodes at the same UI index", async () => {
+  const nativeZero = {
+    ...target,
+    episode: {
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    },
+  };
+  const nativeOne = {
+    ...target,
+    episode: {
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+    },
+  };
+  const handle = new EpisodePrefetchHandle();
+  const bundle = createBundle({ target: nativeZero });
+
+  handle.schedule(nativeZero, async () => bundle);
+  await Promise.resolve();
+
+  expect(episodePrefetchKey(nativeZero.titleId, nativeZero.episode)).not.toBe(
+    episodePrefetchKey(nativeOne.titleId, nativeOne.episode),
+  );
+  expect(matchesEpisodePrefetchTarget(nativeZero, nativeOne)).toBe(false);
+  expect(handle.takeReadyFor(nativeOne)).toBeNull();
+  expect(handle.takeReadyFor(nativeZero)).toEqual(bundle);
 });
 
 function createBundle(overrides?: Partial<EpisodePrefetchBundle>): EpisodePrefetchBundle {

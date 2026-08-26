@@ -1,6 +1,11 @@
 import { SQLiteError } from "bun:sqlite";
 
-import type { MediaKind, ProviderExternalIds, ProviderId } from "@kunai/types";
+import type {
+  MediaKind,
+  ProviderEpisodeIdentity,
+  ProviderExternalIds,
+  ProviderId,
+} from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
@@ -39,6 +44,7 @@ export interface DownloadJobRecord {
   readonly contentType?: "movie" | "series";
   readonly season?: number;
   readonly episode?: number;
+  readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   readonly providerId: ProviderId;
   readonly mode?: "series" | "anime" | "youtube";
   readonly subLang?: string;
@@ -86,6 +92,8 @@ interface DownloadJobRow {
   readonly content_type: "movie" | "series" | null;
   readonly season: number | null;
   readonly episode: number | null;
+  readonly provider_episode_provider_id: string | null;
+  readonly provider_episode_value: string | null;
   readonly provider_id: string;
   readonly mode: "series" | "anime" | null;
   readonly sub_lang: string | null;
@@ -166,14 +174,15 @@ export class DownloadJobsRepository {
         .query(
           `
           INSERT INTO download_jobs (
-            id, title_id, external_ids_json, title_name, media_kind, content_type, season, episode, provider_id,
+            id, title_id, external_ids_json, title_name, media_kind, content_type, season, episode,
+            provider_episode_provider_id, provider_episode_value, provider_id,
             mode, sub_lang, anime_lang, selected_source_id, selected_stream_id, selected_quality_label,
             stream_url, headers_json,
             status, progress_percent, output_path, temp_path, subtitle_url, subtitle_path, subtitle_language,
             intro_skip_json, poster_url, thumbnail_path, duration_ms, file_size, error_message, retry_count, attempt, max_attempts, next_retry_at,
             started_at, last_heartbeat_at, failure_kind, artifact_status, last_resolved_provider_id,
             created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
         `,
         )
         .run(
@@ -185,6 +194,8 @@ export class DownloadJobsRepository {
           input.contentType ?? null,
           input.season ?? null,
           input.episode ?? null,
+          input.providerEpisodeIdentity?.providerId ?? null,
+          input.providerEpisodeIdentity?.value ?? null,
           input.providerId,
           input.mode ?? null,
           input.subLang ?? null,
@@ -559,20 +570,29 @@ export class DownloadJobsRepository {
     readonly titleId: string;
     readonly season?: number;
     readonly episode?: number;
+    readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   }): DownloadJobRecord | undefined {
     const row = this.db
-      .query<DownloadJobRow, [string, number | null, number | null]>(
+      .query<DownloadJobRow, [string, number | null, number | null, string | null, string | null]>(
         `
           SELECT * FROM download_jobs
           WHERE title_id = ?
             AND season IS ?
             AND episode IS ?
+            AND provider_episode_provider_id IS ?
+            AND provider_episode_value IS ?
             AND status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable')
           ORDER BY updated_at DESC
           LIMIT 1
         `,
       )
-      .get(input.titleId, input.season ?? null, input.episode ?? null);
+      .get(
+        input.titleId,
+        input.season ?? null,
+        input.episode ?? null,
+        input.providerEpisodeIdentity?.providerId ?? null,
+        input.providerEpisodeIdentity?.value ?? null,
+      );
     return row === null ? undefined : mapRow(row);
   }
 
@@ -673,6 +693,13 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     contentType: row.content_type ?? undefined,
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
+    providerEpisodeIdentity:
+      row.provider_episode_provider_id !== null && row.provider_episode_value !== null
+        ? {
+            providerId: row.provider_episode_provider_id,
+            value: row.provider_episode_value,
+          }
+        : undefined,
     providerId: row.provider_id as ProviderId,
     mode: row.mode ?? undefined,
     subLang: row.sub_lang ?? undefined,

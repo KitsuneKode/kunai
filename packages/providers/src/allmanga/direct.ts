@@ -351,7 +351,26 @@ export const allmangaProviderModule: CoreProviderModule = {
         throw new Error(`No ${mode} episodes found for show ${showId}`);
       }
 
-      const epStr = resolveAnimeEpisodeString(episodes, episodeNum);
+      const selectedProviderEpisode = input.episode?.providerEpisodeIdentity;
+      let epStr: string;
+      if (selectedProviderEpisode?.providerId === ALLANIME_PROVIDER_ID) {
+        if (!episodes.includes(selectedProviderEpisode.value)) {
+          return createExhaustedResult(
+            input,
+            context,
+            ALLANIME_PROVIDER_ID,
+            {
+              code: "not-found",
+              message: "Selected AllManga episode is no longer present in the active catalog",
+              retryable: false,
+            },
+            { cachePolicy, events, failures, startedAt },
+          );
+        }
+        epStr = selectedProviderEpisode.value;
+      } else {
+        epStr = resolveAnimeEpisodeString(episodes, episodeNum);
+      }
       const startupPriority = input.startupPriority ?? "balanced";
       const sourcePreparationStartedAt = performance.now();
       const linkResult = await collectAllMangaLinksForStartup(input, {

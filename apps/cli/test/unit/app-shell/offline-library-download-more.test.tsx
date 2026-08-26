@@ -77,7 +77,9 @@ function createContainer(): Container {
         }
       },
     },
-    providerRegistry: { get: () => undefined },
+    // This surface exercises the legacy numeric fallback for a provider that
+    // has no catalog hook; a missing active provider is an honest hard failure.
+    providerRegistry: { get: () => ({ metadata: { id: "allanime" } }) },
     downloadService: {
       getEnqueueEligibility: () => ({ allowed: true }),
     },

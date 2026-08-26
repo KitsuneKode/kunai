@@ -6,8 +6,11 @@ import {
   findReadyJobIdForEpisode,
   isEpisodeDownloaded,
 } from "@/services/offline/offline-episode-index";
-import { OfflineAssetService } from "@/services/offline/OfflineAssetService";
-import type { OfflineAssetRecord, OfflineAssetsRepository } from "@kunai/storage";
+import {
+  OfflineAssetService,
+  type OfflineAssetRepositoryPort,
+} from "@/services/offline/OfflineAssetService";
+import type { OfflineAssetRecord, OfflineNextReadyCursor } from "@kunai/storage";
 
 /** Identity is not what these tests exercise: keep whatever id the job carried. */
 const passthroughIdentity = {
@@ -15,7 +18,9 @@ const passthroughIdentity = {
   resolveForJob: (job: { titleId: string }) => job.titleId,
 };
 
-function asset(partial: Partial<OfflineAssetRecord> & Pick<OfflineAssetRecord, "titleId">) {
+function asset(
+  partial: Partial<OfflineAssetRecord> & Pick<OfflineAssetRecord, "titleId">,
+): OfflineAssetRecord {
   return {
     id: partial.id ?? `asset-${partial.titleId}`,
     titleId: partial.titleId,
@@ -23,6 +28,7 @@ function asset(partial: Partial<OfflineAssetRecord> & Pick<OfflineAssetRecord, "
     mediaKind: partial.mediaKind ?? "series",
     season: partial.season,
     episode: partial.episode,
+    providerEpisodeIdentity: partial.providerEpisodeIdentity,
     profileKey: partial.profileKey ?? "series:original:none:best",
     originJobId: partial.originJobId ?? "job-1",
     filePath: partial.filePath ?? "/tmp/demo.mkv",
@@ -35,23 +41,35 @@ function asset(partial: Partial<OfflineAssetRecord> & Pick<OfflineAssetRecord, "
     identityKey: partial.identityKey ?? `${partial.titleId}:1:1`,
     protected: partial.protected ?? false,
     createdAt: partial.createdAt ?? new Date().toISOString(),
-  } as OfflineAssetRecord;
+  };
+}
+
+function repositoryStub(
+  overrides: Partial<OfflineAssetRepositoryPort> = {},
+): OfflineAssetRepositoryPort {
+  return {
+    get: () => undefined,
+    listTitleAssets: () => [],
+    listByTitleIds: () => [],
+    listNextReadyByTitleCursors: () => [],
+    markValidation: () => {},
+    deleteByOriginJobId: () => {},
+    deleteOrphaned: () => 0,
+    upsertPlayable: () => asset({ titleId: "test-title" }),
+    ...overrides,
+  };
 }
 
 describe("offline-episode-index", () => {
   test("isEpisodeDownloaded and downloadedCountForTitle read ready assets", () => {
-    const repo = {
-      get: () => undefined,
+    const repo = repositoryStub({
       listTitleAssets: () => [
         asset({ titleId: "t1", season: 1, episode: 1 }),
         asset({ titleId: "t1", season: 1, episode: 2, state: "missing" }),
         asset({ titleId: "t1", season: 1, episode: 3 }),
       ],
-      listByTitleIds: () => [],
-      listNextReadyByTitleCursors: () => [],
-      markValidation: () => {},
       upsertPlayable: () => asset({ titleId: "t1" }),
-    } as unknown as OfflineAssetsRepository;
+    });
     const service = new OfflineAssetService(repo, passthroughIdentity);
 
     expect(isEpisodeDownloaded(service, "t1", 1, 1)).toBe(true);
@@ -60,36 +78,76 @@ describe("offline-episode-index", () => {
   });
 
   test("finds downloaded movies without inventing an episode axis", () => {
-    const repo = {
-      get: () => undefined,
+    const repo = repositoryStub({
       listTitleAssets: () => [asset({ titleId: "movie-1", mediaKind: "movie" })],
-      listByTitleIds: () => [],
-      listNextReadyByTitleCursors: () => [],
-      markValidation: () => {},
       upsertPlayable: () => asset({ titleId: "movie-1", mediaKind: "movie" }),
-    } as unknown as OfflineAssetsRepository;
+    });
     const service = new OfflineAssetService(repo, passthroughIdentity);
 
     expect(findReadyJobIdForEpisode(service, "movie-1", 1, 1, { mediaKind: "movie" })).toBe(
       "job-1",
     );
   });
+
+  test("does not serve or badge a different provider-native episode at the same UI position", () => {
+    const repo = repositoryStub({
+      listTitleAssets: () => [
+        asset({
+          titleId: "anime-1",
+          season: 1,
+          episode: 1,
+          originJobId: "job-zero",
+          providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+        }),
+        asset({
+          titleId: "anime-1",
+          season: 1,
+          episode: 1,
+          originJobId: "job-one",
+          providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+        }),
+      ],
+      upsertPlayable: () => asset({ titleId: "anime-1" }),
+    });
+    const service = new OfflineAssetService(repo, passthroughIdentity);
+
+    expect(
+      findReadyJobIdForEpisode(service, "anime-1", 1, 1, {
+        mediaKind: "anime",
+        providerEpisodeIdentity: { providerId: "allanime", value: "1" },
+      }),
+    ).toBe("job-one");
+    expect(
+      findReadyJobIdForEpisode(service, "anime-1", 1, 1, {
+        mediaKind: "anime",
+        providerEpisodeIdentity: { providerId: "allanime", value: "2" },
+      }),
+    ).toBeUndefined();
+    expect(
+      isEpisodeDownloaded(service, "anime-1", 1, 1, {
+        providerId: "allanime",
+        value: "1",
+      }),
+    ).toBe(true);
+    expect(
+      isEpisodeDownloaded(service, "anime-1", 1, 1, {
+        providerId: "allanime",
+        value: "2",
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("findNextReadyEpisode", () => {
   function serviceReturning(next: readonly OfflineAssetRecord[]) {
-    const cursorsSeen: unknown[] = [];
-    const repo = {
-      get: () => undefined,
-      listTitleAssets: () => [],
-      listByTitleIds: () => [],
-      listNextReadyByTitleCursors: (cursors: unknown) => {
+    const cursorsSeen: Array<readonly OfflineNextReadyCursor[]> = [];
+    const repo = repositoryStub({
+      listNextReadyByTitleCursors: (cursors) => {
         cursorsSeen.push(cursors);
         return next;
       },
-      markValidation: () => {},
       upsertPlayable: () => asset({ titleId: "t1" }),
-    } as unknown as OfflineAssetsRepository;
+    });
     return { service: new OfflineAssetService(repo, passthroughIdentity), cursorsSeen };
   }
 
@@ -111,6 +169,23 @@ describe("findNextReadyEpisode", () => {
     const { service } = serviceReturning([]);
 
     expect(findNextReadyEpisode(service, "t1", { season: 1, episode: 13 })).toBeNull();
+  });
+
+  test("returns provider-native identity with the next downloaded episode", () => {
+    const { service } = serviceReturning([
+      asset({
+        titleId: "t1",
+        season: 1,
+        episode: 2,
+        providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+      }),
+    ]);
+
+    expect(findNextReadyEpisode(service, "t1", { season: 1, episode: 1 })).toEqual({
+      season: 1,
+      episode: 2,
+      providerEpisodeIdentity: { providerId: "allanime", value: "OVA" },
+    });
   });
 
   test("answers null for an asset carrying no episode axis", () => {

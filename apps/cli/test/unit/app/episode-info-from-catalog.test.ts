@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
+import {
+  episodeInfoFromAnimePickerOption,
+  episodeInfoFromSelection,
+} from "@/app/bootstrap/episode-info-from-catalog";
 
 const originalFetch = globalThis.fetch;
 
@@ -26,6 +29,20 @@ describe("episodeInfoFromSelection", () => {
     expect(info.overview).toBe("A deterministic anime episode.");
     expect(info.airDate).toBe("2026-01-02");
     expect(info.artwork?.thumbnailUrl).toBe("https://img.example/episode-2.jpg");
+  });
+
+  test("direct provider-option conversion keeps provider episode identity", () => {
+    const info = episodeInfoFromAnimePickerOption({
+      index: 1,
+      label: "Episode 0",
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    });
+
+    expect(info).toMatchObject({
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "0" },
+    });
   });
 
   test("falls back to TMDB cache for series when warmed", async () => {
