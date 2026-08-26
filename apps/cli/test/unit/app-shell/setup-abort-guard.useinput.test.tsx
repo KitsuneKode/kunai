@@ -32,8 +32,12 @@ const READY: CapabilitySnapshot = {
 
 const BASE_INITIAL: SetupInitialState = {
   mode: "series",
-  audio: "original",
-  subtitle: "en",
+  languageProfiles: {
+    series: { audio: "original", subtitle: "en" },
+    movie: { audio: "original", subtitle: "en" },
+    anime: { audio: "original", subtitle: "en" },
+    youtube: { audio: "original", subtitle: "en" },
+  },
   autoNext: true,
   skipIntro: true,
   skipCredits: true,
@@ -115,6 +119,21 @@ test("[s] applies the screen's recommendation, not wherever the cursor sits (#23
   }
 });
 
+test("every pre-consent screen exposes the safe remaining-defaults shortcut", () => {
+  const { handle } = start();
+  try {
+    handle.stdin.enqueue("\r"); // -> mode
+    expect(handle.lastFrame()).toContain("[S]");
+    expect(handle.lastFrame()).toContain("remaining defaults");
+
+    handle.stdin.enqueue("\r"); // -> language
+    expect(handle.lastFrame()).toContain("[S]");
+    expect(handle.lastFrame()).toContain("remaining defaults");
+  } finally {
+    handle.unmount();
+  }
+});
+
 test("[s] never flips a hydrated-on standing decision off (#231, with #228)", () => {
   const { handle, results } = start({ anilistSync: true });
   try {
@@ -147,6 +166,59 @@ test("the focused language column names its choice's detail (#233)", () => {
     // The detail wraps at this width, so assert a wrap-safe substring.
     expect(handle.lastFrame()).toContain("❯ Audio");
     expect(handle.lastFrame()).toContain("the title was made");
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("language profile hotkeys edit one media lane without rewriting the others", () => {
+  const { handle } = start({
+    languageProfiles: {
+      series: { audio: "original", subtitle: "en" },
+      movie: { audio: "en", subtitle: "es" },
+      anime: { audio: "ja", subtitle: "none" },
+      // `dub`/`interactive` — the assertion below reads their labels. Seeding a
+      // value outside the option catalogs would instead exercise the raw-value
+      // fallback and prove nothing about lane isolation.
+      youtube: { audio: "dub", subtitle: "interactive" },
+    },
+  });
+  try {
+    handle.stdin.enqueue("\r"); // -> mode
+    handle.stdin.enqueue("\r"); // -> language
+    expect(handle.lastFrame()).toContain("Shows Original/English");
+    expect(handle.lastFrame()).toContain("Anime Japanese/None");
+
+    handle.stdin.enqueue("\x1b[B"); // Shows audio: Original -> English
+    handle.stdin.enqueue("3"); // edit Anime
+    handle.stdin.enqueue("\x1b[C"); // focus subtitles
+    handle.stdin.enqueue("\x1b[B"); // None -> Arabic
+
+    const frame = handle.lastFrame();
+    expect(frame).toContain("Shows English/English");
+    expect(frame).toContain("Anime Japanese/Arabic");
+    expect(frame).toContain("Movies English/Spanish");
+    expect(frame).toContain("YouTube Any dub/Pick each time");
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("the done screen reports every media language profile", () => {
+  const { handle } = start();
+  try {
+    handle.stdin.enqueue("\r"); // -> mode
+    handle.stdin.enqueue("\r"); // -> language
+    handle.stdin.enqueue("\r"); // -> playback
+    handle.stdin.enqueue("\r"); // -> library
+    handle.stdin.enqueue("\r"); // -> analytics
+    handle.stdin.enqueue("s"); // keep analytics off -> done
+
+    const frame = handle.lastFrame();
+    expect(frame).toContain("Shows language");
+    expect(frame).toContain("Movies language");
+    expect(frame).toContain("Anime language");
+    expect(frame).toContain("YouTube language");
   } finally {
     handle.unmount();
   }

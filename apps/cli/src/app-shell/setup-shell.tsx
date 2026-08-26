@@ -91,10 +91,27 @@ export const KUNAI_VERSION: string = packageJson.version;
  */
 export type SetupFlowResult = "completed" | "defaults" | "aborted";
 
+export type SetupLanguageLane = "series" | "movie" | "anime" | "youtube";
+export type SetupLanguageProfile = {
+  readonly audio: string;
+  readonly subtitle: string;
+};
+export type SetupLanguageProfiles = Readonly<Record<SetupLanguageLane, SetupLanguageProfile>>;
+
+export const SETUP_LANGUAGE_LANES: readonly {
+  readonly value: SetupLanguageLane;
+  readonly label: string;
+  readonly key: string;
+}[] = [
+  { value: "series", label: "Shows", key: "1" },
+  { value: "movie", label: "Movies", key: "2" },
+  { value: "anime", label: "Anime", key: "3" },
+  { value: "youtube", label: "YouTube", key: "4" },
+];
+
 export interface SetupPrefs {
   mode: "series" | "anime" | "youtube";
-  audio: string;
-  subtitle: string;
+  languageProfiles: SetupLanguageProfiles;
   autoNext: boolean;
   skipIntro: boolean;
   skipCredits: boolean;
@@ -130,8 +147,7 @@ export interface SetupPrefs {
  */
 export interface SetupInitialState {
   readonly mode: "series" | "anime" | "youtube";
-  readonly audio: string;
-  readonly subtitle: string;
+  readonly languageProfiles: SetupLanguageProfiles;
   readonly autoNext: boolean;
   readonly skipIntro: boolean;
   readonly skipCredits: boolean;
@@ -144,8 +160,7 @@ export interface SetupInitialState {
 
 export const FACTORY_INITIAL_STATE: SetupInitialState = {
   mode: "series",
-  audio: RECOMMENDED_AUDIO_PREFERENCE,
-  subtitle: RECOMMENDED_SUBTITLE_PREFERENCE,
+  languageProfiles: recommendedLanguageProfiles(),
   autoNext: true,
   skipIntro: true,
   skipCredits: true,
@@ -159,6 +174,23 @@ export const FACTORY_INITIAL_STATE: SetupInitialState = {
 /** The value `s` ("use recommended") restores on a screen, per screen kind. */
 const MODE_RECOMMENDED = "series";
 const DOWNLOAD_QUALITY_RECOMMENDED = "1080p";
+
+function recommendedLanguageProfiles(): SetupLanguageProfiles {
+  const profile = (): SetupLanguageProfile => ({
+    audio: RECOMMENDED_AUDIO_PREFERENCE,
+    subtitle: RECOMMENDED_SUBTITLE_PREFERENCE,
+  });
+  return {
+    series: profile(),
+    movie: profile(),
+    anime: profile(),
+    youtube: profile(),
+  };
+}
+
+function languageLaneForMode(mode: SetupPrefs["mode"]): SetupLanguageLane {
+  return mode;
+}
 
 /** Index of `value`, or 0 when it somehow left the list — never -1. */
 function indexOfValue(values: readonly string[], value: string): number {
@@ -219,11 +251,9 @@ export function SetupShell({
       initial.mode,
     ),
   );
-  const [audioIdx, setAudioIdx] = useState(() =>
-    recommendedIndex(AUDIO_PREFERENCE_OPTIONS, initial.audio),
-  );
-  const [subtitleIdx, setSubtitleIdx] = useState(() =>
-    recommendedIndex(SUBTITLE_PREFERENCE_OPTIONS, initial.subtitle),
+  const [languageProfiles, setLanguageProfiles] = useState(initial.languageProfiles);
+  const [languageLane, setLanguageLane] = useState<SetupLanguageLane>(() =>
+    languageLaneForMode(initial.mode),
   );
   const [langFocus, setLangFocus] = useState<"audio" | "subtitle">("audio");
   const [playbackIdx, setPlaybackIdx] = useState(0);
@@ -270,6 +300,9 @@ export function SetupShell({
   });
 
   const mode = MODE_OPTIONS[modeIdx]?.value ?? "series";
+  const activeLanguageProfile = languageProfiles[languageLane];
+  const audioIdx = recommendedIndex(AUDIO_PREFERENCE_OPTIONS, activeLanguageProfile.audio);
+  const subtitleIdx = recommendedIndex(SUBTITLE_PREFERENCE_OPTIONS, activeLanguageProfile.subtitle);
 
   /**
    * `analyticsChoice` is passed in rather than derived: every caller has to say
@@ -279,8 +312,7 @@ export function SetupShell({
   function buildPrefs(analyticsChoice: SetupPrefs["analyticsChoice"]): SetupPrefs {
     return {
       mode,
-      audio: AUDIO_PREFERENCE_OPTIONS[audioIdx]?.value ?? RECOMMENDED_AUDIO_PREFERENCE,
-      subtitle: SUBTITLE_PREFERENCE_OPTIONS[subtitleIdx]?.value ?? RECOMMENDED_SUBTITLE_PREFERENCE,
+      languageProfiles,
       autoNext,
       skipIntro,
       skipCredits,
@@ -295,6 +327,7 @@ export function SetupShell({
 
   function advance() {
     if (screenIdx < SCREEN_ORDER.length - 1) {
+      if (screen === "mode") setLanguageLane(languageLaneForMode(mode));
       setShowFix(false);
       setConfirmingAbort(false);
       deepestRef.current = Math.max(deepestRef.current, screenIdx + 1);
@@ -321,7 +354,21 @@ export function SetupShell({
    * action.
    */
   function acceptRemainingDefaults() {
-    finish("defaults", buildPrefs(analyticsDecision), deepestRef.current);
+    const prefs = buildPrefs(analyticsDecision);
+    const remaining = new Set(SCREEN_ORDER.slice(screenIdx));
+    finish(
+      "defaults",
+      {
+        ...prefs,
+        ...(remaining.has("mode") ? { mode: MODE_RECOMMENDED } : {}),
+        ...(remaining.has("language") ? { languageProfiles: recommendedLanguageProfiles() } : {}),
+        ...(remaining.has("playback")
+          ? { autoNext: true, skipIntro: true, skipCredits: true }
+          : {}),
+        ...(remaining.has("library") ? { downloadQuality: DOWNLOAD_QUALITY_RECOMMENDED } : {}),
+      },
+      deepestRef.current,
+    );
   }
 
   function abort() {
@@ -370,10 +417,7 @@ export function SetupShell({
         );
         break;
       case "language":
-        setAudioIdx(recommendedIndex(AUDIO_PREFERENCE_OPTIONS, RECOMMENDED_AUDIO_PREFERENCE));
-        setSubtitleIdx(
-          recommendedIndex(SUBTITLE_PREFERENCE_OPTIONS, RECOMMENDED_SUBTITLE_PREFERENCE),
-        );
+        setLanguageProfiles(recommendedLanguageProfiles());
         break;
       case "playback":
         setAutoNext(true);
@@ -417,9 +461,19 @@ export function SetupShell({
     else if (screen === "mode") setModeIdx((i) => clamp(i + delta, MODE_OPTIONS.length - 1));
     else if (screen === "language") {
       if (langFocus === "audio") {
-        setAudioIdx((i) => clamp(i + delta, AUDIO_PREFERENCE_OPTIONS.length - 1));
+        const next = clamp(audioIdx + delta, AUDIO_PREFERENCE_OPTIONS.length - 1);
+        const value = AUDIO_PREFERENCE_OPTIONS[next]?.value ?? RECOMMENDED_AUDIO_PREFERENCE;
+        setLanguageProfiles((current) => ({
+          ...current,
+          [languageLane]: { ...current[languageLane], audio: value },
+        }));
       } else {
-        setSubtitleIdx((i) => clamp(i + delta, SUBTITLE_PREFERENCE_OPTIONS.length - 1));
+        const next = clamp(subtitleIdx + delta, SUBTITLE_PREFERENCE_OPTIONS.length - 1);
+        const value = SUBTITLE_PREFERENCE_OPTIONS[next]?.value ?? RECOMMENDED_SUBTITLE_PREFERENCE;
+        setLanguageProfiles((current) => ({
+          ...current,
+          [languageLane]: { ...current[languageLane], subtitle: value },
+        }));
       }
     } else if (screen === "playback") setPlaybackIdx((i) => clamp(i + delta, 2));
     else if (screen === "library") setLibraryIdx((i) => clamp(i + delta, 4));
@@ -515,9 +569,24 @@ export function SetupShell({
       return;
     }
 
-    if (key.tab && screen === "language") {
-      setLangFocus((f) => (f === "audio" ? "subtitle" : "audio"));
-      return;
+    if (screen === "language") {
+      const selectedLane = SETUP_LANGUAGE_LANES.find((lane) => lane.key === input);
+      if (selectedLane) {
+        setLanguageLane(selectedLane.value);
+        return;
+      }
+      if (key.tab) {
+        setLangFocus((f) => (f === "audio" ? "subtitle" : "audio"));
+        return;
+      }
+      if (key.leftArrow) {
+        setLangFocus("audio");
+        return;
+      }
+      if (key.rightArrow) {
+        setLangFocus("subtitle");
+        return;
+      }
     }
 
     if (input === " ") {
@@ -566,6 +635,9 @@ export function SetupShell({
         {screen === "mode" ? <ModeScreen selected={modeIdx} /> : null}
         {screen === "language" ? (
           <LanguageScreen
+            lanes={SETUP_LANGUAGE_LANES}
+            activeLane={languageLane}
+            profiles={languageProfiles}
             audioOptions={AUDIO_PREFERENCE_OPTIONS}
             subtitleOptions={SUBTITLE_PREFERENCE_OPTIONS}
             audioIndex={audioIdx}
@@ -626,11 +698,19 @@ function buildFooter(
         { key: "↑↓", label: "choose" },
         ...back,
         { key: "s", label: "recommended" },
+        { key: "S", label: "remaining defaults" },
       ];
     case "language":
       // tab and ↑↓ are named in the screen body, right where they act; the
       // footer keeps only the decisions.
-      return [{ key: "enter", label: "confirm" }, { key: "s", label: "recommended" }, ...back];
+      return [
+        { key: "enter", label: "next" },
+        { key: "1-4", label: "profile" },
+        { key: "tab", label: "audio / subs" },
+        { key: "s", label: "recommended" },
+        { key: "S", label: "remaining defaults" },
+        ...back,
+      ];
     case "playback":
     case "library":
       return [
@@ -638,6 +718,7 @@ function buildFooter(
         { key: "↑↓", label: "choose" },
         { key: "enter", label: "next" },
         { key: "s", label: "recommended" },
+        { key: "S", label: "remaining defaults" },
         ...back,
       ];
     case "analytics":
@@ -657,16 +738,25 @@ function buildFooter(
 
 function describeChoice(prefs: SetupPrefs): string {
   const modeLabel = MODE_OPTIONS.find((option) => option.value === prefs.mode)?.label ?? "Shows";
-  const audio =
-    AUDIO_PREFERENCE_OPTIONS.find((option) => option.value === prefs.audio)?.label ?? prefs.audio;
-  const subtitle =
-    SUBTITLE_PREFERENCE_OPTIONS.find((option) => option.value === prefs.subtitle)?.label ??
-    prefs.subtitle;
-  return `${modeLabel} · ${audio} audio · ${subtitle} subtitles`;
+  return `${modeLabel} first · every profile stays editable`;
 }
 
 function summaryLines(prefs: SetupPrefs): readonly SummaryLine[] {
   const lines: SummaryLine[] = [];
+  for (const lane of SETUP_LANGUAGE_LANES) {
+    const profile = prefs.languageProfiles[lane.value];
+    const audio =
+      AUDIO_PREFERENCE_OPTIONS.find((option) => option.value === profile.audio)?.label ??
+      profile.audio;
+    const subtitle =
+      SUBTITLE_PREFERENCE_OPTIONS.find((option) => option.value === profile.subtitle)?.label ??
+      profile.subtitle;
+    lines.push({
+      ok: true,
+      label: `${lane.label} language`,
+      detail: `${audio} audio · ${subtitle} subtitles`,
+    });
+  }
   lines.push({
     ok: prefs.downloadsEnabled,
     label: prefs.downloadsEnabled ? "Downloads on" : "Downloads off",

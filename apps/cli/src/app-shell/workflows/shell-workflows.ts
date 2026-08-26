@@ -86,11 +86,11 @@ import type { SyncPushSummary } from "@/services/sync/SyncService";
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
+import { openTrackerConnectShell } from "../tracker-connect-shell";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
 import { promptPlaylistName } from "./playlist-name-prompt";
 import { openSetupWizardFromShell } from "./setup-workflows";
-import { connectNamedTracker } from "./tracker-connect";
 
 export function waitForOverlayClose(
   stateManager: import("@/domain/session/SessionStateManager").SessionStateManager,
@@ -3247,37 +3247,7 @@ async function handleSync(container: Container): Promise<"handled"> {
     if (picked.type === "connect") {
       const adapter = adapters.find((a) => a.id === picked.id);
       if (!adapter) continue;
-
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: `Connecting to ${adapter.displayName}…`,
-      });
-
-      const controller = new AbortController();
-      const result = await adapter.connect({
-        signal: controller.signal,
-        // Adapters must not print: stdout writes paint over the Ink frame.
-        onPrompt: (note) =>
-          container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note }),
-      });
-
-      if (result.ok) {
-        // Rows parked on this tracker's dead credential are unparked and drained
-        // now, so a reconnect actually delivers what it was blocking.
-        const resumed = syncService.resumeAfterReauth(adapter.id);
-        const summary = resumed > 0 ? await syncService.drain() : null;
-        container.stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: summary
-            ? `Connected to ${adapter.displayName}. ${describeSyncSummary(summary)}`
-            : `Connected to ${adapter.displayName}.`,
-        });
-      } else {
-        container.stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: `Failed: ${result.error}`,
-        });
-      }
+      await openTrackerConnectShell(container, adapter.id);
       continue;
     }
 
@@ -3308,12 +3278,12 @@ async function handleSync(container: Container): Promise<"handled"> {
 }
 
 async function handleSyncConnectAniList(container: Container): Promise<"handled"> {
-  await connectNamedTracker(container, "anilist");
+  await openTrackerConnectShell(container, "anilist");
   return "handled";
 }
 
 async function handleSyncConnectTmdb(container: Container): Promise<"handled"> {
-  await connectNamedTracker(container, "tmdb");
+  await openTrackerConnectShell(container, "tmdb");
   return "handled";
 }
 

@@ -145,7 +145,7 @@ export function dependencyFooter(hasFix: boolean): readonly FooterKey[] {
     { key: "enter", label: "continue" },
     ...(hasFix ? [{ key: "d", label: "how to fix" }] : []),
     { key: "r", label: "recheck" },
-    { key: "S", label: "use recommended" },
+    { key: "S", label: "remaining defaults" },
     // The one destructive key the grammar names. Deeper screens rely on the
     // two-press guard; here quitting has cost nothing yet, so it is safe to show.
     { key: "esc", label: "quit" },
@@ -198,7 +198,7 @@ function LanguageColumn({
 }) {
   const active = options[index];
   return (
-    <Box flexDirection="column" width="45%">
+    <Box flexDirection="column" width="48%">
       <Text color={focused ? palette.accent : palette.dim} bold>
         {focused ? "❯ " : "  "}
         {heading}
@@ -222,7 +222,7 @@ function LanguageColumn({
       {focused && active ? (
         <Box>
           <Text color={palette.dim}>{"  "}</Text>
-          <Text color={palette.muted}>{active.detail}</Text>
+          <Text color={palette.textDim}>↳ {active.detail}</Text>
         </Box>
       ) : null}
     </Box>
@@ -230,12 +230,24 @@ function LanguageColumn({
 }
 
 export function LanguageScreen({
+  lanes,
+  activeLane,
+  profiles,
   audioOptions,
   subtitleOptions,
   audioIndex,
   subtitleIndex,
   focus,
 }: {
+  readonly lanes: readonly {
+    readonly value: "series" | "movie" | "anime" | "youtube";
+    readonly label: string;
+    readonly key: string;
+  }[];
+  readonly activeLane: "series" | "movie" | "anime" | "youtube";
+  readonly profiles: Readonly<
+    Record<"series" | "movie" | "anime" | "youtube", { audio: string; subtitle: string }>
+  >;
   readonly audioOptions: readonly { value: string; label: string; detail: string }[];
   readonly subtitleOptions: readonly { value: string; label: string; detail: string }[];
   readonly audioIndex: number;
@@ -246,9 +258,30 @@ export function LanguageScreen({
     <Box flexDirection="column">
       <ScreenTitle
         text="Language"
-        sub="Applies to anime, shows, films, and YouTube alike. Change either per episode."
+        sub="Each media type keeps its own defaults. Change either again per episode."
       />
-      <Box gap={4}>
+      <Box marginBottom={1} gap={1} flexWrap="wrap">
+        {lanes.map((lane) => {
+          const active = lane.value === activeLane;
+          const profile = profiles[lane.value];
+          const audio = audioOptions.find((option) => option.value === profile.audio)?.label;
+          const subtitle = subtitleOptions.find(
+            (option) => option.value === profile.subtitle,
+          )?.label;
+          return (
+            <Box key={lane.value} backgroundColor={active ? palette.accentFill : undefined}>
+              <Text color={active ? palette.accent : palette.dim}>[{lane.key}] </Text>
+              <Text color={active ? palette.text : palette.muted} bold={active}>
+                {lane.label}
+              </Text>
+              <Text
+                color={palette.dim}
+              >{` ${audio ?? profile.audio}/${subtitle ?? profile.subtitle}`}</Text>
+            </Box>
+          );
+        })}
+      </Box>
+      <Box gap={2}>
         <LanguageColumn
           heading="Audio"
           focused={focus === "audio"}
@@ -264,7 +297,7 @@ export function LanguageScreen({
       </Box>
       <Box marginTop={1}>
         <Text color={palette.dim} dimColor>
-          tab switches columns · ↑↓ chooses
+          1–4 switches profile · tab or ←→ switches field · ↑↓ chooses
         </Text>
       </Box>
     </Box>

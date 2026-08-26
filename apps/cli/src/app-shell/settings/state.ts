@@ -14,6 +14,7 @@ export function createSettingsUiState(snapshot: KitsuneConfig): SettingsUiState 
     selectedIndex: 0,
     error: null,
     busy: false,
+    activeActionId: null,
     revision: 0,
   };
 }
