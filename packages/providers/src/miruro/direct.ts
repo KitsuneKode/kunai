@@ -1237,17 +1237,68 @@ export function resolveMiruroAnilistId(title: TitleIdentity): string | null {
   return parsePositiveDecimalId(title.id.slice(MIRURO_ANILIST_ID_PREFIX.length));
 }
 
-/**
- * Persistent cache namespace + TTL for the episode catalog.
- *
- * 2 hours, not 12: the catalog is stable for finished shows, but for a
- * currently-airing one a new episode would not appear until the entry expired.
- * 2h still covers the case that matters — a binge or a same-afternoon restart
- * skips the ~6s Cloudflare-gated pipe call — while keeping a newly-aired episode
- * at most 2h stale rather than half a day.
- */
 const MIRURO_EPISODES_CACHE_NAMESPACE = "miruro:episodes";
-const MIRURO_EPISODES_PERSIST_TTL_MS = 2 * 60 * 60 * 1000;
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+/**
+ * A finished catalog does not change, so it earns the long persistence that
+ * makes the restart win worthwhile — the ~6s Cloudflare-gated pipe call is paid
+ * once every 12h rather than once per session.
+ */
+const MIRURO_EPISODES_TTL_FINISHED_MS = 12 * HOUR_MS;
+/**
+ * An airing catalog never persists longer than this, so a just-aired episode is
+ * at most this stale even when the next-air estimate is far off.
+ */
+const MIRURO_EPISODES_TTL_AIRING_FLOOR_MS = 2 * HOUR_MS;
+/** Weekly cadence covers almost every simulcast; the next episode is ~7d after the last. */
+const MIRURO_EPISODES_WEEKLY_CADENCE_MS = 7 * DAY_MS;
+/**
+ * If the newest listed episode aired more than this ago the show is treated as
+ * finished. A weekly show is at most ~7d between episodes; the extra slack
+ * absorbs a late simulcast or an irregular gap before we commit to the long TTL.
+ */
+const MIRURO_EPISODES_AIRING_WINDOW_MS = 10 * DAY_MS;
+
+/**
+ * How long to persist a Miruro episode catalog, from its own episodes' air dates.
+ *
+ * The catalog is stable for a finished show and volatile for an airing one, so a
+ * single flat TTL either wastes the restart win on finished shows or shows a
+ * stale catalog for airing ones. Instead:
+ *
+ * - No parseable air date (edge/empty catalog): treat as finished. Miruro
+ *   supplies air dates for airing catalogs, so the missing-date case is not one.
+ * - Newest episode aired more than the airing window ago: finished → 12h.
+ * - Otherwise airing: the catalog does not change until the next episode airs, so
+ *   persist until the approximate next air date (last + ~7d), clamped to
+ *   [2h, one week]. An airing catalog can therefore out-persist a finished one,
+ *   because its next change point is predictable where a finished show's is not.
+ *   The 2h floor keeps a show that is overdue for an episode from thrashing.
+ *
+ * Pure and exported for unit tests; `now` is injected.
+ */
+export function computeMiruroEpisodesPersistTtlMs(
+  entries: readonly MiruroEpisodeEntry[],
+  now: number = Date.now(),
+): number {
+  let latestAirMs = Number.NEGATIVE_INFINITY;
+  for (const entry of entries) {
+    if (!entry.airDate) continue;
+    const parsed = Date.parse(entry.airDate);
+    if (Number.isFinite(parsed) && parsed > latestAirMs) latestAirMs = parsed;
+  }
+
+  if (latestAirMs === Number.NEGATIVE_INFINITY) return MIRURO_EPISODES_TTL_FINISHED_MS;
+  if (latestAirMs < now - MIRURO_EPISODES_AIRING_WINDOW_MS) return MIRURO_EPISODES_TTL_FINISHED_MS;
+
+  const untilNextAir = latestAirMs + MIRURO_EPISODES_WEEKLY_CADENCE_MS - now;
+  return Math.min(
+    MIRURO_EPISODES_WEEKLY_CADENCE_MS,
+    Math.max(MIRURO_EPISODES_TTL_AIRING_FLOOR_MS, untilNextAir),
+  );
+}
 
 /** Shared episode list fetch for listEpisodes + resolve. */
 export async function getMiruroEpisodesResponse(
@@ -1275,15 +1326,18 @@ export async function getMiruroEpisodesResponse(
   // 3. Network.
   const epData = await pipeCall(context, "episodes", { anilistId: Number(anilistId) }, signal);
   episodeCache.set(cacheKey, epData);
-  if (selectMiruroEpisodeCatalogEntries(epData).length > 0) {
+  const catalogEntries = selectMiruroEpisodeCatalogEntries(epData);
+  if (catalogEntries.length > 0) {
     // Only persist a catalog that actually has episodes. `providers: {}` is
     // truthy, so guarding on it alone would cache an empty body as "this show
-    // has no episodes" for 12 hours and starve every later resolve.
+    // has no episodes" and starve every later resolve. The TTL is derived from
+    // the catalog's own air dates so a finished show persists long and an airing
+    // one expires around its next episode.
     void context.cache?.write(
       MIRURO_EPISODES_CACHE_NAMESPACE,
       anilistId,
       epData,
-      MIRURO_EPISODES_PERSIST_TTL_MS,
+      computeMiruroEpisodesPersistTtlMs(catalogEntries),
     );
   }
   return epData;

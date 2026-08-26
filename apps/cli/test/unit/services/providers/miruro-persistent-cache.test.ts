@@ -6,10 +6,11 @@ import { getMiruroEpisodesResponse } from "@kunai/providers/miruro";
 import { openKunaiDatabase, ProviderCacheRepository, runMigrations } from "@kunai/storage";
 import type { ProviderRuntimeContext } from "@kunai/types";
 
-// A stub that returns a valid episodes payload once, then fails — so a second
-// resolve can only succeed if it read from the persistent cache.
-function oneShotPipeContext(cache: ProviderRuntimeContext["cache"], onFetch: () => void) {
-  let served = false;
+// A context whose fetch must never fire: the catalog is pre-seeded in the
+// persistent store, so a resolve that reaches the network is a failure. The
+// stub records the call (asserted to stay 0) and throws to make an accidental
+// network path fail loudly rather than fall through to a decode error.
+function noNetworkContext(cache: ProviderRuntimeContext["cache"], onFetch: () => void) {
   return {
     providerId: "miruro",
     now: () => new Date().toISOString(),
@@ -18,12 +19,7 @@ function oneShotPipeContext(cache: ProviderRuntimeContext["cache"], onFetch: () 
       runtime: "direct-http",
       fetch: async (_url: string) => {
         onFetch();
-        if (served) return new Response("gone", { status: 500 });
-        served = true;
-        // Not a decodable pipe body — getMiruroEpisodesResponse would throw. We
-        // instead pre-seed the persistent cache below and assert the SECOND
-        // call reads it without touching the network at all.
-        return new Response("gone", { status: 500 });
+        throw new Error("miruro persistent-cache test hit the network");
       },
     },
   } as unknown as ProviderRuntimeContext;
@@ -47,7 +43,7 @@ describe("miruro episode catalog persists across sessions", () => {
     // cache is cold, so a hit can only come from the persistent store. The fetch
     // stub throws if called.
     let fetched = 0;
-    const ctx = oneShotPipeContext(port, () => {
+    const ctx = noNetworkContext(port, () => {
       fetched += 1;
     });
 
