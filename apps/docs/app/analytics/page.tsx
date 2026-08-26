@@ -1,5 +1,7 @@
+import { TrendSection } from "@/components/analytics/trend-section";
 import { UsagePanel } from "@/components/analytics/usage-panel";
 import { fetchDocsAnalyticsMetrics } from "@/lib/analytics-metrics";
+import { fetchDocsAnalyticsSeries } from "@/lib/analytics-series";
 import { buildPageMetadata } from "@/lib/page-metadata";
 import type { Metadata } from "next";
 
@@ -16,7 +18,11 @@ export const metadata: Metadata = buildPageMetadata({
 });
 
 export default async function AnalyticsPage() {
-  const metrics = await fetchDocsAnalyticsMetrics();
+  // Both are optional: the page renders whichever the endpoints can supply.
+  const [metrics, series] = await Promise.all([
+    fetchDocsAnalyticsMetrics(),
+    fetchDocsAnalyticsSeries(),
+  ]);
 
   return (
     <main className="kunai-home relative mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-6 py-14 md:px-10">
@@ -32,6 +38,7 @@ export default async function AnalyticsPage() {
       </header>
 
       <UsagePanel metrics={metrics} />
+      <TrendSection series={series} />
     </main>
   );
 }

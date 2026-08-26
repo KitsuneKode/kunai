@@ -13,7 +13,7 @@
  * them is `force-static`, so there was never request-time data to lose.
  *
  * Outputs are committed, like `lib/generated-metadata.json`, and
- * `scripts/check-codegen-freshness.ts` fails CI when they drift from source.
+ * `apps/docs/scripts/check-codegen-freshness.ts` fails CI when they drift from source.
  */
 import fs from "node:fs";
 import path from "node:path";
