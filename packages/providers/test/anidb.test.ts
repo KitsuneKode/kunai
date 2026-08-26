@@ -13,6 +13,7 @@ import {
   parseAnidbSeasonEvidence,
   anidbCipherArgs,
   resolveAnidbCurl,
+  runAnidbCurlWithRetry,
   resolveAnidbEpisodeStreams,
   searchAnidb,
 } from "../src/anidb/direct";
@@ -400,6 +401,65 @@ describe("anidb curl selection", () => {
   test("never overrides an impersonate build's own handshake", () => {
     for (const platform of ["darwin", "win32", "linux"] as const) {
       expect(anidbCipherArgs(true, platform)).toEqual([]);
+    }
+  });
+});
+
+describe("runAnidbCurlWithRetry", () => {
+  const ok = (stdout: string) => ({ stdout, stderr: "", exitCode: 0 });
+
+  test("returns the first successful attempt without spawning twice", async () => {
+    const runs: number[] = [];
+    const stdout = await runAnidbCurlWithRetry(
+      ["curl", "https://anidb.app"],
+      undefined,
+      async () => {
+        runs.push(1);
+        return ok("<html>page</html>");
+      },
+    );
+    expect(stdout).toBe("<html>page</html>");
+    expect(runs).toHaveLength(1);
+  });
+
+  test("retries exactly once when curl times out (exit 28), then succeeds", async () => {
+    let attempt = 0;
+    const attempts: number[] = [];
+    const stdout = await runAnidbCurlWithRetry(
+      ["curl", "https://anidb.app"],
+      undefined,
+      async () => {
+        attempt += 1;
+        attempts.push(attempt);
+        if (attempt === 1) return { stdout: "", stderr: "", exitCode: 28 };
+        return ok("<html>page after retry</html>");
+      },
+    );
+    expect(stdout).toBe("<html>page after retry</html>");
+    expect(attempts).toEqual([1, 2]);
+  });
+
+  test("a second consecutive timeout surfaces the error instead of retrying forever", async () => {
+    let calls = 0;
+    await expect(
+      runAnidbCurlWithRetry(["curl", "https://anidb.app"], undefined, async () => {
+        calls += 1;
+        return { stdout: "", stderr: "operation timed out", exitCode: 28 };
+      }),
+    ).rejects.toThrow("operation timed out");
+    expect(calls).toBe(2);
+  });
+
+  test("deterministic failures (DNS, TLS, refused) do not burn a retry", async () => {
+    for (const exitCode of [6, 7, 35]) {
+      let calls = 0;
+      await expect(
+        runAnidbCurlWithRetry(["curl", "https://anidb.app"], undefined, async () => {
+          calls += 1;
+          return { stdout: "", stderr: `curl exit ${exitCode}`, exitCode };
+        }),
+      ).rejects.toThrow(`curl exit ${exitCode}`);
+      expect(calls).toBe(1);
     }
   });
 });

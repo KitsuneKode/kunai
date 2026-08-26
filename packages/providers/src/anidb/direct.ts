@@ -69,6 +69,7 @@ export {
   parseAnidbSeasonEvidence,
   anidbCipherArgs,
   resolveAnidbCurl,
+  runAnidbCurlWithRetry,
   resolveAnidbEpisodeStreams,
   searchAnidb,
   type AnidbSearchResult,
