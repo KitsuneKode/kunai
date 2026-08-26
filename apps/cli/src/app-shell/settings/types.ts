@@ -39,6 +39,11 @@ export type EnumOption = {
   readonly detail?: string;
 };
 
+export type SettingActionOptions = {
+  readonly signal: AbortSignal;
+  readonly onStatus: (message: string | null) => void;
+};
+
 type SettingRowMetadata = {
   readonly configKeys?: readonly (keyof KitsuneConfig)[];
 };
@@ -119,7 +124,11 @@ export type SettingRowDef = SettingRowMetadata &
         readonly label: string;
         readonly detail?: string;
         readonly tone?: "danger";
-        readonly run: (ctx: SettingsRegistryContext) => Promise<string | void>;
+        readonly cancellable?: boolean;
+        readonly run: (
+          ctx: SettingsRegistryContext,
+          options?: SettingActionOptions,
+        ) => Promise<string | void>;
         readonly gate?: SettingGate;
       }
     | {
@@ -152,6 +161,7 @@ export type SettingsUiState = {
   readonly selectedIndex: number;
   readonly error: string | null;
   readonly busy: boolean;
+  readonly activeActionId: string | null;
   /**
    * Bumped when an action completes. Actions can change state the draft cannot
    * see — connecting a tracker moves adapter state, not config — so this is

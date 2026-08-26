@@ -45,8 +45,12 @@ const READY: CapabilitySnapshot = {
 
 const BASE_INITIAL: SetupInitialState = {
   mode: "series",
-  audio: "original",
-  subtitle: "en",
+  languageProfiles: {
+    series: { audio: "original", subtitle: "en" },
+    movie: { audio: "original", subtitle: "en" },
+    anime: { audio: "original", subtitle: "en" },
+    youtube: { audio: "original", subtitle: "en" },
+  },
   autoNext: true,
   skipIntro: true,
   skipCredits: true,

@@ -4,8 +4,12 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { forceCloseRootContent } from "@/app-shell/root-content-state";
-import type { SetupFlowPayload } from "@/app-shell/setup-shell";
+import {
+  forceCloseRootContent,
+  getRootContentSession,
+  subscribeRootContentSession,
+} from "@/app-shell/root-content-state";
+import { FACTORY_INITIAL_STATE, type SetupFlowPayload } from "@/app-shell/setup-shell";
 import {
   runSetupWizard,
   wizardInitialStateFromConfig,
@@ -18,7 +22,9 @@ import {
 } from "@/services/persistence/pre-setup-snapshot";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { DEFAULT_CONFIG } from "@kunai/config";
+import { act } from "react";
 
+import { render } from "../../harness/render-capture";
 import { applyStorageRootEnv } from "../../helpers/storage-env";
 
 // `runSetupWizard` now writes a real restore point beside the real config, so
@@ -42,6 +48,27 @@ afterAll(() => {
 
 function clearSnapshot(): void {
   rmSync(preSetupSnapshotPath(), { recursive: true, force: true });
+}
+
+async function renderTrackerConnectSurface() {
+  const waitForSession = () =>
+    new Promise<NonNullable<ReturnType<typeof getRootContentSession>>>((resolve) => {
+      const inspect = () => {
+        const session = getRootContentSession();
+        if (!session?.headerLabel?.startsWith("Connect ")) return;
+        unsubscribe();
+        resolve(session);
+      };
+      const unsubscribe = subscribeRootContentSession(inspect);
+      inspect();
+    });
+
+  const session = await waitForSession();
+  const handle = render(session.element, { columns: 100, rows: 32 });
+  await act(async () => {
+    for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
+  });
+  return handle;
 }
 
 /**
@@ -129,8 +156,7 @@ function fakeContainer(
 
 const BASE_PREFS: SetupFlowPayload["prefs"] = {
   mode: "series",
-  audio: "original",
-  subtitle: "en",
+  languageProfiles: FACTORY_INITIAL_STATE.languageProfiles,
   autoNext: true,
   skipIntro: true,
   skipCredits: true,
@@ -141,6 +167,15 @@ const BASE_PREFS: SetupFlowPayload["prefs"] = {
   presenceDiscord: false,
   analyticsChoice: "unchanged",
 };
+
+function allLanguageProfiles(audio: string, subtitle: string) {
+  return {
+    series: { audio, subtitle },
+    movie: { audio, subtitle },
+    anime: { audio, subtitle },
+    youtube: { audio, subtitle },
+  };
+}
 
 function payload(
   overrides: {
@@ -157,7 +192,11 @@ test("the language choice reaches all four lanes, including YouTube (#229)", asy
   const { container, config } = fakeContainer();
 
   const pending = runSetupWizard({ container, force: true });
-  expect(forceCloseRootContent(payload({ prefs: { audio: "ja", subtitle: "es" } }))).toBe(true);
+  expect(
+    forceCloseRootContent(
+      payload({ prefs: { languageProfiles: allLanguageProfiles("ja", "es") } }),
+    ),
+  ).toBe(true);
   await pending;
 
   for (const lane of [
@@ -235,12 +274,16 @@ test("a failed browser handoff does not flip the standing decision on (#232)", a
 
   const pending = runSetupWizard({ container, force: true });
   expect(forceCloseRootContent(payload({ prefs: { connectAniList: true } }))).toBe(true);
+  const connectSurface = await renderTrackerConnectSurface();
+  expect(connectSurface.lastFrame()).toContain("browser never opened");
+  connectSurface.stdin.enqueue("q");
+  connectSurface.unmount();
   await pending;
 
   expect(anilist?.connectCalls).toBe(1);
   expect(config.sync.anilist.enabled).toBe(false);
   expect(diagnostics.some((m) => m.includes("linking anilist"))).toBe(true);
-  expect(notes.some((n) => n.includes("/sync-connect-anilist"))).toBe(true);
+  expect(notes.some((n) => n.includes("browser never opened"))).toBe(true);
 });
 
 test("a successful handoff flips enabled on after the fact (#232)", async () => {
@@ -257,6 +300,8 @@ test("a successful handoff flips enabled on after the fact (#232)", async () => 
 
   const pending = runSetupWizard({ container, force: true });
   expect(forceCloseRootContent(payload({ prefs: { connectTmdb: true } }))).toBe(true);
+  const connectSurface = await renderTrackerConnectSurface();
+  connectSurface.unmount();
   await pending;
 
   expect(tmdb?.connectCalls).toBe(1);
@@ -332,6 +377,9 @@ describe("wizardInitialStateFromConfig", () => {
         ...DEFAULT_CONFIG,
         defaultMode: "anime",
         animeLanguageProfile: { audio: "en", subtitle: "none", quality: "best" },
+        seriesLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+        movieLanguageProfile: { audio: "ja", subtitle: "es", quality: "best" },
+        youtubeLanguageProfile: { audio: "en", subtitle: "interactive", quality: "best" },
         autoNext: false,
         skipIntro: false,
         skipCredits: false,
@@ -344,8 +392,12 @@ describe("wizardInitialStateFromConfig", () => {
     );
     expect(initial).toEqual({
       mode: "anime",
-      audio: "en",
-      subtitle: "none",
+      languageProfiles: {
+        series: { audio: "original", subtitle: "en" },
+        movie: { audio: "ja", subtitle: "es" },
+        anime: { audio: "en", subtitle: "none" },
+        youtube: { audio: "en", subtitle: "interactive" },
+      },
       autoNext: false,
       skipIntro: false,
       skipCredits: false,
@@ -370,13 +422,7 @@ describe("wizardInitialStateFromConfig", () => {
 
 // ─── Pre-setup restore point ──────────────────────────────────────────────────
 
-/**
- * A configuration whose four language lanes already agree, so a run that
- * answers with those same values produces a patch identical to what is stored.
- * With stock defaults that is impossible: `seriesLanguageProfile.subtitle` is
- * `"none"` while the other three are `"en"`, and the wizard writes one answer to
- * all four — so every run would look like a change and every run would snapshot.
- */
+/** A configuration whose four language lanes already agree. */
 const SETTLED_CONFIG = {
   seriesLanguageProfile: { ...DEFAULT_CONFIG.seriesLanguageProfile, subtitle: "en" },
 };
@@ -384,8 +430,7 @@ const SETTLED_CONFIG = {
 /** Prefs that re-answer `SETTLED_CONFIG` with exactly what it already holds. */
 const SETTLED_PREFS = {
   mode: "series",
-  audio: "original",
-  subtitle: "en",
+  languageProfiles: allLanguageProfiles("original", "en"),
   downloadQuality: "best",
 } as const;
 
@@ -395,7 +440,11 @@ describe("pre-setup restore point", () => {
     const { container, config, notes } = fakeContainer();
 
     const pending = runSetupWizard({ container, force: true });
-    expect(forceCloseRootContent(payload({ prefs: { audio: "ja", subtitle: "es" } }))).toBe(true);
+    expect(
+      forceCloseRootContent(
+        payload({ prefs: { languageProfiles: allLanguageProfiles("ja", "es") } }),
+      ),
+    ).toBe(true);
     await pending;
 
     const snapshot = await readPreSetupSnapshot();
@@ -454,7 +503,11 @@ describe("pre-setup restore point", () => {
     const { container, config, diagnostics } = fakeContainer();
 
     const pending = runSetupWizard({ container, force: true });
-    expect(forceCloseRootContent(payload({ prefs: { audio: "ja" } }))).toBe(true);
+    expect(
+      forceCloseRootContent(
+        payload({ prefs: { languageProfiles: allLanguageProfiles("ja", "en") } }),
+      ),
+    ).toBe(true);
     await expect(pending).resolves.toBe("completed");
 
     expect(config.animeLanguageProfile.audio).toBe("ja");
@@ -470,7 +523,11 @@ describe("pre-setup restore point", () => {
     const before = JSON.parse(JSON.stringify(config));
 
     const pending = runSetupWizard({ container, force: true });
-    expect(forceCloseRootContent(payload({ prefs: { audio: "ja", subtitle: "es" } }))).toBe(true);
+    expect(
+      forceCloseRootContent(
+        payload({ prefs: { languageProfiles: allLanguageProfiles("ja", "es") } }),
+      ),
+    ).toBe(true);
     await pending;
 
     expect(JSON.parse(await readFile(preSetupSnapshotPath(), "utf8"))).toEqual(before);

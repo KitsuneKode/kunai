@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { forceCloseRootContent } from "@/app-shell/root-content-state";
-import type { SetupFlowPayload } from "@/app-shell/setup-shell";
+import { FACTORY_INITIAL_STATE, type SetupFlowPayload } from "@/app-shell/setup-shell";
 import { runSetupWizard } from "@/app-shell/workflows/setup-workflows";
 import type { Container } from "@/container";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
@@ -90,8 +90,7 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
 
 const UNTOUCHED_PREFS = {
   mode: "series",
-  audio: "original",
-  subtitle: "en",
+  languageProfiles: FACTORY_INITIAL_STATE.languageProfiles,
   autoNext: true,
   skipIntro: true,
   skipCredits: true,

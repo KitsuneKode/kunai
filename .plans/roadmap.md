@@ -54,14 +54,14 @@ archive and put only the residue here.
 
 ### Offline and release stability
 
-| Track                        | Remaining                                                                                    | Plan                                                                                                           |
-| ---------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 0.3.0 merge train            | Merge order, chain-A publication, regression watch                                           | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                           |
-| Provider-independent offline | Keep downloads playable after provider retirement                                            | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)                         |
-| Offline artwork cache        | Library previews                                                                             | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)               |
-| Boundary + downloads         | Reviewed adaptive-download design, not started                                               | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)                 |
-| Poster release smokes        | Real-terminal Kitty, iTerm2, Sixel, and multiplexer pass                                     | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)                                       |
-| Setup wizard testing residue | Core landed in #235; residue is real-terminal `esc`-in-PTY and the restore-point walkthrough | [../.archive/plans/2026-08-25-setup-wizard-redesign.md](../.archive/plans/2026-08-25-setup-wizard-redesign.md) |
+| Track                          | Remaining                                                                                            | Plan                                                                                                 |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                   | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
+| Provider-independent offline   | Keep downloads playable after provider retirement                                                    | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
+| Offline artwork cache          | Library previews                                                                                     | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
+| Boundary + downloads           | Reviewed adaptive-download design, not started                                                       | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |
+| Poster release smokes          | Real-terminal Kitty, iTerm2, Sixel, and multiplexer pass                                             | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)                             |
+| Setup wizard release hardening | Independent media language profiles, cancellable OAuth, then real-terminal restore-point walkthrough | [2026-08-27-release-setup-and-oauth-hardening.md](./2026-08-27-release-setup-and-oauth-hardening.md) |
 
 ### Analytics
 

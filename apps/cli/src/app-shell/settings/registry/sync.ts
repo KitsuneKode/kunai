@@ -2,6 +2,7 @@ import { describePauseState, pauseUntil, resolvePauseState } from "@/services/sy
 import type { SyncAdapter } from "@/services/sync/SyncAdapter";
 import type { ConnectionState, TrackerId } from "@/services/sync/types";
 
+import { connectNamedTracker } from "../../workflows/tracker-connect";
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 
 /**
@@ -79,32 +80,28 @@ function trackerRows(ctx: SettingsRegistryContext, adapter: SyncAdapter): Settin
           ? "Sign out locally. Your history and queued changes are kept."
           : "Opens your browser to approve. Nothing to configure.",
       ...(connected ? { tone: "danger" as const } : {}),
-      run: async (context) => {
+      cancellable: true,
+      run: async (context, options) => {
         const service = context.container.syncService;
         const target = service.adapters.find((candidate) => candidate.id === tracker);
         if (!target) return `${adapter.displayName} is not available.`;
+        // A caller that predates the cancellable contract still gets a real
+        // signal object; nothing aborts it, which is the old behaviour.
+        const fallbackController = new AbortController();
+        const signal = options?.signal ?? fallbackController.signal;
 
         if (target.getConnection().state === "connected") {
-          await target.disconnect({ signal: new AbortController().signal });
+          await target.disconnect({ signal });
           return `Disconnected ${adapter.displayName}.`;
         }
 
-        // TMDB's flow has an out-of-band step and says so through `onPrompt`.
-        // Dropping it on the floor is why Connect TMDB looked like it did
-        // nothing: the browser opened and nothing on screen explained the wait.
-        const result = await target.connect({
-          signal: new AbortController().signal,
-          onPrompt: (note) =>
-            context.container.stateManager.dispatch({
-              type: "SET_PLAYBACK_FEEDBACK",
-              note,
-            }),
+        const outcome = await connectNamedTracker(context.container, tracker, {
+          signal,
+          onPrompt: (message) => options?.onStatus(message),
         });
-        if (!result.ok) return `${adapter.displayName}: ${result.error}`;
-
-        // Reconnecting is only finished when the work it was blocking moves.
-        const resumed = service.resumeAfterReauth(tracker);
-        if (resumed > 0) await service.drain();
+        if (outcome.status === "cancelled") return `${adapter.displayName} connection cancelled.`;
+        if (outcome.status === "failed") return `${adapter.displayName}: ${outcome.error}`;
+        if (outcome.status === "unavailable") return `${adapter.displayName} is not available.`;
         const now = target.getConnection();
         const who = now.state === "connected" && now.username ? ` as @${now.username}` : "";
         return `Connected to ${adapter.displayName}${who}.`;

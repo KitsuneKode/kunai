@@ -54,8 +54,8 @@ accounts, usage ping, done. Implementation is
   showed. Hydrated download enablement is clamped to whether `yt-dlp` is
   actually present, the same clamp `[r]` re-probe applies.
 - **`s` applies this screen's recommendation and advances.** It resets only the
-  current screen's decision — mode to shows, language to original/en, playback to
-  all on, quality to 1080p. Standing decisions (account links, downloads
+  current screen's decision — mode to shows, every language lane to its own
+  recommendation, playback to all on, quality to 1080p. Standing decisions (account links, downloads
   enablement, presence) have no recommendation other than what the user already
   has, so `s` never flips one.
 - **`S` accepts every remaining recommendation and finishes.** On the consent
@@ -67,9 +67,15 @@ accounts, usage ping, done. Implementation is
   first screen leaves `onboardingVersion` below the onboarded floor so the next
   launch offers setup again; an abort after answering records the offer and
   touches nothing else.
-- **The language answer reaches all four lanes** — anime, series, movie, and
-  YouTube — for both audio and subtitles. Writing three of them was what made
-  screen 3 configure every lane except the one a YouTube user had just picked.
+- **Each media lane keeps its own language profile.** The language screen edits
+  one lane at a time — `1`–`4` pick Shows, Movies, Anime, or YouTube, `tab` (or
+  `←→`) switches audio/subtitles, `↑↓` chooses — and every lane is hydrated from,
+  and written back to, its own `*LanguageProfile`. Two earlier shapes were both
+  wrong: writing anime only left films and shows on original audio for a user who
+  picked English and skipped YouTube entirely (#229); writing one answer to all
+  four then flattened per-lane values that `/settings` → Language lets you set
+  independently, so a rerun silently discarded them. Fields the screen does not
+  ask about — `quality` — are preserved per lane.
 - **Analytics is keystroke-gated.** Consent is recorded when the user presses a
   key on the consent screen, never when they arrive on it. Arriving and stepping
   back leaves the value `unchanged`, which is neither an opt-in nor an opt-out.
@@ -79,6 +85,16 @@ accounts, usage ping, done. Implementation is
   standing "yes" in config always has a token behind it. An already-connected
   adapter short-circuits rather than opening a second browser round-trip, and no
   abort path connects anything.
+- **A link attempt is a screen you can leave.** Approval happens in a browser and
+  can take as long as the user takes, so the wait is an owned surface
+  (`apps/cli/src/app-shell/tracker-connect-shell.tsx`) that reports progress,
+  takes `esc`/`q` to cancel, and offers `r` to retry a failure. The abort reaches
+  the adapter through a real `AbortSignal`: the call previously passed
+  `new AbortController().signal` — a signal from a controller nobody held, so
+  cancelling was impossible and the wizard sat on an unresponsive screen until
+  the tracker's own deadline expired. A cancelled attempt leaves sync disabled
+  and says nothing further; only a genuine failure suggests
+  `/sync-connect-<tracker>`.
 - **One restore point per setup run.** Before a completing run writes, the
   current config is copied to `config.json.pre-setup.bak` — but only when the
   patch actually changes a field the user would miss (`RESTORABLE_SETUP_FIELDS`

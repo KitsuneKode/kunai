@@ -13,8 +13,9 @@ export const SettingsFooter = React.memo(function SettingsFooter({
   readonly mode: "main" | "submenu" | "input";
 }) {
   const dirty = !settingsEqual(state.draft, state.snapshot);
-  const hints =
-    mode === "input"
+  const hints = state.busy
+    ? "Working… · Esc cancel"
+    : mode === "input"
       ? "Enter save · Esc cancel · Ctrl+U clear"
       : mode === "submenu"
         ? "Enter pick · [ ] reorder · Esc back"

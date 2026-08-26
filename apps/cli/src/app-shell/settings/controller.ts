@@ -427,7 +427,7 @@ export function handleSettingsKey(
       if (state.busy) return { handled: true, state };
       return {
         handled: true,
-        state: { ...state, busy: true, error: null },
+        state: { ...state, busy: true, activeActionId: def.id, error: null },
         runActionId: def.id,
       };
     }

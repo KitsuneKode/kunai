@@ -17,7 +17,7 @@ import { probeCapabilities } from "@/ui";
 import type { KitsuneConfig } from "@kunai/config";
 
 import { runSetupFlow, type SetupInitialState } from "../setup-shell";
-import { connectNamedTracker } from "./tracker-connect";
+import { openTrackerConnectShell, type TrackerConnectOutcome } from "../tracker-connect-shell";
 
 export type { SetupWizardResult } from "@/app/bootstrap/startup-setup";
 
@@ -27,16 +27,18 @@ export type { SetupWizardResult } from "@/app/bootstrap/startup-setup";
  *
  * Without this a rerun showed factory defaults in every control while claiming
  * to be *your* settings — completing it then rewrote `sync.*.enabled` to false
- * and severed linked trackers nobody asked to disconnect (#228). The audio and
- * subtitle lanes are written together by the wizard, so the anime lane is a
- * faithful source for both; the component clamps anything that has drifted out
- * of its catalog.
+ * and severed linked trackers nobody asked to disconnect (#228). Each language
+ * profile hydrates independently so changing one media lane never rewrites the
+ * other three; the component clamps values that have drifted out of its catalog.
  */
 export function wizardInitialStateFromConfig(
   current: Pick<
     KitsuneConfig,
     | "defaultMode"
     | "animeLanguageProfile"
+    | "seriesLanguageProfile"
+    | "movieLanguageProfile"
+    | "youtubeLanguageProfile"
     | "autoNext"
     | "skipIntro"
     | "skipCredits"
@@ -49,8 +51,24 @@ export function wizardInitialStateFromConfig(
 ): SetupInitialState {
   return {
     mode: current.defaultMode,
-    audio: current.animeLanguageProfile.audio,
-    subtitle: current.animeLanguageProfile.subtitle,
+    languageProfiles: {
+      series: {
+        audio: current.seriesLanguageProfile.audio,
+        subtitle: current.seriesLanguageProfile.subtitle,
+      },
+      movie: {
+        audio: current.movieLanguageProfile.audio,
+        subtitle: current.movieLanguageProfile.subtitle,
+      },
+      anime: {
+        audio: current.animeLanguageProfile.audio,
+        subtitle: current.animeLanguageProfile.subtitle,
+      },
+      youtube: {
+        audio: current.youtubeLanguageProfile.audio,
+        subtitle: current.youtubeLanguageProfile.subtitle,
+      },
+    },
     autoNext: current.autoNext,
     skipIntro: current.skipIntro,
     skipCredits: current.skipCredits,
@@ -188,30 +206,28 @@ export async function runSetupWizard({
         tmdb: { ...current.sync.tmdb, ...(prefs.connectTmdb ? {} : { enabled: false }) },
       },
       ...analyticsPatch,
-      // Audio reaches every lane. It previously landed on anime only, while
-      // the slide asked which audio Kunai should prefer generally — so a user
-      // who chose English still got original audio for films and shows. The
-      // YouTube lane was then skipped entirely, which made screen 3 configure
-      // exactly the three lanes a YouTube user did not pick (#229).
+      // Every lane is written from its own answer. Two earlier shapes were both
+      // wrong: writing anime only left films and shows on original audio for a
+      // user who picked English, and skipped YouTube entirely (#229); writing
+      // one answer to all four then flattened per-lane choices that Settings
+      // lets you set independently, so rerunning setup silently discarded them.
+      // The `...current` spread keeps each profile's other fields — `quality`
+      // among them — which this screen does not ask about.
       animeLanguageProfile: {
         ...current.animeLanguageProfile,
-        audio: prefs.audio,
-        subtitle: prefs.subtitle,
+        ...prefs.languageProfiles.anime,
       },
       seriesLanguageProfile: {
         ...current.seriesLanguageProfile,
-        audio: prefs.audio,
-        subtitle: prefs.subtitle,
+        ...prefs.languageProfiles.series,
       },
       movieLanguageProfile: {
         ...current.movieLanguageProfile,
-        audio: prefs.audio,
-        subtitle: prefs.subtitle,
+        ...prefs.languageProfiles.movie,
       },
       youtubeLanguageProfile: {
         ...current.youtubeLanguageProfile,
-        audio: prefs.audio,
-        subtitle: prefs.subtitle,
+        ...prefs.languageProfiles.youtube,
       },
     } satisfies Partial<KitsuneConfig>;
 
@@ -256,9 +272,9 @@ export async function runSetupWizard({
       ["tmdb", prefs.connectTmdb, () => (tmdbLinked = true)],
     ] as const) {
       if (!wanted) continue;
-      let connected: boolean;
+      let connectOutcome: TrackerConnectOutcome;
       try {
-        connected = await connectNamedTracker(container, tracker);
+        connectOutcome = await openTrackerConnectShell(container, tracker);
       } catch (error) {
         container.diagnosticsService.record({
           category: "session",
@@ -268,15 +284,17 @@ export async function runSetupWizard({
         note(container, `${tracker} not linked — run /sync-connect-${tracker} to try again.`);
         continue;
       }
-      if (connected) {
+      if (connectOutcome.status === "connected") {
         linkedFlag();
       } else {
         container.diagnosticsService.record({
           category: "session",
           message: `Setup could not finish linking ${tracker}`,
-          context: { reason: "connect did not complete" },
+          context: { reason: connectOutcome.status },
         });
-        note(container, `${tracker} not linked — run /sync-connect-${tracker} to try again.`);
+        if (connectOutcome.status !== "cancelled") {
+          note(container, `${tracker} not linked — run /sync-connect-${tracker} to try again.`);
+        }
       }
     }
 

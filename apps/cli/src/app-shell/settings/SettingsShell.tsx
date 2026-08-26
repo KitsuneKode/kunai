@@ -1,6 +1,6 @@
 import type { Container } from "@/container";
 import { useInput } from "ink";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { buildSettingsPage } from "./build-page";
 import { SettingsFooter } from "./components/SettingsFooter";
@@ -37,6 +37,7 @@ export function SettingsShell({
   readonly onStatus: (message: string | null) => void;
   readonly onRedraw: () => void;
 }) {
+  const actionAbortRef = useRef<AbortController | null>(null);
   const [state, setState] = useState<SettingsUiState>(() => {
     const base = createSettingsUiState(container.config.getRaw());
     const ctx = buildSettingsRegistryContext(container, base.draft);
@@ -86,11 +87,16 @@ export function SettingsShell({
     async (actionId: string) => {
       const def = page.defById.get(actionId);
       if (!def || def.kind !== "action") {
-        setState((current) => ({ ...current, busy: false }));
+        setState((current) => ({ ...current, busy: false, activeActionId: null }));
         return;
       }
+      const controller = new AbortController();
+      actionAbortRef.current = controller;
       try {
-        const message = await def.run(registryCtx);
+        const message = await def.run(registryCtx, {
+          signal: controller.signal,
+          onStatus,
+        });
         if (message) onStatus(message);
         // An action's message is its result, not a failure. Storing it in
         // `error` is what painted "Connected to AniList as @you." in red.
@@ -98,15 +104,29 @@ export function SettingsShell({
           ...current,
           draft: container.config.getRaw(),
           busy: false,
+          activeActionId: null,
           error: null,
           revision: current.revision + 1,
         }));
       } catch (error) {
+        if (controller.signal.aborted) {
+          onStatus("Action cancelled.");
+          setState((current) => ({
+            ...current,
+            busy: false,
+            activeActionId: null,
+            error: null,
+          }));
+          return;
+        }
         setState((current) => ({
           ...current,
           busy: false,
+          activeActionId: null,
           error: `Action failed: ${String(error)}`,
         }));
+      } finally {
+        if (actionAbortRef.current === controller) actionAbortRef.current = null;
       }
     },
     [container, onStatus, page.defById, registryCtx],
@@ -121,9 +141,20 @@ export function SettingsShell({
     return () => clearTimeout(timer);
   }, [state.draft, container]);
 
+  useEffect(() => () => actionAbortRef.current?.abort(), []);
+
   useInput(
     (input, key) => {
       if (commandMode) return;
+      if (state.busy && (key.escape || input.toLowerCase() === "q")) {
+        const activeDef = state.activeActionId ? page.defById.get(state.activeActionId) : null;
+        if (activeDef?.kind === "action" && activeDef.cancellable) {
+          actionAbortRef.current?.abort();
+          onStatus("Cancelling…");
+          onRedraw();
+        }
+        return;
+      }
       const result = handleSettingsKey(input, key, state, { container, registryCtx });
       if (!result.handled) return;
 
