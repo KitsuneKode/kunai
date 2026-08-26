@@ -82,7 +82,7 @@ export type VidkingFlavorDefinition = {
  * Cypher is Kunai-only (explicit quality ladder; not on the website).
  */
 const FLAVORS: readonly VidkingFlavorDefinition[] = [
-  /* ── Active Cineby catalog (api.speedracelight.com / api.wingsdatabase.com) ── */
+  /* ── Active Cineby catalog (api.speedracelight.com) ── */
   {
     id: "cineby-yoru",
     themeLabel: "Yoru",

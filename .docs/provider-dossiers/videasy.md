@@ -49,7 +49,7 @@ Deliberately **not** done, and why:
 ## Production status (2026-07-16)
 
 - **Module:** `packages/providers/src/videasy/direct.ts` + `flavors.ts` + `crypto.ts`
-- **Active stream API:** `api.speedracelight.com` (primary; used by player.videasy.to / cineby.at / cineplay.to). Mirror: `api.wingsdatabase.com`.
+- **Active stream API:** `api.speedracelight.com` (sole seed host; used by player.videasy.to / cineby.at / cineplay.to). The `api.wingsdatabase.com` mirror was removed on 2026-08-26 — the name is NXDOMAIN on Cloudflare and Google resolvers and the surviving apex does not serve `/seed`, so it could only lose the race and then occupy the penalty box. The transport still races N hosts via `WINGS_API_BASES`; add a mirror there when a live one exists.
 - **Decrypt:** seed + `enc=2` + mvm1 PRNG XOR. **Must use sparse `Array(61)`** for PRNG state (`n in state` mask). Dense arrays break every payload.
 - **Cineby UI catalog** (https://www.cineby.at/tv/299167 “Dutton Ranch” example):
   | UI             | API route                  | Live note (S1E1)         |

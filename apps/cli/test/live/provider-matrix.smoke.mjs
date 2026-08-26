@@ -17,6 +17,18 @@ const MATRIX = [
     fixture: "Breaking Bad S01E01",
   },
   {
+    provider: "vidlink",
+    command: ["bun", "test/live/vidlink-inception.smoke.ts"],
+    media: "movie",
+    fixture: "Inception (DASH + playlist cookie)",
+  },
+  {
+    provider: "anidb",
+    command: ["bun", "-e", "await import('./test/live/anidb-onigiri.smoke.ts')"],
+    media: "anime",
+    fixture: "Onigiri S01E01",
+  },
+  {
     provider: "allanime",
     command: ["bun", "-e", "await import('./test/live/allanime-demonslayer.smoke.ts')"],
     media: "anime",
