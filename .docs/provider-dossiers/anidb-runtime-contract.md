@@ -65,7 +65,7 @@ instead of pretending those fields came from `anidb.app`.
   evidence that captions are hardcoded.
 - Official AniDB XML is a separate catalog namespace. It can provide richer anime and episode
   metadata, but its AIDs must not be confused with the numeric ids in `anidb.app` URLs. See
-  [the metadata capability dossier](./provider-dossiers/anidb-metadata-capabilities.md).
+  [the metadata capability dossier](./anidb-metadata-capabilities.md).
 
 The cost model matters as much as the data, because this runs in front of the episode picker:
 
