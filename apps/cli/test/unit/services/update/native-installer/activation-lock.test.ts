@@ -527,6 +527,16 @@ describe("activation lock", () => {
       const lock = await tryAcquireActivationLock(layout, "2.0.0", {
         timeoutMs: RETAIN_TEST_TIMEOUT_MS,
         pollMs: 5,
+        // Confirm the owner is the same live process by returning its stored
+        // start id. Without an injected lookup this used the real Windows probe
+        // against an impossible stored id, so retention depended on whether the
+        // bounded probe returned in time (fast runner: reports the real id ->
+        // mismatch -> reclaim; slow runner: budget exceeded -> null -> retain) --
+        // a timing flake, not the invariant. The invariant is: a confirmed-live
+        // aged owner is retained within the short deadline. Injecting makes that
+        // deterministic; the real probe's own behavior is covered by the reclaim
+        // tests.
+        processStartIdLookup: () => impossibleProcessStartId(),
       });
 
       expect(lock).toEqual({ acquired: false, holderPid: process.pid });
