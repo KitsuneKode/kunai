@@ -65,6 +65,32 @@ Playback reliability, calendar navigation, and shell responsiveness.
 - Search shows a query-aware loading skeleton, post-play artwork retries after a transient fetch failure, and quitting no longer pauses autoplay.
 - Provider fallback moves to a deliberate `Shift+F` chord so a stray keypress cannot switch providers mid-session.
 
+A last review pass over the release train, from real sessions:
+
+- **A malformed language tag can no longer take down a resolve.** `Intl.DisplayNames.of()`
+  throws on anything that is not a well-formed BCP-47 tag, and several values reaching it are
+  not — YouTube's `a.en` auto-caption codes, `live_chat`, and `none`, which Kunai ships as its
+  own default subtitle preference. Labels now degrade instead of throwing, YouTube's dotted
+  auto-caption tags resolve to the real language, and the `live_chat` metadata track is dropped
+  before it can reach the picker.
+- **Setup keeps a language per media type.** Shows, Movies, Anime, and YouTube each hydrate from
+  and write back to their own profile, so rerunning `/setup` no longer flattens choices made in
+  Settings. `1`-`4` pick the lane, `tab` switches audio and subtitles.
+- **A tracker sign-in can be cancelled.** Linking now runs in its own screen with visible
+  progress, `esc` to cancel, and `r` to retry a failure. It previously passed a signal from a
+  controller nobody held, so cancelling was impossible and the wizard waited on an unresponsive
+  screen until the tracker's own deadline expired.
+- **Stopping early shows where you stopped.** The post-play bar read season progress — "3 / 10"
+  after 23 seconds of an episode — and films got no bar at all. It now reads position over
+  runtime for both.
+- **Discord presence clears when Kunai exits.** A single Discord IPC frame was allowed ten
+  seconds while shutdown force-exits after four, and the clear also queued behind any update
+  already in flight, so the card outlived the session. It now runs first and within the
+  shutdown budget.
+- **A withdrawn release says so.** Marking one withdrawn now lists it as withdrawn on the docs
+  site with the rollback command and withholds its install commands, rather than dropping it
+  from the page while its detail view still offered them.
+
 Also new since 0.2.5, the last release you could install:
 
 - **YouTube lane.** Search, playlists and channels play through the same shell as
