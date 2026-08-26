@@ -318,6 +318,27 @@ Autoplay and next/previous actions should follow real episode availability from 
 - fullscreen transitions should favor instant layout stability over flourish
 - the shell should feel denser and calmer over long sessions, especially during episode browsing and repeated picker use
 
+## Shell To Phase-Loop Intents
+
+The Ink shell hands playback intents to the app phase loop through a **promise
+bridge**: `waitForRootQueueSelection()` / `resolveRootQueueSelection()` in
+`apps/cli/src/app-shell/root-queue-bridge.ts`, and the same shape in
+`root-history-bridge.ts`. The route awaits the bridge and returns a result the
+phase loop plays. Queue and history use it.
+
+**Use the promise bridge for any new intent. Do not add a staged module
+global.** A staged global is read by exactly one route, but overlays open from
+more than one place — the notifications inbox is opened both by
+`openNotificationsOverlay()` and by a direct `OPEN_OVERLAY` dispatch in
+`root-overlay-shell.tsx`. On the route that never read the staged value, "play
+now" silently did nothing, and the stranded intent later fired against an
+unrelated session and played the wrong title. Subscribe/notify plus
+clear-on-open bounded that damage; it did not remove the second pattern.
+
+Migrating notifications onto the promise bridge is the outstanding
+single-source-of-truth fix. Whatever the mechanism, an intent has to work on
+every path that can open the surface.
+
 ## Anti-Patterns
 
 - mixing multiple interaction models in the same primary flow
