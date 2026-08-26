@@ -11,13 +11,34 @@ lastReviewed: "2026-08-24"
 - **Budget:** no per-warning budget file — fix new warnings in the same PR that introduces them; burn down existing warnings in focused batches when touching a file anyway.
 - **Rationale:** keeps signal high for agents and humans without blocking unrelated refactors on legacy debt.
 
-## anti-slop (changed-file advisory)
+## anti-slop (ratcheted, plus a changed-file advisory)
 
 `bun run lint:anti-slop` runs the vendored plugin in
 `tools/oxlint/anti-slop/` via `.oxlintrc.anti-slop.json`. All fifteen generic
 rules are set to **error** in that config — the severity is not weakened.
 
-It is a **separate** command on purpose. The rules still report thousands of
+### The ratcheted rules
+
+Four rules are clean in `src/` and are therefore **blocking** in
+`.oxlintrc.json`, so `bun run lint` and the pre-commit hook enforce them:
+
+- `anti-slop/no-chained-type-assertions`
+- `anti-slop/no-object-parameters`
+- `anti-slop/no-reflect-apply`
+- `anti-slop/no-reflect-get`
+
+They are turned **off** for test paths (`**/*.test.*`, `**/test/**`,
+`**/__mocks__/**`), which still carry a legacy baseline — roughly 300 chained
+assertions in tests alone. Production code holds the line; tests are not held to
+it yet.
+
+**Ratcheting a fifth rule means driving its `src/` count to zero first**, then
+moving it into `.oxlintrc.json` alongside these. Do not add a rule to the
+blocking gate with a non-zero baseline; that is how a gate gets disabled.
+
+### The advisory
+
+The remaining eleven rules stay a **separate** command on purpose. The rules still report thousands of
 historical findings, so wiring them into `.oxlintrc.json` would turn
 `bun run lint` and the lint-staged pre-commit hook red on the first run and
 block every unrelated commit. Severity is not the thing to compromise there;

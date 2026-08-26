@@ -117,9 +117,11 @@ function checkFile(absolute: string): Finding[] {
 
       for (const [, target] of line.matchAll(MD_LINK)) {
         if (!target || target.startsWith("http") || isAllowedMissing(target)) continue;
-        const fromDoc = join(dirname(absolute), target);
-        const fromRoot = join(ROOT, target);
-        if (!existsSync(fromDoc) && !existsSync(fromRoot)) {
+        // Doc-relative only. A markdown renderer resolves a link against the
+        // file it sits in, so accepting a repo-root fallback here passed links
+        // that were already broken for a human reader — `.docs/providers.md`
+        // written from inside `.docs/` is one, and it shipped.
+        if (!existsSync(join(dirname(absolute), target))) {
           findings.push({ file: relative, target, line: index + 1 });
         }
       }
