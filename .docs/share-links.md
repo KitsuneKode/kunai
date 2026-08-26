@@ -64,7 +64,7 @@ Parser returns `null` when neither `cat` nor `q` is present, or when the catalog
 - `kunai --handoff-url <url>` — OS protocol handler path (confirmation required)
 - Post-play **Share link** action and history **Copy share link**
 - mpv `Ctrl+Shift+S` — copy the HTTPS link at live `time-pos`
-- Discord Rich Presence — https catalog button; playable `kunai://` ref in presence text (not a button; Discord only allows http(s) buttons)
+- Discord Rich Presence — **Play on Kunai** button carrying the https web-share URL, plus an https catalog button; the `kunai://` ref also stays in presence text (Discord only allows http(s) button URLs, so the play button uses the web route)
 
 ## Timestamp resume
 

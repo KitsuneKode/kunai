@@ -1,6 +1,7 @@
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import {
   encodePlaybackTargetRef,
+  encodePlaybackTargetWebUrl,
   type PlaybackTargetRef,
 } from "@/domain/share/playback-target-ref";
 import { buildShareRefFromTitleContext } from "@/domain/share/share-ref-from-title-context";
@@ -31,6 +32,25 @@ export function buildPlayableShareUrlForActivity(
   if (privacy === "private") return null;
   const ref = buildShareRefForActivity(activity);
   return ref ? encodePlaybackTargetRef(ref) : null;
+}
+
+/**
+ * The same playback target as {@link buildPlayableShareUrlForActivity}, but over
+ * https so Discord will accept it as a button.
+ *
+ * Discord rejects any button URL that is not http(s), which is why the
+ * `kunai://` ref rode along as presence *text* and the only button repeated the
+ * catalog link — the play target and the catalog target rendered as the same
+ * destination. The web share route is an ordinary https URL that hands off to
+ * `kunai://`, so the play action can finally be its own button.
+ */
+export function buildPlayableWebUrlForActivity(
+  activity: PresencePlaybackActivity,
+  privacy: "full" | "private",
+): string | null {
+  if (privacy === "private") return null;
+  const ref = buildShareRefForActivity(activity);
+  return ref ? encodePlaybackTargetWebUrl(ref) : null;
 }
 
 export function buildCatalogViewLink(input: {
@@ -96,14 +116,26 @@ export function buildBestCatalogLink(
   return buildCatalogEpisodeLink(activity) ?? buildCatalogViewLink(activity);
 }
 
+/** Discord renders at most two presence buttons; extras are dropped silently. */
+export const DISCORD_MAX_PRESENCE_BUTTONS = 2;
+
 export function buildDiscordPresenceButtons(
   activity: PresencePlaybackActivity,
   privacy: "full" | "private",
 ): readonly { label: string; url: string }[] {
   if (privacy === "private") return [];
 
+  const buttons: { label: string; url: string }[] = [];
+  const playUrl = buildPlayableWebUrlForActivity(activity, privacy);
+  if (playUrl) buttons.push({ label: "Play on Kunai", url: playUrl });
+
+  // A catalog button that resolves to the play target would give the card two
+  // buttons and one destination, which is the duplication this list exists to
+  // avoid.
   const catalog = buildBestCatalogLink(activity);
-  return catalog ? [catalog] : [];
+  if (catalog && catalog.url !== playUrl) buttons.push(catalog);
+
+  return buttons.slice(0, DISCORD_MAX_PRESENCE_BUTTONS);
 }
 
 export function buildDiscordActivityUrlFields(
@@ -112,10 +144,13 @@ export function buildDiscordActivityUrlFields(
 ): Record<string, string> {
   const viewLink = buildCatalogViewLink({ mode: activity.mode, title: activity.title });
   const episodeLink = buildCatalogEpisodeLink(activity);
-  const stateLink = episodeLink ?? viewLink;
   const fields: Record<string, string> = {};
   if (viewLink) fields.details_url = viewLink.url;
-  if (stateLink) fields.state_url = stateLink.url;
+  // The state line is only worth linking when it goes somewhere the title does
+  // not. A movie has no episode page, and an AniList-only title resolves both
+  // links to the same series page — in both cases the old `episodeLink ??
+  // viewLink` made the title and state rows point at one identical URL.
+  if (episodeLink && episodeLink.url !== viewLink?.url) fields.state_url = episodeLink.url;
   const playable = buildPlayableShareUrlForActivity(activity, privacy);
   if (playable) fields.playable_ref = playable;
   return fields;
