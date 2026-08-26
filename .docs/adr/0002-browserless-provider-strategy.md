@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-26"
+---
+
 # 0002 — Browserless provider strategy, and why Turnstile minting is off the table
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Status: accepted
 Date: 2026-08-26

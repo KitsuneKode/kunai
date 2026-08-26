@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-26"
+---
+
 # Kunai internal docs
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Agent- and contributor-facing. How the system works and why. User-facing docs
 live in [`docs/`](../docs/) and ship on the site; nothing here is linked from

@@ -6,7 +6,6 @@ import {
   decodePlaybackTargetWebCode,
   encodePlaybackTargetRef,
   type ParsedKunaiShare,
-  type PlaybackTargetRef,
 } from "@kunai/types";
 import { IconArrowRight, IconPlayerPlayFilled, IconTerminal2 } from "@tabler/icons-react";
 import type { Metadata } from "next";
