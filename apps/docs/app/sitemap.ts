@@ -1,4 +1,4 @@
-import { releaseNotesArtifacts, releasePath } from "@/lib/release-notes";
+import { indexableReleaseNotesArtifacts, releasePath } from "@/lib/release-notes";
 import { docsSiteUrl } from "@/lib/site";
 import { source } from "@/lib/source";
 import type { MetadataRoute } from "next";
@@ -7,7 +7,9 @@ export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages = source.getPages();
-  const releases = releaseNotesArtifacts;
+  // Withdrawn releases keep their page but leave the sitemap: the point of a
+  // withdrawal is to stop people arriving at that version.
+  const releases = indexableReleaseNotesArtifacts();
 
   return [
     {

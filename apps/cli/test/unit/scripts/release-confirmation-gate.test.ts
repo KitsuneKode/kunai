@@ -124,7 +124,6 @@ function validInput(overrides: Partial<ReleaseConfirmationInput> = {}): ReleaseC
     binaryArtifactName: `kunai-release-candidate-${version}`,
     releaseAssets: completeAssets(),
     targetReleaseMetadata: { version, status: "staged", publishedAt: null },
-    release026Metadata: { version: "0.2.6", status: "staged", publishedAt: null },
     trackedInstallerReferencePaths: [],
     generatedMetadataFresh: true,
     gateEvidence: validatedGateEvidence(version, commitSha),
@@ -238,20 +237,6 @@ describe("evaluateReleaseConfirmation", () => {
         }),
       ),
     ).toThrow(/non-staged|must be staged|status.*staged/i);
-  });
-
-  test("rejects public 0.2.6", () => {
-    expect(() =>
-      evaluateReleaseConfirmation(
-        validInput({
-          release026Metadata: {
-            version: "0.2.6",
-            status: "published",
-            publishedAt: "2026-07-01T00:00:00.000Z",
-          },
-        }),
-      ),
-    ).toThrow(/0\.2\.6/i);
   });
 
   test("rejects tracked installer-reference source", () => {

@@ -25,24 +25,37 @@ describe("release notes artifacts", () => {
     expect(latest?.summary.trim().length).toBeGreaterThan(0);
   });
 
-  test("latest public release ignores staged 0.2.6", () => {
+  test("latest public release ignores the staged candidate", () => {
     expect(latestReleaseNotesArtifact()?.version).toBe("0.2.5");
     expect(
       publishedReleaseNotesArtifacts().every((release) => release.status === "published"),
     ).toBe(true);
-    expect(publishedReleaseNotesArtifacts().some((release) => release.version === "0.2.6")).toBe(
+    expect(publishedReleaseNotesArtifacts().some((release) => release.version === "0.3.0")).toBe(
       false,
     );
   });
 
-  test("staged releases have no GitHub URL or visible assets", () => {
-    const STAGED_026 = getReleaseByTag("0.2.6");
-    expect(STAGED_026).toBeDefined();
-    if (!STAGED_026) return;
+  /**
+   * The published line is 0.2.5 → 0.3.0. The old `0.2.6` artifact was removed:
+   * that cycle was versioned but never published (the release workflow could not
+   * find its own composite action), and its work reaches users for the first
+   * time inside 0.3.0, where the changelog folds it in. Shipping a standalone
+   * 0.2.6 entry would advertise a version that has no tag, no binaries, and no
+   * npm release.
+   */
+  test("no release artifact sits between 0.2.5 and 0.3.0", () => {
+    expect(getReleaseByTag("0.2.6")).toBeNull();
+    expect(releaseNotesArtifacts.map((release) => release.version)).toEqual(["0.3.0", "0.2.5"]);
+  });
 
-    expect(STAGED_026.status).toBe("staged");
-    expect(githubReleaseUrl(STAGED_026)).toBeNull();
-    expect(releaseAssetsForDisplay(STAGED_026)).toEqual([]);
+  test("staged releases have no GitHub URL or visible assets", () => {
+    const staged = getReleaseByTag("0.3.0");
+    expect(staged).toBeDefined();
+    if (!staged) return;
+
+    expect(staged.status).toBe("staged");
+    expect(githubReleaseUrl(staged)).toBeNull();
+    expect(releaseAssetsForDisplay(staged)).toEqual([]);
   });
 
   test("looks up releases by tag and builds detail paths", () => {
@@ -51,7 +64,7 @@ describe("release notes artifacts", () => {
     expect(sample).toBeDefined();
     if (!sample) return;
 
-    expect(normalizeReleaseTag("0.2.6")).toBe("v0.2.6");
+    expect(normalizeReleaseTag("0.2.5")).toBe("v0.2.5");
     expect(getReleaseByTag(sample.tag)?.version).toBe(sample.version);
     expect(getReleaseByTag(sample.version)?.tag).toBe(sample.tag);
     expect(releasePath(sample.tag)).toBe(`/releases/${normalizeReleaseTag(sample.tag)}`);

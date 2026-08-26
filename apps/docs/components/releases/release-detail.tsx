@@ -1,5 +1,6 @@
 import { ReleaseInstallPanel } from "@/components/releases/release-install-panel";
 import { ReleaseSectionList, SummaryBlocks } from "@/components/releases/release-sections";
+import { ReleaseWithdrawnNotice } from "@/components/releases/release-withdrawn-notice";
 import {
   displaySectionsForRelease,
   githubReleaseUrl,
@@ -17,6 +18,7 @@ export function ReleaseDetail({ release }: ReleaseDetailProps) {
   const assets = releaseAssetsForDisplay(release);
   const githubUrl = githubReleaseUrl(release);
   const isStaged = release.status === "staged";
+  const isWithdrawn = release.status === "withdrawn";
 
   return (
     <article className="flex flex-col gap-10">
@@ -30,6 +32,7 @@ export function ReleaseDetail({ release }: ReleaseDetailProps) {
           {isStaged ? (
             <span className="text-fd-muted-foreground"> · staged (not published)</span>
           ) : null}
+          {isWithdrawn ? <span className="text-fd-muted-foreground"> · withdrawn</span> : null}
         </p>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -58,7 +61,11 @@ export function ReleaseDetail({ release }: ReleaseDetailProps) {
         <SummaryBlocks summary={release.summary} />
       </header>
 
-      <ReleaseInstallPanel release={release} showCanonical />
+      {isWithdrawn ? (
+        <ReleaseWithdrawnNotice release={release} />
+      ) : (
+        <ReleaseInstallPanel release={release} showCanonical />
+      )}
 
       <ReleaseSectionList sections={sections} />
 

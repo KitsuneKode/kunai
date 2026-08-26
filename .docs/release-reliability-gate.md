@@ -462,13 +462,13 @@ Expected: `ok: true`, `streamResolved: true`, `streamHost` contains `youtube.com
 Every gate above exists to stop a bad release shipping. This section is for when
 one ships anyway. Rehearse it before tagging, not during an incident.
 
-Nothing here needs a code change. Both update channels resolve a *server-side
-mutable pointer*, so withdrawal is a metadata edit and is reversible.
+Nothing here needs a code change. Both update channels resolve a _server-side
+mutable pointer_, so withdrawal is a metadata edit and is reversible.
 
-| Channel | Pointer read at runtime | Read by |
-| ------- | ----------------------- | ------- |
-| `binary` | `https://api.github.com/repos/KitsuneKode/kunai/releases/latest` → `tag_name` | `apps/cli/src/services/update/latest-version.ts` |
-| `npm-global`, `bun-global` | `https://registry.npmjs.org/@kitsunekode%2fkunai/latest` | `apps/cli/src/services/update/UpdateService.ts` |
+| Channel                    | Pointer read at runtime                                                       | Read by                                          |
+| -------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------ |
+| `binary`                   | `https://api.github.com/repos/KitsuneKode/kunai/releases/latest` → `tag_name` | `apps/cli/src/services/update/latest-version.ts` |
+| `npm-global`, `bun-global` | `https://registry.npmjs.org/@kitsunekode%2fkunai/latest`                      | `apps/cli/src/services/update/UpdateService.ts`  |
 
 `apps/cli/src/services/update/resolve-latest-version.ts` is the single entry
 point that routes an install method to its channel.
@@ -520,6 +520,28 @@ Release notes, `README.md`, and the docs site. A withdrawn version that is
 withdrawn silently gets reinstalled from a cached tarball, a pinned CI file, or
 a blog post.
 
+On the docs site this is one command:
+
+```sh
+bun run scripts/set-release-status.ts <version> withdrawn
+```
+
+That flips `status` in `.release/kunai-v<version>.json`, which
+`apps/docs/scripts/sync-repo-content.ts` bakes into the site at build time. From
+that status the site then:
+
+- lists the release under **Withdrawn** on `/releases`, with the rollback
+  command, instead of dropping it from the page;
+- replaces the install panel on `/releases/v<version>` with a notice naming the
+  current release and `kunai rollback` — a page that warns you off a version
+  while still offering a copy button for it is worse than one that does neither;
+- keeps the URL alive but drops it from `sitemap.xml` and marks it `noindex`, so
+  an old link still explains itself while search results stop leading there.
+
+Withdrawal is never inferred. Until that command runs and the site redeploys,
+the release still reads as published. `apps/docs/test/release-withdrawal.test.tsx`
+holds this behavior in place.
+
 ### Rehearsal
 
 Before tagging, confirm on the candidate that:
@@ -528,3 +550,5 @@ Before tagging, confirm on the candidate that:
 - a real `kunai rollback` restores a working launcher and manifest
 - `kunai --version` reports the restored version afterwards
 - the native installer Docker lifecycle passes (`bun run test:installer:docker`)
+- `set-release-status.ts <version> withdrawn` renders the withdrawal on
+  `/releases` and on the release's own page

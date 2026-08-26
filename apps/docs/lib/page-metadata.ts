@@ -32,6 +32,8 @@ type PageMetadataInput = {
   readonly type?: "website" | "article";
   /** Title shown in the tab and SERP when it should not take the site suffix. */
   readonly absoluteTitle?: boolean;
+  /** Keep the page reachable but out of the index — used by withdrawn releases. */
+  readonly noindex?: boolean;
 };
 
 function socialDescriptionFor(input: PageMetadataInput): string {
@@ -57,6 +59,7 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
     title: input.absoluteTitle ? { absolute: input.title } : input.title,
     description: input.description,
     alternates: { canonical: url },
+    ...(input.noindex ? { robots: { index: false, follow: true } } : {}),
     openGraph: {
       title: input.title,
       description: socialDescription,

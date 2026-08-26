@@ -41,11 +41,37 @@ export function publishedReleaseNotesArtifacts(): readonly ReleaseNotesArtifact[
   return releaseNotesArtifacts.filter((artifact) => artifact.status === "published");
 }
 
+/**
+ * Releases that were pulled after shipping.
+ *
+ * `withdrawn` is the status the withdraw runbook sets
+ * (`.docs/release-reliability-gate.md` § "Withdrawing a Released Version").
+ * Step 4 of that runbook makes the docs site one of the three places a
+ * withdrawal has to become visible, because "a withdrawn version that is
+ * withdrawn silently gets reinstalled from a cached tarball, a pinned CI file,
+ * or a blog post". These artifacts must therefore stay reachable and be marked
+ * — never quietly dropped.
+ */
+export function withdrawnReleaseNotesArtifacts(): readonly ReleaseNotesArtifact[] {
+  return releaseNotesArtifacts.filter((artifact) => artifact.status === "withdrawn");
+}
+
+/**
+ * Releases the sitemap may advertise to search engines.
+ *
+ * A withdrawn release keeps its page — an old link must land on the warning
+ * rather than a 404 — but asking crawlers to keep it in the index works
+ * against the withdrawal. The page itself also carries `robots: noindex`.
+ */
+export function indexableReleaseNotesArtifacts(): readonly ReleaseNotesArtifact[] {
+  return releaseNotesArtifacts.filter((artifact) => artifact.status !== "withdrawn");
+}
+
 export function latestReleaseNotesArtifact(): ReleaseNotesArtifact | null {
   return publishedReleaseNotesArtifacts()[0] ?? null;
 }
 
-/** Normalize tags like `v0.2.6` or `0.2.6` for lookup. */
+/** Normalize tags like `v0.3.0` or `0.3.0` for lookup. */
 export function normalizeReleaseTag(tag: string): string {
   const trimmed = tag.trim();
   if (!trimmed) return trimmed;
@@ -91,8 +117,9 @@ function sectionItemsFromMarkdownBody(body: string): string[] {
 }
 
 /**
- * Prefer explicit `sections`. When empty (e.g. 0.2.6), derive display sections
- * from `changelogBody` markdown headings or fall back to summary paragraphs.
+ * Prefer explicit `sections`. An artifact can carry none — the removed 0.2.6
+ * artifact did — so derive display sections from `changelogBody` markdown
+ * headings, falling back to summary paragraphs.
  */
 export function displaySectionsForRelease(
   release: ReleaseNotesArtifact,
