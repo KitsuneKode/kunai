@@ -50,10 +50,24 @@ function parseCounts(value: unknown): Record<string, number> | null {
   return counts;
 }
 
+/**
+ * A real calendar date, not merely the right shape.
+ *
+ * The format check alone accepts `2026-13-45` and `2026-00-00`, which
+ * `Date.parse` returns NaN for. That NaN reaches the x-scale and every SVG path
+ * on the chart becomes `MNaN,NaN` — which browsers drop silently, so the plot
+ * disappears with no error anywhere.
+ */
+function isCalendarDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 function parsePoint(value: unknown): SeriesPoint | null {
   if (!isRecord(value)) return null;
   const { day, activeInstalls, lifetimeInstalls } = value;
-  if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  if (typeof day !== "string" || !isCalendarDay(day)) return null;
   if (typeof activeInstalls !== "number" || !Number.isFinite(activeInstalls)) return null;
   if (typeof lifetimeInstalls !== "number" || !Number.isFinite(lifetimeInstalls)) return null;
   const byVersion = parseCounts(value.byVersion);
@@ -79,6 +93,13 @@ export function parseDocsAnalyticsSeries(raw: unknown): DocsAnalyticsSeries | nu
     // One malformed day makes the whole window untrustworthy: a chart drawn from
     // a partially parsed series would quietly misstate a trend.
     if (!next) return null;
+    // Strictly ascending. Both stores already order by day, but this is the
+    // trust boundary for an HTTP response, and the x-scale positions points by
+    // date — an out-of-order day yields a NEGATIVE offset and paints its mark
+    // outside the plot, which `overflow: visible` then shows over the page.
+    // A duplicate day is equally untrustworthy: the window would double-count.
+    const previous = parsed.at(-1);
+    if (previous && previous.day >= next.day) return null;
     parsed.push(next);
   }
   return { from, to, updatedAt, points: parsed };
@@ -161,7 +182,12 @@ export function dayOffsets(days: readonly string[]): readonly number[] {
   if (!Number.isFinite(span) || span <= 0) {
     return days.map((_, i) => i / (days.length - 1));
   }
-  return days.map((d) => (at(d) - start) / span);
+  // Clamped: an unparseable or out-of-order day must never place a mark outside
+  // the plot. The parser rejects both, so this is the second line, not the first.
+  return days.map((d, i) => {
+    const offset = (at(d) - start) / span;
+    return Number.isFinite(offset) ? Math.min(1, Math.max(0, offset)) : i / (days.length - 1);
+  });
 }
 
 export function resolveAnalyticsSeriesUrl(): string {

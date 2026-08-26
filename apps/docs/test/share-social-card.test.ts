@@ -43,6 +43,17 @@ describe("splitHeadline", () => {
     expect(splitHeadline(exact).join("")).toBe(exact);
   });
 
+  test("a title that is only whitespace still names the card", () => {
+    // An empty headline on an otherwise complete card reads as a broken render.
+    expect(splitHeadline("")).toEqual(["Shared with Kunai"]);
+    expect(splitHeadline("   \t\n ")).toEqual(["Shared with Kunai"]);
+  });
+
+  test("embedded newlines and tabs collapse instead of reaching satori raw", () => {
+    expect(splitHeadline("Attack\non\nTitan")).toEqual(["Attack on Titan"]);
+    expect(splitHeadline("A\tB")).toEqual(["A B"]);
+  });
+
   test("a long word run is marked rather than overflowing the card", () => {
     const lines = splitHeadline(`${"alpha ".repeat(12)}omega`);
     expect(lines).toHaveLength(2);

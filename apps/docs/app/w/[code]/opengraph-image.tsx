@@ -73,7 +73,12 @@ const LINE_BUDGET = 22;
  * it is handed over or it overflows the card.
  */
 export function splitHeadline(title: string): string[] {
-  const trimmed = title.trim();
+  // Collapse every whitespace run, not just the ends. A title carrying a newline
+  // or tab reaches satori as literal control characters inside one text node,
+  // which lays out unpredictably; and a title that is only whitespace would
+  // otherwise render an empty headline on an otherwise complete card.
+  const trimmed = title.replace(/\s+/g, " ").trim();
+  if (trimmed.length === 0) return ["Shared with Kunai"];
   if (trimmed.length <= LINE_BUDGET) return [trimmed];
 
   const words = trimmed.split(/\s+/);

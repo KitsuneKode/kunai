@@ -154,3 +154,50 @@ describe("dayOffsets — spacing follows the calendar, not the array", () => {
     expect(offsets).toEqual([0, 0.5, 1]);
   });
 });
+
+describe("the parse boundary rejects what the x-scale cannot draw", () => {
+  const days = (...list: string[]) =>
+    parseDocsAnalyticsSeries({
+      from: list[0],
+      to: list.at(-1),
+      updatedAt: "2026-08-26T00:00:00.000Z",
+      points: list.map((day) => ({
+        day,
+        activeInstalls: 1,
+        lifetimeInstalls: 1,
+        byVersion: { "0.3.0": 1 },
+      })),
+    });
+
+  test("a date that matches the format but is not a real day is refused", () => {
+    // `Date.parse` returns NaN for these, and that NaN reaches the x-scale:
+    // every path becomes `MNaN,NaN`, which browsers drop silently.
+    expect(days("2026-13-45")).toBeNull();
+    expect(days("2026-00-00")).toBeNull();
+    expect(days("2026-02-30")).toBeNull();
+    expect(days("2026-08-01")).not.toBeNull();
+  });
+
+  test("out-of-order days are refused rather than drawn off-plot", () => {
+    // An earlier day after a later one yields a negative offset, and
+    // `overflow: visible` paints that mark over the surrounding page.
+    expect(days("2026-08-03", "2026-08-01")).toBeNull();
+    expect(days("2026-08-01", "2026-08-03")).not.toBeNull();
+  });
+
+  test("a duplicated day is refused so the window cannot double-count", () => {
+    expect(days("2026-08-01", "2026-08-01")).toBeNull();
+  });
+});
+
+describe("dayOffsets is safe even when handed unparsed input", () => {
+  test("an out-of-order day is clamped into the plot, never negative", () => {
+    const offsets = dayOffsets(["2026-08-10", "2026-08-01", "2026-08-20"]);
+    expect(offsets.every((o) => o >= 0 && o <= 1)).toBe(true);
+  });
+
+  test("an unparseable day never yields NaN", () => {
+    const offsets = dayOffsets(["2026-08-01", "not-a-date", "2026-08-20"]);
+    expect(offsets.every(Number.isFinite)).toBe(true);
+  });
+});
