@@ -63,7 +63,7 @@ describe("parseTopCliChangelogEntry", () => {
     const entry = parseTopCliChangelogEntry(content);
     expect(entry?.version).toBe("0.2.6");
     expect(entry?.body).toContain("Provider flavor picker fix");
-    expect(entry?.body).toContain("### Highlights");
+    expect(entry?.body).toContain("### Highlights\n\n- More servers visible");
     expect(entry?.body).not.toMatch(/^  - More servers/m);
   });
 

@@ -224,9 +224,11 @@ function cleanEntrySummary(summary: string): string {
  * `### Highlights` is left untouched.
  */
 function promoteNestedHeadings(text: string): string {
-  return text.replace(/^(#{3,6})(\s)/gm, (_match, hashes: string, space: string) => {
-    return "#".repeat(Math.max(3, hashes.length - 1)) + space;
-  });
+  return text
+    .replace(/^(#{3,6})(\s)/gm, (_match, hashes: string, space: string) => {
+      return "#".repeat(Math.max(3, hashes.length - 1)) + space;
+    })
+    .replace(/^(#{3,6}[ \t]+.+)\n(?=[^\r\n]*\S)/gm, "$1\n\n");
 }
 
 /** Parses a specific `## vX.Y.Z` entry from the root changelog (if present). */
