@@ -1,58 +1,39 @@
 # Kunai 0.3.0
 
-Security, honesty, and platform fixes from a full codebase review.
+Make shared playback targets easy to open outside an existing Kunai install.
 
-Provider source reliability and lower cold-start waiting.
+- Copy browser-safe, catalog-anchored HTTPS links from `/share` and mpv.
+- Add a stateless web handoff with native install guidance and no share-page analytics.
+- Accept compact checksummed share codes and render scannable HTTPS QR codes with `/share --qr`.
 
-- **AniDB:** source inventory now comes from exact per-episode `jpn`/`eng`
-  evidence. The requested audio mode resolves first; optional alternate audio is
-  skipped in fast mode and bounded in balanced/quality-first modes, so a slow or
-  missing alternate cannot hold a playable requested stream or appear as a
-  selectable source.
-- **AllAnime:** the mkissa build-140 crypto rotation is locked with independent
-  known-answer vectors and exact bootstrap-header tests. Cold episode-catalog
-  and crypto preparation now overlap, and baseline source adapters share a 1.5
-  second inventory window so a dead mirror cannot hold already-playable peers.
-  The production cold smoke kept four candidates while dropping from 12.257 to
-  2.573 seconds; request retries and their individual deadlines are unchanged.
-- **Relay diagnostics:** `bun run test:relay` reads the user's existing relay
-  config without modifying it, preflights `/health` through Bun itself, then
-  runs the AllAnime smoke in an isolated profile. It reports only the relay
-  origin, token presence, provider count, and bounded failure code; full URLs,
-  URL queries, fragments, embedded credentials, and tokens are not logged.
-- **Provider ordering:** the default remains `animeProviderPriority: ["anidb"]`.
-  The field is documented as ordering rather than an allowlist; registered
-  AllAnime and Miruro providers remain available behind AniDB.
+Persist expensive provider intermediate data across restarts.
 
-- **Downloads:** provider stream URLs and headers are guarded before reaching
-  yt-dlp (scheme check, leading-dash rejection, `--` terminator, CRLF-stripped
-  headers), closing an argv option-injection path the mpv lane already blocked.
-- **Storage:** the data and cache SQLite files (plus `-wal`/`-shm`) are chmod'd
-  to owner-only on every open, matching config and token handling.
-- **Windows:** every install path now installs real mpv instead of mpv.net.
-  mpv.net ships `mpvnet.exe`, but Kunai probes for `mpv` and drives playback
-  over mpv's IPC socket and Lua bridge, so a "successful" dependency install
-  could still leave playback reporting mpv as missing.
-- **CLI:** `--jump` help says what the flag does (auto-pick the n-th search
-  result) and warns on invalid values; headless download failures and rejected
-  `--handoff-url` values exit nonzero.
-- **Playback:** one-shot mpv launches attach the full collected subtitle
-  inventory and report the real track count; prefetched and back-navigation
-  streams are re-resolved when blocked or older than five minutes instead of
-  replaying a possibly expired URL.
-- **AniSkip:** the TMDB to MAL fallback is refused beyond season 1, so
-  split-cour anime no longer risk wrong auto-skip windows.
-- **Docs:** the command-honesty gate counts the browse palette; user docs stop
-  promising `/sync`, `/random`, and `/surprise` as typed commands; the
-  keybindings doc's post-playback table matches the code; provider descriptions
-  state adapter roles instead of speed or "recommended" claims.
+- Add a general `ProviderCachePort` (namespace + TTL) to the provider runtime
+  context, backed by a SQLite `provider_cache` table, so a provider's expensive
+  but stable intermediate data survives a restart instead of dying with the
+  process.
+- Miruro's episode catalog now reads memory → persistent → network, so the cold
+  Cloudflare-gated pipe call (~6–13s) is paid once per catalog per TTL rather
+  than once per session.
 
-New in this release: `kunai completion <shell>` prints a completion script for
-bash, zsh, fish, and PowerShell, covering every flag and maintenance
-subcommand. `/docs` now opens the published documentation site at
-https://kunai.kitsunekode.in instead of the GitHub tree.
+- The persist TTL is derived from the catalog's own air dates: a finished show
+  persists for 12h, while an airing show persists until its approximate next air
+  date (clamped to 2h–1 week), so a newly-aired episode is never hidden behind a
+  stale cache.
+- Only a non-empty catalog is persisted; a failed or empty body is never cached.
+  The cache degrades to a no-op on any store error — a broken cache slows a
+  resolve, never fails it. Stream/source URLs stay in-memory and are never
+  persisted.
 
-[`15cac9e`](https://github.com/KitsuneKode/kunai/commit/15cac9e0c1dbc91c957d0b2133a515b7585803e6) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Keep the anime auto-skip and provider-relay paths working after upstream rotations.
+Warm the top anime result's episode cache during search.
+
+- After an anime search, Kunai warms the persistent episode cache for the single
+  top anime result in the background, so the Cloudflare-gated catalog fetch
+  (~6s) is already paid by the time you pick it. It is fire-and-forget — it never
+  blocks, delays, or fails the search — deduped so a title is warmed once per
+  session, and limited to one gated call per search to stay gentle on the WAF.
+
+Keep the anime auto-skip and provider-relay paths working after upstream rotations.
 
 - AniSkip now resolves a MAL id for AniDB titles, so opening and ending skips work on the default anime provider instead of silently never firing. The lookup shares the provider package's Cloudflare-aware transport and overlaps stream resolution, so it adds no serial request to playback start.
 - AllAnime tracks the upstream `mkissa` rotation to build 119 and 7-day epochs; the previous constants failed every stream request with `AA_CRYPTO_MISSING_BUILD`.
@@ -101,39 +82,68 @@ The 0.2.6 development cycle was versioned but never published, so its work reach
 - **Native installer.** Self-contained binaries with a versioned layout and
   channel-aware `kunai upgrade` / `kunai uninstall`.
 
-[`135517c`](https://github.com/KitsuneKode/kunai/commit/135517c2e1fe8225c501f4246fec41884233ce43) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - AllAnime now reports a captcha-gated stream request as a blocked, non-retryable failure naming the relay workaround, instead of silently returning no streams next to a full episode list. It is also demoted out of the automatic anime fallback lane while staying manually selectable.
+Preserve exact provider-native anime episode identities from catalog selection through playback, caching, downloads, and offline recovery.
 
-[`4186bf2`](https://github.com/KitsuneKode/kunai/commit/4186bf2d85a6b3e70cba03ad404b62a9b588af2f) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Keep anime films in the anime profile while preserving their movie structure through history, downloads, and offline playback. Unknown one-shot anime formats now stay episodic until their episode count is known, and HTML cleanup cannot turn encoded markup back into tags.
+- Keep Kunai's episode picker 1-based while resolving AllAnime episode zero, OVA, and special labels with their exact provider values.
+- Prevent cache, selection, prefetch, dead-stream, download, and offline-library state from aliasing different provider episodes at the same UI position.
+- Preserve existing numeric fallback behavior for legacy downloads and selections that predate provider-native episode identity storage.
 
-[`0fc67a3`](https://github.com/KitsuneKode/kunai/commit/0fc67a37bdb1536039e80e68df8b884e9038bf6e) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Repair the default AniDB anime route across current browse parsing, provider-native identity, season and absolute-episode routing, and production-derived release signoff.
+Rebuild first-run setup as seven framed slides that write what they ask for: every control starts from your current configuration, so rerunning `/setup` no longer disconnects linked AniList or TMDB accounts or rewinds preferences to factory defaults; the language choice reaches anime, shows, films, and YouTube alike; `[s]` applies the slide's recommendation instead of committing whatever the cursor sat on; leaving asks before discarding answers and re-offers setup next launch if you left on the first slide; and tracker sync is only marked enabled once the browser handoff actually succeeds. The usage-ping slide stays recommended and pre-selected, and remains impossible to enable by skipping, accepting all defaults, or stepping onto the slide and back off it.
 
-[`0c3c735`](https://github.com/KitsuneKode/kunai/commit/0c3c7357d85b640f4c962035a2f04bff544f940b) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Report `curl` in `kunai doctor` and setup. AniDB is the default anime provider and needs a curl (plain or curl-impersonate) to get past Cloudflare, so its absence could previously make anime search return nothing with no diagnostic anywhere.
+Serialize native installer activation across the in-process updater and the Bash and PowerShell installers, preserving launcher and manifest consistency during concurrent upgrades and recovery failures.
 
-[`0f20cf4`](https://github.com/KitsuneKode/kunai/commit/0f20cf463940aac27821da836d3a11b3358da336) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Present movie, series, anime, and video positions consistently; persist movie downloads as title-level jobs; and keep download and calendar surfaces responsive through width, poster, loading, retry, and cancellation changes.
+Download verified platform archives for native self-updates, safely extract one bounded executable in-process, and preserve rollback-compatible provenance while migrating schema-1 install manifests.
 
-[`4186bf2`](https://github.com/KitsuneKode/kunai/commit/4186bf2d85a6b3e70cba03ad404b62a9b588af2f) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Make anonymous usage analytics explicit opt-in. Setup now defaults to off, Settings can enable or disable collection, and disabling removes the local install identifier.
+Install verified compressed native release assets from Bash and PowerShell, reject unsafe or oversized archive contents, and retain a 404/410-only fallback for older raw releases.
+
+Redact standalone opaque credential values from diagnostics even when an upstream field uses an unrecognized name.
+
+Keep unexpected background download-queue failures inside the download
+subsystem so they cannot terminate playback.
+
+YouTube plays at the quality you chose on the persistent player path. The format selector was set on mpv's `ytdl` option, which is a yes/no flag — mpv answered `unsupported format for accessing property` and dropped it, so the ceiling silently never applied while the spawn path honoured it. The two player paths now agree.
+
+Tracker credentials are private on Windows and survive a power cut everywhere. The owner-only permission was applied under a POSIX-only branch, so on Windows `sync-tokens.json` and `config.json` kept whatever `%APPDATA%` inherited; they now get an inheritance-free, user-only ACL. Neither file was ever flushed either, so an atomic rename could reach the journal while the data sat in the page cache — a power loss left a correctly named, empty config. Both are now flushed before the rename and the directory entry after it.
+
+`-i/--id` no longer leaves a placeholder title in your history, and a partial write can no longer erase external ids that were already resolved. Continue-watching rows keep the identity they were saved with.
+
+A malformed Discord IPC frame can no longer end your session. Rich Presence is optional, but a bad frame from the socket could terminate playback or grow memory without a bound; the frame reader is now contained and bounded, and a presence failure degrades to no presence instead of taking the player with it.
+
+Choosing a title shows the loader while it resolves, instead of a still screen that looked like nothing had happened.
+
+AllAnime now reports a captcha-gated stream request as a blocked, non-retryable failure naming the relay workaround, instead of silently returning no streams next to a full episode list. It is also demoted out of the automatic anime fallback lane while staying manually selectable.
+
+Keep anime films in the anime profile while preserving their movie structure through history, downloads, and offline playback. Unknown one-shot anime formats now stay episodic until their episode count is known, and HTML cleanup cannot turn encoded markup back into tags.
+
+Repair the default AniDB anime route across current browse parsing, provider-native identity, season and absolute-episode routing, and production-derived release signoff.
+
+Report `curl` in `kunai doctor` and setup. AniDB is the default anime provider and needs a curl (plain or curl-impersonate) to get past Cloudflare, so its absence could previously make anime search return nothing with no diagnostic anywhere.
+
+Present movie, series, anime, and video positions consistently; persist movie downloads as title-level jobs; and keep download and calendar surfaces responsive through width, poster, loading, retry, and cancellation changes.
+
+Make anonymous usage analytics explicit opt-in. Setup now defaults to off, Settings can enable or disable collection, and disabling removes the local install identifier.
 
 ### Privacy
 
 - Do not send analytics before consent, without an interactive terminal, or when DNT or CI blocks it.
 - Leave the production endpoint disabled until an operator configures and verifies one.
 
-[`35aa301`](https://github.com/KitsuneKode/kunai/commit/35aa301b78b79eca17c16c697d139756f0394da1) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Recover active playback from transient buffer, stall, and seek states while rejecting stale mpv cycle events and presence updates.
+Recover active playback from transient buffer, stall, and seek states while rejecting stale mpv cycle events and presence updates.
 
-[`3bf6d33`](https://github.com/KitsuneKode/kunai/commit/3bf6d33054d72cd0fe2b19875099dc2cc746b64f) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Make Miruro resolution evidence truthful: stream reachability is attested only from an explicit probe, AniList identity is parsed once and strictly, the server try order has a single authority, every pipe decode stage raises its own redacted failure code, and subtitle format is inferred from evidence instead of defaulting to SRT.
+Make Miruro resolution evidence truthful: stream reachability is attested only from an explicit probe, AniList identity is parsed once and strictly, the server try order has a single authority, every pipe decode stage raises its own redacted failure code, and subtitle format is inferred from evidence instead of defaulting to SRT.
 
-[`099e040`](https://github.com/KitsuneKode/kunai/commit/099e0409281363bd3cce3e2a347cfc38664fa537) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Route every poster through one bounded Bun-native preparation seam, add iTerm2/VS Code inline images, and remove the chafa and ImageMagick runtime requirements. Posters now need nothing installed on any supported terminal.
+Route every poster through one bounded Bun-native preparation seam, add iTerm2/VS Code inline images, and remove the chafa and ImageMagick runtime requirements. Posters now need nothing installed on any supported terminal.
 
-[`05e97ee`](https://github.com/KitsuneKode/kunai/commit/05e97eed95991172b2ef33bfe6a9cf8f3e85dc20) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Recognize Bun connection failures as offline, keep confirmed offline state until a successful request, and return failed searches with visible retry and offline-library guidance instead of silently replaying them.
+Recognize Bun connection failures as offline, keep confirmed offline state until a successful request, and return failed searches with visible retry and offline-library guidance instead of silently replaying them.
 
-[`68b0a5f`](https://github.com/KitsuneKode/kunai/commit/68b0a5f45ebf349a342c3b7cd4643e98c48ef6f8) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Keep verified offline downloads on their trusted local media and subtitle paths, without provider recovery or remote playback metadata requests, and harden cancellation and reconnect handling around the mpv handoff.
+Keep verified offline downloads on their trusted local media and subtitle paths, without provider recovery or remote playback metadata requests, and harden cancellation and reconnect handling around the mpv handoff.
 
-[`6a952d8`](https://github.com/KitsuneKode/kunai/commit/6a952d8044288f5ff58bebf269d3e609369f1506) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Make the shell's own surfaces reachable and readable at the terminal sizes people actually use.
+Make the shell's own surfaces reachable and readable at the terminal sizes people actually use.
 
 - `/analytics` and `/presence` answered "no matching commands" from the resume and starting-point pickers while the footer still advertised `[/] commands`. Both govern data leaving the machine, so being told they do not exist was the wrong answer. Picker command sets now come from one registry context instead of three hand-written arrays that had drifted apart.
 - The Settings section tabs were unreadable at 80 columns: twelve names were squeezed into two-character stumps that wrapped onto a second line, hiding which sections exist. The strip now scrolls around the active section, which is always shown in full, with `‹`/`›` marking what is off-screen.
 
-[`4186bf2`](https://github.com/KitsuneKode/kunai/commit/4186bf2d85a6b3e70cba03ad404b62a9b588af2f) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Rebuild tracker sync on a generation-safe SQLite outbox with typed tracker
+Rebuild tracker sync on a generation-safe SQLite outbox with typed tracker
 identities and idempotent desired-state writes, so a redelivery converges
 instead of toggling and a late completion cannot overwrite newer intent.
 
@@ -191,7 +201,7 @@ Sync gains a settings page — the first reachable Connect surface — with a st
 badge in the root crumb. It is marked experimental: the delivery path is covered
 by tests but has not yet been verified against a live tracker account.
 
-[`8a07e00`](https://github.com/KitsuneKode/kunai/commit/8a07e00812b3ecf073f87b38d2eb9759db028025) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Harden Videasy's active path: TMDB identity must be a complete positive decimal, the selected-route cache policy has a single owner instead of being silently rebuilt, and Wings seed transport state is bounded. Cancelling a playback no longer marks both Wings hosts unhealthy for five minutes.
+Harden Videasy's active path: TMDB identity must be a complete positive decimal, the selected-route cache policy has a single owner instead of being silently rebuilt, and Wings seed transport state is bounded. Cancelling a playback no longer marks both Wings hosts unhealthy for five minutes.
 
 Harden installers and release asset completion checks.
 
@@ -204,22 +214,3 @@ Ship the npm postinstall registration hook in the published tarball and verify a
 Ship the npm package as a minimal Node launcher with exact-version optional
 platform binaries, and preserve the correct npm or Bun managed-install
 ownership in the compiled CLI.
-
-Late 0.3.0 fixes, from a review pass over the release train.
-
-- **YouTube plays at the quality you chose**, on the persistent player path. The
-  format selector was set on mpv's `ytdl` option, which is a yes/no flag — mpv
-  dropped it, so the ceiling silently never applied while the spawn path honoured
-  it. Both player paths now agree.
-- **Tracker credentials are private on Windows, and survive a power cut
-  everywhere.** The owner-only permission sat behind a POSIX-only branch, so on
-  Windows `sync-tokens.json` and `config.json` kept whatever `%APPDATA%`
-  inherited; they now get an inheritance-free, user-only ACL. Neither file was
-  flushed either, so a power loss could leave a correctly named, empty config.
-- **A malformed Discord IPC frame can no longer end your session.** Rich Presence
-  is optional; a bad frame could take playback down with it. Presence now
-  degrades to no presence.
-- **`-i/--id` no longer leaves a placeholder in your history**, and a partial
-  write can no longer erase external ids that were already resolved.
-- **Choosing a title shows the loader while it resolves**, instead of a still
-  screen that looked like nothing had happened.
