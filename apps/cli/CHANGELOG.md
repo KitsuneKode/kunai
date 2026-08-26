@@ -235,7 +235,7 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
   - Search shows a query-aware loading skeleton, post-play artwork retries after a transient fetch failure, and quitting no longer pauses autoplay.
   - Provider fallback moves to a deliberate `Shift+F` chord so a stray keypress cannot switch providers mid-session.
 
-- The 0.2.6 development cycle was versioned but never published, so its work reaches users for the first time in 0.3.0:
+- Also new since 0.2.5, the last release you could install:
 
   - **YouTube lane.** Search, playlists and channels play through the same shell as
     everything else, with live/upcoming handling, SponsorBlock and cookie settings,
