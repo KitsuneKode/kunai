@@ -486,6 +486,10 @@ export async function runPostPlaybackMenu(
               ? `resume S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}  ·  ${formatTimestamp(resumeSeconds)}`
               : `resume ${formatTimestamp(resumeSeconds)}`
             : undefined,
+          // The stopped-early bar answers "where did I stop", which needs both
+          // ends of the episode, not the season's episode counts.
+          resumePositionSeconds: resumeSeconds,
+          episodeDurationSeconds: result.duration,
           status: iteration.catalogAutoplayEndBanner
             ? { label: iteration.catalogAutoplayEndBanner, tone: "neutral" }
             : { label: "Ready for next action", tone: "success" },

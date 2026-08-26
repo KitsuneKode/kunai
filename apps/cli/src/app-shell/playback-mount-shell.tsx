@@ -487,6 +487,8 @@ function PlaybackShell({
     queueNextLabel: state.queueNextLabel,
     queueNextEntryId: state.queueNextEntryId,
     resumeLabel: state.resumeLabel,
+    resumePositionSeconds: state.resumePositionSeconds,
+    episodeDurationSeconds: state.episodeDurationSeconds,
     postPlayState,
     recommendations: activeRecommendations,
     totalEpisodes: state.totalEpisodes,

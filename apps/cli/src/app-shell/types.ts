@@ -143,6 +143,10 @@ export type PlaybackShellState = {
   autoskipPaused?: boolean;
   stopAfterCurrent?: boolean;
   resumeLabel?: string;
+  /** Where playback stopped, in seconds — the stopped-early progress bar reads it. */
+  resumePositionSeconds?: number;
+  /** Runtime of what was just playing, when the player reported one. */
+  episodeDurationSeconds?: number;
   showMemory: boolean;
   memoryUsage?: string;
   providerHealth?: ShellPanelLine;

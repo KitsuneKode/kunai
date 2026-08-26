@@ -17,6 +17,7 @@
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
+import { formatTimestamp } from "@/services/continuation/history-progress";
 
 import { resolveKeybinding, resolvePostPlaybackBindingResult } from "./keybinding-runtime";
 import { footerKeyFromBinding, KEYBINDINGS, type KeyBinding } from "./keybindings";
@@ -138,6 +139,10 @@ export type BuildPostPlayViewProps = {
   /** Exact queue row id snapped with `queueNextLabel` from one `peekNext()`. */
   readonly queueNextEntryId?: string;
   readonly resumeLabel?: string;
+  /** Where playback stopped, in seconds. Pairs with `episodeDurationSeconds`. */
+  readonly resumePositionSeconds?: number;
+  /** Runtime of what was just playing, in seconds, when the player reported one. */
+  readonly episodeDurationSeconds?: number;
   readonly postPlayState: PostPlayState;
   readonly recommendations?: readonly PlaybackRecommendationRailItem[];
   readonly bindings?: readonly KeyBinding[];
@@ -160,6 +165,34 @@ function buildProgressBar(watched: number, total: number, suffix = ""): PostPlay
   const percent = Math.round((watched / total) * 100);
   const label = `${watched} / ${total}${suffix ? ` ${suffix}` : ""} · ${percent}%`;
   return { watched, total, percent, label };
+}
+
+/**
+ * "12:04 / 48:30 · 25%" — position inside the thing that was just playing.
+ *
+ * The stopped-early hero used the season bar, so quitting 23 seconds into an
+ * episode reported "3 / 10 · 30%": true about the season, and not an answer to
+ * the question the screen is asking, which is where you stopped. Films got no
+ * bar at all for the same reason — they have no episode counts.
+ *
+ * Returns undefined unless the player reported a usable runtime, so an unknown
+ * duration falls back to the season bar rather than inventing a denominator.
+ */
+function buildTimeProgressBar(
+  positionSeconds: number | undefined,
+  durationSeconds: number | undefined,
+): PostPlayProgressBar | undefined {
+  if (positionSeconds === undefined || durationSeconds === undefined) return undefined;
+  if (!Number.isFinite(positionSeconds) || !Number.isFinite(durationSeconds)) return undefined;
+  if (durationSeconds <= 0 || positionSeconds < 0) return undefined;
+  const clamped = Math.min(positionSeconds, durationSeconds);
+  const percent = Math.round((clamped / durationSeconds) * 100);
+  return {
+    watched: Math.round(clamped),
+    total: Math.round(durationSeconds),
+    percent,
+    label: `${formatTimestamp(clamped)} / ${formatTimestamp(durationSeconds)} · ${percent}%`,
+  };
 }
 
 function postPlayShortcut(
@@ -310,6 +343,8 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     autoplayPaused,
     autoskipPaused,
     stopAfterCurrent,
+    resumePositionSeconds,
+    episodeDurationSeconds,
   } = props;
 
   const bindings = props.bindings ?? KEYBINDINGS;
@@ -375,7 +410,11 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       nextUpHero: buildNextUpHero(props, "resume"),
       heroLabel: "⏸ stopped early",
       heroColor: "accent",
-      progressBar: isMovie ? undefined : progressBar,
+      // Where you stopped, not how far into the season you are. Films get one
+      // too — the season bar never applied to them.
+      progressBar:
+        buildTimeProgressBar(resumePositionSeconds, episodeDurationSeconds) ??
+        (isMovie ? undefined : progressBar),
       actions: [
         {
           id: "resume",
