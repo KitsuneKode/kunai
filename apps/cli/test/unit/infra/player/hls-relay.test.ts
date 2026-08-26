@@ -122,6 +122,103 @@ describe("hls-relay gating", () => {
     ).rejects.toThrow("upstream redirected too many times");
   });
 
+  test("shares response bytes and deadlines across every redirect hop", async () => {
+    let now = 1_000;
+    const observed: Array<{
+      readonly maxResponseBytes: number;
+      readonly curlTimeoutMs: number;
+      readonly watchdogTimeoutMs: number;
+    }> = [];
+
+    const response = await fetchHlsRelayUpstream(
+      "https://vault-06.uwucdn.top/start.m3u8?step=0",
+      async (url, budget) => {
+        observed.push({
+          maxResponseBytes: budget.maxResponseBytes,
+          curlTimeoutMs: budget.curlTimeoutMs,
+          watchdogTimeoutMs: budget.watchdogTimeoutMs,
+        });
+        now += 5_000;
+        const step = Number(new URL(url).searchParams.get("step") ?? "0");
+        return step < 2
+          ? {
+              status: 302,
+              contentType: "text/plain",
+              body: Buffer.alloc(20),
+              redirectUrl: `https://vault-06.uwucdn.top/next.m3u8?step=${step + 1}`,
+              receivedBytes: 30,
+            }
+          : {
+              status: 200,
+              contentType: "application/vnd.apple.mpegurl",
+              body: Buffer.from("#EXTM3U\n"),
+              redirectUrl: null,
+              receivedBytes: 10,
+            };
+      },
+      {
+        now: () => now,
+        maxResponseBytes: 100,
+        curlTimeoutMs: 25_000,
+        watchdogTimeoutMs: 30_000,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(observed).toEqual([
+      { maxResponseBytes: 100, curlTimeoutMs: 25_000, watchdogTimeoutMs: 30_000 },
+      { maxResponseBytes: 70, curlTimeoutMs: 20_000, watchdogTimeoutMs: 25_000 },
+      { maxResponseBytes: 40, curlTimeoutMs: 15_000, watchdogTimeoutMs: 20_000 },
+    ]);
+  });
+
+  test("rejects redirect bodies that exceed the shared response budget", async () => {
+    let requests = 0;
+
+    await expect(
+      fetchHlsRelayUpstream(
+        "https://vault-06.uwucdn.top/start.m3u8",
+        async () => {
+          requests += 1;
+          return {
+            status: 302,
+            contentType: "text/plain",
+            body: Buffer.alloc(60),
+            redirectUrl: "https://vault-06.uwucdn.top/next.m3u8",
+            receivedBytes: 60,
+          };
+        },
+        { maxResponseBytes: 100 },
+      ),
+    ).rejects.toThrow("upstream body exceeded 100 bytes");
+
+    expect(requests).toBe(2);
+  });
+
+  test("rejects a redirect chain after one shared curl deadline", async () => {
+    let now = 10_000;
+    let requests = 0;
+
+    await expect(
+      fetchHlsRelayUpstream(
+        "https://vault-06.uwucdn.top/start.m3u8",
+        async () => {
+          requests += 1;
+          now += 13_000;
+          return {
+            status: 302,
+            contentType: "text/plain",
+            body: Buffer.alloc(0),
+            redirectUrl: "https://vault-06.uwucdn.top/next.m3u8",
+          };
+        },
+        { now: () => now, curlTimeoutMs: 25_000, watchdogTimeoutMs: 30_000 },
+      ),
+    ).rejects.toThrow("upstream redirect chain exceeded 25000ms");
+
+    expect(requests).toBe(2);
+  });
+
   test("streamNeedsHlsRelay matches only uwucdn/owocdn hosts", () => {
     expect(streamNeedsHlsRelay("https://vault-06.uwucdn.top/x/index.m3u8")).toBe(true);
     expect(streamNeedsHlsRelay("https://vault-15.owocdn.top/x/index.m3u8")).toBe(true);

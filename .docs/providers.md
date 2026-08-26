@@ -928,7 +928,8 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
   at most three redirects itself, reapplying the exact uwucdn/owocdn allowlist before
   each request and rejecting HTTPS-to-HTTP downgrades. Curl never receives `-L`, so
   an allowlisted CDN response cannot redirect the local relay into another host or a
-  plaintext request. Relative playlist entries resolve from the final redirected URL.
+  plaintext request. Relative playlist entries resolve from the final redirected URL,
+  and the full redirect chain shares one 25-second deadline and 64 MiB response budget.
 - **Pipe decoding is endpoint-aware and every stage has its own code.**
   `decodeMiruroPipePayload({ body, obfuscationVersion, expectedKind, keyHex })` raises
   `MiruroPipeDecodeError` with one of `pipe-key-missing`, `pipe-version-mismatch`,
