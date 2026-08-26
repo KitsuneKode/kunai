@@ -32,6 +32,8 @@ type PageMetadataInput = {
   readonly type?: "website" | "article";
   /** Title shown in the tab and SERP when it should not take the site suffix. */
   readonly absoluteTitle?: boolean;
+  /** Keep the page reachable but out of the index — used by withdrawn releases. */
+  readonly noindex?: boolean;
 };
 
 function socialDescriptionFor(input: PageMetadataInput): string {
@@ -53,7 +55,7 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
   const url = docsCanonicalUrl(input.path);
   const socialDescription = socialDescriptionFor(input);
 
-  return {
+  const metadata: Metadata = {
     title: input.absoluteTitle ? { absolute: input.title } : input.title,
     description: input.description,
     alternates: { canonical: url },
@@ -72,4 +74,12 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
       images: [SOCIAL_IMAGE],
     },
   };
+
+  // Follow, but do not index: a withdrawn release keeps its page so an old link
+  // still explains itself, while search stops leading people to it.
+  if (input.noindex) {
+    metadata.robots = { index: false, follow: true };
+  }
+
+  return metadata;
 }

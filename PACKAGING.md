@@ -6,7 +6,7 @@ Use this before cutting a public release via the staged promotion workflow ([REL
 
 - [ ] Version PR merged (`chore: version packages`) — do not hand-bump `apps/cli/package.json`
 - [ ] `.release/kunai-vX.Y.Z.json` exists with `schemaVersion: 2`, `status: "staged"`, `publishedAt: null`
-- [ ] Staged versions are **not** treated as public latest (example: 0.2.6 staged while 0.2.5 remains published latest)
+- [ ] Staged versions are **not** treated as public latest (example: 0.3.0 staged while 0.2.5 remains published latest)
 - [ ] `LICENSE` present and referenced from package metadata
 - [ ] `bun run typecheck`, `bun run lint`, `bun run fmt`, and `bun run test` clean on the release commit
 - [ ] `bun run guard` and `bun run release:notes:check` pass

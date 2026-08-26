@@ -93,9 +93,11 @@ fails while trying to _find_ the action — before the checkout inside it can ru
 
 This broke the release pipeline silently: the composite carried its own
 checkout, `release.yml` had none of its own, and from 2026-06-27 the release job
-never reached publish. Version 0.2.6 has a version bump and release notes but no
-`v0.2.6` tag and no published binaries, while every local gate stayed green —
-local runs never execute workflow bootstrap.
+never reached publish. A whole development cycle was versioned and had notes
+written, but produced no tag and no binaries — while every local gate stayed
+green, because local runs never execute workflow bootstrap. Its work was folded
+into the next release and the orphaned artifacts were dropped, so the published
+line stays contiguous.
 
 The invariant is enforced two ways:
 

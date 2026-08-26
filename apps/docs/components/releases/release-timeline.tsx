@@ -13,11 +13,16 @@ type ReleaseTimelineProps = {
 export function ReleaseTimeline({ releases }: ReleaseTimelineProps) {
   const published = releases.filter((release) => release.status === "published");
   const staged = releases.filter((release) => release.status === "staged");
+  // A withdrawn release used to match neither filter and so disappeared from
+  // this page entirely — the opposite of what withdrawing one is for. It gets
+  // its own section so the warning is visible from the index, not only from the
+  // detail page someone has to already know to open.
+  const withdrawn = releases.filter((release) => release.status === "withdrawn");
   const latest = published[0];
   const previous = published.slice(1);
   const latestGithubUrl = latest ? githubReleaseUrl(latest) : null;
 
-  if (!latest && staged.length === 0) {
+  if (!latest && staged.length === 0 && withdrawn.length === 0) {
     return <p className="text-fd-muted-foreground text-sm">No release artifacts are available.</p>;
   }
 
@@ -133,6 +138,50 @@ export function ReleaseTimeline({ releases }: ReleaseTimelineProps) {
                     className="text-fd-primary shrink-0 text-sm font-medium underline-offset-4 hover:underline"
                   >
                     Notes
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
+      {withdrawn.length > 0 ? (
+        <section aria-labelledby="withdrawn-releases-heading">
+          <h2 id="withdrawn-releases-heading" className="kunai-type-title text-xl">
+            Withdrawn
+          </h2>
+          <p className="text-fd-muted-foreground mt-2 max-w-3xl text-sm leading-6">
+            Pulled after publication. Do not install these. If you are already on one, run{" "}
+            <code className="font-mono text-xs">kunai rollback</code>.
+          </p>
+          <ol className="border-fd-border relative mt-6 flex flex-col gap-0 border-l pl-6">
+            {withdrawn.map((release) => (
+              <li key={release.tag} className="relative pb-8 last:pb-0">
+                <span
+                  className="bg-fd-muted-foreground absolute top-1.5 -left-[1.55rem] size-2.5 rounded-full"
+                  aria-hidden
+                />
+                <div className="border-fd-border flex flex-col gap-2 rounded-md border border-dashed p-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-fd-muted-foreground text-xs tabular-nums">
+                      {release.tag} · withdrawn
+                    </p>
+                    <Link
+                      href={releasePath(release.tag)}
+                      className="kunai-type-title text-base hover:underline"
+                    >
+                      {release.title}
+                    </Link>
+                    <p className="text-fd-muted-foreground mt-2 text-sm leading-6">
+                      {releaseOneLineSummary(release)}
+                    </p>
+                  </div>
+                  <Link
+                    href={releasePath(release.tag)}
+                    className="text-fd-primary shrink-0 text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    Why
                   </Link>
                 </div>
               </li>

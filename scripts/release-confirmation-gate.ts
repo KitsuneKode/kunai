@@ -68,7 +68,6 @@ export type ReleaseConfirmationInput = {
   readonly binaryArtifactName: string;
   readonly releaseAssets: readonly ReleaseAssetDescriptor[];
   readonly targetReleaseMetadata: ReleaseMetadataSnapshot;
-  readonly release026Metadata: ReleaseMetadataSnapshot | null;
   readonly trackedInstallerReferencePaths: readonly string[];
   readonly generatedMetadataFresh: boolean;
   readonly gateEvidence: ValidatedReleaseGateEvidence;
@@ -170,8 +169,6 @@ export function evaluateReleaseConfirmation(
     );
   }
 
-  assert026NotPublic(input.release026Metadata);
-
   if (input.trackedInstallerReferencePaths.length > 0) {
     throw new Error(
       `[release-confirmation] installer-reference source must not be tracked: ${input.trackedInstallerReferencePaths.join(", ")}`,
@@ -195,15 +192,6 @@ export function evaluateReleaseConfirmation(
   };
 
   return { status: "ready-for-confirmation", evidence };
-}
-
-function assert026NotPublic(meta: ReleaseMetadataSnapshot | null): void {
-  if (!meta) return;
-  if (meta.status === "published" || meta.publishedAt !== null) {
-    throw new Error(
-      "[release-confirmation] 0.2.6 must not be public (status must stay staged with publishedAt null)",
-    );
-  }
 }
 
 function readPackageVersion(repoRoot: string): string {
@@ -458,7 +446,6 @@ export function runReleaseConfirmationCheck(
     binaryArtifactName: args.binaryArtifactName ?? `kunai-release-candidate-${args.version}`,
     releaseAssets: listBinaryDirAssets(resolveFromRepo(args.binaryDir)),
     targetReleaseMetadata: target,
-    release026Metadata: readReleaseMetadata(repoRoot, "0.2.6"),
     trackedInstallerReferencePaths: listTrackedInstallerReference(repoRoot),
     generatedMetadataFresh: args.skipGeneratedDriftCheck
       ? true

@@ -180,16 +180,25 @@ describe("0.3.0 public truth contract", () => {
     expect(cliReference).toContain("kunai upgrade");
   });
 
-  test("0.2.6 is not latest or published", () => {
-    const staged = getReleaseByTag("0.2.6");
+  /**
+   * A staged candidate must never read as shipped. This used to name a fixed
+   * version whose artifact has since been removed; the invariant outlived the
+   * example, so it follows the current staged candidate instead.
+   */
+  test("the staged candidate is not latest or published", () => {
+    const staged = getReleaseByTag("0.3.0");
     expect(staged).toBeDefined();
     expect(staged?.status).toBe("staged");
     expect(staged?.publishedAt).toBeNull();
 
-    expect(latestReleaseNotesArtifact()?.version).not.toBe("0.2.6");
-    expect(publishedReleaseNotesArtifacts().some((release) => release.version === "0.2.6")).toBe(
+    expect(latestReleaseNotesArtifact()?.version).not.toBe("0.3.0");
+    expect(publishedReleaseNotesArtifacts().some((release) => release.version === "0.3.0")).toBe(
       false,
     );
+  });
+
+  test("no unpublished version is advertised anywhere public", () => {
+    expect(getReleaseByTag("0.2.6")).toBeNull();
 
     const publicCopy = combinedPublicDocs().toLowerCase();
     expect(publicCopy).not.toMatch(/0\.2\.6[^\n]{0,40}(latest|published)/);
