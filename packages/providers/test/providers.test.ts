@@ -1298,10 +1298,10 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
   const canonical = [...MIRURO_SERVER_TRY_ORDER];
   expect(dub.map((candidate) => candidate.serverId)).toEqual(canonical);
   expect(sub.map((candidate) => candidate.serverId)).toEqual(canonical);
-  expect(dub.map((candidate) => candidate.label).slice(0, 3)).toEqual(["Kagura", "Soyo", "Okita"]);
+  expect(dub.map((candidate) => candidate.label).slice(0, 3)).toEqual(["Soyo", "Kyubei", "Okita"]);
   expect(sub.map((candidate) => candidate.label).slice(0, 3)).toEqual([
-    "Gintoki",
     "Soyo",
+    "Kyubei",
     "Shinpachi",
   ]);
 });

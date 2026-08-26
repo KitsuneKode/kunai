@@ -151,22 +151,22 @@ describe("resolveMiruroAnilistId", () => {
 
 describe("Miruro server order has one authority", () => {
   const EXPECTED_ORDER: readonly string[] = [
-    "kiwi",
     "pewe",
-    "bee",
-    "hop",
     "moo",
+    "bee",
+    "ally",
+    "bonk",
     "dune",
     "ANIMEKAI",
     "ANIMEZ",
     "ZORO",
-    "ally",
-    "bonk",
+    "kiwi",
+    "hop",
   ];
 
   const episodes = { sub: [{ id: "ep-1", number: 1 }] };
 
-  test("exports the canonical try order with bonk last", () => {
+  test("exports the canonical try order", () => {
     expect(MIRURO_SERVER_TRY_ORDER.map(String)).toEqual([...EXPECTED_ORDER]);
   });
 
@@ -235,10 +235,10 @@ describe("Miruro server order has one authority", () => {
     });
 
     expect(candidates.map((candidate) => candidate.serverId)).toEqual([
-      "kiwi",
       "bee",
-      "ZORO",
       "bonk",
+      "ZORO",
+      "kiwi",
     ]);
   });
 
@@ -256,8 +256,8 @@ describe("Miruro server order has one authority", () => {
     });
 
     expect(candidates.map((candidate) => candidate.serverId)).toEqual([
-      "kiwi",
       "bonk",
+      "kiwi",
       "zzz",
       "aaa",
     ]);
