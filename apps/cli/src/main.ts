@@ -625,7 +625,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (argv[0] === "diagnostics") {
     const { runDiagnosticsRecentCommand } =
       await import("./services/diagnostics/diagnostics-export");
-    process.exit(await runDiagnosticsRecentCommand(argv.slice(1)));
+    process.exit(
+      await runDiagnosticsRecentCommand(argv.slice(1), {
+        isTty: Boolean(process.stdout.isTTY),
+        noColor: Boolean(process.env.NO_COLOR),
+      }),
+    );
   }
 
   // Best-effort: clear any stale `*.old` left by a prior Windows self-replace.
