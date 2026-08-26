@@ -76,6 +76,22 @@ export function suppressSmallBuckets(
     else kept[bucket] = count;
   }
 
+  return sealResidual(kept, other, valueSpace);
+}
+
+/**
+ * Fold surviving buckets into `other` until it can no longer be attributed by
+ * elimination, then attach it.
+ *
+ * Shared by the snapshot and the series so both close the same hole: with a
+ * closed dimension, publishing every value but one makes `other` that value.
+ */
+export function sealResidual(
+  kept: Record<string, number>,
+  residual: number,
+  valueSpace: number,
+): Record<string, number> {
+  let other = residual;
   // Only a non-empty `other` can be attributed by elimination.
   while (other > 0 && valueSpace - Object.keys(kept).length < 2) {
     const smallest = Object.entries(kept).sort(
