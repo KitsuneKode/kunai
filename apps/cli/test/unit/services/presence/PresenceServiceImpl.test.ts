@@ -10,6 +10,7 @@ import {
   buildDiscordActivity,
   buildPresenceSnapshot,
   describePresenceConfiguration,
+  PRESENCE_SHUTDOWN_CLEAR_BUDGET_MS,
   PresenceServiceImpl,
   resolvePresenceClientId,
   resolvePresenceClientIdSource,
@@ -771,5 +772,126 @@ describe("PresenceServiceImpl", () => {
     expect(snapshot.status).toBe("unavailable");
     expect(snapshot.detail).toContain("Could not connect to Discord IPC");
     expect(diagnostics.messages).toContain("Discord presence unavailable");
+  });
+});
+
+/**
+ * Discord kept showing "Watching kunai …" after a crash.
+ *
+ * Two deadlines made the clear unwinnable. A Discord IPC frame is allowed 10s,
+ * and `clearPlayback` went through the serial presence-operation queue, so it
+ * also waited behind whatever `setActivity` was already in flight. The shutdown
+ * coordinator force-exits after 4s. The process was gone before the clear frame
+ * was attempted, and the card outlived the session that published it.
+ */
+describe("presence clear during shutdown", () => {
+  test("does not wait behind an in-flight presence update", async () => {
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnostics,
+    });
+    const order: string[] = [];
+    let releaseStuckUpdate: (() => void) | undefined;
+    const stuckUpdate = new Promise<void>((resolve) => {
+      releaseStuckUpdate = resolve;
+    });
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      discordClient: {
+        async login() {},
+        async setActivity() {
+          order.push("update-start");
+          await stuckUpdate;
+          order.push("update-end");
+        },
+        async clearActivity() {
+          order.push("clear");
+        },
+        async destroy() {},
+        on() {},
+      },
+      status: "ready",
+    });
+
+    // An update the socket never answers — the state a crash interrupts.
+    const pendingUpdate = service.updatePlayback({
+      mode: "series",
+      title: { id: "1", type: "series", name: "Demo" },
+      episode: { season: 1, episode: 2 },
+      providerId: "vidking",
+      startedAtMs: 1000,
+    });
+
+    await service.shutdown();
+
+    // The clear landed while the update was still hanging: `update-end` has not
+    // been recorded, so the socket never answered. Queued behind that update,
+    // the clear could only have run after it — i.e. never, within the budget.
+    expect(order).toContain("clear");
+    expect(order).not.toContain("update-end");
+
+    releaseStuckUpdate?.();
+    await pendingUpdate.catch(() => undefined);
+  });
+
+  test("gives up inside the shutdown budget when the socket never answers", async () => {
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnostics,
+    });
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      discordClient: {
+        async login() {},
+        async setActivity() {},
+        // The real client would reject only after its own 10s frame timeout.
+        clearActivity: () => new Promise<void>(() => {}),
+        async destroy() {},
+        on() {},
+      },
+      status: "ready",
+    });
+
+    const startedAt = Date.now();
+    await service.shutdown();
+    const elapsed = Date.now() - startedAt;
+
+    // Well inside the coordinator's 4s force-exit, rather than the 10s a single
+    // Discord IPC frame is otherwise allowed.
+    expect(elapsed).toBeLessThan(PRESENCE_SHUTDOWN_CLEAR_BUDGET_MS + 1_000);
+  });
+
+  test("clears the card and drops the payload that would redraw it", async () => {
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnostics,
+    });
+    const calls: string[] = [];
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      discordClient: {
+        async login() {},
+        async setActivity() {},
+        async clearActivity() {
+          calls.push("clear");
+        },
+        async destroy() {
+          calls.push("destroy");
+        },
+        on() {},
+      },
+      lastActivityPayload: { details: "Still visible" },
+      lastActivityHash: "stale-hash",
+      status: "ready",
+    });
+
+    await service.shutdown();
+
+    expect(calls).toEqual(["clear", "destroy"]);
+    expect((service as unknown as { lastActivityPayload: unknown }).lastActivityPayload).toBeNull();
+    expect((service as unknown as { lastActivityHash: string | null }).lastActivityHash).toBeNull();
   });
 });

@@ -20,6 +20,16 @@ import type {
 } from "./PresenceService";
 
 const DEFAULT_DISCORD_CLIENT_ID = "1502307419047461025";
+/**
+ * How long a shutdown may spend clearing the Discord card.
+ *
+ * Deliberately a fraction of the shutdown coordinator's own deadline
+ * (`DEFAULT_DEADLINE_MS`, 4s in `app/session/shutdown-coordinator.ts`), so the
+ * clear resolves or gives up while there is still a process to resolve into.
+ * A single Discord IPC frame is otherwise allowed 10s, which is more than the
+ * whole shutdown gets — see `clearWithinShutdownBudget`.
+ */
+export const PRESENCE_SHUTDOWN_CLEAR_BUDGET_MS = 1_500;
 const DISCORD_ACTIVITY_TEXT_LIMIT = 128;
 
 /** Shown in diagnostics when IPC/update fails and another consumer may hold the Discord app pipe. */
@@ -284,17 +294,21 @@ export class PresenceServiceImpl implements PresenceService {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
+    this.playbackPresenceGeneration += 1;
     const clearedClient = this.discordClient;
-    if (clearedClient) {
-      await this.clearPlayback("shutdown");
-    } else {
-      this.stopHeartbeat();
-      this.lastActivityPayload = null;
-    }
+    // Teardown state is set synchronously and the clear jumps the operation
+    // queue: see PRESENCE_SHUTDOWN_CLEAR_BUDGET_MS.
     this.stopHeartbeat();
+    this.resetWatchSession();
+    this.lastPlaybackActivity = null;
+    this.lastActivityPayload = null;
+    this.lastActivityHash = null;
+    if (clearedClient) {
+      await this.clearWithinShutdownBudget(clearedClient);
+    }
     const client = this.discordClient ?? (await this.connectPromise?.catch(() => null));
     if (client && client !== clearedClient) {
-      await this.clearDiscordActivity(client, "shutdown");
+      await this.clearWithinShutdownBudget(client);
     }
     this.discordClient = null;
     this.connectPromise = null;
@@ -307,6 +321,39 @@ export class PresenceServiceImpl implements PresenceService {
     if (!client) return;
     await client.destroy().catch(() => undefined);
     this.status = this.deps.config.presenceProvider === "off" ? "disabled" : "idle";
+  }
+
+  /**
+   * Clear the Discord card inside the shutdown budget, or give up trying.
+   *
+   * Two deadlines used to make this unwinnable. A single Discord IPC frame is
+   * allowed 10s (`DEFAULT_DISCORD_IPC_TIMEOUT_MS`), and the clear went through
+   * `enqueuePresenceOperation`, so it also queued behind whatever `setActivity`
+   * was already in flight. The shutdown coordinator force-exits after 4s. On a
+   * fatal exit the process was therefore gone long before the clear frame was
+   * even attempted, and Discord kept showing "Watching kunai …" for a session
+   * that no longer existed.
+   *
+   * So the clear does not queue — it is the last presence work there will ever
+   * be, and the state it would have raced with is already reset above — and it
+   * is bounded well inside the coordinator's deadline. Losing the race is not a
+   * failure worth reporting: the socket dying is the normal reason a clear does
+   * not land while exiting.
+   */
+  private async clearWithinShutdownBudget(client: DiscordPresenceClient): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.clearDiscordActivity(client, "shutdown"),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, PRESENCE_SHUTDOWN_CLEAR_BUDGET_MS);
+        }),
+      ]);
+    } catch {
+      // clearDiscordActivity already records its own outcome.
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   private async ensureDiscordClient(): Promise<DiscordPresenceClient | null> {
