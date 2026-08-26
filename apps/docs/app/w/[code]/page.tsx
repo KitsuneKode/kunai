@@ -1,6 +1,7 @@
 import { CopyButton } from "@/components/ui/copy-button";
 import { NATIVE_INSTALL_PS1, NATIVE_INSTALL_SH } from "@/lib/install-commands";
 import { buildPageMetadata } from "@/lib/page-metadata";
+import { catalogFor, initialFor, positionFor, titleFor } from "@/lib/share-presentation";
 import {
   decodePlaybackTargetWebCode,
   encodePlaybackTargetRef,
@@ -174,28 +175,4 @@ function InvalidShareLanding() {
       </section>
     </main>
   );
-}
-
-function titleFor(ref: PlaybackTargetRef): string {
-  if (ref.title) return ref.title;
-  if (ref.anchor.by === "catalog") return `${ref.anchor.ns.toUpperCase()} ${ref.anchor.id}`;
-  return ref.anchor.query;
-}
-
-function catalogFor(ref: PlaybackTargetRef): string {
-  return ref.anchor.by === "catalog"
-    ? `${ref.anchor.ns.toUpperCase()} · ${ref.anchor.id}`
-    : "Search fallback";
-}
-
-function positionFor(ref: PlaybackTargetRef): string {
-  if (ref.season !== undefined && ref.episode !== undefined) {
-    return `Season ${ref.season} · Episode ${ref.episode}`;
-  }
-  if (ref.absoluteEpisode !== undefined) return `Episode ${ref.absoluteEpisode}`;
-  return ref.kind === "movie" ? "Movie" : ref.kind === "video" ? "Video" : "Series";
-}
-
-function initialFor(title: string): string {
-  return Array.from(title.trim())[0]?.toUpperCase() ?? "K";
 }
