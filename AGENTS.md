@@ -1,64 +1,95 @@
-# Kunai — Agent Entry Point
+# Kunai
 
 Kunai is a terminal-first Bun CLI that finds playable direct-provider video
-streams and hands them off to `mpv`.
+streams and hands them off to `mpv`. `CLAUDE.md` is a symlink to this file —
+edit this one.
 
-`CLAUDE.md` is a symlink to this file. Edit this one.
+## Working here
 
-## Start here
+Treat what follows as good defaults, not hard rules. The exceptions are the
+enforced non-negotiables below and the four hazards; everything else is
+judgment, and the developer's stated preference outranks anything here. If a
+rule fights the task in front of you, say so and get a decision rather than
+quietly working around it.
 
-1. **Find the code** — [.docs/feature-map.md](.docs/feature-map.md) routes any
-   user-visible feature to the directory that owns it. Use it before grepping.
-2. **Read the code.** It is the only source of truth. Docs describe intent and
-   constraints; when they disagree with the tree, the tree wins and the doc is
-   the bug.
-3. **Check the boundaries below** if your change crosses a layer, a package, or
-   the provider seam.
+Find code through [.docs/feature-map.md](.docs/feature-map.md) before grepping.
+Read the code as the source of truth — when a doc disagrees with the tree, the
+tree wins and the doc is the bug. Route to the one or two deep docs your change
+touches; do not read `.docs/` end to end. Vocabulary lives in
+[.docs/glossary.md](.docs/glossary.md).
 
-Do not read `.docs/` end to end. Route to the one or two files your change
-touches.
+## The four ways to hurt yourself
+
+1. **Writing to the real profile.** `KUNAI_CONFIG_DIR` is **not** an override —
+   a run that relies on it silently uses the developer's live config and can
+   migrate it. Isolate with `storageRootEnv` (HOME + XDG + APPDATA). Never point
+   tests or a debug run at the live SQLite databases; copy them to a shadow
+   directory first. Data flows one way: into your sandbox, never back out.
+2. **Believing a green gate.** A passing root `bun run typecheck` / `test` can be
+   a turbo cache replay — re-run with `--force` or per-package before claiming
+   green. Pwsh-gated installer tests land in the "N skip" line, not the failure
+   count, and `verify:doc-coverage` does not run locally at all.
+3. **Enabling analytics by accident.** Only an explicit keystroke may turn it on.
+   A skip, an accept-all-defaults, or any non-interactive path that creates an
+   `installId` or permits a send is a contract breach, not a bug.
+4. **Shipping a shared relay URL.** `providerRelay.baseUrl` is empty by default
+   and user-owned. Published binaries are immutable, so a baked-in host is
+   forever.
 
 ## Non-negotiables
 
-Each of these is enforced or expensive to get wrong. Everything else is
-judgment.
+Each of these is enforced by a test or is expensive to get wrong.
 
 - **Layering is a test, not a convention.**
   `apps/cli/test/unit/architecture/boundary-imports.test.ts` fails on a new
   violation: `domain/` imports neither `app`, `app-shell`, nor `services`;
   `infra/` and `services/` import neither `app` nor `app-shell`; `app-shell`
   imports no provider or player runtime; nothing outside the shell imports
-  `ink`; no active code imports `.archive/legacy` or `.reference/experiments`. Details
-  in [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md).
+  `ink`; no active code imports `.archive/legacy` or `.reference/experiments`.
+  Map in [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md).
 - **`apps/cli/src/main.ts` is the only entrypoint.** Do not add a second one.
-- **Production providers are the ones in
-  `apps/cli/src/container/bootstrap-providers.ts` →
-  `loadProductionProviderModules()`.** A module existing under
+- **Production providers are the ones
+  `loadProductionProviderModules()` returns** in
+  `apps/cli/src/container/bootstrap-providers.ts`. A module existing under
   `packages/providers/src/` does not make it live.
 - **Episode numbers are 1-based in the UI.** Providers adapt internally.
 - **`isAnimeProvider: true` is what puts a provider in anime mode.**
 - **`packages/providers/src/allmanga/api-client.ts` carries ani-cli parity
   logic.** Check parity against the reference implementation before changing
-  crypto or decoder constants, and document any deliberate divergence in
+  crypto or decoder constants, and document deliberate divergence in
   [.docs/providers.md](.docs/providers.md).
-- **Relay is metadata-only.** It has no media route or video fallback contract;
-  stream URLs always stay direct. `packages/relay` is the single shared
-  implementation; `apps/relay-server` stays a thin adapter.
-- **Kunai must never ship a shared public relay URL.** `providerRelay.baseUrl`
-  is empty by default and user-owned.
-- **Analytics is user-controlled, and only a keystroke turns it on.** A fresh
-  install is `unset`. Setup **recommends** analytics and pre-selects it, but only
-  an explicit choice on the consent screen creates `installId` or permits a send:
-  no skip, accept-all-defaults, or non-interactive path may enable it. Users opt
-  in or out at any time in `/settings`; disabling clears `installId`. No TTY, CI,
-  and DNT send nothing. The payload is bounded to five keys. A default endpoint
-  ships and is overridable — it is where a ping goes, never permission to send
-  one, and it must stay on a domain Kunai controls because published binaries are
-  immutable.
-  See
-  [.docs/analytics-privacy-contract.md](.docs/analytics-privacy-contract.md)
-  before touching `services/analytics`, `domain/analytics`, or
-  `apps/analytics-ingest`.
+- **Relay is metadata-only** — no media route, no video fallback; stream URLs
+  stay direct. `packages/relay` is the single implementation and
+  `apps/relay-server` stays a thin adapter.
+- **Analytics is user-controlled.** The full contract is
+  [.docs/analytics-privacy-contract.md](.docs/analytics-privacy-contract.md) and
+  it is gated by `analytics-disclosure-once`, `analytics-endpoint-pin`, and
+  `analytics-payload-drift` in `apps/cli/test/unit/architecture/`. Read it before
+  touching `services/analytics`, `domain/analytics`, or `apps/analytics-ingest`.
+
+## Hit every seam
+
+**The house failure mode is the silent no-op** — a flag parsed and dropped, a
+setting persisted and ignored, a capability declared and never read.
+`apps/cli/test/unit/architecture/contract-conformance.test.ts` catches some of
+it; the rest is this list. Before calling work done, walk it and say which
+entries applied.
+
+- **Declaration → reader.** If you add a flag, config key, capability, or
+  contract field, name the code that consumes it. If nothing does, you shipped
+  a no-op.
+- **Reverse states.** If you added a way in, add the way out and the way to see
+  it. Enable needs disable, queue needs dequeue, a one-way door is a bug.
+- **Entry points.** A behavior reachable from browse is usually also reachable
+  from the command palette, a hotkey, and post-play. Fixing one is not fixing
+  the feature.
+- **Both lanes.** Anime and TMDB identity resolve differently. A catalog or
+  history change needs a decision for each.
+- **Every provider.** Provider-shaped changes need a decision per adapter, even
+  if the decision is "not supported here".
+- **Every platform.** Linux, macOS, and Windows. Most cross-platform CI failures
+  here are tests pinning one OS's incidental behavior, not real breakage.
+- **Docs.** Update the doc that owns the subject in the same change set.
 
 ## Commands
 
@@ -72,148 +103,106 @@ bun run dev:relay                 # local relay server
 bun run link:global               # install `kunai` from this checkout
 ```
 
-Before finishing work:
+Before finishing: `bun run typecheck`, `bun run lint`, `bun run fmt`, and
+`bun run verify:doc-paths` if you touched `AGENTS.md` or `.docs/`. Use
+`bun run test`, never `bun test` directly. Run `bun run build` after a complete
+feature — it catches build-only errors. Tests live in `apps/cli/test/{unit,integration,live}/`;
+relay smoke is opt-in (see [.docs/testing-strategy.md](.docs/testing-strategy.md)).
 
-```sh
-bun run typecheck
-bun run lint
-bun run fmt
-bun run verify:doc-paths   # if you touched AGENTS.md or .docs/
-```
-
-- `bun run test` for tests — never `bun test` directly.
-- `bun run build` after a complete feature or before release, to catch
-  build-only errors.
-- Tests live in `apps/cli/test/unit/`, `apps/cli/test/integration/`, and
-  `apps/cli/test/live/`. Relay smoke is opt-in — run `bun run dev:relay`, set
-  `KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787`, then
-  `bun run test:live:relay-allanime`.
-
-## Priorities
-
-- **Correctness over convenience.** When a tradeoff is forced, choose the
-  behavior that stays predictable during failure, recovery, and provider churn.
-- **Diagnosable failures.** Log enough context to reason about a failure after
-  the fact. Never leave the terminal in a broken state.
-- **Silent no-ops are the house failure mode** — flags parsed and dropped,
-  settings persisted and ignored, capabilities declared and unread. If you add a
-  declaration, add its reader;
-  `apps/cli/test/unit/architecture/contract-conformance.test.ts` gates this.
-- **Extract shared logic instead of patching locally.** Duplicated logic across
-  files is a design smell. Reshaping existing code to improve the long-term
-  design is welcome; mass-renaming for style is not.
+A test that needs a timeout or a real sleep to pass is wrong. Anchor injected
+clocks past the data they read, never to a hardcoded date.
 
 ## Bun-first runtime
 
-- Prefer `Bun.spawn`, `Bun.which`, `Bun.connect` (Unix sockets), and `Bun.sleep`
-  for deliberate delays on Bun-only paths.
-- Prefer `Bun.file` / `Bun.write`, or `writeAtomicJson` in
-  [`apps/cli/src/infra/fs/atomic-write.ts`](apps/cli/src/infra/fs/atomic-write.ts),
-  for whole-file JSON without append semantics or special permission flags.
-- Prefer Node `fs` for append (`appendFile`), crash-safe atomic replace (temp
-  file in the target directory + `rename`), `copyFile` with mtime checks, sync
-  `mkdir` next to SQLite bootstrap, and tight `existsSync` / `unlink` sequences
-  on mpv socket paths.
-- Prefer `setTimeout` for cancellable deadlines (mpv IPC per-command timeouts
-  with `clearTimeout`).
-- Prefer `node:crypto` synchronous hashing for small hot-path keys.
-- Do not change APIs for style alone; keep Node where cross-platform semantics
-  are clearer.
+Prefer Bun APIs (`Bun.spawn`, `Bun.which`, `Bun.connect`, `Bun.sleep`,
+`Bun.file`/`Bun.write`, or `writeAtomicJson` in
+[`apps/cli/src/infra/fs/atomic-write.ts`](apps/cli/src/infra/fs/atomic-write.ts))
+on Bun-only paths. Keep Node `fs` where its semantics are clearer: append,
+crash-safe atomic replace, `copyFile` with mtime checks, and tight
+`existsSync`/`unlink` sequences on mpv socket paths. Two gotchas worth knowing:
+assets embedded in a compiled binary resolve to `/$bunfs/...`, which `Bun.write`
+handles and Node `fs.copyFile` does not; and `setTimeout` (not `Bun.sleep`) is
+what gives mpv IPC its cancellable deadlines. Do not change APIs for style alone.
 
 ## Deep docs
 
 Read one when your change lands in its subject. Not before.
 
-| Changing…                                                                     | Read                                                                                                                                                                   |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Where feature X lives                                                         | [.docs/feature-map.md](.docs/feature-map.md)                                                                                                                           |
-| Playback flow, provider orchestration, persistence, recovery                  | [.docs/architecture.md](.docs/architecture.md)                                                                                                                         |
-| Which layer or package work belongs in                                        | [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md)                                                                                                         |
-| Broad refactors, service extraction, caching                                  | [.docs/engineering-guide.md](.docs/engineering-guide.md)                                                                                                               |
-| Shell flow, hotkeys, overlays, setup UX                                       | [.docs/ux-architecture.md](.docs/ux-architecture.md) · [.docs/keybindings.md](.docs/keybindings.md)                                                                    |
-| Terminal styling and interaction patterns                                     | [.docs/design-system.md](.docs/design-system.md) · [.docs/ui-redesign-playbook.md](.docs/ui-redesign-playbook.md)                                                      |
-| Poster previews, native Kitty/iTerm2/Sixel output, image capability detection | [.docs/poster-image-rendering.md](.docs/poster-image-rendering.md)                                                                                                     |
-| Adding or hardening a provider                                                | [.docs/providers.md](.docs/providers.md) · [.docs/provider-intake.md](.docs/provider-intake.md) · [.docs/provider-agent-workflow.md](.docs/provider-agent-workflow.md) |
-| A provider shape from scratch                                                 | [.docs/provider-examples.md](.docs/provider-examples.md)                                                                                                               |
-| Source, quality, audio, subtitle inventory                                    | [.docs/playback-source-inventory-contract.md](.docs/playback-source-inventory-contract.md)                                                                             |
-| IntroDB/AniSkip, MAL resolution, auto-skip metadata                           | [.docs/playback-timing-and-aniskip.md](.docs/playback-timing-and-aniskip.md)                                                                                           |
-| mpv reconnect on the persistent session path                                  | [.docs/mpv-in-process-reconnect.md](.docs/mpv-in-process-reconnect.md)                                                                                                 |
-| Debug logs, diagnostics panels, provider tracing                              | [.docs/diagnostics-guide.md](.docs/diagnostics-guide.md)                                                                                                               |
-| Broad reliability or debugging sweeps                                         | [.docs/debugging-map.md](.docs/debugging-map.md)                                                                                                                       |
-| Provider health, cache layers, reset behavior                                 | [.docs/title-provider-health-and-cache-reset.md](.docs/title-provider-health-and-cache-reset.md)                                                                       |
-| `/discover` and recommendations                                               | [.docs/recommendations-and-discover.md](.docs/recommendations-and-discover.md)                                                                                         |
-| Share URLs, `/share`, `/watch`, `kunai --open`                                | [.docs/share-links.md](.docs/share-links.md)                                                                                                                           |
-| Discord presence and social status                                            | [.docs/presence-integrations.md](.docs/presence-integrations.md)                                                                                                       |
-| Download, offline library, setup, onboarding                                  | [.docs/download-offline-onboarding.md](.docs/download-offline-onboarding.md)                                                                                           |
-| AniList/TMDB sync, the outbox, tracker auth                                   | [.docs/tracker-sync.md](.docs/tracker-sync.md)                                                                                                                         |
-| Tests, test seams, new runtime behaviors                                      | [.docs/testing-strategy.md](.docs/testing-strategy.md)                                                                                                                 |
-| CI, Husky, lint-staged, issue and PR templates                                | [.docs/repo-infrastructure.md](.docs/repo-infrastructure.md) · [.docs/lint-policy.md](.docs/lint-policy.md)                                                            |
-| Release gating                                                                | [.docs/release-reliability-gate.md](.docs/release-reliability-gate.md)                                                                                                 |
-| Setup, local run flow, troubleshooting                                        | [.docs/quickstart.md](.docs/quickstart.md)                                                                                                                             |
-| Product vocabulary (Watchlist / Playlists / Up Next / …)                      | [.docs/adr/0001-personal-media-vocabulary.md](.docs/adr/0001-personal-media-vocabulary.md)                                                                             |
-| Parked surfaces — web, desktop, daemon, cache direction                       | [.docs/architecture-v2.md](.docs/architecture-v2.md)                                                                                                                   |
-| Local UI prototype harnesses                                                  | [.docs/prototypes.md](.docs/prototypes.md)                                                                                                                             |
+| Changing…                                                        | Read                                                                                                                                                 |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Where feature X lives                                            | [feature-map.md](.docs/feature-map.md)                                                                                                               |
+| Playback flow, provider orchestration, persistence, recovery     | [architecture.md](.docs/architecture.md)                                                                                                             |
+| Which layer or package work belongs in                           | [runtime-boundary-map.md](.docs/runtime-boundary-map.md)                                                                                             |
+| Broad refactors, service extraction, caching                     | [engineering-guide.md](.docs/engineering-guide.md)                                                                                                   |
+| Shell flow, hotkeys, overlays, setup UX                          | [ux-architecture.md](.docs/ux-architecture.md) · [keybindings.md](.docs/keybindings.md)                                                              |
+| Terminal styling and interaction patterns                        | [design-system.md](.docs/design-system.md) · [ui-redesign-playbook.md](.docs/ui-redesign-playbook.md)                                                |
+| Poster previews, Kitty/iTerm2/Sixel output, capability detection | [poster-image-rendering.md](.docs/poster-image-rendering.md)                                                                                         |
+| Adding or hardening a provider                                   | [providers.md](.docs/providers.md) · [provider-intake.md](.docs/provider-intake.md) · [provider-agent-workflow.md](.docs/provider-agent-workflow.md) |
+| A provider shape from scratch                                    | [provider-examples.md](.docs/provider-examples.md)                                                                                                   |
+| Source, quality, audio, subtitle inventory                       | [playback-source-inventory-contract.md](.docs/playback-source-inventory-contract.md)                                                                 |
+| IntroDB/AniSkip, MAL resolution, auto-skip metadata              | [playback-timing-and-aniskip.md](.docs/playback-timing-and-aniskip.md)                                                                               |
+| mpv reconnect on the persistent session path                     | [mpv-in-process-reconnect.md](.docs/mpv-in-process-reconnect.md)                                                                                     |
+| Debug logs, diagnostics panels, provider tracing                 | [diagnostics-guide.md](.docs/diagnostics-guide.md)                                                                                                   |
+| Broad reliability or debugging sweeps                            | [debugging-map.md](.docs/debugging-map.md)                                                                                                           |
+| Provider health, cache layers, reset behavior                    | [title-provider-health-and-cache-reset.md](.docs/title-provider-health-and-cache-reset.md)                                                           |
+| `/discover` and recommendations                                  | [recommendations-and-discover.md](.docs/recommendations-and-discover.md)                                                                             |
+| Share URLs, `/share`, `/watch`, `kunai --open`                   | [share-links.md](.docs/share-links.md)                                                                                                               |
+| Discord presence and social status                               | [presence-integrations.md](.docs/presence-integrations.md)                                                                                           |
+| Download, offline library, setup, onboarding                     | [download-offline-onboarding.md](.docs/download-offline-onboarding.md)                                                                               |
+| AniList/TMDB sync, the outbox, tracker auth                      | [tracker-sync.md](.docs/tracker-sync.md)                                                                                                             |
+| Tests, test seams, new runtime behaviors                         | [testing-strategy.md](.docs/testing-strategy.md)                                                                                                     |
+| CI, Husky, lint-staged, issue and PR templates                   | [repo-infrastructure.md](.docs/repo-infrastructure.md) · [lint-policy.md](.docs/lint-policy.md)                                                      |
+| Release gating                                                   | [release-reliability-gate.md](.docs/release-reliability-gate.md)                                                                                     |
+| Setup, local run flow, troubleshooting                           | [quickstart.md](.docs/quickstart.md)                                                                                                                 |
+| Product vocabulary (Watchlist / Playlists / Up Next / …)         | [adr/0001-personal-media-vocabulary.md](.docs/adr/0001-personal-media-vocabulary.md)                                                                 |
+| Parked surfaces — web, desktop, daemon, cache direction          | [architecture-v2.md](.docs/architecture-v2.md)                                                                                                       |
 
-Per-feature product rules live in [.docs/features/](.docs/features/). Provider
-research dossiers live in [.docs/provider-dossiers/](.docs/provider-dossiers/).
+Per-feature product rules live in [.docs/features/](.docs/features/); provider
+research dossiers in [.docs/provider-dossiers/](.docs/provider-dossiers/); local
+UI prototype harnesses in [.docs/prototypes.md](.docs/prototypes.md).
 
 ## Where things are written down
 
 One meaning per directory. If two places could hold a file, it belongs in the
 more specific one.
 
-| Folder          | Holds                                                                                             | Authority                      |
-| --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `.docs/`        | How the system works and why; vocabulary in [.docs/glossary.md](.docs/glossary.md)                | Current, unless code disagrees |
-| `.plans/`       | Unfinished work only — the **only** plan board, indexed by [.plans/roadmap.md](.plans/roadmap.md) | Intent, not behavior           |
-| `.reference/`   | Live material never imported by runtime: design authority, provider research lab                  | Reference                      |
-| `.archive/`     | Everything superseded — docs, plans, the closed SDD wave, dead modules                            | **None** — history only        |
-| `docs/`         | The public docs site (`apps/docs`); provider, command, and flag tables generated from source      | Current, user-facing           |
-| `.docs/agents/` | Issue tracker, triage labels, domain-doc conventions                                              | Current                        |
+| Folder          | Holds                                                                   | Authority                      |
+| --------------- | ----------------------------------------------------------------------- | ------------------------------ |
+| `.docs/`        | How the system works and why                                            | Current, unless code disagrees |
+| `.plans/`       | Unfinished work only, indexed by [.plans/roadmap.md](.plans/roadmap.md) | Intent, not behavior           |
+| `.reference/`   | Live material never imported by runtime: design authority, provider lab | Reference                      |
+| `.archive/`     | Everything superseded — docs, plans, dead modules                       | **None** — history only        |
+| `docs/`         | The public docs site (`apps/docs`); provider and flag tables generated  | Current, user-facing           |
+| `.docs/agents/` | Issue tracker, triage labels, domain-doc conventions                    | Current                        |
 
-Never cite a file under `.archive/` as authority for current behavior. See
-[.archive/README.md](.archive/README.md) and
-[.reference/README.md](.reference/README.md).
+Never cite a file under `.archive/` as authority for current behavior. The
+canonical design boards are HTML under `.reference/design/cli/` — build UI from
+those, not from prose summaries.
 
-## Keeping docs honest
-
-The dominant cause of doc rot here is a directory reorganization that leaves
-routing docs pointing at the old layout — silent until an agent looks in the
-wrong place. `bun run verify:doc-paths` turns that into a failure: it checks
-every backticked repo path and relative link in `AGENTS.md`, `.docs/`, and
-`.docs/agents/`.
-
-When you finish work:
-
-- Update the doc that owns the subject, in the same change set.
-- If a plan's core landed, move it to `.archive/plans/` and leave one roadmap
-  row for the residue. Do not leave a landed plan sitting in `.plans/`.
-- Cite a file that no longer exists only with wording that says so ("the old
-  `x.ts` was removed") — the verifier keys off that.
+A landed plan does not stay in `.plans/`: move it to `.archive/plans/` and leave
+one roadmap row for the residue. A merged PR is the implementation record — do
+not keep a second checklist beside it. Doc rot here is almost always a directory
+move that leaves routing docs pointing at the old layout, so
+`bun run verify:doc-paths` checks every backticked path and relative link in
+`AGENTS.md` and `.docs/`. Cite a removed file only with wording that says so
+("the old `x.ts` was removed") — the verifier keys off that.
 
 ## User data
 
 Paths are platform-resolved by `getKunaiPaths()` in
 `packages/storage/src/paths.ts` — Linux `~/.config/kunai`, macOS
-`~/Library/Application Support/kunai`, Windows `%APPDATA%\kunai`. Do not
-hardcode `~/.config`.
+`~/Library/Application Support/kunai`, Windows `%APPDATA%\kunai`. Never hardcode
+`~/.config`. Config is `configDir/config.json`; the mpv bridge script is
+`configDir/mpv/kunai-bridge.lua`; `kunai-data.sqlite` lives in the OS data dir
+and `kunai-cache.sqlite` in the OS cache dir; `./logs.txt` exists only under
+`--debug`. SQLite owns history and cache — the JSON history and cache stores are
+legacy implementation details.
 
-| Data              | Location                           |
-| ----------------- | ---------------------------------- |
-| Config            | `configDir/config.json`            |
-| mpv bridge script | `configDir/mpv/kunai-bridge.lua`   |
-| Data DB           | OS data dir, `kunai-data.sqlite`   |
-| Cache DB          | OS cache dir, `kunai-cache.sqlite` |
-| Debug log         | `./logs.txt`, only under `--debug` |
+## Conventions
 
-SQLite owns history and cache. The JSON config and provider-override stores are
-current; JSON history and cache stores are legacy implementation details.
-
-## Agent conventions
-
-- **Issues** — GitHub Issues on `KitsuneKode/kunai`. Workflow in
-  [.docs/agents/issue-tracker.md](.docs/agents/issue-tracker.md); label vocabulary
-  in [.docs/agents/triage-labels.md](.docs/agents/triage-labels.md).
-- **Domain language** — [.docs/agents/domain.md](.docs/agents/domain.md). Kunai is
-  single-context: one system-wide ADR set in `.docs/adr/`, no per-package
-  context files. New ADRs get the next sequential number.
+Issues are GitHub Issues on `KitsuneKode/kunai` — workflow in
+[.docs/agents/issue-tracker.md](.docs/agents/issue-tracker.md), labels in
+[.docs/agents/triage-labels.md](.docs/agents/triage-labels.md). Domain language
+is [.docs/agents/domain.md](.docs/agents/domain.md). Kunai is single-context:
+one system-wide ADR set in `.docs/adr/`, no per-package context files, and new
+ADRs take the next sequential number.

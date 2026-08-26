@@ -511,8 +511,6 @@ If the provider has native search or episode listing, export standalone function
 
 `packages/providers/src/allmanga/api-client.ts` contains the crypto/decoder and GraphQL helpers shared by the `allmangaProviderModule`. The module itself (`allmanga/direct.ts`) implements `CoreProviderModule`.
 
-## AllManga / Ani-CLI Parity Policy
-
 - `packages/providers/src/allmanga/api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired behavior it implements unless Kunai deliberately chooses a different contract
 - when AllAnime or AllManga breaks, compare against ani-cli before guessing at a fix
 - on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli`
