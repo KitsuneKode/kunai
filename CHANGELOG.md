@@ -84,6 +84,10 @@ The 0.2.6 development cycle was versioned but never published, so its work reach
 - **Native installer.** Self-contained binaries with a versioned layout and
   channel-aware `kunai upgrade` / `kunai uninstall`.
 
+Reject untrusted or downgraded HLS relay redirects before requesting them, and bound yt-dlp streaming output.
+
+Bound GitHub and npm update-metadata requests to 15 seconds, use the injected request path for every install channel, and reject malformed registry versions.
+
 Preserve exact provider-native anime episode identities from catalog selection through playback, caching, downloads, and offline recovery.
 
 - Keep Kunai's episode picker 1-based while resolving AllAnime episode zero, OVA, and special labels with their exact provider values.

@@ -254,6 +254,10 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
 
 ### Patch Changes
 
+- [#246](https://github.com/KitsuneKode/kunai/pull/246) [`443111a`](https://github.com/KitsuneKode/kunai/commit/443111a7fccb49b58449c9feb953f520bdcd7694) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Reject untrusted or downgraded HLS relay redirects before requesting them, and bound yt-dlp streaming output.
+
+- [#247](https://github.com/KitsuneKode/kunai/pull/247) [`1523ec7`](https://github.com/KitsuneKode/kunai/commit/1523ec7b77dff4657abee917f962f625b17b3c62) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Bound GitHub and npm update-metadata requests to 15 seconds, use the injected request path for every install channel, and reject malformed registry versions.
+
 - [#178](https://github.com/KitsuneKode/kunai/pull/178) [`db71c33`](https://github.com/KitsuneKode/kunai/commit/db71c332a13eba5081dd877951e784b6bd44b3ed) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Preserve exact provider-native anime episode identities from catalog selection through playback, caching, downloads, and offline recovery.
 
   - Keep Kunai's episode picker 1-based while resolving AllAnime episode zero, OVA, and special labels with their exact provider values.
