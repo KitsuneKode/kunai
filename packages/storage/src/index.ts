@@ -95,6 +95,7 @@ export type {
 } from "./repositories/offline-maintenance-jobs";
 export { ProviderHealthRepository } from "./repositories/provider-health";
 export { ProviderEndpointHealthRepository } from "./repositories/provider-endpoint-health";
+export { ProviderCacheRepository } from "./repositories/provider-cache";
 export { YoutubeMetadataCacheRepository } from "./repositories/youtube-metadata-cache";
 export type { YoutubeMetadataCacheRecord } from "./repositories/youtube-metadata-cache";
 export { TitleProviderHealthRepository } from "./repositories/title-provider-health";

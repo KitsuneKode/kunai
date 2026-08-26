@@ -5,6 +5,7 @@ import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types"
 import { getMiruroKnownCatalog } from "../src/catalogs/miruro";
 import {
   buildMiruroCycleCandidates,
+  computeMiruroEpisodesPersistTtlMs,
   createMiruroResultFromPayload,
   decodeMiruroPipePayload,
   interpretMiruroCurlResult,
@@ -487,5 +488,51 @@ describe("miruro audio fallback detection", () => {
   test("a missing or non-audio presentation is not treated as a fallback", () => {
     expect(isMiruroAudioFallback("dub", undefined)).toBe(false);
     expect(isMiruroAudioFallback("dub", "external")).toBe(false);
+  });
+});
+
+describe("computeMiruroEpisodesPersistTtlMs", () => {
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
+  const NOW = Date.parse("2026-08-26T00:00:00.000Z");
+  const ep = (airDate?: string) => ({ id: airDate ?? "x", number: 1, airDate });
+
+  test("a finished show (newest episode aired long ago) persists for 12h", () => {
+    const entries = [ep("2020-01-01T00:00:00.000Z"), ep("2020-03-15T00:00:00.000Z")];
+    expect(computeMiruroEpisodesPersistTtlMs(entries, NOW)).toBe(12 * HOUR);
+  });
+
+  test("no parseable air date falls back to the finished 12h TTL", () => {
+    expect(computeMiruroEpisodesPersistTtlMs([ep(), ep("not-a-date")], NOW)).toBe(12 * HOUR);
+  });
+
+  test("an airing show persists until roughly its next air date", () => {
+    // Newest episode aired 2 days ago; the next is ~5 days out.
+    const entries = [ep(new Date(NOW - 2 * DAY).toISOString())];
+    expect(computeMiruroEpisodesPersistTtlMs(entries, NOW)).toBe(5 * DAY);
+  });
+
+  test("a just-aired show is capped at one week, never longer", () => {
+    // Newest episode aired today; +7d would exceed the one-week cap.
+    const entries = [ep(new Date(NOW).toISOString())];
+    expect(computeMiruroEpisodesPersistTtlMs(entries, NOW)).toBe(7 * DAY);
+  });
+
+  test("an airing show close to its next episode persists only until then", () => {
+    // Newest episode aired 6 days ago; next is ~1 day out.
+    const entries = [ep(new Date(NOW - 6 * DAY).toISOString())];
+    const ttl = computeMiruroEpisodesPersistTtlMs(entries, NOW);
+    expect(ttl).toBe(DAY);
+  });
+
+  test("an overdue airing show clamps to the 2h floor rather than going negative", () => {
+    // Newest episode aired 8 days ago; next was due 1 day ago.
+    const entries = [ep(new Date(NOW - 8 * DAY).toISOString())];
+    expect(computeMiruroEpisodesPersistTtlMs(entries, NOW)).toBe(2 * HOUR);
+  });
+
+  test("uses the newest air date across mixed entries", () => {
+    const entries = [ep("2020-01-01T00:00:00.000Z"), ep(new Date(NOW - 6 * DAY).toISOString())];
+    expect(computeMiruroEpisodesPersistTtlMs(entries, NOW)).toBe(DAY);
   });
 });
