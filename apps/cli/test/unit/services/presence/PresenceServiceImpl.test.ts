@@ -4,6 +4,7 @@ import type { DiagnosticsStore } from "@/services/diagnostics/DiagnosticsStore";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import { resolveTuning } from "@/services/persistence/tuning";
+import { buildPlayableWebUrlForActivity } from "@/services/presence/discord-activity-links";
 import {
   __testing as presenceTesting,
   buildDiscordActivity,
@@ -103,7 +104,11 @@ describe("PresenceServiceImpl", () => {
     });
     expect(String(buildDiscordActivity(activity, "full").state)).toContain("S4 E9");
     expect(buildDiscordActivity(activity, "full").playable_ref).toContain("kunai://play?");
-    expect(buildDiscordActivity(activity, "full").buttons).toBeUndefined();
+    // No catalog ids, so there is no catalog button — but the play target is
+    // still known, and it is the one button worth showing.
+    expect(buildDiscordActivity(activity, "full").buttons).toEqual([
+      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full") as string },
+    ]);
     expect(buildDiscordActivity(activity, "private")).toMatchObject({
       details: "Watching with Kunai",
       state: "Playing",
@@ -242,14 +247,18 @@ describe("PresenceServiceImpl", () => {
     expect(payload).toMatchObject({
       details: "Frieren: Beyond Journey's End",
       details_url: "https://anilist.co/anime/154587",
-      state_url: "https://anilist.co/anime/154587",
-      buttons: [{ label: "View on AniList", url: "https://anilist.co/anime/154587" }],
+      buttons: [
+        { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full") as string },
+        { label: "View on AniList", url: "https://anilist.co/anime/154587" },
+      ],
       assets: {
         large_image: "https://image.example/frieren.jpg",
         large_text: "Frieren: Beyond Journey's End",
         large_url: "https://anilist.co/anime/154587",
       },
     });
+    // AniList has no per-episode page, so linking the state row would repeat the title link.
+    expect(payload).not.toHaveProperty("state_url");
     expect(String(payload.state)).toContain("S1 E14 · Smells Like Trouble");
     expect(payload).not.toHaveProperty("largeImageKey");
     expect(payload).not.toHaveProperty("smallImageKey");
@@ -271,6 +280,7 @@ describe("PresenceServiceImpl", () => {
     };
 
     expect(buildDiscordActivity(activity, "full").buttons).toEqual([
+      { label: "Play on Kunai", url: buildPlayableWebUrlForActivity(activity, "full") as string },
       {
         label: "View episode on TMDB",
         url: "https://www.themoviedb.org/tv/1396/season/4/episode/9",

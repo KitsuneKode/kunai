@@ -8,6 +8,7 @@ import {
   buildDiscordPosterAsset,
   buildDiscordPresenceButtons,
   buildPlayableShareUrlForActivity,
+  buildPlayableWebUrlForActivity,
   buildShareRefForActivity,
 } from "@/services/presence/discord-activity-links";
 
@@ -51,11 +52,32 @@ test("buildCatalogEpisodeLink returns TMDB episode pages when possible", () => {
   });
 });
 
-test("buildDiscordPresenceButtons only exposes catalog links", () => {
-  expect(buildDiscordPresenceButtons(baseActivity, "full")).toEqual([
+/**
+ * The play target used to reach Discord only as presence *text*, so the single
+ * button repeated the catalog link and the card offered one destination under
+ * two affordances. Discord refuses non-http(s) button URLs, so the play button
+ * must carry the https web-share route rather than the `kunai://` ref.
+ */
+test("buildDiscordPresenceButtons leads with a play button distinct from the catalog link", () => {
+  const buttons = buildDiscordPresenceButtons(baseActivity, "full");
+  const playUrl = buildPlayableWebUrlForActivity(baseActivity, "full");
+
+  expect(buttons).toEqual([
+    { label: "Play on Kunai", url: playUrl as string },
     { label: "View on AniList", url: "https://anilist.co/anime/21" },
   ]);
+  expect(buttons[0]?.url.startsWith("https://")).toBe(true);
+  expect(buttons[0]?.url).not.toBe(buttons[1]?.url);
+  expect(buttons.length).toBeLessThanOrEqual(2);
   expect(buildDiscordPresenceButtons(baseActivity, "private")).toEqual([]);
+});
+
+test("buildPlayableWebUrlForActivity yields an https handoff and stays private-safe", () => {
+  const webUrl = buildPlayableWebUrlForActivity(baseActivity, "full");
+  expect(webUrl?.startsWith("https://")).toBe(true);
+  // Same playback target as the kunai:// ref, carried over a scheme Discord accepts.
+  expect(buildPlayableShareUrlForActivity(baseActivity, "full")?.startsWith("kunai://")).toBe(true);
+  expect(buildPlayableWebUrlForActivity(baseActivity, "private")).toBeNull();
 });
 
 test("buildDiscordPosterAsset uses HTTPS poster URLs for Discord large_image", () => {
@@ -115,14 +137,14 @@ test("buildDiscordPosterAsset accepts title thumbnail artwork", () => {
 });
 
 test("buildDiscordActivityUrlFields exposes clickable catalog links", () => {
+  // An AniList-only title has no distinct episode page, so linking the state row
+  // would point it at the same URL as the title row.
   expect(buildDiscordActivityUrlFields(baseActivity)).toEqual({
     details_url: "https://anilist.co/anime/21",
-    state_url: "https://anilist.co/anime/21",
     playable_ref: "kunai://play?cat=anilist%3A21&kind=anime&s=1&e=1&src=allanime&n=One%20Piece",
   });
   expect(buildDiscordActivityUrlFields(baseActivity, "private")).toEqual({
     details_url: "https://anilist.co/anime/21",
-    state_url: "https://anilist.co/anime/21",
   });
   expect(
     buildDiscordActivityUrlFields({

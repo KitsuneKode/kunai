@@ -36,7 +36,7 @@ Discord presence is optional and local-only:
    `position / duration` label in `state` for clients that render time remaining differently.
 5. Paused playback sends `timestamps: null` with static `Paused at …` text so Discord does not
    keep advancing the old timer. After three minutes paused (tunable), Kunai clears the activity.
-6. Full privacy adds safe poster artwork and catalog links when ids are known.
+6. Full privacy adds safe poster artwork, a **Play on Kunai** button, and catalog links when ids are known.
 
 If any requirement is missing, Kunai records a diagnostics event and disables automatic retry until
 the user reconnects from Settings or changes the presence configuration. Duplicate activity payloads
@@ -129,22 +129,27 @@ Presence integrations must never receive:
 `presencePrivacy: "full"` may include title, episode, catalog ids, playback timestamps, and safe
 poster artwork.
 
-Discord activity buttons are URL-only (max two). During full privacy playback Kunai adds a single
-catalog button when ids are known:
+Discord activity buttons are URL-only (max two). During full privacy playback Kunai fills both:
 
-- **View episode on TMDB** for TV with a TMDB id
-- otherwise **View on AniList**, **View on IMDb**, or **View on TMDB** for the series/movie
+1. **Play on Kunai** — the https web-share route for the live playback target
+2. a catalog button when ids are known — **View episode on TMDB** for TV with a TMDB id,
+   otherwise **View on AniList**, **View on IMDb**, or **View on TMDB** for the series/movie
+
+The play button carries the https web-share URL, not the `kunai://` ref, because Discord rejects
+any button URL that is not http(s); the web route hands off to `kunai://` on open. A title with no
+catalog ids still gets the play button, and a catalog link that resolves to the play target is
+dropped rather than shown as a second button to the same place.
 
 Recent Discord clients also support clickable text/image via `details_url`, `state_url`, and
-`assets.large_url` when catalog ids are known. Under full privacy, the encoded playable
-`kunai://` ref is also appended to the presence `state` line (and exposed as `playable_ref` in
-url-fields); Discord buttons remain https catalog links only because Discord only allows http(s)
-button URLs.
+`assets.large_url` when catalog ids are known. `state_url` is set only when the episode page is a
+different destination from the title page — a movie has no episode page, and an AniList-only title
+resolves both to the same series page, so linking it would point the title and state rows at one
+identical URL. The encoded playable `kunai://` ref stays appended to the presence `state` line and
+exposed as `playable_ref` in url-fields.
 
-Play-in-Kunai handoffs use the shared `PlaybackTargetRef` codec (see `.docs/share-links.md`). The
-playable ref is derived from the live activity via `buildShareRefForActivity` in
-`discord-activity-links.ts`, so the `kunai://` text ref stays episode-accurate alongside the https
-catalog buttons.
+Play-in-Kunai handoffs use the shared `PlaybackTargetRef` codec (see `.docs/share-links.md`). Both
+the `kunai://` text ref and the https play button are derived from the live activity via
+`buildShareRefForActivity` in `discord-activity-links.ts`, so they stay episode-accurate.
 `presenceDiscordOpenUrl` remains in settings for future use but is not wired into the default
 activity payload.
 
@@ -179,7 +184,8 @@ Discord Rich Presence here is local IPC, not OAuth:
 4. Set `presenceProvider: "discord"` and preferred `presencePrivacy`.
 5. Start playback in Kunai.
 6. Confirm Discord activity shows poster (or uploaded `kunai` fallback), `S# E# · episode`,
-   progress bar after duration is known, clickable catalog URLs, and a catalog button when ids exist.
+   progress bar after duration is known, clickable catalog URLs, a **Play on Kunai** button, and a
+   catalog button when ids exist.
 7. Pause → static card, no advancing timer; after ~3 minutes → presence clears.
 8. Autoplay next episode → card updates without clearing binge session suffix (after 15+ minutes).
 9. Return to search / quit → presence clears.
