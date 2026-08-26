@@ -121,7 +121,9 @@ export async function fetchHlsRelayUpstream(
   request: HlsRelayCurlRequest,
   options: HlsRelayFetchOptions = {},
 ): Promise<HlsRelayUpstreamResponse> {
-  const now = options.now ?? Date.now;
+  // Redirect-chain budgets are elapsed-time limits. A wall-clock correction
+  // must not restore time to later hops, so production uses a monotonic clock.
+  const now = options.now ?? (() => performance.now());
   const startedAt = now();
   const bodyLimitBytes = options.maxResponseBytes ?? MAX_UPSTREAM_BODY_BYTES;
   const curlTimeoutMs = options.curlTimeoutMs ?? 25_000;
@@ -169,6 +171,37 @@ export async function fetchHlsRelayUpstream(
   throw new Error("upstream redirected too many times");
 }
 
+export function buildHlsRelayCurlArgs(
+  url: string,
+  referer: string,
+  origin: string,
+  budget: HlsRelayCurlBudget,
+): string[] {
+  return [
+    // curl only honors --disable/-q as a config-file guard when it is the first
+    // argument. Without it, a user's `location` setting can follow a redirect
+    // before Kunai validates the next hop.
+    "-q",
+    "-sS",
+    "--no-location",
+    "--http2",
+    "-A",
+    AGENT,
+    "-H",
+    `Referer: ${referer}`,
+    "-H",
+    `Origin: ${origin}`,
+    "-H",
+    "Accept: */*",
+    "--max-time",
+    (Math.max(1, budget.curlTimeoutMs) / 1_000).toFixed(3),
+    "-w",
+    `\n${CURL_META_MARKER}%{http_code}\n%{content_type}\n%{redirect_url}`,
+    "--",
+    url,
+  ];
+}
+
 function curlFetchOnce(
   url: string,
   referer: string,
@@ -177,24 +210,7 @@ function curlFetchOnce(
 ): Promise<HlsRelayCurlResponse> {
   assertRelayUpstreamUrl(url);
   return new Promise((resolve, reject) => {
-    const proc = spawn("curl", [
-      "-sS",
-      "--http2",
-      "-A",
-      AGENT,
-      "-H",
-      `Referer: ${referer}`,
-      "-H",
-      `Origin: ${origin}`,
-      "-H",
-      "Accept: */*",
-      "--max-time",
-      (Math.max(1, budget.curlTimeoutMs) / 1_000).toFixed(3),
-      "-w",
-      `\n${CURL_META_MARKER}%{http_code}\n%{content_type}\n%{redirect_url}`,
-      "--",
-      url,
-    ]);
+    const proc = spawn("curl", buildHlsRelayCurlArgs(url, referer, origin, budget));
     let chunks: Buffer[] = [];
     let totalBytes = 0;
     let stderr = "";
@@ -415,7 +431,7 @@ export function startHlsRelay(
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
-              host: new URL(srcUrl).hostname,
+              host: new URL(r.effectiveUrl).hostname,
               message: `upstream ${r.status}`,
             });
             return new Response(`upstream ${r.status}`, { status: r.status });
@@ -457,7 +473,7 @@ export function startHlsRelay(
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
-              host: new URL(srcUrl).hostname,
+              host: new URL(r.effectiveUrl).hostname,
               message: `upstream ${r.status}`,
             });
           }

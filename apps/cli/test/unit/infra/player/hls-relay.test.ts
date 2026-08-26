@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildHlsRelayCurlArgs,
   fetchHlsRelayUpstream,
   fromB64Url,
   looksLikeHlsPlaylist,
@@ -14,6 +15,26 @@ const RELAY = "http://127.0.0.1:9";
 const BASE = "https://vault-06.uwucdn.top/path/to/index.m3u8?token=abc%2B%2F%3D";
 
 describe("hls-relay gating", () => {
+  test("disables curl config and redirect following before every other argument", () => {
+    const args = buildHlsRelayCurlArgs(
+      "https://vault-06.uwucdn.top/start.m3u8",
+      "https://kwik.cx/",
+      "https://kwik.cx",
+      {
+        maxResponseBytes: 1024,
+        bodyLimitBytes: 1024,
+        curlTimeoutMs: 25_000,
+        watchdogTimeoutMs: 30_000,
+      },
+    );
+
+    expect(args[0]).toBe("-q");
+    expect(args).toContain("--no-location");
+    expect(args).not.toContain("-L");
+    expect(args).not.toContain("--location");
+    expect(args.at(-1)).toBe("https://vault-06.uwucdn.top/start.m3u8");
+  });
+
   test("rejects a redirect before requesting a non-allowlisted target", async () => {
     const requested: string[] = [];
 
