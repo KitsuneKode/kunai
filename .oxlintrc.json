@@ -7,12 +7,19 @@
     "es2026": true
   },
   "plugins": ["eslint", "typescript", "import", "unicorn", "promise", "node", "react", "jsx-a11y"],
+
+  "jsPlugins": [{ "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }],
   "categories": {
     "correctness": "error",
     "suspicious": "warn",
     "perf": "warn"
   },
   "rules": {
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+
     "no-debugger": "error",
     "no-console": "off",
 
@@ -40,11 +47,15 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/*.spec.ts", "**/*.test.tsx", "**/*.spec.tsx"],
+      "files": ["**/*.test.ts", "**/*.spec.ts", "**/*.test.tsx", "**/*.spec.tsx", "**/test/**", "**/__mocks__/**"],
       "env": {
         "vitest": true
       },
       "rules": {
+        "anti-slop/no-chained-type-assertions": "off",
+        "anti-slop/no-object-parameters": "off",
+        "anti-slop/no-reflect-apply": "off",
+        "anti-slop/no-reflect-get": "off",
         "typescript/no-explicit-any": "off",
         "typescript/no-non-null-assertion": "off",
         "unicorn/consistent-function-scoping": "off"
