@@ -55,11 +55,10 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
   const url = docsCanonicalUrl(input.path);
   const socialDescription = socialDescriptionFor(input);
 
-  return {
+  const metadata: Metadata = {
     title: input.absoluteTitle ? { absolute: input.title } : input.title,
     description: input.description,
     alternates: { canonical: url },
-    ...(input.noindex ? { robots: { index: false, follow: true } } : {}),
     openGraph: {
       title: input.title,
       description: socialDescription,
@@ -75,4 +74,12 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
       images: [SOCIAL_IMAGE],
     },
   };
+
+  // Follow, but do not index: a withdrawn release keeps its page so an old link
+  // still explains itself, while search stops leading people to it.
+  if (input.noindex) {
+    metadata.robots = { index: false, follow: true };
+  }
+
+  return metadata;
 }
