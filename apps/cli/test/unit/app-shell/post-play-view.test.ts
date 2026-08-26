@@ -133,3 +133,75 @@ describe("series-complete celebration", () => {
     expect(view.celebration?.watchTimeLine).toBeUndefined();
   });
 });
+
+/**
+ * Stopping 23 seconds into S01E03 of a ten-episode season reported
+ * "3 / 10 · 30%" — true about the season, and not an answer to the question
+ * the stopped-early screen asks, which is where you stopped. Films showed no
+ * bar at all, because the season bar never applied to them.
+ */
+describe("stopped-early progress", () => {
+  const stoppedEarly = {
+    title: "Ozark",
+    episodeLabel: "S01 E03",
+    resumeLabel: "resume S01E03  ·  0:23",
+    postPlayState: { kind: "mid-series" as const },
+    totalEpisodes: 10,
+    watchedEpisodes: 3,
+  };
+
+  it("reports position inside the episode, not progress through the season", () => {
+    const view = buildPostPlayView({
+      ...stoppedEarly,
+      resumePositionSeconds: 23,
+      episodeDurationSeconds: 2891,
+    });
+
+    expect(view.heroKind).toBe("stopped-early");
+    expect(view.progressBar?.label).toBe("0:23 / 48:11 · 1%");
+    expect(view.progressBar?.percent).toBe(1);
+    // The season numbers must not be what the bar reports.
+    expect(view.progressBar?.label).not.toContain("3 / 10");
+    expect(view.progressBar?.percent).not.toBe(30);
+  });
+
+  it("gives a film the same bar the season count could never provide", () => {
+    const view = buildPostPlayView({
+      ...stoppedEarly,
+      titleType: "movie",
+      totalEpisodes: undefined,
+      watchedEpisodes: undefined,
+      resumePositionSeconds: 1800,
+      episodeDurationSeconds: 7200,
+    });
+
+    expect(view.progressBar?.label).toBe("30:00 / 2:00:00 · 25%");
+  });
+
+  it("falls back to the season bar when the player reported no runtime", () => {
+    const view = buildPostPlayView({ ...stoppedEarly, resumePositionSeconds: 23 });
+
+    expect(view.progressBar?.label).toBe("3 / 10 · 30%");
+  });
+
+  it("never invents a denominator from a zero or negative runtime", () => {
+    for (const duration of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const view = buildPostPlayView({
+        ...stoppedEarly,
+        resumePositionSeconds: 23,
+        episodeDurationSeconds: duration,
+      });
+      expect(view.progressBar?.label).toBe("3 / 10 · 30%");
+    }
+  });
+
+  it("clamps a position past the runtime instead of exceeding 100%", () => {
+    const view = buildPostPlayView({
+      ...stoppedEarly,
+      resumePositionSeconds: 5000,
+      episodeDurationSeconds: 2891,
+    });
+
+    expect(view.progressBar?.percent).toBe(100);
+  });
+});
