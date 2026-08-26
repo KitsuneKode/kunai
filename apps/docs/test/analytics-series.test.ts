@@ -43,6 +43,30 @@ describe("parseDocsAnalyticsSeries", () => {
     expect(parsed?.points[1]?.activeInstalls).toBe(12);
   });
 
+  /**
+   * `from`/`to` are rendered as the axis labels, so they are a claim about what
+   * the chart covers. Every point inside is already rejected on a bad day; the
+   * window that frames them cannot be the one value taken on trust.
+   */
+  test("a malformed window bound rejects the series", () => {
+    expect(parseDocsAnalyticsSeries({ ...valid, from: "nope" })).toBeNull();
+    expect(parseDocsAnalyticsSeries({ ...valid, to: "2026-13-45" })).toBeNull();
+    expect(parseDocsAnalyticsSeries({ ...valid, from: "" })).toBeNull();
+  });
+
+  test("a window that runs backwards is refused", () => {
+    expect(parseDocsAnalyticsSeries({ ...valid, from: "2026-08-02", to: "2026-08-01" })).toBeNull();
+    // A single-day window is legitimate — from and to may be equal.
+    expect(
+      parseDocsAnalyticsSeries({
+        ...valid,
+        from: "2026-08-01",
+        to: "2026-08-01",
+        points: [valid.points[0]],
+      }),
+    ).not.toBeNull();
+  });
+
   test("one malformed day rejects the whole window", () => {
     // A partially parsed series would quietly misstate a trend.
     const broken = { ...valid, points: [valid.points[0], { day: "nope", activeInstalls: 1 }] };

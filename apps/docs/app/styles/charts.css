@@ -183,7 +183,7 @@
 @media (forced-colors: active), print {
   .kunai-plot-band {
     fill: transparent;
-    stroke: currentColor;
+    stroke: currentcolor;
     stroke-width: 1;
   }
 
@@ -269,12 +269,12 @@ table.kunai-chart tr.kunai-chart-row:hover th {
  */
 @media (forced-colors: active), print {
   .kunai-chart-bar {
-    outline: 1px solid currentColor;
+    outline: 1px solid currentcolor;
     background-color: transparent;
-    background-image: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 4px);
+    background-image: repeating-linear-gradient(45deg, currentcolor 0 1px, transparent 1px 4px);
   }
 
   .kunai-chart-bar[data-residual="true"] {
-    background-image: repeating-linear-gradient(135deg, currentColor 0 1px, transparent 1px 6px);
+    background-image: repeating-linear-gradient(135deg, currentcolor 0 1px, transparent 1px 6px);
   }
 }

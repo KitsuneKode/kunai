@@ -83,7 +83,14 @@ function parsePoint(value: unknown): SeriesPoint | null {
 export function parseDocsAnalyticsSeries(raw: unknown): DocsAnalyticsSeries | null {
   if (!isRecord(raw)) return null;
   const { from, to, updatedAt, points } = raw;
-  if (typeof from !== "string" || typeof to !== "string") return null;
+  // The window is held to the same standard as the points inside it. It is
+  // rendered as the axis labels, so a malformed bound prints as the range the
+  // chart claims to cover, and a reversed pair describes a window that ran
+  // backwards. Every point is already rejected on a bad day; the window that
+  // frames them cannot be the one thing taken on trust.
+  if (typeof from !== "string" || !isCalendarDay(from)) return null;
+  if (typeof to !== "string" || !isCalendarDay(to)) return null;
+  if (from > to) return null;
   if (typeof updatedAt !== "string") return null;
   if (!Array.isArray(points) || points.length === 0) return null;
 
