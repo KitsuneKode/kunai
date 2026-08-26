@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { publicShortcutMetadata } from "../../cli/src/app-shell/keybindings.ts";
+import { extractArray, extractBoolean, extractString } from "../lib/manifest-parsing";
 import {
   computeCliSourceFingerprint,
   computeDocsContentFingerprint,
@@ -82,28 +83,6 @@ function readExistingMetadata(filePath: string): Record<string, unknown> | null 
  */
 export function metadataIdentity(value: Record<string, unknown>): string {
   return JSON.stringify(value);
-}
-
-function extractString(content: string, prop: string): string | null {
-  const regex = new RegExp(`${prop}:\\s*["']([^"']+)["']`);
-  const match = content.match(regex);
-  return match ? match[1] : null;
-}
-
-function extractBoolean(content: string, prop: string): boolean {
-  const regex = new RegExp(`${prop}:\\s*(true|false)`);
-  const match = content.match(regex);
-  return match ? match[1] === "true" : false;
-}
-
-function extractArray(content: string, prop: string): string[] {
-  const regex = new RegExp(`${prop}:\\s*\\[([^\\]]+)\\]`);
-  const match = content.match(regex);
-  if (!match) return [];
-  return match[1]
-    .split(",")
-    .map((val) => val.trim().replace(/['"]/g, ""))
-    .filter((val) => val.length > 0);
 }
 
 function resolveProviderId(rawId: string, fallbackDir: string): string {
