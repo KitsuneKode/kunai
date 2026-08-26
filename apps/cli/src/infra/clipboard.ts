@@ -31,7 +31,12 @@ export type ClipboardRuntime = {
 export const defaultClipboardRuntime: ClipboardRuntime = {
   platform: process.platform,
   env: process.env,
-  spawn: (command, options) => Bun.spawn([...command], options) as unknown as ClipboardProcess,
+  spawn: (command, options) => {
+    // Mapped field by field rather than asserted: `ClipboardProcess` is the
+    // port this module actually uses, and Bun's `Subprocess` is wider than it.
+    const child = Bun.spawn([...command], options);
+    return { exited: child.exited, stdin: child.stdin, stdout: child.stdout };
+  },
 };
 
 function copyCommand(runtime: ClipboardRuntime): string[] {

@@ -135,18 +135,33 @@ function parseJson(stdout: string, context: string): unknown {
   }
 }
 
+/** Read one required non-empty string field, or fail with the field named. */
+function requireStringField(
+  record: Readonly<Record<string, unknown>>,
+  field: string,
+  context: string,
+): string {
+  const value = record[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`[publish] ${context} npm pack metadata has no ${field}.`);
+  }
+  return value;
+}
+
 function parseNpmPackMetadata(stdout: string, context: string): NpmPackMetadata {
   const parsed = parseJson(stdout, `${context} npm pack`);
   if (!Array.isArray(parsed) || parsed.length !== 1 || !isJsonObject(parsed[0])) {
     throw new Error(`[publish] ${context} npm pack must return exactly one metadata record.`);
   }
   const record = parsed[0];
-  for (const field of ["name", "version", "integrity", "filename"] as const) {
-    if (typeof record[field] !== "string" || record[field].length === 0) {
-      throw new Error(`[publish] ${context} npm pack metadata has no ${field}.`);
-    }
-  }
-  return record as unknown as NpmPackMetadata;
+  // Built field by field rather than asserted: the reads are what prove the
+  // shape, so the return type is earned instead of claimed.
+  return {
+    name: requireStringField(record, "name", context),
+    version: requireStringField(record, "version", context),
+    integrity: requireStringField(record, "integrity", context),
+    filename: requireStringField(record, "filename", context),
+  };
 }
 
 function isSha512Integrity(value: string): boolean {
