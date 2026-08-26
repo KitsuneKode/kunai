@@ -265,41 +265,6 @@ Source inventory and language normalization:
 
 ## Provider Types
 
-### `PlaywrightProvider`
-
-Use this when the real stream only appears after a browser player runs client-side JavaScript.
-
-```ts
-interface PlaywrightProvider extends BaseProvider {
-  kind: "playwright";
-  buildUrl(id: string, type: "movie" | "tv", season: number, episode: number): string;
-  needsClick?: boolean;
-}
-```
-
-### Historical `ApiProvider`
-
-Older plans used this shape for HTTP/GraphQL providers with optional Playwright
-help for the final embed step. Do not use it for new active providers; implement
-`CoreProviderModule` in `packages/providers`.
-
-```ts
-interface ApiProvider extends BaseProvider {
-  kind: "api";
-  search(query: string): Promise<ApiSearchResult[]>;
-  resolveStream(
-    id: string,
-    type: "movie" | "tv",
-    season: number,
-    episode: number,
-    opts: { embedScraper: EmbedScraper; animeLang?: "sub" | "dub" },
-  ): Promise<string | null>;
-}
-```
-
-`opts.embedScraper` is a legacy pattern kept for archival/reference providers.
-Active beta providers resolve through direct modules in `packages/providers`.
-
 ### YouTube (`packages/providers/src/youtube`)
 
 **The quality ceiling reaches mpv only if three things are right.** Verified
@@ -360,9 +325,11 @@ Third lane provider for standalone videos, playlists, and channels.
 - **Dependencies:** `yt-dlp` required for playback and downloads; search can work via Invidious/Piped without it.
 - **Age-restricted / members content:** configure `config.youtubeMetadata.cookiesFromBrowser` or `cookiesFile` (no shipped default cookies).
 
-## When A Playwright Provider Can Become Browser-Less
+## When A Browser-Requiring Source Can Become Browser-Less
 
-Do not assume every iframe or embed site can be converted into an HTTP-only provider just because AllAnime can.
+Kunai ships no browser runtime, so this is a research question, not a fallback.
+Do not assume every iframe or embed site can be converted into an HTTP-only
+provider just because AllAnime can.
 
 Move a provider away from Playwright only when research shows at least one of these is true:
 
@@ -413,25 +380,6 @@ When the site behavior is unclear, gather evidence first and keep knowns vs unkn
 
 Use `.reference/experiments/scratchpads/provider-*` as the research lab. The reports and probes there are evidence for dossiers and implementation handoffs, not production imports.
 
-## Migration Order From Current Dossiers
-
-The current Provider SDK migration follows the updated dossiers, not the older legacy provider classes:
-
-1. `vidlink` and `rivestream`: primary low-friction movie/series lane for fast CLI startup, broad catalog coverage, and subtitle-rich playback.
-2. `vidking`: high-value Videasy source lane; first-class when a valid attended Videasy session exists, but never a cold-start blocker.
-3. `anidb` (default anime) plus `allanime` / AllManga-compatible client and `miruro`: active anime lane. Prefer AniDB for ani-cli v5 parity; keep AllManga crypto aligned with live mkissa bootstrap and harden Miruro through the provider matrix.
-4. `vidrock`, `rgshows`, `vidapi`, `anikai`, `braflix`, `cineby`, `bitcine`, and `cineby-anime` remain research/candidate paths unless matrix evidence proves they are better than the supported routes.
-
-Quality gate for promotion into the production resolver:
-
-- resolves representative movie/series/anime samples in the provider matrix without browser automation
-- median resolve is fast enough for foreground playback, with bounded timeout behavior
-- broad catalog hit rate on current samples; misses fail with structured evidence
-- usable subtitles or a reliable subtitle fallback plan
-- source/quality inventory maps cleanly to Kunai's picker model
-- no mandatory per-episode challenge, hidden headless loop, captcha solver, or hostile user setup
-- docs and regression samples identify likely drift points
-
 ## Design Guidance
 
 - If multiple providers need the same parsing, retry, or URL-construction behavior, extract it instead of copying it
@@ -441,26 +389,6 @@ Quality gate for promotion into the production resolver:
 - The global resolver handles provider-level fallback, ranking, cache reads/writes, health scoring, and user policy
 - Providers emit cache policy and hints; they do not write SQLite, history, cache, health, or trace stores directly
 - Providers receive runtime ports such as `fetch` or `browserLease`; they do not own environment-specific runtime setup
-
-## Adding a Playwright Provider (future/runtime-browser path)
-
-1. Implement `PlaywrightProvider`
-2. Return a stable embed URL from `buildUrl()`
-3. Set `needsClick: true` only if playback requires user activation
-4. Register the module in `apps/cli/src/container/bootstrap-providers.ts` inside `loadProductionProviderModules()`
-
-Minimal shape:
-
-```ts
-export const MyProvider: PlaywrightProvider = {
-  kind: "playwright",
-  id: "myprovider",
-  description: "Short provider description",
-  buildUrl(id, type, season, episode) {
-    return `https://example.com/embed/${type}/${id}?s=${season}&e=${episode}`;
-  },
-};
-```
 
 ## Adding a New Provider (Current Pattern)
 
@@ -509,6 +437,10 @@ If the provider has native search or episode listing, export standalone function
 
 ## AllManga / Ani-CLI Parity Policy
 
+Dated incident history — NEED_CAPTCHA, the user-relay route, and the crypto
+rotations — lives in
+[provider-dossiers/allanime-parity-history.md](./provider-dossiers/allanime-parity-history.md).
+
 `packages/providers/src/allmanga/api-client.ts` contains the crypto/decoder and GraphQL helpers shared by the `allmangaProviderModule`. The module itself (`allmanga/direct.ts`) implements `CoreProviderModule`.
 
 - `packages/providers/src/allmanga/api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired behavior it implements unless Kunai deliberately chooses a different contract
@@ -526,150 +458,6 @@ If the provider has native search or episode listing, export standalone function
   - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
   - downstream link extraction from decoded source URLs — `Mp4` scrapes the embed HTML for `src: "…"` and plays with `Referer: https://www.mp4upload.com` plus mpv `--tls-verify=no`
 
-### AllAnime NEED_CAPTCHA (2026-08-13)
-
-The "valid episode catalog, zero extracted streams" symptom is **not** a crypto or
-parity defect. Measured against the production constants (`api.mkissa.net` +
-`https://mkissa.to` referer + build id 81):
-
-- Bootstrap succeeds, `keyHex` and `queryHash` are both 64 chars, the `aaReq`
-  attestation is accepted, and **no** `AA_CRYPTO_*` error is returned.
-- The episode **catalog** query resolves normally (11 episodes for the
-  Demon Slayer fixture, titles and all).
-- The episode **sources** query returns `NEED_CAPTCHA` on every valid host/referer
-  pair — `api.mkissa.net` ← `mkissa.to` and `api.allanime.day` ← `allmanga.to` both
-  return it; `api.allanime.day` ← `allanime.to` is a flat HTTP 403.
-
-That asymmetry — catalog ungated, sources gated — is exactly what produced a full
-episode list next to zero streams.
-
-`NEED_CAPTCHA` was previously unhandled anywhere in the codebase: it fell through
-the retry loop, `rawSources` stayed empty, and the user saw
-`No streams extracted from AllManga for episode N`. It is now
-`AllMangaCaptchaError`, classified as **`blocked` and non-retryable** (a captcha is
-not a network fault and retrying or re-bootstrapping cannot clear it), with a
-message naming the one thing that does help — a user-owned relay in an ungated
-region. It is checked _before_ the crypto-staleness and rate-limit branches so it
-cannot be mistaken for either.
-
-A relay running on the same machine as the client does **not** clear the gate,
-because the egress IP is unchanged; a relay deployed to an ungated region is the
-untested variable. AllAnime was dropped from the automatic anime lane on
-2026-08-13 while staying a registered, manually selectable production module.
-
-The 2026-08-24 build-140 repair makes AllAnime usable again where the source
-endpoint is not captcha-gated. No priority-default change is needed:
-`animeProviderPriority` is ordering rather than an allowlist, so registered
-providers omitted from the array remain available after its named entries. The
-NEED_CAPTCHA classification and relay hint stay because geo/bot-gated networks
-can still hit the gate.
-
-**Do not restore historical crypto.** Build 140, the current mask constants,
-HMAC `x-aa-boot`, and AES-256-GCM are the verified contract. The older build 81
-or 119 material, epoch/partB query construction, and AES-CTR decryption must not
-be restored.
-
-### AllAnime via user relay (2026-08-17)
-
-With a user-owned relay in place, AllAnime works end-to-end. `bun run
-test:live:relay-allanime` passes with real streams (e.g. `video.wixstatic.com`
-1080p mp4 via the `Default` source).
-
-- The relay egress (Vercel `iad1` in the reference deployment) reaches
-  `api.mkissa.net` and `cdn.mkissa.net` without a Cloudflare challenge and is
-  **not** captcha-gated for the episode sources query.
-- On 2026-08-17 the upstream build rotated **81 → 119** and the epoch scale
-  moved from 3-day to **7-day** (`epochMs: 604800000`, 1-day grace, plus a
-  `switchAt` boundary). The old material answered `AA_CRYPTO_MISSING_BUILD`.
-  The new constants (build id `119`, mask fragments, epoch scale, and the
-  episode persisted-query hash `ca735f…`) were re-derived from the live site:
-  string table + rotation from the crypto chunk (`CA0Qy_FU.js`, 144-entry
-  table, rotation verified by recomputing the browser's `x-aa-boot` HMAC) and
-  the episode hash from the `_9` GraphQL template in the same chunk, then
-  confirmed against a real browser session's network traffic. The same
-  procedure applies on the next rotation.
-- The episode sources request now also carries `k: "k7"` in `extensions`
-  (alongside `persistedQuery` + `aaReq`), matching the live site.
-
-**Relay gaps found and fixed the same day:**
-
-- **The relay metadata allowlist was dropping provider-auth headers.**
-  `x-build-id`, `x-aa-boot`, `x-obfuscated`, and `x-session-token` were not in
-  `METADATA_HEADER_ALLOWLIST`, so every bootstrap through a relay failed with
-  `invalid_boot_token` even when the client material was correct. They are now
-  forwarded (header-text validation still applies); `x-obfuscated` is also
-  passed through on relay responses for Miruro pipe decoding.
-- **Deployed relays go stale with provider manifests.** The relay server builds
-  its host registry from `@kunai/providers` manifests at deploy time. A relay
-  deployed before the mkissa migration rejects `api.mkissa.net` with
-  `host-not-allowed`. After any change to a provider's `relayProfile.upstreamHosts`,
-  redeploy the relay. `apps/relay-server` also pins `typescript@5.9.3` because
-  Vercel's `@vercel/node` builder crashes on the repo-wide TypeScript 7.
-
-**wixmp referer: current behaviour retained.** Plan 036 proposed attaching the
-mkissa site referer for `repackager.wixmp.com`, gated on a fixture proving the
-current final-stream fallback insufficient. No such fixture can be built from this
-network: the pipeline never reaches source extraction, so there is no live wixmp
-row to characterize. Per that gate, `resolveDirectStreamReferer()` is unchanged.
-mp4upload keeps its dedicated referer and scoped `--tls-verify=no`; TLS
-verification is not broadened to any other host.
-
-### AllAnime crypto rotation 119 → 140 (2026-08-24)
-
-The bootstrap started answering `{error:"unknown_build_id"}` (HTTP 404) — build
-**119 is retired**, current build id is **140**. This rotation also changed the
-derivation constants, which upstream now ships as a config object (`Fd`) in the
-obfuscated crypto chunk instead of hard-coding them:
-
-- `hashBuildId` mixes `(index * saltMul + saltAdd)` = `*250 + 54` (was `*17+31`)
-- `deriveMaskKey` mixes `(fragmentIndex * fragMul + byteIndex * fragAdd)` =
-  `*16 + *217` (was `*41 + *7`)
-- new mask fragments; episode persisted-query hash unchanged
-- boot token layout changed: first HMAC message is now `{bootPrefix}{buildId}`
-  (prefix `4X2PsZc2r:`), second HMAC covers
-  `group.host.lane.buildId.epoch` joined by `.` (was
-  `buildId:keyGroup:host:epoch:lane` joined by `:`)
-
-Recovery procedure (worked end-to-end against live bootstrap + episode sources):
-
-1. Fetch the mkissa home page, follow `_app/immutable/entry/*.js`, then the
-   chunks they reference on `cdn.mkissa.net`; find the chunk containing
-   `/client-crypto/v1/bootstrap`.
-2. Slice out the self-contained crypto region between `const _I=` and the
-   second string-table client (`const Tt=ms;`), append exports of the scoped
-   symbols, and run it under Bun with dynamic `import()` — the chunk's anti-debug
-   console patching silences `console.log`, so write through
-   `process.stdout.write`. That yields buildId, mask fragments, and the config
-   object directly.
-3. Verify: computed `x-aa-boot` must return HTTP 200 partB from bootstrap, then
-   decrypt a real `tobeparsed` blob with the derived key before shipping.
-
-On a cold resolve, the episode catalog and crypto bootstrap start concurrently.
-Baseline source adapters then share a 1.5-second foreground inventory window:
-prompt peers are retained, but a dead adapter is aborted instead of holding
-already-playable streams until its own request deadline. The individual request
-timeouts and stale-material retry policy are unchanged. On 2026-08-24 the same
-production cold smoke retained four stream candidates and fell from 12.257 to
-2.573 seconds after a dead `Luf-Mp4` adapter was isolated as the 11-second wait.
-Trace output records only preparation duration, readiness, link count, and
-whether Ak was required—never bootstrap material, attestation, token, or source
-URLs.
-
-Note: ani-cli v5 (2026-08-01) left AllAnime/mkissa for **anidb.app** and deleted its AllAnime code
-entirely, so **there is no upstream parity reference left** for this provider — the "compare against
-ani-cli" step above applies to AniDB only. For mkissa crypto the live JS chunk is the sole source of
-truth. Kunai keeps AllManga as a registered secondary anime source with `anidb` as the
-default anime provider. See [.docs/research/anidb-provider-dossier.md](./research/anidb-provider-dossier.md).
-
-Parity tip: for AniDB compare against local ani-cli `master`. For mkissa crypto, the live JS chunk is the source of truth when ani-cli no longer tracks it. The API rate-limits bursts (~3s), so stale-material recovery re-bootstraps keys instead of retry-storming.
-
-Recommended workflow:
-
-1. compare behavior with the local ani-cli checkout
-2. identify whether the break is shared upstream or Kunai-specific
-3. if shared upstream, implement the smallest temporary local fix needed here
-4. document the divergence and what should be removed once upstream parity is restored
-
 ## Capability Flags
 
 | Field                   | Meaning                                                      |
@@ -679,6 +467,18 @@ Recommended workflow:
 | `searchBackend`         | Documents which search backend currently feeds this provider |
 
 ## Active Beta Providers
+
+Per-provider runtime detail lives in the dossiers, not here. This section keeps
+only the contracts every provider must honour.
+
+| Provider            | Dossier                                                                                                                                                           |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AllManga / AllAnime | [allmanga.md](./provider-dossiers/allmanga.md) · [allanime-parity-history.md](./provider-dossiers/allanime-parity-history.md)                                     |
+| AniDB               | [anidb-runtime-contract.md](./provider-dossiers/anidb-runtime-contract.md) · [anidb-metadata-capabilities.md](./provider-dossiers/anidb-metadata-capabilities.md) |
+| Miruro              | [miruro.md](./provider-dossiers/miruro.md)                                                                                                                        |
+| Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
+| Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
+| Cineby              | [cineby.md](./provider-dossiers/cineby.md) · [cineby-anime.md](./provider-dossiers/cineby-anime.md)                                                               |
 
 Active providers are registered in `apps/cli/src/container/bootstrap-providers.ts` via
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
@@ -735,96 +535,6 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
 A catalog's own id space is numeric, so a non-numeric id is never accepted into the `anilistId` or
 `tmdbId` slot even when the active provider declares that catalog identity.
 
-### AniDB catalog search compatibility
-
-Advanced AniDB discovery uses the explicitly declared compatible AniList catalog
-(`compatibleProviders` in `apps/cli/src/services/search/definitions/`), retaining AniList identity
-until a validated AniDB slug is found. It **never** falls through to the default TMDB catalog: when
-no compatible catalog exists, `SearchRoutingService` returns either a diagnosed provider-native
-fallback or an `unsupported` result carrying filter evidence, each with
-`attemptedDefaultFallback: false`.
-
-### AniDB browse parsing
-
-`packages/providers/src/anidb/browse-parser.ts` is the single parser for both markup generations,
-used by search and resolve so they cannot drift apart:
-
-- It captures the complete anchor opening tag first and only then parses and validates `href`;
-  href matching never delimits the attributes used for title extraction.
-- Attribute matching is anchored on a start-or-whitespace boundary, so `data-href`, `xlink:href`
-  and `data-original-title` cannot shadow the real attribute.
-- Title precedence is anchor `title` / `aria-label` → image `alt` → nested text, so a `title`
-  placed after `href` still wins.
-- Legacy relative `/anime/<slug-id>` cards and current absolute `https://anidb.app/anime/<slug-id>`
-  cards both parse; entities decode in a single pass; rows without a positive numeric suffix are
-  rejected; results dedupe by validated slug.
-- Only anchors carrying result-card evidence (a `title`/`aria-label` attribute or nested card
-  markup) become results, so nav, breadcrumb, related-rail and footer links cannot become
-  `results[0]` and pin the wrong show.
-- Live cards also carry a poster `img`, a TV/Movie/ONA/… badge, and a star rating (`5.3`). Search
-  maps poster and rating onto `ProviderSearchResult`; a Movie badge becomes `type: "movie"`. The
-  card has no year — Kunai does not invent one. Placeholder `img` srcs (`placeholder.svg`) and
-  non-http(s) srcs are dropped. Relative posters resolve against `https://anidb.app/`.
-
-### AniDB metadata and language evidence
-
-The active `anidb.app` episode endpoint is a stream catalog, not a rich episode metadata catalog:
-it currently returns episode ids, numbers, and filler flags. `anidb.listEpisodes()` first follows
-the title page's explicit cross-link to the official AniDB AID and enriches from the official XML
-catalog. It then uses the existing shared AniList/Jikan path for still thumbnails and missing fields
-when the title identity carries an AniList or MAL id. This keeps the metadata authority explicit
-instead of pretending those fields came from `anidb.app`.
-
-- `anidb.app` language evidence is per episode: `jpn` is the sub/original embed and `eng` is the
-  dub embed when present. Search does not advertise both modes blindly; availability is confirmed
-  only by the episode languages response.
-- A missing requested language is an exhausted AniDB attempt. It must not fall back to the other
-  language and label the stream incorrectly.
-- Only exact `jpn` (sub/original) and `eng` (dub) catalog evidence is accepted.
-  The requested mode resolves first; the alternate starts concurrently but is
-  skipped for `fast`, bounded to 1 second for `balanced`, and bounded to 4
-  seconds for `quality-first`. A timed-out alternate is aborted and is not
-  advertised as an available source.
-- The embed probe currently exposes an HLS source but no independently addressable subtitle track.
-  AniDB results keep `subtitles: []` and mark subtitle delivery unknown; `jpn` is not sufficient
-  evidence that captions are hardcoded.
-- Official AniDB XML is a separate catalog namespace. It can provide richer anime and episode
-  metadata, but its AIDs must not be confused with the numeric ids in `anidb.app` URLs. See
-  [the metadata capability dossier](./provider-dossiers/anidb-metadata-capabilities.md).
-
-The cost model matters as much as the data, because this runs in front of the episode picker:
-
-- Official AniDB XML is **one request for the whole series**, cached for a month and seeded into
-  the shared episode-metadata cache, so a second listing of the same show is free.
-- AniList runs even when every title is already known — it is a single request and the only source
-  of episode stills AniDB has.
-- Jikan is the expensive pass (100 episodes per page, strict rate limit) and is **skipped** when
-  official titles already cover the catalog, matching the AllManga path via
-  `shouldSkipExternalEpisodeMetadataEnrichment()`.
-- An official response that carries `<error>` (rate limit, ban, bad client credentials) is never
-  cached. Caching what it parses to would suppress every episode title for that show for a month
-  after the block lifted.
-- AniDB is relay-registered (`/rpc/anidb`, settings toggle). Metadata HTML/JSON uses `context.fetch`
-  with curl fallback. HLS ladder expansion uses the same path so a relay miss does not collapse
-  qualities to a silent `auto` row. Video remains direct from `hls.anidb.app`; the relay has no
-  media route or video fallback configuration.
-
-### AniDB season routing and episode numbering
-
-AniDB models each season as its own title, so `routeAnidbSeason()` in
-`packages/providers/src/anidb/season-routing.ts` decides identity and numbering from evidence:
-
-- Season 1 retains the base title.
-- Season 2+ searches `<normalized base> Season N` and requires both a matching parsed season and
-  exact/prefix normalized base-title evidence. An ambiguous best score fails closed with a
-  structured `not-found` rather than resolving the wrong title.
-- `absoluteEpisode` survives CLI adaptation but is consumed **only** when the routed title's own
-  resolved AniDB episode catalog contains that exact episode number. A missing season label is not
-  evidence. A season-specific title, an unconfirmed base, and every routed season sibling use the
-  one-based cour episode.
-- The resolve trace records requested season, base id, routed id, route evidence, numbering
-  evidence and reason, episode number, and whether the absolute episode was used.
-
 ### Title identity persistence contract
 
 History and continuation use **canonical catalog ids** as the merge key (`anilistId` for anime, `tmdb:…` for series/movie) via `resolveCanonicalCatalogTitleId()` / `resolvePersistedHistoryTitle()` in `@kunai/core`.
@@ -833,158 +543,6 @@ History and continuation use **canonical catalog ids** as the merge key (`anilis
 - **Read path** — `HistoryRepository.getLatestForTitleIdentity()` tries the canonical id first, then falls back to the session opaque id for legacy rows.
 - **AllAnime bridge** — `resolveAllMangaShowId` reads `providerNativeIds.allanime`, then the durable SQLite `provider_title_bridge` cache (TTL class `provider-metadata`), then in-process search bridge. Bridge results are persisted to both history metadata and the cache adapter injected through `ProviderRuntimeContext.titleBridge`. Numeric catalog ids fail closed when no native mapping is available: a confirmed miss is `unsupported-title`, while an unchecked bridge caused by search transport failure stays a retryable `network-error`; neither value is sent to the provider-native show catalog.
 - **Legacy repair** — `HistoryIdentityConsolidator` runs once at CLI bootstrap (catalog-proof rows only; set `KUNAI_HISTORY_IDENTITY_DRY_RUN=1` to log without writing). Continue-watching dedupes display rows by catalog id without DB writes.
-
-### Videasy identity, route caching and Wings transport
-
-- **TMDB identity is complete or it is nothing.** `resolveTmdbCatalogId()` in
-  `packages/providers/src/shared/catalog-id.ts` is the single reader for every
-  TMDB-keyed provider (Videasy and the shared direct-stream source path). It accepts
-  an explicit `title.tmdbId`, an exact `tmdb:` prefix, or a bare `title.id`, each of
-  which must match `^[1-9]\d*$` and be a safe integer. The bare form is load-bearing:
-  `kunai -i 438631 -t movie` and the live provider smokes pass a bare numeric id with
-  no `externalIds`. The old `Number.parseInt` readers accepted `123abc`, `123`,
-  `0`, `-5`, `4.5` and `1e5`.
-- **One owner builds the selected-route cache policy.**
-  `createVideasyRouteCachePolicy({ resolveInput, appId, apiRoute })` is the only
-  builder, and it may only be called once a route has actually answered — `apiRoute`
-  is evidence, not a guess. `createVidkingResultFromPayload()` now **requires** a
-  policy and an `apiRoute` and uses the policy verbatim; it previously named the
-  parameter `_cachePolicy`, discarded it, and rebuilt an equivalent policy internally
-  by re-deriving the route and app id. The selected source records `metadata.apiRoute`
-  so route provenance is read explicitly rather than by positionally parsing
-  `cachePolicy.keyParts`.
-- **Every stream-resolve manifest keys on the whole preference set.** The resolve
-  cache key is built from `keyParts`, so a manifest that omits `audio`, `subtitle`,
-  `quality`, `startup`, `source`, or `stream` reuses one cached entry across
-  different requests for that preference — switching audio or quality then serves a
-  stream that answers the previous choice until the TTL expires. Under-keying is a
-  correctness bug; over-keying costs at most a redundant re-resolve.
-  `bootstrap-providers.test.ts` derives the conformance matrix from
-  `loadProductionProviderModules()` and asserts the full set on every production
-  stream-resolve provider, including YouTube, so adding a provider cannot silently
-  leave it outside the gate.
-- **The CLI stream-cache key is route-agnostic, and that is deliberate.**
-  `buildApiStreamResolveCacheKey()` in
-  `apps/cli/src/services/cache/stream-resolve-cache.ts` derives its preimage from the
-  manifest `keyParts`, which carry no `apiRoute`. Read, write, and invalidation all
-  use that one key, so they cannot disagree. A stale entry whose route later dies is
-  caught by the cache-revalidation stream-health probe, not by key fragmentation.
-  The selected-route policy returned by Videasy is result provenance and TTL metadata,
-  not a second lookup key. This matters for Vyse and Fade: both resolve through
-  `wings-hdmovie`, but their distinct source ids are part of the manifest-driven CLI
-  key (as is the request's audio preference), so the shared backend cannot alias their
-  cached stream resolves.
-- **Wings transport state is bounded.** Seed and preferred-host entries are keyed per
-  media id and previously grew for the life of the process — expiry alone never freed
-  an entry nobody asked for again. All three maps are now `TTLCache` instances with
-  hard ceilings (`WINGS_TRANSPORT_LIMITS`: 16 seed, 256 preferred-host, 32 failure).
-  `TTLCache` gained an optional `maxEntries` and an injectable clock; it evicts
-  expired entries first and only then the oldest write, and replacing a key never
-  counts as growth.
-- **Seed-race outcomes are classified by cause.** A host is penalized only for a
-  genuine pre-winner failure or timeout. A loser aborted because a peer already won
-  is not evidence, and neither is **caller cancellation** — that last case used to
-  put both Wings hosts in a five-minute penalty box every time a user walked away
-  from a playback. Every transition is covered by deterministic deferred-promise
-  tests in `packages/providers/test/videasy-wings-seed-race.test.ts`. When every host
-  is penalized the transport still races them rather than giving up, which is why
-  host health is asserted directly instead of being inferred from request order.
-- **HTTP 500 stays transient.** Only 404 and 410 are `route-dead`. Many
-  speedracelight servers answer 500 "No streams available" for one title while
-  staying healthy for every other title, so quarantining the endpoint on a 500 would
-  take a working route offline.
-- **`wings-tejo` stays deprecated and unsupported.** It is not in the active flavor
-  list, not eligible, and not scheduled in phase A. Its AES-GCM decoder is not
-  implemented and must not be added for a route product code cannot select.
-
-### Miruro pipe contract
-
-Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz` and
-`www.miruro.ru`. `packages/providers/src/miruro/direct.ts` owns the whole path.
-
-- **Server order has one authority.** `MIRURO_SERVER_TRY_ORDER` in
-  `packages/providers/src/miruro/manifest.ts` is the only list: `kiwi`, `pewe`, `bee`,
-  `hop`, `moo`, `dune`, `ANIMEKAI`, `ANIMEZ`, `ZORO`, `ally`, `bonk`. Discovery
-  ranking, fallback construction when the pipe returns no provider map, and the
-  known-catalog placeholder rows all read it. `kiwi` leads because its uwucdn/owocdn
-  CDN serves real video; `bonk` is last because its `ibyteimg.com` CDN returns PNG
-  placeholders for segments. Unknown discovered servers keep their source order
-  behind every known one.
-- **Identity is strict.** `resolveMiruroAnilistId()` is the single reader for both
-  `listEpisodes()` and `resolve()`. It accepts an explicit `title.anilistId` or an
-  exact `anilist:` prefix, each of which must be a complete positive decimal. Bare
-  numeric ids, padded ids, `anilist: 438631`, `438631abc`, zero, negatives, and
-  other catalogs' ids all fail closed rather than reaching the API as a query that
-  comes back as an unexplained empty catalog.
-- **Reachability is not asserted without evidence.** `createMiruroResultFromPayload()`
-  sets `streamReachabilityVerified: true` only when it is handed a
-  `StreamReachabilityProbeResult` with `status: "reachable"`. The production resolve
-  path performs no such probe, so it emits no attestation and the CLI's own
-  stream-health gate probes normally. A raw URL, a decoded playlist, or a non-empty
-  candidate list is not reachability evidence.
-- **The fingerprint relay validates every redirect.** The loopback HLS relay follows
-  at most three redirects itself, reapplying the exact uwucdn/owocdn allowlist before
-  each request and rejecting HTTPS-to-HTTP downgrades. Curl starts with `-q` to ignore
-  user config and receives `--no-location`, so neither command arguments nor `.curlrc`
-  can follow a redirect before Kunai validates it. Relative playlist entries resolve
-  from the final redirected URL, and the full redirect chain shares one monotonic
-  25-second deadline and 64 MiB response budget.
-- **Pipe decoding is endpoint-aware and every stage has its own code.**
-  `decodeMiruroPipePayload({ body, obfuscationVersion, expectedKind, keyHex })` raises
-  `MiruroPipeDecodeError` with one of `pipe-key-missing`, `pipe-version-mismatch`,
-  `pipe-base64-invalid`, `pipe-xor-gunzip-failed`, `pipe-json-syntax-invalid`, or
-  `pipe-json-shape-invalid`. The error message is the code and nothing else — key
-  hex, encrypted body, decrypted plaintext, and native parser messages never reach a
-  log line. A decode failure aborts immediately instead of trying the next mirror
-  (every mirror would fail identically) and surfaces as `parse-failed`, not
-  `network-error`. A Cloudflare block surfaces as `blocked`.
-- **A rotated key does not announce itself.** XOR always "succeeds", so a wrong key
-  surfaces at whichever later stage its garbage breaks — `pipe-xor-gunzip-failed` on a
-  gzipped body, `pipe-json-syntax-invalid` on a plain one. Both are actionable;
-  neither is silent.
-- **The obfuscation version-2 body prefix only marks gzipped payloads.**
-  `bh4YNPj7` is `base64url(xor(gzipHeader, key))`, so plain bodies still need the
-  `x-obfuscated: 2` response header to be recognised.
-- **The key is static and stays static.** `PIPE_KEY` is a documented constant. No
-  first-party or reproducible derivation source has been demonstrated, so Kunai does
-  not scrape or guess one at runtime. Re-derivation stays a separate provider-intake
-  investigation, gated on a documented first-party script/bootstrap source.
-- **Subtitle format comes from evidence.** `inferSubtitleFormat()` in
-  `packages/providers/src/shared/subtitle-helpers.ts` strips query and fragment,
-  accepts `.vtt` / `.srt` / `.ass` / `.ssa`, honours known content types, and returns
-  `unknown` otherwise. A non-VTT track is never assumed to be SRT.
-- **The WAF fail-fast threshold of 2 is deliberate, not a defect.** It equals the real
-  mirror count (`www.miruro.bz` + `www.miruro.ru`); when both return Cloudflare HTML
-  the block is region-wide and further candidates fail identically. Changing it needs
-  a reproducible failure sequence, not a guess. The block message names the one
-  escape hatch that exists — a user-owned relay (`providerRelay.baseUrl`) in an
-  ungated region; as of 2026-08-17 the `curl --http2` fallback is itself CF-403'd
-  from some networks, so the hint is the actionable part of the failure.
-  Verified live the same day: a relay deployed on Vercel `iad1` receives the
-  "Just a moment" challenge on the pipe too, so that region does **not** count
-  as ungated for Miruro — only a relay on an egress Miruro's WAF tolerates
-  (unproven region, likely non-US cloud IPs) would clear the gate.
-- **The pipe itself is fingerprint-gated, not dead.** From a real browser the
-  envelope (`?e=base64url({path,method,query,body,version})`, e.g.
-  `{"path":"episodes","query":{"anilistId":"21"},"version":"0.2.0"}`) answers
-  200 with `x-obfuscated: 2` while plain curl gets CF HTML — intermittent by
-  network. The curl fallback reuses the shared AniDB resolver
-  (`shared/curl-impersonate.ts`), which **discovers** impersonate wrappers from
-  `PATH` rather than matching a hardcoded list — newest desktop build wins,
-  ranked family-first (chrome → firefox → safari → edge), with mobile and tor
-  builds excluded. With any current build installed the pipe request carries a
-  browser TLS fingerprint and clears the gate. Without an impersonate build, a
-  WAF 403 is expected behavior, not a bug.
-- **Per-server failures are not provider failures.** Miruro's site marks single
-  servers under maintenance ("Some servers are under maintenance. Please switch
-  servers if needed.") while others keep working. Kunai mirrors that: after the
-  pipe resolves, each server is attempted as its own source candidate
-  (`source:miruro:pipe:<server>:<audio>`), and a failed candidate moves to the
-  next server in `MIRURO_SERVER_TRY_ORDER` instead of exhausting the provider.
-- **Live evidence is the smoke's job.** `bun run test:live:miruro` resolves through
-  `container.engine.resolve(...)`, probes the selected stream itself, and reports
-  `streamReachable` and `resolverAttestedReachable` separately. It passes on measured
-  reachability, so a resolver that correctly declines to attest still passes.
 
 ### Episode metadata ownership
 

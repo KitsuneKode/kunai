@@ -269,3 +269,89 @@ After the table:
 - Do not switch production to `theanimecommunity.com` as a stream backend on current evidence.
 - Do not assume `kiwi = hardsub` and `bee = softsub` forever; let source payloads and subtitles decide.
 - **Runtime:** when `audioCategory === "sub"` and the pipe returns **zero** subtitle tracks, Kunai sets `subtitleDelivery: "hardcoded"` plus `hardSubLanguage` from the user subtitle preference (default `en`). When pipe subtitles exist, delivery is `embedded`/`external` with languages parsed from each track — no duplicate external rows for the same embedded tracks.
+
+## Runtime contract
+
+> Moved from `.docs/providers.md` 2026-08-26.
+
+### Miruro pipe contract
+
+Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz` and
+`www.miruro.ru`. `packages/providers/src/miruro/direct.ts` owns the whole path.
+
+- **Server order has one authority.** `MIRURO_SERVER_TRY_ORDER` in
+  `packages/providers/src/miruro/manifest.ts` is the only list: `kiwi`, `pewe`, `bee`,
+  `hop`, `moo`, `dune`, `ANIMEKAI`, `ANIMEZ`, `ZORO`, `ally`, `bonk`. Discovery
+  ranking, fallback construction when the pipe returns no provider map, and the
+  known-catalog placeholder rows all read it. `kiwi` leads because its uwucdn/owocdn
+  CDN serves real video; `bonk` is last because its `ibyteimg.com` CDN returns PNG
+  placeholders for segments. Unknown discovered servers keep their source order
+  behind every known one.
+- **Identity is strict.** `resolveMiruroAnilistId()` is the single reader for both
+  `listEpisodes()` and `resolve()`. It accepts an explicit `title.anilistId` or an
+  exact `anilist:` prefix, each of which must be a complete positive decimal. Bare
+  numeric ids, padded ids, `anilist: 438631`, `438631abc`, zero, negatives, and
+  other catalogs' ids all fail closed rather than reaching the API as a query that
+  comes back as an unexplained empty catalog.
+- **Reachability is not asserted without evidence.** `createMiruroResultFromPayload()`
+  sets `streamReachabilityVerified: true` only when it is handed a
+  `StreamReachabilityProbeResult` with `status: "reachable"`. The production resolve
+  path performs no such probe, so it emits no attestation and the CLI's own
+  stream-health gate probes normally. A raw URL, a decoded playlist, or a non-empty
+  candidate list is not reachability evidence.
+- **Pipe decoding is endpoint-aware and every stage has its own code.**
+  `decodeMiruroPipePayload({ body, obfuscationVersion, expectedKind, keyHex })` raises
+  `MiruroPipeDecodeError` with one of `pipe-key-missing`, `pipe-version-mismatch`,
+  `pipe-base64-invalid`, `pipe-xor-gunzip-failed`, `pipe-json-syntax-invalid`, or
+  `pipe-json-shape-invalid`. The error message is the code and nothing else — key
+  hex, encrypted body, decrypted plaintext, and native parser messages never reach a
+  log line. A decode failure aborts immediately instead of trying the next mirror
+  (every mirror would fail identically) and surfaces as `parse-failed`, not
+  `network-error`. A Cloudflare block surfaces as `blocked`.
+- **A rotated key does not announce itself.** XOR always "succeeds", so a wrong key
+  surfaces at whichever later stage its garbage breaks — `pipe-xor-gunzip-failed` on a
+  gzipped body, `pipe-json-syntax-invalid` on a plain one. Both are actionable;
+  neither is silent.
+- **The obfuscation version-2 body prefix only marks gzipped payloads.**
+  `bh4YNPj7` is `base64url(xor(gzipHeader, key))`, so plain bodies still need the
+  `x-obfuscated: 2` response header to be recognised.
+- **The key is static and stays static.** `PIPE_KEY` is a documented constant. No
+  first-party or reproducible derivation source has been demonstrated, so Kunai does
+  not scrape or guess one at runtime. Re-derivation stays a separate provider-intake
+  investigation, gated on a documented first-party script/bootstrap source.
+- **Subtitle format comes from evidence.** `inferSubtitleFormat()` in
+  `packages/providers/src/shared/subtitle-helpers.ts` strips query and fragment,
+  accepts `.vtt` / `.srt` / `.ass` / `.ssa`, honours known content types, and returns
+  `unknown` otherwise. A non-VTT track is never assumed to be SRT.
+- **The WAF fail-fast threshold of 2 is deliberate, not a defect.** It equals the real
+  mirror count (`www.miruro.bz` + `www.miruro.ru`); when both return Cloudflare HTML
+  the block is region-wide and further candidates fail identically. Changing it needs
+  a reproducible failure sequence, not a guess. The block message names the one
+  escape hatch that exists — a user-owned relay (`providerRelay.baseUrl`) in an
+  ungated region; as of 2026-08-17 the `curl --http2` fallback is itself CF-403'd
+  from some networks, so the hint is the actionable part of the failure.
+  Verified live the same day: a relay deployed on Vercel `iad1` receives the
+  "Just a moment" challenge on the pipe too, so that region does **not** count
+  as ungated for Miruro — only a relay on an egress Miruro's WAF tolerates
+  (unproven region, likely non-US cloud IPs) would clear the gate.
+- **The pipe itself is fingerprint-gated, not dead.** From a real browser the
+  envelope (`?e=base64url({path,method,query,body,version})`, e.g.
+  `{"path":"episodes","query":{"anilistId":"21"},"version":"0.2.0"}`) answers
+  200 with `x-obfuscated: 2` while plain curl gets CF HTML — intermittent by
+  network. The curl fallback reuses the shared AniDB resolver
+  (`shared/curl-impersonate.ts`), which **discovers** impersonate wrappers from
+  `PATH` rather than matching a hardcoded list — newest desktop build wins,
+  ranked family-first (chrome → firefox → safari → edge), with mobile and tor
+  builds excluded. With any current build installed the pipe request carries a
+  browser TLS fingerprint and clears the gate. Without an impersonate build, a
+  WAF 403 is expected behavior, not a bug.
+- **Per-server failures are not provider failures.** Miruro's site marks single
+  servers under maintenance ("Some servers are under maintenance. Please switch
+  servers if needed.") while others keep working. Kunai mirrors that: after the
+  pipe resolves, each server is attempted as its own source candidate
+  (`source:miruro:pipe:<server>:<audio>`), and a failed candidate moves to the
+  next server in `MIRURO_SERVER_TRY_ORDER` instead of exhausting the provider.
+- **Live evidence is the smoke's job.** `bun run test:live:miruro` resolves through
+  `container.engine.resolve(...)`, probes the selected stream itself, and reports
+  `streamReachable` and `resolverAttestedReachable` separately. It passes on measured
+  reachability, so a resolver that correctly declines to attest still passes.

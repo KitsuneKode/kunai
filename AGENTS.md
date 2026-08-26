@@ -126,7 +126,8 @@ what gives mpv IPC its cancellable deadlines. Do not change APIs for style alone
 
 ## Deep docs
 
-Read one when your change lands in its subject. Not before.
+Read one when your change lands in its subject. Not before. Full index with the
+rest of `.docs/`: [.docs/README.md](.docs/README.md).
 
 | Changing…                                                        | Read                                                                                                                                                 |
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
