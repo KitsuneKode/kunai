@@ -381,7 +381,28 @@ describe("buildMediaPanel — video", () => {
     const replay = buildMediaPanel(
       ctx({ contentKind: "video", title: "Replay", videoMeta: { liveStatus: "post_live" } }),
     );
-    expect(replay.facts).toContainEqual({ label: "live", value: "↺ replay", tone: "neutral" });
+    expect(replay.facts).toContainEqual({ label: "live", value: "↺ was live", tone: "neutral" });
+  });
+
+  test("counts every valid video total, including zero and one", () => {
+    const empty = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Empty Playlist",
+        videoMeta: { contentShape: "playlist", videoCount: 0 },
+      }),
+    );
+    // Zero is a fact about the playlist, not an absence of one.
+    expect(empty.facts).toContainEqual({ label: "videos", value: "0 videos" });
+
+    const single = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "One Video Playlist",
+        videoMeta: { contentShape: "playlist", videoCount: 1 },
+      }),
+    );
+    expect(single.facts).toContainEqual({ label: "videos", value: "1 video" });
   });
 
   test("badges channel contentShape distinctly from video", () => {

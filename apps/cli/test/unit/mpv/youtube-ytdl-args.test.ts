@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildPersistentLoadfileOptions,
   DEFAULT_MPV_YTDL_FORMAT,
+  LIVE_DEMUXER_LAVF_OPTIONS,
 } from "@/infra/player/mpv-stream-http-headers";
 import { buildMpvArgs } from "@/mpv";
 import { DEFAULT_CONFIG, DEFAULT_YOUTUBE_EXTRACTOR_ARGS } from "@kunai/config";
@@ -197,5 +198,73 @@ describe("default player clients", () => {
       // One `youtube:` prefix only — a second one turns the key into `youtube:<key>`.
       expect(lane.split("youtube:").length - 1).toBe(1);
     }
+  });
+});
+
+describe("demuxer-lavf-o composition", () => {
+  const LOCAL_HLS = "/tmp/kunai/materialized/stream.m3u8";
+
+  test("a live local-HLS loadfile keeps both the reconnect ladder and the whitelist", () => {
+    // mpv's demuxer-lavf-o is single-valued, so writing it twice drops one set.
+    // A live stream served from a materialized manifest needs the whitelist or every
+    // segment fails instantly, and needs the reconnect ladder or a blip ends playback.
+    const options = buildPersistentLoadfileOptions(LOCAL_HLS, 0, {}, { isLive: true });
+    const value = options["demuxer-lavf-o"] ?? "";
+    expect(value).toContain("reconnect_max_retries=5");
+    expect(value).toContain("protocol_whitelist=[file,tcp,tls,https,http,crypto,data]");
+  });
+
+  test("a non-live local-HLS loadfile still carries the whitelist alone", () => {
+    const options = buildPersistentLoadfileOptions(LOCAL_HLS, 0, {}, { isLive: false });
+    expect(options["demuxer-lavf-o"]).toBe(
+      "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]",
+    );
+  });
+
+  test("a remote live loadfile carries the reconnect ladder and no whitelist", () => {
+    const options = buildPersistentLoadfileOptions(
+      "https://www.youtube.com/watch?v=abc",
+      0,
+      {},
+      { requiresYtdl: true, isLive: true },
+    );
+    expect(options["demuxer-lavf-o"]).toBe(LIVE_DEMUXER_LAVF_OPTIONS);
+    expect(options["demuxer-lavf-o-clr"]).toBeUndefined();
+  });
+
+  test("buildMpvArgs emits demuxer-lavf-o exactly once, carrying every fragment", () => {
+    const args = buildMpvArgs(
+      {
+        url: LOCAL_HLS,
+        urlKind: "local" as const,
+        headers: {},
+        subtitle: null,
+        displayTitle: "Live",
+        isLive: true,
+      },
+      null,
+    );
+    const lavf = args.filter((arg) => arg.startsWith("--demuxer-lavf-o="));
+    expect(lavf).toHaveLength(1);
+    expect(lavf[0]).toContain("reconnect_max_retries=5");
+    expect(lavf[0]).toContain("protocol_whitelist=");
+  });
+
+  test("a non-live local-HLS launch keeps its reconnect ladder too", () => {
+    // The whitelist used to be pushed last and replaced whichever ladder was chosen.
+    const args = buildMpvArgs(
+      {
+        url: LOCAL_HLS,
+        urlKind: "local" as const,
+        headers: {},
+        subtitle: null,
+        displayTitle: "VOD",
+      },
+      null,
+    );
+    const lavf = args.filter((arg) => arg.startsWith("--demuxer-lavf-o="));
+    expect(lavf).toHaveLength(1);
+    expect(lavf[0]).toContain("reconnect=1");
+    expect(lavf[0]).toContain("protocol_whitelist=");
   });
 });

@@ -17,6 +17,26 @@ tree is right and the entry is the bug.
 
 ---
 
+## YouTube live states
+
+One word per state, everywhere. The browse row renders them Title Case beside
+the other shape labels (`Video`, `Short`, `Playlist`, `Channel`); the media panel
+renders the same words lowercase with a glyph, matching its own fact rows
+(`views`, `posted`, `length`). Styling is per surface, wording is not — the panel
+briefly said `replay` for the state the browse row and both provider docs call
+`Was Live`, which is two names for one thing.
+
+| `liveStatus` | Browse row | Media panel  | Means                                     |
+| ------------ | ---------- | ------------ | ----------------------------------------- |
+| `live`       | `● LIVE`   | `● live`     | Broadcasting now; playback joins the edge |
+| `upcoming`   | `Upcoming` | `◷ upcoming` | A premiere that has not started           |
+| `post_live`  | `Was Live` | `↺ was live` | A finished broadcast, now seekable        |
+| `none`       | —          | —            | An ordinary upload                        |
+
+Live state is **not** a content shape. A result carries both: `contentShape`
+says what will open (`video` / `short` / `playlist` / `channel`), `liveStatus`
+says what state it is in. A live Short and a live video are both live.
+
 ## Shell mode vs Provider lane
 
 Both are `"anime" | "series" | "youtube"`. They are not the same thing.

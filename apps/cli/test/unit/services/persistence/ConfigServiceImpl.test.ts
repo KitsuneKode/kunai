@@ -343,6 +343,18 @@ describe("youtubeMetadata normalization", () => {
     expect((await store.load()).youtubeMetadata?.poToken).toBe("visionos.gvs+SECRET");
   });
 
+  test("a non-string persisted value is dropped instead of throwing during load", async () => {
+    // The schema validates providerRelay only and preserves everything else, so a
+    // hand-edited config.json can put a number where a string belongs. `.trim()` on
+    // that used to throw inside load(), taking down startup.
+    const store = new MemoryConfigStore({
+      youtubeMetadata: { poToken: 42, extractorArgs: { nested: true } } as never,
+    });
+    const service = await ConfigServiceImpl.load(store);
+    expect(service.youtubeMetadata.poToken).toBeUndefined();
+    expect(service.youtubeMetadata.extractorArgs).toBeUndefined();
+  });
+
   test("drops a blank PO token rather than persisting an empty string", async () => {
     const store = new MemoryConfigStore({ youtubeMetadata: { poToken: "   " } });
     const service = await ConfigServiceImpl.load(store);

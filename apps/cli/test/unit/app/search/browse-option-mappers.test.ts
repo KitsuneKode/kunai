@@ -161,3 +161,63 @@ test("a Short is labelled from its shape, never from its duration", () => {
   );
   expect(long.detail?.startsWith("Short")).toBe(true);
 });
+
+// Shape and live state are independent axes and the UI has to say which is which.
+// This pins the whole grid: a change that makes two states render alike, or that
+// reintroduces a second word for one state, fails here rather than in a screenshot.
+test("every YouTube shape and live state renders distinctly in the browse row", () => {
+  const base = {
+    id: "youtube:x",
+    type: "movie" as const,
+    year: "2026",
+    overview: "",
+    posterPath: null,
+    channelTitle: "Some Channel",
+    externalIds: { youtubeId: "x" },
+  };
+  const cases: readonly [string, Partial<SearchResult>, string, string | undefined][] = [
+    ["video", { contentShape: "video", durationSeconds: 754 }, "Video", undefined],
+    ["short", { contentShape: "short", durationSeconds: 45 }, "Short", undefined],
+    // A three-minute Short is still a Short; a 45-second upload is still a video.
+    ["long short", { contentShape: "short", durationSeconds: 170 }, "Short", undefined],
+    ["brief video", { contentShape: "video", durationSeconds: 45 }, "Video", undefined],
+    ["live", { contentShape: "video", liveStatus: "live" }, "Video", "● LIVE"],
+    ["upcoming", { contentShape: "video", liveStatus: "upcoming" }, "Video", "Upcoming"],
+    ["post_live", { contentShape: "video", liveStatus: "post_live" }, "Video", "Was Live"],
+    ["playlist", { contentShape: "playlist", episodeCount: 24 }, "Playlist", undefined],
+    ["channel", { contentShape: "channel", episodeCount: 310 }, "Channel", undefined],
+  ];
+
+  for (const [name, over, expectedShape, expectedBadge] of cases) {
+    const option = toBrowseResultOption({ ...base, ...over } as SearchResult);
+    expect(option.detail?.startsWith(expectedShape), `${name} shape`).toBe(true);
+    expect(option.previewBadge, `${name} badge`).toBe(expectedBadge);
+    // The shape label is always present, so a live video still reads as a video.
+    expect(option.previewMeta, `${name} meta shape`).toContain(expectedShape);
+    if (expectedBadge) {
+      expect(option.previewMeta, `${name} meta state`).toContain(expectedBadge);
+    }
+  }
+});
+
+test("a live row says Enter joins the live edge, a premiere says it has not started", () => {
+  const base = {
+    id: "youtube:x",
+    type: "movie" as const,
+    year: "2026",
+    overview: "",
+    posterPath: null,
+    externalIds: { youtubeId: "x" },
+    contentShape: "video" as const,
+  };
+  expect(toBrowseResultOption({ ...base, liveStatus: "live" } as SearchResult).previewNote).toBe(
+    "This stream is live. Press Enter to join at the live edge.",
+  );
+  expect(
+    toBrowseResultOption({ ...base, liveStatus: "upcoming" } as SearchResult).previewNote,
+  ).toBe("This YouTube premiere has not started yet.");
+  // A finished broadcast is an ordinary seekable video again.
+  expect(
+    toBrowseResultOption({ ...base, liveStatus: "post_live" } as SearchResult).previewNote,
+  ).toBe("Press Enter to open this video and continue to playback.");
+});

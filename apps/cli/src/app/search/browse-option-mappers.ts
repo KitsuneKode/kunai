@@ -295,17 +295,19 @@ export function toBrowseResultOption(
     previewNote:
       isYoutubeResult && result.liveStatus === "upcoming"
         ? "This YouTube premiere has not started yet."
-        : isYoutubeResult && result.contentShape === "playlist"
-          ? "Press Enter to open this playlist and choose a video."
-          : isYoutubeResult && result.contentShape === "channel"
-            ? "Press Enter to open this channel and choose a video."
-            : isYoutubeResult && result.contentShape === "short"
-              ? "Press Enter to open this Short and continue to playback."
-              : isYoutubeResult
-                ? "Press Enter to open this video and continue to playback."
-                : result.type === "series"
-                  ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
-                  : "Press Enter to open this title and continue to playback. Use / details for the overview.",
+        : isYoutubeResult && result.liveStatus === "live"
+          ? "This stream is live. Press Enter to join at the live edge."
+          : isYoutubeResult && result.contentShape === "playlist"
+            ? "Press Enter to open this playlist and choose a video."
+            : isYoutubeResult && result.contentShape === "channel"
+              ? "Press Enter to open this channel and choose a video."
+              : isYoutubeResult && result.contentShape === "short"
+                ? "Press Enter to open this Short and continue to playback."
+                : isYoutubeResult
+                  ? "Press Enter to open this video and continue to playback."
+                  : result.type === "series"
+                    ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
+                    : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
 }
 

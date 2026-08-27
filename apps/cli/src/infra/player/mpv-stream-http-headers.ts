@@ -124,9 +124,29 @@ export const LIVE_DEMUXER_OPTIONS = {
   "cache-pause-wait": "1",
   "demuxer-readahead-secs": "10",
   "demuxer-max-bytes": "32MiB",
-  "demuxer-lavf-o":
-    "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=5",
 } as const;
+
+/**
+ * The live half of `demuxer-lavf-o`, kept apart from {@link LIVE_DEMUXER_OPTIONS}
+ * because that option is single-valued: setting it twice does not merge, the last
+ * write wins. A live stream served from a materialized local HLS manifest needs
+ * both the reconnect ladder and the protocol whitelist, so callers compose the
+ * parts through {@link composeDemuxerLavfOptions} and set the option exactly once.
+ */
+export const LIVE_DEMUXER_LAVF_OPTIONS =
+  "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=5";
+
+/**
+ * Join `demuxer-lavf-o` fragments into one value. The protocol whitelist is placed
+ * last by callers because its `[a,b,c]` bracket group is what protects its own
+ * commas from the surrounding key=value list.
+ */
+export function composeDemuxerLavfOptions(
+  ...parts: readonly (string | undefined)[]
+): string | undefined {
+  const present = parts.filter((part): part is string => Boolean(part?.trim()));
+  return present.length > 0 ? present.join(",") : undefined;
+}
 
 export function buildPersistentLoadfileOptions(
   url: string,
@@ -177,8 +197,12 @@ export function buildPersistentLoadfileOptions(
   } else if (isRemoteHlsManifestPlaybackUrl(url)) {
     loadOptions.ytdl = "no";
   }
-  if (isLocalHlsManifestPlaybackUrl(url)) {
-    loadOptions["demuxer-lavf-o"] = LOCAL_HLS_DEMUXER_LAVF_OPTIONS;
+  const demuxerLavfOptions = composeDemuxerLavfOptions(
+    ytdlOptions?.isLive ? LIVE_DEMUXER_LAVF_OPTIONS : undefined,
+    isLocalHlsManifestPlaybackUrl(url) ? LOCAL_HLS_DEMUXER_LAVF_OPTIONS : undefined,
+  );
+  if (demuxerLavfOptions) {
+    loadOptions["demuxer-lavf-o"] = demuxerLavfOptions;
   } else if (/^https?:\/\//i.test(url.trim())) {
     loadOptions["demuxer-lavf-o-clr"] = "";
   }

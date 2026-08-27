@@ -134,6 +134,56 @@ function makeSubtitleCandidate(overrides: Partial<SubtitleCandidate> = {}): Subt
   };
 }
 
+test("derives isLive from either metadata field a provider reports", () => {
+  // A provider that reports only `liveStatus` used to resolve to `isLive: false`,
+  // which re-enables the watch-later resume seek and drops the live demuxer profile
+  // on a stream that is genuinely broadcasting.
+  const withStatusOnly = providerResolveResultToStreamInfo({
+    result: makeResolveResult({
+      streams: [
+        makeStream("stream-live", "source-a", "https://cdn.example/live.m3u8", 1080, {
+          metadata: { liveStatus: "live" },
+        }),
+      ],
+      selectedStreamId: "stream-live",
+    }),
+    title: "Live",
+    subtitlePreference: "none",
+  });
+  expect(withStatusOnly?.isLive).toBe(true);
+  expect(withStatusOnly?.liveStatus).toBe("live");
+
+  const withFlagOnly = providerResolveResultToStreamInfo({
+    result: makeResolveResult({
+      streams: [
+        makeStream("stream-live", "source-a", "https://cdn.example/live.m3u8", 1080, {
+          metadata: { isLive: true },
+        }),
+      ],
+      selectedStreamId: "stream-live",
+    }),
+    title: "Live",
+    subtitlePreference: "none",
+  });
+  expect(withFlagOnly?.isLive).toBe(true);
+
+  // A finished broadcast is not live, and neither is an ordinary stream.
+  const postLive = providerResolveResultToStreamInfo({
+    result: makeResolveResult({
+      streams: [
+        makeStream("stream-vod", "source-a", "https://cdn.example/vod.m3u8", 1080, {
+          metadata: { liveStatus: "post_live" },
+        }),
+      ],
+      selectedStreamId: "stream-vod",
+    }),
+    title: "Replay",
+    subtitlePreference: "none",
+  });
+  expect(postLive?.isLive).toBe(false);
+  expect(postLive?.liveStatus).toBe("post_live");
+});
+
 function makeResolveResult(
   overrides: Partial<ProviderResolveResult> & { streams?: StreamCandidate[] } = {},
 ): ProviderResolveResult {

@@ -105,8 +105,13 @@ async function searchYoutube(
   // that carries an explicit shape signal when the caller asks for them, and
   // never return regular videos under a `type:short` filter.
   if (input.preferredContentShape === "short") {
+    // yt-dlp reads YouTube's own Shorts filter, so when it answers at all its
+    // answer is authoritative -- including an empty one. Falling through to a
+    // backend that cannot filter by shape would either invent non-Shorts results
+    // or, when that backend is down, report "search failed" for a query that
+    // simply has no Shorts.
     const ytsearch = await searchYoutubeViaYtsearch(query, context, "short");
-    if (ytsearch?.length) return ytsearch;
+    if (ytsearch) return ytsearch;
     if (globalYoutubeConfig.pipedApiUrl?.trim()) {
       try {
         const piped = await pipedSearch(query, {
@@ -153,7 +158,9 @@ async function searchYoutube(
       context,
       input.preferredContentShape,
     );
-    if (ytsearchResults) return ytsearchResults;
+    // Last-resort lane: an empty answer here should surface the original backend
+    // error rather than a bare "no results", so only a non-empty list short-circuits.
+    if (ytsearchResults?.length) return ytsearchResults;
 
     throw invidiousError;
   }
@@ -168,6 +175,26 @@ function filterYoutubeContentShape(
 
 const YTSEARCH_RESULT_LIMIT = 12;
 
+/**
+ * YouTube's own "Shorts" search filter.
+ *
+ * `ytsearch:` runs the ordinary search, which excludes Shorts entirely -- a probe
+ * of `ytsearch12:cooking` returned 12 entries and not one carried a Shorts signal,
+ * so a `type:short` query could only ever filter its way down to nothing and then
+ * fall through to a provider that was never asked for Shorts either. The results
+ * page with `sp=EgIYAQ%3D%3D` is the filter YouTube itself uses, and yt-dlp reads
+ * it as an ordinary playlist.
+ */
+const YOUTUBE_SHORTS_SEARCH_FILTER = "EgIYAQ%3D%3D";
+
+function youtubeSearchTarget(
+  query: string,
+  requestedShape: YouTubeContentShape | undefined,
+): string {
+  if (requestedShape !== "short") return `ytsearch${YTSEARCH_RESULT_LIMIT}:${query}`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${YOUTUBE_SHORTS_SEARCH_FILTER}`;
+}
+
 async function searchYoutubeViaYtsearch(
   query: string,
   context: ProviderRuntimeContext,
@@ -179,7 +206,9 @@ async function searchYoutubeViaYtsearch(
     "--flat-playlist",
     "--dump-json",
     "--no-warnings",
-    `ytsearch${YTSEARCH_RESULT_LIMIT}:${query}`,
+    "--playlist-end",
+    String(YTSEARCH_RESULT_LIMIT),
+    youtubeSearchTarget(query, requestedShape),
   ];
   try {
     const proc = await spawnYtDlpWithTimeout({ args, signal: context.signal, timeoutMs: 30_000 });
@@ -203,6 +232,9 @@ async function searchYoutubeViaYtsearch(
           timestamp?: number;
           release_timestamp?: number;
           thumbnail?: string;
+          // `--flat-playlist` emits `url`; the full-extraction fields are absent.
+          // Reading only those meant a `/shorts/` result was still labelled a video.
+          url?: string;
           webpage_url?: string;
           original_url?: string;
           is_short?: boolean;
@@ -229,7 +261,9 @@ async function searchYoutubeViaYtsearch(
           liveStatus: mapYtDlpLiveStatus(entry.is_live, entry.live_status),
           contentShape:
             entry.is_short === true ||
-            [entry.webpage_url, entry.original_url].some((url) => /\/shorts\//i.test(url ?? ""))
+            [entry.url, entry.webpage_url, entry.original_url].some((url) =>
+              /\/shorts\//i.test(url ?? ""),
+            )
               ? "short"
               : "video",
           externalIds: { youtubeId: entry.id, youtubeChannelId: entry.channel_id },
@@ -242,8 +276,10 @@ async function searchYoutubeViaYtsearch(
         // skip malformed line
       }
     }
-    const filtered = filterYoutubeContentShape(results, requestedShape);
-    return filtered.length > 0 ? filtered : null;
+    // An empty array means "this search ran and found nothing"; `null` is reserved
+    // for "the search could not run". The Shorts caller relies on that distinction
+    // so a genuine no-Shorts answer is not mistaken for a dead lane.
+    return filterYoutubeContentShape(results, requestedShape);
   } catch {
     return null;
   }

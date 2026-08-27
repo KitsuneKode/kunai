@@ -28,6 +28,8 @@ import {
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import {
+  composeDemuxerLavfOptions,
+  LIVE_DEMUXER_LAVF_OPTIONS,
   LIVE_DEMUXER_OPTIONS,
   LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
 } from "@/infra/player/mpv-stream-http-headers";
@@ -616,10 +618,16 @@ export function buildMpvArgs(
   args.push("--cache=yes");
   args.push("--cache-pause=yes");
   args.push("--cache-pause-initial=no");
+  // `--demuxer-lavf-o` is single-valued: repeating it replaces the previous value
+  // rather than merging. The local-HLS whitelist used to be pushed last and so
+  // silently discarded whichever reconnect ladder had been chosen above. Collect
+  // the fragments and emit the option exactly once.
+  let reconnectLavfOptions: string;
   if (opts.isLive) {
     for (const [key, value] of Object.entries(LIVE_DEMUXER_OPTIONS)) {
       args.push(`--${key}=${value}`);
     }
+    reconnectLavfOptions = LIVE_DEMUXER_LAVF_OPTIONS;
   } else {
     args.push("--cache-pause-wait=2");
     const fastStart = config?.mpv?.startupPriority === "fast";
@@ -627,24 +635,26 @@ export function buildMpvArgs(
       args.push("--demuxer-readahead-secs=10");
       args.push("--demuxer-max-bytes=48MiB");
       // Shorter reconnect window so dead CDNs fail fast into Kunai failover.
-      args.push(
-        "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=3",
-      );
+      reconnectLavfOptions =
+        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=3";
     } else {
       args.push("--demuxer-readahead-secs=60");
       args.push("--demuxer-max-bytes=200MiB");
       // libavformat HTTP/HLS reconnect hints (backend-dependent). We still rely on IPC
       // watchdogs + refresh/reload; keep-open=always is intentionally not used here because
       // it can suppress end-file and stall autoplay/session hand-off (see keep-open=no above).
-      args.push(
-        "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
-      );
+      reconnectLavfOptions =
+        "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8";
     }
   }
   // Materialized local HLS playlists reference remote HTTPS segments. libavformat defaults
   // to file,crypto,data only for local manifests, which makes every segment fail instantly.
-  if (isLocalHlsManifestPlaybackUrl(opts.url)) {
-    args.push(`--demuxer-lavf-o=${LOCAL_HLS_DEMUXER_LAVF_OPTIONS}`);
+  const demuxerLavfOptions = composeDemuxerLavfOptions(
+    reconnectLavfOptions,
+    isLocalHlsManifestPlaybackUrl(opts.url) ? LOCAL_HLS_DEMUXER_LAVF_OPTIONS : undefined,
+  );
+  if (demuxerLavfOptions) {
+    args.push(`--demuxer-lavf-o=${demuxerLavfOptions}`);
   }
   if (config?.mpv?.clean || config?.mpv?.noUserConfig) {
     args.push("--no-config");

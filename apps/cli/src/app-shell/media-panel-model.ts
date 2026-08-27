@@ -353,11 +353,14 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   } else if (meta?.liveStatus === "upcoming") {
     facts.push({ label: "live", value: "◷ upcoming", tone: "warning" });
   } else if (meta?.liveStatus === "post_live") {
-    facts.push({ label: "live", value: "↺ replay", tone: "neutral" });
+    facts.push({ label: "live", value: "↺ was live", tone: "neutral" });
   } else if (meta?.premium) facts.push({ label: "premium", value: "members" });
 
-  if (meta?.videoCount && (isChannel || isPlaylist)) {
-    facts.push({ label: "videos", value: `${meta.videoCount} videos` });
+  if (meta?.videoCount !== undefined && (isChannel || isPlaylist)) {
+    facts.push({
+      label: "videos",
+      value: meta.videoCount === 1 ? "1 video" : `${meta.videoCount} videos`,
+    });
   }
 
   // Up next: playlist/channel head when shaped that way, else the related queue
