@@ -5,7 +5,7 @@ import { buildYoutubeYtdlProfile } from "../../src/youtube/ytdl-profile";
 describe("buildYoutubeYtdlProfile", () => {
   test("builds 1080p DASH format selector for playback", () => {
     const profile = buildYoutubeYtdlProfile({ qualityLabel: "1080p" });
-    expect(profile.formatSelector).toContain("bestvideo[height<=1080]");
+    expect(profile.formatSelector).toContain("bestvideo[height<=?1080]");
     expect(profile.mpvFormat).toBe(profile.formatSelector);
     expect(profile.mpvScriptOpts).toBe("ytdlautoformat-domains=");
   });
@@ -35,13 +35,13 @@ describe("buildYoutubeYtdlProfile", () => {
         "--write-auto-subs",
       ]),
     );
-    expect(profile.formatSelector).toContain("bestvideo[height<=720]");
+    expect(profile.formatSelector).toContain("bestvideo[height<=?720]");
     expect(profile.mpvRawOptions).toContain("cookies-from-browser");
   });
 
   test("uses live playback format when stream is live", () => {
     const profile = buildYoutubeYtdlProfile({ isLive: true, qualityLabel: "1080p" });
-    expect(profile.formatSelector).toBe("bv*+ba/b");
+    expect(profile.formatSelector).toBe("bestvideo+bestaudio/best");
     expect(profile.cliArgs).toContain("--no-live-from-start");
   });
 });

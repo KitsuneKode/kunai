@@ -416,15 +416,22 @@ export class PersistentMpvSession {
     const preflightPromise = checkStreamPreflight(stream.url, stream.headers, undefined, {
       cachedAt: stream.timestamp,
       streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
+      requiresYtdl: stream.requiresYtdl,
     });
 
     const loadResult = await this.ipcSession?.send(
-      buildPersistentLoadfileCommand(stream.url, options.startAt, stream.headers, {
-        requiresYtdl: stream.requiresYtdl,
-        ytdlFormat: stream.ytdlFormat,
-        ytdlRawOptions: stream.ytdlRawOptions,
-        urlKind: options.urlKind,
-      }),
+      buildPersistentLoadfileCommand(
+        stream.url,
+        stream.isLive ? undefined : options.startAt,
+        stream.headers,
+        {
+          requiresYtdl: stream.requiresYtdl,
+          ytdlFormat: stream.ytdlFormat,
+          ytdlRawOptions: stream.ytdlRawOptions,
+          isLive: stream.isLive,
+          urlKind: options.urlKind,
+        },
+      ),
       3_000,
     );
 
@@ -569,7 +576,8 @@ export class PersistentMpvSession {
         subtitleUrlKind: this.initialOptions.subtitleUrlKind,
         subtitleTracks: this.initialOptions.subtitleTracks,
         displayTitle: this.initialOptions.displayTitle,
-        startAt: this.initialOptions.startAt,
+        startAt: this.initialStream.isLive ? undefined : this.initialOptions.startAt,
+        isLive: this.initialStream.isLive,
         requiresYtdl: this.initialStream.requiresYtdl,
         ytdlFormat: this.initialStream.ytdlFormat,
         ytdlRawOptions: this.initialStream.ytdlRawOptions,
@@ -1564,12 +1572,13 @@ export class PersistentMpvSession {
       const loadResult = await this.ipcSession.send(
         buildPersistentLoadfileCommand(
           this.playbackStream.url,
-          shouldSeek ? seekSeconds : 0,
+          this.playbackStream.isLive ? undefined : shouldSeek ? seekSeconds : 0,
           this.playbackStream.headers,
           {
             requiresYtdl: this.playbackStream.requiresYtdl,
             ytdlFormat: this.playbackStream.ytdlFormat,
             ytdlRawOptions: this.playbackStream.ytdlRawOptions,
+            isLive: this.playbackStream.isLive,
             urlKind: opts.urlKind,
           },
         ),

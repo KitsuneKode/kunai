@@ -110,12 +110,13 @@ export function buildPersistentLoadfileOptions(
     readonly requiresYtdl?: boolean;
     readonly ytdlFormat?: string;
     readonly ytdlRawOptions?: string;
+    readonly isLive?: boolean;
     readonly urlKind?: MpvUrlKind;
   },
 ): PersistentLoadfileOptions {
   const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(headers);
   const loadOptions: Record<string, string> = {
-    start: shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
+    start: !ytdlOptions?.isLive && shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
   };
 
   if (referer) {
@@ -167,6 +168,7 @@ export function buildPersistentLoadfileCommand(
     readonly requiresYtdl?: boolean;
     readonly ytdlFormat?: string;
     readonly ytdlRawOptions?: string;
+    readonly isLive?: boolean;
     readonly urlKind?: MpvUrlKind;
   },
 ): ["loadfile", string, "replace", -1, PersistentLoadfileOptions] {

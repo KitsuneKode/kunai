@@ -36,6 +36,7 @@ import {
 import { YOUTUBE_PROVIDER_ID, youtubeManifest } from "./manifest";
 import { mapInvidiousSearchResults, mapPipedSearchResults } from "./map-search-result";
 import { classifyYoutubeMetadataFailure } from "./metadata-failure";
+import { parseUploadDate } from "./metadata-normalize";
 import { pipedSearch } from "./piped-client";
 import { selectYoutubeQuality, youtubeQualityHeight } from "./quality-selection";
 import { spawnYtDlpWithTimeout } from "./spawn-ytdlp";
@@ -57,6 +58,7 @@ type YoutubeProviderConfig = {
   readonly cookiesFromBrowser?: string;
   readonly cookiesFile?: string;
   readonly extractorArgs?: string;
+  readonly poToken?: string;
   readonly sponsorblockRemove?: string;
   readonly metadataService?: YoutubeMetadataService;
   /** @deprecated Prefer metadataService; kept for tests and lazy service bootstrap. */
@@ -72,6 +74,7 @@ function resolveMetadataService(config: YoutubeProviderConfig): YoutubeMetadataS
       cookiesFromBrowser: config.cookiesFromBrowser,
       cookiesFile: config.cookiesFile,
       extractorArgs: config.extractorArgs,
+      poToken: config.poToken,
     },
   });
 }
@@ -196,6 +199,9 @@ async function searchYoutubeViaYtsearch(
           uploader?: string;
           channel_id?: string;
           view_count?: number;
+          upload_date?: string;
+          timestamp?: number;
+          release_timestamp?: number;
           thumbnail?: string;
           webpage_url?: string;
           original_url?: string;
@@ -219,6 +225,7 @@ async function searchYoutubeViaYtsearch(
           channelTitle: entry.uploader,
           channelId: entry.channel_id,
           viewCount: entry.view_count,
+          publishedAt: parseUploadDate(entry),
           liveStatus: mapYtDlpLiveStatus(entry.is_live, entry.live_status),
           contentShape:
             entry.is_short === true ||
@@ -244,9 +251,9 @@ async function searchYoutubeViaYtsearch(
 
 function mapYtDlpLiveStatus(isLive?: boolean, liveStatus?: string): YouTubeLiveStatus {
   const normalized = liveStatus?.trim().toLowerCase();
-  if (normalized === "is_upcoming") return "upcoming";
+  if (normalized === "is_upcoming" || normalized === "upcoming") return "upcoming";
   if (normalized === "was_live" || normalized === "post_live") return "post_live";
-  if (isLive || normalized === "is_live") return "live";
+  if (isLive || normalized === "is_live" || normalized === "live") return "live";
   return "none";
 }
 

@@ -8,9 +8,23 @@ import {
   joinMpvYtdlRawOptions,
   parseYoutubePlayerClients,
   withYoutubePlayerClient,
+  appendYoutubePoToken,
 } from "@kunai/providers/youtube";
 
 describe("youtube ytdl options", () => {
+  test("appendYoutubePoToken appends po_token correctly", () => {
+    expect(appendYoutubePoToken("youtube:player_client=mweb", "abcd")).toBe(
+      "youtube:player_client=mweb;youtube:po_token=web+abcd",
+    );
+    expect(appendYoutubePoToken("youtube:player_client=mweb", "ios+abcd")).toBe(
+      "youtube:player_client=mweb;youtube:po_token=ios+abcd",
+    );
+    expect(appendYoutubePoToken(undefined, "abcd")).toBe("youtube:po_token=web+abcd");
+    expect(appendYoutubePoToken("youtube:po_token=web+old", "abcd")).toBe(
+      "youtube:po_token=web+old",
+    );
+  });
+
   test("buildYoutubeYtdlCliArgs includes sponsorblock and cookies", () => {
     const args = buildYoutubeYtdlCliArgs({
       cookiesFromBrowser: "chrome",
@@ -35,8 +49,22 @@ describe("youtube ytdl options", () => {
     );
 
     expect(joined).toBe(
-      "sponsorblock-remove=%13%sponsor,intro,live-from-start=no,sub-langs=%3%all",
+      "sponsorblock-remove=%13%sponsor,intro,no-live-from-start=,sub-langs=%3%all",
     );
+  });
+
+  test("appends PO token to extractor-args", () => {
+    const args = buildYoutubeYtdlCliArgs({
+      extractorArgs: "youtube:player_client=web",
+      poToken: "web+testToken123",
+    });
+    expect(args).toContain("--extractor-args");
+    expect(args).toContain("youtube:player_client=web;youtube:po_token=web+testToken123");
+
+    const raw = buildYoutubeMpvYtdlRawOptions({
+      poToken: "testToken456",
+    });
+    expect(raw).toContain("extractor-args=%33%youtube:po_token=web+testToken456");
   });
 
   test("buildYoutubeMpvScriptOpts disables ytdlautoformat overrides", () => {

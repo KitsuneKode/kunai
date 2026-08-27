@@ -52,6 +52,7 @@ export interface VideoMeta {
   readonly durationSeconds?: number;
   readonly contentShape?: YouTubeContentShape;
   readonly liveStatus?: YouTubeLiveStatus;
+  readonly videoCount?: number;
   readonly premium?: boolean;
   readonly paid?: boolean;
 }
@@ -127,6 +128,8 @@ export interface StreamInfo {
   readonly requiresYtdl?: boolean;
   readonly ytdlFormat?: string;
   readonly ytdlRawOptions?: string;
+  readonly isLive?: boolean;
+  readonly liveStatus?: string;
   readonly providerResolveResult?: SharedProviderResolveResult;
   readonly cacheProvenance?:
     | "fresh"

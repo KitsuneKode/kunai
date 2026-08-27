@@ -23,6 +23,8 @@ export type YtDlpVideoInfo = {
   readonly channel_id?: string;
   readonly view_count?: number;
   readonly upload_date?: string;
+  readonly timestamp?: number;
+  readonly release_timestamp?: number;
   readonly is_live?: boolean;
   readonly live_status?: string;
   readonly formats?: readonly YtDlpFormatInfo[];
@@ -37,6 +39,7 @@ export type YtDlpExtractOptions = {
   readonly cookiesFromBrowser?: string;
   readonly cookiesFile?: string;
   readonly extractorArgs?: string;
+  readonly poToken?: string;
   readonly sponsorblockRemove?: string;
   readonly isLive?: boolean;
   readonly signal?: AbortSignal;
@@ -64,7 +67,7 @@ export async function extractYtDlpVideoInfo(
 }
 
 export function defaultYtdlPlaybackFormat(): string {
-  return "bv*+ba/b";
+  return "bestvideo+bestaudio/best";
 }
 
 export function buildYtdlFormatSelector(qualityLabel?: string): string {
@@ -77,9 +80,9 @@ export function buildYtdlFormatSelector(qualityLabel?: string): string {
   if (!match?.[1]) return defaultYtdlPlaybackFormat();
   const height = Number.parseInt(match[1], 10);
   if (!Number.isFinite(height) || height <= 0) return defaultYtdlPlaybackFormat();
-  // YouTube 1080p+ is usually DASH (separate video+audio). Leading with `best[height]`
-  // prefers muxed/HLS streams and can cap well below the requested ceiling.
-  return `bestvideo[height<=${height}]+bestaudio/bestvideo[height<=${height}]/bestvideo+bestaudio/bv*+ba/b`;
+  // YouTube 1080p+ is usually DASH (separate video+audio) or HLS.
+  // Using `height<=?${height}` matches DASH, live HLS, and fallback streams without rejecting formats missing height metadata.
+  return `bestvideo[height<=?${height}]+bestaudio/bestvideo+bestaudio/best`;
 }
 
 export function mapYtDlpFormatsToQualityLabels(

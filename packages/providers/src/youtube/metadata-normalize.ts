@@ -5,6 +5,22 @@ import {
 } from "./youtube-metadata";
 import { mapYtDlpFormatsToQualityLabels, type YtDlpVideoInfo } from "./yt-dlp-metadata";
 
+export function parseUploadDate(info: YtDlpVideoInfo): string | undefined {
+  if (typeof info.release_timestamp === "number" && Number.isFinite(info.release_timestamp)) {
+    return new Date(info.release_timestamp * 1000).toISOString();
+  }
+  if (typeof info.timestamp === "number" && Number.isFinite(info.timestamp)) {
+    return new Date(info.timestamp * 1000).toISOString();
+  }
+  if (typeof info.upload_date === "string") {
+    const match = info.upload_date.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (match) {
+      return `${match[1]}-${match[2]}-${match[3]}T00:00:00.000Z`;
+    }
+  }
+  return undefined;
+}
+
 export function normalizeYtDlpVideoInfo(
   info: YtDlpVideoInfo,
   videoId: string,
@@ -20,6 +36,7 @@ export function normalizeYtDlpVideoInfo(
     channelId: info.channel_id,
     viewCount: typeof info.view_count === "number" ? info.view_count : undefined,
     uploadDate: info.upload_date,
+    publishedAt: parseUploadDate(info),
     isLive: info.is_live === true,
     liveStatus: info.live_status,
     qualities,

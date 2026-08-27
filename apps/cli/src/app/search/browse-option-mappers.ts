@@ -11,7 +11,11 @@ import {
   historyContentType,
   isFinished,
 } from "@/services/continuation/history-progress";
-import { formatDurationSeconds, formatViewCount } from "@kunai/providers/youtube";
+import {
+  formatDurationSeconds,
+  formatRelativeTime,
+  formatViewCount,
+} from "@kunai/providers/youtube";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
@@ -134,12 +138,14 @@ export function toBrowseResultOption(
     result.channelTitle,
     formatViewCount(result.viewCount),
     result.liveStatus === "live"
-      ? "Live"
+      ? "● LIVE"
       : result.liveStatus === "upcoming"
         ? "Upcoming"
-        : undefined,
-    result.episodeCount && result.type !== "movie"
-      ? result.contentShape === "channel"
+        : result.liveStatus === "post_live"
+          ? "Was Live"
+          : undefined,
+    result.episodeCount && (result.type !== "movie" || isYoutubeResult)
+      ? result.contentShape === "channel" || result.contentShape === "playlist"
         ? `${result.episodeCount} videos`
         : `${result.episodeCount} episodes`
       : undefined,
@@ -169,7 +175,17 @@ export function toBrowseResultOption(
     }${overview ? ` · ${overview}` : ""}`,
     previewTitle: displayTitle,
     previewMeta: meta,
-    previewBadge: inWatchlist ? "wl" : isFollowing ? "★ following" : undefined,
+    previewBadge: inWatchlist
+      ? "wl"
+      : isFollowing
+        ? "★ following"
+        : result.liveStatus === "live"
+          ? "● LIVE"
+          : result.liveStatus === "upcoming"
+            ? "Upcoming"
+            : result.liveStatus === "post_live"
+              ? "Was Live"
+              : undefined,
     previewFacts: [
       ...buildLocalEnrichmentFacts(enrichment),
       ...buildManagementFacts(result, listService, optionContext),
@@ -179,6 +195,64 @@ export function toBrowseResultOption(
               label: "Watch history",
               detail: historyBadge ?? "Watched",
               tone: isFinished(historyEntry) ? ("success" as const) : ("neutral" as const),
+            },
+          ]
+        : []),
+      ...(isYoutubeResult && result.channelTitle
+        ? [
+            {
+              label: "Channel",
+              detail: result.channelTitle,
+              tone: "neutral" as const,
+            },
+          ]
+        : []),
+      ...(isYoutubeResult && result.viewCount !== undefined
+        ? [
+            {
+              label: "Views",
+              detail: formatViewCount(result.viewCount) ?? `${result.viewCount}`,
+              tone: "neutral" as const,
+            },
+          ]
+        : []),
+      ...(isYoutubeResult && result.publishedAt
+        ? [
+            {
+              label: "Uploaded",
+              detail: formatRelativeTime(result.publishedAt) ?? result.publishedAt,
+              tone: "neutral" as const,
+            },
+          ]
+        : []),
+      ...(isYoutubeResult && result.durationSeconds
+        ? [
+            {
+              label: "Duration",
+              detail:
+                contentLabel === "Short"
+                  ? `Short (${formatDurationSeconds(result.durationSeconds)})`
+                  : (formatDurationSeconds(result.durationSeconds) ?? `${result.durationSeconds}s`),
+              tone: "neutral" as const,
+            },
+          ]
+        : []),
+      ...(isYoutubeResult && result.liveStatus && result.liveStatus !== "none"
+        ? [
+            {
+              label: "Live status",
+              detail:
+                result.liveStatus === "live"
+                  ? "● LIVE"
+                  : result.liveStatus === "upcoming"
+                    ? "Upcoming"
+                    : "Was Live",
+              tone:
+                result.liveStatus === "live"
+                  ? ("error" as const)
+                  : result.liveStatus === "upcoming"
+                    ? ("warning" as const)
+                    : ("neutral" as const),
             },
           ]
         : []),
@@ -226,17 +300,19 @@ export function toBrowseResultOption(
     previewRating: formatRating(result.rating),
     previewBody: overview || "No overview available yet.",
     previewNote:
-      isYoutubeResult && result.contentShape === "playlist"
-        ? "Press Enter to open this playlist and choose a video."
-        : isYoutubeResult && result.contentShape === "channel"
-          ? "Press Enter to open this channel and choose a video."
-          : isYoutubeResult && result.contentShape === "short"
-            ? "Press Enter to open this Short and continue to playback."
-            : isYoutubeResult
-              ? "Press Enter to open this video and continue to playback."
-              : result.type === "series"
-                ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
-                : "Press Enter to open this title and continue to playback. Use / details for the overview.",
+      isYoutubeResult && result.liveStatus === "upcoming"
+        ? "This YouTube premiere has not started yet."
+        : isYoutubeResult && result.contentShape === "playlist"
+          ? "Press Enter to open this playlist and choose a video."
+          : isYoutubeResult && result.contentShape === "channel"
+            ? "Press Enter to open this channel and choose a video."
+            : isYoutubeResult && result.contentShape === "short"
+              ? "Press Enter to open this Short and continue to playback."
+              : isYoutubeResult
+                ? "Press Enter to open this video and continue to playback."
+                : result.type === "series"
+                  ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
+                  : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
 }
 

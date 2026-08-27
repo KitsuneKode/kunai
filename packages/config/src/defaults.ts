@@ -7,16 +7,13 @@ export const DEFAULT_OFFLINE_RUNWAY_TARGET = 2;
 /**
  * yt-dlp player clients Kunai asks for by default.
  *
- * yt-dlp 2026.07.04 (current latest) leads with ANDROID_VR, whose media URLs answer
- * 403 Forbidden at playback time — extraction succeeds, so nothing fails until mpv
- * opens the stream and the user sees "Playback failed on this stream". Verified
- * 2026-08-18: `default`, `tv`, `web_safari` and `ios` all fail; `mweb` and
- * `tv_simply` both play. Two are named so one rotating out does not break playback.
+ * Modern client priority hierarchy (web,android,ios,visionos) to prevent quality caps
+ * and 403 Forbidden errors when separate DASH video streams are requested.
  *
  * This is a default, not a pin — Settings › YouTube › extractor args overrides it,
  * and it should be revisited whenever yt-dlp's own client order changes.
  */
-export const DEFAULT_YOUTUBE_EXTRACTOR_ARGS = "youtube:player_client=mweb,tv_simply";
+export const DEFAULT_YOUTUBE_EXTRACTOR_ARGS = "youtube:player_client=web,android,ios,visionos";
 
 export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",

@@ -324,7 +324,53 @@ describe("buildMediaPanel — video", () => {
         videoMeta: { channelTitle: "News", liveStatus: "live" },
       }),
     );
-    expect(model.facts).toContainEqual({ label: "live", value: "● live", tone: "success" });
+    expect(model.facts).toContainEqual({ label: "live", value: "● LIVE", tone: "danger" });
+  });
+
+  test("flags upcoming videos", () => {
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Upcoming Stream",
+        videoMeta: { liveStatus: "upcoming" },
+      }),
+    );
+    expect(model.facts).toContainEqual({ label: "status", value: "Upcoming", tone: "warn" });
+  });
+
+  test("flags was live videos", () => {
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "VOD Stream",
+        videoMeta: { liveStatus: "post_live" },
+      }),
+    );
+    expect(model.facts).toContainEqual({ label: "status", value: "Was Live", tone: "muted" });
+  });
+
+  test("formats shorts as Short length", () => {
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Shorts clip",
+        videoMeta: { durationSeconds: 45, contentShape: "video" },
+      }),
+    );
+    expect(model.facts).toContainEqual({ label: "length", value: "Short" });
+  });
+
+  test("badges playlist contentShape distinctly from video", () => {
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Example Playlist",
+        videoMeta: { channelTitle: "Creator", contentShape: "playlist" },
+        nextEpisodeLabel: "Play",
+      }),
+    );
+    expect(model.kindBadge).toBe("playlist");
+    expect(model.miniCards[0]?.meta).toBe("playlist");
   });
 
   test("distinguishes upcoming and post-live videos", () => {

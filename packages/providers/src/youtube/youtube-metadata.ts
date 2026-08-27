@@ -23,6 +23,7 @@ export type YoutubeVideoMetadata = {
   readonly channelId?: string;
   readonly viewCount?: number;
   readonly uploadDate?: string;
+  readonly publishedAt?: string;
   readonly isLive?: boolean;
   readonly liveStatus?: string;
   readonly qualities: readonly YoutubeVideoQuality[];

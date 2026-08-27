@@ -23,7 +23,7 @@ import { resolveEpisodeThumbUrl, resolveSeasonAwarePosterUrl } from "./media-art
 export type MediaPanelFact = {
   readonly label: string;
   readonly value: string;
-  readonly tone?: "success" | "muted";
+  readonly tone?: "success" | "ok" | "danger" | "warn" | "warning" | "info" | "muted";
 };
 
 export type MediaPanelMiniCardKind = "resume" | "prev" | "next";
@@ -339,7 +339,7 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
 
   const facts: MediaPanelFact[] = [];
   const posted = formatRelativeTime(meta?.publishedAt);
-  const length = formatDurationClock(meta?.durationSeconds);
+  const length = isShort ? "Short" : formatDurationClock(meta?.durationSeconds);
   if (views) facts.push({ label: "views", value: views });
   if (posted) facts.push({ label: "posted", value: posted });
   if (length) facts.push({ label: "length", value: length });
@@ -350,6 +350,10 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   } else if (meta?.liveStatus === "post_live") {
     facts.push({ label: "live", value: "↺ replay", tone: "muted" });
   } else if (meta?.premium) facts.push({ label: "premium", value: "members" });
+
+  if (meta?.videoCount && (isChannel || isPlaylist)) {
+    facts.push({ label: "videos", value: `${meta.videoCount} videos` });
+  }
 
   // Up next: playlist/channel head when shaped that way, else the related queue
   // head. YouTube thumbnails always exist so the slot is reliably full.

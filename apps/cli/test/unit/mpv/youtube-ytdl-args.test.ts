@@ -45,23 +45,40 @@ describe("buildMpvArgs youtube playback", () => {
         displayTitle: "Test",
         requiresYtdl: true,
         ytdlFormat: "bv*+ba/b",
-        ytdlRawOptions: "sponsorblock-remove=%13%sponsor,intro,live-from-start=no",
+        ytdlRawOptions: "sponsorblock-remove=%13%sponsor,intro,no-live-from-start=",
       },
       null,
     );
 
     expect(args).toContain(
-      "--ytdl-raw-options=sponsorblock-remove=%13%sponsor,intro,live-from-start=no",
+      "--ytdl-raw-options=sponsorblock-remove=%13%sponsor,intro,no-live-from-start=",
     );
     expect(args).toContain("--script-opts=ytdlautoformat-domains=");
+  });
+
+  test("configures low-latency demuxer and disables start seeking for live streams", () => {
+    const args = buildMpvArgs(
+      {
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        headers: {},
+        subtitle: null,
+        displayTitle: "Live Broadcast",
+        requiresYtdl: true,
+        isLive: true,
+        startAt: 120,
+      },
+      null,
+    );
+
+    expect(args).toContain("--demuxer-readahead-secs=10");
+    expect(args).toContain("--demuxer-max-bytes=32MiB");
+    expect(args).toContain("--cache-pause-wait=1");
+    expect(args.some((arg) => arg.startsWith("--start="))).toBe(false);
   });
 });
 
 describe("shipped YouTube extractor-args default", () => {
   test("the default is set and names only clients that serve playable media URLs", () => {
-    // yt-dlp's own client order leads with ANDROID_VR, whose media URLs 403 at
-    // playback time. Extraction still succeeds, so an unset default fails only
-    // once mpv opens the stream — no test or gate catches it upstream of here.
     expect(DEFAULT_CONFIG.youtubeMetadata.extractorArgs).toBe(DEFAULT_YOUTUBE_EXTRACTOR_ARGS);
     expect(DEFAULT_YOUTUBE_EXTRACTOR_ARGS).toMatch(/^youtube:player_client=/);
 
@@ -69,7 +86,7 @@ describe("shipped YouTube extractor-args default", () => {
     // More than one, so a single client rotating out does not break playback.
     expect(clients.length).toBeGreaterThan(1);
     for (const client of clients) {
-      expect(["mweb", "tv_simply"]).toContain(client);
+      expect(["web", "android", "ios", "visionos"]).toContain(client);
     }
   });
 

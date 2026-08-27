@@ -49,8 +49,16 @@ function mapLiveStatus(item: LiveStatusSource): YouTubeLiveStatus {
   if (status === "upcoming" || status === "is_upcoming") return "upcoming";
   if (status === "post_live" || status === "was_live") return "post_live";
   const publishedText = item.publishedText?.toLowerCase() ?? "";
-  if (publishedText.includes("scheduled") || publishedText.includes("premieres")) {
+  if (
+    publishedText.includes("scheduled") ||
+    publishedText.includes("premieres") ||
+    publishedText.includes("premiere") ||
+    publishedText.includes("upcoming")
+  ) {
     return "upcoming";
+  }
+  if (publishedText.includes("streamed") || publishedText.includes("was live")) {
+    return "post_live";
   }
   return "none";
 }

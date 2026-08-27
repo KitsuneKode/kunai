@@ -115,6 +115,25 @@ function PosterSlot({
 
 // ── Facts (aligned label / value rows) ──────────────────────────────────────
 
+function factToneColor(tone?: MediaPanelFact["tone"]): string {
+  switch (tone) {
+    case "success":
+    case "ok":
+      return palette.ok;
+    case "danger":
+      return palette.danger;
+    case "warn":
+    case "warning":
+      return palette.warn;
+    case "info":
+      return palette.info;
+    case "muted":
+      return palette.muted;
+    default:
+      return palette.textDim;
+  }
+}
+
 function FactRows({
   facts,
   width,
@@ -131,9 +150,7 @@ function FactRows({
           <Text color={palette.muted}>
             {padColumnsEnd(truncateLine(fact.label, FACT_LABEL_WIDTH), FACT_LABEL_WIDTH)}{" "}
           </Text>
-          <Text color={fact.tone === "success" ? palette.ok : palette.textDim}>
-            {truncateLine(fact.value, valueWidth)}
-          </Text>
+          <Text color={factToneColor(fact.tone)}>{truncateLine(fact.value, valueWidth)}</Text>
         </Box>
       ))}
     </Box>

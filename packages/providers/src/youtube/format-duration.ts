@@ -22,3 +22,21 @@ export function formatViewCount(count: number | undefined | null): string | unde
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K views`;
   return `${count} views`;
 }
+
+export function formatRelativeTime(iso: string | undefined | null): string | undefined {
+  if (!iso) return undefined;
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return undefined;
+  const ms = Date.now() - then;
+  if (ms < 0) return undefined;
+  const days = Math.floor(ms / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  const years = Math.floor(days / 365);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}

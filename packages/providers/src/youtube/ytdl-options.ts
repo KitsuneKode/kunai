@@ -4,12 +4,27 @@ export type YoutubeYtdlOptionsInput = {
   readonly cookiesFromBrowser?: string;
   readonly cookiesFile?: string;
   readonly extractorArgs?: string;
+  readonly poToken?: string;
   readonly sponsorblockRemove?: string;
   readonly isLive?: boolean;
   readonly subtitleLanguage?: string;
 };
 
 const PLAYER_CLIENT_PATTERN = /(^|;)\s*youtube:([^;]*\b)?player_client=([^;]*)/i;
+
+/** Append a PO token to yt-dlp extractor args if not already present. */
+export function appendYoutubePoToken(
+  extractorArgs: string | undefined,
+  poToken: string | undefined,
+): string | undefined {
+  const trimmedToken = poToken?.trim();
+  if (!trimmedToken) return extractorArgs?.trim() || undefined;
+  const tokenVal = trimmedToken.includes("+") ? trimmedToken : `web+${trimmedToken}`;
+  const trimmedArgs = extractorArgs?.trim();
+  if (!trimmedArgs) return `youtube:po_token=${tokenVal}`;
+  if (/youtube:[^;]*\bpo_token=/i.test(trimmedArgs)) return trimmedArgs;
+  return `${trimmedArgs};youtube:po_token=${tokenVal}`;
+}
 
 /**
  * The player clients an extractor-args string asks for, in order.
@@ -55,8 +70,9 @@ export function buildYoutubeYtdlCliArgs(options: YoutubeYtdlOptionsInput): strin
   if (options.cookiesFile?.trim()) {
     args.push("--cookies", options.cookiesFile.trim());
   }
-  if (options.extractorArgs?.trim()) {
-    args.push("--extractor-args", options.extractorArgs.trim());
+  const extractorArgs = appendYoutubePoToken(options.extractorArgs, options.poToken);
+  if (extractorArgs?.trim()) {
+    args.push("--extractor-args", extractorArgs.trim());
   }
   if (options.sponsorblockRemove?.trim()) {
     args.push("--sponsorblock-remove", options.sponsorblockRemove.trim());
@@ -80,14 +96,15 @@ export function buildYoutubeMpvYtdlRawOptions(options: YoutubeYtdlOptionsInput):
   if (options.cookiesFile?.trim()) {
     raw.push(formatMpvKeyValueOption("cookies", options.cookiesFile.trim()));
   }
-  if (options.extractorArgs?.trim()) {
-    raw.push(formatMpvKeyValueOption("extractor-args", options.extractorArgs.trim()));
+  const extractorArgs = appendYoutubePoToken(options.extractorArgs, options.poToken);
+  if (extractorArgs?.trim()) {
+    raw.push(formatMpvKeyValueOption("extractor-args", extractorArgs.trim()));
   }
   if (options.sponsorblockRemove?.trim()) {
     raw.push(formatMpvKeyValueOption("sponsorblock-remove", options.sponsorblockRemove.trim()));
   }
   if (options.isLive) {
-    raw.push("live-from-start=no");
+    raw.push("no-live-from-start=");
   }
   const subLangs = toYoutubeSubtitlePreferenceTokens(options.subtitleLanguage).ytdlpSubLangs;
   if (subLangs) {

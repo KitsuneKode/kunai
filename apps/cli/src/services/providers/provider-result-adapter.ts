@@ -64,6 +64,8 @@ export function providerResolveResultToStreamInfo(
     ytdlRawOptions: selected.requiresYtdl
       ? resolveYoutubeYtdlRawOptions(selected, subtitlePreference)
       : undefined,
+    isLive: (selected.metadata as { readonly isLive?: boolean } | undefined)?.isLive ?? false,
+    liveStatus: (selected.metadata as { readonly liveStatus?: string } | undefined)?.liveStatus,
     subtitle: pickedSubtitle?.url,
     subtitleList,
     subtitleSource,

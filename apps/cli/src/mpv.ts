@@ -79,6 +79,7 @@ export async function launchMpv(opts: {
   requiresYtdl?: boolean;
   ytdlFormat?: string;
   ytdlRawOptions?: string;
+  isLive?: boolean;
   attach?: boolean;
   timing?: import("@/domain/types").PlaybackTimingMetadata | null;
   autoSkipEnabled?: boolean;
@@ -285,7 +286,9 @@ async function launchMpvInner(
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
-  const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000).then((result) => {
+  const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000, {
+    requiresYtdl: opts.requiresYtdl,
+  }).then((result) => {
     if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
       dbg("mpv", "preflight-definitive-failure", {
         reason: result.reason,
@@ -514,6 +517,7 @@ export function buildMpvArgs(
     requiresYtdl?: boolean;
     ytdlFormat?: string;
     ytdlRawOptions?: string;
+    isLive?: boolean;
   },
   ipcPath: string | null,
   config?: {
@@ -582,7 +586,7 @@ export function buildMpvArgs(
     }
   }
 
-  const includeStartArg = config?.includeStartArg ?? config?.persistent !== true;
+  const includeStartArg = (config?.includeStartArg ?? config?.persistent !== true) && !opts.isLive;
   if (includeStartArg && shouldApplyStartAtSeek(opts.startAt)) {
     args.push(`--start=${opts.startAt}`);
   }
@@ -609,24 +613,33 @@ export function buildMpvArgs(
   args.push("--cache=yes");
   args.push("--cache-pause=yes");
   args.push("--cache-pause-initial=no");
-  args.push("--cache-pause-wait=2");
-  const fastStart = config?.mpv?.startupPriority === "fast";
-  if (fastStart) {
+  if (opts.isLive) {
+    args.push("--cache-pause-wait=1");
     args.push("--demuxer-readahead-secs=10");
-    args.push("--demuxer-max-bytes=48MiB");
-    // Shorter reconnect window so dead CDNs fail fast into Kunai failover.
+    args.push("--demuxer-max-bytes=32MiB");
     args.push(
-      "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=3",
+      "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=5",
     );
   } else {
-    args.push("--demuxer-readahead-secs=60");
-    args.push("--demuxer-max-bytes=200MiB");
-    // libavformat HTTP/HLS reconnect hints (backend-dependent). We still rely on IPC
-    // watchdogs + refresh/reload; keep-open=always is intentionally not used here because
-    // it can suppress end-file and stall autoplay/session hand-off (see keep-open=no above).
-    args.push(
-      "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
-    );
+    args.push("--cache-pause-wait=2");
+    const fastStart = config?.mpv?.startupPriority === "fast";
+    if (fastStart) {
+      args.push("--demuxer-readahead-secs=10");
+      args.push("--demuxer-max-bytes=48MiB");
+      // Shorter reconnect window so dead CDNs fail fast into Kunai failover.
+      args.push(
+        "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=3",
+      );
+    } else {
+      args.push("--demuxer-readahead-secs=60");
+      args.push("--demuxer-max-bytes=200MiB");
+      // libavformat HTTP/HLS reconnect hints (backend-dependent). We still rely on IPC
+      // watchdogs + refresh/reload; keep-open=always is intentionally not used here because
+      // it can suppress end-file and stall autoplay/session hand-off (see keep-open=no above).
+      args.push(
+        "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
+      );
+    }
   }
   // Materialized local HLS playlists reference remote HTTPS segments. libavformat defaults
   // to file,crypto,data only for local manifests, which makes every segment fail instantly.

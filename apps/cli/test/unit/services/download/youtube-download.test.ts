@@ -79,7 +79,7 @@ describe("DownloadService youtube argv contract", () => {
     await service.processQueue();
 
     expect(repo.get(job.id)?.status).toBe("completed");
-    expect(capturedArgs.join(" ")).toContain("bestvideo[height<=1080]");
+    expect(capturedArgs.join(" ")).toContain("bestvideo[height<=?1080]");
     expect(capturedArgs).toEqual(
       expect.arrayContaining([
         "--merge-output-format",
