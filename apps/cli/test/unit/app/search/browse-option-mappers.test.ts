@@ -221,3 +221,47 @@ test("a live row says Enter joins the live edge, a premiere says it has not star
     toBrowseResultOption({ ...base, liveStatus: "post_live" } as SearchResult).previewNote,
   ).toBe("Press Enter to open this video and continue to playback.");
 });
+
+test("collection counts render zero and singular correctly in the browse row", () => {
+  // The media panel says the same thing about the same result, so the two surfaces
+  // have to agree: zero is a fact about a playlist, and one video is not "1 videos".
+  const base = {
+    id: "youtube:x",
+    type: "movie" as const,
+    year: "2026",
+    overview: "",
+    posterPath: null,
+    externalIds: { youtubeId: "x" },
+  };
+
+  const empty = toBrowseResultOption({
+    ...base,
+    contentShape: "playlist",
+    episodeCount: 0,
+  } as SearchResult);
+  expect(empty.previewMeta).toContain("0 videos");
+
+  const single = toBrowseResultOption({
+    ...base,
+    contentShape: "playlist",
+    episodeCount: 1,
+  } as SearchResult);
+  expect(single.previewMeta).toContain("1 video");
+
+  const many = toBrowseResultOption({
+    ...base,
+    contentShape: "channel",
+    episodeCount: 310,
+  } as SearchResult);
+  expect(many.previewMeta).toContain("310 videos");
+
+  // A series still counts episodes, and one episode is not "1 episodes".
+  const oneEpisode = toBrowseResultOption({
+    ...base,
+    type: "series",
+    contentShape: undefined,
+    externalIds: {},
+    episodeCount: 1,
+  } as SearchResult);
+  expect(oneEpisode.previewMeta).toContain("1 episode");
+});

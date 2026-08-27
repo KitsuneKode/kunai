@@ -42,17 +42,25 @@ type LiveStatusSource = {
   readonly publishedText?: string;
 };
 
+/** `premiere`/`premieres` as whole words — deliberately not `premiered`. */
+const UPCOMING_PREMIERE_TEXT = /\bpremieres?\b/;
+
 function mapLiveStatus(item: LiveStatusSource): YouTubeLiveStatus {
   if (item.liveNow) return "live";
   const status = item.liveStatus?.trim().toLowerCase();
   if (status === "live" || status === "is_live") return "live";
   if (status === "upcoming" || status === "is_upcoming") return "upcoming";
   if (status === "post_live" || status === "was_live") return "post_live";
+  // Last resort: no structured field, so read the human-readable date line. Tense
+  // is the whole signal here — "Premieres in 2 hours" has not started, while
+  // "Premiered 2 years ago" is an ordinary video that happens to have begun as a
+  // premiere. Matching `premiere` as a substring collapses those two into
+  // "upcoming" and puts a years-old video behind a "has not started yet" notice,
+  // so the word boundary is load-bearing rather than tidiness.
   const publishedText = item.publishedText?.toLowerCase() ?? "";
   if (
     publishedText.includes("scheduled") ||
-    // "premiere" already matches "premieres".
-    publishedText.includes("premiere") ||
+    UPCOMING_PREMIERE_TEXT.test(publishedText) ||
     publishedText.includes("upcoming")
   ) {
     return "upcoming";

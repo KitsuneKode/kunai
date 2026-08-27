@@ -261,19 +261,19 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
     argument, the loadfile offset, the watch-later resume prompt, and the seek that used to fire
     after an in-process reconnect.
 
-- **YouTube quality is no longer capped at 360p, and a PO token is actually used.** The default
-  player clients now lead with `visionos`, matching yt-dlp's own default: it is the one client
-  with no Proof-of-Origin requirement, and yt-dlp skips rather than attempts formats whose token
-  is missing, so a token-gated client in front spent a whole failover lane on formats that were
-  never going to be offered. A configured PO token now survives a restart, reaches downloads as
-  well as playback, and is written in the single-prefix form yt-dlp can actually parse — before,
-  it was dropped by config normalization, omitted by downloads, and malformed on the wire.
-- **A YouTube premiere says it has not started.** Opening one reports that instead of handing
-  mpv a stream that cannot play yet, and rows carry view counts, humanized upload times, and
-  live state.
-- **Post-play keeps its escape hatches visible.** `/analytics`, `/sync`, and diagnostics are
-  available from the command palette after playback, so a stopped session can inspect telemetry,
-  tracker state, or recovery details without returning to browse.
+  - **YouTube quality is no longer capped at 360p, and a PO token is actually used.** The default
+    player clients now lead with `visionos`, matching yt-dlp's own default: it is the one client
+    with no Proof-of-Origin requirement, and yt-dlp skips rather than attempts formats whose token
+    is missing, so a token-gated client in front spent a whole failover lane on formats that were
+    never going to be offered. A configured PO token now survives a restart, reaches downloads as
+    well as playback, and is written in the single-prefix form yt-dlp can actually parse — before,
+    it was dropped by config normalization, omitted by downloads, and malformed on the wire.
+  - **A YouTube premiere says it has not started.** Opening one reports that instead of handing
+    mpv a stream that cannot play yet, and rows carry view counts, humanized upload times, and
+    live state.
+  - **Post-play keeps its escape hatches visible.** `/analytics`, `/sync`, and diagnostics are
+    available from the command palette after playback, so a stopped session can inspect telemetry,
+    tracker state, or recovery details without returning to browse.
   - **A tracker sign-in can be cancelled.** Linking now runs in its own screen with visible
     progress, `esc` to cancel, and `r` to retry a failure. It previously passed a signal from a
     controller nobody held, so cancelling was impossible and the wizard waited on an unresponsive

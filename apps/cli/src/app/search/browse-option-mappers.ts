@@ -75,6 +75,23 @@ function youtubePreviewFacts(result: SearchResult, contentLabel: string): ShellP
   return facts;
 }
 
+/**
+ * "24 videos" / "12 episodes" for a collection.
+ *
+ * Zero is a fact about a collection, not an absence of one, so the check is
+ * against `undefined` rather than truthiness — and one video is not "1 videos".
+ * The media panel says the same thing about the same result, so the two have to
+ * agree.
+ */
+function countLabel(result: SearchResult, isYoutubeResult: boolean): string | undefined {
+  const count = result.episodeCount;
+  if (count === undefined) return undefined;
+  if (result.type === "movie" && !isYoutubeResult) return undefined;
+  const collection = result.contentShape === "channel" || result.contentShape === "playlist";
+  if (collection) return count === 1 ? "1 video" : `${count} videos`;
+  return count === 1 ? "1 episode" : `${count} episodes`;
+}
+
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
 
 function toPosterUrl(posterPath: string | null): string | undefined {
@@ -195,11 +212,7 @@ export function toBrowseResultOption(
     result.channelTitle,
     formatViewCount(result.viewCount),
     youtubeLiveLabel(result.liveStatus),
-    result.episodeCount && (result.type !== "movie" || isYoutubeResult)
-      ? result.contentShape === "channel" || result.contentShape === "playlist"
-        ? `${result.episodeCount} videos`
-        : `${result.episodeCount} episodes`
-      : undefined,
+    countLabel(result, isYoutubeResult),
     formatAnimeAvailability(result),
     formatRating(result.rating),
     ...enrichmentBadges.map((badge) => badge.label),
