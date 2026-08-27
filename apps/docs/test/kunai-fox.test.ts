@@ -28,16 +28,29 @@ function publicFile(src: string): string {
 }
 
 /**
- * How many distinct alpha values a file actually stores.
+ * Whether a file stores per-pixel alpha rather than a palette mask.
  *
- * This is the guard that matters. A palette PNG keeps transparency in a `tRNS`
- * chunk — one value per palette entry — and a quantizer spends the palette on
- * colour, so the result is a two-level alpha: a 1-bit cutout with hard
- * stair-stepped edges. Counting levels catches that no matter the container.
+ * This is the guard that matters, and it is read from the container header so
+ * it needs no image tooling on the runner. A palette PNG keeps transparency in
+ * a `tRNS` chunk — one value per palette entry — and a quantizer spends the
+ * palette on colour, so the result is a two-level alpha: a 1-bit cutout with
+ * hard stair-stepped edges, worst at nav size.
  */
-function alphaLevels(file: string): number {
-  const out = Bun.spawnSync(["magick", file, "-alpha", "extract", "-format", "%k", "info:"]);
-  return Number(new TextDecoder().decode(out.stdout).trim());
+function hasPerPixelAlpha(file: string): boolean {
+  const bytes = fs.readFileSync(file);
+  const tag = (start: number, end: number) => bytes.subarray(start, end).toString("ascii");
+
+  if (tag(0, 4) === "RIFF" && tag(8, 12) === "WEBP") {
+    // Extended (VP8X) headers flag alpha in bit 0x10 of the flags byte; lossy
+    // WebP carries the channel in an ALPH chunk. Both are full 8-bit.
+    const extendedAlpha = tag(12, 16) === "VP8X" && ((bytes[20] ?? 0) & 0x10) !== 0;
+    return extendedAlpha || bytes.includes(Buffer.from("ALPH"));
+  }
+
+  // PNG IHDR colour type, 8-byte signature + 8-byte chunk header + 9.
+  // 6 = truecolour+alpha, 4 = grey+alpha. 3 is the palette form to refuse.
+  const colorType = bytes[25];
+  return colorType === 6 || colorType === 4;
 }
 
 describe("fox stills on disk", () => {
@@ -56,8 +69,18 @@ describe("fox stills on disk", () => {
     // only two alpha levels has hard stair-stepped edges, which is what a
     // palette PNG produces and what made the nav mark look ragged.
     for (const name of ["idle", "watch", "go", "go-left", "wait", "wait-right", "nav"]) {
-      const levels = alphaLevels(path.join(DOCS_APP_ROOT, "public/brand/fox", `${name}.webp`));
-      expect(levels, `${name} alpha levels`).toBeGreaterThan(32);
+      const file = path.join(DOCS_APP_ROOT, "public/brand/fox", `${name}.webp`);
+      expect(hasPerPixelAlpha(file), `${name} per-pixel alpha`).toBe(true);
+    }
+  });
+
+  test("the CLI pets keep per-pixel alpha too, and never become palette PNGs", () => {
+    // The terminal is where an opaque or hard-edged pet is most obvious,
+    // because the background belongs to the user, not to us.
+    const pets = path.resolve(DOCS_APP_ROOT, "../cli/src/app-shell/brand/pets");
+    for (const name of ["idle", "watch", "go", "wait"]) {
+      const file = path.join(pets, `${name}.png`);
+      expect(hasPerPixelAlpha(file), `${name} per-pixel alpha`).toBe(true);
     }
   });
 
