@@ -183,9 +183,24 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   animation: kunai-fox-perk 340ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
+/* Same trap as the breathe loop: the perk keyframes drive `transform`, so a
+   mirrored pose that hovers would drop its `scaleX(-1)` and flip to face the
+   wrong way mid-animation. The flip has to live inside every keyframe set that
+   touches transform, not alongside them. */
+.kunai-flow-card:hover .kunai-fox--mirrored.kunai-fox--animated,
+.kunai-fox-banner:hover .kunai-fox--mirrored.kunai-fox--animated {
+  animation-name: kunai-fox-perk-mirrored;
+}
+
 @keyframes kunai-fox-perk {
   to {
     transform: translateY(-4px) scale(1.08) rotate(-5deg);
+  }
+}
+
+@keyframes kunai-fox-perk-mirrored {
+  to {
+    transform: translateY(-4px) scale(1.08) rotate(-5deg) scaleX(-1);
   }
 }
 
@@ -254,7 +269,9 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 30;
+  /* Above page content, below the sticky nav (40) and the search dialog (50):
+     a companion that covers navigation is a companion people close. */
+  z-index: 20;
   pointer-events: none;
   will-change: transform;
 }
@@ -280,10 +297,20 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   transform: scale(1.08);
 }
 
-/* Two bobs, one per gait. Walking is quick and shallow; sitting is a slow
-   breath. Sleeping stops entirely — a sleeping animal that bounces is awake. */
+/* The walk bob is driven by the step flag the movement clock flips, not by a
+   free-running loop — so her footfalls land exactly when she actually moves,
+   and she is perfectly still the moment she stops. A loop here would keep
+   bouncing a stationary fox. */
 .kunai-roamer__fox.is-walking {
-  animation: kunai-roamer-trot 460ms cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  transition: transform 90ms linear;
+}
+
+.kunai-roamer[data-step="a"] .kunai-roamer__fox.is-walking {
+  transform: translateY(-3px) rotate(-1.5deg);
+}
+
+.kunai-roamer[data-step="b"] .kunai-roamer__fox.is-walking {
+  transform: translateY(0) rotate(1.5deg);
 }
 
 .kunai-roamer__fox.is-sitting {
@@ -292,16 +319,6 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 
 .kunai-roamer__fox.is-asleep {
   animation: kunai-roamer-snooze 4.4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
-}
-
-@keyframes kunai-roamer-trot {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-1deg);
-  }
-  50% {
-    transform: translateY(-5px) rotate(1deg);
-  }
 }
 
 @keyframes kunai-roamer-snooze {

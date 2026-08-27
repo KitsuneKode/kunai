@@ -1,6 +1,5 @@
 import { KunaiFox, type KunaiFoxPose } from "@/components/brand/kunai-fox";
 import { KunaiFoxBanner } from "@/components/brand/kunai-fox-banner";
-import { KunaiFoxRoamer } from "@/components/brand/kunai-fox-roamer";
 import { HomeHeroStatic } from "@/components/home/home-hero-static";
 import { HomeStarCta } from "@/components/home/home-star-cta";
 import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
@@ -41,9 +40,6 @@ export default function HomePageShell({
 }: HomePageShellProps) {
   return (
     <main className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
-      {/* Home only. She is a welcome, not a fixture — nobody wants a mascot
-          following them through a troubleshooting page. */}
-      <KunaiFoxRoamer />
       <section className="kunai-home-hero grid items-center gap-10 pb-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <HomeHeroStatic cliVersion={cliVersion} providerCount={providers.length} />
         <div className="kunai-hero-terminal-plane flex flex-col">

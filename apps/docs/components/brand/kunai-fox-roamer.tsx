@@ -26,37 +26,88 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type Phase = "walking" | "sitting" | "asleep";
 
-/** Below this she has arrived and stops correcting, so she never jitters. */
-const ARRIVE_PX = 90;
-/** How far behind the pointer she settles. She follows; she does not hover. */
-const TRAIL_PX = 74;
-/** Fraction of the remaining gap closed per frame. Low enough to read as walking. */
-const EASE = 0.055;
-/** Stillness before she sits, then before she curls up. */
-const SIT_AFTER_MS = 2200;
-const SLEEP_AFTER_MS = 14000;
-/** She speaks unprompted at a random interval inside this window. */
-const CHATTER_MIN_MS = 22000;
-const CHATTER_MAX_MS = 48000;
+/** Pixels per tick, along the unit vector. Constant — this is the whole trick. */
+const SPEED_PX = 15;
+/** ~10 steps a second. oneko throttles to the same cadence for the same reason. */
+const TICK_MS = 100;
+/** She stops this far out rather than climbing onto the cursor. */
+const DEAD_ZONE_PX = 68;
+/** Ticks of stillness before she sits down. */
+const SIT_AFTER_TICKS = 22;
+/** Once sitting, a 1-in-N chance per tick of curling up. Roughly 20s. */
+const SLEEP_ODDS = 200;
+/**
+ * How long she goes between unprompted lines, by state.
+ *
+ * Sleeping earns the longest gap — an animal that mutters every twenty seconds
+ * is not asleep — and walking the shortest, because that is when you are most
+ * likely to be looking at her.
+ */
+const CHATTER_WINDOW_MS: Record<Phase, readonly [number, number]> = {
+  walking: [16000, 34000],
+  sitting: [24000, 52000],
+  asleep: [45000, 90000],
+};
 const BUBBLE_MS = 4200;
 const STORAGE_KEY = "kunai.roamer.dismissed";
 
-const LINES = [
-  "hi.",
-  "you clicked me. bold.",
-  "i found seven mirrors. six were lying.",
+/**
+ * What she says, by state.
+ *
+ * Three flavours run through the resting pool — what the tool actually does,
+ * something anime-shaped, and plain goofiness — because a companion that only
+ * ever markets at you is an ad, and one that only jokes is noise. Walking and
+ * sleeping get their own short pools so an unprompted line always fits what she
+ * is visibly doing.
+ */
+const RESTING_LINES = [
+  // what it does
   "mpv does the hard part. i just find things.",
-  "still faster than opening twelve tabs.",
-  "i'm not a loading spinner.",
+  "seven mirrors. six were lying.",
+  "i don't buffer. i just leave.",
+  "no accounts, no ads, no opinions.",
+  "your watchlist is local. nobody's selling it.",
+  "twelve tabs, or one command.",
+  "yt-dlp and i have an understanding.",
+  "ffmpeg is a friend. a difficult friend.",
+  "providers go down. that's what fallbacks are for.",
   "the install command is up there.",
+  // anime-shaped
+  "another season, another twelve episodes.",
+  "the opening is ninety seconds. i can skip it.",
+  "sub or dub. i don't judge. much.",
+  "filler arc detected.",
+  "episode one is free. episode two is where they get you.",
+  // goofy
   "i've been awake since 2am.",
-  "ask me about ffmpeg. actually, don't.",
-  "that command works. i checked.",
+  "i'm not a loading spinner.",
+  "this is my page. you're visiting.",
+  "i could nap right here.",
   "you're still scrolling.",
-  "nap incoming.",
 ] as const;
 
-const SLEEPY_LINES = ["zzz.", "five more minutes.", "wake me for the good ones."] as const;
+const WALKING_LINES = [
+  "where are we going.",
+  "slow down.",
+  "i have short legs.",
+  "keep going, i'll follow.",
+] as const;
+
+const SLEEPY_LINES = [
+  "zzz.",
+  "five more minutes.",
+  "wake me for the good ones.",
+  "mm. filler episode.",
+] as const;
+
+const POKED_LINES = ["hey.", "you clicked me. bold.", "yes?", "i'm working.", "rude."] as const;
+
+/** The pool that matches what she is visibly doing. */
+function poolFor(phase: Phase): readonly string[] {
+  if (phase === "asleep") return SLEEPY_LINES;
+  if (phase === "walking") return WALKING_LINES;
+  return RESTING_LINES;
+}
 
 /** A line from the pool that is not the one she just said. */
 function pickLine(pool: readonly string[], last: string | null): string {
@@ -65,14 +116,16 @@ function pickLine(pool: readonly string[], last: string | null): string {
   return choices[Math.floor(Math.random() * choices.length)] as string;
 }
 
-export function KunaiFoxRoamer({ size = 92 }: { readonly size?: number }) {
+export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
   // Position and target live in refs, not state: this updates every frame and
   // must never queue a React render to move her.
   const pos = useRef({ x: -400, y: -400 });
   const target = useRef({ x: -400, y: -400 });
-  const lastMove = useRef(Date.now());
+  const idleTicks = useRef(0);
+  const stepFlag = useRef(false);
+  const lastTick = useRef(0);
   const seeded = useRef(false);
 
   const [phase, setPhase] = useState<Phase>("sitting");
@@ -110,36 +163,53 @@ export function KunaiFoxRoamer({ size = 92 }: { readonly size?: number }) {
 
     function onMove(event: PointerEvent) {
       target.current = { x: event.clientX, y: event.clientY };
-      lastMove.current = Date.now();
       if (!seeded.current) {
-        // Drop her in beside the pointer on first sight rather than sliding her
-        // across the whole viewport from wherever she was parked.
+        // Drop her in beside the pointer on first sight rather than marching
+        // her across the whole viewport from wherever she was parked.
         seeded.current = true;
-        pos.current = { x: event.clientX - TRAIL_PX, y: event.clientY + 40 };
+        pos.current = { x: event.clientX - 90, y: event.clientY + 50 };
       }
     }
 
-    function step() {
-      frameRef.current = window.requestAnimationFrame(step);
+    function tick(timestamp: number) {
+      frameRef.current = window.requestAnimationFrame(tick);
+      // rAF rather than setInterval, so a backgrounded tab stops her entirely.
+      if (timestamp - lastTick.current < TICK_MS) return;
+      lastTick.current = timestamp;
+
       const host = hostRef.current;
       if (!host || !seeded.current) return;
 
       const dx = target.current.x - pos.current.x;
       const dy = target.current.y - pos.current.y;
       const distance = Math.hypot(dx, dy);
-      const still = Date.now() - lastMove.current;
 
-      if (distance > ARRIVE_PX) {
-        pos.current.x += dx * EASE;
-        pos.current.y += dy * EASE;
+      if (distance > DEAD_ZONE_PX) {
+        idleTicks.current = 0;
+        // Unit vector times a constant. Her pace is identical whether the
+        // pointer is just outside the dead zone or across the page.
+        pos.current.x += (dx / distance) * SPEED_PX;
+        pos.current.y += (dy / distance) * SPEED_PX;
+        stepFlag.current = !stepFlag.current;
+        host.dataset.step = stepFlag.current ? "a" : "b";
         setPhase("walking");
         // Only commit to a direction on real horizontal travel, so she does not
-        // flap back and forth while the pointer wanders vertically.
-        if (Math.abs(dx) > 12) setFacing(dx > 0 ? "right" : "left");
-      } else if (still > SLEEP_AFTER_MS) {
-        setPhase("asleep");
-      } else if (still > SIT_AFTER_MS) {
-        setPhase("sitting");
+        // flip back and forth while the pointer wanders vertically.
+        if (Math.abs(dx) > 10) setFacing(dx > 0 ? "right" : "left");
+      } else {
+        idleTicks.current += 1;
+        if (idleTicks.current > SIT_AFTER_TICKS) {
+          // Sitting is the resting state. Sleep is a coin flip she keeps making
+          // while nothing happens, so dropping off is never on a schedule the
+          // reader can feel coming.
+          setPhase((current) =>
+            current === "asleep"
+              ? current
+              : Math.floor(Math.random() * SLEEP_ODDS) === 0
+                ? "asleep"
+                : "sitting",
+          );
+        }
       }
 
       host.style.transform = `translate3d(${Math.round(pos.current.x - size / 2)}px, ${Math.round(
@@ -148,7 +218,7 @@ export function KunaiFoxRoamer({ size = 92 }: { readonly size?: number }) {
     }
 
     window.addEventListener("pointermove", onMove, { passive: true });
-    frameRef.current = window.requestAnimationFrame(step);
+    frameRef.current = window.requestAnimationFrame(tick);
     return () => {
       window.removeEventListener("pointermove", onMove);
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
@@ -156,21 +226,31 @@ export function KunaiFoxRoamer({ size = 92 }: { readonly size?: number }) {
     };
   }, [enabled, size]);
 
-  // Unprompted chatter, on a fresh random delay each time so it never lands on
-  // a rhythm the reader can start predicting.
+  // Unprompted chatter. `phase` is read through a ref rather than a dependency
+  // on purpose: as a dependency it re-ran this effect every time she started or
+  // stopped walking, which cleared the pending timer, so the delay almost never
+  // elapsed and she was close to silent.
+  const phaseRef = useRef<Phase>(phase);
+  phaseRef.current = phase;
+
   useEffect(() => {
     if (!enabled) return undefined;
     let timer: number;
     const schedule = () => {
-      const delay = CHATTER_MIN_MS + Math.random() * (CHATTER_MAX_MS - CHATTER_MIN_MS);
-      timer = window.setTimeout(() => {
-        if (seeded.current) say(phase === "asleep" ? SLEEPY_LINES : LINES);
-        schedule();
-      }, delay);
+      const [min, max] = CHATTER_WINDOW_MS[phaseRef.current];
+      timer = window.setTimeout(
+        () => {
+          // Silent until she has actually been seen, and never over a line the
+          // reader is still reading.
+          if (seeded.current) say(poolFor(phaseRef.current));
+          schedule();
+        },
+        min + Math.random() * (max - min),
+      );
     };
     schedule();
     return () => window.clearTimeout(timer);
-  }, [enabled, phase, say]);
+  }, [enabled, say]);
 
   const dismiss = useCallback(() => {
     setEnabled(false);
@@ -196,7 +276,7 @@ export function KunaiFoxRoamer({ size = 92 }: { readonly size?: number }) {
       <button
         type="button"
         className={`kunai-roamer__fox is-${phase}`}
-        onClick={() => say(phase === "asleep" ? SLEEPY_LINES : LINES)}
+        onClick={() => say(phase === "asleep" ? SLEEPY_LINES : POKED_LINES)}
         tabIndex={-1}
       >
         <KunaiFox pose={pose} facing={facing} size={size} />

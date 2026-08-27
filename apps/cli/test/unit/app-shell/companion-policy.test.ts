@@ -29,6 +29,9 @@ function withRealTty<T>(run: () => T): T {
     return run();
   } finally {
     if (descriptor) Object.defineProperty(process.stdout, "isTTY", descriptor);
+    // SAFETY: with no own descriptor to restore, the property here is the
+    // configurable one defined above, so deleting it returns `isTTY` to the
+    // prototype lookup it had before this helper ran.
     else delete (process.stdout as { isTTY?: boolean }).isTTY;
   }
 }

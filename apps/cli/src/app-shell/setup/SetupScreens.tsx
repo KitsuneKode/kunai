@@ -8,6 +8,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { CompanionPet } from "../CompanionPet";
 import { BLOOM_FRAMES, reducedMotionEnabled, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { palette } from "../shell-theme";
 import type { ScopedDependencyRow } from "./dependency-rows";
@@ -455,14 +456,23 @@ export function DoneScreen({
 }) {
   return (
     <Box flexDirection="column">
-      <Box marginBottom={1} flexDirection="column">
-        <Text color={palette.ok} bold>
-          {STATIC_PETAL}
-        </Text>
-        <Text color={palette.text} bold>
-          You're all set
-        </Text>
-        <Text color={palette.muted}>{headline}</Text>
+      {/* The one screen in setup where she is the point rather than decoration:
+          nothing here re-renders, there is vertical room, and it is the last
+          thing seen before the shell opens. `idle` rather than the wizard's
+          `wait` — the waiting is over. */}
+      <Box marginBottom={1} flexDirection="row">
+        <Box marginRight={2}>
+          <CompanionPet pose="idle" rows={3} />
+        </Box>
+        <Box flexDirection="column">
+          <Text color={palette.ok} bold>
+            {STATIC_PETAL}
+          </Text>
+          <Text color={palette.text} bold>
+            You're all set
+          </Text>
+          <Text color={palette.muted}>{headline}</Text>
+        </Box>
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
