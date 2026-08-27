@@ -285,11 +285,17 @@ async function searchYoutubeViaYtsearch(
   }
 }
 
-function mapYtDlpLiveStatus(isLive?: boolean, liveStatus?: string): YouTubeLiveStatus {
+/**
+ * yt-dlp's `live_status` vocabulary is closed: `not_live`, `is_live`,
+ * `is_upcoming`, `was_live`, `post_live`. Bare `live`/`upcoming` are what the
+ * Invidious and Piped mappers emit, so they are handled there rather than
+ * carried here as aliases that can never match.
+ */
+export function mapYtDlpLiveStatus(isLive?: boolean, liveStatus?: string): YouTubeLiveStatus {
   const normalized = liveStatus?.trim().toLowerCase();
-  if (normalized === "is_upcoming" || normalized === "upcoming") return "upcoming";
+  if (normalized === "is_upcoming") return "upcoming";
   if (normalized === "was_live" || normalized === "post_live") return "post_live";
-  if (isLive || normalized === "is_live" || normalized === "live") return "live";
+  if (isLive || normalized === "is_live") return "live";
   return "none";
 }
 

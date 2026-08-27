@@ -51,7 +51,7 @@ function mapLiveStatus(item: LiveStatusSource): YouTubeLiveStatus {
   const publishedText = item.publishedText?.toLowerCase() ?? "";
   if (
     publishedText.includes("scheduled") ||
-    publishedText.includes("premieres") ||
+    // "premiere" already matches "premieres".
     publishedText.includes("premiere") ||
     publishedText.includes("upcoming")
   ) {
