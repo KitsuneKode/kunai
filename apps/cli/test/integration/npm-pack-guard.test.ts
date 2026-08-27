@@ -24,6 +24,14 @@ function nodeAvailable(): boolean {
 
 const describeWithNode = nodeAvailable() ? describe : describe.skip;
 
+test("npm package README points users at public docs and the real Windows mpv package", () => {
+  const readme = readFileSync(join(CLI_ROOT, "README.md"), "utf8");
+
+  expect(readme).not.toContain("../../.docs/");
+  expect(readme).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+  expect(readme).not.toMatch(/winget install mpv(?:\s|`)/);
+});
+
 describeWithNode("npm pack guard with binaries on disk", () => {
   test("builds and release-packs only the policy-safe launcher files", async () => {
     const tarballBackup = `${RELEASE_TARBALL}.test-backup-${process.pid}`;

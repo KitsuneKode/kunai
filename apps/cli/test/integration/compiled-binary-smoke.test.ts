@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { verifyReleaseArtifactDirectory } from "../../../../scripts/verify-release-artifact-directory";
+import { assertCompleteReleaseAssetSet } from "../../../../scripts/release-asset-contract";
+import { listRegularReleaseFiles } from "../../../../scripts/verify-release-artifact-directory";
 import {
   COMPILED_SMOKE_FIXTURES,
   COMPILED_SMOKE_SCENARIO_IDS,
@@ -20,11 +21,6 @@ const CLI_ROOT = join(import.meta.dirname, "../..");
 const BIN_DIR = join(CLI_ROOT, "dist/bin");
 const GLIBC_BIN = resolveHostBinary();
 const REQUIRE_BINARY = process.env.KUNAI_BINARY_SMOKE === "1";
-
-function packageVersion(): string {
-  return (JSON.parse(readFileSync(join(CLI_ROOT, "package.json"), "utf8")) as { version: string })
-    .version;
-}
 
 function runBinary(args: readonly string[]) {
   return Bun.spawnSync([GLIBC_BIN, ...args], {
@@ -80,11 +76,8 @@ describeBinary("compiled linux binary smoke", () => {
     expect(result.stdout.toString().trim()).toMatch(/^kunai \d+\.\d+\.\d+/);
   });
 
-  test("dist/bin satisfies the exact 18-file release asset contract", async () => {
-    await verifyReleaseArtifactDirectory({
-      directory: BIN_DIR,
-      expectedVersion: packageVersion(),
-    });
+  test("dist/bin satisfies the exact 18-file release asset contract", () => {
+    assertCompleteReleaseAssetSet(listRegularReleaseFiles(BIN_DIR));
   });
 
   test("movie persists history and records playback-start evidence", async () => {

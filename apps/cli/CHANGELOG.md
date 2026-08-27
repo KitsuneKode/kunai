@@ -260,6 +260,16 @@ https://kunai.kitsunekode.in instead of the GitHub tree.
   - **A withdrawn release says so.** Marking one withdrawn now lists it as withdrawn on the docs
     site with the rollback command and withholds its install commands, rather than dropping it
     from the page while its detail view still offered them.
+  - **AniDB understands a show's final season without guessing.** A standalone `Final Season`
+    routes after the highest exact numbered sibling, while movies, split parts, spin-offs, and
+    ambiguous story arcs remain excluded instead of becoming false season evidence.
+  - **Advertised queue and sync commands are reachable.** `/playlist-add` and `/queue-season`
+    now appear during playback and post-play, where the current title is trustworthy; `/sync`
+    opens the public sync surface, and failed setup links point back to Settings → Sync rather
+    than a deliberately hidden nested command.
+  - **Windows install guidance names the real mpv package.** The README, npm package page, and
+    platform guide use `mpv-player.mpv-CI.MSVC`, which provides the `mpv.exe` Kunai probes and
+    controls, instead of the ambiguous package name that can leave only `mpvnet.exe` available.
 
 - Also new since 0.2.5, the last release you could install:
 

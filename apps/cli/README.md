@@ -17,7 +17,8 @@ Native release binaries embed Bun and do **not** need a separate Bun or Node ins
 `install.sh` / `install.ps1` when you want zero runtime prerequisites. This npm page is
 for the package-manager channel only.
 
-Poster subsystem and testing: repo root [.docs/poster-image-rendering.md](../../.docs/poster-image-rendering.md).
+See [platform and poster support](https://kunai.kitsunekode.in/docs/users/platforms)
+for terminal capabilities and OS-specific setup.
 
 Install core tools:
 
@@ -32,7 +33,10 @@ sudo apt install mpv yt-dlp
 brew install mpv yt-dlp
 ```
 
-Windows: `winget install mpv` (the process looks for a command named `mpv` / `mpv.exe`) and `winget install yt-dlp`. Add `ffprobe` (from FFmpeg) only if you want post-download validation.
+Windows: `winget install --id mpv-player.mpv-CI.MSVC -e` installs the real
+`mpv.exe` Kunai probes and controls; `mpv.net` provides `mpvnet.exe` and is not a
+substitute. Install YouTube support with `winget install yt-dlp`. Add `ffprobe`
+(from FFmpeg) only if you want post-download validation.
 
 ## Install
 
