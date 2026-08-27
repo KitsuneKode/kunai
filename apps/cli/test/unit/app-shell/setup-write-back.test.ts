@@ -286,6 +286,18 @@ test("a failed browser handoff does not flip the standing decision on (#232)", a
   expect(notes.some((n) => n.includes("browser never opened"))).toBe(true);
 });
 
+test("an unavailable tracker points at the reachable Settings sync surface", async () => {
+  const { container, config, notes } = fakeContainer();
+
+  const pending = runSetupWizard({ container, force: true });
+  expect(forceCloseRootContent(payload({ prefs: { connectAniList: true } }))).toBe(true);
+  await pending;
+
+  expect(config.sync.anilist.enabled).toBe(false);
+  expect(notes.some((note) => note.includes("Settings → Sync"))).toBe(true);
+  expect(notes.every((note) => !note.includes("/sync-connect-anilist"))).toBe(true);
+});
+
 test("a successful handoff flips enabled on after the fact (#232)", async () => {
   const { container, config, adapters } = fakeContainer({}, [
     {

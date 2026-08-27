@@ -160,16 +160,7 @@ describe("contract conformance", () => {
       }
     }
 
-    const KNOWN_DEAD_INSTRUCTIONS = new Set<string>([]);
-
-    expect(
-      found.filter((entry) => !KNOWN_DEAD_INSTRUCTIONS.has(entry)),
-      "copy points at a command no palette offers",
-    ).toEqual([]);
-    expect(
-      [...KNOWN_DEAD_INSTRUCTIONS].filter((entry) => !found.includes(entry)),
-      "fixed — delete these from KNOWN_DEAD_INSTRUCTIONS",
-    ).toEqual([]);
+    expect(found, "copy points at a command no palette offers").toEqual([]);
   });
 
   /**
