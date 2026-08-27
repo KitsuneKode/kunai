@@ -32,6 +32,8 @@ Three tiers, and every surface must decide for all three:
 - `StateBlock` renders one line on those two kinds, across 16 mount sites
 - `companionMode()` — `graphics` / `glyph` / `off`, non-TTY resolves to `off`
 - Docs: pointer lean, pose cross-fade, copy-reward hop, nav and sidebar hover
+- `docs/users/kanna.mdx` — the character page, including how to retire her
+- `scripts/dev-sandbox.sh` — try her without touching the real profile
 
 ## Remaining
 
@@ -136,13 +138,6 @@ Blocked on a consistent pose sheet landing:
   re-export.
 - the `seek` / `carry` / `nap` / `oops` poses above
 - a `peek` crop for the sidebar and section rules
-
-### 6. The Kanna page
-
-`docs/users/kanna.mdx` — who she is, the pose sheet, what each state means, and
-how to turn her off. The "turn her off" section is not an afterthought:
-developers trust a project more when it tells them plainly how to disable the
-cute thing.
 
 ## Guardrails
 
