@@ -111,13 +111,17 @@ Search can return **videos, Shorts, playlists, and channels**. Results retain
 their shape and the shell labels it before playback, so a Short is not mistaken
 for a collection. Playlists and channels are catalog collections
 (`youtube-playlist:…` / channel ids) — pick a video inside them to play. Live
-and upcoming entries carry a separate status badge; post-live replays are
-labelled separately when the backend exposes that state. Backends that omit a
-shape or status signal are labelled conservatively. Live URLs
-(`youtube.com/live/…`) resolve as videos. Kunai passes `--no-live-from-start`
-to yt-dlp so a live handoff does not start from the beginning of the stream
-unless you change that. Use `type:short` in YouTube search to narrow to Shorts;
-the filter prefers yt-dlp/Piped results with an explicit Shorts signal.
+and upcoming entries carry their own status badge — `● LIVE` for an active
+broadcast, `Upcoming` for a premiere that has not started, `Was Live` for an
+archived stream — and backends that omit a shape or status signal are labelled
+conservatively. Use `type:short` in YouTube search to narrow to Shorts; the
+filter prefers yt-dlp/Piped results with an explicit Shorts signal.
+
+Live URLs (`youtube.com/live/…`) resolve as videos. Kunai passes
+`--no-live-from-start` to yt-dlp so a live handoff joins at the live edge, and it
+will not offer to resume a broadcast from a saved position — a live stream has no
+fixed position to return to. Opening a premiere that has not started tells you so
+instead of handing mpv a stream that cannot play yet.
 
 **SponsorBlock** is off unless you set `youtubeMetadata.sponsorblockRemove` in Settings › YouTube (for example `sponsor,intro`). That value is forwarded to yt-dlp / mpv. There is no shipped default category list.
 
@@ -129,7 +133,7 @@ Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also edi
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cookiesFromBrowser` | Browser name for yt-dlp `--cookies-from-browser` (for example `chrome`, `firefox`). Reads cookies from that browser profile on your machine. |
 | `cookiesFile`        | **Absolute** path to a Netscape cookie file passed as yt-dlp `--cookies`. Relative paths are easy to mis-resolve — use an absolute path.     |
-| `poToken`            | Proof of Origin token (e.g. `web.gvs+...`) passed to yt-dlp for authenticated client extraction.                                             |
+| `poToken`            | Proof of Origin token in yt-dlp's `CLIENT.CONTEXT+TOKEN` form (for example `visionos.gvs+...`). A bare token is scoped to whichever client Kunai is asking for. Used for playback and downloads alike. |
 
 Safety rules:
 

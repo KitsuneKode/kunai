@@ -7,13 +7,18 @@ export const DEFAULT_OFFLINE_RUNWAY_TARGET = 2;
 /**
  * yt-dlp player clients Kunai asks for by default.
  *
- * Modern client priority hierarchy (web,android,ios,visionos) to prevent quality caps
- * and 403 Forbidden errors when separate DASH video streams are requested.
+ * This mirrors yt-dlp's own unauthenticated default (`_DEFAULT_CLIENTS` in
+ * `yt_dlp/extractor/youtube/_video.py`), and the order is the whole point.
+ * `visionos` is the only client with no GVS PO-token policy, so its formats are
+ * always usable; `web` declares `required=True` for HTTPS and DASH, and yt-dlp
+ * *skips* formats whose PO token is missing rather than trying them. Kunai turns
+ * each client into its own failover lane, so leading with a token-gated client
+ * spends a whole lane on formats that were never going to be offered.
  *
  * This is a default, not a pin — Settings › YouTube › extractor args overrides it,
  * and it should be revisited whenever yt-dlp's own client order changes.
  */
-export const DEFAULT_YOUTUBE_EXTRACTOR_ARGS = "youtube:player_client=web,android,ios,visionos";
+export const DEFAULT_YOUTUBE_EXTRACTOR_ARGS = "youtube:player_client=visionos,web";
 
 export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",

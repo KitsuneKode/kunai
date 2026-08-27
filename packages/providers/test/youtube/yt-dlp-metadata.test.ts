@@ -7,7 +7,7 @@ import {
 
 describe("buildYtdlFormatSelector", () => {
   test("returns default format for undefined, best, auto", () => {
-    const def = "bestvideo+bestaudio/best";
+    const def = "bv*+ba/b";
     expect(buildYtdlFormatSelector(undefined)).toBe(def);
     expect(buildYtdlFormatSelector("best")).toBe(def);
     expect(buildYtdlFormatSelector("auto")).toBe(def);
@@ -16,14 +16,12 @@ describe("buildYtdlFormatSelector", () => {
 
   test("builds height ceiling with DASH merge for numeric qualities", () => {
     expect(buildYtdlFormatSelector("1080p")).toBe(
-      "bestvideo[height<=?1080]+bestaudio/bestvideo+bestaudio/best",
+      "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b",
     );
     expect(buildYtdlFormatSelector("1440p")).toBe(
-      "bestvideo[height<=?1440]+bestaudio/bestvideo+bestaudio/best",
+      "bv*[height<=?1440]+ba/bv*[height<=?1440]/bv*+ba/b",
     );
-    expect(buildYtdlFormatSelector("4K")).toBe(
-      "bestvideo[height<=?2160]+bestaudio/bestvideo+bestaudio/best",
-    );
+    expect(buildYtdlFormatSelector("4K")).toBe("bv*[height<=?2160]+ba/bv*[height<=?2160]/bv*+ba/b");
   });
 });
 

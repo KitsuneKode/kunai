@@ -17,6 +17,10 @@ function trimTrailingZeros(val: string): string {
   return val.replace(/\.0$/, "");
 }
 
+function plural(count: number, unit: string): string {
+  return `${count} ${unit}${count === 1 ? "" : "s"} ago`;
+}
+
 export function formatViewCount(count: number | undefined | null): string | undefined {
   if (count === undefined || count === null || !Number.isFinite(count) || count < 0) {
     return undefined;
@@ -37,14 +41,19 @@ export function formatRelativeTime(
   if (!Number.isFinite(then)) return undefined;
   const ms = now - then;
   if (ms < 0) return undefined;
-  const days = Math.floor(ms / 86_400_000);
-  if (days <= 0) return "today";
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return plural(minutes, "minute");
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return plural(hours, "hour");
+  const days = Math.floor(hours / 24);
   if (days === 1) return "yesterday";
-  if (days < 7) return `${days} days ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
+  if (days < 7) return plural(days, "day");
+  if (days < 30) return plural(Math.floor(days / 7), "week");
+  // Each rung divides the *same* unit it compares against, so no span falls
+  // between two rungs. Mixing 30-day months with 365-day years left days 360-364
+  // matching neither, and they rendered as "0 years ago".
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
-  const years = Math.floor(days / 365);
-  return `${years} year${years === 1 ? "" : "s"} ago`;
+  if (months < 12) return plural(months, "month");
+  return plural(Math.floor(months / 12), "year");
 }

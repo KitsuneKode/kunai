@@ -4,7 +4,7 @@ import { isCalendarSearchResult } from "@/app/search/calendar-results";
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { ListService } from "@/domain/lists/ListService";
 import { isAnimeContent } from "@/domain/media/content-kind";
-import type { SearchResult, TitleAliasKind } from "@/domain/types";
+import type { SearchResult, TitleAliasKind, YouTubeLiveStatus } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import {
   formatTimestamp,
@@ -17,6 +17,21 @@ import {
   formatViewCount,
 } from "@kunai/providers/youtube";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
+
+/**
+ * The one place a YouTube live state becomes words. The row line, the preview badge
+ * and the preview facts all showed the same status through their own ternary chain,
+ * so they could drift apart on the same result.
+ */
+const YOUTUBE_LIVE_LABELS = {
+  live: "\u25cf LIVE",
+  upcoming: "Upcoming",
+  post_live: "Was Live",
+} as const;
+
+function youtubeLiveLabel(status: YouTubeLiveStatus | undefined): string | undefined {
+  return status && status !== "none" ? YOUTUBE_LIVE_LABELS[status] : undefined;
+}
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
 
@@ -137,13 +152,7 @@ export function toBrowseResultOption(
     formatDurationSeconds(result.durationSeconds),
     result.channelTitle,
     formatViewCount(result.viewCount),
-    result.liveStatus === "live"
-      ? "● LIVE"
-      : result.liveStatus === "upcoming"
-        ? "Upcoming"
-        : result.liveStatus === "post_live"
-          ? "Was Live"
-          : undefined,
+    youtubeLiveLabel(result.liveStatus),
     result.episodeCount && (result.type !== "movie" || isYoutubeResult)
       ? result.contentShape === "channel" || result.contentShape === "playlist"
         ? `${result.episodeCount} videos`
@@ -175,17 +184,16 @@ export function toBrowseResultOption(
     }${overview ? ` · ${overview}` : ""}`,
     previewTitle: displayTitle,
     previewMeta: meta,
+    // Membership stays first. `previewBadge` is not free-form: calendar banding
+    // (`isCalendarTrackedOption`), the calendar episode-code slot, and the preview
+    // rail all exact-match "wl", so a live label in front would quietly drop a
+    // watchlisted broadcast out of all three. Live state is carried by the meta line
+    // and the preview facts, so nothing is lost by ranking it below.
     previewBadge: inWatchlist
       ? "wl"
       : isFollowing
         ? "★ following"
-        : result.liveStatus === "live"
-          ? "● LIVE"
-          : result.liveStatus === "upcoming"
-            ? "Upcoming"
-            : result.liveStatus === "post_live"
-              ? "Was Live"
-              : undefined,
+        : youtubeLiveLabel(result.liveStatus),
     previewFacts: [
       ...buildLocalEnrichmentFacts(enrichment),
       ...buildManagementFacts(result, listService, optionContext),
@@ -241,12 +249,7 @@ export function toBrowseResultOption(
         ? [
             {
               label: "Live status",
-              detail:
-                result.liveStatus === "live"
-                  ? "● LIVE"
-                  : result.liveStatus === "upcoming"
-                    ? "Upcoming"
-                    : "Was Live",
+              detail: youtubeLiveLabel(result.liveStatus) ?? "",
               tone:
                 result.liveStatus === "live"
                   ? ("error" as const)

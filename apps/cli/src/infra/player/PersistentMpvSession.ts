@@ -1537,10 +1537,13 @@ export class PersistentMpvSession {
     this.reconnectInFlight = true;
     this.reconnectTryCount = nextAttempt;
     const opts = this.currentCycleOptions();
-    const { seekSeconds, shouldSeek } = computeInProcessReconnectSeek(
-      positionSeconds,
-      durationSeconds,
-    );
+    // A live broadcast has no meaningful absolute position to return to: seeking
+    // back lands in the DVR window or fails outright. Gate once, here, so both the
+    // loadfile `start` and the post-load seek in `finishInProcessReconnectAfterLoad`
+    // follow from the same decision.
+    const { seekSeconds, shouldSeek } = this.playbackStream.isLive
+      ? { seekSeconds: 0, shouldSeek: false }
+      : computeInProcessReconnectSeek(positionSeconds, durationSeconds);
 
     try {
       opts.onPlaybackEvent?.({
@@ -1572,7 +1575,7 @@ export class PersistentMpvSession {
       const loadResult = await this.ipcSession.send(
         buildPersistentLoadfileCommand(
           this.playbackStream.url,
-          this.playbackStream.isLive ? undefined : shouldSeek ? seekSeconds : 0,
+          shouldSeek ? seekSeconds : 0,
           this.playbackStream.headers,
           {
             requiresYtdl: this.playbackStream.requiresYtdl,

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { toBrowseResultOption } from "@/app/search/browse-option-mappers";
+import type { ListService } from "@/domain/lists/ListService";
 import type { SearchResult } from "@/domain/types";
 
 test("toBrowseResultOption labels YouTube videos by content shape, not transport type", () => {
@@ -91,4 +92,72 @@ test("toBrowseResultOption labels channels with avatar poster and video count", 
   expect(option.previewMeta).toContain("120 videos");
   expect(option.previewImageUrl).toBe("https://yt3.ggpht.com/avatar.jpg");
   expect(option.previewNote).toBe("Press Enter to open this channel and choose a video.");
+});
+
+function youtubeLiveResult(overrides: Partial<SearchResult> = {}): SearchResult {
+  return {
+    id: "youtube:liveid",
+    type: "movie",
+    title: "Live right now",
+    year: "2026",
+    overview: "",
+    posterPath: null,
+    contentShape: "video",
+    liveStatus: "live",
+    channelTitle: "A Channel",
+    externalIds: { youtubeId: "liveid" },
+    ...overrides,
+  };
+}
+
+test("a watchlisted live broadcast keeps the exact 'wl' badge", () => {
+  // previewBadge is not free-form: calendarPriorityBand, the calendar episode-code
+  // slot, and the preview rail all compare it to the literal "wl". Ranking a live
+  // label above membership silently drops watchlisted items out of all three.
+  const listService = {
+    isInWatchlist: () => true,
+    isInFavorites: () => false,
+    isInUpNext: () => false,
+  } as unknown as ListService;
+  const option = toBrowseResultOption(
+    youtubeLiveResult(),
+    undefined,
+    "provider",
+    undefined,
+    listService,
+  );
+
+  expect(option.previewBadge).toBe("wl");
+  // Nothing is lost: live state is still carried by the meta line and the facts.
+  expect(option.previewMeta).toContain("● LIVE");
+});
+
+test("an untracked live broadcast still badges its live state", () => {
+  const option = toBrowseResultOption(youtubeLiveResult());
+  expect(option.previewBadge).toBe("● LIVE");
+});
+
+test("live state renders identically wherever it appears", () => {
+  for (const [liveStatus, label] of [
+    ["live", "● LIVE"],
+    ["upcoming", "Upcoming"],
+    ["post_live", "Was Live"],
+  ] as const) {
+    const option = toBrowseResultOption(youtubeLiveResult({ liveStatus }));
+    expect(option.previewBadge).toBe(label);
+    expect(option.previewMeta).toContain(label);
+    expect(option.previewFacts?.some((fact) => fact.detail === label)).toBe(true);
+  }
+});
+
+test("a Short is labelled from its shape, never from its duration", () => {
+  const brief = toBrowseResultOption(
+    youtubeLiveResult({ liveStatus: undefined, durationSeconds: 45, contentShape: "video" }),
+  );
+  expect(brief.detail?.startsWith("Video")).toBe(true);
+
+  const long = toBrowseResultOption(
+    youtubeLiveResult({ liveStatus: undefined, durationSeconds: 170, contentShape: "short" }),
+  );
+  expect(long.detail?.startsWith("Short")).toBe(true);
 });

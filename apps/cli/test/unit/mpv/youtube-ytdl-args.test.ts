@@ -1,8 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
+import {
+  buildPersistentLoadfileOptions,
+  DEFAULT_MPV_YTDL_FORMAT,
+} from "@/infra/player/mpv-stream-http-headers";
 import { buildMpvArgs } from "@/mpv";
 import { DEFAULT_CONFIG, DEFAULT_YOUTUBE_EXTRACTOR_ARGS } from "@kunai/config";
-import { buildYoutubeMpvYtdlRawOptions, joinMpvYtdlRawOptions } from "@kunai/providers/youtube";
+import {
+  buildYoutubeMpvYtdlRawOptions,
+  defaultYtdlPlaybackFormat,
+  joinMpvYtdlRawOptions,
+  parseYoutubePlayerClients,
+  withYoutubePlayerClient,
+} from "@kunai/providers/youtube";
 
 describe("buildMpvArgs youtube playback", () => {
   test("adds ytdl-format for YouTube watch URLs", () => {
@@ -110,5 +120,82 @@ describe("shipped YouTube extractor-args default", () => {
     expect(rawOptions).toContain(
       `extractor-args=%${DEFAULT_YOUTUBE_EXTRACTOR_ARGS.length}%${DEFAULT_YOUTUBE_EXTRACTOR_ARGS}`,
     );
+  });
+});
+
+describe("live streams on the persistent session", () => {
+  test("a live replacement carries the low-latency demuxer profile", () => {
+    // buildMpvArgs only runs at process spawn. Autoplay and /next replace the file
+    // over IPC, so without this a live stream loaded into a running session kept the
+    // 60-second VOD readahead and drifted off the live edge.
+    const options = buildPersistentLoadfileOptions(
+      "https://youtube.com/watch?v=abc",
+      900,
+      {},
+      {
+        requiresYtdl: true,
+        isLive: true,
+      },
+    );
+
+    expect(options["demuxer-readahead-secs"]).toBe("10");
+    expect(options["demuxer-max-bytes"]).toBe("32MiB");
+    expect(options["cache-pause-wait"]).toBe("1");
+    expect(options["demuxer-lavf-o"]).toContain("reconnect_max_retries=5");
+  });
+
+  test("a live replacement never carries a resume offset", () => {
+    const options = buildPersistentLoadfileOptions(
+      "https://youtube.com/watch?v=abc",
+      900,
+      {},
+      {
+        requiresYtdl: true,
+        isLive: true,
+      },
+    );
+    expect(options.start).toBe("0");
+  });
+
+  test("a recorded stream keeps its resume offset and the VOD profile", () => {
+    const options = buildPersistentLoadfileOptions(
+      "https://youtube.com/watch?v=abc",
+      900,
+      {},
+      {
+        requiresYtdl: true,
+        isLive: false,
+      },
+    );
+    expect(options.start).toBe("900");
+    expect(options["demuxer-readahead-secs"]).toBeUndefined();
+  });
+
+  test("the loadfile format fallback matches the provider default", () => {
+    // Importing the provider barrel here would pull it into the launcher bundle, so
+    // the constant is duplicated on purpose and this guards the drift.
+    expect(DEFAULT_MPV_YTDL_FORMAT).toBe(defaultYtdlPlaybackFormat());
+  });
+});
+
+describe("default player clients", () => {
+  test("the first failover lane is the client that needs no PO token", () => {
+    // Kunai gives each client its own source lane and walks them in order. yt-dlp
+    // *skips* formats whose GVS PO-token policy is unmet, so a token-gated client in
+    // front spends a whole lane on formats that were never going to be offered.
+    // visionos is the only client in INNERTUBE_CLIENTS with no GVS policy, which is
+    // why yt-dlp's own _DEFAULT_CLIENTS leads with it too.
+    const clients = parseYoutubePlayerClients(DEFAULT_YOUTUBE_EXTRACTOR_ARGS);
+    expect(clients[0]).toBe("visionos");
+    expect(clients.length).toBeGreaterThan(1);
+  });
+
+  test("every default client survives the per-lane rewrite as a single-client value", () => {
+    for (const client of parseYoutubePlayerClients(DEFAULT_YOUTUBE_EXTRACTOR_ARGS)) {
+      const lane = withYoutubePlayerClient(DEFAULT_YOUTUBE_EXTRACTOR_ARGS, client);
+      expect(parseYoutubePlayerClients(lane)).toEqual([client]);
+      // One `youtube:` prefix only — a second one turns the key into `youtube:<key>`.
+      expect(lane.split("youtube:").length - 1).toBe(1);
+    }
   });
 });

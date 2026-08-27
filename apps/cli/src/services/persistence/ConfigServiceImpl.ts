@@ -128,6 +128,7 @@ function normalizeYoutubeMetadata(
       : {}),
     ...(value.cookiesFile?.trim() ? { cookiesFile: value.cookiesFile.trim() } : {}),
     ...(value.extractorArgs?.trim() ? { extractorArgs: value.extractorArgs.trim() } : {}),
+    ...(value.poToken?.trim() ? { poToken: value.poToken.trim() } : {}),
     ...(value.sponsorblockRemove?.trim()
       ? { sponsorblockRemove: value.sponsorblockRemove.trim() }
       : {}),

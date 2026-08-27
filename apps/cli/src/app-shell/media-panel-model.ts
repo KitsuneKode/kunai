@@ -17,13 +17,15 @@ import type { ContentKind } from "@/domain/media/content-kind";
 import type { ContentType, VideoMeta } from "@/domain/types";
 
 import { resolveEpisodeThumbUrl, resolveSeasonAwarePosterUrl } from "./media-art";
+import type { ShellStatus } from "./types";
 
 // ── Model ──────────────────────────────────────────────────────────────────
 
 export type MediaPanelFact = {
   readonly label: string;
   readonly value: string;
-  readonly tone?: "success" | "ok" | "danger" | "warn" | "warning" | "info" | "muted";
+  /** Shares the shell status vocabulary so `statusColor` stays the only palette map. */
+  readonly tone?: ShellStatus["tone"];
 };
 
 export type MediaPanelMiniCardKind = "resume" | "prev" | "next";
@@ -334,21 +336,24 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   const views = formatViewCount(meta?.viewCount);
   const isChannel = meta?.contentShape === "channel";
   const isPlaylist = meta?.contentShape === "playlist";
+  // Shape comes from the provider (`is_short` / a `/shorts/` URL), never from
+  // duration: YouTube raised the Shorts ceiling to three minutes in Oct 2024, so
+  // a length test both mislabels short videos and misses long Shorts.
   const isShort = meta?.contentShape === "short";
   const secondary = meta?.channelTitle || undefined;
 
   const facts: MediaPanelFact[] = [];
   const posted = formatRelativeTime(meta?.publishedAt);
-  const length = isShort ? "Short" : formatDurationClock(meta?.durationSeconds);
+  const length = formatDurationClock(meta?.durationSeconds);
   if (views) facts.push({ label: "views", value: views });
   if (posted) facts.push({ label: "posted", value: posted });
   if (length) facts.push({ label: "length", value: length });
   if (meta?.liveStatus === "live") {
-    facts.push({ label: "live", value: "● live", tone: "success" });
+    facts.push({ label: "live", value: "● live", tone: "error" });
   } else if (meta?.liveStatus === "upcoming") {
-    facts.push({ label: "live", value: "◷ upcoming", tone: "muted" });
+    facts.push({ label: "live", value: "◷ upcoming", tone: "warning" });
   } else if (meta?.liveStatus === "post_live") {
-    facts.push({ label: "live", value: "↺ replay", tone: "muted" });
+    facts.push({ label: "live", value: "↺ replay", tone: "neutral" });
   } else if (meta?.premium) facts.push({ label: "premium", value: "members" });
 
   if (meta?.videoCount && (isChannel || isPlaylist)) {

@@ -7,6 +7,13 @@ import {
 } from "./mpv-playback-url";
 import { shouldApplyStartAtSeek } from "./mpv-start-seek";
 
+/**
+ * Last-resort selector when a caller hands us no format. Must stay equal to the
+ * provider's `defaultYtdlPlaybackFormat()` — importing it here would pull the whole
+ * provider barrel into the launcher bundle, so a test asserts the two agree instead.
+ */
+export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b";
+
 export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
   "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
 
@@ -100,7 +107,26 @@ export type PersistentLoadfileOptions = {
   readonly "ytdl-raw-options"?: string;
   readonly "demuxer-lavf-o"?: string;
   readonly "demuxer-lavf-o-clr"?: string;
+  /** Live-broadcast demuxer profile; see {@link LIVE_DEMUXER_OPTIONS}. */
+  readonly "cache-pause-wait"?: string;
+  readonly "demuxer-readahead-secs"?: string;
+  readonly "demuxer-max-bytes"?: string;
 };
+
+/**
+ * Demuxer profile for an active broadcast: a small readahead window so playback
+ * stays near the live edge, and a shorter reconnect ladder because a dropped live
+ * segment is never coming back. Shared with `buildMpvArgs` so a live stream loaded
+ * into an *existing* persistent session gets the same treatment as one that the
+ * process was spawned on — a loadfile replacement inherits nothing from spawn args.
+ */
+export const LIVE_DEMUXER_OPTIONS = {
+  "cache-pause-wait": "1",
+  "demuxer-readahead-secs": "10",
+  "demuxer-max-bytes": "32MiB",
+  "demuxer-lavf-o":
+    "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=5",
+} as const;
 
 export function buildPersistentLoadfileOptions(
   url: string,
@@ -144,7 +170,7 @@ export function buildPersistentLoadfileOptions(
     // property` while `ytdl-format` accepts it. Setting the flag explicitly
     // also survives a user config that turned ytdl off.
     loadOptions.ytdl = "yes";
-    loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? "bv*+ba/b";
+    loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT;
     if (ytdlOptions?.ytdlRawOptions?.trim()) {
       loadOptions["ytdl-raw-options"] = ytdlOptions.ytdlRawOptions.trim();
     }
@@ -155,6 +181,10 @@ export function buildPersistentLoadfileOptions(
     loadOptions["demuxer-lavf-o"] = LOCAL_HLS_DEMUXER_LAVF_OPTIONS;
   } else if (/^https?:\/\//i.test(url.trim())) {
     loadOptions["demuxer-lavf-o-clr"] = "";
+  }
+
+  if (ytdlOptions?.isLive) {
+    Object.assign(loadOptions, LIVE_DEMUXER_OPTIONS);
   }
 
   return loadOptions as PersistentLoadfileOptions;

@@ -324,7 +324,7 @@ describe("buildMediaPanel — video", () => {
         videoMeta: { channelTitle: "News", liveStatus: "live" },
       }),
     );
-    expect(model.facts).toContainEqual({ label: "live", value: "● LIVE", tone: "danger" });
+    expect(model.facts).toContainEqual({ label: "live", value: "● LIVE", tone: "error" });
   });
 
   test("flags upcoming videos", () => {
@@ -335,7 +335,7 @@ describe("buildMediaPanel — video", () => {
         videoMeta: { liveStatus: "upcoming" },
       }),
     );
-    expect(model.facts).toContainEqual({ label: "status", value: "Upcoming", tone: "warn" });
+    expect(model.facts).toContainEqual({ label: "status", value: "Upcoming", tone: "warning" });
   });
 
   test("flags was live videos", () => {
@@ -346,18 +346,35 @@ describe("buildMediaPanel — video", () => {
         videoMeta: { liveStatus: "post_live" },
       }),
     );
-    expect(model.facts).toContainEqual({ label: "status", value: "Was Live", tone: "muted" });
+    expect(model.facts).toContainEqual({ label: "status", value: "Was Live", tone: "neutral" });
   });
 
-  test("formats shorts as Short length", () => {
+  test("badges a Short from its shape and still shows the running time", () => {
     const model = buildMediaPanel(
       ctx({
         contentKind: "video",
         title: "Shorts clip",
+        videoMeta: { durationSeconds: 45, contentShape: "short" },
+      }),
+    );
+    expect(model.kindBadge).toBe("short");
+    // The badge already says "short"; replacing the clock with the word threw away
+    // the one fact the row was there to carry.
+    expect(model.facts).toContainEqual({ label: "length", value: "0:45" });
+  });
+
+  test("a short regular video is not a Short", () => {
+    // YouTube raised the Shorts ceiling to three minutes in Oct 2024, so duration
+    // decides nothing: only the provider's shape does.
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Brief clip",
         videoMeta: { durationSeconds: 45, contentShape: "video" },
       }),
     );
-    expect(model.facts).toContainEqual({ label: "length", value: "Short" });
+    expect(model.kindBadge).toBe("video");
+    expect(model.facts).toContainEqual({ label: "length", value: "0:45" });
   });
 
   test("badges playlist contentShape distinctly from video", () => {

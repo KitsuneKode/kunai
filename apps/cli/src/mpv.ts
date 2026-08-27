@@ -27,7 +27,10 @@ import {
 } from "@/infra/player/mpv-process-registry";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
-import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
+import {
+  LIVE_DEMUXER_OPTIONS,
+  LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
+} from "@/infra/player/mpv-stream-http-headers";
 import {
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
@@ -614,12 +617,9 @@ export function buildMpvArgs(
   args.push("--cache-pause=yes");
   args.push("--cache-pause-initial=no");
   if (opts.isLive) {
-    args.push("--cache-pause-wait=1");
-    args.push("--demuxer-readahead-secs=10");
-    args.push("--demuxer-max-bytes=32MiB");
-    args.push(
-      "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=5",
-    );
+    for (const [key, value] of Object.entries(LIVE_DEMUXER_OPTIONS)) {
+      args.push(`--${key}=${value}`);
+    }
   } else {
     args.push("--cache-pause-wait=2");
     const fastStart = config?.mpv?.startupPriority === "fast";

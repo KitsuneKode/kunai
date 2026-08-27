@@ -321,6 +321,35 @@ describe("ConfigServiceImpl", () => {
   });
 });
 
+describe("youtubeMetadata normalization", () => {
+  // The normalizer rebuilds this object from an allow-list, so a key it does not
+  // name is not merely ignored — load() drops it and the next save() writes the
+  // stripped object back over config.json, destroying what the user typed.
+  test("keeps every credential field across a load/save round trip", async () => {
+    const store = new MemoryConfigStore({
+      youtubeMetadata: {
+        instanceUrl: "https://inv.example",
+        cookiesFromBrowser: "firefox",
+        extractorArgs: "youtube:player_client=visionos",
+        poToken: "visionos.gvs+SECRET",
+        sponsorblockRemove: "sponsor",
+      },
+    });
+
+    const service = await ConfigServiceImpl.load(store);
+    expect(service.youtubeMetadata.poToken).toBe("visionos.gvs+SECRET");
+
+    await service.save();
+    expect((await store.load()).youtubeMetadata?.poToken).toBe("visionos.gvs+SECRET");
+  });
+
+  test("drops a blank PO token rather than persisting an empty string", async () => {
+    const store = new MemoryConfigStore({ youtubeMetadata: { poToken: "   " } });
+    const service = await ConfigServiceImpl.load(store);
+    expect(service.youtubeMetadata.poToken).toBeUndefined();
+  });
+});
+
 describe("session overrides", () => {
   test("a session override never reaches the persisted config file", async () => {
     const store = new MemoryConfigStore();
