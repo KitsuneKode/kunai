@@ -147,8 +147,21 @@ function ChartTooltipContent({
     const [item] = payload;
     const key = `${labelKey ?? item?.dataKey ?? item?.name ?? "value"}`;
     const itemConfig = getPayloadConfigFromPayload(config, item, key);
-    const value =
-      !labelKey && typeof label === "string" ? (config[label]?.label ?? label) : itemConfig?.label;
+    /*
+     * A NUMERIC label is the axis value itself and must survive to
+     * `labelFormatter`. Only a string label is a config lookup key. Without the
+     * number branch, a time-scaled x-axis (`type="number"`, epoch milliseconds)
+     * fell through to the series label, so a date formatter received
+     * "Lifetime", `Number(...)` gave NaN, and the tooltip heading rendered
+     * empty.
+     */
+    const value = labelKey
+      ? itemConfig?.label
+      : typeof label === "string"
+        ? (config[label]?.label ?? label)
+        : typeof label === "number"
+          ? label
+          : itemConfig?.label;
 
     if (labelFormatter) {
       return (

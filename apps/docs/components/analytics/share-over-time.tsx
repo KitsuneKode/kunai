@@ -55,14 +55,23 @@ const BAND_COLOR = (index: number): string =>
   `var(--kunai-chart-band-${Math.min(index + 1, MAX_VERSION_BANDS)})`;
 
 /**
- * A CSS-safe series key for a version string.
+ * A CSS-safe series key for a bucket name.
  *
  * `ChartStyle` emits one `--color-<key>` custom property per config key, and a
  * custom property name is a CSS identifier: `--color-0.3.0` is invalid, so the
  * whole declaration is dropped and every band silently renders unpainted. The
- * real version travels in `label`, which is what the legend and tooltip show.
+ * real bucket name travels in `label` and `name`, which is what the legend and
+ * tooltip show.
+ *
+ * The encoding must be INJECTIVE, not merely safe. Collapsing every separator
+ * to `_` maps `1.0.0-alpha` and `1.0.0+alpha` to the same key, and two buckets
+ * sharing a key overwrite each other in both `chartConfig` and every data row —
+ * the chart then silently omits part of the reported share. Each non
+ * alphanumeric character is therefore encoded as its code point, `_` included,
+ * so distinct names can never converge.
  */
-export const seriesKey = (bucket: string): string => `v${bucket.replace(/[^a-zA-Z0-9]/g, "_")}`;
+export const seriesKey = (bucket: string): string =>
+  `v${bucket.replace(/[^a-zA-Z0-9]/g, (char) => `_${(char.codePointAt(0) ?? 0).toString(16)}_`)}`;
 
 /**
  * Renders one tooltip row as a percentage.

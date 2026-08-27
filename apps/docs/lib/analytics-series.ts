@@ -154,14 +154,17 @@ export function shareBands(
       totals.set(bucket, (totals.get(bucket) ?? 0) + count);
     }
   }
-  const ordered = dimension === "byVersion" ? compareVersions : undefined;
-  // Biggest-by-total decides WHICH bands survive the colour limit; the
-  // dimension's own order decides how they stack.
+  // Biggest-by-total decides WHICH bands survive the colour limit.
   const kept = [...totals.entries()]
-    .sort((a, b) => b[1] - a[1] || (ordered ? ordered(a[0], b[0]) : a[0].localeCompare(b[0])))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([bucket]) => bucket);
-  return ordered ? [...kept].sort(ordered) : [...kept].sort((a, b) => a.localeCompare(b));
+  // Versions then re-sort into release order, because the reader's question is
+  // "is the newest taking over". Platform and architecture have no such order,
+  // so they keep the descending-total order they were selected in — which is
+  // what the chart copy promises ("largest band first"). Re-sorting them
+  // alphabetically would contradict it.
+  return dimension === "byVersion" ? [...kept].sort(compareVersions) : kept;
 }
 
 /** Numeric-aware version compare, so `0.10.0` sorts after `0.9.0`. */

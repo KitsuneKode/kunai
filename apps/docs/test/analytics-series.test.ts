@@ -232,8 +232,10 @@ describe("shareBands across dimensions", () => {
     expect(shareBands(window, "byVersion")).toEqual(["0.9.0", "0.10.0"]);
   });
 
-  test("platform and architecture are nominal, so they sort by name", () => {
-    expect(shareBands(window, "byOs")).toEqual(["darwin", "linux"]);
+  test("platform and architecture keep descending-total order", () => {
+    // The chart copy promises "largest band first", so these must NOT be
+    // re-sorted alphabetically: linux (9) outranks darwin (6).
+    expect(shareBands(window, "byOs")).toEqual(["linux", "darwin"]);
     expect(shareBands(window, "byArch")).toEqual(["x64"]);
   });
 

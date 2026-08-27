@@ -11,7 +11,8 @@ import { seriesKey } from "../components/analytics/share-over-time";
  */
 describe("seriesKey", () => {
   test("produces a valid CSS identifier for a semver bucket", () => {
-    expect(seriesKey("0.3.0")).toBe("v0_3_0");
+    // Each non-alphanumeric is encoded as its code point, so "." becomes _2e_.
+    expect(seriesKey("0.3.0")).toBe("v0_2e_3_2e_0");
     // A custom property name may not start with a digit and may not contain a dot.
     expect(seriesKey("0.3.0")).toMatch(/^[a-zA-Z][a-zA-Z0-9_-]*$/);
   });
@@ -26,8 +27,31 @@ describe("seriesKey", () => {
     expect(seriesKey("other")).toBe("vother");
   });
 
-  test("distinct versions never collide on one key", () => {
-    // A sloppy sanitiser that stripped separators would map both to "v030".
-    expect(seriesKey("0.3.0")).not.toBe(seriesKey("03.0"));
+  test("is injective — distinct buckets never share a key", () => {
+    // The previous encoding collapsed every separator to "_", so `1.0.0-alpha`
+    // and `1.0.0+alpha` produced the same key. Two buckets sharing a key
+    // overwrite each other in chartConfig and in every data row, and the chart
+    // silently drops part of the reported share. These are the pairs that
+    // actually collided, plus a literal underscore, which must not alias a
+    // separator it encodes to.
+    const buckets = [
+      "1.0.0-alpha",
+      "1.0.0+alpha",
+      "0.3.0",
+      "0-3-0",
+      "1.0.0-rc.1",
+      "1.0.0.rc-1",
+      "a_b",
+      "a.b",
+      "other",
+    ];
+    const keys = buckets.map(seriesKey);
+    expect(new Set(keys).size).toBe(buckets.length);
+  });
+
+  test("every key stays a valid CSS identifier after encoding", () => {
+    for (const bucket of ["1.0.0-alpha", "1.0.0+alpha", "a_b", "0.3.0", "x86_64"]) {
+      expect(seriesKey(bucket)).toMatch(/^[a-zA-Z][a-zA-Z0-9_-]*$/);
+    }
   });
 });

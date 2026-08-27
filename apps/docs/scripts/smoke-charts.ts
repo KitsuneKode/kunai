@@ -66,6 +66,7 @@ async function waitForServer(url: string, timeoutMs: number): Promise<void> {
 /** A tiny CDP client — enough to navigate, settle, and evaluate. */
 async function connect(): Promise<{
   evaluate: (expression: string) => Promise<unknown>;
+  hover: (x: number, y: number) => Promise<void>;
   navigate: (url: string, width: number) => Promise<void>;
   close: () => void;
 }> {
@@ -128,6 +129,14 @@ async function connect(): Promise<{
   await send("Runtime.enable");
 
   return {
+    /** Move the pointer so recharts opens its tooltip for real. */
+    async hover(x: number, y: number) {
+      for (const type of ["mouseMoved", "mouseMoved"]) {
+        await send("Input.dispatchMouseEvent", { type, x, y, button: "none", buttons: 0 });
+        await Bun.sleep(120);
+      }
+      await Bun.sleep(400);
+    },
     async navigate(url, width) {
       await send("Emulation.setDeviceMetricsOverride", {
         width,
@@ -234,6 +243,33 @@ async function main(): Promise<void> {
       `(() => { const t = Array.from(document.querySelectorAll(".recharts-xAxis .recharts-cartesian-axis-tick")); return t.length >= 2; })()`,
     )) as boolean;
     check("the x-axis renders multiple ticks", spansTime, "fewer than two x ticks");
+
+    /*
+     * The tooltip heading, hovered for real.
+     *
+     * `ChartTooltipContent` only forwards a STRING label to `labelFormatter`;
+     * a numeric one used to fall through to the series label, so the
+     * time-scaled axis handed a date formatter "Lifetime", `Number(...)` gave
+     * NaN, and the heading rendered empty. Nothing else here can see that —
+     * the paths, colours and axis were all perfectly correct.
+     */
+    const box = (await cdp.evaluate(
+      `(() => { const s = document.querySelector(".recharts-surface"); if (!s) return null; const r = s.getBoundingClientRect(); return JSON.stringify({ x: Math.round(r.left + r.width * 0.6), y: Math.round(r.top + r.height * 0.6) }); })()`,
+    )) as string | null;
+    if (box) {
+      const point = JSON.parse(box) as { x: number; y: number };
+      await cdp.hover(point.x, point.y);
+      const heading = (await cdp.evaluate(
+        `(() => { const w = document.querySelector(".recharts-tooltip-wrapper"); if (!w) return ""; const h = w.querySelector(".font-medium"); return (h?.textContent ?? "").trim(); })()`,
+      )) as string;
+      check(
+        "the tooltip heading shows a date",
+        /^[A-Z][a-z]{2} \d{1,2}$/.test(heading),
+        `heading was ${JSON.stringify(heading)}, expected a formatted day like "Aug 26"`,
+      );
+    } else {
+      check("the tooltip heading shows a date", false, "no chart surface to hover");
+    }
 
     console.log("\n/analytics at 320px");
     await cdp.navigate(`${BASE}/analytics`, 320);
