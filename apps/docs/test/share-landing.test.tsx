@@ -61,3 +61,21 @@ test("share codes never enter site analytics", () => {
   expect(filterPrivateShareAnalytics(shareEvent)).toBeNull();
   expect(filterPrivateShareAnalytics(docsEvent)).toBe(docsEvent);
 });
+
+test("share metadata leaves the image slot to the segment card", async () => {
+  const url = encodePlaybackTargetWebUrl(
+    {
+      anchor: { by: "catalog", ns: "anilist", id: "21" },
+      kind: "anime",
+      title: "Cowboy Bebop",
+    },
+    "play",
+  );
+  const metadata = await generateMetadata({
+    params: Promise.resolve({ code: webCode(url) }),
+  });
+
+  expect(metadata.openGraph?.images).toBeUndefined();
+  expect(metadata.twitter?.images).toBeUndefined();
+  expect(metadata.openGraph?.title).toContain("Cowboy Bebop");
+});

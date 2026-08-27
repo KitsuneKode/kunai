@@ -29,6 +29,6 @@ describe("generated repo content", () => {
   test("OG mascot matches the tracked PNG", () => {
     expect(generatedMascot.mascotDataUrl).toBe(fresh.mascot.mascotDataUrl);
     expect(generatedMascot.mascotDataUrl.startsWith("data:image/png;base64,")).toBe(true);
-    expect(generatedMascot.mascotDataUrl.length).toBeGreaterThan(200);
+    expect(generatedMascot.mascotDataUrl.length).toBeGreaterThan(50_000);
   });
 });

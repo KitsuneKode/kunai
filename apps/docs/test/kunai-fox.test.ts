@@ -67,4 +67,17 @@ describe("kunai fox identity", () => {
       expect(fs.statSync(file).size).toBeGreaterThan(10_000);
     }
   });
+
+  test("OG and Twitter cards use the illustrated still plus kind companions", () => {
+    const social = readSource("lib/brand/social-card.tsx");
+    expect(social).toContain("AnimeBuddy");
+    expect(social).toContain("SeriesBuddy");
+    expect(social).toContain("MovieBuddy");
+    expect(social).not.toContain("KindDots");
+    expect(readSource("app/opengraph-image.tsx")).toContain("KunaiSocialCard");
+    expect(readSource("app/twitter-image.tsx")).toContain('from "./opengraph-image"');
+    expect(readSource("app/w/[code]/opengraph-image.tsx")).toContain("kind={shared.ref.kind}");
+    expect(readSource("app/w/[code]/twitter-image.tsx")).toContain('from "./opengraph-image"');
+    expect(readSource("scripts/export-fox-assets.ts")).not.toContain("apps/cli");
+  });
 });
