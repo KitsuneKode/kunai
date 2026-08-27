@@ -12,7 +12,7 @@
  * `residualShare` only *reports* how much of a breakdown it ate.
  */
 
-import type { SeriesPoint } from "./analytics-series";
+import { RESIDUAL_LABEL, type SeriesPoint } from "./analytics-series";
 
 /** How a figure moved. `flat` is a real answer, not a missing one. */
 export type TrendDirection = "up" | "down" | "flat";
@@ -99,7 +99,7 @@ export function residualShare(counts: Readonly<Record<string, number>>): number 
   let residual = 0;
   for (const [bucket, count] of Object.entries(counts)) {
     total += count;
-    if (bucket === "other") residual += count;
+    if (bucket === RESIDUAL_LABEL) residual += count;
   }
   return total === 0 ? 0 : residual / total;
 }
@@ -120,12 +120,24 @@ export function dayToEpoch(day: string): number {
   return Date.parse(`${day}T00:00:00.000Z`);
 }
 
+/**
+ * An axis tick label for an epoch-millisecond x value.
+ *
+ * Formatted in UTC to match `dayToEpoch`: the rollup keys are calendar days, so
+ * a local-timezone label shifts every tick a day west of Greenwich.
+ */
+export function formatDayTick(value: number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
 /** Distinct named (non-residual) buckets seen anywhere in the window. */
 export function namedVersionCount(points: readonly SeriesPoint[]): number {
   const seen = new Set<string>();
   for (const point of points) {
     for (const [bucket, count] of Object.entries(point.byVersion)) {
-      if (bucket !== "other" && count > 0) seen.add(bucket);
+      if (bucket !== RESIDUAL_LABEL && count > 0) seen.add(bucket);
     }
   }
   return seen.size;

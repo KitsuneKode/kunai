@@ -15,7 +15,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { dayToEpoch } from "@/lib/analytics-derive";
+import { dayToEpoch, formatDayTick } from "@/lib/analytics-derive";
 import {
   isFullySuppressed,
   MAX_VERSION_BANDS,
@@ -51,7 +51,7 @@ const BAND_COLOR = (index: number): string =>
  * whole declaration is dropped and every band silently renders unpainted. The
  * real version travels in `label`, which is what the legend and tooltip show.
  */
-const seriesKey = (bucket: string): string => `v${bucket.replace(/[^a-zA-Z0-9]/g, "_")}`;
+export const seriesKey = (bucket: string): string => `v${bucket.replace(/[^a-zA-Z0-9]/g, "_")}`;
 
 /**
  * Renders one tooltip row as a percentage.
@@ -68,12 +68,6 @@ const formatSharePercent = (value: unknown, name: unknown) => (
     </span>
   </>
 );
-
-function formatTick(value: number): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
 
 export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeries }) {
   const bands = versionBands(series);
@@ -149,7 +143,7 @@ export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeri
           axisLine={false}
           tickMargin={8}
           minTickGap={24}
-          tickFormatter={formatTick}
+          tickFormatter={formatDayTick}
         />
         <YAxis
           tickLine={false}
@@ -161,7 +155,7 @@ export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeri
         <ChartTooltip
           content={
             <ChartTooltipContent
-              labelFormatter={(value) => formatTick(Number(value))}
+              labelFormatter={(value) => formatDayTick(Number(value))}
               formatter={formatSharePercent}
             />
           }

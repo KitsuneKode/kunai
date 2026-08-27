@@ -4,6 +4,7 @@ import {
   availableRanges,
   dayToEpoch,
   delta,
+  formatDayTick,
   namedVersionCount,
   residualShare,
   sliceRange,
@@ -126,5 +127,16 @@ describe("dayToEpoch", () => {
   test("an unparseable day is NaN rather than a silent zero", () => {
     // Zero would place the point at the epoch, dragging the whole domain to 1970.
     expect(Number.isNaN(dayToEpoch("not-a-date"))).toBe(true);
+  });
+});
+
+describe("formatDayTick", () => {
+  test("labels in UTC, not the runner's timezone", () => {
+    // A local-midnight parse would render this as Aug 17 anywhere west of UTC.
+    expect(formatDayTick(dayToEpoch("2026-08-18"))).toBe("Aug 18");
+  });
+
+  test("an unparseable tick renders empty rather than 'Invalid Date'", () => {
+    expect(formatDayTick(Number.NaN)).toBe("");
   });
 });

@@ -25,7 +25,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { availableRanges, dayToEpoch, sliceRange, type RangeKey } from "@/lib/analytics-derive";
+import {
+  availableRanges,
+  dayToEpoch,
+  formatDayTick,
+  sliceRange,
+  type RangeKey,
+} from "@/lib/analytics-derive";
 import type { SeriesPoint } from "@/lib/analytics-series";
 import * as React from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
@@ -59,12 +65,6 @@ const chartConfig = {
     color: "var(--kunai-chart-active)",
   },
 } satisfies ChartConfig;
-
-function formatTick(value: number): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
 
 export function ChartInstalls({
   points,
@@ -199,7 +199,7 @@ export function ChartInstalls({
               axisLine={false}
               tickMargin={8}
               minTickGap={24}
-              tickFormatter={formatTick}
+              tickFormatter={formatDayTick}
             />
             {/*
               dashboard-01 omits the y-axis because its values are in the
@@ -223,7 +223,7 @@ export function ChartInstalls({
               cursor={{ strokeDasharray: "3 3" }}
               content={
                 <ChartTooltipContent
-                  labelFormatter={(value) => formatTick(Number(value))}
+                  labelFormatter={(value) => formatDayTick(Number(value))}
                   indicator="dot"
                 />
               }

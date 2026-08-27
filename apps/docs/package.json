@@ -16,7 +16,8 @@
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
     "test": "bun test test --timeout=20000",
-    "clean": "rm -rf .next dist .source"
+    "clean": "rm -rf .next dist .source",
+    "smoke:charts": "bun run scripts/smoke-charts.ts"
   },
   "dependencies": {
     "@base-ui/react": "catalog:web",
