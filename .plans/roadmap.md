@@ -41,6 +41,7 @@ archive and put only the residue here.
 | Fullscreen root shell       | Flatten remaining nested chrome                       | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)               |
 | Sakura theme rollout        | Remaining surfaces after the token foundation         | [sakura-rollout.md](./sakura-rollout.md)                                               |
 | Terminal image protocol     | Flicker hardening and `ink-shell` split               | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
+| Kanna voice and presence    | Remaining voice moments, terminal reactions, pose map | [kanna-mascot-personality.md](./kanna-mascot-personality.md)                           |
 
 ### Playback and providers
 

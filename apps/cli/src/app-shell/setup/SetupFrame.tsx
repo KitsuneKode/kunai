@@ -159,7 +159,7 @@ export function SetupFrame({
             fresh placement upload on a step transition, which is the one moment
             the pane is already re-laying out. */}
         <Box marginBottom={1}>
-          <CompanionPet pose="wait" rows={4} cols={6} />
+          <CompanionPet pose="wait" rows={4} />
         </Box>
         {children}
       </Box>

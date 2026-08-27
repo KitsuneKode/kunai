@@ -7,8 +7,8 @@ import { MiniPosterTile } from "./primitives/MiniPosterTile";
 
 type CompanionPetProps = {
   readonly pose?: CompanionPose;
+  /** Height in terminal rows. Width is derived so the slot is square on screen. */
   readonly rows?: number;
-  readonly cols?: number;
 };
 
 /**
@@ -17,7 +17,7 @@ type CompanionPetProps = {
  * companion is switched off. Never half-block — this art turns to noise at two
  * pixels per cell.
  */
-export function CompanionPet({ pose = "idle", rows = 5, cols = 7 }: CompanionPetProps) {
+export function CompanionPet({ pose = "idle", rows = 4 }: CompanionPetProps) {
   const mode = companionMode();
   if (mode === "off") return null;
   if (mode === "glyph") return <Text>{companionFallbackGlyph()}</Text>;
@@ -28,7 +28,7 @@ export function CompanionPet({ pose = "idle", rows = 5, cols = 7 }: CompanionPet
       title="Kunai"
       enabled
       rows={rows}
-      cols={cols}
+      cols={rows}
       allowKitty
       allowSixel
       debounceMs={0}
