@@ -106,7 +106,32 @@ const CLI_PETS_BY_NAME = {
 const NAV_MASTER = "kunai-ip-C2-watcher-lr.png";
 const NAV_CROP = 85;
 
+/**
+ * Why this shells out instead of using `Bun.Image`.
+ *
+ * `Bun.Image` covers resize, rotate, flip, and encoding to png/webp/avif — but
+ * it exposes no flood fill, no morphology, no trim, no crop, and no raw pixel
+ * access. Those are precisely the four steps the alpha cut is made of, so there
+ * is nothing here to build on: doing it in Bun would mean decoding the PNG,
+ * writing flood fill and erosion by hand, and re-encoding — new image-processing
+ * code to own and test.
+ *
+ * That trade would be worth it for something on a hot path or in CI. This is
+ * neither. It is a manual design step that runs when new art lands, a few times
+ * a year, and it writes committed artifacts. The dependency that actually
+ * mattered was the one in `apps/docs/test/kunai-fox.test.ts`, which ran on every
+ * CI job; that one reads the file header directly and needs no tooling.
+ */
 async function magick(args: readonly string[]): Promise<void> {
+  if (!Bun.which("magick")) {
+    throw new Error(
+      "ImageMagick 7 is required for this export and `magick` is not on PATH.\n" +
+        "  macOS: brew install imagemagick\n" +
+        "  Arch:  pacman -S imagemagick\n" +
+        "  Debian/Ubuntu: apt install imagemagick  (then check `magick -version`;\n" +
+        "    older images ship v6 as `convert` and have no `magick` entrypoint)",
+    );
+  }
   const proc = Bun.spawn(["magick", ...args], { stdout: "pipe", stderr: "pipe" });
   const code = await proc.exited;
   if (code !== 0) {
