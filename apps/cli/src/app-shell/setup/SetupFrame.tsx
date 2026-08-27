@@ -16,8 +16,8 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { CompanionPet } from "../companion-pet";
 import { isCompanionGraphicsEnabled } from "../companion-policy";
+import { CompanionPet } from "../CompanionPet";
 import { palette } from "../shell-theme";
 
 export type FooterKey = { readonly key: string; readonly label: string };

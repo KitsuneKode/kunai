@@ -1,5 +1,7 @@
 .kunai-fox {
   display: block;
+  object-fit: contain;
+  object-position: center bottom;
   overflow: visible;
 }
 

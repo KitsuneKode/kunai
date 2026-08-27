@@ -9,10 +9,14 @@ function readSource(relativePath: string): string {
 }
 
 describe("kunai fox identity", () => {
-  test("exposes idle watch go and wait", () => {
-    expect(readSource("components/brand/kunai-fox.tsx")).toContain(
-      'export const KUNAI_FOX_POSES = ["idle", "watch", "go", "wait"]',
-    );
+  test("exposes idle watch go and wait as illustrated stills", () => {
+    const src = readSource("components/brand/kunai-fox.tsx");
+    expect(src).toContain('export const KUNAI_FOX_POSES = ["idle", "watch", "go", "wait"]');
+    expect(src).toContain("/brand/fox/idle.png");
+    expect(src).toContain("/brand/fox/watch.png");
+    expect(src).toContain("/brand/fox/go.png");
+    expect(src).toContain("/brand/fox/wait.png");
+    expect(src).not.toContain("<svg");
   });
 
   test("home hero, flow, banner, and 404 all mount the fox", () => {
@@ -52,5 +56,14 @@ describe("kunai fox identity", () => {
   test("favicon still uses the blade mark", () => {
     expect(readSource("app/icon.tsx")).toContain("KunaiMark");
     expect(readSource("app/icon.tsx")).not.toContain("KunaiFox");
+  });
+
+  test("public stills for every pose exist on disk", () => {
+    const stills = ["idle", "watch", "go", "go-left", "wait", "wait-right"];
+    for (const name of stills) {
+      const file = path.join(DOCS_APP_ROOT, "public/brand/fox", `${name}.png`);
+      expect(fs.existsSync(file)).toBe(true);
+      expect(fs.statSync(file).size).toBeGreaterThan(10_000);
+    }
   });
 });

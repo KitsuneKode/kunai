@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
 
-import { CompanionPet } from "./companion-pet";
 import { isCompanionGraphicsEnabled } from "./companion-policy";
+import { CompanionPet } from "./CompanionPet";
 import { palette } from "./shell-theme";
 
 type ExitStep = "dim" | "footer-gone" | "fox" | "closing" | "done";

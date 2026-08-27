@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { CompanionPet } from "./companion-pet";
 import { isCompanionGraphicsEnabled } from "./companion-policy";
+import { CompanionPet } from "./CompanionPet";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
