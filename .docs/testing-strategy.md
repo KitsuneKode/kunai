@@ -336,7 +336,7 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
 - `--dry-run` must not create `KUNAI_BIN_DIR` / data / config directories
 - Incomplete release assets fail with empty-asset / missing-checksum messages and npm|bun|source|pinned-version recovery copy
 
-**Full cross-compile (all 8 targets)** — not on every PR (too slow). Use:
+**Full cross-compile (all 10 targets)** — not on every PR (too slow). Use:
 
 - **Release** workflow `binaries` job after a real npm publish (authoritative)
 - **`.github/workflows/build-binaries.yml`** — weekly cron + `workflow_dispatch` + pushes that touch build scripts
@@ -385,6 +385,21 @@ mpv playback is tracked in [release-reliability-gate.md](./release-reliability-g
 Do not loop live smokes while iterating on a provider. Use fixture payloads, mocked fetch ports,
 and provider contract tests for repeated runs, then perform one focused live smoke when the
 deterministic seam is already green.
+
+Android handoff has its own physical-device smoke and is likewise opt-in:
+
+```sh
+KUNAI_ANDROID_HANDOFF_PLAYER=vlc \
+KUNAI_ANDROID_HANDOFF_URL="<direct-test-media-url>" \
+bun run test:live:android-handoff
+```
+
+Run it only inside Android/Termux. The harness creates an isolated temporary
+HOME/XDG profile, refuses desktop hosts and roots inside the real profile, and
+prints binary/runtime, TTY, SQLite-path, player, and launcher evidence. A green
+launcher smoke proves only that Android accepted the intent; provider playback,
+media start, completion, app suspension, return-to-terminal, cold start,
+responsiveness, and memory remain separate device observations.
 
 ## Non-Flaky Test Rules
 
@@ -486,6 +501,8 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 - Source refresh tests must prove that voluntary refresh cooldown does not block broken-stream recovery, and that a failed fresh lookup can keep the current cached stream instead of stalling playback.
 - Storage maintenance tests must seed durable user tables and disposable cache tables together, then prove automatic maintenance only prunes cache-class rows.
 - Fake mpv IPC lifecycle tests cover app-side orchestration only; keep one manual real-mpv smoke for release candidates that touch playback.
+- Android intent tests cover command construction only; keep VLC and mpv-android
+  physical-device gates separate and never infer playback from accepted handoff.
 - Live provider and Discord smokes are opt-in and must not be added to `bun run test`, CI, or Husky.
 
 ## Manual Smoke Matrix

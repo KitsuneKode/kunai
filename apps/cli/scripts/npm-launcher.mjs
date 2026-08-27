@@ -44,8 +44,14 @@ export function resolveTargetId({
   platform = process.platform,
   arch = process.arch,
   libc = detectLibc(platform),
+  env = process.env,
 } = {}) {
-  if (platform === "android") {
+  const isAndroid =
+    platform === "android" ||
+    Boolean(env.TERMUX_VERSION) ||
+    Boolean(env.ANDROID_ROOT) ||
+    env.PREFIX?.includes("com.termux") === true;
+  if (isAndroid) {
     if (arch === "x64") return "android-x64";
     if (arch === "arm64") return "android-arm64";
     return null;

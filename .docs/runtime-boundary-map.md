@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-29"
+lastReviewed: "2026-08-27"
 ---
 
 # Kunai Runtime Boundary Map
@@ -54,7 +54,7 @@ The same test also gates workspace dependencies per package, so a new
 | `apps/cli/src/services`        | App services such as playback resolve, source inventory, diagnostics, presence, search/catalog orchestration      | Ink rendering, raw mpv sockets              |
 | `apps/cli/src/app`             | Session phases, playback/search policy, user-intent semantics, history decisions, queue claim/ack/rollback policy | Provider internals, terminal drawing        |
 | `apps/cli/src/domain/queue`    | Queue playback intents, restore-with-resume, planner placement, `QueueService` adapters over storage              | Ink rendering, mpv launch, provider resolve |
-| `apps/cli/src/infra`           | mpv, IPC, process, filesystem, terminal/runtime mechanics; emits `playback-started` (ack boundary)                | User-facing playback policy                 |
+| `apps/cli/src/infra`           | mpv/IPC and Android intent mechanics; only observed players emit `playback-started`                               | User-facing playback or queue policy        |
 | `apps/cli/src/app-shell`       | Ink components, overlays, footer, command palette, picker rendering; exact-ID queue play bridge                   | Stream resolution, provider fallback policy |
 | `.archive/legacy/apps/cli/src` | Quarantined old runtime/provider/browser reference code                                                           | Active beta runtime imports                 |
 | `.reference/experiments`       | Provider research and scratchpads                                                                                 | Production runtime behavior                 |
@@ -127,6 +127,12 @@ Playback actions should be named intents before they touch mpv:
 Do not let raw `--start` values leak through picker components or provider
 adapters. The app layer owns the meaning, and the infra/player layer owns the
 mechanism.
+
+Player variation stays behind `PlayerService`: domain owns immutable capability
+facts and stream qualification, app owns observed-versus-detached policy, infra
+owns mpv or Android launch mechanics, and app-shell renders the resulting state.
+An intent-launch exit code is launch acceptance only; infra must not synthesize
+progress, completion, EOF, provider health, or queue acknowledgement.
 
 ## Command Ownership
 

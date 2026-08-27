@@ -163,7 +163,22 @@ describe("platform release assets", () => {
       arch: "arm64",
       libc: "bionic",
     });
+    expect(detectPlatform("linux", "aarch64", "gnu", { TERMUX_VERSION: "0.119.0" })).toEqual({
+      os: "android",
+      arch: "arm64",
+      libc: "bionic",
+    });
     expect(releaseAssetName("android", "arm64", "bionic")).toBe("kunai-android-arm64");
+  });
+
+  test("resolves the Android updater asset from Termux runtime markers", () => {
+    expect(
+      resolveHostReleaseBinaryTarget({
+        platform: "linux",
+        arch: "arm64",
+        env: { PREFIX: "/data/data/com.termux/files/usr" },
+      }).id,
+    ).toBe("android-arm64");
   });
 
   test("resolves the host release binary target for the current runtime", () => {

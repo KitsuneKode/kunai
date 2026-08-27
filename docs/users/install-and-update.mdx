@@ -1,6 +1,6 @@
 ---
 title: Install And Update
-description: Install Kunai on Linux, macOS, or Windows via the native binary or npm, then keep it current — with upgrade, rollback, and uninstall behaviour explained.
+description: Install Kunai on Android, Linux, macOS, or Windows via the native binary or npm, then keep it current — with upgrade, rollback, and uninstall behaviour explained.
 ---
 
 Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime — you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
@@ -9,7 +9,7 @@ Kunai supports **zero-prerequisite compiled binaries** (default), global package
 
 ## Install paths
 
-<Tabs items={["Linux / macOS", "Windows", "Bun global", "npm global", "Source"]}>
+<Tabs items={["Linux / macOS", "Android (Termux)", "Windows", "Bun global", "npm global", "Source"]}>
 <Tab value="Linux / macOS">
 
 Default — downloads a verified release binary into a versioned store and links `~/.local/bin/kunai`:
@@ -54,6 +54,30 @@ profile. It reports the actual PATH winner but does not rewrite shell startup
 files automatically.
 
 Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`.
+
+</Tab>
+<Tab value="Android (Termux)">
+
+Android support is an experimental terminal preview for ARM64 and x64 Termux.
+It is not a native Android app.
+
+```sh
+pkg update
+pkg install curl termux-am
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
+kunai --player vlc
+```
+
+The installer detects Termux before generic Linux and selects
+`android-arm64-bionic` or `android-x64-bionic`. It installs under Termux-owned
+storage, not shared `/sdcard`. Install VLC or mpv-android separately as an
+Android app. Use `--player auto` for the chooser, `--player vlc`, or
+`--player mpv`.
+
+The preview supports only direct HTTP(S) streams without custom headers,
+cookies, player-side yt-dlp, local files, or external subtitles. These
+restrictions are checked per resolved stream and produce an explanation rather
+than a broken launch. iOS is not supported.
 
 </Tab>
 <Tab value="Windows">
@@ -227,8 +251,10 @@ You can snooze automatic checks for seven days or disable them from the update p
 | `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                   |
 | `windows-x64`                                 | **Beta**                                                                   |
 | `windows-arm64`                               | **Experimental**                                                           |
+| `android-arm64`, `android-x64` (Bionic)       | **Experimental preview; physical-device qualification pending**            |
 | WSL                                           | Linux binary + Linux mpv/PATH/data — not Windows-native                    |
 | FreeBSD / other BSD                           | **Unsupported** binary — npm/bun/source only                               |
+| iOS / iPadOS                                  | **Unsupported** — terminal runtime and VLC handoff remain unproven         |
 | Code signing / notarization                   | Not in beta scope — see [Unsigned binaries](#unsigned-binaries-beta) above |
 
 ### Alpine / musl quick start

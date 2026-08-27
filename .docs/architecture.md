@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-08-27"
 ---
 
 # Kunai — Runtime Architecture
@@ -29,11 +29,11 @@ Kunai is a terminal CLI that:
 1. Searches titles
 2. Lets the user pick a title, season, episode, and provider
 3. Resolves a playable stream URL
-4. Launches `mpv`
+4. Routes playback through managed desktop `mpv` or a detached Android player handoff
 5. Returns to the same shell for post-playback actions, settings, and provider changes
 
 ```text
-user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules -> mpv -> shell
+user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules -> PlayerService -> shell
 ```
 
 ## Entrypoint
@@ -59,7 +59,7 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 | Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                                              |
 | Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                                       |
 | Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                          |
-| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking                                                       |
+| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | Managed `mpv` launch/IPC or detached Android intent handoff                                                 |
 | Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                   |
 | Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                         |
 | Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                        |
@@ -100,6 +100,7 @@ For new providers or major provider hardening, do not jump straight from this do
 | Archive Playwright reference code | Browser interception remains useful for research evidence, not production defaults      |
 | Future runtime-browser package    | Any renewed Playwright path should be isolated behind a runtime boundary/lease model    |
 | Detached `mpv`                    | Keeps the terminal usable and matches ani-cli style behavior                            |
+| Detached Android handoff          | Reuses the same shell/provider flow without pretending an external app is observable    |
 | Lua position reporter             | `mpv` does not reliably expose final playback position on exit                          |
 | Search-service registry           | Keeps room for multiple search backends without hardwiring everything into one provider |
 | `isAnimeProvider` flag            | Anime routing should be explicit and cheap to evaluate                                  |
@@ -142,6 +143,8 @@ storage (`packages/storage` queue repository) and applied by domain/app adapters
   for non-playback exits).
 - Only confirmed `playback-started` acknowledges a claimed row. Process spawn and
   IPC connection are insufficient.
+- Android intent acceptance is also insufficient. Detached handoff restores the
+  exact claimed row to pending because Kunai cannot observe media start.
 - Every handoff carries the exact queue entry ID and absolute anime episode
   identity when present; auto-next and post-play must not substitute a reordered
   head.
@@ -179,6 +182,26 @@ Production resolution is browserless by default:
 - keeps socket cleanup and final playback stats bounded after process exit
 
 This is part of the repo's reliability contract. Changes are fine, but recovery under kill signals, EOF, or expired stream URLs needs to remain solid.
+
+### Android detached-player flow
+
+On Android/Termux, `--player auto|mpv|vlc` composes
+`HandoffPlayerService` instead of `PlayerServiceImpl`. `auto` opens the Android
+chooser; explicit choices target mpv-android or VLC. The adapter accepts only a
+final absolute HTTP(S) URL with no custom headers/cookies, yt-dlp requirement,
+local file, deferred locator, or external subtitle. It constructs an argv array
+for `am`/Termux launchers and never interpolates a shell command.
+
+An accepted `ACTION_VIEW` request is represented as detached handoff evidence,
+not playback evidence. The session emits no start/progress/completion event,
+writes no inferred history, pauses autoplay/near-EOF behavior, restores queue
+claims, and labels post-play as “opened externally.” Desktop auto/mpv behavior
+continues through the observed mpv runner; desktop `--player vlc` fails with an
+explicit unsupported-player remediation.
+
+Android is an experimental preview until the physical-device matrix in
+[release-reliability-gate.md](./release-reliability-gate.md) passes. iOS remains
+unimplemented pending a separately approved runtime proof.
 
 Observability matters here too: failures around stream resolution, cache reuse, or provider retries should leave enough logging context to explain what path the app took.
 

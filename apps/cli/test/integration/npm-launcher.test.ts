@@ -209,6 +209,12 @@ nodeTest("resolves Android ARM64 and x64 without Linux libc fallback", () => {
     const rows = [
       resolveTargetId({ platform: "android", arch: "arm64", libc: "gnu" }),
       resolveTargetId({ platform: "android", arch: "x64", libc: "musl" }),
+      resolveTargetId({
+        platform: "linux",
+        arch: "arm64",
+        libc: "gnu",
+        env: { TERMUX_VERSION: "0.119.0" },
+      }),
       resolveTargetId({ platform: "linux", arch: "arm64", libc: "musl" }),
     ];
     process.stdout.write(JSON.stringify(rows));
@@ -223,6 +229,7 @@ nodeTest("resolves Android ARM64 and x64 without Linux libc fallback", () => {
   expect(JSON.parse(result.stdout.toString())).toEqual([
     "android-arm64",
     "android-x64",
+    "android-arm64",
     "linux-arm64-musl",
   ]);
 });

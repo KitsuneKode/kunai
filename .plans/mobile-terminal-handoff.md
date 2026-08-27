@@ -156,9 +156,6 @@ customHeaders     true | false
 externalSubtitles true | false
 localFiles        true | false
 progressEvents    true | false
-completion        true | false
-autoSkip          true | false
-trackControl      true | false
 ```
 
 Managed mpv advertises its current capabilities. Android handoff advertises
@@ -205,8 +202,8 @@ user to choose an embedded subtitle/source or a managed desktop player.
 
 The Android adapter:
 
-1. Resolves an available launcher from `termux-am`, `am`, then
-   `termux-open-url` where its reduced behavior is sufficient.
+1. Resolves an available launcher from `termux-am`, `am`, then modern
+   `termux-open` or legacy `termux-open-url` for chooser-only handoff.
 2. Validates the URL before spawning.
 3. Builds a fixed argument array for `android.intent.action.VIEW` and
    `video/*`.
@@ -367,6 +364,16 @@ Each device gate uses an isolated HOME/XDG root and covers:
 
 The deterministic suite, Android runtime, live provider, external player, real
 terminal, installer, and release-approval gates are reported separately.
+
+### Implementation status (2026-08-27)
+
+The release-target, installer/npm, player-selection, stream-qualification,
+intent-launcher, detached-result, queue, post-play, and deterministic contract
+work is implemented on `feat/mobile-terminal-handoff`. Android cross-build and
+repository gates still need final evidence. Physical Android runtime, VLC,
+mpv-android, real providers, terminal lifecycle, SQLite WAL/reopen, install
+reliability, cold start, responsiveness, memory, and release approval remain
+unverified and block promotion beyond experimental preview.
 
 ## Documentation ownership
 

@@ -59,6 +59,73 @@ function readerFilesFor(symbol: string, definedIn: readonly string[]): string[] 
 }
 
 describe("contract conformance", () => {
+  test("the public player flag reaches runtime composition", () => {
+    const main = readRepoFile("apps/cli/src/main.ts");
+    const container = readRepoFile("apps/cli/src/container/bootstrap-services.ts");
+
+    expect(main).toContain("playerChoice: args.player");
+    expect(container).toContain('options?.playerChoice ?? "auto"');
+    expect(container).toContain("resolvePlayerMode");
+  });
+
+  test("every player capability has a production behavior reader", () => {
+    const declaration = readRepoFile("apps/cli/src/domain/playback/player-capabilities.ts");
+    const interfaceBody = declaration.match(
+      /export interface PlayerCapabilities \{(?<body>[\s\S]*?)\n\}/u,
+    )?.groups?.body;
+    expect(interfaceBody).toBeDefined();
+
+    const fields = [...(interfaceBody ?? "").matchAll(/readonly\s+(\w+):/gu)].map(
+      (match) => match[1],
+    );
+    const sources = PRODUCTION_SOURCES.filter(
+      ({ file }) => file !== "apps/cli/src/domain/playback/player-capabilities.ts",
+    );
+    const unread = fields.filter(
+      (field) =>
+        !sources.some(({ text }) =>
+          new RegExp(`\\bcapabilities\\s*\\.\\s*${field}\\b`, "u").test(text),
+        ),
+    );
+
+    expect(unread, "capability declared without a behavior reader").toEqual([]);
+  });
+
+  test("Android release targets reach every distribution consumer", () => {
+    const platformAssets = readRepoFile("apps/cli/src/services/update/platform-assets.ts");
+    const binaryBuilder = readRepoFile("apps/cli/scripts/build-binaries.ts");
+    const nativeUpdater = readRepoFile(
+      "apps/cli/src/services/update/native-installer/install-latest.ts",
+    );
+    const npmLauncher = readRepoFile("apps/cli/scripts/npm-launcher.mjs");
+    const installer = readRepoFile("install.sh");
+
+    for (const target of ["android-arm64", "android-x64"]) {
+      expect(platformAssets).toContain(`id: "${target}"`);
+      expect(npmLauncher).toContain(`return "${target}"`);
+    }
+    expect(platformAssets).toContain('libc: "bionic"');
+    expect(binaryBuilder).toContain("RELEASE_BINARY_TARGETS");
+    expect(nativeUpdater).toContain("resolveReleaseBinaryTarget");
+    expect(installer).toContain('target="android-${arch}-bionic"');
+  });
+
+  test("the Android live smoke is opt-in and forwarded from the root", () => {
+    const rootPackage = JSON.parse(readRepoFile("package.json")) as {
+      scripts: Record<string, string>;
+    };
+    const cliPackage = JSON.parse(readRepoFile("apps/cli/package.json")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(rootPackage.scripts["test:live:android-handoff"]).toBe(
+      "bun run --cwd apps/cli test:live:android-handoff",
+    );
+    expect(cliPackage.scripts["test:live:android-handoff"]).toBe(
+      "bun test/live/android-terminal-handoff.ts",
+    );
+  });
+
   test("background download queue kicks use the supervised entry point", () => {
     const discardedQueuePasses = PRODUCTION_SOURCES.flatMap(({ file, text }) =>
       file === "apps/cli/src/services/download/DownloadService.ts"

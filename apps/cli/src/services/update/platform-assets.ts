@@ -156,8 +156,14 @@ export function detectPlatform(
   platform: string = process.platform,
   arch: string = process.arch,
   libc: PlatformLibc = "gnu",
+  env: Readonly<Record<string, string | undefined>> = process.env,
 ): DetectedPlatform {
-  const os = normalizePlatformOs(platform);
+  const androidRuntime =
+    platform === "android" ||
+    Boolean(env["TERMUX_VERSION"]) ||
+    Boolean(env["ANDROID_ROOT"]) ||
+    env["PREFIX"]?.includes("com.termux") === true;
+  const os = androidRuntime ? "android" : normalizePlatformOs(platform);
   return {
     os,
     arch: normalizePlatformArch(arch),
@@ -205,6 +211,7 @@ export type HostReleaseBinaryTargetInput = {
   readonly platform?: string;
   readonly arch?: string;
   readonly libc?: PlatformLibc;
+  readonly env?: Readonly<Record<string, string | undefined>>;
 };
 
 /**
@@ -218,6 +225,7 @@ export function resolveHostReleaseBinaryTarget(
     input.platform ?? process.platform,
     input.arch ?? process.arch,
     input.libc ?? "gnu",
+    input.env ?? process.env,
   );
   if (!detected.os || !detected.arch) {
     const platform = input.platform ?? process.platform;

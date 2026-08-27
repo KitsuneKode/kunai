@@ -4,9 +4,6 @@ export interface PlayerCapabilities {
   readonly externalSubtitles: boolean;
   readonly localFiles: boolean;
   readonly progressEvents: boolean;
-  readonly completion: boolean;
-  readonly autoSkip: boolean;
-  readonly trackControl: boolean;
 }
 
 export const MANAGED_MPV_CAPABILITIES: PlayerCapabilities = Object.freeze({
@@ -15,9 +12,6 @@ export const MANAGED_MPV_CAPABILITIES: PlayerCapabilities = Object.freeze({
   externalSubtitles: true,
   localFiles: true,
   progressEvents: true,
-  completion: true,
-  autoSkip: true,
-  trackControl: true,
 });
 
 export const DETACHED_HANDOFF_CAPABILITIES: PlayerCapabilities = Object.freeze({
@@ -26,7 +20,4 @@ export const DETACHED_HANDOFF_CAPABILITIES: PlayerCapabilities = Object.freeze({
   externalSubtitles: false,
   localFiles: false,
   progressEvents: false,
-  completion: false,
-  autoSkip: false,
-  trackControl: false,
 });

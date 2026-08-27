@@ -8,6 +8,24 @@ Kunai keeps playback centered on one shell session. After `mpv` exits, you retur
 
 This guide covers the full playback lifecycle — from first resolve through recovery when providers or networks misbehave.
 
+## Android external-player preview
+
+Inside Termux, `--player auto|vlc|mpv` hands a qualified direct stream to the
+Android chooser, VLC, or mpv-android. Kunai returns to a dedicated “opened
+externally” state as soon as Android accepts the intent. That does **not** prove
+the media started or finished.
+
+Detached playback therefore has deliberately smaller behavior:
+
+- no automatic progress, completion, watched-state, or provider-health inference;
+- no autoplay, auto-skip, near-EOF prefetch, or in-terminal player controls;
+- a claimed queue item returns to pending instead of being marked played;
+- offline/local files, external subtitles, yt-dlp-dependent playback, and
+  streams requiring headers or cookies are rejected before launch.
+
+Use desktop managed mpv when you need full history/resume, subtitle attachment,
+track controls, recovery, or autoplay parity. iOS is not implemented.
+
 ## Playback flow
 
 <Steps>
@@ -28,9 +46,11 @@ Search lands on results unless you add `--jump 1` or `-q` for auto-select.
 When inventory has choices, Kunai shows source, quality, audio, and subtitle pickers. See [Media selection](/docs/users/media-selection).
 </Step>
 <Step>
-### Watch in mpv
+### Watch in the selected player
 
-Kunai launches mpv with required headers and subtitle attachments, then supervises through IPC.
+Desktop Kunai launches mpv with required headers and subtitle attachments, then
+supervises through IPC. Android uses the limited detached handoff described
+above.
 </Step>
 <Step>
 ### Return to the shell
