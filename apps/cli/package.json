@@ -125,6 +125,8 @@
     "typescript": "catalog:"
   },
   "optionalDependencies": {
+    "@kitsunekode/kunai-android-arm64": "0.3.0",
+    "@kitsunekode/kunai-android-x64": "0.3.0",
     "@kitsunekode/kunai-darwin-arm64": "0.3.0",
     "@kitsunekode/kunai-darwin-x64": "0.3.0",
     "@kitsunekode/kunai-linux-arm64": "0.3.0",

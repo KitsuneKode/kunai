@@ -1043,6 +1043,8 @@ jobs:
           VERSION="${{ needs.confirmation.outputs.version }}"
           PKGS=(
             "@kitsunekode/kunai"
+            "@kitsunekode/kunai-android-arm64"
+            "@kitsunekode/kunai-android-x64"
             "@kitsunekode/kunai-linux-x64"
             "@kitsunekode/kunai-linux-arm64"
             "@kitsunekode/kunai-linux-x64-musl"

@@ -25,13 +25,15 @@ function validManifest(version = "1.2.3") {
 }
 
 describe("npm platform version synchronization", () => {
-  test("derives exactly the eight published platform package names from canonical targets", async () => {
+  test("derives exactly the ten published platform package names from canonical targets", async () => {
     const { PLATFORM_PACKAGE_NAMES } = await syncModule();
 
     expect(PLATFORM_PACKAGE_NAMES).toEqual(
       RELEASE_BINARY_TARGETS.map((target) => `@kitsunekode/kunai-${target.id}`),
     );
-    expect(PLATFORM_PACKAGE_NAMES).toHaveLength(8);
+    expect(PLATFORM_PACKAGE_NAMES).toHaveLength(10);
+    expect(PLATFORM_PACKAGE_NAMES).toContain("@kitsunekode/kunai-android-arm64");
+    expect(PLATFORM_PACKAGE_NAMES).toContain("@kitsunekode/kunai-android-x64");
   });
 
   test("rejects missing or extra platform pins instead of changing the package set", async () => {
