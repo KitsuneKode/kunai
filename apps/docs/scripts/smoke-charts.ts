@@ -87,25 +87,42 @@ async function connect(): Promise<{
   });
 
   let id = 0;
-  const pending = new Map<number, (value: Record<string, unknown>) => void>();
+
+  /*
+   * Frames land in a plain data inbox and each `send` waits for its own id.
+   *
+   * The obvious shape — a Map of resolver callbacks, looked up by the id on the
+   * incoming frame and invoked — dispatches a function chosen by a value read
+   * off a socket. CodeQL flags that as an unvalidated dynamic method call, and
+   * it is right to: checking that the looked-up value is callable says nothing
+   * about which target it is. Here the listener only ever WRITES data, so there
+   * is no call to hijack, and the resolution path is ordinary control flow.
+   */
+  const inbox = new Map<number, Record<string, unknown>>();
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data)) as { id?: unknown };
-    // Only ever dispatch to a resolver this process created, keyed by an id it
-    // issued. The frame comes off a socket, so its `id` is untrusted input:
-    // resolve it to a value first and confirm it is callable before calling.
     const frameId = message.id;
     if (typeof frameId !== "number" || !Number.isSafeInteger(frameId)) return;
-    const resolve = pending.get(frameId);
-    if (typeof resolve !== "function") return;
-    pending.delete(frameId);
-    resolve(message as Record<string, unknown>);
+    inbox.set(frameId, message as Record<string, unknown>);
   });
-  const send = (method: string, params: Record<string, unknown> = {}) =>
-    new Promise<Record<string, unknown>>((resolve) => {
-      const next = (id += 1);
-      pending.set(next, resolve);
-      socket.send(JSON.stringify({ id: next, method, params }));
-    });
+
+  const send = async (
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>> => {
+    const frameId = (id += 1);
+    socket.send(JSON.stringify({ id: frameId, method, params }));
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      const frame = inbox.get(frameId);
+      if (frame) {
+        inbox.delete(frameId);
+        return frame;
+      }
+      await Bun.sleep(10);
+    }
+    throw new Error(`CDP ${method} did not answer within 30s`);
+  };
 
   await send("Page.enable");
   await send("Runtime.enable");
