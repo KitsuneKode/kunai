@@ -15,7 +15,3 @@ const PET_FILES = {
 export function companionPetPath(pose: CompanionPose): string {
   return PET_FILES[pose];
 }
-
-export function companionPetUrl(pose: CompanionPose): string {
-  return companionPetPath(pose);
-}

@@ -9,6 +9,13 @@ Illustrated kitsune stills for docs, banners, OG, and the CLI companion. These a
 | `watch` | Watcher C1  | 404, docs hub, mischief    |
 | `idle`  | Watcher C2  | home, OG, nav, default pet |
 
-Site stills: `apps/docs/public/brand/fox/`. Banners: `kunai-fox-banner.tsx`. Raster masters: `.reference/design/brand/ip-as-logo-batch/`. Export with `bun apps/docs/scripts/export-fox-assets.ts` then rebake `generated-mascot.json`.
+Site stills: `apps/docs/public/brand/fox/`. Banners: `kunai-fox-banner.tsx`. Raster masters: `.reference/design/brand/ip-as-logo-batch/`. Export with `bun .reference/design/brand/export-fox-assets.ts` then rebake `generated-mascot.json`.
 
-The blade mark (`kunai-mark.tsx`) stays on favicons and badges. CLI chrome stays `🦊 Kunai`. Set `KUNAI_PET=0` to keep the companion on the unicode glyph.
+The blade mark (`kunai-mark.tsx`) stays on favicons and badges, and the nav loads the dedicated 96px
+`nav.png` rather than a pose still — the pose masters are corner-cropped and collapse into a smudge
+at 28px. CLI chrome stays `🦊 Kunai`. `KUNAI_PET=off` retires the companion; `KUNAI_PET=glyph` pins
+it to the unicode glyph.
+
+Stills are cut to alpha and quantized by the export script. They must never be shipped as the opaque
+masters: those carry a solid `#1c1620` plate that shows as a lighter box on the hero and a dark box
+over a light terminal background.

@@ -1,4 +1,4 @@
-import { KunaiFox } from "@/components/brand/kunai-fox";
+import { KunaiFoxLive } from "@/components/brand/kunai-fox-live";
 import { HeroProofRow } from "@/components/home/hero-proof-row";
 import { HomeStarCta } from "@/components/home/home-star-cta";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -18,7 +18,7 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
   return (
     <section className="kunai-hero-static kunai-reveal flex flex-col justify-center">
       <div className="kunai-hero-fox">
-        <KunaiFox pose="idle" size={120} animated />
+        <KunaiFoxLive pose="idle" alertPose="watch" size={120} />
       </div>
       <p className="kunai-eyebrow">{homeHero.eyebrow}</p>
       <h1 className="kunai-display-title mt-3 max-w-3xl text-balance">{homeHero.title}</h1>

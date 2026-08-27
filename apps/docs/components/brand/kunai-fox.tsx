@@ -12,8 +12,27 @@ type KunaiFoxProps = {
   readonly title?: string;
   readonly className?: string;
   readonly style?: CSSProperties;
+  /** Use the 96px nav still instead of the 320px pose still. */
+  readonly compact?: boolean;
 };
 
+/**
+ * The still each pose was drawn at, and which way that drawing faces.
+ *
+ * Only `go` and `wait` have a real mirrored pair in the master batch. Rather
+ * than accept a `facing` the art cannot honour — the shape this had before,
+ * where `watch` and `idle` silently returned the same file for both
+ * directions — the odd direction is produced by flipping the still. Every
+ * `facing` value therefore changes what renders.
+ */
+const STILLS = {
+  wait: { left: "/brand/fox/wait.png", right: "/brand/fox/wait-right.png" },
+  go: { left: "/brand/fox/go-left.png", right: "/brand/fox/go.png" },
+  watch: { left: "/brand/fox/watch.png", right: null },
+  idle: { left: null, right: "/brand/fox/idle.png" },
+} satisfies Record<KunaiFoxPose, { left: string | null; right: string | null }>;
+
+/** Where each pose looks when the caller does not ask for a direction. */
 const DEFAULT_FACING = {
   idle: "right",
   watch: "left",
@@ -21,28 +40,33 @@ const DEFAULT_FACING = {
   wait: "left",
 } satisfies Record<KunaiFoxPose, KunaiFoxFacing>;
 
-/** Public stills exported from the illustrated A/B/C masters. Never a traced SVG. */
-const STILLS = {
-  wait: {
-    left: "/brand/fox/wait.png",
-    right: "/brand/fox/wait-right.png",
-  },
-  go: {
-    left: "/brand/fox/go-left.png",
-    right: "/brand/fox/go.png",
-  },
-  watch: {
-    left: "/brand/fox/watch.png",
-    right: "/brand/fox/watch.png",
-  },
-  idle: {
-    left: "/brand/fox/idle.png",
-    right: "/brand/fox/idle.png",
-  },
-} satisfies Record<KunaiFoxPose, Record<KunaiFoxFacing, string>>;
+/**
+ * The 96px still the nav and other sub-40px slots load.
+ *
+ * A2 rather than the pose still on purpose: the pose masters are composed to
+ * emerge from a corner, so several are cropped through an ear and collapse into
+ * an unreadable smudge at 28px. A2 sits square in frame with both ears intact.
+ */
+const NAV_STILL = "/brand/fox/nav.png";
+
+type ResolvedStill = { readonly src: string; readonly mirrored: boolean };
+
+/** Pick the drawn still for a direction, flipping the opposite one when needed. */
+export function resolveFoxStill(pose: KunaiFoxPose, facing: KunaiFoxFacing): ResolvedStill {
+  const pair = STILLS[pose];
+  const drawn = pair[facing];
+  if (drawn) return { src: drawn, mirrored: false };
+  const opposite = facing === "left" ? pair.right : pair.left;
+  // Every pose has at least one drawn direction, so this is always populated.
+  return { src: opposite as string, mirrored: true };
+}
 
 /**
- * The illustrated kitsune stills — Operator, Courier, Watcher — not a geometric stand-in.
+ * The illustrated kitsune stills — Operator, Courier, Watcher — not a traced SVG.
+ *
+ * Decorative by default: with no `title` the image is `aria-hidden` and carries
+ * an empty alt, because on most surfaces she sits beside copy that already says
+ * what the section is.
  */
 export function KunaiFox({
   pose = "idle",
@@ -52,17 +76,23 @@ export function KunaiFox({
   title,
   className,
   style,
+  compact = false,
 }: KunaiFoxProps) {
   const side = facing ?? DEFAULT_FACING[pose];
-  const src = STILLS[pose][side];
+  const { src, mirrored } = resolveFoxStill(pose, side);
   const label = title ?? "Kunai fox";
-  const classes = ["kunai-fox", animated ? "kunai-fox--animated" : "", className]
+  const classes = [
+    "kunai-fox",
+    animated ? "kunai-fox--animated" : "",
+    mirrored ? "kunai-fox--mirrored" : "",
+    className,
+  ]
     .filter(Boolean)
     .join(" ");
 
   return (
     <img
-      src={src}
+      src={compact ? NAV_STILL : src}
       width={size}
       height={size}
       alt={title ? label : ""}
@@ -70,6 +100,8 @@ export function KunaiFox({
       className={classes || undefined}
       style={style}
       draggable={false}
+      loading={compact ? "eager" : "lazy"}
+      decoding="async"
     />
   );
 }

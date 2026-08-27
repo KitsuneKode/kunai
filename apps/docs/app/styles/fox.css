@@ -5,10 +5,97 @@
   overflow: visible;
 }
 
-.kunai-fox--animated {
-  transform-origin: 50% 90%;
-  animation: kunai-fox-bob 4.2s var(--kunai-ease-out, ease-in-out) infinite;
+/*
+ * Only `go` and `wait` were drawn as mirrored pairs. The other poses produce
+ * their opposite direction here rather than silently ignoring `facing` —
+ * see `resolveFoxStill` in `kunai-fox.tsx`.
+ */
+.kunai-fox--mirrored {
+  transform: scaleX(-1);
 }
+
+/*
+ * A settle, not a bob. The previous shorthand ran an *ease-out* curve on a
+ * two-keyframe infinite loop, which decelerates into each end and then snaps
+ * back — mechanical rather than breathing. A symmetric sine-ish curve is what
+ * makes a loop read as alive, and the scale gives it weight the pure translate
+ * never had.
+ */
+.kunai-fox--animated {
+  transform-origin: 50% 92%;
+  animation: kunai-fox-breathe 5.2s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+
+.kunai-fox--mirrored.kunai-fox--animated {
+  /* scaleX and the keyframes both drive `transform`, so the flip has to live
+     inside the animation for a mirrored pose that also breathes. */
+  animation-name: kunai-fox-breathe-mirrored;
+}
+
+@keyframes kunai-fox-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-3px) scale(1.015);
+  }
+}
+
+@keyframes kunai-fox-breathe-mirrored {
+  0%,
+  100% {
+    transform: translateY(0) scale(1) scaleX(-1);
+  }
+  50% {
+    transform: translateY(-3px) scale(1.015) scaleX(-1);
+  }
+}
+
+/* ── Live fox ───────────────────────────────────────────────────────────────
+   Three transform layers, because `transform` is a single property and this
+   needs three independent animations of it: the host leans toward the pointer,
+   the stage hops on a copy, and each still breathes on its own clock. */
+
+.kunai-fox-live {
+  position: relative;
+  display: block;
+  transform: translate(var(--fox-dx, 0), var(--fox-dy, 0));
+  transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.kunai-fox-live__stage {
+  position: absolute;
+  inset: 0;
+}
+
+.kunai-fox-live__stage > .kunai-fox {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.kunai-fox-live__alert {
+  opacity: 0;
+  transition: opacity 240ms ease-out;
+}
+
+.kunai-fox-live__rest {
+  opacity: 1;
+  transition: opacity 240ms ease-out;
+}
+
+.kunai-fox-live.is-noticed .kunai-fox-live__alert {
+  opacity: 1;
+}
+
+.kunai-fox-live.is-noticed .kunai-fox-live__rest {
+  opacity: 0;
+}
+
+/* ── Banner ─────────────────────────────────────────────────────────────── */
 
 .kunai-fox-banner {
   display: flex;
@@ -66,18 +153,43 @@
   flex: none;
 }
 
-@keyframes kunai-fox-bob {
-  0%,
-  100% {
-    transform: translateY(0);
+/* ── Copy reward ────────────────────────────────────────────────────────────
+   One 620ms hop when the install command is copied. This is the only motion on
+   the page tied to something the reader did on purpose, so it is allowed to be
+   the largest. */
+
+.kunai-fox--rewarded {
+  animation: kunai-fox-hop 620ms cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+}
+
+@keyframes kunai-fox-hop {
+  0% {
+    transform: translateY(0) scale(1);
   }
-  50% {
-    transform: translateY(-5px);
+  35% {
+    transform: translateY(-9px) scale(1.06, 0.96);
+  }
+  70% {
+    transform: translateY(0) scale(0.97, 1.03);
+  }
+  100% {
+    transform: translateY(0) scale(1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kunai-fox--animated {
+  .kunai-fox--animated,
+  .kunai-fox--rewarded {
     animation: none;
+  }
+
+  .kunai-fox-live {
+    transform: none;
+    transition: none;
+  }
+
+  .kunai-fox-live__alert,
+  .kunai-fox-live__rest {
+    transition: none;
   }
 }

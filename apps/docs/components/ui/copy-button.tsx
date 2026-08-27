@@ -35,6 +35,9 @@ export function CopyButton({
       return;
     }
     setLocalCopied(true);
+    // Announced rather than wired: the fox reacts to a successful copy, and
+    // this button should not have to know that a fox exists.
+    window.dispatchEvent(new CustomEvent("kunai:copied", { detail: { label } }));
     window.setTimeout(() => setLocalCopied(false), 1800);
   }, [externalOnCopy, label, text]);
 

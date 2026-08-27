@@ -28,17 +28,16 @@
 
 The illustrated kitsune is the warm face. Raster masters live in `ip-as-logo-batch/` (A Operator, B Courier, C Watcher). The live character is the hand-simplified SVG in `apps/docs/components/brand/kunai-fox.tsx`:
 
-| pose  | batch | use                                      |
-| ----- | ----- | ---------------------------------------- |
-| wait  | A     | empty, waiting, sidebar                  |
-| go    | B     | search, loading, install banners         |
-| watch | C1    | 404, mischief, docs hub                  |
-| idle  | C2    | home, OG, nav, companion default         |
+| pose  | batch | use                              |
+| ----- | ----- | -------------------------------- |
+| wait  | A     | empty, waiting, sidebar          |
+| go    | B     | search, loading, install banners |
+| watch | C1    | 404, mischief, docs hub          |
+| idle  | C2    | home, OG, nav, companion default |
 
-Docs animate with CSS (`apps/docs/app/styles/fox.css`); `prefers-reduced-motion: reduce` freezes on the pose. Favicons, badges, and header chrome keep the **mark**. CLI headers keep `🦊 Kunai`. On Kitty/Ghostty/iTerm/WezTerm the same rasters render as a companion pane (`KUNAI_PET=0` disables; half-block is skipped because this art turns to noise at two pixels per cell).
+Docs animate with CSS (`apps/docs/app/styles/fox.css`); `prefers-reduced-motion: reduce` freezes on the pose. Favicons, badges, and header chrome keep the **mark**. CLI headers keep `🦊 Kunai`. On Kitty/Ghostty/iTerm/WezTerm the same rasters render as a companion pane (`KUNAI_PET=off` retires her, `KUNAI_PET=glyph` pins 🦊; half-block is skipped because this art turns to noise at two pixels per cell).
 
 The pixel-grid generator (`generate-mascot.mjs`) is no longer the source of truth.
-
 
 ## 4. Color — "Ember Dusk" (proposed token redesign)
 

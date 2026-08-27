@@ -2,7 +2,7 @@
 
 Raster masters for the illustrated kitsune. Overlay from the Kunai brief: fox/kitsune subject, Ember Dusk palette, no props, blunt triangular ears as the one species-defining feature.
 
-Live character: `apps/docs/components/brand/kunai-fox.tsx`. Export: `bun apps/docs/scripts/export-fox-assets.ts`.
+Live character: `apps/docs/components/brand/kunai-fox.tsx`. Export: `bun .reference/design/brand/export-fox-assets.ts`.
 
 ## Model
 
@@ -14,11 +14,11 @@ Live character: `apps/docs/components/brand/kunai-fox.tsx`. Export: `bun apps/do
 
 ## Palette (locked)
 
-| role | hex | use |
-| --- | --- | --- |
-| IP 1 · fur | `#ff8fb0` | body |
+| role         | hex       | use                       |
+| ------------ | --------- | ------------------------- |
+| IP 1 · fur   | `#ff8fb0` | body                      |
 | IP 2 · cream | `#ffc6d8` | muzzle, inner ears, chest |
-| background | `#1c1620` | tile; reused for eyes |
+| background   | `#1c1620` | tile; reused for eyes     |
 
 ## Directions
 
@@ -28,14 +28,14 @@ Live character: `apps/docs/components/brand/kunai-fox.tsx`. Export: `bun apps/do
 
 ## Candidates
 
-| label | direction | corner | file | size |
-| --- | --- | --- | --- | --- |
-| A1 | Operator | lower-left | `kunai-ip-A1-operator-ll.png` | 1024² |
-| A2 | Operator | lower-right | `kunai-ip-A2-operator-lr.png` | 1024² |
-| B1 | Courier | lower-left | `kunai-ip-B1-courier-ll.png` | 1024² |
-| B2 | Courier | lower-right | `kunai-ip-B2-courier-lr.png` | 1024² |
-| C1 | Night Watcher | lower-left | `kunai-ip-C1-watcher-ll.png` | 1024² |
-| C2 | Night Watcher | lower-right | `kunai-ip-C2-watcher-lr.png` | 1024² |
+| label | direction     | corner      | file                          | size  |
+| ----- | ------------- | ----------- | ----------------------------- | ----- |
+| A1    | Operator      | lower-left  | `kunai-ip-A1-operator-ll.png` | 1024² |
+| A2    | Operator      | lower-right | `kunai-ip-A2-operator-lr.png` | 1024² |
+| B1    | Courier       | lower-left  | `kunai-ip-B1-courier-ll.png`  | 1024² |
+| B2    | Courier       | lower-right | `kunai-ip-B2-courier-lr.png`  | 1024² |
+| C1    | Night Watcher | lower-left  | `kunai-ip-C1-watcher-ll.png`  | 1024² |
+| C2    | Night Watcher | lower-right | `kunai-ip-C2-watcher-lr.png`  | 1024² |
 
 One pass. No retries, no ranking, no post-processing of the six masters. `preview-board.png` is a labeled contact sheet plus a 16px nearest-neighbor row for judging, not a generated asset.
 
@@ -63,4 +63,27 @@ Personality clauses:
 
 ## What this batch is for
 
-Pick a winner (or ask for another draw of one direction). Landing it still means replacing `.reference/design/brand/kunai-mascot-og.png` (keep under ~40 KB, 8-colour indexed PNG) and rebaking `apps/docs/lib/generated-mascot.json`. The mark stays. Nothing in this batch is wired into the product yet.
+**Status: wired in.** All six masters ship — `wait` and `go` as drawn mirrored
+pairs, `watch` and `idle` as the two Watcher frames. Export with
+`bun .reference/design/brand/export-fox-assets.ts`, then rebake
+`apps/docs/lib/generated-mascot.json` via `apps/docs/scripts/sync-repo-content.ts`.
+
+The export is not a resize. It cuts the plate to alpha with a flood fill —
+never `-transparent`, because the brief reuses the background colour for the
+eyes — and quantizes to 32 colours. Shipped straight, these masters carry a
+solid `#1c1620` square and 2,600–4,100 colours, which is a visible box on every
+surface and ~100 KB per still.
+
+### The known gap
+
+A, B and C are three _directions_, drawn to be compared and one of them picked.
+Shipping all three means the mascot is three foxes rather than one character in
+four poses: three eye treatments, three ear silhouettes, and a cream chest blaze
+that appears in A, vanishes in B and dominates in C.
+
+That was a deliberate call — the art reads well and the mechanical problems were
+worth fixing first — but it is the open item. Closing it means one consistent
+pose sheet drawn from a single locked character, and
+[kanna-art-brief.md](../kanna-art-brief.md) is the brief for that. When it
+lands, `STILLS` in `apps/docs/components/brand/kunai-fox.tsx` and
+`CLI_PETS_BY_NAME` in the export script are the two maps that change.

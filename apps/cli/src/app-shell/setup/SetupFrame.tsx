@@ -155,8 +155,11 @@ export function SetupFrame({
           sits a little above centre: dead-centre in a tall terminal leaves the
           top half looking abandoned, and the eye starts high. */}
       <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={2}>
+        {/* One pose for the whole wizard. Flipping it on the last step meant a
+            fresh placement upload on a step transition, which is the one moment
+            the pane is already re-laying out. */}
         <Box marginBottom={1}>
-          <CompanionPet pose={step >= totalSteps - 1 ? "idle" : "wait"} rows={4} cols={6} />
+          <CompanionPet pose="wait" rows={4} cols={6} />
         </Box>
         {children}
       </Box>
