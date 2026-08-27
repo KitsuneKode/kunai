@@ -85,6 +85,25 @@ describe("section cards", () => {
     expect(html).toContain("3 days");
   });
 
+  test("a retention-adjusted FALL in lifetime reads as a fall, not as steady", () => {
+    // The ingest retention-adjusts lifetimeInstalls, so it is not monotonic:
+    // a window can end lower than it started. The badge already renders "-30";
+    // the headline must not say "Steady across the window" beside it.
+    const html = renderToStaticMarkup(
+      <SectionCards metrics={{ ...sample, lifetimeInstalls: 450 }} series={series} />,
+    );
+    expect(html).toContain("-30");
+    expect(html).toContain("retired installs were pruned");
+    expect(html).not.toContain("Steady across the window");
+  });
+
+  test("an unchanged lifetime reads as steady", () => {
+    const html = renderToStaticMarkup(
+      <SectionCards metrics={{ ...sample, lifetimeInstalls: 480 }} series={series} />,
+    );
+    expect(html).toContain("Steady across the window");
+  });
+
   test("renders without a series, dropping only the deltas", () => {
     const html = renderToStaticMarkup(<SectionCards metrics={sample} series={null} />);
     expect(html).toContain("512");

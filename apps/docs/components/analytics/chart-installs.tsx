@@ -39,11 +39,17 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 /**
  * Installs over time — the page's one interactive chart.
  *
- * Two series, NOT stacked. `active` is a strict subset of `lifetime` (an
- * install that pinged yesterday has by definition been seen before), so the
- * areas nest: lifetime is the outer envelope, active the region inside it.
- * Stacking would draw `lifetime + active` and overstate the population by the
- * active count on every single day.
+ * Two series, NOT stacked. `active` counts installs that pinged on a day and
+ * `lifetime` counts installs ever seen, so the areas nest: lifetime is the
+ * outer envelope, active the region inside it. Stacking would draw
+ * `lifetime + active` and overstate the population by the active count on
+ * every single day.
+ *
+ * Nesting is the normal shape, not a guarantee. `lifetime` is
+ * retention-adjusted and can FALL when the ingest prunes retired installs, so
+ * a window that straddles a prune can show active poking above it. That is
+ * correct data — the axis is shared and both areas are drawn, so the crossing
+ * is visible rather than clipped.
  *
  * Lifetime is here at all because it is the only series with shape. Active
  * oscillates 0–2 at this population; a chart of it alone is a flat zigzag that

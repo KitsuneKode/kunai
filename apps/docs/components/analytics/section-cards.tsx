@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import {
   delta,
+  type Delta,
   namedVersionCount,
   residualShare,
   type TrendDirection,
@@ -84,6 +85,18 @@ function StatCard({
   );
 }
 
+/**
+ * Copy for the lifetime tile, which must cover a FALL.
+ *
+ * A retention-adjusted drop renders a `-3` badge with a downward arrow; pairing
+ * that with "Steady across the window" would have the tile contradict itself.
+ */
+function lifetimeHeadline(lifetime: Delta | null): string {
+  if (!lifetime || lifetime.value === 0) return "Steady across the window";
+  if (lifetime.value > 0) return `Grew by ${lifetime.value} this window`;
+  return `Fell by ${Math.abs(lifetime.value)} as retired installs were pruned`;
+}
+
 export function SectionCards({
   metrics,
   series,
@@ -97,8 +110,13 @@ export function SectionCards({
   const first = points[0];
   const previous = points.at(-2);
 
-  // Lifetime only ever climbs, so its delta is growth across the whole window;
-  // active is a daily flow, so its delta is against yesterday's yesterday.
+  // Lifetime is a running total, so its delta spans the whole window; active is
+  // a daily flow, so its delta is against the previous day.
+  //
+  // Lifetime is NOT monotonic: the ingest retention-adjusts it when
+  // `lifetime_retired` absorbs pruned installs, so it can fall. A drop is
+  // correct data, not a bug, and the copy below has to be able to say so —
+  // see .docs/analytics-privacy-contract.md.
   const lifetimeDelta = first ? delta(metrics.lifetimeInstalls, first.lifetimeInstalls) : null;
   const activeDelta = previous ? delta(metrics.activeInstalls, previous.activeInstalls) : null;
 
@@ -115,11 +133,7 @@ export function SectionCards({
             ? { text: lifetimeDelta.label, direction: lifetimeDelta.direction }
             : undefined
         }
-        headline={
-          lifetimeDelta && lifetimeDelta.value > 0
-            ? `Grew by ${lifetimeDelta.value} this window`
-            : "Steady across the window"
-        }
+        headline={lifetimeHeadline(lifetimeDelta)}
         detail="Exact — one hashed row per install"
       />
       <StatCard
