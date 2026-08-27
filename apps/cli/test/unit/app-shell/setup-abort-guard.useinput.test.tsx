@@ -190,7 +190,8 @@ test("language profile hotkeys edit one media lane without rewriting the others"
     expect(handle.lastFrame()).toContain("Anime Japanese/None");
 
     handle.stdin.enqueue("\x1b[B"); // Shows audio: Original -> English
-    handle.stdin.enqueue("3"); // edit Anime
+    handle.stdin.enqueue("\t"); // Shows -> Movies
+    handle.stdin.enqueue("\t"); // Movies -> Anime
     handle.stdin.enqueue("\x1b[C"); // focus subtitles
     handle.stdin.enqueue("\x1b[B"); // None -> Arabic
 

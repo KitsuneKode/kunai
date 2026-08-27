@@ -101,13 +101,24 @@ export type SetupLanguageProfiles = Readonly<Record<SetupLanguageLane, SetupLang
 export const SETUP_LANGUAGE_LANES: readonly {
   readonly value: SetupLanguageLane;
   readonly label: string;
-  readonly key: string;
 }[] = [
-  { value: "series", label: "Shows", key: "1" },
-  { value: "movie", label: "Movies", key: "2" },
-  { value: "anime", label: "Anime", key: "3" },
-  { value: "youtube", label: "YouTube", key: "4" },
+  { value: "series", label: "Shows" },
+  { value: "movie", label: "Movies" },
+  { value: "anime", label: "Anime" },
+  { value: "youtube", label: "YouTube" },
 ];
+
+/** Move between media-type language profiles with a wrapping, reversible cycle. */
+export function cycleSetupLanguageLane(
+  current: SetupLanguageLane,
+  delta: number,
+): SetupLanguageLane {
+  const index = SETUP_LANGUAGE_LANES.findIndex((lane) => lane.value === current);
+  const safeIndex = index >= 0 ? index : 0;
+  const next = (safeIndex + delta) % SETUP_LANGUAGE_LANES.length;
+  const wrapped = next < 0 ? next + SETUP_LANGUAGE_LANES.length : next;
+  return SETUP_LANGUAGE_LANES[wrapped]?.value ?? "series";
+}
 
 export interface SetupPrefs {
   mode: "series" | "anime" | "youtube";
@@ -161,9 +172,9 @@ export interface SetupInitialState {
 export const FACTORY_INITIAL_STATE: SetupInitialState = {
   mode: "series",
   languageProfiles: recommendedLanguageProfiles(),
-  autoNext: true,
-  skipIntro: true,
-  skipCredits: true,
+  autoNext: false,
+  skipIntro: false,
+  skipCredits: false,
   downloadsEnabled: false,
   downloadQuality: "1080p",
   anilistSync: false,
@@ -480,6 +491,16 @@ export function SetupShell({
     else if (screen === "analytics") setAnalyticsIdx((i) => clamp(i + delta, 1));
   }
 
+  function applyLanguageProfileToAll() {
+    const selected = languageProfiles[languageLane];
+    setLanguageProfiles({
+      series: { ...selected },
+      movie: { ...selected },
+      anime: { ...selected },
+      youtube: { ...selected },
+    });
+  }
+
   function toggle() {
     if (screen === "playback") {
       if (playbackIdx === 0) setAutoNext((v) => !v);
@@ -570,13 +591,8 @@ export function SetupShell({
     }
 
     if (screen === "language") {
-      const selectedLane = SETUP_LANGUAGE_LANES.find((lane) => lane.key === input);
-      if (selectedLane) {
-        setLanguageLane(selectedLane.value);
-        return;
-      }
       if (key.tab) {
-        setLangFocus((f) => (f === "audio" ? "subtitle" : "audio"));
+        setLanguageLane((current) => cycleSetupLanguageLane(current, key.shift ? -1 : 1));
         return;
       }
       if (key.leftArrow) {
@@ -585,6 +601,10 @@ export function SetupShell({
       }
       if (key.rightArrow) {
         setLangFocus("subtitle");
+        return;
+      }
+      if (input === "a" || input === "A") {
+        applyLanguageProfileToAll();
         return;
       }
     }
@@ -705,8 +725,9 @@ function buildFooter(
       // footer keeps only the decisions.
       return [
         { key: "enter", label: "next" },
-        { key: "1-4", label: "profile" },
-        { key: "tab", label: "audio / subs" },
+        { key: "tab/shift-tab", label: "profile" },
+        { key: "←→", label: "audio / subs" },
+        { key: "a", label: "apply to all" },
         { key: "s", label: "recommended" },
         { key: "S", label: "remaining defaults" },
         ...back,

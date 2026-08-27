@@ -74,6 +74,24 @@ describe("PostPlayShell Next-Up hero", () => {
     expect(frame).not.toContain("▶ UP NEXT");
   });
 
+  it("renders elapsed and total runtime in the stopped-early menu", () => {
+    const frame = captureFrame(
+      <PostPlayShell
+        title="My Show"
+        episodeLabel="S01 E03"
+        postPlayState={{ kind: "mid-series" }}
+        resumeLabel="resume S01E03 · 0:23"
+        resumePositionSeconds={23}
+        episodeDurationSeconds={2891}
+        totalEpisodes={10}
+        watchedEpisodes={3}
+      />,
+      { columns: 130 },
+    );
+    expect(frame).toContain("0:23 / 48:11 · 1%");
+    expect(frame).not.toContain("3 / 10 · 30%");
+  });
+
   it("does not offer an episode list for a movie", () => {
     // No episode/season signals => resolvedContentKind infers "movie", so the
     // "e episodes" accelerator would point at nothing.

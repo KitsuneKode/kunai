@@ -339,4 +339,15 @@ describe("buildMediaPanel — video", () => {
     expect(model.kindBadge).toBe("channel");
     expect(model.miniCards[0]?.meta).toBe("channel");
   });
+
+  test("badges Shorts distinctly from regular videos", () => {
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Quick clip",
+        videoMeta: { contentShape: "short" },
+      }),
+    );
+    expect(model.kindBadge).toBe("short");
+  });
 });

@@ -26,6 +26,7 @@ export function buildSearchFilterChipOptions(context: {
     ...(isYoutube
       ? [
           { value: "type:video", label: "YouTube · Videos", detail: "Only videos" },
+          { value: "type:short", label: "YouTube · Shorts", detail: "Only Shorts" },
           { value: "type:playlist", label: "YouTube · Playlists", detail: "Only playlists" },
           { value: "type:channel", label: "YouTube · Channels", detail: "Only channels" },
         ]

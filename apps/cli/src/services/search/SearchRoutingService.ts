@@ -365,7 +365,7 @@ function getUpstreamFilterKeys(
 }
 
 function getLocalFilterKeys(intent: SearchIntent, sourceId: string): readonly string[] {
-  // YouTube content shapes (video/playlist/channel) only mean something on a
+  // YouTube content shapes (video/short/playlist/channel) only mean something on a
   // YouTube catalog. On a TMDB/AniList catalog they cannot be applied, so they
   // must never be claimed as local (that would empty the list dishonestly).
   const catalogType =
@@ -453,7 +453,7 @@ function applyLocalSearchFilters(
 }
 
 function isContentShapeType(type: SearchIntent["filters"]["type"]): boolean {
-  return type === "video" || type === "playlist" || type === "channel";
+  return type === "video" || type === "short" || type === "playlist" || type === "channel";
 }
 
 function matchesYear(year: string, filter: SearchIntentFilters["year"]): boolean {

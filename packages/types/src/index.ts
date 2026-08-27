@@ -4,7 +4,8 @@ export type ProviderLane = "anime" | "series" | "youtube";
 
 export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
 
-export type YouTubeContentShape = "video" | "playlist" | "channel";
+/** The user-visible YouTube result kind; collections are not playable videos. */
+export type YouTubeContentShape = "video" | "short" | "playlist" | "channel";
 
 export type * from "./provider-cycle";
 export * from "./share";

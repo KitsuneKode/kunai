@@ -15,4 +15,4 @@
 ────────────────────────────────────────────────────────────────────────
   [enter]  confirm  ·  [↑↓]  choose  ·  [b]  back  ·  [s]        Setup
 
-   recommended
+   recommended  ·  [S]  remaining defaults

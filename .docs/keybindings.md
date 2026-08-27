@@ -62,6 +62,16 @@ visibly different.
 
 Use `/provider` from browse or playback command surfaces to change provider. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed.
 
+## Setup Wizard
+
+The language screen keeps a separate audio/subtitle profile for Shows, Movies,
+Anime, and YouTube. `Tab` and `Shift+Tab` cycle profiles, `←` / `→` choose the
+audio or subtitle column, and `↑` / `↓` choose a value. Press `a` to copy the
+active profile to all four lanes. On the playback screen, `Space` toggles the
+selected setting; factory defaults are off and `s` applies the recommended
+all-on playback defaults. The final screen summarizes every profile and toggle
+before the wizard writes configuration.
+
 ## Active Playback
 
 These keys are available while `mpv` is active and the shell is supervising it.

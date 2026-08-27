@@ -242,7 +242,6 @@ export function LanguageScreen({
   readonly lanes: readonly {
     readonly value: "series" | "movie" | "anime" | "youtube";
     readonly label: string;
-    readonly key: string;
   }[];
   readonly activeLane: "series" | "movie" | "anime" | "youtube";
   readonly profiles: Readonly<
@@ -270,13 +269,13 @@ export function LanguageScreen({
           )?.label;
           return (
             <Box key={lane.value} backgroundColor={active ? palette.accentFill : undefined}>
-              <Text color={active ? palette.accent : palette.dim}>[{lane.key}] </Text>
+              <Text color={active ? palette.accent : palette.dim}>{active ? "▌ " : "  "}</Text>
               <Text color={active ? palette.text : palette.muted} bold={active}>
                 {lane.label}
               </Text>
-              <Text
-                color={palette.dim}
-              >{` ${audio ?? profile.audio}/${subtitle ?? profile.subtitle}`}</Text>
+              <Text color={active ? palette.textDim : palette.dim}>
+                {` ${audio ?? profile.audio}/${subtitle ?? profile.subtitle}`}
+              </Text>
             </Box>
           );
         })}
@@ -296,8 +295,9 @@ export function LanguageScreen({
         />
       </Box>
       <Box marginTop={1}>
-        <Text color={palette.dim} dimColor>
-          1–4 switches profile · tab or ←→ switches field · ↑↓ chooses
+        <Text color={palette.textDim}>
+          tab / shift-tab switches profile · ←→ picks audio or subtitles · ↑↓ chooses · a applies
+          this profile to all
         </Text>
       </Box>
     </Box>

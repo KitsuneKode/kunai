@@ -107,7 +107,14 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 **Caveats:** requires network; yt-dlp must be available for resolve. Kunai does **not** bypass DRM or circumvent YouTube access controls — it only forwards optional cookies you already have to yt-dlp/mpv.
 
-Search can return **videos, playlists, and channels**. Playlists and channels are catalog collections (`youtube-playlist:…` / channel ids) — pick a video inside them to play. Live URLs (`youtube.com/live/…`) resolve as videos; Kunai passes `--no-live-from-start` to yt-dlp so a live handoff does not start from the beginning of the stream unless you change that.
+Search can return **videos, Shorts, playlists, and channels**. Results retain
+their shape and the shell labels it before playback, so a Short is not mistaken
+for a collection. Playlists and channels are catalog collections
+(`youtube-playlist:…` / channel ids) — pick a video inside them to play. Live
+and upcoming entries carry a separate status badge; live URLs
+(`youtube.com/live/…`) resolve as videos. Kunai passes `--no-live-from-start`
+to yt-dlp so a live handoff does not start from the beginning of the stream
+unless you change that. Use `type:short` in YouTube search to narrow to Shorts.
 
 **SponsorBlock** is off unless you set `youtubeMetadata.sponsorblockRemove` in Settings › YouTube (for example `sponsor,intro`). That value is forwarded to yt-dlp / mpv. There is no shipped default category list.
 

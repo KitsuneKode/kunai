@@ -55,6 +55,10 @@ export type PostPlayShellProps = {
   /** Exact queue row id snapped with `queueNextLabel` from one `peekNext()`. */
   queueNextEntryId?: string;
   resumeLabel?: string;
+  /** Where playback stopped, in seconds — shown as elapsed/total in post-play. */
+  resumePositionSeconds?: number;
+  /** Runtime reported by the player for the episode or video. */
+  episodeDurationSeconds?: number;
   postPlayState: PostPlayState;
   recommendations?: readonly PlaybackRecommendationRailItem[];
   totalEpisodes?: number;
@@ -412,6 +416,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   queueNextLabel,
   queueNextEntryId,
   resumeLabel,
+  resumePositionSeconds,
+  episodeDurationSeconds,
   postPlayState,
   recommendations = EMPTY_RECOMMENDATIONS,
   totalEpisodes,
@@ -452,6 +458,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     queueNextLabel,
     queueNextEntryId,
     resumeLabel,
+    resumePositionSeconds,
+    episodeDurationSeconds,
     postPlayState,
     recommendations,
     totalEpisodes,
@@ -509,7 +517,11 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     autoplayPaused,
     isFavorite,
     progress:
-      filmStructure || !totalEpisodes || totalEpisodes <= 0
+      // Stopped-early already has the authoritative elapsed/total runtime bar
+      // in the body. Repeating season completion here makes a 23-second stop
+      // look like "3 / 10 · 30%" and contradicts the question the surface is
+      // answering (where did I stop?).
+      resumeLabel || filmStructure || !totalEpisodes || totalEpisodes <= 0
         ? undefined
         : { watched: watchedEpisodes ?? 0, total: totalEpisodes },
   });

@@ -36,7 +36,7 @@ export type ContentType = "movie" | "series";
 export type ShellMode = "series" | "anime" | "youtube";
 export type ProviderLane = "anime" | "series" | "youtube";
 export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
-export type YouTubeContentShape = "video" | "playlist" | "channel";
+export type YouTubeContentShape = "video" | "short" | "playlist" | "channel";
 
 /**
  * YouTube/video metadata captured from the originating {@link SearchResult} at

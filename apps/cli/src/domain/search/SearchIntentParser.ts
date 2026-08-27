@@ -37,6 +37,7 @@ const TYPE_FILTERS = new Set<SearchIntentTypeFilter>([
   "series",
   "all",
   "video",
+  "short",
   "playlist",
   "channel",
 ]);

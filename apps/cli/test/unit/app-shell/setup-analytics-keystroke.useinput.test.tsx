@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 
 import {
+  FACTORY_INITIAL_STATE,
+  SETUP_LANGUAGE_LANES,
   SetupShell,
   type SetupFlowResult,
   type SetupInitialState,
@@ -179,6 +181,57 @@ test("an answered screen keeps its answer when the user steps back over it", () 
 
     expect(results).toHaveLength(1);
     expect(results[0]?.prefs.analyticsChoice).toBe("disabled");
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("factory playback defaults stay off until recommended is chosen", () => {
+  expect(FACTORY_INITIAL_STATE.autoNext).toBe(false);
+  expect(FACTORY_INITIAL_STATE.skipIntro).toBe(false);
+  expect(FACTORY_INITIAL_STATE.skipCredits).toBe(false);
+});
+
+test("language Tab and Shift+Tab cycle profiles while arrows choose audio/subtitles", () => {
+  const { handle, results } = start();
+  try {
+    handle.stdin.enqueue(["\r", "\r"]); // deps -> mode -> language
+
+    // Forward and reverse profile traversal must be distinct from field focus.
+    handle.stdin.enqueue("\t"); // series -> movie
+    handle.stdin.enqueue("\x1b[Z"); // movie -> series
+    handle.stdin.enqueue("\x1b[Z"); // series -> youtube
+    handle.stdin.enqueue("\x1b[B"); // choose English audio for YouTube
+
+    // Finish without changing the remaining screens.
+    handle.stdin.enqueue(["\r", "\r", "\r"]); // playback, library, analytics
+    handle.stdin.enqueue("s"); // consent: explicitly keep analytics off
+    handle.stdin.enqueue("\r"); // done
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.prefs.languageProfiles.youtube.audio).toBe("en");
+    expect(results[0]?.prefs.languageProfiles.series.audio).toBe("original");
+    expect(results[0]?.prefs.languageProfiles.movie.audio).toBe("original");
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("language apply-to-all copies the active profile without touching playback", () => {
+  const { handle, results } = start();
+  try {
+    handle.stdin.enqueue(["\r", "\r"]); // deps -> mode -> language
+    handle.stdin.enqueue("\x1b[B"); // series audio: English
+    handle.stdin.enqueue("a"); // copy series profile to every lane
+    handle.stdin.enqueue(["\r", "\r", "\r"]); // playback, library, analytics
+    handle.stdin.enqueue("s");
+    handle.stdin.enqueue("\r");
+
+    expect(results).toHaveLength(1);
+    for (const lane of SETUP_LANGUAGE_LANES) {
+      expect(results[0]?.prefs.languageProfiles[lane.value].audio).toBe("en");
+    }
+    expect(results[0]?.prefs.autoNext).toBe(true); // explicit BASE_INITIAL remains hydrated
   } finally {
     handle.unmount();
   }

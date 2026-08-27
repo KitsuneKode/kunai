@@ -148,7 +148,7 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
     viewCount: item.views,
     publishedAt: uploadedMs ? new Date(uploadedMs).toISOString() : undefined,
     liveStatus: "none",
-    contentShape: "video",
+    contentShape: item.isShort || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
     externalIds: {
       youtubeId: videoId,
       ...(channelId ? { youtubeChannelId: channelId } : {}),

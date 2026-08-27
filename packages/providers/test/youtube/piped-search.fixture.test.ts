@@ -3,6 +3,17 @@ import { describe, expect, test } from "bun:test";
 import { mapPipedSearchItem } from "@kunai/providers/youtube";
 
 describe("mapPipedSearchItem", () => {
+  test("preserves the provider's Shorts shape so the UI can avoid treating it as a regular video", () => {
+    const mapped = mapPipedSearchItem({
+      url: "/shorts/dQw4w9WgXcQ",
+      title: "A short",
+      duration: 32,
+      isShort: true,
+    });
+
+    expect(mapped?.contentShape).toBe("short");
+  });
+
   test("maps Piped video rows with metadata source", () => {
     const mapped = mapPipedSearchItem({
       url: "/watch?v=dQw4w9WgXcQ",

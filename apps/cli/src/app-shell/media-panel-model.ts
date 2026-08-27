@@ -334,6 +334,7 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   const views = formatViewCount(meta?.viewCount);
   const isChannel = meta?.contentShape === "channel";
   const isPlaylist = meta?.contentShape === "playlist";
+  const isShort = meta?.contentShape === "short";
   const secondary = meta?.channelTitle || undefined;
 
   const facts: MediaPanelFact[] = [];
@@ -363,14 +364,14 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
       kind: "next",
       section: "up next",
       label: nextLabel,
-      meta: shaped ? (isChannel ? "channel" : "playlist") : "related",
+      meta: shaped ? (isChannel ? "channel" : "playlist") : isShort ? "short" : "related",
       thumbUrl: ctx.nextEpisodeThumbUrl,
     });
   }
 
   return {
     kind: "video",
-    kindBadge: isChannel ? "channel" : isPlaylist ? "playlist" : "video",
+    kindBadge: isChannel ? "channel" : isPlaylist ? "playlist" : isShort ? "short" : "video",
     posterUrl: ctx.posterUrl,
     title: ctx.title,
     secondary,

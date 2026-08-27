@@ -152,6 +152,7 @@ describe("command registry contexts", () => {
       "series-mode",
       "anime-mode",
       "youtube-mode",
+      "sync",
       "diagnostics",
       "export-diagnostics",
       "report-issue",

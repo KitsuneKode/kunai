@@ -159,6 +159,9 @@ async function searchYoutubeViaYtsearch(
           channel_id?: string;
           view_count?: number;
           thumbnail?: string;
+          webpage_url?: string;
+          original_url?: string;
+          is_short?: boolean;
           is_live?: boolean;
           live_status?: string;
         };
@@ -179,7 +182,11 @@ async function searchYoutubeViaYtsearch(
           channelId: entry.channel_id,
           viewCount: entry.view_count,
           liveStatus: mapYtDlpLiveStatus(entry.is_live, entry.live_status),
-          contentShape: "video",
+          contentShape:
+            entry.is_short === true ||
+            [entry.webpage_url, entry.original_url].some((url) => /\/shorts\//i.test(url ?? ""))
+              ? "short"
+              : "video",
           externalIds: { youtubeId: entry.id, youtubeChannelId: entry.channel_id },
           artwork: {
             thumbnailUrl: poster,
