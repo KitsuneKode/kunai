@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
+import type { PlayerCapabilities } from "@/domain/playback/player-capabilities";
 import type { PlaybackResult, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
@@ -136,6 +137,7 @@ export interface PlayerOptions {
 }
 
 export interface PlayerService {
+  readonly capabilities: PlayerCapabilities;
   play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult>;
   releasePersistentSession(): Promise<void>;
   /** Synchronous SIGKILL backstop for `process.on("exit")`. */

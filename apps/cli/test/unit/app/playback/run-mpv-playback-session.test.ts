@@ -8,6 +8,7 @@ import {
 } from "@/app/playback/playback-status-policy";
 import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import { INITIAL_PLAYBACK_GENERATION } from "@/domain/playback/playback-generation";
+import { MANAGED_MPV_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import type { EpisodeInfo, PlaybackResult, StreamInfo, TitleInfo } from "@/domain/types";
 import type {
   PlayerOptions,
@@ -119,6 +120,7 @@ async function runSession(
   };
 
   const player: PlayerService = {
+    capabilities: MANAGED_MPV_CAPABILITIES,
     play: async (_stream, playOptions: PlayerOptions) => {
       playOptions.onGenerationActivated?.(activation);
       script(
@@ -378,6 +380,7 @@ describe("runMpvPlaybackSession completion", () => {
     const calls: string[] = [];
     const seenOptions: PlayerOptions[] = [];
     const player: PlayerService = {
+      capabilities: MANAGED_MPV_CAPABILITIES,
       play: async (_stream, options) => {
         calls.push("remote");
         seenOptions.push(options);

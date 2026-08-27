@@ -209,13 +209,20 @@ export interface TitleAlias {
 }
 
 export type EndReason = "eof" | "quit" | "error" | "unknown";
-export type PlaybackStatsSource = "ipc" | "unknown";
+export type PlaybackStatsSource = "ipc" | "unknown" | "handoff";
+
+export interface PlaybackHandoffEvidence {
+  readonly accepted: true;
+  readonly player: "chooser" | "vlc" | "mpv";
+  readonly launcher: string;
+}
 
 export interface PlaybackResult {
   readonly watchedSeconds: number;
   readonly duration: number;
   readonly endReason: EndReason;
   readonly resultSource?: PlaybackStatsSource;
+  readonly handoff?: PlaybackHandoffEvidence;
   readonly playerExitedCleanly?: boolean;
   readonly playerExitCode?: number | null;
   readonly playerExitSignal?: string | null;
@@ -231,6 +238,13 @@ export interface PlaybackResult {
   readonly suspectedDeadStream?: boolean;
   /** True when a terminal manifest response rejected this stream before mpv was launched. */
   readonly streamRejectedBeforePlayerLaunch?: boolean;
+}
+
+export function isDetachedHandoffResult(result: PlaybackResult): result is PlaybackResult & {
+  readonly resultSource: "handoff";
+  readonly handoff: PlaybackHandoffEvidence;
+} {
+  return result.resultSource === "handoff" && result.handoff?.accepted === true;
 }
 
 export interface PlaybackTimingSegment {
