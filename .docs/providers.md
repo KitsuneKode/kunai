@@ -312,7 +312,7 @@ healthy instances.
 
 Third lane provider for standalone videos, Shorts, playlists, and channels.
 
-- **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail. Badges distinguish active live streams (`● LIVE`), premieres (`Upcoming`), archived streams (`Was Live`), Shorts, playlists, and channels.
+- **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail (a `type:short` query leads with yt-dlp instead, see below). Badges distinguish active live streams (`● LIVE`), premieres (`Upcoming`), archived streams (`Was Live`), Shorts, playlists, and channels.
 - Search results preserve a `contentShape` of `video`, `short`, `playlist`, or
   `channel`; `liveStatus` separately identifies `live`, `upcoming`, and
   `post_live`. The browse UI labels these shapes before playback, so channels,
@@ -321,10 +321,16 @@ Third lane provider for standalone videos, Shorts, playlists, and channels.
   Shape comes from the provider — `is_short` or a `/shorts/` URL — never from
   duration: YouTube raised the Shorts ceiling to three minutes in October 2024,
   so a length test both mislabels brief videos and misses long Shorts.
-- `type:short` is a YouTube-only local filter. It prefers yt-dlp/Piped paths that
-  expose an explicit Shorts signal and never relabels an unclassified video as a
-  Short. It is intentionally unsupported in TMDB and AniList modes, just like
-  the other YouTube content shapes.
+- `type:short` is YouTube-only and runs its own search rather than filtering one.
+  `ytsearch:` excludes Shorts outright — a probe of `ytsearch12:cooking` returned
+  twelve entries and not one carried a Shorts signal — so filtering that lane could
+  only ever empty it and then fall through to a backend that was never asked for
+  Shorts either. The Shorts lane instead asks yt-dlp for YouTube's own results page
+  with `sp=EgIYAQ%3D%3D`, the filter YouTube itself uses, and reads the `/shorts/`
+  URLs it returns. An empty answer from that lane is authoritative ("no Shorts"),
+  not a dead lane to fall through. It never relabels an unclassified video as a
+  Short, and is intentionally unsupported in TMDB and AniList modes, just like the
+  other YouTube content shapes.
 - **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default quality ceiling is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → Language → YouTube quality. Format selector uses `bv*[height<=?H]+ba/bv*[height<=?H]/bv*+ba/b` — `bv*` (not `bv`) so pre-merged renditions stay eligible, `<=?H` so live HLS variants with no reported height are not rejected, and the ceiling repeated on the fallback so a failed merge cannot silently promote the viewer above the quality they asked for.
 - **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` and `--ytdl-raw-options` (SponsorBlock, live edge via `no-live-from-start=`, PO tokens). Live broadcasts apply a short-buffer demuxer profile (`demuxer-readahead-secs=10`, `demuxer-max-bytes=32MiB`, `cache-pause-wait=1`) at spawn **and** on every persistent loadfile replacement — a replacement inherits nothing from spawn argv, so both paths read one shared constant. Live playback also suppresses the `--start` seek, the loadfile `start`, the watch-later resume prompt, and the in-process reconnect seek: a broadcast has no absolute position to return to. Kunai disables mpv-ytdlautoformat overrides via `--script-opts=ytdlautoformat-domains=` so a user-level `ytdlautoformat` script cannot force 720p. **No full video file is written for play** — mpv streams via yt-dlp; only JSON metadata is cached in SQLite.
 - **Subtitles:** Automatically attaches all human-authored tracks, the original language track (`-orig`), and user-configured language translations while filtering out machine-translation spam and `live_chat` JSON metadata.

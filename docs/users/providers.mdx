@@ -114,8 +114,10 @@ for a collection. Playlists and channels are catalog collections
 and upcoming entries carry their own status badge — `● LIVE` for an active
 broadcast, `Upcoming` for a premiere that has not started, `Was Live` for an
 archived stream — and backends that omit a shape or status signal are labelled
-conservatively. Use `type:short` in YouTube search to narrow to Shorts; the
-filter prefers yt-dlp/Piped results with an explicit Shorts signal.
+conservatively. Use `type:short` in YouTube search to narrow to Shorts — that query
+runs YouTube's own Shorts search through yt-dlp rather than filtering ordinary
+results, which never include Shorts. If it finds none, it says so instead of
+falling back to regular videos.
 
 Live URLs (`youtube.com/live/…`) resolve as videos. Kunai passes
 `--no-live-from-start` to yt-dlp so a live handoff joins at the live edge, and it
