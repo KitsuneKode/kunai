@@ -1,3 +1,4 @@
+import { youtubeQualityHeight } from "./quality-selection";
 import { spawnYtDlpWithTimeout } from "./spawn-ytdlp";
 import { buildYoutubeYtdlCliArgs } from "./ytdl-options";
 
@@ -72,14 +73,8 @@ export function defaultYtdlPlaybackFormat(): string {
 
 export function buildYtdlFormatSelector(qualityLabel?: string): string {
   if (!qualityLabel) return defaultYtdlPlaybackFormat();
-  const normalized = qualityLabel.trim().toLowerCase();
-  if (normalized === "best" || normalized === "auto" || normalized === "") {
-    return defaultYtdlPlaybackFormat();
-  }
-  const match = qualityLabel.match(/(\d{3,4})\s*p/i);
-  if (!match?.[1]) return defaultYtdlPlaybackFormat();
-  const height = Number.parseInt(match[1], 10);
-  if (!Number.isFinite(height) || height <= 0) return defaultYtdlPlaybackFormat();
+  const height = youtubeQualityHeight(qualityLabel);
+  if (!height) return defaultYtdlPlaybackFormat();
   // YouTube 1080p+ is usually DASH (separate video+audio) or HLS.
   // Using `height<=?${height}` matches DASH, live HLS, and fallback streams without rejecting formats missing height metadata.
   return `bestvideo[height<=?${height}]+bestaudio/bestvideo+bestaudio/best`;

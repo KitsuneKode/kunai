@@ -6,7 +6,7 @@ describe("youtubeQualityHeight", () => {
   test("extracts height from valid labels", () => {
     expect(youtubeQualityHeight("1080p")).toBe(1080);
     expect(youtubeQualityHeight("720p")).toBe(720);
-    expect(youtubeQualityHeight("4K")).toBeUndefined();
+    expect(youtubeQualityHeight("4K")).toBe(2160);
     expect(youtubeQualityHeight("best")).toBeUndefined();
     expect(youtubeQualityHeight(undefined)).toBeUndefined();
   });

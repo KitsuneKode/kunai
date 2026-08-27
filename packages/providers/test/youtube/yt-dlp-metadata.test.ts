@@ -21,7 +21,9 @@ describe("buildYtdlFormatSelector", () => {
     expect(buildYtdlFormatSelector("1440p")).toBe(
       "bestvideo[height<=?1440]+bestaudio/bestvideo+bestaudio/best",
     );
-    expect(buildYtdlFormatSelector("4K")).toBe("bestvideo+bestaudio/best"); // Doesn't match regex
+    expect(buildYtdlFormatSelector("4K")).toBe(
+      "bestvideo[height<=?2160]+bestaudio/bestvideo+bestaudio/best",
+    );
   });
 });
 
