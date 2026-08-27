@@ -27,6 +27,7 @@ export function createQueuePlaybackAttempt(
 ): QueuePlaybackAttempt {
   const now = options.now ?? (() => new Date().toISOString());
   let acknowledged = false;
+  let rolledBack = false;
   let stage: QueuePlaybackFailureContext["stage"] = "handoff";
 
   return {
@@ -39,18 +40,21 @@ export function createQueuePlaybackAttempt(
     },
     acknowledgeStarted(at) {
       if (acknowledged) return true;
+      if (rolledBack) return false;
       const ok = queue.acknowledgePlaybackStarted(intent, at ?? now());
       if (ok) acknowledged = true;
       return ok;
     },
     rollbackIfUnacknowledged(code, detail) {
-      if (acknowledged) return false;
-      return queue.rollbackBeforeStart(intent, {
+      if (acknowledged || rolledBack) return false;
+      const restored = queue.rollbackBeforeStart(intent, {
         code,
         stage,
         at: now(),
         ...(detail !== undefined ? { detail } : {}),
       });
+      if (restored) rolledBack = true;
+      return restored;
     },
   };
 }

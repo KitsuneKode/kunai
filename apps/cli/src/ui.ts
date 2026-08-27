@@ -110,6 +110,7 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
  */
 export async function probeCapabilities(
   options: {
+    requireMpv?: boolean;
     requireYtDlp?: boolean;
     /** PATH lookup seam; defaults to the real one. Injected by tests. */
     which?: (command: string) => string | null;
@@ -118,6 +119,7 @@ export async function probeCapabilities(
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
+  const requireMpv = options.requireMpv ?? true;
   const which = options.which ?? ((command: string) => Bun.which(command));
   const issues: CapabilityIssue[] = [];
   const mpv = Boolean(which("mpv"));
@@ -138,7 +140,7 @@ export async function probeCapabilities(
   };
   const image = detectImageCapability();
 
-  if (!mpv) {
+  if (requireMpv && !mpv) {
     issues.push({
       id: "mpv-missing",
       // Missing mpv blocks playback only — setup and non-playback shell still mount.
@@ -228,12 +230,15 @@ export async function probeCapabilities(
 
 export async function checkDeps(
   appVersion = "0.1.0",
-  options: { silent?: boolean; requireYtDlp?: boolean } = {},
+  options: { silent?: boolean; requireMpv?: boolean; requireYtDlp?: boolean } = {},
 ): Promise<CapabilitySnapshot> {
   const silent = options.silent ?? false;
-  const snapshot = await probeCapabilities({ requireYtDlp: options.requireYtDlp });
+  const snapshot = await probeCapabilities({
+    requireMpv: options.requireMpv,
+    requireYtDlp: options.requireYtDlp,
+  });
 
-  if (!snapshot.mpv && !silent) {
+  if ((options.requireMpv ?? true) && !snapshot.mpv && !silent) {
     console.error("mpv not found — required for playback (shell still available).");
   }
 

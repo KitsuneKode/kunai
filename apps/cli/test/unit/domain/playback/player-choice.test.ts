@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  detectPlayerPlatform,
   normalizePlayerPlatform,
   parsePlayerChoice,
   resolvePlayerMode,
@@ -56,5 +57,21 @@ describe("player choice", () => {
     expect(normalizePlayerPlatform("darwin")).toBe("darwin");
     expect(normalizePlayerPlatform("win32")).toBe("win32");
     expect(normalizePlayerPlatform("freebsd")).toBe("other");
+  });
+
+  test("detects Android from Termux and Android runtime markers before generic Linux", () => {
+    expect(detectPlayerPlatform({ platform: "linux", env: { TERMUX_VERSION: "0.119" } })).toBe(
+      "android",
+    );
+    expect(detectPlayerPlatform({ platform: "linux", env: { ANDROID_ROOT: "/system" } })).toBe(
+      "android",
+    );
+    expect(
+      detectPlayerPlatform({
+        platform: "linux",
+        env: { PREFIX: "/data/data/com.termux/files/usr" },
+      }),
+    ).toBe("android");
+    expect(detectPlayerPlatform({ platform: "linux", env: {} })).toBe("linux");
   });
 });

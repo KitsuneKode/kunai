@@ -112,6 +112,25 @@ describe("Android intent command resolution", () => {
     expect(explicit).toEqual({ ok: false, reason: "intent-launcher-missing" });
   });
 
+  test("uses modern termux-open chooser and MIME flags before the legacy URL helper", () => {
+    expect(
+      resolveAndroidIntentCommand({
+        target: "chooser",
+        url: URL,
+        runtime: runtime({
+          commands: {
+            "termux-open": "/usr/bin/termux-open",
+            "termux-open-url": "/usr/bin/termux-open-url",
+          },
+        }),
+      }),
+    ).toEqual({
+      ok: true,
+      launcher: "termux-open",
+      argv: ["/usr/bin/termux-open", "--view", "--chooser", "--content-type", "video/*", URL],
+    });
+  });
+
   test("returns a typed failure when no supported launcher exists", () => {
     expect(
       resolveAndroidIntentCommand({ target: "chooser", url: URL, runtime: runtime({}) }),

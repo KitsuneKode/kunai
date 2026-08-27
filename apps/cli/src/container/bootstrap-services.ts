@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
-import { normalizePlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
+import { detectPlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
+import { HandoffPlayerService } from "../infra/player/HandoffPlayerService";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
@@ -131,7 +132,7 @@ export function bootstrapServices(input: {
   const stateManager = new SessionStateManagerImpl({ logger });
   const playerMode = resolvePlayerMode({
     choice: options?.playerChoice ?? "auto",
-    platform: normalizePlayerPlatform(process.platform),
+    platform: detectPlayerPlatform(),
   });
   const shell = new ShellServiceImpl({ logger, tracer, stateManager });
   const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
@@ -139,15 +140,18 @@ export function bootstrapServices(input: {
   const playerPresentation: PlayerPresentationPort = {
     isInteractiveShellMounted,
   };
-  const player = new PlayerServiceImpl({
-    logger,
-    tracer,
-    diagnostics: diagnosticsService,
-    playerControl,
-    config,
-    mpv: options?.mpv,
-    presentation: playerPresentation,
-  });
+  const player =
+    playerMode.kind === "android-handoff"
+      ? new HandoffPlayerService({ target: playerMode.target })
+      : new PlayerServiceImpl({
+          logger,
+          tracer,
+          diagnostics: diagnosticsService,
+          playerControl,
+          config,
+          mpv: options?.mpv,
+          presentation: playerPresentation,
+        });
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
   const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases, offlineAssets);

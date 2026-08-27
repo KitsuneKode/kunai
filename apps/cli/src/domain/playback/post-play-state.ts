@@ -1,3 +1,5 @@
+import type { PlaybackHandoffEvidence } from "@/domain/types";
+
 export type PostPlayInput = {
   readonly hasNextEpisode: boolean;
   readonly isSeasonFinale: boolean;
@@ -12,9 +14,15 @@ export type PostPlayInput = {
    * existing callers keep their completion semantics.
    */
   readonly playbackStarted?: boolean;
+  readonly handoff?: PlaybackHandoffEvidence;
 };
 
 export type PostPlayState =
+  | {
+      kind: "external-handoff";
+      player: PlaybackHandoffEvidence["player"];
+      launcher: string;
+    }
   | { kind: "did-not-start" }
   | { kind: "mid-series" }
   | { kind: "caught-up"; nextAirDate?: string }
@@ -22,6 +30,13 @@ export type PostPlayState =
   | { kind: "series-complete" };
 
 export function resolvePostPlayState(input: PostPlayInput): PostPlayState {
+  if (input.handoff?.accepted) {
+    return {
+      kind: "external-handoff",
+      player: input.handoff.player,
+      launcher: input.handoff.launcher,
+    };
+  }
   if (input.playbackStarted === false) {
     return { kind: "did-not-start" };
   }

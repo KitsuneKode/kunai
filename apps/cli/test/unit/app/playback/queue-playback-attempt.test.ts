@@ -57,6 +57,8 @@ describe("createQueuePlaybackAttempt", () => {
     };
     expect(rollbackBeforeStart).toHaveBeenCalledWith(INTENT, failure);
     expect(attempt.acknowledged).toBe(false);
+    expect(attempt.rollbackIfUnacknowledged("playback-aborted")).toBe(false);
+    expect(rollbackBeforeStart).toHaveBeenCalledTimes(1);
   });
 
   test("failed acknowledge does not flip acknowledged", () => {

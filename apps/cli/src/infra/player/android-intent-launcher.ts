@@ -1,6 +1,6 @@
 import type { DetachedPlayerTarget } from "@/domain/playback/player-choice";
 
-export type AndroidIntentLauncher = "termux-am" | "am" | "termux-open-url";
+export type AndroidIntentLauncher = "termux-am" | "am" | "termux-open" | "termux-open-url";
 export type AndroidIntentFailure =
   | "intent-launcher-missing"
   | "player-not-installed"
@@ -90,6 +90,15 @@ export function resolveAndroidIntentCommand(input: {
       ok: true,
       launcher: "am",
       argv: actionViewArgv(am, input.target, input.url),
+    };
+  }
+
+  const termuxOpen = input.runtime.which("termux-open");
+  if (termuxOpen && input.target === "chooser") {
+    return {
+      ok: true,
+      launcher: "termux-open",
+      argv: [termuxOpen, "--view", "--chooser", "--content-type", "video/*", input.url],
     };
   }
 

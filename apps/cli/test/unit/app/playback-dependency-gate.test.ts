@@ -32,6 +32,35 @@ describe("buildMpvRemediation", () => {
 });
 
 describe("gatePlaybackDependencies", () => {
+  test("missing Android intent support gives mobile player guidance instead of desktop mpv", async () => {
+    const result = await gatePlaybackDependencies({
+      player: { isAvailable: async () => false },
+      playerMode: { kind: "android-handoff", target: "vlc" },
+      platform: "linux",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected blocked playback");
+    expect(result.dependency).toBe("android-intent");
+    expect(result.problem.cause).toBe("android-intent-launcher-missing");
+    expect(result.problem.userMessage).toContain("termux-am");
+    expect(result.problem.userMessage).toContain("VLC");
+    expect(result.problem.userMessage).not.toContain("apt install mpv");
+    expect(result.remediation.platform).toBe("android");
+  });
+
+  test("rejects desktop VLC explicitly instead of silently using mpv", async () => {
+    const result = await gatePlaybackDependencies({
+      player: { isAvailable: async () => true },
+      playerMode: { kind: "unsupported", choice: "vlc" },
+      platform: "linux",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected blocked playback");
+    expect(result.dependency).toBe("player-selection");
+    expect(result.problem.cause).toBe("player-selection-unsupported");
+    expect(result.problem.userMessage).toContain("--player auto");
+  });
+
   test("missing mpv blocks playback with Linux guidance", async () => {
     const result = await gatePlaybackDependencies({
       player: { isAvailable: async () => false },

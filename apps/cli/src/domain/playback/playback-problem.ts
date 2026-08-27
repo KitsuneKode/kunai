@@ -51,6 +51,34 @@ export function buildMpvMissingProblem(input: {
   };
 }
 
+export function buildAndroidIntentMissingProblem(input: {
+  readonly player: "chooser" | "vlc" | "mpv";
+  readonly remediationSummary: string;
+}): PlaybackProblem {
+  const playerName =
+    input.player === "vlc" ? "VLC" : input.player === "mpv" ? "mpv-android" : "a video player";
+  return {
+    stage: "mpv",
+    severity: "blocking",
+    cause: "android-intent-launcher-missing",
+    userMessage: `Android playback needs the termux-am package and ${playerName}. ${input.remediationSummary}`,
+    recommendedAction: "settings",
+    secondaryActions: ["diagnostics"],
+  };
+}
+
+export function buildUnsupportedPlayerProblem(): PlaybackProblem {
+  return {
+    stage: "mpv",
+    severity: "blocking",
+    cause: "player-selection-unsupported",
+    userMessage:
+      "VLC handoff is currently supported on Android only. Use --player auto or --player mpv on this platform.",
+    recommendedAction: "settings",
+    secondaryActions: ["diagnostics"],
+  };
+}
+
 /**
  * The library still advertises a title as downloaded, but nothing playable
  * resolved for it — a deleted, moved, or truncated artifact.

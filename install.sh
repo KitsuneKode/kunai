@@ -1844,8 +1844,8 @@ print_android_player_guidance() {
 	[[ "$HOST_OS" == android ]] || return 0
 	info "Android playback opens qualified direct streams in VLC or mpv-android."
 	info "Install VLC (org.videolan.vlc), mpv-android (is.xyz.mpv), or use the Android chooser."
-	if ! have termux-am && ! have am && ! have termux-open-url; then
-		warn "No Android intent launcher found. Install termux-am, or provide am/termux-open-url."
+	if ! have termux-am && ! have am && ! have termux-open && ! have termux-open-url; then
+		warn "No Android intent launcher found. Run 'pkg install termux-am' (it provides am)."
 	fi
 }
 

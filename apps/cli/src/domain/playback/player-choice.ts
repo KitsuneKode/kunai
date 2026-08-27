@@ -25,6 +25,25 @@ export function normalizePlayerPlatform(platform: string): SupportedPlayerPlatfo
   return "other";
 }
 
+export function detectPlayerPlatform(
+  input: {
+    readonly platform?: string;
+    readonly env?: Readonly<Record<string, string | undefined>>;
+  } = {},
+): SupportedPlayerPlatform {
+  const platform = input.platform ?? process.platform;
+  const env = input.env ?? process.env;
+  if (
+    platform === "android" ||
+    Boolean(env["TERMUX_VERSION"]) ||
+    Boolean(env["ANDROID_ROOT"]) ||
+    env["PREFIX"]?.includes("com.termux") === true
+  ) {
+    return "android";
+  }
+  return normalizePlayerPlatform(platform);
+}
+
 export function resolvePlayerMode(input: {
   readonly choice: PlayerChoice;
   readonly platform: SupportedPlayerPlatform;

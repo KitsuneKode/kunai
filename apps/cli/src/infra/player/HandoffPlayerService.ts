@@ -36,7 +36,7 @@ const FAILURE_COPY: Readonly<
   "local-source-unsupported": "Android handoff does not support local files yet.",
   "player-shutting-down": "The player is shutting down.",
   "intent-launcher-missing":
-    "No Android intent launcher was found. Install termux-am or Termux:API and try again.",
+    "No Android intent launcher was found. Run `pkg install termux-am` and try again.",
   "player-not-installed": "The requested Android player is not installed.",
   "launch-rejected": "Android rejected the external player launch.",
 };

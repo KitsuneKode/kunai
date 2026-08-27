@@ -3,6 +3,18 @@ import { describe, expect, test } from "bun:test";
 import { resolvePostPlayState } from "@/domain/playback/post-play-state";
 
 describe("resolvePostPlayState", () => {
+  test("external handoff remains distinct from did-not-start and completion", () => {
+    expect(
+      resolvePostPlayState({
+        hasNextEpisode: true,
+        isSeasonFinale: false,
+        isSeriesComplete: false,
+        isCaughtUpOnAiring: false,
+        handoff: { accepted: true, player: "vlc", launcher: "termux-am" },
+      }),
+    ).toEqual({ kind: "external-handoff", player: "vlc", launcher: "termux-am" });
+  });
+
   test("mid-series: more episodes in season → state is 'mid-series'", () => {
     const state = resolvePostPlayState({
       hasNextEpisode: true,
