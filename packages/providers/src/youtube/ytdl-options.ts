@@ -12,6 +12,20 @@ export type YoutubeYtdlOptionsInput = {
 
 const PLAYER_CLIENT_PATTERN = /(^|;)\s*youtube:([^;]*\b)?player_client=([^;]*)/i;
 
+function hasYoutubePoToken(args: string): boolean {
+  for (const segment of args.split(";")) {
+    const trimmed = segment.trim();
+    if (!trimmed.toLowerCase().startsWith("youtube:")) continue;
+    const body = trimmed.slice("youtube:".length);
+    for (const param of body.split(",")) {
+      if (param.trim().toLowerCase().startsWith("po_token=")) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Append a PO token to yt-dlp extractor args if not already present. */
 export function appendYoutubePoToken(
   extractorArgs: string | undefined,
@@ -22,7 +36,7 @@ export function appendYoutubePoToken(
   const tokenVal = trimmedToken.includes("+") ? trimmedToken : `web+${trimmedToken}`;
   const trimmedArgs = extractorArgs?.trim();
   if (!trimmedArgs) return `youtube:po_token=${tokenVal}`;
-  if (/youtube:[^;]*\bpo_token=/i.test(trimmedArgs)) return trimmedArgs;
+  if (hasYoutubePoToken(trimmedArgs)) return trimmedArgs;
   return `${trimmedArgs};youtube:po_token=${tokenVal}`;
 }
 
