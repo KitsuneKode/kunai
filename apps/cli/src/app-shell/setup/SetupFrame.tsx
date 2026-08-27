@@ -8,7 +8,7 @@
 // `.reference/design/cli/kunai-sakura-systems.html` specified onboarding inside
 // this frame from the start; `01-shell-footer-contract.md` gives the grammar:
 //
-//   ᐠ•ᴗ•ᐟ Kunai · <context>                                        setup · N⁄7
+//   🦊 Kunai · <context>                                        setup · N⁄7
 //   <body — the current decision>
 //   [key] label  [key] label                                         Setup
 // =============================================================================

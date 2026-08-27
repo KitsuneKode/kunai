@@ -1,7 +1,7 @@
 "use client";
 
 import { useDocsSearch } from "fumadocs-core/search/client";
-import { fetchClient } from "fumadocs-core/search/client/fetch";
+import { staticClient } from "fumadocs-core/search/client/orama-static";
 import {
   SearchDialog,
   SearchDialogClose,
@@ -30,7 +30,10 @@ export function KunaiSearchDialog({
   ...props
 }: KunaiSearchDialogProps) {
   const { search, setSearch, query } = useDocsSearch({
-    client: fetchClient({ api }),
+    // Pairs with `staticGET` in the route: download the exported index once,
+    // then match locally. `fetchClient` would round-trip per keystroke to a
+    // route that is prerendered and cannot read the query.
+    client: staticClient({ from: api }),
     delayMs,
   });
 

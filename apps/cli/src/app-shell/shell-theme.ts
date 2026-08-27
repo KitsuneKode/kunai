@@ -54,14 +54,17 @@ export const palette = {
 /**
  * The brand as it appears in chrome.
  *
- * A drawn face rather than the stock fox emoji, built only from single-column
- * codepoints — Canadian syllabics for the ears, a bullet for each eye, U+1D17
- * for the smile. Every kaomoji that reads better than this one needs a modifier
- * letter (U+02D5, U+A788), and terminals disagree on whether those advance the
- * cursor, which shifts the whole top bar. Measured at 5 columns; the header
- * fills exactly its width at 62, 96 and 140.
+ * The emoji, not a drawn kaomoji. A face built from Canadian syllabics reads
+ * better in a font that has them and measures cleanly at 5 columns — but
+ * coverage is not universal, and where the glyphs are missing the ears fall
+ * back to backticks and the whole mark turns to noise. The emoji is the only
+ * option that renders the same everywhere, which is what chrome needs.
+ *
+ * Kanna herself belongs in the surfaces that can host a real image — setup, the
+ * summary, goodbye — not in a label that has to survive every font on every
+ * platform. See `CompanionPet`.
  */
-export const APP_LABEL = "ᐠ•ᴗ•ᐟ Kunai";
+export const APP_LABEL = "🦊 Kunai";
 
 export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
   switch (tone) {
