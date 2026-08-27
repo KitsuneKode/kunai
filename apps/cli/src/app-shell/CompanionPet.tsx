@@ -33,6 +33,7 @@ export function CompanionPet({ pose = "idle", rows = 5, cols = 7 }: CompanionPet
       cols={cols}
       allowKitty
       allowSixel
+      debounceMs={0}
       placementSlot="companion"
       square
     />

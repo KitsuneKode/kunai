@@ -28,6 +28,7 @@ describe("kunai fox identity", () => {
     expect(shell).toContain("KunaiFoxBanner");
     expect(shell).toContain("FLOW_POSES");
     expect(missing).toContain('pose="watch"');
+    expect(missing).toContain('heading="h1"');
   });
 
   test("nav and docs hub keep a fox mark next to the wordmark", () => {

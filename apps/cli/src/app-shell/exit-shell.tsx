@@ -11,8 +11,9 @@ const STEP_TIMINGS = {
   dim: 0, // initial state — not scheduled, here for completeness
   "footer-gone": 40,
   fox: 80,
-  closing: 120,
-  done: 200,
+  // The pet needs a local PNG upload; 200ms total exited before Kitty painted.
+  closing: 420,
+  done: 640,
 } satisfies Record<ExitStep, number>;
 
 export function ExitShell({ onDone }: { onDone: () => void }) {
