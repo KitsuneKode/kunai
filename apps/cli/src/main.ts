@@ -797,6 +797,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     debugJson: args.debugJson,
     debugSession: args.debugSession,
     mpv: args.mpv,
+    playerChoice: args.player,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
     appVersion: KUNAI_VERSION,

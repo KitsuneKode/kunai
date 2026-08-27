@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
+import { normalizePlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
@@ -128,6 +129,10 @@ export function bootstrapServices(input: {
   } = persistence;
 
   const stateManager = new SessionStateManagerImpl({ logger });
+  const playerMode = resolvePlayerMode({
+    choice: options?.playerChoice ?? "auto",
+    platform: normalizePlayerPlatform(process.platform),
+  });
   const shell = new ShellServiceImpl({ logger, tracer, stateManager });
   const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const workControl = new WorkControlServiceImpl({ logger, diagnostics: diagnosticsService });
@@ -534,6 +539,7 @@ export function bootstrapServices(input: {
     searchRegistry,
     shellChrome,
     capabilitySnapshot,
+    playerMode,
     debugTracePath,
     debugSessionInstructions,
   };
