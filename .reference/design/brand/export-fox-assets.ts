@@ -24,11 +24,23 @@
  * The generator also ignored the "no lighting variation" clause and shaded the
  * plate, so no two masters share a corner value — hence the fuzz tolerance.
  *
- * ## Why quantize
+ * ## Why three output formats
  *
- * The masters carry 2,600-4,100 colours for art specified as three. At 32
- * colours the result is visually identical and roughly 20x smaller, which is
- * what keeps `generated-mascot.json` inside its ~40 KB budget.
+ * The destinations have genuinely different constraints, and one format cannot
+ * serve all three.
+ *
+ * A palette PNG (`PNG8`) is the trap. Its transparency lives in a `tRNS` chunk
+ * that stores one alpha value per palette entry, and in practice a quantizer
+ * spends the palette on colour — leaving a **two-level** alpha, fully opaque or
+ * fully clear. That is a 1-bit cutout: hard stair-stepped edges at every size,
+ * worst in the nav. Whatever else changes here, never write PNG8.
+ *
+ * - **Site stills → WebP.** Lossy WebP keeps full 8-bit alpha and lands smaller
+ *   than the broken PNG8 did. Universally supported for years.
+ * - **CLI pets → PNG32.** `apps/cli/src/image/decode.ts` parses PNG only, and
+ *   colour type 6 is the shape that carries real per-pixel alpha.
+ * - **OG bake → PNG32, smaller.** Satori wants PNG, and this one is inlined as
+ *   base64 into two route bundles, so its budget is the tightest.
  *
  * Lives beside the other brand generators rather than under `apps/docs`,
  * because it now writes both the site stills and the CLI pets. Two pipelines
@@ -53,8 +65,8 @@ const CLI_PETS = path.join(ROOT, "apps/cli/src/app-shell/brand/pets");
 const PLATE = "#1c1620";
 /** Corner-to-corner spread across the six masters is ~10 levels; 22% clears it. */
 const PLATE_FUZZ = "22%";
-/** Visually identical to the unquantized cut, ~14x smaller. */
-const PALETTE_SIZE = 32;
+/** Lossy WebP quality. Flat art holds up well below this; edges do not. */
+const WEBP_QUALITY = "88";
 /** Fraction of the square the character fills, leaving even breathing room. */
 const FILL_RATIO = 0.88;
 
@@ -81,11 +93,18 @@ const CLI_PETS_BY_NAME = {
 } as const;
 
 /**
- * The nav renders at 28px, where a corner-cropped master is an unreadable
- * smudge. A2 sits square in frame with both ears intact, so it survives the
- * downscale — see the `nav` still in `kunai-fox.tsx`.
+ * The nav mark, and the OG bake.
+ *
+ * Both are C2 — the same still the home hero uses. An earlier pass used A2 here
+ * because the Operator survives 28px better, but the nav sits on every page
+ * directly above the hero, so the two most-seen foxes on the site were visibly
+ * different animals. Matching the hero matters more than the extra legibility.
+ *
+ * `NAV_CROP` keeps the top of the figure: the whole character at 28px is a
+ * smudge, the head alone reads.
  */
-const NAV_MASTER = "kunai-ip-A2-operator-lr.png";
+const NAV_MASTER = "kunai-ip-C2-watcher-lr.png";
+const NAV_CROP = 85;
 
 async function magick(args: readonly string[]): Promise<void> {
   const proc = Bun.spawn(["magick", ...args], { stdout: "pipe", stderr: "pipe" });
@@ -96,6 +115,8 @@ async function magick(args: readonly string[]): Promise<void> {
   }
 }
 
+type StillFormat = "webp" | "png";
+
 /**
  * One master to one exported still: cut the plate to alpha, trim it away, then
  * centre the character on a transparent square of the requested size.
@@ -103,10 +124,26 @@ async function magick(args: readonly string[]): Promise<void> {
  * `-alpha set` has to come first or the flood fill has no channel to write
  * into. `+repage` after the trim resets the virtual canvas, without which the
  * later `-extent` would re-introduce the offset the trim just removed.
+ *
+ * `crop` keeps only the top fraction of the trimmed character, for the bust the
+ * nav needs. The whole figure is unreadable at 28px.
  */
-async function exportStill(sourceName: string, dest: string, size: number): Promise<number> {
+async function exportStill(
+  sourceName: string,
+  dest: string,
+  size: number,
+  format: StillFormat,
+  crop?: number,
+): Promise<number> {
   const source = path.join(BATCH, sourceName);
   const inner = Math.round(size * FILL_RATIO);
+
+  const encode =
+    format === "webp"
+      ? ["-quality", WEBP_QUALITY, "-define", "webp:alpha-quality=100", "-strip", dest]
+      : // PNG32, never PNG8 — see the header. Colour type 6 is what keeps
+        // per-pixel alpha instead of collapsing it to a 1-bit mask.
+        ["-strip", `PNG32:${dest}`];
 
   await magick([
     source,
@@ -138,6 +175,7 @@ async function exportStill(sourceName: string, dest: string, size: number): Prom
     "+channel",
     "-trim",
     "+repage",
+    ...(crop === undefined ? [] : ["-gravity", "north", "-crop", `100%x${crop}%+0+0`, "+repage"]),
     "-resize",
     `${inner}x${inner}`,
     "-background",
@@ -146,15 +184,7 @@ async function exportStill(sourceName: string, dest: string, size: number): Prom
     "center",
     "-extent",
     `${size}x${size}`,
-    "-colors",
-    String(PALETTE_SIZE),
-    "-dither",
-    "None",
-    "-strip",
-    // PNG8 keeps the palette indexed and the transparency in a tRNS chunk,
-    // which halves the file and which `apps/cli/src/image/decode.ts` reads
-    // back as real per-pixel alpha.
-    `PNG8:${dest}`,
+    ...encode,
   ]);
 
   return Bun.file(dest).size;
@@ -164,21 +194,22 @@ mkdirSync(DOCS_STILLS, { recursive: true });
 mkdirSync(CLI_PETS, { recursive: true });
 
 for (const [name, file] of Object.entries(DOCS_STILLS_BY_NAME)) {
-  const dest = path.join(DOCS_STILLS, `${name}.png`);
-  console.log(`docs ${name}.png ${await exportStill(file, dest, 320)} bytes`);
+  const dest = path.join(DOCS_STILLS, `${name}.webp`);
+  console.log(`docs ${name}.webp ${await exportStill(file, dest, 320, "webp")} bytes`);
 }
 
-const navDest = path.join(DOCS_STILLS, "nav.png");
-console.log(`docs nav.png ${await exportStill(NAV_MASTER, navDest, 96)} bytes`);
+const navDest = path.join(DOCS_STILLS, "nav.webp");
+console.log(`docs nav.webp ${await exportStill(NAV_MASTER, navDest, 128, "webp", NAV_CROP)} bytes`);
 
 // The companion slot is 4 rows x 6 cols, which is well under 128px on any
 // realistic cell size, so a larger source would only cost decode time.
 for (const [name, file] of Object.entries(CLI_PETS_BY_NAME)) {
   const dest = path.join(CLI_PETS, `${name}.png`);
-  console.log(`cli  ${name}.png ${await exportStill(file, dest, 128)} bytes`);
+  console.log(`cli  ${name}.png ${await exportStill(file, dest, 128, "png")} bytes`);
 }
 
-// The OG bake inlines this as a data URL, so its size lands in two route
-// bundles. Kept at 256 rather than 320 for that reason.
+// Inlined as base64 into two OG route bundles, so this one is sized to its
+// budget rather than to the 360px the card draws it at. A social card is read
+// small; the softness costs less than doubling two bundles would.
 const ogDest = path.join(BRAND, "kunai-mascot-og.png");
-console.log(`og   kunai-mascot-og.png ${await exportStill(NAV_MASTER, ogDest, 256)} bytes`);
+console.log(`og   kunai-mascot-og.png ${await exportStill(NAV_MASTER, ogDest, 224, "png")} bytes`);

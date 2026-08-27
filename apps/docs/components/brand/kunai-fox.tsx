@@ -26,10 +26,10 @@ type KunaiFoxProps = {
  * `facing` value therefore changes what renders.
  */
 const STILLS = {
-  wait: { left: "/brand/fox/wait.png", right: "/brand/fox/wait-right.png" },
-  go: { left: "/brand/fox/go-left.png", right: "/brand/fox/go.png" },
-  watch: { left: "/brand/fox/watch.png", right: null },
-  idle: { left: null, right: "/brand/fox/idle.png" },
+  wait: { left: "/brand/fox/wait.webp", right: "/brand/fox/wait-right.webp" },
+  go: { left: "/brand/fox/go-left.webp", right: "/brand/fox/go.webp" },
+  watch: { left: "/brand/fox/watch.webp", right: null },
+  idle: { left: null, right: "/brand/fox/idle.webp" },
 } satisfies Record<KunaiFoxPose, { left: string | null; right: string | null }>;
 
 /** Where each pose looks when the caller does not ask for a direction. */
@@ -41,13 +41,14 @@ const DEFAULT_FACING = {
 } satisfies Record<KunaiFoxPose, KunaiFoxFacing>;
 
 /**
- * The 96px still the nav and other sub-40px slots load.
+ * The still the nav and other sub-40px slots load.
  *
- * A2 rather than the pose still on purpose: the pose masters are composed to
- * emerge from a corner, so several are cropped through an ear and collapse into
- * an unreadable smudge at 28px. A2 sits square in frame with both ears intact.
+ * A bust crop of the same C2 master the home hero uses. The whole figure at
+ * 28px is a smudge, so it needs its own crop — but it must stay the same
+ * animal, because the nav sits directly above the hero on the home page and an
+ * earlier pass using a different direction here read as two different foxes.
  */
-const NAV_STILL = "/brand/fox/nav.png";
+const NAV_STILL = "/brand/fox/nav.webp";
 
 type ResolvedStill = { readonly src: string; readonly mirrored: boolean };
 

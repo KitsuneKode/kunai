@@ -27,11 +27,17 @@ function publicFile(src: string): string {
   return path.join(DOCS_APP_ROOT, "public", src.replace(/^\//, ""));
 }
 
-/** Colour type from IHDR, and whether a tRNS chunk carries the transparency. */
-function pngAlphaShape(file: string): { readonly colorType: number; readonly hasTrns: boolean } {
-  const bytes = fs.readFileSync(file);
-  // 8-byte signature, then IHDR: 4 length + 4 type + 13 data, colour type at +9.
-  return { colorType: bytes[25] as number, hasTrns: bytes.includes(Buffer.from("tRNS")) };
+/**
+ * How many distinct alpha values a file actually stores.
+ *
+ * This is the guard that matters. A palette PNG keeps transparency in a `tRNS`
+ * chunk — one value per palette entry — and a quantizer spends the palette on
+ * colour, so the result is a two-level alpha: a 1-bit cutout with hard
+ * stair-stepped edges. Counting levels catches that no matter the container.
+ */
+function alphaLevels(file: string): number {
+  const out = Bun.spawnSync(["magick", file, "-alpha", "extract", "-format", "%k", "info:"]);
+  return Number(new TextDecoder().decode(out.stdout).trim());
 }
 
 describe("fox stills on disk", () => {
@@ -44,19 +50,25 @@ describe("fox stills on disk", () => {
     }
   });
 
-  test("every still is cut to alpha, so it never paints a plate on its surface", () => {
-    // The masters are opaque squares of #1c1620. Shipped uncut they show as a
-    // lighter box on the hero and a dark box over a light terminal background.
+  test("every still carries a soft alpha edge, not a 1-bit cutout", () => {
+    // Two things at once. The masters are opaque squares of #1c1620, so an
+    // uncut still paints a box on whatever sits behind it. And a still cut to
+    // only two alpha levels has hard stair-stepped edges, which is what a
+    // palette PNG produces and what made the nav mark look ragged.
     for (const name of ["idle", "watch", "go", "go-left", "wait", "wait-right", "nav"]) {
-      const shape = pngAlphaShape(path.join(DOCS_APP_ROOT, "public/brand/fox", `${name}.png`));
-      expect(shape.colorType, `${name} colour type`).toBe(3);
-      expect(shape.hasTrns, `${name} tRNS`).toBe(true);
+      const levels = alphaLevels(path.join(DOCS_APP_ROOT, "public/brand/fox", `${name}.webp`));
+      expect(levels, `${name} alpha levels`).toBeGreaterThan(32);
     }
   });
 
   test("no still exceeds its size budget", () => {
     const dir = path.join(DOCS_APP_ROOT, "public/brand/fox");
-    for (const file of fs.readdirSync(dir)) {
+    const files = fs.readdirSync(dir);
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      // Nothing may reintroduce a palette PNG here — it is smaller, and its
+      // transparency is a 1-bit mask.
+      expect(file.endsWith(".webp"), `${file} is webp`).toBe(true);
       expect(fs.statSync(path.join(dir, file)).size, file).toBeLessThan(STILL_BUDGET_BYTES);
     }
   });
@@ -103,7 +115,7 @@ describe("rendering", () => {
   test("compact loads the nav still, not a corner-cropped pose still", () => {
     // At 28px the pose masters collapse into a smudge; several crop an ear.
     expect(renderToStaticMarkup(KunaiFox({ pose: "idle", size: 28, compact: true }))).toContain(
-      "/brand/fox/nav.png",
+      "/brand/fox/nav.webp",
     );
   });
 

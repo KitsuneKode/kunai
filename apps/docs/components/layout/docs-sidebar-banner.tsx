@@ -13,7 +13,7 @@ export function DocsSidebarBanner() {
   return (
     <div
       data-sidebar-banner
-      className="mb-3 flex flex-col gap-2 border-b border-[var(--kunai-line)] pb-3"
+      className="kunai-sidebar-banner mb-3 flex flex-col gap-2 border-b border-[var(--kunai-line)] pb-3"
     >
       <div className="flex items-center gap-2">
         <KunaiFox pose="wait" size={36} />

@@ -153,6 +153,42 @@
   flex: none;
 }
 
+/* ── Reactive marks ─────────────────────────────────────────────────────────
+   Every fox the reader can put a pointer on answers to it. The small marks —
+   nav, sidebar — are not animated, so a plain transform is enough and costs no
+   JavaScript. `transform-origin` sits low so she pivots on her feet rather than
+   swinging around her middle. */
+
+.kunai-nav-title .kunai-fox,
+.kunai-sidebar-banner .kunai-fox {
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: 50% 88%;
+}
+
+.kunai-nav-title:hover .kunai-fox,
+a:hover .kunai-nav-title .kunai-fox,
+a:focus-visible .kunai-nav-title .kunai-fox {
+  transform: scale(1.16) rotate(-6deg);
+}
+
+.kunai-sidebar-banner:hover .kunai-fox {
+  transform: scale(1.14) rotate(-5deg);
+}
+
+/* The larger marks already breathe. One element cannot hold two animations of
+   `transform`, so hovering swaps the loop for a one-shot perk that settles and
+   holds — rather than the two fighting and neither reading. */
+.kunai-flow-card:hover .kunai-fox--animated,
+.kunai-fox-banner:hover .kunai-fox--animated {
+  animation: kunai-fox-perk 340ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes kunai-fox-perk {
+  to {
+    transform: translateY(-4px) scale(1.08) rotate(-5deg);
+  }
+}
+
 /* ── Copy reward ────────────────────────────────────────────────────────────
    One 620ms hop when the install command is copied. This is the only motion on
    the page tied to something the reader did on purpose, so it is allowed to be
@@ -179,8 +215,22 @@
 
 @media (prefers-reduced-motion: reduce) {
   .kunai-fox--animated,
-  .kunai-fox--rewarded {
+  .kunai-fox--rewarded,
+  .kunai-flow-card:hover .kunai-fox--animated,
+  .kunai-fox-banner:hover .kunai-fox--animated {
     animation: none;
+  }
+
+  .kunai-nav-title .kunai-fox,
+  .kunai-sidebar-banner .kunai-fox {
+    transition: none;
+  }
+
+  .kunai-nav-title:hover .kunai-fox,
+  a:hover .kunai-nav-title .kunai-fox,
+  a:focus-visible .kunai-nav-title .kunai-fox,
+  .kunai-sidebar-banner:hover .kunai-fox {
+    transform: none;
   }
 
   .kunai-fox-live {
