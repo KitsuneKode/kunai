@@ -92,7 +92,14 @@ export function ChartInstalls({
 
   return (
     <Card className="@container/card">
-      <CardHeader>
+      {/*
+        `flex flex-col` below 440px, grid above. CardHeader always puts a
+        CardAction in a second column, which at phone widths leaves the title
+        ~150px and wraps "Installs over / time" beside the control. Switching
+        the header to flex makes CardAction's grid placement inert, so the
+        control simply stacks under the description.
+      */}
+      <CardHeader className="flex flex-col gap-2 @[440px]/card:grid">
         <CardTitle>Installs over time</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
@@ -153,7 +160,18 @@ export function ChartInstalls({
         ) : null}
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6">
-        <ChartContainer config={chartConfig} className="aspect-auto h-[260px] w-full">
+        {/*
+          `initialDimension` width 0, not shadcn's default 320. ResponsiveContainer
+          paints at the initial width until its observer measures the real one, so
+          the default bursts a 320px-wide chart out of a ~250px card on every
+          phone-width first paint. Zero renders nothing for that one frame and
+          then paints correctly, which is the better of the two flashes.
+        */}
+        <ChartContainer
+          config={chartConfig}
+          className="aspect-auto h-[260px] w-full"
+          initialDimension={{ width: 0, height: 260 }}
+        >
           <AreaChart data={data} margin={{ left: 4, right: 20, top: 4 }}>
             <defs>
               <linearGradient id="kunai-fill-lifetime" x1="0" y1="0" x2="0" y2="1">
@@ -196,8 +214,13 @@ export function ChartInstalls({
               allowDecimals={false}
               tickMargin={4}
             />
+            {/*
+              A crosshair, unlike dashboard-01's `cursor={false}`: with two
+              nested areas the reader needs to see which date both values are
+              being read at.
+            */}
             <ChartTooltip
-              cursor={false}
+              cursor={{ strokeDasharray: "3 3" }}
               content={
                 <ChartTooltipContent
                   labelFormatter={(value) => formatTick(Number(value))}

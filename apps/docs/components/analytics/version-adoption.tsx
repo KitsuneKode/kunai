@@ -86,7 +86,7 @@ export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeri
    */
   if (isFullySuppressed(series)) {
     return (
-      <Empty className="border-border/70 bg-muted/10 my-2 flex-none rounded-lg border border-dashed py-8">
+      <Empty className="border-border/70 bg-muted/10 my-2 max-w-md flex-none self-center rounded-lg border border-dashed px-4 py-6">
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <IconStack2 />
@@ -131,7 +131,11 @@ export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeri
   });
 
   return (
-    <ChartContainer config={chartConfig} className="aspect-auto h-[220px] w-full">
+    <ChartContainer
+      config={chartConfig}
+      className="aspect-auto h-[220px] w-full"
+      initialDimension={{ width: 0, height: 220 }}
+    >
       <AreaChart data={data} margin={{ left: 4, right: 8, top: 4 }}>
         <CartesianGrid vertical={false} />
         {/* Time scale for the same reason as the installs chart: a skipped
