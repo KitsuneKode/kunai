@@ -29,6 +29,25 @@ describe("resolveCommandsForPaletteSurface", () => {
     expect(commands).toContain("surprise");
   });
 
+  test("playback palette offers the queue commands copy already advertised", () => {
+    const commands = resolveCommandsForPaletteSurface(baseState(), "playback").map(
+      (command) => command.id,
+    );
+
+    expect(commands).toContain("up-next");
+    expect(commands).toContain("playlist-add");
+    expect(commands).toContain("queue-season");
+  });
+
+  test("root overlay palette offers /sync so tracker reconnect is not settings-only", () => {
+    const commands = resolveCommandsForPaletteSurface(baseState(), "list").map(
+      (command) => command.id,
+    );
+
+    expect(commands).toContain("sync");
+    expect(commands).not.toContain("sync-connect-anilist");
+  });
+
   test("post-play palette excludes Experimental command group by default", () => {
     const commands = resolveCommandsForPaletteSurface(baseState(), "post-play").map(
       (command) => command.id,
@@ -145,6 +164,8 @@ describe("resolveCommandContext scoped surfaces", () => {
       "mark-up-to-episode",
       "playlists",
       "up-next",
+      "playlist-add",
+      "queue-season",
       "stats",
       "search",
       "recommendation",

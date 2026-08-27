@@ -281,7 +281,7 @@ export async function runSetupWizard({
           message: `Setup could not finish linking ${tracker}`,
           context: { error: String(error) },
         });
-        note(container, `${tracker} not linked — run /sync-connect-${tracker} to try again.`);
+        note(container, `${tracker} not linked — connect it from Settings → Sync.`);
         continue;
       }
       if (connectOutcome.status === "connected") {
@@ -293,7 +293,7 @@ export async function runSetupWizard({
           context: { reason: connectOutcome.status },
         });
         if (connectOutcome.status !== "cancelled") {
-          note(container, `${tracker} not linked — run /sync-connect-${tracker} to try again.`);
+          note(container, `${tracker} not linked — connect it from Settings → Sync.`);
         }
       }
     }
