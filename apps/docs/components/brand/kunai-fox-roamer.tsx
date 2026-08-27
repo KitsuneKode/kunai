@@ -26,16 +26,33 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type Phase = "walking" | "sitting" | "asleep";
 
-/** Pixels per tick, along the unit vector. Constant — this is the whole trick. */
-const SPEED_PX = 15;
-/** ~10 steps a second. oneko throttles to the same cadence for the same reason. */
-const TICK_MS = 100;
-/** She stops this far out rather than climbing onto the cursor. */
-const DEAD_ZONE_PX = 68;
-/** Ticks of stillness before she sits down. */
-const SIT_AFTER_TICKS = 22;
-/** Once sitting, a 1-in-N chance per tick of curling up. Roughly 20s. */
-const SLEEP_ODDS = 200;
+/**
+ * Travel speed, in pixels per second — not per frame.
+ *
+ * Per-second with a delta time is what holds her pace even across a 60Hz and a
+ * 144Hz display, and it is the difference between walking and being dragged:
+ * easing by a fraction of the remaining distance makes speed a function of how
+ * far away she is, so she lurches when far, crawls when near, and is never
+ * still.
+ *
+ * This is the number to turn if she feels wrong. Too low and she trails so far
+ * behind that following reads as lag; too high and she snaps to the cursor and
+ * stops looking like an animal. 620 crosses a 1400px screen in a bit over two
+ * seconds, which keeps her in frame without her ever catching you.
+ */
+const SPEED_PX_PER_SEC = 620;
+/** Inside this she is arriving, and eases down to a walk rather than stopping dead. */
+const SLOW_ZONE_PX = 220;
+/** Slowest she will travel while still closing, as a fraction of full speed. */
+const MIN_SPEED_FACTOR = 0.28;
+/** She settles this far out rather than climbing onto the cursor. */
+const DEAD_ZONE_PX = 64;
+/** How long one footfall lasts. The bob alternates on this, not on the frame. */
+const STEP_MS = 190;
+/** Stillness before she sits down. */
+const SIT_AFTER_MS = 2000;
+/** Once sitting, the chance per second of curling up. Roughly 20s. */
+const SLEEP_ODDS_PER_SEC = 0.05;
 /**
  * How long she goes between unprompted lines, by state.
  *
@@ -123,9 +140,10 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   // must never queue a React render to move her.
   const pos = useRef({ x: -400, y: -400 });
   const target = useRef({ x: -400, y: -400 });
-  const idleTicks = useRef(0);
+  const stillMs = useRef(0);
   const stepFlag = useRef(false);
-  const lastTick = useRef(0);
+  const stepMs = useRef(0);
+  const lastFrame = useRef(0);
   const seeded = useRef(false);
 
   const [phase, setPhase] = useState<Phase>("sitting");
@@ -173,11 +191,16 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
 
     function tick(timestamp: number) {
       frameRef.current = window.requestAnimationFrame(tick);
-      // rAF rather than setInterval, so a backgrounded tab stops her entirely.
-      if (timestamp - lastTick.current < TICK_MS) return;
-      lastTick.current = timestamp;
-
       const host = hostRef.current;
+      // Every frame, so motion is smooth; the *pace* is held constant by delta
+      // time rather than by throttling the clock. Stepping the position at
+      // 10fps is what made her look laggy — that cadence belongs to a pixel-art
+      // sprite, not to a vector one on a 120Hz display.
+      const previous = lastFrame.current || timestamp;
+      lastFrame.current = timestamp;
+      // A tab that was backgrounded returns one enormous delta; clamping it
+      // stops her teleporting across the page on the first frame back.
+      const dt = Math.min((timestamp - previous) / 1000, 0.05);
       if (!host || !seeded.current) return;
 
       const dx = target.current.x - pos.current.x;
@@ -185,36 +208,48 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       const distance = Math.hypot(dx, dy);
 
       if (distance > DEAD_ZONE_PX) {
-        idleTicks.current = 0;
-        // Unit vector times a constant. Her pace is identical whether the
-        // pointer is just outside the dead zone or across the page.
-        pos.current.x += (dx / distance) * SPEED_PX;
-        pos.current.y += (dy / distance) * SPEED_PX;
-        stepFlag.current = !stepFlag.current;
-        host.dataset.step = stepFlag.current ? "a" : "b";
+        stillMs.current = 0;
+        // Full pace while travelling, easing down through the slow zone so she
+        // arrives instead of stopping dead on the spot.
+        const closeness = Math.min(1, (distance - DEAD_ZONE_PX) / SLOW_ZONE_PX);
+        const factor = MIN_SPEED_FACTOR + (1 - MIN_SPEED_FACTOR) * closeness;
+        const travel = Math.min(SPEED_PX_PER_SEC * factor * dt, distance - DEAD_ZONE_PX);
+        pos.current.x += (dx / distance) * travel;
+        pos.current.y += (dy / distance) * travel;
+
+        // The gait runs on its own clock so footfalls stay even whatever the
+        // frame rate is doing.
+        stepMs.current += dt * 1000;
+        if (stepMs.current >= STEP_MS) {
+          stepMs.current = 0;
+          stepFlag.current = !stepFlag.current;
+          host.dataset.step = stepFlag.current ? "a" : "b";
+        }
+
         setPhase("walking");
         // Only commit to a direction on real horizontal travel, so she does not
         // flip back and forth while the pointer wanders vertically.
         if (Math.abs(dx) > 10) setFacing(dx > 0 ? "right" : "left");
       } else {
-        idleTicks.current += 1;
-        if (idleTicks.current > SIT_AFTER_TICKS) {
-          // Sitting is the resting state. Sleep is a coin flip she keeps making
-          // while nothing happens, so dropping off is never on a schedule the
-          // reader can feel coming.
+        stillMs.current += dt * 1000;
+        if (stillMs.current > SIT_AFTER_MS) {
+          // Sleep is a coin flip she keeps making while nothing happens, scaled
+          // by dt so the odds are per-second rather than per-frame — otherwise
+          // a faster display would put her to sleep sooner.
           setPhase((current) =>
             current === "asleep"
               ? current
-              : Math.floor(Math.random() * SLEEP_ODDS) === 0
+              : Math.random() < SLEEP_ODDS_PER_SEC * dt
                 ? "asleep"
                 : "sitting",
           );
         }
       }
 
-      host.style.transform = `translate3d(${Math.round(pos.current.x - size / 2)}px, ${Math.round(
-        pos.current.y - size / 2,
-      )}px, 0)`;
+      host.style.transform = `translate3d(${(pos.current.x - size / 2).toFixed(1)}px, ${(
+        pos.current.y -
+        size / 2
+      ).toFixed(1)}px, 0)`;
     }
 
     window.addEventListener("pointermove", onMove, { passive: true });
