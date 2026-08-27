@@ -1,17 +1,19 @@
 import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
 
+import { CompanionPet } from "./companion-pet";
+import { isCompanionGraphicsEnabled } from "./companion-policy";
 import { palette } from "./shell-theme";
 
 type ExitStep = "dim" | "footer-gone" | "fox" | "closing" | "done";
 
-const STEP_TIMINGS: Record<ExitStep, number> = {
+const STEP_TIMINGS = {
   dim: 0, // initial state — not scheduled, here for completeness
   "footer-gone": 40,
   fox: 80,
   closing: 120,
   done: 200,
-};
+} satisfies Record<ExitStep, number>;
 
 export function ExitShell({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<ExitStep>("dim");
@@ -33,11 +35,17 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
   }, [onDone]);
 
   const isDim = step === "dim" || step === "footer-gone";
+  const showFox = step === "fox" || step === "closing" || step === "done";
 
   return (
     <Box flexDirection="column" paddingY={1}>
+      {showFox && isCompanionGraphicsEnabled() ? (
+        <Box marginBottom={1}>
+          <CompanionPet pose="idle" rows={4} cols={6} />
+        </Box>
+      ) : null}
       <Text dimColor={isDim} color={palette.dim}>
-        {step === "fox" || step === "closing" || step === "done" ? "◉  see you next time" : ""}
+        {showFox ? "◉  see you next time" : ""}
       </Text>
       {(step === "closing" || step === "done") && <Text color={palette.accent}>◈ kunai</Text>}
     </Box>

@@ -16,6 +16,8 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { CompanionPet } from "../companion-pet";
+import { isCompanionGraphicsEnabled } from "../companion-policy";
 import { palette } from "../shell-theme";
 
 export type FooterKey = { readonly key: string; readonly label: string };
@@ -154,6 +156,11 @@ export function SetupFrame({
           sits a little above centre: dead-centre in a tall terminal leaves the
           top half looking abandoned, and the eye starts high. */}
       <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={2}>
+        {isCompanionGraphicsEnabled() ? (
+          <Box marginBottom={1}>
+            <CompanionPet pose={step >= totalSteps - 1 ? "idle" : "wait"} rows={4} cols={6} />
+          </Box>
+        ) : null}
         {children}
       </Box>
 

@@ -20,7 +20,8 @@ export type KittyPlacementSlot =
   | "details-primary"
   | "details-secondary"
   | "details-sheet"
-  | "generic";
+  | "generic"
+  | "companion";
 
 type PlacementEntry = {
   readonly imageId: number;

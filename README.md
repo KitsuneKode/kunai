@@ -293,6 +293,8 @@ paints at the cursor and does not reflow, so it cannot be hosted in the Ink
 layout yet. Force a specific path with `KUNAI_IMAGE_PROTOCOL=kitty|sixel|symbols|half-block`,
 or disable posters with `KUNAI_POSTER=0`.
 
+Setup and goodbye can show the illustrated fox companion on Kitty, Ghostty, iTerm2, and WezTerm. Other terminals keep 🦊. Disable the pet with `KUNAI_PET=0`.
+
 If mpv is missing, Kunai won't start playback — setup and browsing remain available.
 Everything else is optional and detected automatically — the setup wizard
 (`/setup` or `kunai --setup`) walks through each capability and what it enables.
@@ -524,6 +526,7 @@ Environment overrides:
 
 ```bash
 KUNAI_POSTER=0                          # Disable posters
+KUNAI_PET=0                             # Disable the fox companion (unicode 🦊 remains)
 KUNAI_IMAGE_PROTOCOL=kitty              # Force protocol
 KUNAI_IMAGE_SIZE=30x18                  # Custom dimensions
 KUNAI_IMAGE_DEBUG=1                     # Verbose poster logging

@@ -1,6 +1,8 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { CompanionPet } from "./companion-pet";
+import { isCompanionGraphicsEnabled } from "./companion-policy";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
@@ -521,14 +523,21 @@ export const EmptyState = React.memo(function EmptyState({
   title,
   subtitle,
   hint,
+  pet = false,
 }: {
   icon?: string;
   title: string;
   subtitle?: string;
   hint?: string;
+  pet?: boolean;
 }) {
   return (
     <Box flexDirection="column" paddingY={1}>
+      {pet && isCompanionGraphicsEnabled() ? (
+        <Box marginBottom={1}>
+          <CompanionPet pose="wait" rows={4} cols={6} />
+        </Box>
+      ) : null}
       <Text color={palette.dim}>
         {icon} {title}
       </Text>
