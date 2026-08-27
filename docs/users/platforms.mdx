@@ -109,7 +109,7 @@ kunai --setup
 Kunai runs where a capable terminal and **native Windows `mpv.exe`** are available on the **same** PATH as Kunai. Windows Terminal is the most predictable surface. Kunai looks for `mpv.exe`, not `mpvnet.exe` — after install, `where.exe mpv` must resolve.
 
 ```powershell
-winget install mpv
+winget install --id mpv-player.mpv-CI.MSVC -e
 where.exe mpv
 kunai doctor
 ```

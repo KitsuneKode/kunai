@@ -176,6 +176,18 @@ describe("docs codegen drift", () => {
     }
   });
 
+  test("Windows install guidance names the real mpv package Kunai probes", () => {
+    for (const filePath of [
+      path.join(ROOT, "README.md"),
+      path.join(ROOT, "apps/cli/README.md"),
+      path.join(DOCS_ROOT, "users/platforms.mdx"),
+    ]) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      expect(content).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+      expect(content).not.toMatch(/winget install mpv(?:\s|`)/);
+    }
+  });
+
   test("--download help describes download-only bootstrap", () => {
     const download = codeMetadata.cliOptions.find((option) => option.long === "--download");
     expect(download).toBeDefined();

@@ -204,7 +204,7 @@ brew install yt-dlp curl ffmpeg
 
 ```bash
 # Required
-winget install mpv
+winget install --id mpv-player.mpv-CI.MSVC -e
 # Optional: downloads and post-download integrity checks
 winget install yt-dlp Gyan.FFmpeg
 ```
