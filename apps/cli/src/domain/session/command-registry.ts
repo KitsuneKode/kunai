@@ -237,6 +237,7 @@ export const COMMAND_CONTEXTS = {
     "series-mode",
     "anime-mode",
     "youtube-mode",
+    "sync",
     "diagnostics",
     "export-diagnostics",
     "report-issue",

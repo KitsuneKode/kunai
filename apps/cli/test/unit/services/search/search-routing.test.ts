@@ -773,6 +773,77 @@ describe("searchTitles", () => {
     expect(result.evidence.unsupported).not.toContain("type playlist");
   });
 
+  test("applies type:short locally against SearchResult.contentShape", async () => {
+    const searchRegistry = {
+      getDefault: () => ({
+        metadata: { id: "youtube-catalog", name: "YouTube" },
+        search: async () => [
+          {
+            id: "youtube:v1",
+            type: "movie",
+            title: "Video",
+            year: "",
+            overview: "",
+            posterPath: null,
+            contentShape: "video",
+          },
+          {
+            id: "youtube:s1",
+            type: "movie",
+            title: "Short",
+            year: "",
+            overview: "",
+            posterPath: null,
+            contentShape: "short",
+          },
+        ],
+      }),
+      getForProvider: () => undefined,
+    };
+
+    const providerRegistry: any = {
+      get: () => ({
+        metadata: {
+          id: "youtube",
+          name: "YouTube",
+          description: "",
+          recommended: true,
+          isAnimeProvider: false,
+          domain: "youtube.com",
+        },
+        search: async () => searchRegistry.getDefault().search(),
+      }),
+      getDefaultForMode: () => ({
+        metadata: {
+          id: "youtube",
+          name: "YouTube",
+          description: "",
+          recommended: true,
+          isAnimeProvider: false,
+          domain: "youtube.com",
+        },
+      }),
+    };
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "shorts",
+        mode: "youtube",
+        filters: { type: "short" },
+      }),
+      {
+        mode: "youtube",
+        providerId: "youtube",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        youtubeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: searchRegistry as any,
+        providerRegistry,
+      },
+    );
+
+    expect(result.results.map((item) => item.id)).toEqual(["youtube:s1"]);
+    expect(result.evidence.local).toContain("type short");
+  });
+
   test("does not apply YouTube content shapes on a TMDB catalog search", async () => {
     const searchRegistry = createSearchRegistry({
       providerResults: [

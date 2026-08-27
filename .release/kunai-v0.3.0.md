@@ -75,14 +75,25 @@ A last review pass over the release train, from real sessions:
   before it can reach the picker.
 - **Setup keeps a language per media type.** Shows, Movies, Anime, and YouTube each hydrate from
   and write back to their own profile, so rerunning `/setup` no longer flattens choices made in
-  Settings. `1`-`4` pick the lane, `tab` switches audio and subtitles.
+  Settings. `Tab`/`Shift+Tab` cycle the lane, `←`/`→` switch audio and subtitles, and `a` copies
+  the active profile to all four lanes. Playback toggles start off until the recommendation is
+  chosen. Accepting remaining defaults now lands on the final review screen before saving.
+- **YouTube results identify what will open.** Videos, Shorts, playlists, and channels retain
+  their shape through search, filters, and the details panel. `type:short` narrows YouTube search,
+  preferring backends that provide an explicit Shorts signal, while live/upcoming/post-live
+  status remains a separate badge so a collection or live entry is not mistaken for a regular
+  video. Backends that omit a signal remain labelled conservatively.
+- **Post-play keeps its escape hatches visible.** `/analytics`, `/sync`, and diagnostics are
+  available from the command palette after playback, so a stopped session can inspect telemetry,
+  tracker state, or recovery details without returning to browse.
 - **A tracker sign-in can be cancelled.** Linking now runs in its own screen with visible
   progress, `esc` to cancel, and `r` to retry a failure. It previously passed a signal from a
   controller nobody held, so cancelling was impossible and the wizard waited on an unresponsive
   screen until the tracker's own deadline expired.
 - **Stopping early shows where you stopped.** The post-play bar read season progress — "3 / 10"
-  after 23 seconds of an episode — and films got no bar at all. It now reads position over
-  runtime for both.
+  after 23 seconds of an episode — and films got no bar at all. It now reads elapsed position
+  over runtime for both, without a misleading percentage or a season fallback when runtime is
+  unavailable.
 - **Discord presence clears when Kunai exits.** A single Discord IPC frame was allowed ten
   seconds while shutdown force-exits after four, and the clear also queued behind any update
   already in flight, so the card outlived the session. It now runs first and within the

@@ -1,5 +1,12 @@
 export type SearchIntentMode = "series" | "anime" | "movie" | "youtube" | "all";
-export type SearchIntentTypeFilter = "movie" | "series" | "all" | "video" | "playlist" | "channel";
+export type SearchIntentTypeFilter =
+  | "movie"
+  | "series"
+  | "all"
+  | "video"
+  | "short"
+  | "playlist"
+  | "channel";
 export type WatchFilter = "any" | "unwatched" | "watching" | "completed";
 export type ReleaseFilter = "today" | "this-week" | "upcoming";
 export type SearchSort = "relevance" | "progress" | "recent" | "popular" | "rating";

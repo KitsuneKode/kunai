@@ -19,4 +19,4 @@
                                 ○ Discord presence
                                     Show friends what you're watching
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [b]  back                                              Setup
+  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [S]  remaining defaults  ·  [b]  back                  Setup

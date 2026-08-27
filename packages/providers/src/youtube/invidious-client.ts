@@ -20,6 +20,10 @@ export type InvidiousSearchVideo = {
   readonly publishedText?: string;
   readonly lengthSeconds?: number;
   readonly liveNow?: boolean;
+  readonly liveStatus?: string;
+  /** Some Invidious forks expose Shorts explicitly; older ones omit it. */
+  readonly isShort?: boolean;
+  readonly url?: string;
   readonly paid?: boolean;
   readonly premium?: boolean;
   readonly videoThumbnails?: readonly {
@@ -118,6 +122,9 @@ export type InvidiousVideoDetails = {
   readonly published?: number;
   readonly lengthSeconds?: number;
   readonly liveNow?: boolean;
+  readonly liveStatus?: string;
+  readonly isShort?: boolean;
+  readonly url?: string;
   readonly videoThumbnails?: InvidiousSearchVideo["videoThumbnails"];
   readonly recommendedVideos?: readonly InvidiousRecommendedVideo[];
 };
@@ -130,6 +137,11 @@ export type InvidiousRecommendedVideo = {
   readonly lengthSeconds?: number;
   readonly viewCount?: number;
   readonly published?: number;
+  readonly publishedText?: string;
+  readonly liveNow?: boolean;
+  readonly liveStatus?: string;
+  readonly isShort?: boolean;
+  readonly url?: string;
   readonly videoThumbnails?: InvidiousSearchVideo["videoThumbnails"];
 };
 

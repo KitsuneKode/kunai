@@ -48,7 +48,7 @@ describe("resolveCommandsForPaletteSurface", () => {
     expect(commands).not.toContain("sync-connect-anilist");
   });
 
-  test("post-play palette excludes Experimental command group by default", () => {
+  test("post-play palette exposes recovery and insight commands", () => {
     const commands = resolveCommandsForPaletteSurface(baseState(), "post-play").map(
       (command) => command.id,
     );
@@ -56,9 +56,11 @@ describe("resolveCommandsForPaletteSurface", () => {
     expect(commands).toContain("next");
     expect(commands).toContain("recommendation");
     expect(commands).toContain("stats");
+    expect(commands).toContain("analytics");
+    expect(commands).toContain("analytics-show");
+    expect(commands).toContain("sync");
     expect(commands).not.toContain("random");
     expect(commands).not.toContain("surprise");
-    expect(commands).not.toContain("sync");
   });
 });
 
@@ -174,6 +176,9 @@ describe("resolveCommandContext scoped surfaces", () => {
       "library",
       "history",
       "diagnostics",
+      "analytics",
+      "analytics-show",
+      "sync",
     ]);
     expect(commands).not.toContain("quit");
     expect(commands).not.toContain("settings");

@@ -310,9 +310,18 @@ names instances that work. Instance order is left as the registry returns it
 rotate via cooldown rather than round-robin, which would spread load onto less
 healthy instances.
 
-Third lane provider for standalone videos, playlists, and channels.
+Third lane provider for standalone videos, Shorts, playlists, and channels.
 
 - **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail.
+- Search results preserve a `contentShape` of `video`, `short`, `playlist`, or
+  `channel`; `liveStatus` separately identifies `live`, `upcoming`, and
+  `post_live`. The browse UI labels these shapes before playback, so channels,
+  playlists, Shorts, and live entries cannot be mistaken for ordinary videos.
+  Invidious forks that omit a shape/status signal are labelled conservatively.
+- `type:short` is a YouTube-only local filter. It prefers yt-dlp/Piped paths that
+  expose an explicit Shorts signal and never relabels an unclassified video as a
+  Short. It is intentionally unsupported in TMDB and AniList modes, just like
+  the other YouTube content shapes.
 - **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default quality ceiling is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → Language → YouTube quality.
 - **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` (DASH `bestvideo+bestaudio` capped to the profile) and `--ytdl-raw-options` (SponsorBlock, live-from-start). Kunai disables mpv-ytdlautoformat overrides via `--script-opts=ytdlautoformat-domains=` so a user-level `ytdlautoformat` script cannot force 720p. **No full video file is written for play** — mpv streams via yt-dlp; only JSON metadata is cached in SQLite.
 - **Downloads:** explicit queue via `d` / download flows; yt-dlp writes `.mp4` to `downloadPath` (or OS default) with `-f` from the same format selector, `--merge-output-format mp4`, cookies/extractor args, and optional `--sponsorblock-remove`; live streams rejected at enqueue.

@@ -55,6 +55,9 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "library",
   "history",
   "diagnostics",
+  "analytics",
+  "analytics-show",
+  "sync",
 ];
 
 /**
@@ -79,9 +82,7 @@ export function resolveCommandContext(
   context: CommandContextId,
 ): readonly ResolvedAppCommand[] {
   if (context === "postPlayback") {
-    return resolveCommands(state, POST_PLAYBACK_SURFACE_COMMANDS, {
-      excludeGroups: ["Experimental"],
-    });
+    return resolveCommands(state, POST_PLAYBACK_SURFACE_COMMANDS);
   }
 
   const topOverlay = state.activeModals.at(-1);

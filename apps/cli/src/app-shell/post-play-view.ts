@@ -96,7 +96,7 @@ export type PostPlayProgressBar = {
   readonly watched: number;
   readonly total: number;
   readonly percent: number;
-  /** "7 / 12 · 58%" or "28 / 28 this season" etc. */
+  /** Human-readable elapsed/total or season progress label. */
   readonly label: string;
 };
 
@@ -168,15 +168,16 @@ function buildProgressBar(watched: number, total: number, suffix = ""): PostPlay
 }
 
 /**
- * "12:04 / 48:30 · 25%" — position inside the thing that was just playing.
+ * "12:04 / 48:30" — position inside the thing that was just playing.
  *
  * The stopped-early hero used the season bar, so quitting 23 seconds into an
  * episode reported "3 / 10 · 30%": true about the season, and not an answer to
  * the question the screen is asking, which is where you stopped. Films got no
  * bar at all for the same reason — they have no episode counts.
  *
- * Returns undefined unless the player reported a usable runtime, so an unknown
- * duration falls back to the season bar rather than inventing a denominator.
+ * Returns undefined unless the player reported a usable runtime. A stopped
+ * episode with no runtime should not fall back to a season percentage: that
+ * answers a different question and is easy to mistake for playback progress.
  */
 function buildTimeProgressBar(
   positionSeconds: number | undefined,
@@ -191,7 +192,7 @@ function buildTimeProgressBar(
     watched: Math.round(clamped),
     total: Math.round(durationSeconds),
     percent,
-    label: `${formatTimestamp(clamped)} / ${formatTimestamp(durationSeconds)} · ${percent}%`,
+    label: `${formatTimestamp(clamped)} / ${formatTimestamp(durationSeconds)}`,
   };
 }
 
@@ -412,9 +413,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       heroColor: "accent",
       // Where you stopped, not how far into the season you are. Films get one
       // too — the season bar never applied to them.
-      progressBar:
-        buildTimeProgressBar(resumePositionSeconds, episodeDurationSeconds) ??
-        (isMovie ? undefined : progressBar),
+      progressBar: buildTimeProgressBar(resumePositionSeconds, episodeDurationSeconds),
       actions: [
         {
           id: "resume",

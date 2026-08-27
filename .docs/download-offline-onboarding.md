@@ -68,14 +68,21 @@ accounts, usage ping, done. Implementation is
   launch offers setup again; an abort after answering records the offer and
   touches nothing else.
 - **Each media lane keeps its own language profile.** The language screen edits
-  one lane at a time — `1`–`4` pick Shows, Movies, Anime, or YouTube, `tab` (or
-  `←→`) switches audio/subtitles, `↑↓` chooses — and every lane is hydrated from,
+  one lane at a time — `Tab`/`Shift+Tab` cycle Shows, Movies, Anime, and YouTube,
+  `←`/`→` switches audio or subtitles, and `↑`/`↓` chooses — and every lane is hydrated from,
   and written back to, its own `*LanguageProfile`. Two earlier shapes were both
   wrong: writing anime only left films and shows on original audio for a user who
   picked English and skipped YouTube entirely (#229); writing one answer to all
   four then flattened per-lane values that `/settings` → Language lets you set
   independently, so a rerun silently discarded them. Fields the screen does not
-  ask about — `quality` — are preserved per lane.
+  ask about — `quality` — are preserved per lane. Press `a` to copy the active
+  lane's audio and subtitle choices to all four lanes; changing any lane later
+  remains independent.
+- **Playback defaults are conservative.** Autoplay, intro skipping, and credit
+  skipping start off. Press `s` to apply the recommended all-on playback
+  defaults, or `S` to accept every remaining recommendation and jump to the final
+  review. Neither key writes configuration — `S` opens the review screen, and the
+  wizard saves only when you press Enter there.
 - **Analytics is keystroke-gated.** Consent is recorded when the user presses a
   key on the consent screen, never when they arrive on it. Arriving and stepping
   back leaves the value `unchanged`, which is neither an opt-in nor an opt-out.

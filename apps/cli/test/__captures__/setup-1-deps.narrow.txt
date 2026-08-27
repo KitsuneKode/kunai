@@ -15,6 +15,6 @@
     ✓ posters           kitty-native · ghostty   artwork
     ✓ data & cache      ~/.local/share/kunai     history · offline
 ────────────────────────────────────────────────────────────────────────
-  [enter]  continue  ·  [r]  recheck  ·  [S]  use recommended  · Setup
+  [enter]  continue  ·  [r]  recheck  ·  [S]  remaining defaults Setup
 
-  [esc]  quit
+   ·  [esc]  quit

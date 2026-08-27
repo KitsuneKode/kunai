@@ -22,4 +22,4 @@
 ────────────────────────────────────────────────────────────────────────
   [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]     Setup
 
-   recommended  ·  [b]  back
+   recommended  ·  [S]  remaining defaults  ·  [b]  back

@@ -119,7 +119,9 @@ export function toBrowseResultOption(
       ? "Playlist"
       : result.contentShape === "channel"
         ? "Channel"
-        : "Video"
+        : result.contentShape === "short"
+          ? "Short"
+          : "Video"
     : isAnimeContent(result)
       ? "Anime"
       : result.type === "series"
@@ -228,11 +230,13 @@ export function toBrowseResultOption(
         ? "Press Enter to open this playlist and choose a video."
         : isYoutubeResult && result.contentShape === "channel"
           ? "Press Enter to open this channel and choose a video."
-          : isYoutubeResult
-            ? "Press Enter to open this video and continue to playback."
-            : result.type === "series"
-              ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
-              : "Press Enter to open this title and continue to playback. Use / details for the overview.",
+          : isYoutubeResult && result.contentShape === "short"
+            ? "Press Enter to open this Short and continue to playback."
+            : isYoutubeResult
+              ? "Press Enter to open this video and continue to playback."
+              : result.type === "series"
+                ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
+                : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
 }
 

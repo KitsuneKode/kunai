@@ -82,7 +82,14 @@ stay direct, and unknown legacy video-relay keys are ignored.
 
 ### Language and media profiles
 
-Kunai uses separate profiles for anime, series, and movies:
+Kunai uses separate profiles for anime, series, movies, and YouTube:
+
+During `kunai --setup`, the language screen also exposes a YouTube profile.
+`Tab`/`Shift+Tab` cycle Shows, Movies, Anime, and YouTube; `←`/`→` switch
+between audio and subtitles; `↑`/`↓` choose a value; and `a` copies the active
+profile to all four lanes. Playback defaults (autoplay, intro skip, and credit
+skip) start off. Press `s` for the recommended all-on defaults. The final setup
+screen summarizes every choice before saving.
 
 Example (not the shipped defaults — those use `audio: "original"` and `quality: "best"`):
 

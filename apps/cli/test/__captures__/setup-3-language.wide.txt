@@ -4,18 +4,25 @@
 
 
                               Language
-                              Applies to anime, shows, films, and YouTube alike. Change either per episode.
+                              Each media type keeps its own defaults. Change either again per episode.
+
+                              ▌ Shows Original/English   Movies Original/English   Anime Original/English
+
+                                YouTube Original/English
 
                               ❯ Audio                                   Subtitles
                               ▌ Original                              ▌ English
                                 English                                 Pick each time
                                 Japanese                                None
                                 Any dub                                 Arabic
-                               Use the language the title was made      German
-                                in                                      Spanish
+                               ↳ Use the language the title was made    German
+                               in                                       Spanish
                                                                         French
                                                                         Japanese
 
-                              tab switches columns · ↑↓ chooses
+                              tab / shift-tab switches profile · ←→ picks audio or subtitles · ↑↓ chooses · a
+                              applies this profile to all
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [enter]  confirm  ·  [s]  recommended  ·  [b]  back                                                                                Setup
+  [enter]  next  ·  [tab/shift-tab]  profile  ·  [←→]  audio / subs  ·  [a]  apply to all  ·  [s]  recommended  ·  [S]               Setup
+
+   remaining defaults  ·  [b]  back
