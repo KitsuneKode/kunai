@@ -48,6 +48,15 @@ export type PersistentReadyWorkExecutorDeps = {
     timeLabel: string | undefined,
   ): Promise<PersistentResumeStartChoice>;
   handleSegmentSkipProgress(options: PersistentReadyWorkOptions): Promise<void>;
+  /**
+   * Whether the file currently loaded is an active broadcast.
+   *
+   * The caller already drops `startAt` and `resumePromptAt` for a live stream, but
+   * that left one call site as the only thing standing between a live broadcast and
+   * an absolute seek — the same single-point fragility that let the in-process
+   * reconnect seek survive the first fix. Checking here makes every caller safe.
+   */
+  isLiveStream(): boolean;
   onIpcCommandFailure?(command: string, error: string): void;
   subtitleManager: PersistentSubtitleManager;
   /** False once a replacement cycle has taken over the generation this work belongs to. */
@@ -80,8 +89,12 @@ export class PersistentReadyWorkExecutor {
     const ipcSession = this.deps.getIpcSession();
     if (!ipcSession) return;
 
+    // A live broadcast has no absolute position to return to: the prompt is
+    // meaningless and the seek lands in the DVR window or fails outright.
+    const live = this.deps.isLiveStream();
     this.deps.setResumeSeekPending(
-      shouldApplyStartAtSeek(options.startAt) || shouldApplyStartAtSeek(options.resumePromptAt),
+      !live &&
+        (shouldApplyStartAtSeek(options.startAt) || shouldApplyStartAtSeek(options.resumePromptAt)),
     );
     try {
       const unpauseResult = await ipcSession.send(["set_property", "pause", false], 500);
@@ -108,7 +121,7 @@ export class PersistentReadyWorkExecutor {
 
       let choice: PersistentResumeStartChoice | undefined;
       const resumePromptAt = options.resumePromptAt ?? 0;
-      if (options.offerResumeStartChoice && shouldApplyStartAtSeek(resumePromptAt)) {
+      if (!live && options.offerResumeStartChoice && shouldApplyStartAtSeek(resumePromptAt)) {
         choice = await this.deps.waitResumeOrStartOverChoice(
           resumePromptAt,
           options.displayTitle,
@@ -117,7 +130,7 @@ export class PersistentReadyWorkExecutor {
         if (!isCurrent()) return;
       }
 
-      const seekTarget = resolvePersistentStartSeekTarget(options, choice);
+      const seekTarget = live ? undefined : resolvePersistentStartSeekTarget(options, choice);
       if (shouldApplyStartAtSeek(seekTarget) && seekTarget !== undefined) {
         const target = seekTarget;
         options.onPlaybackEvent?.({ type: "resolving-playback" });

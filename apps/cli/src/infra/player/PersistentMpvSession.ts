@@ -961,6 +961,7 @@ export class PersistentMpvSession {
         this.waitResumeOrStartOverChoice(seconds, displayTitle, timeLabel),
       handleSegmentSkipProgress: async (readyOptions) =>
         this.handleSegmentSkipProgress(readyOptions),
+      isLiveStream: () => this.playbackStream.isLive === true,
       onIpcCommandFailure: (command, error) => {
         dbg("mpv-ipc", `${command}-failed`, { error });
       },

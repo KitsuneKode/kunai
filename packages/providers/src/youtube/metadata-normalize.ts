@@ -51,14 +51,20 @@ export function parseCachedYoutubeMetadata(
   try {
     const parsed: unknown = JSON.parse(payloadJson);
     if (!parsed || typeof parsed !== "object") return null;
-    if (
-      "schemaVersion" in parsed &&
-      parsed.schemaVersion === YOUTUBE_METADATA_SCHEMA_VERSION &&
-      "videoId" in parsed &&
-      typeof parsed.videoId === "string"
-    ) {
-      return parsed as YoutubeVideoMetadata;
+    if ("schemaVersion" in parsed) {
+      // A payload that declares a version at all was written by this normalizer, in
+      // camelCase. Running a *stale* one through the raw-blob path below silently
+      // strips every field whose key name differs from yt-dlp's -- duration, channel,
+      // upload date and the entire quality ladder -- and hands back a hollow record
+      // that looks valid. A version we do not recognise is a cache miss, so the
+      // caller refetches instead of serving a stripped one until the TTL expires.
+      if (parsed.schemaVersion !== YOUTUBE_METADATA_SCHEMA_VERSION) return null;
+      if ("videoId" in parsed && typeof parsed.videoId === "string") {
+        return parsed as YoutubeVideoMetadata;
+      }
+      return null;
     }
+    // No declared version: a raw `yt-dlp -J` blob from before the cache was normalized.
     return normalizeYtDlpVideoInfo(parsed as YtDlpVideoInfo, videoId);
   } catch {
     return null;

@@ -187,7 +187,7 @@ const YTSEARCH_RESULT_LIMIT = 12;
  */
 const YOUTUBE_SHORTS_SEARCH_FILTER = "EgIYAQ%3D%3D";
 
-function youtubeSearchTarget(
+export function youtubeSearchTarget(
   query: string,
   requestedShape: YouTubeContentShape | undefined,
 ): string {

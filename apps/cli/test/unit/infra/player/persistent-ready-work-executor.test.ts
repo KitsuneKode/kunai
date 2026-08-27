@@ -38,6 +38,99 @@ function createCycle(events: unknown[]) {
 const GENERATION: PlaybackGeneration = { process: 3, cycle: 8 };
 
 describe("PersistentReadyWorkExecutor", () => {
+  test("a live stream never prompts to resume and never seeks", async () => {
+    // The caller already drops startAt/resumePromptAt for a live broadcast, but that
+    // left one call site as the only thing preventing an absolute seek — the same
+    // single-point fragility that let the in-process reconnect seek survive the first
+    // fix. Even handed a full resume request, the executor must refuse.
+    const { ipc, commands } = createFakeIpc();
+    const events: unknown[] = [];
+    const resumePendingValues: boolean[] = [];
+    let promptShown = false;
+
+    const executor = new PersistentReadyWorkExecutor({
+      getIpcSession: () => ipc,
+      getInitialOptions: () => ({ displayTitle: "Live broadcast", primarySubtitle: null }),
+      getLoadStartAt: () => null,
+      getTitleAppliedViaArgs: () => true,
+      setTitleAppliedViaArgs: () => {},
+      getSubtitlesAttachedAtSpawn: () => false,
+      setSubtitlesAttachedAtSpawn: () => {},
+      setCurrentPositionSeconds: () => {},
+      setResumeSeekPending: (value) => resumePendingValues.push(value),
+      waitResumeOrStartOverChoice: async () => {
+        promptShown = true;
+        return "resume";
+      },
+      handleSegmentSkipProgress: async () => {},
+      subtitleManager: new PersistentSubtitleManager(),
+      isLiveStream: () => true,
+      isGenerationCurrent: () => true,
+    });
+
+    await executor.execute(
+      {
+        displayTitle: "Live broadcast",
+        primarySubtitle: null,
+        startAt: 3_600,
+        resumePromptAt: 3_600,
+        offerResumeStartChoice: true,
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      createCycle(events),
+      GENERATION,
+    );
+
+    expect(promptShown).toBe(false);
+    expect(commands.some((command) => command[0] === "seek")).toBe(false);
+    // Never armed, so segment-skip work is not held back waiting for a seek.
+    expect(resumePendingValues.every((value) => value === false)).toBe(true);
+  });
+
+  test("a recorded stream with the same options still resumes", async () => {
+    // The guard has to key on live-ness alone; otherwise it would silently disable
+    // resume for ordinary playback.
+    const { ipc, commands } = createFakeIpc();
+    const events: unknown[] = [];
+    let promptShown = false;
+
+    const executor = new PersistentReadyWorkExecutor({
+      getIpcSession: () => ipc,
+      getInitialOptions: () => ({ displayTitle: "Episode 1", primarySubtitle: null }),
+      getLoadStartAt: () => null,
+      getTitleAppliedViaArgs: () => true,
+      setTitleAppliedViaArgs: () => {},
+      getSubtitlesAttachedAtSpawn: () => false,
+      setSubtitlesAttachedAtSpawn: () => {},
+      setCurrentPositionSeconds: () => {},
+      setResumeSeekPending: () => {},
+      waitResumeOrStartOverChoice: async () => {
+        promptShown = true;
+        return "resume";
+      },
+      handleSegmentSkipProgress: async () => {},
+      subtitleManager: new PersistentSubtitleManager(),
+      isLiveStream: () => false,
+      isGenerationCurrent: () => true,
+    });
+
+    await executor.execute(
+      {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        startAt: 3_600,
+        resumePromptAt: 3_600,
+        offerResumeStartChoice: true,
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      createCycle(events),
+      GENERATION,
+    );
+
+    expect(promptShown).toBe(true);
+    expect(commands).toContainEqual(["seek", 3_600, "absolute"]);
+  });
+
   test("skips redundant resume seek when loadfile already started at the same timestamp", async () => {
     const { ipc, commands } = createFakeIpc();
     const events: unknown[] = [];
@@ -59,6 +152,7 @@ describe("PersistentReadyWorkExecutor", () => {
       waitResumeOrStartOverChoice: async () => "start",
       handleSegmentSkipProgress: async () => {},
       subtitleManager: new PersistentSubtitleManager(),
+      isLiveStream: () => false,
       isGenerationCurrent: () => true,
     });
 
@@ -98,6 +192,7 @@ describe("PersistentReadyWorkExecutor", () => {
       waitResumeOrStartOverChoice: async () => "resume",
       handleSegmentSkipProgress: async () => {},
       subtitleManager: new PersistentSubtitleManager(),
+      isLiveStream: () => false,
       isGenerationCurrent: () => true,
     });
 
@@ -140,6 +235,7 @@ describe("PersistentReadyWorkExecutor", () => {
       waitResumeOrStartOverChoice: async () => "start",
       handleSegmentSkipProgress: async () => {},
       subtitleManager: new PersistentSubtitleManager(),
+      isLiveStream: () => false,
       isGenerationCurrent: () => true,
     });
 
@@ -220,6 +316,7 @@ describe("PersistentReadyWorkExecutor stale-generation continuations", () => {
         skipRuns += 1;
       },
       subtitleManager: new PersistentSubtitleManager(),
+      isLiveStream: () => false,
       isGenerationCurrent: () => current,
     });
 
@@ -277,6 +374,7 @@ describe("PersistentReadyWorkExecutor stale-generation continuations", () => {
       waitResumeOrStartOverChoice: async () => "start",
       handleSegmentSkipProgress: async () => {},
       subtitleManager: new PersistentSubtitleManager(),
+      isLiveStream: () => false,
       isGenerationCurrent: () => false,
     });
 
