@@ -89,11 +89,16 @@ async function connect(): Promise<{
   let id = 0;
   const pending = new Map<number, (value: Record<string, unknown>) => void>();
   socket.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data)) as { id?: number };
-    if (typeof message.id === "number") {
-      pending.get(message.id)?.(message as Record<string, unknown>);
-      pending.delete(message.id);
-    }
+    const message = JSON.parse(String(event.data)) as { id?: unknown };
+    // Only ever dispatch to a resolver this process created, keyed by an id it
+    // issued. The frame comes off a socket, so its `id` is untrusted input:
+    // resolve it to a value first and confirm it is callable before calling.
+    const frameId = message.id;
+    if (typeof frameId !== "number" || !Number.isSafeInteger(frameId)) return;
+    const resolve = pending.get(frameId);
+    if (typeof resolve !== "function") return;
+    pending.delete(frameId);
+    resolve(message as Record<string, unknown>);
   });
   const send = (method: string, params: Record<string, unknown> = {}) =>
     new Promise<Record<string, unknown>>((resolve) => {

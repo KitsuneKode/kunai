@@ -7,6 +7,7 @@
  * nothing here re-derives privacy, it only draws what it is given.
  */
 
+import { fetchAnalyticsJson } from "./analytics-fetch";
 import { resolveAnalyticsMetricsUrl } from "./analytics-metrics";
 
 /** The residual bucket. Never a real version, OS, or arch value. */
@@ -181,16 +182,6 @@ export async function fetchDocsAnalyticsSeries(options?: {
 }): Promise<DocsAnalyticsSeries | null> {
   const url = options?.url ?? resolveAnalyticsSeriesUrl();
   if (!url) return null;
-  const fetchImpl = options?.fetchImpl ?? fetch;
-  try {
-    const response = await fetchImpl(url, {
-      headers: { accept: "application/json" },
-      next: { revalidate: 3600 },
-    });
-    if (!response.ok) return null;
-    const json: unknown = await response.json();
-    return parseDocsAnalyticsSeries(json);
-  } catch {
-    return null;
-  }
+  const json = await fetchAnalyticsJson(url, options?.fetchImpl ?? fetch);
+  return parseDocsAnalyticsSeries(json);
 }

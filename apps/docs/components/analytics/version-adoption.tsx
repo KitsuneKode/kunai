@@ -164,6 +164,9 @@ export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeri
           <Area
             key={bucket}
             dataKey={seriesKey(bucket)}
+            // `dataKey` is the CSS-safe key, so without an explicit `name`
+            // recharts labels the tooltip row "v0_3_0" instead of "0.3.0".
+            name={bucket}
             type="monotone"
             stackId="version"
             fill={`var(--color-${seriesKey(bucket)})`}
