@@ -1,5 +1,5 @@
 ---
-status: design-review
+status: approved
 owner: playback-and-distribution
 lastReviewed: "2026-08-27"
 ---

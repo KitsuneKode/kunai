@@ -44,14 +44,14 @@ archive and put only the residue here.
 
 ### Playback and providers
 
-| Track                      | Remaining                                                               | Plan                                                                               |
-| -------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Mobile terminal handoff    | Android Termux binaries, detached VLC/mpv playback, real-device gates   | [mobile-terminal-handoff.md](./mobile-terminal-handoff.md)                         |
-| Provider resolve hardening | Health recovery, latency ordering, and measured hedge-delay calibration | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)   |
-| Provider hardening         | Research and scraper capability roadmap                                 | [provider-hardening.md](./provider-hardening.md)                                   |
-| Provider result contract   | Contract work before broad `@kunai/core` extraction                     | [provider-result-contract.md](./provider-result-contract.md)                       |
-| Beta UI/provider hardening | Tasks 8–10: input routing, subtitle calls, display honesty              | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)   |
-| Resolve UX and Playwright  | Pick up during a browser/provider reliability pass                      | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md) |
+| Track                      | Remaining                                                               | Plan                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Mobile terminal handoff    | Android Termux binaries, detached VLC/mpv playback, real-device gates   | [design](./mobile-terminal-handoff.md) · [implementation](./mobile-terminal-handoff-implementation.md) |
+| Provider resolve hardening | Health recovery, latency ordering, and measured hedge-delay calibration | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                       |
+| Provider hardening         | Research and scraper capability roadmap                                 | [provider-hardening.md](./provider-hardening.md)                                                       |
+| Provider result contract   | Contract work before broad `@kunai/core` extraction                     | [provider-result-contract.md](./provider-result-contract.md)                                           |
+| Beta UI/provider hardening | Tasks 8–10: input routing, subtitle calls, display honesty              | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                       |
+| Resolve UX and Playwright  | Pick up during a browser/provider reliability pass                      | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                     |
 
 ### Offline and release stability
 
