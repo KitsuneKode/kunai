@@ -116,22 +116,32 @@ function normalizeRelayBaseUrl(value: unknown): string {
   return normalizeRelayBaseUrlValue(value) ?? "";
 }
 
+/**
+ * The config schema validates `providerRelay` only and preserves the rest verbatim,
+ * so a hand-edited `config.json` can put a number or an object where a string
+ * belongs. `.trim()` on that throws inside `load()`, which takes down startup for a
+ * field nothing critical depends on.
+ */
+function trimmedConfigString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function normalizeYoutubeMetadata(
   value: KitsuneConfig["youtubeMetadata"] | undefined,
 ): KitsuneConfig["youtubeMetadata"] {
   if (!value || typeof value !== "object") return { ...DEFAULT_CONFIG.youtubeMetadata };
-  return {
-    ...(value.instanceUrl?.trim() ? { instanceUrl: value.instanceUrl.trim() } : {}),
-    ...(value.pipedApiUrl?.trim() ? { pipedApiUrl: value.pipedApiUrl.trim() } : {}),
-    ...(value.cookiesFromBrowser?.trim()
-      ? { cookiesFromBrowser: value.cookiesFromBrowser.trim() }
-      : {}),
-    ...(value.cookiesFile?.trim() ? { cookiesFile: value.cookiesFile.trim() } : {}),
-    ...(value.extractorArgs?.trim() ? { extractorArgs: value.extractorArgs.trim() } : {}),
-    ...(value.sponsorblockRemove?.trim()
-      ? { sponsorblockRemove: value.sponsorblockRemove.trim() }
-      : {}),
+  const entries = {
+    instanceUrl: trimmedConfigString(value.instanceUrl),
+    pipedApiUrl: trimmedConfigString(value.pipedApiUrl),
+    cookiesFromBrowser: trimmedConfigString(value.cookiesFromBrowser),
+    cookiesFile: trimmedConfigString(value.cookiesFile),
+    extractorArgs: trimmedConfigString(value.extractorArgs),
+    poToken: trimmedConfigString(value.poToken),
+    sponsorblockRemove: trimmedConfigString(value.sponsorblockRemove),
   };
+  return Object.fromEntries(
+    Object.entries(entries).filter(([, entry]) => entry !== undefined),
+  ) as KitsuneConfig["youtubeMetadata"];
 }
 
 export class ConfigServiceImpl implements ConfigService {

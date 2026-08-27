@@ -819,6 +819,55 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     await playbackResult;
   });
 
+  test("an in-process reconnect on a live stream never seeks back to the drop position", async () => {
+    // Nulling the loadfile `start` was not enough: the completion step issued its own
+    // absolute seek, which on a live broadcast lands in the DVR window or fails.
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream({
+        url: "https://www.youtube.com/watch?v=liveid",
+        headers: {},
+        requiresYtdl: true,
+        isLive: true,
+      }),
+      options: { displayTitle: "Live broadcast", primarySubtitle: null, onPlaybackEvent: () => {} },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+    harness
+      .callbacks()
+      .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: 4 });
+    harness.callbacks().onPropertyUpdate({
+      name: "demuxer-cache-state",
+      value: { "fw-bytes": 0 },
+      observedAt: 5,
+    });
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 6 });
+    await flushAsyncWork();
+    harness.callbacks().onFileLoaded?.({ observedAt: 18_100 });
+    await flushAsyncWork();
+
+    const reload = harness.commands.find(
+      (command) =>
+        command[0] === "loadfile" && command[1] === "https://www.youtube.com/watch?v=liveid",
+    );
+    expect(reload).toBeDefined();
+    expect((reload as [string, string, string, number, Record<string, string>])[4].start).toBe("0");
+    expect(harness.commands.some((command) => command[0] === "seek")).toBe(false);
+
+    const playbackResult = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "quit", observedAt: 18_200 });
+    await playbackResult;
+  });
+
   test("a replacement during reconnect seek blocks every stale completion command", async () => {
     let releaseSeek!: () => void;
     let seekStarted!: () => void;

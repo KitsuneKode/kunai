@@ -28,6 +28,7 @@ describe("DownloadService youtube argv contract", () => {
       cookiesFromBrowser: "firefox",
       cookiesFile: "/tmp/cookies.txt",
       extractorArgs: "youtube:player_client=android",
+      poToken: "android.gvs+DOWNLOAD_TOKEN",
       sponsorblockRemove: "sponsor",
     });
     runYtDlpSpy = spyOn(youtubeProviders, "runYtDlpProcess");
@@ -79,7 +80,7 @@ describe("DownloadService youtube argv contract", () => {
     await service.processQueue();
 
     expect(repo.get(job.id)?.status).toBe("completed");
-    expect(capturedArgs.join(" ")).toContain("bestvideo[height<=1080]");
+    expect(capturedArgs.join(" ")).toContain("bv*[height<=?1080]");
     expect(capturedArgs).toEqual(
       expect.arrayContaining([
         "--merge-output-format",
@@ -91,6 +92,11 @@ describe("DownloadService youtube argv contract", () => {
         "--cookies",
         "/tmp/cookies.txt",
       ]),
+    );
+    // A download needs the same PO token playback uses; without it yt-dlp skips
+    // every format whose GVS policy requires one and the job fails on a 403.
+    expect(capturedArgs.join(" ")).toContain(
+      "youtube:player_client=android;po_token=android.gvs+DOWNLOAD_TOKEN",
     );
     expect(runYtDlpSpy).toHaveBeenCalled();
     expect(spawnSpy).not.toHaveBeenCalled();

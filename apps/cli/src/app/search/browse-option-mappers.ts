@@ -1,18 +1,96 @@
-import type { BrowseShellOption } from "@/app-shell/types";
+import type { BrowseShellOption, ShellPanelLine } from "@/app-shell/types";
 import { buildLocalFilterFacts } from "@/app/search/browse-local-filter-facts";
 import { isCalendarSearchResult } from "@/app/search/calendar-results";
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { ListService } from "@/domain/lists/ListService";
 import { isAnimeContent } from "@/domain/media/content-kind";
-import type { SearchResult, TitleAliasKind } from "@/domain/types";
+import type { SearchResult, TitleAliasKind, YouTubeLiveStatus } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import {
   formatTimestamp,
   historyContentType,
   isFinished,
 } from "@/services/continuation/history-progress";
-import { formatDurationSeconds, formatViewCount } from "@kunai/providers/youtube";
+import {
+  formatDurationSeconds,
+  formatRelativeTime,
+  formatViewCount,
+} from "@kunai/providers/youtube";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
+
+/**
+ * The one place a YouTube live state becomes words. The row line, the preview badge
+ * and the preview facts all showed the same status through their own ternary chain,
+ * so they could drift apart on the same result.
+ */
+const YOUTUBE_LIVE_LABELS = {
+  live: "\u25cf LIVE",
+  upcoming: "Upcoming",
+  post_live: "Was Live",
+} as const;
+
+function youtubeLiveLabel(status: YouTubeLiveStatus | undefined): string | undefined {
+  return status && status !== "none" ? YOUTUBE_LIVE_LABELS[status] : undefined;
+}
+
+/**
+ * The YouTube-only rows of the preview pane, in display order. These were five
+ * near-identical conditional spreads; one builder keeps the shape, the ordering,
+ * and the empty handling in a single place.
+ */
+function youtubePreviewFacts(result: SearchResult, contentLabel: string): ShellPanelLine[] {
+  const facts: ShellPanelLine[] = [];
+  const push = (
+    label: string,
+    detail: string | undefined,
+    tone: ShellPanelLine["tone"] = "neutral",
+  ) => {
+    if (detail) facts.push({ label, detail, tone });
+  };
+  const clock = result.durationSeconds
+    ? (formatDurationSeconds(result.durationSeconds) ?? `${result.durationSeconds}s`)
+    : undefined;
+
+  push("Channel", result.channelTitle);
+  push(
+    "Views",
+    result.viewCount === undefined
+      ? undefined
+      : (formatViewCount(result.viewCount) ?? `${result.viewCount}`),
+  );
+  push(
+    "Uploaded",
+    result.publishedAt ? (formatRelativeTime(result.publishedAt) ?? result.publishedAt) : undefined,
+  );
+  push("Duration", clock && contentLabel === "Short" ? `Short (${clock})` : clock);
+  push(
+    "Live status",
+    youtubeLiveLabel(result.liveStatus),
+    result.liveStatus === "live"
+      ? "error"
+      : result.liveStatus === "upcoming"
+        ? "warning"
+        : "neutral",
+  );
+  return facts;
+}
+
+/**
+ * "24 videos" / "12 episodes" for a collection.
+ *
+ * Zero is a fact about a collection, not an absence of one, so the check is
+ * against `undefined` rather than truthiness — and one video is not "1 videos".
+ * The media panel says the same thing about the same result, so the two have to
+ * agree.
+ */
+function countLabel(result: SearchResult, isYoutubeResult: boolean): string | undefined {
+  const count = result.episodeCount;
+  if (count === undefined) return undefined;
+  if (result.type === "movie" && !isYoutubeResult) return undefined;
+  const collection = result.contentShape === "channel" || result.contentShape === "playlist";
+  if (collection) return count === 1 ? "1 video" : `${count} videos`;
+  return count === 1 ? "1 episode" : `${count} episodes`;
+}
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
 
@@ -133,16 +211,8 @@ export function toBrowseResultOption(
     formatDurationSeconds(result.durationSeconds),
     result.channelTitle,
     formatViewCount(result.viewCount),
-    result.liveStatus === "live"
-      ? "Live"
-      : result.liveStatus === "upcoming"
-        ? "Upcoming"
-        : undefined,
-    result.episodeCount && result.type !== "movie"
-      ? result.contentShape === "channel"
-        ? `${result.episodeCount} videos`
-        : `${result.episodeCount} episodes`
-      : undefined,
+    youtubeLiveLabel(result.liveStatus),
+    countLabel(result, isYoutubeResult),
     formatAnimeAvailability(result),
     formatRating(result.rating),
     ...enrichmentBadges.map((badge) => badge.label),
@@ -169,7 +239,16 @@ export function toBrowseResultOption(
     }${overview ? ` · ${overview}` : ""}`,
     previewTitle: displayTitle,
     previewMeta: meta,
-    previewBadge: inWatchlist ? "wl" : isFollowing ? "★ following" : undefined,
+    // Membership stays first. `previewBadge` is not free-form: calendar banding
+    // (`isCalendarTrackedOption`), the calendar episode-code slot, and the preview
+    // rail all exact-match "wl", so a live label in front would quietly drop a
+    // watchlisted broadcast out of all three. Live state is carried by the meta line
+    // and the preview facts, so nothing is lost by ranking it below.
+    previewBadge: inWatchlist
+      ? "wl"
+      : isFollowing
+        ? "★ following"
+        : youtubeLiveLabel(result.liveStatus),
     previewFacts: [
       ...buildLocalEnrichmentFacts(enrichment),
       ...buildManagementFacts(result, listService, optionContext),
@@ -182,6 +261,7 @@ export function toBrowseResultOption(
             },
           ]
         : []),
+      ...(isYoutubeResult ? youtubePreviewFacts(result, contentLabel) : []),
       {
         label: "Metadata source",
         detail: result.metadataSource ?? "provider response",
@@ -226,17 +306,21 @@ export function toBrowseResultOption(
     previewRating: formatRating(result.rating),
     previewBody: overview || "No overview available yet.",
     previewNote:
-      isYoutubeResult && result.contentShape === "playlist"
-        ? "Press Enter to open this playlist and choose a video."
-        : isYoutubeResult && result.contentShape === "channel"
-          ? "Press Enter to open this channel and choose a video."
-          : isYoutubeResult && result.contentShape === "short"
-            ? "Press Enter to open this Short and continue to playback."
-            : isYoutubeResult
-              ? "Press Enter to open this video and continue to playback."
-              : result.type === "series"
-                ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
-                : "Press Enter to open this title and continue to playback. Use / details for the overview.",
+      isYoutubeResult && result.liveStatus === "upcoming"
+        ? "This YouTube premiere has not started yet."
+        : isYoutubeResult && result.liveStatus === "live"
+          ? "This stream is live. Press Enter to join at the live edge."
+          : isYoutubeResult && result.contentShape === "playlist"
+            ? "Press Enter to open this playlist and choose a video."
+            : isYoutubeResult && result.contentShape === "channel"
+              ? "Press Enter to open this channel and choose a video."
+              : isYoutubeResult && result.contentShape === "short"
+                ? "Press Enter to open this Short and continue to playback."
+                : isYoutubeResult
+                  ? "Press Enter to open this video and continue to playback."
+                  : result.type === "series"
+                    ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
+                    : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
 }
 

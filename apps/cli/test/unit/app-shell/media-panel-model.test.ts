@@ -324,19 +324,85 @@ describe("buildMediaPanel — video", () => {
         videoMeta: { channelTitle: "News", liveStatus: "live" },
       }),
     );
-    expect(model.facts).toContainEqual({ label: "live", value: "● live", tone: "success" });
+    expect(model.facts).toContainEqual({ label: "live", value: "● live", tone: "error" });
+  });
+
+  test("badges a Short from its shape and still shows the running time", () => {
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Shorts clip",
+        videoMeta: { durationSeconds: 45, contentShape: "short" },
+      }),
+    );
+    expect(model.kindBadge).toBe("short");
+    // The badge already says "short"; replacing the clock with the word threw away
+    // the one fact the row was there to carry.
+    expect(model.facts).toContainEqual({ label: "length", value: "0:45" });
+  });
+
+  test("a short regular video is not a Short", () => {
+    // YouTube raised the Shorts ceiling to three minutes in Oct 2024, so duration
+    // decides nothing: only the provider's shape does.
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Brief clip",
+        videoMeta: { durationSeconds: 45, contentShape: "video" },
+      }),
+    );
+    expect(model.kindBadge).toBe("video");
+    expect(model.facts).toContainEqual({ label: "length", value: "0:45" });
+  });
+
+  test("badges playlist contentShape distinctly from video", () => {
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Example Playlist",
+        videoMeta: { channelTitle: "Creator", contentShape: "playlist" },
+        nextEpisodeLabel: "Play",
+      }),
+    );
+    expect(model.kindBadge).toBe("playlist");
+    expect(model.miniCards[0]?.meta).toBe("playlist");
   });
 
   test("distinguishes upcoming and post-live videos", () => {
     const upcoming = buildMediaPanel(
       ctx({ contentKind: "video", title: "Premiere", videoMeta: { liveStatus: "upcoming" } }),
     );
-    expect(upcoming.facts).toContainEqual({ label: "live", value: "◷ upcoming", tone: "muted" });
+    expect(upcoming.facts).toContainEqual({
+      label: "live",
+      value: "◷ upcoming",
+      tone: "warning",
+    });
 
     const replay = buildMediaPanel(
       ctx({ contentKind: "video", title: "Replay", videoMeta: { liveStatus: "post_live" } }),
     );
-    expect(replay.facts).toContainEqual({ label: "live", value: "↺ replay", tone: "muted" });
+    expect(replay.facts).toContainEqual({ label: "live", value: "↺ was live", tone: "neutral" });
+  });
+
+  test("counts every valid video total, including zero and one", () => {
+    const empty = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Empty Playlist",
+        videoMeta: { contentShape: "playlist", videoCount: 0 },
+      }),
+    );
+    // Zero is a fact about the playlist, not an absence of one.
+    expect(empty.facts).toContainEqual({ label: "videos", value: "0 videos" });
+
+    const single = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "One Video Playlist",
+        videoMeta: { contentShape: "playlist", videoCount: 1 },
+      }),
+    );
+    expect(single.facts).toContainEqual({ label: "videos", value: "1 video" });
   });
 
   test("badges channel contentShape distinctly from video", () => {

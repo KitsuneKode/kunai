@@ -52,6 +52,9 @@ export function providerResolveResultToStreamInfo(
       : selectAutomaticSubtitle(subtitleList as never, subtitlePreference);
 
   const subtitleSource = resolveSubtitleSource(result.subtitles, subtitleList);
+  const liveMetadata = selected.metadata as
+    | { readonly isLive?: boolean; readonly liveStatus?: string }
+    | undefined;
 
   return {
     url: playableUrl,
@@ -64,6 +67,11 @@ export function providerResolveResultToStreamInfo(
     ytdlRawOptions: selected.requiresYtdl
       ? resolveYoutubeYtdlRawOptions(selected, subtitlePreference)
       : undefined,
+    // Read both: a provider that reports only `liveStatus` would otherwise resolve
+    // to `isLive: false`, which re-enables resume seeks and drops the live demuxer
+    // profile on a stream that is genuinely broadcasting.
+    isLive: liveMetadata?.isLive === true || liveMetadata?.liveStatus === "live",
+    liveStatus: liveMetadata?.liveStatus,
     subtitle: pickedSubtitle?.url,
     subtitleList,
     subtitleSource,

@@ -8,9 +8,43 @@ import {
   joinMpvYtdlRawOptions,
   parseYoutubePlayerClients,
   withYoutubePlayerClient,
+  appendYoutubePoToken,
 } from "@kunai/providers/youtube";
 
 describe("youtube ytdl options", () => {
+  // yt-dlp strips the `IE_KEY:` prefix exactly once and splits the rest on `;`, so a
+  // second `youtube:` becomes part of the key name and the value is never read. These
+  // assertions are what stop the token from silently going nowhere.
+  test("appendYoutubePoToken keeps one extractor prefix and scopes the token to the lane", () => {
+    expect(appendYoutubePoToken("youtube:player_client=mweb", "abcd")).toBe(
+      "youtube:player_client=mweb;po_token=mweb.gvs+abcd",
+    );
+    // An explicit CLIENT.CONTEXT+TOKEN from the user is passed through untouched.
+    expect(appendYoutubePoToken("youtube:player_client=mweb", "ios.gvs+abcd")).toBe(
+      "youtube:player_client=mweb;po_token=ios.gvs+abcd",
+    );
+    expect(appendYoutubePoToken(undefined, "abcd")).toBe("youtube:po_token=web.gvs+abcd");
+    expect(appendYoutubePoToken("", "abcd")).toBe("youtube:po_token=web.gvs+abcd");
+    expect(appendYoutubePoToken("youtube:player_client=mweb", undefined)).toBe(
+      "youtube:player_client=mweb",
+    );
+  });
+
+  test("appendYoutubePoToken never appends a second po_token", () => {
+    // The dedupe guard has to see a correctly-formed value, which is the shape that
+    // has no `youtube:` in front of the key.
+    expect(appendYoutubePoToken("youtube:player_client=web;po_token=web.gvs+old", "new")).toBe(
+      "youtube:player_client=web;po_token=web.gvs+old",
+    );
+  });
+
+  test("a po_token survives the per-lane player_client rewrite", () => {
+    const lane = withYoutubePlayerClient("youtube:player_client=visionos,web", "web");
+    expect(appendYoutubePoToken(lane, "tok")).toBe(
+      "youtube:player_client=web;po_token=web.gvs+tok",
+    );
+  });
+
   test("buildYoutubeYtdlCliArgs includes sponsorblock and cookies", () => {
     const args = buildYoutubeYtdlCliArgs({
       cookiesFromBrowser: "chrome",
@@ -35,8 +69,23 @@ describe("youtube ytdl options", () => {
     );
 
     expect(joined).toBe(
-      "sponsorblock-remove=%13%sponsor,intro,live-from-start=no,sub-langs=%3%all",
+      "sponsorblock-remove=%13%sponsor,intro,no-live-from-start=,sub-langs=%3%all",
     );
+  });
+
+  test("appends PO token to extractor-args", () => {
+    const args = buildYoutubeYtdlCliArgs({
+      extractorArgs: "youtube:player_client=web",
+      poToken: "web+testToken123",
+    });
+    expect(args).toContain("--extractor-args");
+    expect(args).toContain("youtube:player_client=web;po_token=web+testToken123");
+
+    const raw = buildYoutubeMpvYtdlRawOptions({
+      poToken: "testToken456",
+    });
+    const value = "youtube:po_token=web.gvs+testToken456";
+    expect(raw).toContain(`extractor-args=%${value.length}%${value}`);
   });
 
   test("buildYoutubeMpvScriptOpts disables ytdlautoformat overrides", () => {
@@ -90,7 +139,7 @@ describe("youtube ytdl options", () => {
     );
     // A user's unrelated extractor args must survive the rewrite.
     expect(withYoutubePlayerClient("youtube:skip=hls", "mweb")).toBe(
-      "youtube:skip=hls;youtube:player_client=mweb",
+      "youtube:skip=hls;player_client=mweb",
     );
     expect(withYoutubePlayerClient(undefined, "mweb")).toBe("youtube:player_client=mweb");
     expect(withYoutubePlayerClient("", "mweb")).toBe("youtube:player_client=mweb");

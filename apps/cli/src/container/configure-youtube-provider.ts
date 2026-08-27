@@ -61,6 +61,7 @@ export function applyYoutubeProviderConfig(
       cookiesFromBrowser: config.youtubeMetadata.cookiesFromBrowser,
       cookiesFile: config.youtubeMetadata.cookiesFile,
       extractorArgs: config.youtubeMetadata.extractorArgs,
+      poToken: config.youtubeMetadata.poToken,
     },
   });
 
@@ -70,6 +71,7 @@ export function applyYoutubeProviderConfig(
     cookiesFromBrowser: config.youtubeMetadata.cookiesFromBrowser,
     cookiesFile: config.youtubeMetadata.cookiesFile,
     extractorArgs: config.youtubeMetadata.extractorArgs,
+    poToken: config.youtubeMetadata.poToken,
     sponsorblockRemove: config.youtubeMetadata.sponsorblockRemove,
     metadataService,
   });

@@ -1,3 +1,4 @@
+import { youtubeQualityHeight } from "./quality-selection";
 import { spawnYtDlpWithTimeout } from "./spawn-ytdlp";
 import { buildYoutubeYtdlCliArgs } from "./ytdl-options";
 
@@ -23,6 +24,8 @@ export type YtDlpVideoInfo = {
   readonly channel_id?: string;
   readonly view_count?: number;
   readonly upload_date?: string;
+  readonly timestamp?: number;
+  readonly release_timestamp?: number;
   readonly is_live?: boolean;
   readonly live_status?: string;
   readonly formats?: readonly YtDlpFormatInfo[];
@@ -37,6 +40,7 @@ export type YtDlpExtractOptions = {
   readonly cookiesFromBrowser?: string;
   readonly cookiesFile?: string;
   readonly extractorArgs?: string;
+  readonly poToken?: string;
   readonly sponsorblockRemove?: string;
   readonly isLive?: boolean;
   readonly signal?: AbortSignal;
@@ -64,22 +68,21 @@ export async function extractYtDlpVideoInfo(
 }
 
 export function defaultYtdlPlaybackFormat(): string {
+  // yt-dlp's own documented default. `bv*` means "best format that contains
+  // video" — `bv`/`bestvideo` is video-*only* (`best*[acodec=none]`), which drops
+  // the pre-merged renditions YouTube serves for live HLS and for older uploads.
   return "bv*+ba/b";
 }
 
 export function buildYtdlFormatSelector(qualityLabel?: string): string {
   if (!qualityLabel) return defaultYtdlPlaybackFormat();
-  const normalized = qualityLabel.trim().toLowerCase();
-  if (normalized === "best" || normalized === "auto" || normalized === "") {
-    return defaultYtdlPlaybackFormat();
-  }
-  const match = qualityLabel.match(/(\d{3,4})\s*p/i);
-  if (!match?.[1]) return defaultYtdlPlaybackFormat();
-  const height = Number.parseInt(match[1], 10);
-  if (!Number.isFinite(height) || height <= 0) return defaultYtdlPlaybackFormat();
-  // YouTube 1080p+ is usually DASH (separate video+audio). Leading with `best[height]`
-  // prefers muxed/HLS streams and can cap well below the requested ceiling.
-  return `bestvideo[height<=${height}]+bestaudio/bestvideo[height<=${height}]/bestvideo+bestaudio/bv*+ba/b`;
+  const height = youtubeQualityHeight(qualityLabel);
+  if (!height) return defaultYtdlPlaybackFormat();
+  // `height<=?H` keeps formats whose height YouTube did not report (live HLS
+  // renditions, mainly) instead of rejecting them. The ceiling is repeated on the
+  // second alternative on purpose: without it a failed merge silently promotes the
+  // viewer to the best available rendition, so asking for 480p could yield 2160p.
+  return `bv*[height<=?${height}]+ba/bv*[height<=?${height}]/${defaultYtdlPlaybackFormat()}`;
 }
 
 export function mapYtDlpFormatsToQualityLabels(

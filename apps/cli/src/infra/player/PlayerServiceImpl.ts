@@ -691,10 +691,11 @@ export class PlayerServiceImpl implements PlayerService {
         subtitlePreference: options.subtitlePreference,
         subtitleTracks: stream.subtitleList,
         displayTitle: options.displayTitle,
-        startAt: options.startAt,
+        startAt: stream.isLive ? undefined : options.startAt,
         requiresYtdl: stream.requiresYtdl,
         ytdlFormat: stream.ytdlFormat,
         ytdlRawOptions: stream.ytdlRawOptions,
+        isLive: stream.isLive,
         attach: options.attach,
         timing: options.timing,
         autoSkipEnabled: options.autoSkipEnabled,
@@ -737,7 +738,11 @@ export class PlayerServiceImpl implements PlayerService {
       await this.retirePersistentSession(retiredGeneration);
     }
 
-    const resumePromptAt = options.resumePromptAt ?? 0;
+    // Suppressing only the loadfile `start` is not enough: the ready-work executor
+    // runs its own resume prompt and absolute seek off these fields, and even when
+    // the seek is skipped it still records the stale offset as a trusted position.
+    // A live broadcast has no position to resume, so drop all three at the source.
+    const resumePromptAt = stream.isLive ? 0 : (options.resumePromptAt ?? 0);
     const offerResumeStartChoice =
       shouldApplyStartAtSeek(resumePromptAt) && options.resumeStartChoicePrompt !== false;
 
@@ -749,7 +754,7 @@ export class PlayerServiceImpl implements PlayerService {
       subtitlePreference: options.subtitlePreference,
       primarySubtitle: stream.subtitle ?? null,
       subtitleTracks: stream.subtitleList,
-      startAt: options.startAt,
+      startAt: stream.isLive ? undefined : options.startAt,
       resumePromptAt,
       offerResumeStartChoice,
       resumeChoiceTimeLabel:

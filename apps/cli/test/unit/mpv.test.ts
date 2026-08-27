@@ -27,9 +27,13 @@ test("buildMpvArgs whitelists HTTPS for local materialized HLS playlists", () =>
     "/tmp/kunai-test.sock",
   );
 
-  expect(args).toContain(
-    "--demuxer-lavf-o=protocol_whitelist=[file,tcp,tls,https,http,crypto,data]",
-  );
+  // `--demuxer-lavf-o` is single-valued, so the whitelist has to share one value
+  // with the reconnect ladder instead of being pushed as a second option that
+  // replaces it. Emitting it alone silently dropped every reconnect hint.
+  const lavf = args.filter((arg) => arg.startsWith("--demuxer-lavf-o="));
+  expect(lavf).toHaveLength(1);
+  expect(lavf[0]).toContain("protocol_whitelist=[file,tcp,tls,https,http,crypto,data]");
+  expect(lavf[0]).toContain("reconnect=1");
 });
 
 test("buildMpvArgs attaches full subtitle inventory during initial launch", () => {

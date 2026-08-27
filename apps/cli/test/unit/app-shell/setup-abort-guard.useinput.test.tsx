@@ -9,7 +9,7 @@ import {
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
-import { render } from "../../harness/render-capture";
+import { render, stripAnsi } from "../../harness/render-capture";
 
 // The capture harness cannot deliver a lone escape byte in a form Ink's
 // useInput resolves (see #227's own verification notes), so these drive `q`,
@@ -189,8 +189,8 @@ test("language profile hotkeys edit one media lane without rewriting the others"
   try {
     handle.stdin.enqueue("\r"); // -> mode
     handle.stdin.enqueue("\r"); // -> language
-    expect(handle.lastFrame()).toContain("Shows Original/English");
-    expect(handle.lastFrame()).toContain("Anime Japanese/None");
+    expect(stripAnsi(handle.lastFrame())).toContain("Shows Original/English");
+    expect(stripAnsi(handle.lastFrame())).toContain("Anime Japanese/None");
 
     handle.stdin.enqueue("\x1b[B"); // Shows audio: Original -> English
     handle.stdin.enqueue("\t"); // Shows -> Movies
@@ -198,7 +198,7 @@ test("language profile hotkeys edit one media lane without rewriting the others"
     handle.stdin.enqueue("\x1b[C"); // focus subtitles
     handle.stdin.enqueue("\x1b[B"); // None -> Arabic
 
-    const frame = handle.lastFrame();
+    const frame = stripAnsi(handle.lastFrame());
     expect(frame).toContain("Shows English/English");
     expect(frame).toContain("Anime Japanese/Arabic");
     expect(frame).toContain("Movies English/Spanish");

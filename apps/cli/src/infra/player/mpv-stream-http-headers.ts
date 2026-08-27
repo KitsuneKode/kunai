@@ -7,6 +7,13 @@ import {
 } from "./mpv-playback-url";
 import { shouldApplyStartAtSeek } from "./mpv-start-seek";
 
+/**
+ * Last-resort selector when a caller hands us no format. Must stay equal to the
+ * provider's `defaultYtdlPlaybackFormat()` — importing it here would pull the whole
+ * provider barrel into the launcher bundle, so a test asserts the two agree instead.
+ */
+export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b";
+
 export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
   "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
 
@@ -100,7 +107,46 @@ export type PersistentLoadfileOptions = {
   readonly "ytdl-raw-options"?: string;
   readonly "demuxer-lavf-o"?: string;
   readonly "demuxer-lavf-o-clr"?: string;
+  /** Live-broadcast demuxer profile; see {@link LIVE_DEMUXER_OPTIONS}. */
+  readonly "cache-pause-wait"?: string;
+  readonly "demuxer-readahead-secs"?: string;
+  readonly "demuxer-max-bytes"?: string;
 };
+
+/**
+ * Demuxer profile for an active broadcast: a small readahead window so playback
+ * stays near the live edge, and a shorter reconnect ladder because a dropped live
+ * segment is never coming back. Shared with `buildMpvArgs` so a live stream loaded
+ * into an *existing* persistent session gets the same treatment as one that the
+ * process was spawned on — a loadfile replacement inherits nothing from spawn args.
+ */
+export const LIVE_DEMUXER_OPTIONS = {
+  "cache-pause-wait": "1",
+  "demuxer-readahead-secs": "10",
+  "demuxer-max-bytes": "32MiB",
+} as const;
+
+/**
+ * The live half of `demuxer-lavf-o`, kept apart from {@link LIVE_DEMUXER_OPTIONS}
+ * because that option is single-valued: setting it twice does not merge, the last
+ * write wins. A live stream served from a materialized local HLS manifest needs
+ * both the reconnect ladder and the protocol whitelist, so callers compose the
+ * parts through {@link composeDemuxerLavfOptions} and set the option exactly once.
+ */
+export const LIVE_DEMUXER_LAVF_OPTIONS =
+  "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=5";
+
+/**
+ * Join `demuxer-lavf-o` fragments into one value. The protocol whitelist is placed
+ * last by callers because its `[a,b,c]` bracket group is what protects its own
+ * commas from the surrounding key=value list.
+ */
+export function composeDemuxerLavfOptions(
+  ...parts: readonly (string | undefined)[]
+): string | undefined {
+  const present = parts.filter((part): part is string => Boolean(part?.trim()));
+  return present.length > 0 ? present.join(",") : undefined;
+}
 
 export function buildPersistentLoadfileOptions(
   url: string,
@@ -110,12 +156,13 @@ export function buildPersistentLoadfileOptions(
     readonly requiresYtdl?: boolean;
     readonly ytdlFormat?: string;
     readonly ytdlRawOptions?: string;
+    readonly isLive?: boolean;
     readonly urlKind?: MpvUrlKind;
   },
 ): PersistentLoadfileOptions {
   const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(headers);
   const loadOptions: Record<string, string> = {
-    start: shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
+    start: !ytdlOptions?.isLive && shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
   };
 
   if (referer) {
@@ -143,17 +190,25 @@ export function buildPersistentLoadfileOptions(
     // property` while `ytdl-format` accepts it. Setting the flag explicitly
     // also survives a user config that turned ytdl off.
     loadOptions.ytdl = "yes";
-    loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? "bv*+ba/b";
+    loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT;
     if (ytdlOptions?.ytdlRawOptions?.trim()) {
       loadOptions["ytdl-raw-options"] = ytdlOptions.ytdlRawOptions.trim();
     }
   } else if (isRemoteHlsManifestPlaybackUrl(url)) {
     loadOptions.ytdl = "no";
   }
-  if (isLocalHlsManifestPlaybackUrl(url)) {
-    loadOptions["demuxer-lavf-o"] = LOCAL_HLS_DEMUXER_LAVF_OPTIONS;
+  const demuxerLavfOptions = composeDemuxerLavfOptions(
+    ytdlOptions?.isLive ? LIVE_DEMUXER_LAVF_OPTIONS : undefined,
+    isLocalHlsManifestPlaybackUrl(url) ? LOCAL_HLS_DEMUXER_LAVF_OPTIONS : undefined,
+  );
+  if (demuxerLavfOptions) {
+    loadOptions["demuxer-lavf-o"] = demuxerLavfOptions;
   } else if (/^https?:\/\//i.test(url.trim())) {
     loadOptions["demuxer-lavf-o-clr"] = "";
+  }
+
+  if (ytdlOptions?.isLive) {
+    Object.assign(loadOptions, LIVE_DEMUXER_OPTIONS);
   }
 
   return loadOptions as PersistentLoadfileOptions;
@@ -167,6 +222,7 @@ export function buildPersistentLoadfileCommand(
     readonly requiresYtdl?: boolean;
     readonly ytdlFormat?: string;
     readonly ytdlRawOptions?: string;
+    readonly isLive?: boolean;
     readonly urlKind?: MpvUrlKind;
   },
 ): ["loadfile", string, "replace", -1, PersistentLoadfileOptions] {

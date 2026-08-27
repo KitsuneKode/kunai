@@ -4,10 +4,13 @@ export type YoutubeQualityEntry = {
   readonly formatId: string;
 };
 
-/** Height in pixels for a `"720p"`-style label, or undefined for `best`/`auto`. */
+/** Height in pixels for a `"720p"`, `"1080p"`, or `"4K"`-style label, or undefined for `best`/`auto`. */
 export function youtubeQualityHeight(label: string | undefined): number | undefined {
   if (!label) return undefined;
-  const match = label.match(/(\d{3,4})\s*p/i);
+  const trimmed = label.trim().toLowerCase();
+  if (trimmed === "4k" || trimmed === "2160p") return 2160;
+  if (trimmed === "8k" || trimmed === "4320p") return 4320;
+  const match = trimmed.match(/(\d{3,4})\s*p/i);
   if (!match?.[1]) return undefined;
   const height = Number.parseInt(match[1], 10);
   return Number.isFinite(height) && height > 0 ? height : undefined;
