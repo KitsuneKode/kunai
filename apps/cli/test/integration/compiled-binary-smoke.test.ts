@@ -76,7 +76,7 @@ describeBinary("compiled linux binary smoke", () => {
     expect(result.stdout.toString().trim()).toMatch(/^kunai \d+\.\d+\.\d+/);
   });
 
-  test("dist/bin satisfies the exact 18-file release asset contract", () => {
+  test("dist/bin satisfies the exact 22-file release asset contract", () => {
     assertCompleteReleaseAssetSet(listRegularReleaseFiles(BIN_DIR));
   });
 

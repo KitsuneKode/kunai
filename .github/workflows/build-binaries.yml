@@ -32,7 +32,7 @@ env:
 
 jobs:
   all-targets:
-    name: Cross-compile all 8 targets
+    name: Cross-compile all 10 targets
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -74,6 +74,10 @@ jobs:
             apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
             apps/cli/dist/bin/kunai-linux-arm64-musl
             apps/cli/dist/bin/kunai-linux-arm64-musl.tar.gz
+            apps/cli/dist/bin/kunai-android-arm64
+            apps/cli/dist/bin/kunai-android-arm64.tar.gz
+            apps/cli/dist/bin/kunai-android-x64
+            apps/cli/dist/bin/kunai-android-x64.tar.gz
             apps/cli/dist/bin/kunai-darwin-x64
             apps/cli/dist/bin/kunai-darwin-x64.tar.gz
             apps/cli/dist/bin/kunai-darwin-arm64
