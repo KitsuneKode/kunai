@@ -80,7 +80,9 @@ accounts, usage ping, done. Implementation is
   remains independent.
 - **Playback defaults are conservative.** Autoplay, intro skipping, and credit
   skipping start off. Press `s` to apply the recommended all-on playback
-  defaults, or `S` to accept every remaining recommendation and finish.
+  defaults, or `S` to accept every remaining recommendation and jump to the final
+  review. Neither key writes configuration — `S` opens the review screen, and the
+  wizard saves only when you press Enter there.
 - **Analytics is keystroke-gated.** Consent is recorded when the user presses a
   key on the consent screen, never when they arrive on it. Arriving and stepping
   back leaves the value `unchanged`, which is neither an opt-in nor an opt-out.
