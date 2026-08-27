@@ -1,5 +1,5 @@
 import { ChartInstalls } from "@/components/analytics/chart-installs";
-import { VersionAdoption } from "@/components/analytics/version-adoption";
+import { ShareSection } from "@/components/analytics/share-section";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { DocsAnalyticsSeries, SeriesPoint } from "@/lib/analytics-series";
 
@@ -21,17 +21,7 @@ export function TrendSection({ series }: { readonly series: DocsAnalyticsSeries 
       <ChartInstalls points={series.points} from={series.from} to={series.to} />
 
       <div className="grid gap-4 @4xl/analytics:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-        <Card className="@container/card">
-          <CardHeader>
-            <CardTitle>Version share</CardTitle>
-            <CardDescription>
-              Share of active installs by version. Bands stack oldest to newest.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-2 sm:px-6">
-            <VersionAdoption series={series} />
-          </CardContent>
-        </Card>
+        <ShareSection series={series} />
 
         <Card className="@container/card">
           <CardHeader>

@@ -18,6 +18,8 @@ function day(index: number, activeInstalls = 1): SeriesPoint {
     activeInstalls,
     lifetimeInstalls: index + 1,
     byVersion: { other: activeInstalls },
+    byOs: { other: activeInstalls },
+    byArch: { other: activeInstalls },
   };
 }
 

@@ -23,11 +23,23 @@ export const RESIDUAL_LABEL = "other";
  */
 export const MAX_VERSION_BANDS = 5;
 
+/**
+ * The dimensions a rollup day is broken down by.
+ *
+ * All three are published per day and suppressed across the whole window
+ * before they are ever fetched; the docs parser used to keep only `byVersion`
+ * and drop the other two on the floor.
+ */
+export const SHARE_DIMENSIONS = ["byVersion", "byOs", "byArch"] as const;
+export type ShareDimension = (typeof SHARE_DIMENSIONS)[number];
+
 export type SeriesPoint = {
   readonly day: string;
   readonly activeInstalls: number;
   readonly lifetimeInstalls: number;
   readonly byVersion: Readonly<Record<string, number>>;
+  readonly byOs: Readonly<Record<string, number>>;
+  readonly byArch: Readonly<Record<string, number>>;
 };
 
 export type DocsAnalyticsSeries = {
@@ -73,11 +85,19 @@ function parsePoint(value: unknown): SeriesPoint | null {
   if (typeof lifetimeInstalls !== "number" || !Number.isFinite(lifetimeInstalls)) return null;
   const byVersion = parseCounts(value.byVersion);
   if (!byVersion) return null;
+  // Held to the same standard as byVersion: one malformed breakdown makes the
+  // whole day untrustworthy rather than silently drawing a partial chart.
+  const byOs = parseCounts(value.byOs);
+  if (!byOs) return null;
+  const byArch = parseCounts(value.byArch);
+  if (!byArch) return null;
   return {
     day,
     activeInstalls: Math.max(0, Math.floor(activeInstalls)),
     lifetimeInstalls: Math.max(0, Math.floor(lifetimeInstalls)),
     byVersion,
+    byOs,
+    byArch,
   };
 }
 
@@ -114,31 +134,34 @@ export function parseDocsAnalyticsSeries(raw: unknown): DocsAnalyticsSeries | nu
 }
 
 /**
- * The version bands worth drawing, newest release last.
+ * The bands worth drawing for one dimension.
  *
- * Versions are *ordered*, so the bands are sorted by version rather than by
- * size — the reader's question is "is the newest one taking over", and a chart
- * sorted by magnitude destroys exactly that reading. The residual always sits
- * first so the named bands stack above it.
+ * Versions are *ordered*, so version bands sort by version rather than by
+ * size — the reader's question is "is the newest one taking over", and sorting
+ * by magnitude destroys exactly that reading. OS and architecture are nominal:
+ * they have no natural order, so they sort by size, largest band first. The
+ * residual always sits first so the named bands stack above it.
  */
-export function versionBands(
+export function shareBands(
   series: DocsAnalyticsSeries,
+  dimension: ShareDimension = "byVersion",
   limit: number = MAX_VERSION_BANDS,
 ): readonly string[] {
   const totals = new Map<string, number>();
   for (const point of series.points) {
-    for (const [bucket, count] of Object.entries(point.byVersion)) {
+    for (const [bucket, count] of Object.entries(point[dimension])) {
       if (bucket === RESIDUAL_LABEL) continue;
       totals.set(bucket, (totals.get(bucket) ?? 0) + count);
     }
   }
-  // Biggest-by-total decides *which* bands survive the color limit; version
-  // order decides how they stack.
+  const ordered = dimension === "byVersion" ? compareVersions : undefined;
+  // Biggest-by-total decides WHICH bands survive the colour limit; the
+  // dimension's own order decides how they stack.
   const kept = [...totals.entries()]
-    .sort((a, b) => b[1] - a[1] || compareVersions(a[0], b[0]))
+    .sort((a, b) => b[1] - a[1] || (ordered ? ordered(a[0], b[0]) : a[0].localeCompare(b[0])))
     .slice(0, limit)
     .map(([bucket]) => bucket);
-  return kept.sort(compareVersions);
+  return ordered ? [...kept].sort(ordered) : [...kept].sort((a, b) => a.localeCompare(b));
 }
 
 /** Numeric-aware version compare, so `0.10.0` sorts after `0.9.0`. */
@@ -166,8 +189,11 @@ export function compareVersions(left: string, right: string): number {
  * is doing its job. The page says so rather than drawing an all-grey band and
  * letting the reader think the chart is broken.
  */
-export function isFullySuppressed(series: DocsAnalyticsSeries): boolean {
-  return versionBands(series).length === 0;
+export function isFullySuppressed(
+  series: DocsAnalyticsSeries,
+  dimension: ShareDimension = "byVersion",
+): boolean {
+  return shareBands(series, dimension).length === 0;
 }
 
 export function resolveAnalyticsSeriesUrl(): string {

@@ -28,9 +28,30 @@ const series: DocsAnalyticsSeries = {
   to: "2026-08-13",
   updatedAt: "2026-08-14T00:05:00.000Z",
   points: [
-    { day: "2026-08-11", activeInstalls: 100, lifetimeInstalls: 480, byVersion: { "0.3.0": 100 } },
-    { day: "2026-08-12", activeInstalls: 120, lifetimeInstalls: 500, byVersion: { "0.3.0": 120 } },
-    { day: "2026-08-13", activeInstalls: 128, lifetimeInstalls: 512, byVersion: { "0.3.0": 128 } },
+    {
+      day: "2026-08-11",
+      activeInstalls: 100,
+      lifetimeInstalls: 480,
+      byVersion: { "0.3.0": 100 },
+      byOs: { linux: 60, darwin: 40 },
+      byArch: { x64: 70, arm64: 30 },
+    },
+    {
+      day: "2026-08-12",
+      activeInstalls: 120,
+      lifetimeInstalls: 500,
+      byVersion: { "0.3.0": 120 },
+      byOs: { linux: 72, darwin: 48 },
+      byArch: { x64: 84, arm64: 36 },
+    },
+    {
+      day: "2026-08-13",
+      activeInstalls: 128,
+      lifetimeInstalls: 512,
+      byVersion: { "0.3.0": 128 },
+      byOs: { linux: 80, darwin: 48 },
+      byArch: { x64: 96, arm64: 32 },
+    },
   ],
 };
 

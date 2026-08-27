@@ -5,12 +5,18 @@ import {
   isFullySuppressed,
   MAX_VERSION_BANDS,
   parseDocsAnalyticsSeries,
-  versionBands,
+  shareBands,
   type DocsAnalyticsSeries,
 } from "../lib/analytics-series";
 
 function series(
-  points: readonly { day: string; active?: number; byVersion?: Record<string, number> }[],
+  points: readonly {
+    day: string;
+    active?: number;
+    byVersion?: Record<string, number>;
+    byOs?: Record<string, number>;
+    byArch?: Record<string, number>;
+  }[],
 ): DocsAnalyticsSeries {
   return {
     from: points[0]?.day ?? "",
@@ -21,6 +27,8 @@ function series(
       activeInstalls: p.active ?? 10,
       lifetimeInstalls: 50,
       byVersion: p.byVersion ?? { "0.3.0": 10 },
+      byOs: p.byOs ?? { linux: 10 },
+      byArch: p.byArch ?? { x64: 10 },
     })),
   };
 }
@@ -31,8 +39,22 @@ describe("parseDocsAnalyticsSeries", () => {
     to: "2026-08-02",
     updatedAt: "2026-08-02T00:05:00.000Z",
     points: [
-      { day: "2026-08-01", activeInstalls: 10, lifetimeInstalls: 40, byVersion: { "0.3.0": 10 } },
-      { day: "2026-08-02", activeInstalls: 12, lifetimeInstalls: 42, byVersion: { "0.3.0": 12 } },
+      {
+        day: "2026-08-01",
+        activeInstalls: 10,
+        lifetimeInstalls: 40,
+        byVersion: { "0.3.0": 10 },
+        byOs: { linux: 10 },
+        byArch: { x64: 10 },
+      },
+      {
+        day: "2026-08-02",
+        activeInstalls: 12,
+        lifetimeInstalls: 42,
+        byVersion: { "0.3.0": 12 },
+        byOs: { linux: 12 },
+        byArch: { x64: 12 },
+      },
     ],
   };
 
@@ -40,6 +62,23 @@ describe("parseDocsAnalyticsSeries", () => {
     const parsed = parseDocsAnalyticsSeries(valid);
     expect(parsed?.points).toHaveLength(2);
     expect(parsed?.points[1]?.activeInstalls).toBe(12);
+  });
+
+  test("keeps the OS and architecture history, not just versions", () => {
+    // The ingest has always published all three per day; this parser used to
+    // keep byVersion and drop the other two on the floor.
+    const parsed = parseDocsAnalyticsSeries(valid);
+    expect(parsed?.points[0]?.byOs).toEqual({ linux: 10 });
+    expect(parsed?.points[0]?.byArch).toEqual({ x64: 10 });
+  });
+
+  test("a malformed OS or arch breakdown rejects the day, like a version one", () => {
+    const bad = (key: string) => ({
+      ...valid,
+      points: [{ ...valid.points[0], [key]: { linux: -1 } }, valid.points[1]],
+    });
+    expect(parseDocsAnalyticsSeries(bad("byOs"))).toBeNull();
+    expect(parseDocsAnalyticsSeries(bad("byArch"))).toBeNull();
   });
 
   /**
@@ -89,11 +128,11 @@ describe("parseDocsAnalyticsSeries", () => {
   });
 });
 
-describe("versionBands", () => {
+describe("shareBands", () => {
   test("bands come back in version order, not by size", () => {
     // The reader's question is "is the newest taking over" — sorting by
     // magnitude would destroy exactly that reading.
-    const bands = versionBands(
+    const bands = shareBands(
       series([{ day: "2026-08-01", byVersion: { "0.3.1": 5, "0.2.9": 40, "0.3.0": 20 } }]),
     );
     expect(bands).toEqual(["0.2.9", "0.3.0", "0.3.1"]);
@@ -103,12 +142,12 @@ describe("versionBands", () => {
     const byVersion = Object.fromEntries(
       Array.from({ length: 9 }, (_, i) => [`0.${i}.0`, (i + 1) * 10]),
     );
-    const bands = versionBands(series([{ day: "2026-08-01", byVersion }]));
+    const bands = shareBands(series([{ day: "2026-08-01", byVersion }]));
     expect(bands).toHaveLength(MAX_VERSION_BANDS);
   });
 
   test("the residual is never a band", () => {
-    const bands = versionBands(series([{ day: "2026-08-01", byVersion: { other: 40 } }]));
+    const bands = shareBands(series([{ day: "2026-08-01", byVersion: { other: 40 } }]));
     expect(bands).toEqual([]);
   });
 });
@@ -151,6 +190,8 @@ describe("the parse boundary rejects what the x-scale cannot draw", () => {
         activeInstalls: 1,
         lifetimeInstalls: 1,
         byVersion: { "0.3.0": 1 },
+        byOs: { linux: 1 },
+        byArch: { x64: 1 },
       })),
     });
 
@@ -172,5 +213,36 @@ describe("the parse boundary rejects what the x-scale cannot draw", () => {
 
   test("a duplicated day is refused so the window cannot double-count", () => {
     expect(days("2026-08-01", "2026-08-01")).toBeNull();
+  });
+});
+
+describe("shareBands across dimensions", () => {
+  const window = series([
+    {
+      day: "2026-08-01",
+      byVersion: { "0.9.0": 6, "0.10.0": 9 },
+      byOs: { linux: 9, darwin: 6 },
+      byArch: { x64: 15 },
+    },
+  ]);
+
+  test("versions stack in release order, not by size", () => {
+    // The reader's question is "is the newest taking over", so 0.10.0 must sort
+    // after 0.9.0 even though a plain string compare puts it first.
+    expect(shareBands(window, "byVersion")).toEqual(["0.9.0", "0.10.0"]);
+  });
+
+  test("platform and architecture are nominal, so they sort by name", () => {
+    expect(shareBands(window, "byOs")).toEqual(["darwin", "linux"]);
+    expect(shareBands(window, "byArch")).toEqual(["x64"]);
+  });
+
+  test("suppression is judged per dimension", () => {
+    const mixed = series([
+      { day: "2026-08-01", byVersion: { other: 20 }, byOs: { linux: 20 }, byArch: { other: 20 } },
+    ]);
+    expect(isFullySuppressed(mixed, "byVersion")).toBe(true);
+    expect(isFullySuppressed(mixed, "byOs")).toBe(false);
+    expect(isFullySuppressed(mixed, "byArch")).toBe(true);
   });
 });

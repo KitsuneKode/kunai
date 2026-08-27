@@ -20,25 +20,36 @@ import {
   isFullySuppressed,
   MAX_VERSION_BANDS,
   RESIDUAL_LABEL,
-  versionBands,
+  shareBands,
   type DocsAnalyticsSeries,
+  type ShareDimension,
 } from "@/lib/analytics-series";
 import { IconStack2 } from "@tabler/icons-react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 /**
- * Version share over time — does a release actually propagate?
+ * Share of active installs over time, for one breakdown.
  *
  * A genuine stack, unlike the installs chart: the bands are shares of one day
- * and sum to 100%, so stacking states something true. Bands run oldest at the
- * bottom, newest on top, coloured by the ordinal ramp so release order is
- * legible in the colour rather than only in the legend. Share, not counts —
- * the question is what fraction has moved, and a count chart answers "how many
+ * and sum to 100%, so stacking states something true. Share, not counts — the
+ * question is what fraction has moved, and a count chart answers "how many
  * installs" instead.
+ *
+ * The ramp is ordinal, which fits versions exactly: released order reads out of
+ * the colour rather than only the legend. Platform and architecture are
+ * nominal, so for them the ramp carries rank, not sequence — the legend is the
+ * identity channel there, which is why it is always rendered.
  *
  * `MAX_VERSION_BANDS` is a colour limit, not an editorial one: the ramp is
  * validated at five steps and fails the adjacent-lightness check at six.
  */
+
+/** What one band *is*, for copy that has to name it in a sentence. */
+export const DIMENSION_NOUN: Readonly<Record<ShareDimension, string>> = {
+  byVersion: "version",
+  byOs: "platform",
+  byArch: "architecture",
+};
 
 const BAND_COLOR = (index: number): string =>
   `var(--kunai-chart-band-${Math.min(index + 1, MAX_VERSION_BANDS)})`;
@@ -69,8 +80,14 @@ const formatSharePercent = (value: unknown, name: unknown) => (
   </>
 );
 
-export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeries }) {
-  const bands = versionBands(series);
+export function ShareOverTime({
+  series,
+  dimension,
+}: {
+  readonly series: DocsAnalyticsSeries;
+  readonly dimension: ShareDimension;
+}) {
+  const bands = shareBands(series, dimension);
 
   /*
    * With a small population every bucket sits under the five-install floor and
@@ -78,18 +95,18 @@ export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeri
    * chart — so it says so, instead of drawing one flat grey band that reads as
    * a rendering bug.
    */
-  if (isFullySuppressed(series)) {
+  if (isFullySuppressed(series, dimension)) {
     return (
       <Empty className="border-border/70 bg-muted/10 my-2 max-w-md flex-none self-center rounded-lg border border-dashed px-4 py-6">
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <IconStack2 />
           </EmptyMedia>
-          <EmptyTitle>Every version is below the floor</EmptyTitle>
+          <EmptyTitle>Every {DIMENSION_NOUN[dimension]} is below the floor</EmptyTitle>
           <EmptyDescription className="max-w-md text-pretty">
-            No single version has five installs reporting yet, so the whole window folds into{" "}
-            <span className="text-foreground font-medium">other</span>. This chart appears once a
-            release is running on enough machines to publish without identifying anyone.
+            No single {DIMENSION_NOUN[dimension]} has five installs reporting yet, so the whole
+            window folds into <span className="text-foreground font-medium">other</span>. This chart
+            appears once one is running on enough machines to publish without identifying anyone.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -110,12 +127,13 @@ export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeri
   );
 
   const data = series.points.map((point) => {
-    const total = Object.values(point.byVersion).reduce((sum, n) => sum + n, 0);
-    const named = bands.reduce((sum, b) => sum + (point.byVersion[b] ?? 0), 0);
+    const counts = point[dimension];
+    const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+    const named = bands.reduce((sum, b) => sum + (counts[b] ?? 0), 0);
     const row: Record<string, number> = { t: dayToEpoch(point.day) };
     if (total > 0) {
       row[seriesKey(RESIDUAL_LABEL)] = Math.max(0, total - named) / total;
-      for (const band of bands) row[seriesKey(band)] = (point.byVersion[band] ?? 0) / total;
+      for (const band of bands) row[seriesKey(band)] = (counts[band] ?? 0) / total;
     } else {
       // A day with no pings is a real hole, not a 100% residual day.
       row[seriesKey(RESIDUAL_LABEL)] = 0;

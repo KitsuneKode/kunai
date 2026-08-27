@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { seriesKey } from "../components/analytics/version-adoption";
+import { seriesKey } from "../components/analytics/share-over-time";
 
 /**
  * `ChartStyle` emits one `--color-<key>` custom property per config key, and a
