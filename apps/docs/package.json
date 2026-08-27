@@ -34,6 +34,7 @@
     "next": "catalog:web",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "recharts": "3.8.0",
     "tailwind-merge": "catalog:web",
     "tw-animate-css": "catalog:web"
   },

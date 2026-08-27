@@ -169,34 +169,6 @@ export function isFullySuppressed(series: DocsAnalyticsSeries): boolean {
   return versionBands(series).length === 0;
 }
 
-/**
- * Where each day sits along the x-axis, as a 0..1 fraction of the window.
- *
- * Positioned by DATE, not by array index. `readRollups` returns only the days
- * that actually have a rollup, so a missed cron run leaves a hole — and spacing
- * by index would draw a one-day gap and an eleven-day gap at the same width,
- * making the line misstate time. A single point sits mid-plot, where a marker
- * has room on both sides.
- */
-export function dayOffsets(days: readonly string[]): readonly number[] {
-  if (days.length === 0) return [];
-  if (days.length === 1) return [0.5];
-  const at = (d: string) => Date.parse(`${d}T00:00:00.000Z`);
-  const start = at(days[0] ?? "");
-  const end = at(days.at(-1) ?? "");
-  const span = end - start;
-  // Every row carrying the same day is possible if a window holds one date.
-  if (!Number.isFinite(span) || span <= 0) {
-    return days.map((_, i) => i / (days.length - 1));
-  }
-  // Clamped: an unparseable or out-of-order day must never place a mark outside
-  // the plot. The parser rejects both, so this is the second line, not the first.
-  return days.map((d, i) => {
-    const offset = (at(d) - start) / span;
-    return Number.isFinite(offset) ? Math.min(1, Math.max(0, offset)) : i / (days.length - 1);
-  });
-}
-
 export function resolveAnalyticsSeriesUrl(): string {
   const daily = resolveAnalyticsMetricsUrl();
   if (!daily) return "";

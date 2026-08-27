@@ -1,156 +1,182 @@
+"use client";
+
 import {
-  dayOffsets,
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { dayToEpoch } from "@/lib/analytics-derive";
+import {
   isFullySuppressed,
   MAX_VERSION_BANDS,
   RESIDUAL_LABEL,
   versionBands,
   type DocsAnalyticsSeries,
 } from "@/lib/analytics-series";
+import { IconStack2 } from "@tabler/icons-react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 /**
  * Version share over time — does a release actually propagate?
  *
- * Bands stack oldest at the bottom, newest on top, colored by the ordinal ramp
- * so the release order is visible in the color rather than only in the legend.
- * Share, not counts: the question is what fraction has moved, and a count chart
- * answers "how many installs" instead.
+ * A genuine stack, unlike the installs chart: the bands are shares of one day
+ * and sum to 100%, so stacking states something true. Bands run oldest at the
+ * bottom, newest on top, coloured by the ordinal ramp so release order is
+ * legible in the colour rather than only in the legend. Share, not counts —
+ * the question is what fraction has moved, and a count chart answers "how many
+ * installs" instead.
  *
- * With a small population every bucket sits under the small-cell floor and the
- * whole chart is residual. That is suppression working, not a broken chart, so
- * this says so in words instead of drawing one grey band.
+ * `MAX_VERSION_BANDS` is a colour limit, not an editorial one: the ramp is
+ * validated at five steps and fails the adjacent-lightness check at six.
  */
 
-const VIEW_W = 720;
-const VIEW_H = 200;
-const PAD_L = 8;
-const PAD_R = 10;
-const PAD_T = 12;
-const PAD_B = 22;
+const BAND_COLOR = (index: number): string =>
+  `var(--kunai-chart-band-${Math.min(index + 1, MAX_VERSION_BANDS)})`;
 
-type Props = {
-  readonly series: DocsAnalyticsSeries;
-};
+/**
+ * A CSS-safe series key for a version string.
+ *
+ * `ChartStyle` emits one `--color-<key>` custom property per config key, and a
+ * custom property name is a CSS identifier: `--color-0.3.0` is invalid, so the
+ * whole declaration is dropped and every band silently renders unpainted. The
+ * real version travels in `label`, which is what the legend and tooltip show.
+ */
+const seriesKey = (bucket: string): string => `v${bucket.replace(/[^a-zA-Z0-9]/g, "_")}`;
 
-export function VersionAdoption({ series }: Props) {
+/**
+ * Renders one tooltip row as a percentage.
+ *
+ * Module scope, not an inline arrow: defined inside `VersionAdoption` it is a
+ * fresh function identity on every render, so recharts remounts the tooltip
+ * subtree each time the pointer moves a pixel.
+ */
+const formatSharePercent = (value: unknown, name: unknown) => (
+  <>
+    <span className="text-muted-foreground">{String(name)}</span>
+    <span className="text-foreground ml-auto font-mono font-medium tabular-nums">
+      {Math.round(Number(value) * 100)}%
+    </span>
+  </>
+);
+
+function formatTick(value: number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+export function VersionAdoption({ series }: { readonly series: DocsAnalyticsSeries }) {
   const bands = versionBands(series);
-  const suppressed = isFullySuppressed(series);
 
-  if (suppressed) {
+  /*
+   * With a small population every bucket sits under the five-install floor and
+   * the whole chart is residual. That is suppression working, not a broken
+   * chart — so it says so, instead of drawing one flat grey band that reads as
+   * a rendering bug.
+   */
+  if (isFullySuppressed(series)) {
     return (
-      <p className="text-muted-foreground text-sm">
-        Every version bucket is below the five-install reporting floor, so the whole window folds
-        into <span className="text-foreground font-medium">other</span>. Version share appears here
-        once a release is running on enough machines to publish without identifying anyone.
-      </p>
+      <Empty className="border-border/70 bg-muted/10 my-2 flex-none rounded-lg border border-dashed py-8">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <IconStack2 />
+          </EmptyMedia>
+          <EmptyTitle>Every version is below the floor</EmptyTitle>
+          <EmptyDescription className="max-w-md text-pretty">
+            No single version has five installs reporting yet, so the whole window folds into{" "}
+            <span className="text-foreground font-medium">other</span>. This chart appears once a
+            release is running on enough machines to publish without identifying anyone.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
-
-  const plotW = VIEW_W - PAD_L - PAD_R;
-  const plotH = VIEW_H - PAD_T - PAD_B;
-  const offsets = dayOffsets(series.points.map((p) => p.day));
-  const x = (i: number) => PAD_L + (offsets[i] ?? 0) * plotW;
 
   // Bottom-up: residual first, then oldest to newest.
   const stackOrder = [RESIDUAL_LABEL, ...bands];
 
-  const dayShares = series.points.map((point) => {
+  const chartConfig: ChartConfig = Object.fromEntries(
+    stackOrder.map((bucket, index) => [
+      seriesKey(bucket),
+      {
+        label: bucket,
+        color: bucket === RESIDUAL_LABEL ? "var(--kunai-chart-residual)" : BAND_COLOR(index - 1),
+      },
+    ]),
+  );
+
+  const data = series.points.map((point) => {
     const total = Object.values(point.byVersion).reduce((sum, n) => sum + n, 0);
     const named = bands.reduce((sum, b) => sum + (point.byVersion[b] ?? 0), 0);
-    const residual = Math.max(0, total - named);
-    const shares = new Map<string, number>();
+    const row: Record<string, number> = { t: dayToEpoch(point.day) };
     if (total > 0) {
-      shares.set(RESIDUAL_LABEL, residual / total);
-      for (const b of bands) shares.set(b, (point.byVersion[b] ?? 0) / total);
+      row[seriesKey(RESIDUAL_LABEL)] = Math.max(0, total - named) / total;
+      for (const band of bands) row[seriesKey(band)] = (point.byVersion[band] ?? 0) / total;
+    } else {
+      // A day with no pings is a real hole, not a 100% residual day.
+      row[seriesKey(RESIDUAL_LABEL)] = 0;
+      for (const band of bands) row[seriesKey(band)] = 0;
     }
-    return shares;
+    return row;
   });
 
-  const bandPath = (bucket: string, index: number): string => {
-    const below = stackOrder.slice(0, index);
-    const top: string[] = [];
-    const bottom: string[] = [];
-    series.points.forEach((_, i) => {
-      const base = below.reduce((sum, b) => sum + (dayShares[i]?.get(b) ?? 0), 0);
-      const value = dayShares[i]?.get(bucket) ?? 0;
-      const yBase = PAD_T + plotH - base * plotH;
-      const yTop = PAD_T + plotH - (base + value) * plotH;
-      top.push(`${i === 0 ? "M" : "L"}${x(i)},${yTop}`);
-      bottom.unshift(`L${x(i)},${yBase}`);
-    });
-    // A single day has no span, so give the band a visible column.
-    if (series.points.length === 1) {
-      const base = below.reduce((sum, b) => sum + (dayShares[0]?.get(b) ?? 0), 0);
-      const value = dayShares[0]?.get(bucket) ?? 0;
-      const yBase = PAD_T + plotH - base * plotH;
-      const yTop = PAD_T + plotH - (base + value) * plotH;
-      const half = Math.min(40, plotW / 4);
-      const cx = PAD_L + plotW / 2;
-      return `M${cx - half},${yTop} L${cx + half},${yTop} L${cx + half},${yBase} L${cx - half},${yBase} Z`;
-    }
-    return `${top.join(" ")} ${bottom.join(" ")} Z`;
-  };
-
-  const titleId = "kunai-version-adoption-title";
-  const latest = series.points.at(-1);
-  const latestShares = dayShares.at(-1);
-
   return (
-    <figure className="flex flex-col gap-3">
-      <svg className="kunai-plot" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} aria-labelledby={titleId}>
-        <title id={titleId}>
-          {`Share of active installs by version, ${series.from} to ${series.to}`}
-        </title>
-        {stackOrder.map((bucket, index) => {
-          const residual = bucket === RESIDUAL_LABEL;
-          // Band 1 is the oldest published version; the residual has no slot.
-          const slot = residual ? undefined : String(Math.min(index, MAX_VERSION_BANDS));
-          const share = latestShares?.get(bucket) ?? 0;
-          return (
-            <path
-              key={bucket}
-              className="kunai-plot-band"
-              data-band={slot}
-              data-residual={residual ? "true" : undefined}
-              d={bandPath(bucket, index)}
-            >
-              <title>{`${bucket}: ${Math.round(share * 100)}% on ${latest?.day}`}</title>
-            </path>
-          );
-        })}
-        <path className="kunai-plot-axis" d={`M${PAD_L},${PAD_T + plotH} H${VIEW_W - PAD_R}`} />
-      </svg>
-
-      <div className="text-muted-foreground flex justify-between text-xs tabular-nums">
-        <span>{series.from}</span>
-        <span>{series.to}</span>
-      </div>
-
-      {/* Identity is never colour alone: a legend is always present for >= 2 bands. */}
-      <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
-        {[...stackOrder].reverse().map((bucket) => {
-          const residual = bucket === RESIDUAL_LABEL;
-          const index = stackOrder.indexOf(bucket);
-          const slot = residual ? undefined : String(Math.min(index, MAX_VERSION_BANDS));
-          return (
-            <li key={bucket} className="flex items-center gap-1.5">
-              <span
-                className="kunai-legend-swatch"
-                data-band={slot}
-                data-residual={residual ? "true" : undefined}
-                aria-hidden="true"
-              />
-              <span className={residual ? "text-muted-foreground" : "text-foreground"}>
-                {bucket}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-
-      <figcaption className="text-muted-foreground text-xs">
-        Share of active installs by version. Bands stack oldest to newest; buckets under the
-        five-install floor fold into <span className="text-foreground">other</span>.
-      </figcaption>
-    </figure>
+    <ChartContainer config={chartConfig} className="aspect-auto h-[220px] w-full">
+      <AreaChart data={data} margin={{ left: 4, right: 8, top: 4 }}>
+        <CartesianGrid vertical={false} />
+        {/* Time scale for the same reason as the installs chart: a skipped
+            rollup day must draw a proportional gap, not an equal one. */}
+        <XAxis
+          dataKey="t"
+          type="number"
+          scale="time"
+          domain={["dataMin", "dataMax"]}
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          minTickGap={24}
+          tickFormatter={formatTick}
+        />
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          width={36}
+          domain={[0, 1]}
+          tickFormatter={(value: number) => `${Math.round(value * 100)}%`}
+        />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              labelFormatter={(value) => formatTick(Number(value))}
+              formatter={formatSharePercent}
+            />
+          }
+        />
+        {stackOrder.map((bucket) => (
+          <Area
+            key={bucket}
+            dataKey={seriesKey(bucket)}
+            type="monotone"
+            stackId="version"
+            fill={`var(--color-${seriesKey(bucket)})`}
+            fillOpacity={0.85}
+            stroke="var(--kunai-chart-surface)"
+            strokeWidth={2}
+            isAnimationActive={false}
+          />
+        ))}
+        <ChartLegend content={<ChartLegendContent />} />
+      </AreaChart>
+    </ChartContainer>
   );
 }

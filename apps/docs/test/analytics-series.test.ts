@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   compareVersions,
-  dayOffsets,
   isFullySuppressed,
   MAX_VERSION_BANDS,
   parseDocsAnalyticsSeries,
@@ -141,44 +140,6 @@ describe("compareVersions", () => {
   });
 });
 
-describe("dayOffsets — spacing follows the calendar, not the array", () => {
-  test("a cron outage does not compress into an even line", () => {
-    // readRollups returns only days that HAVE a rollup, so a missed run leaves a
-    // hole. Spacing by index would draw the 1-day gap and the 11-day gap the
-    // same width and make the line misstate time.
-    const offsets = dayOffsets(["2026-08-01", "2026-08-02", "2026-08-13"]);
-    expect(offsets[0]).toBe(0);
-    expect(offsets[2]).toBe(1);
-    // 1 of 12 days elapsed, not 1 of 2 points.
-    expect(offsets[1]).toBeCloseTo(1 / 12, 5);
-    expect(offsets[1]).toBeLessThan(0.1);
-  });
-
-  test("evenly spaced days stay evenly spaced", () => {
-    const offsets = dayOffsets(["2026-08-01", "2026-08-02", "2026-08-03"]);
-    expect(offsets).toEqual([0, 0.5, 1]);
-  });
-
-  test("a single day sits mid-plot so its marker has room both sides", () => {
-    expect(dayOffsets(["2026-08-01"])).toEqual([0.5]);
-  });
-
-  test("an empty window has no positions", () => {
-    expect(dayOffsets([])).toEqual([]);
-  });
-
-  test("a zero-span window falls back to even spacing instead of dividing by zero", () => {
-    const offsets = dayOffsets(["2026-08-01", "2026-08-01", "2026-08-01"]);
-    expect(offsets).toEqual([0, 0.5, 1]);
-    expect(offsets.every((o) => Number.isFinite(o))).toBe(true);
-  });
-
-  test("the window spans a month boundary correctly", () => {
-    const offsets = dayOffsets(["2026-07-30", "2026-07-31", "2026-08-01"]);
-    expect(offsets).toEqual([0, 0.5, 1]);
-  });
-});
-
 describe("the parse boundary rejects what the x-scale cannot draw", () => {
   const days = (...list: string[]) =>
     parseDocsAnalyticsSeries({
@@ -211,17 +172,5 @@ describe("the parse boundary rejects what the x-scale cannot draw", () => {
 
   test("a duplicated day is refused so the window cannot double-count", () => {
     expect(days("2026-08-01", "2026-08-01")).toBeNull();
-  });
-});
-
-describe("dayOffsets is safe even when handed unparsed input", () => {
-  test("an out-of-order day is clamped into the plot, never negative", () => {
-    const offsets = dayOffsets(["2026-08-10", "2026-08-01", "2026-08-20"]);
-    expect(offsets.every((o) => o >= 0 && o <= 1)).toBe(true);
-  });
-
-  test("an unparseable day never yields NaN", () => {
-    const offsets = dayOffsets(["2026-08-01", "not-a-date", "2026-08-20"]);
-    expect(offsets.every(Number.isFinite)).toBe(true);
   });
 });

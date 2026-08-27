@@ -1,8 +1,7 @@
-import { TrendPlot } from "@/components/analytics/trend-plot";
+import { ChartInstalls } from "@/components/analytics/chart-installs";
 import { VersionAdoption } from "@/components/analytics/version-adoption";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
+import type { DocsAnalyticsSeries, SeriesPoint } from "@/lib/analytics-series";
 
 /**
  * The over-time half of the page.
@@ -12,99 +11,91 @@ import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
  * these; the ingest suppresses across the whole window before publishing.
  *
  * Absent when the series endpoint has not been deployed or has no rollups —
- * the daily snapshot above still renders on its own.
+ * the snapshot cards above still render on their own.
  */
 export function TrendSection({ series }: { readonly series: DocsAnalyticsSeries | null }) {
   if (!series) return null;
 
-  const points = series.points;
-  const first = points[0];
-  const last = points.at(-1);
-  const delta = (last?.activeInstalls ?? 0) - (first?.activeInstalls ?? 0);
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Over time</CardTitle>
-        <CardDescription>
-          {points.length === 1
-            ? "One day of history so far — the window fills in as daily rollups accumulate."
-            : `${points.length} days, ${series.from} to ${series.to}.`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-8">
-        <section className="flex flex-col gap-3">
-          <h3 className="text-foreground m-0 text-sm font-medium">Active installs</h3>
-          <TrendPlot
-            points={points}
-            caption={
-              points.length > 1
-                ? `Installs seen on each day, ${delta >= 0 ? "up" : "down"} ${Math.abs(delta)} across the window.`
-                : "Installs seen on the only day recorded so far."
-            }
-          />
-          <TrendTable points={points} />
-        </section>
+    <div className="flex flex-col gap-4">
+      <ChartInstalls points={series.points} from={series.from} to={series.to} />
 
-        <Separator />
+      <div className="grid gap-4 @4xl/analytics:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <Card className="@container/card">
+          <CardHeader>
+            <CardTitle>Version share</CardTitle>
+            <CardDescription>
+              Share of active installs by version. Bands stack oldest to newest.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-2 sm:px-6">
+            <VersionAdoption series={series} />
+          </CardContent>
+        </Card>
 
-        <section className="flex flex-col gap-3">
-          <h3 className="text-foreground m-0 text-sm font-medium">Version share</h3>
-          <VersionAdoption series={series} />
-        </section>
+        <Card className="@container/card">
+          <CardHeader>
+            <CardTitle>Day by day</CardTitle>
+            <CardDescription>
+              Every plotted value, as text — the chart’s accessible twin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TrendTable points={series.points} />
+          </CardContent>
+        </Card>
+      </div>
 
-        <p className="text-muted-foreground m-0 text-xs text-pretty">
-          These counts are anonymous and best-effort. Anyone willing to fake pings can inflate them,
-          so read them as a pulse rather than a measurement — Kunai deliberately collects no IP or
-          identity that would let it prove otherwise.
-        </p>
-      </CardContent>
-    </Card>
+      <p className="text-muted-foreground m-0 text-xs text-pretty">
+        These counts are anonymous and best-effort. Anyone willing to fake pings can inflate them,
+        so read them as a pulse rather than a measurement — Kunai deliberately collects no IP or
+        identity that would let it prove otherwise.
+      </p>
+    </div>
   );
 }
 
 /**
  * The table twin.
  *
- * Every plotted value is reachable here, so the plot's tooltips enhance rather
- * than gate. Collapsed by default because it restates the chart — it is the
- * accessible equivalent, not a second reading.
+ * Every plotted value is reachable here, so the charts' tooltips enhance rather
+ * than gate. It is no longer behind a `<details>`: the charts are now client
+ * components, so with JavaScript off this table is the *only* rendering of the
+ * data, and a collapsed summary would hide it entirely. It also discharges the
+ * light-mode contrast WARN on the pale lifetime band.
  */
-function TrendTable({
-  points,
-}: {
-  readonly points: readonly { day: string; activeInstalls: number }[];
-}) {
+function TrendTable({ points }: { readonly points: readonly SeriesPoint[] }) {
   return (
-    <details className="text-xs">
-      <summary className="text-muted-foreground hover:text-foreground cursor-pointer">
-        Table view — {points.length} {points.length === 1 ? "day" : "days"}
-      </summary>
-      <div className="mt-3 max-h-64 overflow-y-auto">
-        <table className="kunai-chart">
-          <caption className="sr-only">Active installs per day</caption>
-          <thead>
-            <tr>
-              <th scope="col" className="text-muted-foreground text-left font-normal">
-                Day
+    <div className="max-h-[260px] overflow-y-auto">
+      <table className="kunai-chart text-xs">
+        <caption className="sr-only">Active and lifetime installs per day</caption>
+        <thead className="bg-card sticky top-0">
+          <tr>
+            <th scope="col" className="text-muted-foreground text-left font-normal">
+              Day
+            </th>
+            <th scope="col" className="text-muted-foreground text-right font-normal">
+              Active
+            </th>
+            <th scope="col" className="text-muted-foreground text-right font-normal">
+              Lifetime
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {points.map((point) => (
+            <tr key={point.day} className="kunai-chart-row">
+              <th scope="row" className="text-foreground text-left font-normal tabular-nums">
+                {point.day}
               </th>
-              <th scope="col" className="text-muted-foreground text-right font-normal">
-                Active
-              </th>
+              <td className="text-foreground text-right tabular-nums">{point.activeInstalls}</td>
+              <td className="text-muted-foreground text-right tabular-nums">
+                {point.lifetimeInstalls}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {points.map((point) => (
-              <tr key={point.day} className="kunai-chart-row">
-                <th scope="row" className="text-foreground text-left font-normal tabular-nums">
-                  {point.day}
-                </th>
-                <td className="text-foreground text-right tabular-nums">{point.activeInstalls}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </details>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
