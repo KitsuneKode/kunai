@@ -1,3 +1,4 @@
+import { residualShare } from "@/lib/analytics-derive";
 import { rankShareBuckets, type ShareBucket } from "@/lib/analytics-metrics";
 
 /**
@@ -59,14 +60,32 @@ export function ShareBars({
   readonly counts: Readonly<Record<string, number>>;
 }) {
   const buckets = rankShareBuckets(counts);
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  const fullySuppressed = residualShare(counts) >= 1;
 
   return (
     <figure className="m-0 flex flex-col gap-3">
-      <figcaption className="text-muted-foreground text-[11px] font-medium tracking-[0.14em] uppercase">
-        {label}
-      </figcaption>
+      {/* The caption names the figure for assistive tech; the card heading
+          above already carries it visually, so showing both prints the label
+          twice. */}
+      <figcaption className="sr-only">{label}</figcaption>
       {buckets.length === 0 ? (
         <p className="text-muted-foreground m-0 text-xs">No installs reported in this cut.</p>
+      ) : fullySuppressed ? (
+        /*
+          One bar at 100% labelled "other" is not a chart — it encodes nothing
+          and reads as a rendering failure. State the count in words instead,
+          and say what would make the breakdown appear.
+        */
+        <div className="flex flex-col gap-1.5">
+          <p className="text-foreground m-0 text-sm">
+            All <span className="tabular-nums">{total.toLocaleString("en-US")}</span>{" "}
+            {total === 1 ? "install is" : "installs are"} below the reporting floor.
+          </p>
+          <p className="text-muted-foreground m-0 text-xs text-pretty">
+            A bucket needs 5 installs before it is named here.
+          </p>
+        </div>
       ) : (
         <table className="kunai-chart">
           <caption className="sr-only">

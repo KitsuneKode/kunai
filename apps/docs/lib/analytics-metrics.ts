@@ -1,3 +1,5 @@
+import { fetchAnalyticsJson } from "./analytics-fetch";
+
 /**
  * Quiet public usage analytics metrics for the docs home.
  * Fetches aggregates only — never Redis, never install ids.
@@ -171,16 +173,6 @@ export async function fetchDocsAnalyticsMetrics(options?: {
 }): Promise<DocsAnalyticsMetrics | null> {
   const url = options?.url ?? resolveAnalyticsMetricsUrl();
   if (!url) return null;
-  const fetchImpl = options?.fetchImpl ?? fetch;
-  try {
-    const response = await fetchImpl(url, {
-      headers: { accept: "application/json" },
-      next: { revalidate: 3600 },
-    });
-    if (!response.ok) return null;
-    const json: unknown = await response.json();
-    return parseDocsAnalyticsMetrics(json);
-  } catch {
-    return null;
-  }
+  const json = await fetchAnalyticsJson(url, options?.fetchImpl ?? fetch);
+  return parseDocsAnalyticsMetrics(json);
 }

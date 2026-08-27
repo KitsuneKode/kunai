@@ -1,5 +1,5 @@
 import { TrendSection } from "@/components/analytics/trend-section";
-import { UsagePanel } from "@/components/analytics/usage-panel";
+import { BreakdownSection, TrustSection, UsagePanel } from "@/components/analytics/usage-panel";
 import { fetchDocsAnalyticsMetrics } from "@/lib/analytics-metrics";
 import { fetchDocsAnalyticsSeries } from "@/lib/analytics-series";
 import { buildPageMetadata } from "@/lib/page-metadata";
@@ -25,7 +25,14 @@ export default async function AnalyticsPage() {
   ]);
 
   return (
-    <main className="kunai-home relative mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-6 py-14 md:px-10">
+    /*
+      `@container/analytics` is the query context every card below resolves
+      against. The cards deliberately size to this column rather than the
+      viewport: the docs shell can put a sidebar beside them, and a viewport
+      breakpoint would flip a four-up row to two columns while the column
+      itself never changed width.
+    */
+    <main className="kunai-home @container/analytics relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-14 md:px-10">
       <header className="border-border flex flex-col gap-4 border-b pb-8">
         <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
           Trust surface
@@ -37,8 +44,10 @@ export default async function AnalyticsPage() {
         </p>
       </header>
 
-      <UsagePanel metrics={metrics} />
+      <UsagePanel metrics={metrics} series={series} />
       <TrendSection series={series} />
+      <BreakdownSection metrics={metrics} />
+      <TrustSection />
     </main>
   );
 }

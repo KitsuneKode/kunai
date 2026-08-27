@@ -7,6 +7,7 @@
  * nothing here re-derives privacy, it only draws what it is given.
  */
 
+import { fetchAnalyticsJson } from "./analytics-fetch";
 import { resolveAnalyticsMetricsUrl } from "./analytics-metrics";
 
 /** The residual bucket. Never a real version, OS, or arch value. */
@@ -22,11 +23,23 @@ export const RESIDUAL_LABEL = "other";
  */
 export const MAX_VERSION_BANDS = 5;
 
+/**
+ * The dimensions a rollup day is broken down by.
+ *
+ * All three are published per day and suppressed across the whole window
+ * before they are ever fetched; the docs parser used to keep only `byVersion`
+ * and drop the other two on the floor.
+ */
+export const SHARE_DIMENSIONS = ["byVersion", "byOs", "byArch"] as const;
+export type ShareDimension = (typeof SHARE_DIMENSIONS)[number];
+
 export type SeriesPoint = {
   readonly day: string;
   readonly activeInstalls: number;
   readonly lifetimeInstalls: number;
   readonly byVersion: Readonly<Record<string, number>>;
+  readonly byOs: Readonly<Record<string, number>>;
+  readonly byArch: Readonly<Record<string, number>>;
 };
 
 export type DocsAnalyticsSeries = {
@@ -72,11 +85,19 @@ function parsePoint(value: unknown): SeriesPoint | null {
   if (typeof lifetimeInstalls !== "number" || !Number.isFinite(lifetimeInstalls)) return null;
   const byVersion = parseCounts(value.byVersion);
   if (!byVersion) return null;
+  // Held to the same standard as byVersion: one malformed breakdown makes the
+  // whole day untrustworthy rather than silently drawing a partial chart.
+  const byOs = parseCounts(value.byOs);
+  if (!byOs) return null;
+  const byArch = parseCounts(value.byArch);
+  if (!byArch) return null;
   return {
     day,
     activeInstalls: Math.max(0, Math.floor(activeInstalls)),
     lifetimeInstalls: Math.max(0, Math.floor(lifetimeInstalls)),
     byVersion,
+    byOs,
+    byArch,
   };
 }
 
@@ -113,31 +134,37 @@ export function parseDocsAnalyticsSeries(raw: unknown): DocsAnalyticsSeries | nu
 }
 
 /**
- * The version bands worth drawing, newest release last.
+ * The bands worth drawing for one dimension.
  *
- * Versions are *ordered*, so the bands are sorted by version rather than by
- * size — the reader's question is "is the newest one taking over", and a chart
- * sorted by magnitude destroys exactly that reading. The residual always sits
- * first so the named bands stack above it.
+ * Versions are *ordered*, so version bands sort by version rather than by
+ * size — the reader's question is "is the newest one taking over", and sorting
+ * by magnitude destroys exactly that reading. OS and architecture are nominal:
+ * they have no natural order, so they sort by size, largest band first. The
+ * residual always sits first so the named bands stack above it.
  */
-export function versionBands(
+export function shareBands(
   series: DocsAnalyticsSeries,
+  dimension: ShareDimension = "byVersion",
   limit: number = MAX_VERSION_BANDS,
 ): readonly string[] {
   const totals = new Map<string, number>();
   for (const point of series.points) {
-    for (const [bucket, count] of Object.entries(point.byVersion)) {
+    for (const [bucket, count] of Object.entries(point[dimension])) {
       if (bucket === RESIDUAL_LABEL) continue;
       totals.set(bucket, (totals.get(bucket) ?? 0) + count);
     }
   }
-  // Biggest-by-total decides *which* bands survive the color limit; version
-  // order decides how they stack.
+  // Biggest-by-total decides WHICH bands survive the colour limit.
   const kept = [...totals.entries()]
-    .sort((a, b) => b[1] - a[1] || compareVersions(a[0], b[0]))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([bucket]) => bucket);
-  return kept.sort(compareVersions);
+  // Versions then re-sort into release order, because the reader's question is
+  // "is the newest taking over". Platform and architecture have no such order,
+  // so they keep the descending-total order they were selected in — which is
+  // what the chart copy promises ("largest band first"). Re-sorting them
+  // alphabetically would contradict it.
+  return dimension === "byVersion" ? [...kept].sort(compareVersions) : kept;
 }
 
 /** Numeric-aware version compare, so `0.10.0` sorts after `0.9.0`. */
@@ -165,36 +192,11 @@ export function compareVersions(left: string, right: string): number {
  * is doing its job. The page says so rather than drawing an all-grey band and
  * letting the reader think the chart is broken.
  */
-export function isFullySuppressed(series: DocsAnalyticsSeries): boolean {
-  return versionBands(series).length === 0;
-}
-
-/**
- * Where each day sits along the x-axis, as a 0..1 fraction of the window.
- *
- * Positioned by DATE, not by array index. `readRollups` returns only the days
- * that actually have a rollup, so a missed cron run leaves a hole — and spacing
- * by index would draw a one-day gap and an eleven-day gap at the same width,
- * making the line misstate time. A single point sits mid-plot, where a marker
- * has room on both sides.
- */
-export function dayOffsets(days: readonly string[]): readonly number[] {
-  if (days.length === 0) return [];
-  if (days.length === 1) return [0.5];
-  const at = (d: string) => Date.parse(`${d}T00:00:00.000Z`);
-  const start = at(days[0] ?? "");
-  const end = at(days.at(-1) ?? "");
-  const span = end - start;
-  // Every row carrying the same day is possible if a window holds one date.
-  if (!Number.isFinite(span) || span <= 0) {
-    return days.map((_, i) => i / (days.length - 1));
-  }
-  // Clamped: an unparseable or out-of-order day must never place a mark outside
-  // the plot. The parser rejects both, so this is the second line, not the first.
-  return days.map((d, i) => {
-    const offset = (at(d) - start) / span;
-    return Number.isFinite(offset) ? Math.min(1, Math.max(0, offset)) : i / (days.length - 1);
-  });
+export function isFullySuppressed(
+  series: DocsAnalyticsSeries,
+  dimension: ShareDimension = "byVersion",
+): boolean {
+  return shareBands(series, dimension).length === 0;
 }
 
 export function resolveAnalyticsSeriesUrl(): string {
@@ -209,16 +211,6 @@ export async function fetchDocsAnalyticsSeries(options?: {
 }): Promise<DocsAnalyticsSeries | null> {
   const url = options?.url ?? resolveAnalyticsSeriesUrl();
   if (!url) return null;
-  const fetchImpl = options?.fetchImpl ?? fetch;
-  try {
-    const response = await fetchImpl(url, {
-      headers: { accept: "application/json" },
-      next: { revalidate: 3600 },
-    });
-    if (!response.ok) return null;
-    const json: unknown = await response.json();
-    return parseDocsAnalyticsSeries(json);
-  } catch {
-    return null;
-  }
+  const json = await fetchAnalyticsJson(url, options?.fetchImpl ?? fetch);
+  return parseDocsAnalyticsSeries(json);
 }
