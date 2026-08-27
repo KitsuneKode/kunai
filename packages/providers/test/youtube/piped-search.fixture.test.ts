@@ -33,6 +33,30 @@ describe("mapPipedSearchItem", () => {
     expect(mapped?.liveStatus).toBe("none");
   });
 
+  test("preserves live lifecycle status for stream rows", () => {
+    expect(
+      mapPipedSearchItem({
+        url: "/watch?v=dQw4w9WgXcQ",
+        title: "Live now",
+        isLive: true,
+      })?.liveStatus,
+    ).toBe("live");
+    expect(
+      mapPipedSearchItem({
+        url: "/watch?v=dQw4w9WgXcQ",
+        title: "Scheduled",
+        liveStatus: "is_upcoming",
+      })?.liveStatus,
+    ).toBe("upcoming");
+    expect(
+      mapPipedSearchItem({
+        url: "/watch?v=dQw4w9WgXcQ",
+        title: "Replay",
+        liveStatus: "was_live",
+      })?.liveStatus,
+    ).toBe("post_live");
+  });
+
   test("returns null when video id or title missing", () => {
     expect(mapPipedSearchItem({ url: "/watch?v=abc", title: "" })).toBeNull();
     expect(mapPipedSearchItem({ url: "/channel/xyz", title: "Channel" })).toBeNull();

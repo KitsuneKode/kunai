@@ -343,8 +343,13 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   if (views) facts.push({ label: "views", value: views });
   if (posted) facts.push({ label: "posted", value: posted });
   if (length) facts.push({ label: "length", value: length });
-  if (meta?.liveStatus === "live") facts.push({ label: "live", value: "● live", tone: "success" });
-  else if (meta?.premium) facts.push({ label: "premium", value: "members" });
+  if (meta?.liveStatus === "live") {
+    facts.push({ label: "live", value: "● live", tone: "success" });
+  } else if (meta?.liveStatus === "upcoming") {
+    facts.push({ label: "live", value: "◷ upcoming", tone: "muted" });
+  } else if (meta?.liveStatus === "post_live") {
+    facts.push({ label: "live", value: "↺ replay", tone: "muted" });
+  } else if (meta?.premium) facts.push({ label: "premium", value: "members" });
 
   // Up next: playlist/channel head when shaped that way, else the related queue
   // head. YouTube thumbnails always exist so the slot is reliably full.

@@ -327,6 +327,18 @@ describe("buildMediaPanel — video", () => {
     expect(model.facts).toContainEqual({ label: "live", value: "● live", tone: "success" });
   });
 
+  test("distinguishes upcoming and post-live videos", () => {
+    const upcoming = buildMediaPanel(
+      ctx({ contentKind: "video", title: "Premiere", videoMeta: { liveStatus: "upcoming" } }),
+    );
+    expect(upcoming.facts).toContainEqual({ label: "live", value: "◷ upcoming", tone: "muted" });
+
+    const replay = buildMediaPanel(
+      ctx({ contentKind: "video", title: "Replay", videoMeta: { liveStatus: "post_live" } }),
+    );
+    expect(replay.facts).toContainEqual({ label: "live", value: "↺ replay", tone: "muted" });
+  });
+
   test("badges channel contentShape distinctly from video", () => {
     const model = buildMediaPanel(
       ctx({

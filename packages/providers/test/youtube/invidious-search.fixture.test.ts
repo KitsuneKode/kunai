@@ -30,4 +30,17 @@ describe("mapInvidiousSearchItem", () => {
 
     expect(mapped?.liveStatus).toBe("upcoming");
   });
+
+  test("uses explicit Shorts metadata when an Invidious fork provides it", () => {
+    const mapped = mapInvidiousSearchItem({
+      type: "video",
+      title: "Quick clip",
+      videoId: "short1",
+      author: "Channel",
+      authorId: "chan1",
+      isShort: true,
+    });
+
+    expect(mapped?.contentShape).toBe("short");
+  });
 });

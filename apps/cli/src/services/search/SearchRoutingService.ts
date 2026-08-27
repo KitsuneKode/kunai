@@ -81,6 +81,9 @@ export async function searchTitles(
           {
             audioPreference: youtubeProfile.audio,
             subtitlePreference: youtubeProfile.subtitle,
+            ...(isContentShapeType(intent.filters.type)
+              ? { contentShape: intent.filters.type }
+              : {}),
           },
           context.signal,
         )
@@ -452,7 +455,9 @@ function applyLocalSearchFilters(
   return filtered;
 }
 
-function isContentShapeType(type: SearchIntent["filters"]["type"]): boolean {
+function isContentShapeType(
+  type: SearchIntent["filters"]["type"],
+): type is "video" | "short" | "playlist" | "channel" {
   return type === "video" || type === "short" || type === "playlist" || type === "channel";
 }
 

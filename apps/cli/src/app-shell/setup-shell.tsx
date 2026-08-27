@@ -250,6 +250,7 @@ export function SetupShell({
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [rechecking, setRechecking] = useState(false);
   const [screenIdx, setScreenIdx] = useState(0);
+  const [completionOutcome, setCompletionOutcome] = useState<SetupFlowResult>("completed");
   /** Deepest screen reached — an abort after this point was a real decision. */
   const deepestRef = React.useRef(0);
   const [confirmingAbort, setConfirmingAbort] = useState(false);
@@ -344,7 +345,7 @@ export function SetupShell({
       deepestRef.current = Math.max(deepestRef.current, screenIdx + 1);
       setScreenIdx((current) => current + 1);
     } else {
-      finish("completed", buildPrefs(analyticsDecision), deepestRef.current);
+      finish(completionOutcome, buildPrefs(analyticsDecision), deepestRef.current);
     }
   }
 
@@ -357,29 +358,45 @@ export function SetupShell({
   }
 
   /**
-   * Accept every remaining recommendation and finish.
+   * Accept every remaining recommendation and show the final review.
    *
    * Analytics is excluded when the consent screen has not been reached: a
    * blanket "yes to everything" is not consent to send data. Same rule keeps
    * AniList, TMDB, and Discord off — no skip path may perform an outward-facing
-   * action.
+   * action. The user still gets one final chance to inspect the applied values
+   * before pressing Enter to save.
    */
   function acceptRemainingDefaults() {
     const prefs = buildPrefs(analyticsDecision);
     const remaining = new Set(SCREEN_ORDER.slice(screenIdx));
-    finish(
-      "defaults",
-      {
-        ...prefs,
-        ...(remaining.has("mode") ? { mode: MODE_RECOMMENDED } : {}),
-        ...(remaining.has("language") ? { languageProfiles: recommendedLanguageProfiles() } : {}),
-        ...(remaining.has("playback")
-          ? { autoNext: true, skipIntro: true, skipCredits: true }
-          : {}),
-        ...(remaining.has("library") ? { downloadQuality: DOWNLOAD_QUALITY_RECOMMENDED } : {}),
-      },
-      deepestRef.current,
+    const nextPrefs: SetupPrefs = {
+      ...prefs,
+      ...(remaining.has("mode") ? { mode: MODE_RECOMMENDED } : {}),
+      ...(remaining.has("language") ? { languageProfiles: recommendedLanguageProfiles() } : {}),
+      ...(remaining.has("playback") ? { autoNext: true, skipIntro: true, skipCredits: true } : {}),
+      ...(remaining.has("library") ? { downloadQuality: DOWNLOAD_QUALITY_RECOMMENDED } : {}),
+    };
+
+    setModeIdx(
+      indexOfValue(
+        MODE_OPTIONS.map((option) => option.value),
+        nextPrefs.mode,
+      ),
     );
+    setLanguageProfiles(nextPrefs.languageProfiles);
+    setAutoNext(nextPrefs.autoNext);
+    setSkipIntro(nextPrefs.skipIntro);
+    setSkipCredits(nextPrefs.skipCredits);
+    setDownloadsEnabled(nextPrefs.downloadsEnabled);
+    setQualityIdx(indexOfValue(DOWNLOAD_QUALITIES, nextPrefs.downloadQuality));
+    setConnectAniList(nextPrefs.connectAniList);
+    setConnectTmdb(nextPrefs.connectTmdb);
+    setPresenceDiscord(nextPrefs.presenceDiscord);
+    setShowFix(false);
+    setConfirmingAbort(false);
+    setCompletionOutcome("defaults");
+    deepestRef.current = Math.max(deepestRef.current, SCREEN_ORDER.length - 1);
+    setScreenIdx(SCREEN_ORDER.length - 1);
   }
 
   function abort() {
@@ -543,11 +560,9 @@ export function SetupShell({
       return;
     }
 
-    // `S` — accept every remaining recommendation and finish. On the consent
-    // screen it advances instead of passing through, so analytics is never
-    // enabled by a keystroke aimed at everything else. Anywhere else it
-    // finishes carrying whatever the consent screen has actually recorded,
-    // which for a user who never answered it is `unchanged`.
+    // `S` — accept every remaining recommendation and open the final review.
+    // On the consent screen it advances instead of passing through, so
+    // analytics is never enabled by a keystroke aimed at everything else.
     if (input === "S") {
       if (screen === "analytics") {
         commitAnalytics("disabled");

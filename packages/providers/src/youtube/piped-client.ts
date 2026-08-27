@@ -13,6 +13,8 @@ export type PipedSearchItem = {
   readonly uploaded?: number;
   readonly shortDescription?: string;
   readonly isShort?: boolean;
+  readonly isLive?: boolean;
+  readonly liveStatus?: string;
 };
 
 export type PipedSearchResponse = {

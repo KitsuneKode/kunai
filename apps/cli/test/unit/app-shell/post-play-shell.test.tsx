@@ -88,7 +88,8 @@ describe("PostPlayShell Next-Up hero", () => {
       />,
       { columns: 130 },
     );
-    expect(frame).toContain("0:23 / 48:11 · 1%");
+    expect(frame).toContain("0:23 / 48:11");
+    expect(frame).not.toContain("0:23 / 48:11 · 1%");
     expect(frame).not.toContain("3 / 10 · 30%");
   });
 

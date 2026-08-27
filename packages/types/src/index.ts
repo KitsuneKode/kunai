@@ -634,6 +634,8 @@ export interface ProviderSearchInput {
   readonly query: string;
   readonly preferredAudioLanguage?: string;
   readonly preferredSubtitleLanguage?: string;
+  /** Optional provider-native shape hint (used by YouTube Shorts filtering). */
+  readonly preferredContentShape?: YouTubeContentShape;
 }
 
 export interface ProviderSearchResult {

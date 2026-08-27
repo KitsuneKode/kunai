@@ -17,6 +17,7 @@ import type {
   SubtitleCandidate,
   ProviderVariantCandidate,
   YouTubeLiveStatus,
+  YouTubeContentShape,
 } from "@kunai/types";
 
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -97,12 +98,34 @@ async function searchYoutube(
   const query = input.query.trim();
   if (!query) return [];
 
+  // Invidious does not consistently identify Shorts. Prefer a provider path
+  // that carries an explicit shape signal when the caller asks for them, and
+  // never return regular videos under a `type:short` filter.
+  if (input.preferredContentShape === "short") {
+    const ytsearch = await searchYoutubeViaYtsearch(query, context, "short");
+    if (ytsearch?.length) return ytsearch;
+    if (globalYoutubeConfig.pipedApiUrl?.trim()) {
+      try {
+        const piped = await pipedSearch(query, {
+          apiBaseUrl: globalYoutubeConfig.pipedApiUrl,
+          signal: context.signal,
+        });
+        const mapped = mapPipedSearchResults(piped.items).filter(
+          (result) => result.contentShape === "short",
+        );
+        if (mapped.length > 0) return mapped;
+      } catch {
+        // fall through to Invidious for forks that expose Shorts there
+      }
+    }
+  }
+
   try {
     const items = await invidiousSearch(query, {
       preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
       signal: context.signal,
     });
-    return mapInvidiousSearchResults(items);
+    return filterYoutubeContentShape(mapInvidiousSearchResults(items), input.preferredContentShape);
   } catch (invidiousError) {
     if (globalYoutubeConfig.pipedApiUrl?.trim()) {
       try {
@@ -110,7 +133,10 @@ async function searchYoutube(
           apiBaseUrl: globalYoutubeConfig.pipedApiUrl,
           signal: context.signal,
         });
-        const mapped = mapPipedSearchResults(piped.items);
+        const mapped = filterYoutubeContentShape(
+          mapPipedSearchResults(piped.items),
+          input.preferredContentShape,
+        );
         if (mapped.length > 0) return mapped;
       } catch {
         // fall through
@@ -119,11 +145,22 @@ async function searchYoutube(
 
     if (context.signal?.aborted) return null;
 
-    const ytsearchResults = await searchYoutubeViaYtsearch(query, context);
+    const ytsearchResults = await searchYoutubeViaYtsearch(
+      query,
+      context,
+      input.preferredContentShape,
+    );
     if (ytsearchResults) return ytsearchResults;
 
     throw invidiousError;
   }
+}
+
+function filterYoutubeContentShape(
+  results: readonly ProviderSearchResult[],
+  shape: YouTubeContentShape | undefined,
+): readonly ProviderSearchResult[] {
+  return shape ? results.filter((result) => result.contentShape === shape) : results;
 }
 
 const YTSEARCH_RESULT_LIMIT = 12;
@@ -131,6 +168,7 @@ const YTSEARCH_RESULT_LIMIT = 12;
 async function searchYoutubeViaYtsearch(
   query: string,
   context: ProviderRuntimeContext,
+  requestedShape?: YouTubeContentShape,
 ): Promise<readonly ProviderSearchResult[] | null> {
   if (!Bun.which("yt-dlp")) return null;
 
@@ -197,7 +235,8 @@ async function searchYoutubeViaYtsearch(
         // skip malformed line
       }
     }
-    return results.length > 0 ? results : null;
+    const filtered = filterYoutubeContentShape(results, requestedShape);
+    return filtered.length > 0 ? filtered : null;
   } catch {
     return null;
   }

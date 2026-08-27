@@ -94,6 +94,9 @@ test("arriving on the consent screen and stepping back is not consent (#227 cont
 
     // Accept-all from here. Visiting the screen must not count as answering it.
     handle.stdin.enqueue("S");
+    expect(results).toHaveLength(0);
+    expect(stripAnsi(handle.lastFrame())).toContain("You're all set");
+    handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.result).toBe("defaults");
     expect(results[0]?.prefs.analyticsChoice).toBe("unchanged");
@@ -114,6 +117,9 @@ test("the same walk-back followed by [s] never opts in either", () => {
     // Still nothing decided; leaving now must leave the standing value alone.
     handle.stdin.enqueue("\x1b[D"); // back to library
     handle.stdin.enqueue("S");
+    expect(results).toHaveLength(0);
+    expect(stripAnsi(handle.lastFrame())).toContain("You're all set");
+    handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.prefs.analyticsChoice).toBe("unchanged");
   } finally {
@@ -179,6 +185,9 @@ test("an answered screen keeps its answer when the user steps back over it", () 
     handle.stdin.enqueue("\x1b[D"); // back to library
     handle.stdin.enqueue("S"); // accept-all from before the consent screen
 
+    expect(results).toHaveLength(0);
+    expect(stripAnsi(handle.lastFrame())).toContain("You're all set");
+    handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.prefs.analyticsChoice).toBe("disabled");
   } finally {

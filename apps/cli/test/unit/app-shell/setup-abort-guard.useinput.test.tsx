@@ -110,7 +110,10 @@ test("[s] applies the screen's recommendation, not wherever the cursor sits (#23
     handle.stdin.enqueue("s"); // "use recommended" -> back to series, advance
     expect(handle.lastFrame()).toContain("Language");
 
-    handle.stdin.enqueue("S"); // accept the rest
+    handle.stdin.enqueue("S"); // accept the rest and review
+    expect(results).toHaveLength(0);
+    expect(handle.lastFrame()).toContain("You're all set");
+    handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.result).toBe("defaults");
     expect(results[0]?.prefs.mode).toBe("series");
@@ -232,6 +235,9 @@ test("accept-all on a fresh install asks for no account and no presence (#232)",
   const { handle, results } = start({ anilistSync: false, tmdbSync: false });
   try {
     handle.stdin.enqueue("S");
+    expect(results).toHaveLength(0);
+    expect(handle.lastFrame()).toContain("You're all set");
+    handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.result).toBe("defaults");
     expect(results[0]?.prefs.connectAniList).toBe(false);

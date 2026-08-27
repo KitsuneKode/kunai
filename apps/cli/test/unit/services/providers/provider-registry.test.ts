@@ -57,6 +57,7 @@ function createModule(id: string, mediaKinds: readonly ("anime" | "movie" | "ser
 test("ProviderRegistry wires provider-owned search and episode hooks without provider id checks", async () => {
   const searchSignals: AbortSignal[] = [];
   const listSignals: AbortSignal[] = [];
+  let searchShape: string | undefined;
   const module: CoreProviderModule = {
     providerId: "hooked",
     manifest,
@@ -64,6 +65,7 @@ test("ProviderRegistry wires provider-owned search and episode hooks without pro
       throw new Error("resolve should not be called");
     },
     async search(input, context): Promise<ProviderSearchResult[]> {
+      searchShape = input.preferredContentShape;
       if (context.signal) searchSignals.push(context.signal);
       return [
         {
@@ -117,7 +119,7 @@ test("ProviderRegistry wires provider-owned search and episode hooks without pro
 
   const results = await provider?.search?.(
     "hook",
-    { audioPreference: "original", subtitlePreference: "en" },
+    { audioPreference: "original", subtitlePreference: "en", contentShape: "short" },
     controller.signal,
   );
   const episodes = await provider?.listEpisodes?.(
@@ -126,6 +128,7 @@ test("ProviderRegistry wires provider-owned search and episode hooks without pro
   );
 
   expect(results?.[0]?.title).toBe("Hooked Anime");
+  expect(searchShape).toBe("short");
   expect(results?.[0]?.externalIds?.malId).toBe("456");
   expect(results?.[0]?.release?.providerConfirmed).toBe(true);
   expect(results?.[0]?.artwork?.seekBarVttUrl).toContain("seek.vtt");
