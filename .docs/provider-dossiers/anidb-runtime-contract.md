@@ -93,6 +93,9 @@ AniDB models each season as its own title, so `routeAnidbSeason()` in
 - Season 2+ searches `<normalized base> Season N` and requires both a matching parsed season and
   exact/prefix normalized base-title evidence. An ambiguous best score fails closed with a
   structured `not-found` rather than resolving the wrong title.
+- If no numbered sibling matches, a standalone `Final Season` may route to the ordinal immediately
+  after the show's highest explicitly numbered sibling. Movie cards, final-season parts, and
+  prefixed spin-off seasons provide no ordinal evidence; ambiguous or arc-named runs fail closed.
 - `absoluteEpisode` survives CLI adaptation but is consumed **only** when the routed title's own
   resolved AniDB episode catalog contains that exact episode number. A missing season label is not
   evidence. A season-specific title, an unconfirmed base, and every routed season sibling use the

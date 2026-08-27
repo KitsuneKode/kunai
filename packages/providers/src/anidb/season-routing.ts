@@ -218,8 +218,8 @@ async function routeFinalSeason(input: {
   const normalizedBase = input.baseEvidence.normalizedBaseTitle;
   // The numbered siblings are what carry the ordinal, and a `Season N` query
   // does not return them — the base title has to be asked for directly.
-  const siblings = (await input.search(normalizedBase, input.signal)).filter((candidate) =>
-    relatesToBase(candidate, normalizedBase),
+  const siblings = (await input.search(normalizedBase, input.signal)).filter(
+    (candidate) => candidate.kind !== "movie" && relatesToBase(candidate, normalizedBase),
   );
 
   const finals = siblings.filter((candidate) => {
@@ -234,10 +234,12 @@ async function routeFinalSeason(input: {
   if (!finalSeason) return null;
 
   // The base itself is season one, so it is the floor for the highest season.
-  const highestNumberedSeason = siblings.reduce(
-    (highest, candidate) => Math.max(highest, candidate.seasonEvidence.seasonNumber ?? 0),
-    1,
-  );
+  const highestNumberedSeason = siblings.reduce((highest, candidate) => {
+    // A prefixed spin-off is related enough to consider as search noise, but
+    // its own season ordinal is not evidence about the requested show.
+    if (candidate.seasonEvidence.normalizedBaseTitle !== normalizedBase) return highest;
+    return Math.max(highest, candidate.seasonEvidence.seasonNumber ?? 0);
+  }, 1);
   if (highestNumberedSeason + 1 !== input.requestedSeason) return null;
 
   return {

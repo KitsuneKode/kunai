@@ -4,9 +4,15 @@ import type { AnidbEpisodeEntry } from "../src/anidb/client";
 import { parseAnidbSeasonEvidence, type AnidbSearchResult } from "../src/anidb/direct";
 import { routeAnidbSeason } from "../src/anidb/season-routing";
 
-function result(id: string, title: string): AnidbSearchResult {
+function result(id: string, title: string, kind?: "movie"): AnidbSearchResult {
   const numericId = Number(id.match(/-(\d+)$/)?.[1]);
-  return { id, title, numericId, seasonEvidence: parseAnidbSeasonEvidence(title) };
+  return {
+    id,
+    title,
+    numericId,
+    ...(kind ? { kind } : {}),
+    seasonEvidence: parseAnidbSeasonEvidence(title),
+  };
 }
 
 const noEpisodes = async (): Promise<readonly AnidbEpisodeEntry[]> => [];
@@ -268,6 +274,39 @@ describe("final-season routing", () => {
     });
 
     expect(route).toBeNull();
+  });
+
+  test("never treats a movie named Final Season as the requested season", async () => {
+    const route = await routeAnidbSeason({
+      base: result("show-1", "Show"),
+      episode: { season: 4, episode: 1 },
+      search: async () => [
+        result("show-1", "Show"),
+        result("show-season-2-2", "Show Season 2"),
+        result("show-season-3-3", "Show Season 3"),
+        result("show-final-season-4", "Show: Final Season", "movie"),
+      ],
+      episodes: noEpisodes,
+    });
+
+    expect(route).toBeNull();
+  });
+
+  test("does not let a spin-off season inflate the final-season ordinal", async () => {
+    const route = await routeAnidbSeason({
+      base: result("show-1", "Show"),
+      episode: { season: 4, episode: 1 },
+      search: async () => [
+        result("show-1", "Show"),
+        result("show-season-2-2", "Show Season 2"),
+        result("show-season-3-3", "Show Season 3"),
+        result("show-final-season-4", "Show: Final Season"),
+        result("show-junior-high-season-9-9", "Show Junior High Season 9"),
+      ],
+      episodes: noEpisodes,
+    });
+
+    expect(route?.routedShowId).toBe("show-final-season-4");
   });
 
   /**
