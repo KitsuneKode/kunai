@@ -1,4 +1,4 @@
-import type { BrowseShellOption } from "@/app-shell/types";
+import type { BrowseShellOption, ShellPanelLine } from "@/app-shell/types";
 import { buildLocalFilterFacts } from "@/app/search/browse-local-filter-facts";
 import { isCalendarSearchResult } from "@/app/search/calendar-results";
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
@@ -31,6 +31,48 @@ const YOUTUBE_LIVE_LABELS = {
 
 function youtubeLiveLabel(status: YouTubeLiveStatus | undefined): string | undefined {
   return status && status !== "none" ? YOUTUBE_LIVE_LABELS[status] : undefined;
+}
+
+/**
+ * The YouTube-only rows of the preview pane, in display order. These were five
+ * near-identical conditional spreads; one builder keeps the shape, the ordering,
+ * and the empty handling in a single place.
+ */
+function youtubePreviewFacts(result: SearchResult, contentLabel: string): ShellPanelLine[] {
+  const facts: ShellPanelLine[] = [];
+  const push = (
+    label: string,
+    detail: string | undefined,
+    tone: ShellPanelLine["tone"] = "neutral",
+  ) => {
+    if (detail) facts.push({ label, detail, tone });
+  };
+  const clock = result.durationSeconds
+    ? (formatDurationSeconds(result.durationSeconds) ?? `${result.durationSeconds}s`)
+    : undefined;
+
+  push("Channel", result.channelTitle);
+  push(
+    "Views",
+    result.viewCount === undefined
+      ? undefined
+      : (formatViewCount(result.viewCount) ?? `${result.viewCount}`),
+  );
+  push(
+    "Uploaded",
+    result.publishedAt ? (formatRelativeTime(result.publishedAt) ?? result.publishedAt) : undefined,
+  );
+  push("Duration", clock && contentLabel === "Short" ? `Short (${clock})` : clock);
+  push(
+    "Live status",
+    youtubeLiveLabel(result.liveStatus),
+    result.liveStatus === "live"
+      ? "error"
+      : result.liveStatus === "upcoming"
+        ? "warning"
+        : "neutral",
+  );
+  return facts;
 }
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
@@ -206,59 +248,7 @@ export function toBrowseResultOption(
             },
           ]
         : []),
-      ...(isYoutubeResult && result.channelTitle
-        ? [
-            {
-              label: "Channel",
-              detail: result.channelTitle,
-              tone: "neutral" as const,
-            },
-          ]
-        : []),
-      ...(isYoutubeResult && result.viewCount !== undefined
-        ? [
-            {
-              label: "Views",
-              detail: formatViewCount(result.viewCount) ?? `${result.viewCount}`,
-              tone: "neutral" as const,
-            },
-          ]
-        : []),
-      ...(isYoutubeResult && result.publishedAt
-        ? [
-            {
-              label: "Uploaded",
-              detail: formatRelativeTime(result.publishedAt) ?? result.publishedAt,
-              tone: "neutral" as const,
-            },
-          ]
-        : []),
-      ...(isYoutubeResult && result.durationSeconds
-        ? [
-            {
-              label: "Duration",
-              detail:
-                contentLabel === "Short"
-                  ? `Short (${formatDurationSeconds(result.durationSeconds)})`
-                  : (formatDurationSeconds(result.durationSeconds) ?? `${result.durationSeconds}s`),
-              tone: "neutral" as const,
-            },
-          ]
-        : []),
-      ...(isYoutubeResult && result.liveStatus && result.liveStatus !== "none"
-        ? [
-            {
-              label: "Live status",
-              detail: youtubeLiveLabel(result.liveStatus) ?? "",
-              tone:
-                result.liveStatus === "live"
-                  ? ("error" as const)
-                  : result.liveStatus === "upcoming"
-                    ? ("warning" as const)
-                    : ("neutral" as const),
-            },
-          ]
-        : []),
+      ...(isYoutubeResult ? youtubePreviewFacts(result, contentLabel) : []),
       {
         label: "Metadata source",
         detail: result.metadataSource ?? "provider response",

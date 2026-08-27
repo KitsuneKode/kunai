@@ -85,6 +85,23 @@ A last review pass over the release train, from real sessions:
   preferring backends that provide an explicit Shorts signal, while live/upcoming/post-live
   status remains a separate badge so a collection or live entry is not mistaken for a regular
   video. Backends that omit a signal remain labelled conservatively.
+- **YouTube live streams play.** mpv's ytdl hook turns each `ytdl-raw-options` entry into a bare
+  `--flag` when its value is empty, so Kunai's `live-from-start=no` reached yt-dlp as
+  `--live-from-start no` and `no` was read as a second URL. Live playback now joins at the live
+  edge, holds a short demuxer buffer to stay there — at spawn and on every in-session
+  replacement alike — and suppresses every seek that assumes a fixed position: the start
+  argument, the loadfile offset, the watch-later resume prompt, and the seek that used to fire
+  after an in-process reconnect.
+- **YouTube quality is no longer capped at 360p, and a PO token is actually used.** The default
+  player clients now lead with `visionos`, matching yt-dlp's own default: it is the one client
+  with no Proof-of-Origin requirement, and yt-dlp skips rather than attempts formats whose token
+  is missing, so a token-gated client in front spent a whole failover lane on formats that were
+  never going to be offered. A configured PO token now survives a restart, reaches downloads as
+  well as playback, and is written in the single-prefix form yt-dlp can actually parse — before,
+  it was dropped by config normalization, omitted by downloads, and malformed on the wire.
+- **A YouTube premiere says it has not started.** Opening one reports that instead of handing
+  mpv a stream that cannot play yet, and rows carry view counts, humanized upload times, and
+  live state.
 - **Post-play keeps its escape hatches visible.** `/analytics`, `/sync`, and diagnostics are
   available from the command palette after playback, so a stopped session can inspect telemetry,
   tracker state, or recovery details without returning to browse.

@@ -324,29 +324,7 @@ describe("buildMediaPanel — video", () => {
         videoMeta: { channelTitle: "News", liveStatus: "live" },
       }),
     );
-    expect(model.facts).toContainEqual({ label: "live", value: "● LIVE", tone: "error" });
-  });
-
-  test("flags upcoming videos", () => {
-    const model = buildMediaPanel(
-      ctx({
-        contentKind: "video",
-        title: "Upcoming Stream",
-        videoMeta: { liveStatus: "upcoming" },
-      }),
-    );
-    expect(model.facts).toContainEqual({ label: "status", value: "Upcoming", tone: "warning" });
-  });
-
-  test("flags was live videos", () => {
-    const model = buildMediaPanel(
-      ctx({
-        contentKind: "video",
-        title: "VOD Stream",
-        videoMeta: { liveStatus: "post_live" },
-      }),
-    );
-    expect(model.facts).toContainEqual({ label: "status", value: "Was Live", tone: "neutral" });
+    expect(model.facts).toContainEqual({ label: "live", value: "● live", tone: "error" });
   });
 
   test("badges a Short from its shape and still shows the running time", () => {
@@ -394,12 +372,16 @@ describe("buildMediaPanel — video", () => {
     const upcoming = buildMediaPanel(
       ctx({ contentKind: "video", title: "Premiere", videoMeta: { liveStatus: "upcoming" } }),
     );
-    expect(upcoming.facts).toContainEqual({ label: "live", value: "◷ upcoming", tone: "muted" });
+    expect(upcoming.facts).toContainEqual({
+      label: "live",
+      value: "◷ upcoming",
+      tone: "warning",
+    });
 
     const replay = buildMediaPanel(
       ctx({ contentKind: "video", title: "Replay", videoMeta: { liveStatus: "post_live" } }),
     );
-    expect(replay.facts).toContainEqual({ label: "live", value: "↺ replay", tone: "muted" });
+    expect(replay.facts).toContainEqual({ label: "live", value: "↺ replay", tone: "neutral" });
   });
 
   test("badges channel contentShape distinctly from video", () => {

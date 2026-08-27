@@ -279,6 +279,18 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * slack rather than clearing one change; #206/#207 are measured on their own
  * terms if they ever approach this number.
  *
+ * Raised from 3_000 on 2026-08-27 for the YouTube live/quality train (#283 on
+ * top of #282). `fix/release-smoke-ux-030` alone measures 3,069,897 bytes
+ * against the 3,072,000 (3_000 KiB) cap -- 2.1 KiB of headroom, so the stacked
+ * PR was going to trip it no matter how small. The two together measure
+ * 3,073,808 bytes: a 3,911-byte step for live-stream playback, the extractor-args
+ * parser that replaced a regex, PO-token plumbing, Shorts shape, and the browse
+ * metadata rows. Two rounds of deduplication were applied first (one live-status
+ * label instead of three ternary chains, one preview-fact builder instead of five
+ * conditional spreads) and recovered ~300 bytes; the rest is distributed feature
+ * code with no single blob. 3_048 leaves ~46 KiB of headroom, restoring real
+ * slack rather than clearing one change.
+ *
  * Worth restating because it is what makes this safe: this number guards
  * `dist/kunai.js`, which is published nowhere and is not the source of the
  * compiled binaries either -- `compileBinaryBuildOptions` compiles from
@@ -287,7 +299,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
  */
-export const NPM_BUNDLE_BUDGET_KB = 3_000;
+export const NPM_BUNDLE_BUDGET_KB = 3_048;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
