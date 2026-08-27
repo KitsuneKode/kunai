@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-24
+Last updated: 2026-08-27
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -46,6 +46,7 @@ archive and put only the residue here.
 
 | Track                      | Remaining                                                               | Plan                                                                               |
 | -------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Mobile terminal handoff    | Android Termux binaries, detached VLC/mpv playback, real-device gates   | [mobile-terminal-handoff.md](./mobile-terminal-handoff.md)                         |
 | Provider resolve hardening | Health recovery, latency ordering, and measured hedge-delay calibration | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)   |
 | Provider hardening         | Research and scraper capability roadmap                                 | [provider-hardening.md](./provider-hardening.md)                                   |
 | Provider result contract   | Contract work before broad `@kunai/core` extraction                     | [provider-result-contract.md](./provider-result-contract.md)                       |
