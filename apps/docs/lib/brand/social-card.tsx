@@ -1,3 +1,4 @@
+import { KunaiFox } from "@/components/brand/kunai-fox";
 import { KunaiMark } from "@/lib/brand/kunai-mark";
 import { kunaiBrand } from "@/lib/brand/tokens";
 import type { ReactNode } from "react";
@@ -111,7 +112,7 @@ export function KunaiSocialCard({
   const leftColumn: ReactNode = mascotSrc ? (
     <img src={mascotSrc} alt="" width={320} height={284} style={{ objectFit: "contain" }} />
   ) : (
-    <KunaiMark size={220} />
+    <KunaiFox pose="idle" size={240} />
   );
 
   return (

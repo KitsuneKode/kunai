@@ -14,6 +14,7 @@
 @import "./styles/surfaces.css";
 @import "./styles/docs-chrome.css";
 @import "./styles/home.css";
+@import "./styles/fox.css";
 @import "./styles/charts.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
