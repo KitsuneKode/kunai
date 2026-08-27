@@ -11,7 +11,7 @@ import React from "react";
 
 import { StateBlock } from "./primitives/StateBlock";
 import { getWindowStart, truncateLine } from "./shell-text";
-import { palette } from "./shell-theme";
+import { palette, APP_LABEL } from "./shell-theme";
 import {
   chunkSubtitleGrid,
   disambiguateSubtitleLabels,
@@ -152,7 +152,8 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     <Box flexDirection="column" marginBottom={1}>
       <Box>
         <Text color={palette.accent} bold>
-          🦊 Kunai{"  "}
+          {APP_LABEL}
+          {"  "}
         </Text>
         <Text color={palette.textDim} bold>
           Tracks

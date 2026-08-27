@@ -575,18 +575,33 @@ export function SetupShell({
         setLanguageLane(selectedLane.value);
         return;
       }
+
+      // Tab cycles the profile, because the profile is this screen's tab group.
+      // Every other tabbed surface — history, downloads, analytics, library,
+      // browse — already reads Tab that way, and this screen used to be the one
+      // exception, with the tab group stranded on 1-4.
       if (key.tab) {
-        setLangFocus((f) => (f === "audio" ? "subtitle" : "audio"));
+        const index = SETUP_LANGUAGE_LANES.findIndex((lane) => lane.value === languageLane);
+        const count = SETUP_LANGUAGE_LANES.length;
+        const next = (index + (key.shift ? -1 : 1) + count) % count;
+        setLanguageLane(
+          (SETUP_LANGUAGE_LANES[next] as (typeof SETUP_LANGUAGE_LANES)[number]).value,
+        );
         return;
       }
-      if (key.leftArrow) {
-        setLangFocus("audio");
-        return;
-      }
+
+      // The two columns sit left and right on screen, so the arrows walk them.
       if (key.rightArrow) {
         setLangFocus("subtitle");
         return;
       }
+      if (key.leftArrow && langFocus === "subtitle") {
+        setLangFocus("audio");
+        return;
+      }
+      // Left at the leftmost column falls through to `back()` below. That is
+      // what keeps "left goes back" true on every setup screen while still
+      // letting the arrows mean something inside this one.
     }
 
     if (input === " ") {
@@ -705,8 +720,8 @@ function buildFooter(
       // footer keeps only the decisions.
       return [
         { key: "enter", label: "next" },
-        { key: "1-4", label: "profile" },
-        { key: "tab", label: "audio / subs" },
+        { key: "tab", label: "profile" },
+        { key: "←→", label: "audio / subs" },
         { key: "s", label: "recommended" },
         { key: "S", label: "remaining defaults" },
         ...back,

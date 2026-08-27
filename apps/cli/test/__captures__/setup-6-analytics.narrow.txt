@@ -1,9 +1,8 @@
 # setup-6-analytics · narrow (72×34)
-  🦊 Kunai · usage ping                                      setup 6⁄7
+  ᐠ•ᴗ•ᐟ Kunai · usage ping                                   setup 6⁄7
 ────────────────────────────────────────────────────────────────────────
 
 
-  🦊
 
   Help Kunai know it's being used
   Recommended. Nothing is sent until you confirm here.

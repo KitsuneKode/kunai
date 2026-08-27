@@ -8,7 +8,7 @@
 // `.reference/design/cli/kunai-sakura-systems.html` specified onboarding inside
 // this frame from the start; `01-shell-footer-contract.md` gives the grammar:
 //
-//   🦊 Kunai · <context>                                        setup · N⁄7
+//   ᐠ•ᴗ•ᐟ Kunai · <context>                                        setup · N⁄7
 //   <body — the current decision>
 //   [key] label  [key] label                                         Setup
 // =============================================================================
@@ -17,7 +17,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { CompanionPet } from "../CompanionPet";
-import { palette } from "../shell-theme";
+import { APP_LABEL, palette } from "../shell-theme";
 
 export type FooterKey = { readonly key: string; readonly label: string };
 
@@ -134,7 +134,7 @@ export function SetupFrame({
         left={
           <Text>
             <Text color={palette.text} bold>
-              🦊 Kunai
+              {APP_LABEL}
             </Text>
             <Text color={palette.dim}>{" · "}</Text>
             <Text color={palette.muted}>{context}</Text>

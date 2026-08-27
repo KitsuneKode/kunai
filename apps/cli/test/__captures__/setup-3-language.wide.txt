@@ -1,9 +1,8 @@
 # setup-3-language · wide (140×34)
-  🦊 Kunai · language                                                                                                            setup 3⁄7
+  ᐠ•ᴗ•ᐟ Kunai · language                                                                                                         setup 3⁄7
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-                              🦊
 
                               Language
                               Each media type keeps its own defaults. Change either again per episode.
@@ -24,4 +23,4 @@
 
                               1–4 switches profile · tab or ←→ switches field · ↑↓ chooses
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [enter]  next  ·  [1-4]  profile  ·  [tab]  audio / subs  ·  [s]  recommended  ·  [S]  remaining defaults  ·  [b]  back            Setup
+  [enter]  next  ·  [tab]  profile  ·  [←→]  audio / subs  ·  [s]  recommended  ·  [S]  remaining defaults  ·  [b]  back             Setup

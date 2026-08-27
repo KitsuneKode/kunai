@@ -51,7 +51,17 @@ export const palette = {
   dim: tokens.dim,
 } as const;
 
-export const APP_LABEL = "🦊 Kunai";
+/**
+ * The brand as it appears in chrome.
+ *
+ * A drawn face rather than the stock fox emoji, built only from single-column
+ * codepoints — Canadian syllabics for the ears, a bullet for each eye, U+1D17
+ * for the smile. Every kaomoji that reads better than this one needs a modifier
+ * letter (U+02D5, U+A788), and terminals disagree on whether those advance the
+ * cursor, which shifts the whole top bar. Measured at 5 columns; the header
+ * fills exactly its width at 62, 96 and 140.
+ */
+export const APP_LABEL = "ᐠ•ᴗ•ᐟ Kunai";
 
 export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
   switch (tone) {

@@ -45,20 +45,31 @@ visibly different.
 
 ## Browse And Search
 
-| Key        | Action                                                                            |
-| ---------- | --------------------------------------------------------------------------------- |
-| `Enter`    | Open selected result                                                              |
-| `↑` / `↓`  | Move selection                                                                    |
-| `Tab`      | Cycle catalog mode (series / anime / YouTube)                                     |
-| `/`        | Open command palette                                                              |
-| `m`        | Open starting-point menu for the highlighted title (same as Enter)                |
-| `q`        | Add selected result to Up Next when the result list, not text input, owns focus   |
-| `w`        | Add selected result to Watchlist when the result list, not text input, owns focus |
-| `Shift+W`  | Follow selected title when the result list, not text input, owns focus            |
-| `Shift+Q`  | Open Up Next when the result list, not text input, owns focus                     |
-| `Ctrl+F`   | Narrow loaded results only (local text filter)                                    |
-| `/filters` | Open guided search facets                                                         |
-| `Esc`      | Clear/back depending on focused state                                             |
+| Key       | Action                                        |
+| --------- | --------------------------------------------- |
+| `Enter`   | Open selected result                          |
+| `↑` / `↓` | Move selection                                |
+| `Tab`     | Cycle catalog mode (series / anime / YouTube) |
+
+### Language setup (step 3 of `--setup`)
+
+| Key            | Action                                                               |
+| -------------- | -------------------------------------------------------------------- |
+| `Tab` / `⇧Tab` | Cycle profile — Shows / Movies / Anime / YouTube (Shift reverses)    |
+| `1`–`4`        | Jump straight to a profile                                           |
+| `→`            | Move to the Subtitles column                                         |
+| `←`            | Move to the Audio column; at Audio it backs out to the previous step |
+| `↑` / `↓`      | Choose the value in the focused column                               |
+
+| `/` | Open command palette |
+| `m` | Open starting-point menu for the highlighted title (same as Enter) |
+| `q` | Add selected result to Up Next when the result list, not text input, owns focus |
+| `w` | Add selected result to Watchlist when the result list, not text input, owns focus |
+| `Shift+W` | Follow selected title when the result list, not text input, owns focus |
+| `Shift+Q` | Open Up Next when the result list, not text input, owns focus |
+| `Ctrl+F` | Narrow loaded results only (local text filter) |
+| `/filters` | Open guided search facets |
+| `Esc` | Clear/back depending on focused state |
 
 Use `/provider` from browse or playback command surfaces to change provider. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed.
 
