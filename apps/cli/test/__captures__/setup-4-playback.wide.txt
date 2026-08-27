@@ -3,6 +3,8 @@
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
+                              🦊
+
                               How playback should feel
                               All three are easy to change later.
 
@@ -13,4 +15,4 @@
                                 ◉ Skip credits
                                     Jumps the end card and rolls on
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [b]  back                                              Setup
+  [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [S]  remaining defaults  ·  [b]  back                  Setup

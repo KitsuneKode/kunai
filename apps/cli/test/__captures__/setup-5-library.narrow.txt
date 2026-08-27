@@ -3,6 +3,8 @@
 ────────────────────────────────────────────────────────────────────────
 
 
+  🦊
+
   Downloads & accounts
   Accounts are linked after setup, so a browser hiccup never traps you
    here.
@@ -22,4 +24,4 @@
 ────────────────────────────────────────────────────────────────────────
   [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]     Setup
 
-   recommended  ·  [b]  back
+   recommended  ·  [S]  remaining defaults  ·  [b]  back

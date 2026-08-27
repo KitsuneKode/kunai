@@ -3,6 +3,8 @@
 ────────────────────────────────────────────────────────────────────────
 
 
+  🦊
+
   What do you watch most?
   Sets where Kunai starts. Every mode stays one keystroke away.
 
@@ -15,4 +17,4 @@
 ────────────────────────────────────────────────────────────────────────
   [enter]  confirm  ·  [↑↓]  choose  ·  [b]  back  ·  [s]        Setup
 
-   recommended
+   recommended  ·  [S]  remaining defaults

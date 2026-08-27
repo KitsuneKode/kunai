@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { companionFallbackGlyph, isCompanionGraphicsEnabled } from "@/app-shell/companion-policy";
+
+const SHELL_SRC = join(import.meta.dir, "../../../src/app-shell");
 
 describe("companion policy", () => {
   test("KUNAI_PET=0 keeps the unicode glyph path", () => {
@@ -24,5 +28,14 @@ describe("companion policy", () => {
 
   test("fallback glyph stays the portable fox", () => {
     expect(companionFallbackGlyph()).toBe("🦊");
+  });
+
+  test("call sites mount CompanionPet so the glyph fallback can fire", () => {
+    const files = ["setup/SetupFrame.tsx", "exit-shell.tsx", "shell-primitives.tsx"] as const;
+    for (const file of files) {
+      const src = readFileSync(join(SHELL_SRC, file), "utf8");
+      expect(src, file).toContain("<CompanionPet");
+      expect(src, file).not.toContain("isCompanionGraphicsEnabled");
+    }
   });
 });

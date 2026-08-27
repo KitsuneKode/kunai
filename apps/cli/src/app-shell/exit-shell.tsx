@@ -1,7 +1,6 @@
 import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
 
-import { isCompanionGraphicsEnabled } from "./companion-policy";
 import { CompanionPet } from "./CompanionPet";
 import { palette } from "./shell-theme";
 
@@ -40,7 +39,7 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
 
   return (
     <Box flexDirection="column" paddingY={1}>
-      {showFox && isCompanionGraphicsEnabled() ? (
+      {showFox ? (
         <Box marginBottom={1}>
           <CompanionPet pose="idle" rows={4} cols={6} />
         </Box>

@@ -1,7 +1,6 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { isCompanionGraphicsEnabled } from "./companion-policy";
 import { CompanionPet } from "./CompanionPet";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
@@ -533,7 +532,7 @@ export const EmptyState = React.memo(function EmptyState({
 }) {
   return (
     <Box flexDirection="column" paddingY={1}>
-      {pet && isCompanionGraphicsEnabled() ? (
+      {pet ? (
         <Box marginBottom={1}>
           <CompanionPet pose="wait" rows={4} cols={6} />
         </Box>

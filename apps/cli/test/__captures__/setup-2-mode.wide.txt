@@ -3,6 +3,8 @@
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
+                              🦊
+
                               What do you watch most?
                               Sets where Kunai starts. Every mode stays one keystroke away.
 
@@ -13,4 +15,4 @@
                                 YouTube
                                   Search and play from YouTube
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [enter]  confirm  ·  [↑↓]  choose  ·  [b]  back  ·  [s]  recommended                                                               Setup
+  [enter]  confirm  ·  [↑↓]  choose  ·  [b]  back  ·  [s]  recommended  ·  [S]  remaining defaults                                   Setup
