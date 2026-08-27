@@ -21,10 +21,22 @@
   background: color-mix(in oklab, var(--kunai-bg) 92%, transparent);
 }
 
+/*
+ * A command beside a copy button.
+ *
+ * Flex children default to `min-width: auto`, which means they refuse to
+ * shrink below their content — so a long install URL pushes the row wider than
+ * its card instead of wrapping, and the copy button is clipped off the right
+ * edge. The page hides that with `overflow-x-hidden` on the shell, so it
+ * presents as a truncated button rather than a scrollbar. Every rule below
+ * exists to let the row give way at phone widths.
+ */
 .kunai-code-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  min-width: 0;
   gap: 0.5rem;
   border-radius: var(--kunai-radius-inner);
   border: 1px solid var(--kunai-line);
@@ -33,6 +45,16 @@
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.6875rem;
   color: color-mix(in oklab, var(--color-fd-foreground) 82%, transparent);
+}
+
+.kunai-code-row > * {
+  min-width: 0;
+}
+
+/* A URL has no spaces to break on, so it needs an explicit break opportunity. */
+.kunai-code-row code,
+.kunai-code-row span:not([class*="sr-only"]) {
+  overflow-wrap: anywhere;
 }
 
 .kunai-fd-card {

@@ -59,7 +59,7 @@ export default function HomePageInteractive() {
       <div className="install-section kunai-surface-shell">
         <div className="kunai-surface-shell__inner p-6 md:p-8">
           <div
-            className="border-fd-border mb-8 flex gap-3 border-b pb-6"
+            className="os-tab-list border-fd-border mb-8 flex gap-3 border-b pb-6"
             role="tablist"
             aria-label="Operating system"
           >

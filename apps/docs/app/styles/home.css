@@ -622,9 +622,30 @@
   box-shadow: var(--kunai-card-shadow);
 }
 
+/*
+ * The OS tablist scrolls rather than clips.
+ *
+ * Three tabs at full padding measure ~315px, which does not fit the ~270px
+ * content box of a 390px phone. The shell's `overflow-x-hidden` turned that
+ * into a silently truncated "WINDOWS" tab — an option the user cannot see or
+ * reach. Scrolling keeps every tab reachable; the tighter padding below means
+ * most phones never need to scroll at all.
+ */
+.os-tab-list {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.os-tab-list::-webkit-scrollbar {
+  display: none;
+}
+
 .os-tab-button {
   position: relative;
   padding: 0.6rem 1.25rem;
+  white-space: nowrap;
+  flex: 0 0 auto;
   font-size: 0.825rem;
   font-weight: 700;
   border-radius: 0.5rem;
@@ -889,5 +910,11 @@
 
   .kunai-hero-install__os {
     width: 4.5rem;
+  }
+}
+
+@media (max-width: 30rem) {
+  .os-tab-button {
+    padding: 0.6rem 0.75rem;
   }
 }
