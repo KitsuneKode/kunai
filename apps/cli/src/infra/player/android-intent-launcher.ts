@@ -1,6 +1,11 @@
 import type { DetachedPlayerTarget } from "@/domain/playback/player-choice";
+import {
+  resolveAndroidIntentPlan,
+  type AndroidIntentLauncher,
+  type AndroidIntentPlan,
+} from "@kunai/core";
 
-export type AndroidIntentLauncher = "termux-am" | "am" | "termux-open" | "termux-open-url";
+export type { AndroidIntentLauncher } from "@kunai/core";
 export type AndroidIntentFailure =
   | "intent-launcher-missing"
   | "player-not-installed"
@@ -17,13 +22,7 @@ export interface AndroidIntentRuntime {
   readonly spawn: (argv: readonly string[]) => AndroidIntentProcess;
 }
 
-export type AndroidIntentCommand =
-  | {
-      readonly ok: true;
-      readonly launcher: AndroidIntentLauncher;
-      readonly argv: readonly string[];
-    }
-  | { readonly ok: false; readonly reason: "intent-launcher-missing" };
+export type AndroidIntentCommand = AndroidIntentPlan;
 
 export type AndroidIntentLaunchResult =
   | { readonly ok: true; readonly launcher: AndroidIntentLauncher }
@@ -33,11 +32,6 @@ export type AndroidIntentLaunchResult =
       readonly launcher?: AndroidIntentLauncher;
       readonly detail?: string;
     };
-
-const PLAYER_PACKAGES = {
-  mpv: "is.xyz.mpv",
-  vlc: "org.videolan.vlc",
-} as const;
 
 const MAX_DIAGNOSTIC_LENGTH = 2_048;
 
@@ -51,67 +45,21 @@ export const defaultAndroidIntentRuntime: AndroidIntentRuntime = {
     }),
 };
 
-function actionViewArgv(
-  executable: string,
-  target: DetachedPlayerTarget,
-  url: string,
-): readonly string[] {
-  const argv = [
-    executable,
-    "start",
-    "-a",
-    "android.intent.action.VIEW",
-    "-d",
-    url,
-    "-t",
-    "video/*",
-  ];
-  if (target !== "chooser") argv.push("-p", PLAYER_PACKAGES[target]);
-  return argv;
-}
-
 export function resolveAndroidIntentCommand(input: {
   readonly target: DetachedPlayerTarget;
   readonly url: string;
   readonly runtime: AndroidIntentRuntime;
 }): AndroidIntentCommand {
-  const termuxAm = input.runtime.which("termux-am");
-  if (termuxAm) {
-    return {
-      ok: true,
-      launcher: "termux-am",
-      argv: actionViewArgv(termuxAm, input.target, input.url),
-    };
-  }
-
-  const am = input.runtime.which("am");
-  if (am) {
-    return {
-      ok: true,
-      launcher: "am",
-      argv: actionViewArgv(am, input.target, input.url),
-    };
-  }
-
-  const termuxOpen = input.runtime.which("termux-open");
-  if (termuxOpen && input.target === "chooser") {
-    return {
-      ok: true,
-      launcher: "termux-open",
-      argv: [termuxOpen, "--view", "--chooser", "--content-type", "video/*", input.url],
-    };
-  }
-
-  const termuxOpenUrl = input.runtime.which("termux-open-url");
-  if (termuxOpenUrl && input.target === "chooser") {
-    return {
-      ok: true,
-      launcher: "termux-open-url",
-      argv: [termuxOpenUrl, input.url],
-    };
-  }
-
-  return { ok: false, reason: "intent-launcher-missing" };
+  return resolveAndroidIntentPlan({
+    target: input.target,
+    url: input.url,
+    launchers: {
+      termuxAm: input.runtime.which("termux-am") ?? undefined,
+      am: input.runtime.which("am") ?? undefined,
+      termuxOpen: input.runtime.which("termux-open") ?? undefined,
+      termuxOpenUrl: input.runtime.which("termux-open-url") ?? undefined,
+    },
+  });
 }
 
 function redactUrl(rawUrl: string): string {
