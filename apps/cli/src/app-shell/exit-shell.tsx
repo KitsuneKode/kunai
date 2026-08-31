@@ -2,7 +2,7 @@ import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
 
 import { companionMode } from "./companion-policy";
-import { CompanionPet } from "./CompanionPet";
+import { CompanionHost } from "./CompanionHost";
 import { palette } from "./shell-theme";
 
 type ExitStep = "dim" | "footer-gone" | "fox" | "closing" | "done";
@@ -65,7 +65,7 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
     <Box flexDirection="column" paddingY={1}>
       {showFox ? (
         <Box marginBottom={1}>
-          <CompanionPet pose="nap" rows={4} />
+          <CompanionHost moment="farewell" rows={4} />
         </Box>
       ) : null}
       <Text dimColor={isDim} color={palette.dim}>

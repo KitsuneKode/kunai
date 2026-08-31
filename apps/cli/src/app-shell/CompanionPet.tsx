@@ -3,19 +3,12 @@ import React from "react";
 
 import { companionPetPath } from "./companion-assets";
 import { companionFallbackGlyph, companionMode, type CompanionPose } from "./companion-policy";
-import type { KittyPlacementSlot } from "./kitty-placement-registry";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
 
 type CompanionPetProps = {
   readonly pose?: CompanionPose;
   /** Height in terminal rows. Width is derived so the slot is square on screen. */
   readonly rows?: number;
-  /**
-   * Placement slot. Two companions on screen at once need two slots: the
-   * registry deletes the previous image when a different one claims a slot, so
-   * sharing one makes them erase each other every render.
-   */
-  readonly slot?: KittyPlacementSlot;
 };
 
 /**
@@ -24,7 +17,7 @@ type CompanionPetProps = {
  * companion is switched off. Never half-block — this art turns to noise at two
  * pixels per cell.
  */
-export function CompanionPet({ pose = "idle", rows = 4, slot = "companion" }: CompanionPetProps) {
+export function CompanionPet({ pose = "idle", rows = 4 }: CompanionPetProps) {
   const mode = companionMode();
   if (mode === "off") return null;
   if (mode === "glyph") return <Text>{companionFallbackGlyph()}</Text>;
@@ -39,7 +32,7 @@ export function CompanionPet({ pose = "idle", rows = 4, slot = "companion" }: Co
       allowKitty
       allowSixel
       debounceMs={0}
-      placementSlot={slot}
+      placementSlot="companion"
       square
     />
   );

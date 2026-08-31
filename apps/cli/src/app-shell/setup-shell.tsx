@@ -656,9 +656,9 @@ export function SetupShell({
         step={screenIdx}
         totalSteps={SCREEN_ORDER.length}
         footer={footer}
-        // The summary screen draws its own companion, in a pose that means the
-        // waiting is over. The frame would otherwise stack a second one above it.
-        companion={screen !== "done"}
+        // The summary screen draws its own, in a pose that means the waiting is
+        // over. The frame would otherwise stack a second one above it.
+        companion={screen === "done" ? null : "setup"}
       >
         {screen === "deps" ? (
           <DependencyScreen

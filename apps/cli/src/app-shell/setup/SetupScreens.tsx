@@ -9,7 +9,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { companionMode } from "../companion-policy";
-import { CompanionPet } from "../CompanionPet";
+import { CompanionHost } from "../CompanionHost";
 import { BLOOM_FRAMES, reducedMotionEnabled, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { palette } from "../shell-theme";
 import type { ScopedDependencyRow } from "./dependency-rows";
@@ -464,7 +464,7 @@ export function DoneScreen({
       <Box marginBottom={1} flexDirection="row">
         {companionMode() === "off" ? null : (
           <Box marginRight={2}>
-            <CompanionPet pose="idle" rows={3} slot="companion-summary" />
+            <CompanionHost moment="settled" rows={3} />
           </Box>
         )}
         <Box flexDirection="column">

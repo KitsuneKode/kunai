@@ -3,6 +3,8 @@ import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import { momentForLoading } from "./companion-moment";
+import { CompanionHost } from "./CompanionHost";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
 import { footerKeyFromBinding, KEYBINDINGS } from "./keybindings";
 import { buildLoadingFooterActions } from "./loading-shell-model";
@@ -512,6 +514,15 @@ export const LoadingShell = React.memo(function LoadingShell({
   // a bare title never renders a lonely panel.
   const hasPanelContent = Boolean(state.posterUrl || state.titleDetail || state.videoMeta);
   const showSidePanel = isWide && (isPlaying || hasPanelContent);
+  // `showSidePanel` is already the answer to "is there content artwork here",
+  // which is the rule the companion obeys: the poster wins, and she fills the
+  // empty frame rather than crowding a full one.
+  const companionMoment = momentForLoading({
+    operation: state.operation,
+    stage: state.stage,
+    hasPoster: showSidePanel,
+    failed: recoveryView !== null,
+  });
   const totalPlayingWidth = Math.max(60, terminalColumns - 2);
   const sidePanelWidth = showSidePanel
     ? Math.min(36, Math.max(28, Math.floor(totalPlayingWidth * 0.27)))
@@ -758,6 +769,15 @@ export const LoadingShell = React.memo(function LoadingShell({
                     <Text color={palette.dim} dimColor>
                       {waitPresentation.message}
                     </Text>
+                  </Box>
+                ) : null}
+
+                {/* She is here only when the side panel is not: on a narrow
+                  terminal, or before any artwork has arrived. A resolve is the
+                  longest wait in the product and the emptiest surface in it. */}
+                {companionMoment ? (
+                  <Box marginTop={1}>
+                    <CompanionHost moment={companionMoment} rows={3} />
                   </Box>
                 ) : null}
 

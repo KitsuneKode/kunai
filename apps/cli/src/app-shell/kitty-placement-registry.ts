@@ -21,11 +21,10 @@ export type KittyPlacementSlot =
   | "details-secondary"
   | "details-sheet"
   | "generic"
-  // One slot per companion that can be on screen at once. The setup wizard
-  // mounts two — the frame's and the summary screen's — and a single shared
-  // slot made them delete each other's placement on every render.
-  | "companion"
-  | "companion-summary";
+  // One companion, one slot. `CompanionHost` is the only thing that draws one,
+  // so concurrent owners — which is what made the setup wizard's two pets erase
+  // each other — are not expressible any more.
+  | "companion";
 
 type PlacementEntry = {
   readonly imageId: number;

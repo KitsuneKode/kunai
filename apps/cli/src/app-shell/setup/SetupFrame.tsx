@@ -16,8 +16,9 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import type { CompanionMoment } from "../companion-moment";
 import { companionMode } from "../companion-policy";
-import { CompanionPet } from "../CompanionPet";
+import { CompanionHost } from "../CompanionHost";
 import { APP_LABEL, palette } from "../shell-theme";
 
 export type FooterKey = { readonly key: string; readonly label: string };
@@ -117,7 +118,7 @@ export function SetupFrame({
   totalSteps,
   footer,
   children,
-  companion = true,
+  companion = "setup",
 }: {
   readonly width: number;
   readonly context: string;
@@ -126,14 +127,12 @@ export function SetupFrame({
   readonly footer: readonly FooterKey[];
   readonly children: React.ReactNode;
   /**
-   * Whether the frame draws the companion.
-   *
-   * A screen that draws its own passes `false`. Two Kannas on one screen is not
-   * twice the character — it reads as a rendering fault, and the summary screen
-   * has always intended to *replace* the wizard's `wait` with `idle` rather
-   * than sit beneath it.
+   * The moment the frame reports, or `null` when the screen inside draws its
+   * own. Two Kannas on one screen is not twice the character — it reads as a
+   * rendering fault, and the summary screen has always intended to *replace*
+   * the wizard's `wait` rather than sit beneath it.
    */
-  readonly companion?: boolean;
+  readonly companion?: CompanionMoment | null;
 }) {
   const gutter = setupGutter(width);
 
@@ -173,9 +172,9 @@ export function SetupFrame({
             The wrapper is conditional, not just the pet: a Box with a margin
             around a null child still lays out its margin, so `KUNAI_PET=off`
             left an empty row behind — which is not "retired entirely". */}
-        {companion && companionMode() !== "off" ? (
+        {companion !== null && companionMode() !== "off" ? (
           <Box marginBottom={1}>
-            <CompanionPet pose="wait" rows={4} />
+            <CompanionHost moment={companion} rows={4} />
           </Box>
         ) : null}
         {children}
