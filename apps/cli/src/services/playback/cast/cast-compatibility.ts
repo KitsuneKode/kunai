@@ -11,6 +11,20 @@ export type CastCompatibility =
       readonly reasons: readonly ("unsupported-protocol" | "youtube-extractor")[];
     };
 
+export function castContentTypeForUrl(value: string): string {
+  const url = URL.parse(value);
+  const path = url?.pathname.toLowerCase() ?? value.toLowerCase();
+  return path.endsWith(".m3u8")
+    ? "application/x-mpegURL"
+    : path.endsWith(".mpd")
+      ? "application/dash+xml"
+      : path.endsWith(".webm")
+        ? "video/webm"
+        : path.endsWith(".mp3")
+          ? "audio/mpeg"
+          : "video/mp4";
+}
+
 export function assessDirectCastCompatibility(stream: StreamInfo): CastCompatibility {
   if (stream.requiresYtdl) return { kind: "unsupported", reasons: ["youtube-extractor"] };
   const url = URL.parse(stream.url);
@@ -25,15 +39,5 @@ export function assessDirectCastCompatibility(stream: StreamInfo): CastCompatibi
   if (stream.deferredLocator) gatewayReasons.push("deferred-media");
   if (gatewayReasons.length > 0) return { kind: "gateway-required", reasons: gatewayReasons };
 
-  const path = url.pathname.toLowerCase();
-  const contentType = path.endsWith(".m3u8")
-    ? "application/x-mpegURL"
-    : path.endsWith(".mpd")
-      ? "application/dash+xml"
-      : path.endsWith(".webm")
-        ? "video/webm"
-        : path.endsWith(".mp3")
-          ? "audio/mpeg"
-          : "video/mp4";
-  return { kind: "direct", contentType };
+  return { kind: "direct", contentType: castContentTypeForUrl(stream.url) };
 }

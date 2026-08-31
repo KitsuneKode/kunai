@@ -33,7 +33,7 @@ describe("direct Cast compatibility", () => {
     });
   });
 
-  test("routes protected and local streams to the future gateway", () => {
+  test("routes protected and local streams to the session gateway boundary", () => {
     expect(
       assessDirectCastCompatibility(
         stream("https://media.test/master.m3u8", { Referer: "https://provider.test" }),

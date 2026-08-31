@@ -34,8 +34,9 @@ Kunai is a terminal CLI that:
 
 ```text
 user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules
-    -> PlaybackRouter -> LocalPlaybackBackend -> mpv -> shell
-                      -> GoogleCastPlaybackBackend -> Google Cast receiver
+  -> PlaybackRouter -> LocalPlaybackBackend -> mpv -> shell
+                      -> GoogleCastPlaybackBackend -> direct URL -> Google Cast receiver
+                                                   -> session LAN gateway -> receiver
 ```
 
 ## Entrypoint
@@ -63,7 +64,7 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 | Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                          |
 | Playback routing      | `apps/cli/src/services/playback/PlaybackRouter.ts`                                      | Selects a target backend; local playback remains the default                                                |
 | Local playback        | `apps/cli/src/services/playback/LocalPlaybackBackend.ts`, `apps/cli/src/infra/player/*` | Adapts the existing `PlayerService`; owns `mpv` launch, IPC, and Lua-assisted progress tracking             |
-| Google Cast playback  | `apps/cli/src/services/playback/cast/*`                                                 | Experimental mDNS discovery, Cast V2 control, and direct-compatible receiver playback                       |
+| Google Cast playback  | `apps/cli/src/services/playback/cast/*`                                                 | Experimental discovery, Cast V2 control, and a tokenized session LAN gateway for header-protected media     |
 | Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                   |
 | Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                         |
 | Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                        |

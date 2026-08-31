@@ -13,6 +13,11 @@ import {
   type GoogleCastMedia,
 } from "./GoogleCastClient";
 import { GoogleCastDiscoveryService } from "./GoogleCastDiscoveryService";
+import {
+  SessionMediaGateway,
+  type SessionMediaGatewayFactory,
+  type SessionMediaGatewayHandle,
+} from "./SessionMediaGateway";
 
 const CAST_EVENT_GENERATION: PlaybackGeneration = { process: 0, cycle: 0 };
 
@@ -26,16 +31,19 @@ export class CastGatewayRequiredError extends Error {
 type CastBackendRuntime = {
   readonly connect: typeof connectGoogleCast;
   readonly discovery: Pick<GoogleCastDiscoveryService, "browse">;
+  readonly gateway: SessionMediaGatewayFactory;
 };
 
 export class GoogleCastPlaybackBackend implements PlaybackBackend {
   readonly kind = "google-cast" as const;
   private activeSession: GoogleCastSession | null = null;
+  private activeGateway: SessionMediaGatewayHandle | null = null;
 
   constructor(
     private readonly runtime: CastBackendRuntime = {
       connect: connectGoogleCast,
       discovery: new GoogleCastDiscoveryService(),
+      gateway: new SessionMediaGateway(),
     },
     private readonly playerControl?: Pick<PlayerControlService, "getActive" | "setActive">,
   ) {}
@@ -82,9 +90,6 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
       throw new Error(`Google Cast backend cannot play target kind: ${selectedTarget.kind}`);
     }
     const compatibility = assessDirectCastCompatibility(request.stream);
-    if (compatibility.kind === "gateway-required") {
-      throw new CastGatewayRequiredError(compatibility.reasons);
-    }
     if (compatibility.kind === "unsupported") {
       throw new Error(
         `Stream is not supported by Google Cast: ${compatibility.reasons.join(", ")}`,
@@ -93,6 +98,26 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
 
     const target = await this.resolveTarget(selectedTarget, request.options.abortSignal);
     if (!target.host) throw new Error(`Cast device has no reachable address: ${target.name}`);
+    let gateway: SessionMediaGatewayHandle | null = null;
+    let mediaUrl = request.stream.url;
+    let contentType: string;
+    if (compatibility.kind === "gateway-required") {
+      const unsupportedGatewayReasons = compatibility.reasons.filter(
+        (reason) => reason !== "headers",
+      );
+      if (unsupportedGatewayReasons.length > 0) {
+        throw new CastGatewayRequiredError(unsupportedGatewayReasons);
+      }
+      gateway = await this.runtime.gateway.start({
+        stream: request.stream,
+        receiverHost: target.host,
+      });
+      this.activeGateway = gateway;
+      mediaUrl = gateway.mediaUrl;
+      contentType = gateway.contentType;
+    } else {
+      contentType = compatibility.contentType;
+    }
     const emit = (event: PlayerPlaybackEvent) =>
       request.options.onPlaybackEvent?.({ generation: CAST_EVENT_GENERATION, event });
     emit({ type: "launching-player" });
@@ -101,6 +126,7 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
     let duration = 0;
     let started = false;
     let paused = false;
+    let mediaLoadAccepted = false;
     let settled = false;
     let pendingResult: PlaybackResult | null = null;
     let settleResult: ((result: PlaybackResult) => void) | null = null;
@@ -123,45 +149,52 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
       else pendingResult = result;
     };
 
-    const session = await this.runtime.connect(
-      { host: target.host, port: target.port ?? 8009 },
-      {
-        onStatus: (status) => {
-          if (typeof status.currentTime === "number") lastPosition = status.currentTime;
-          if (typeof status.media?.duration === "number") duration = status.media.duration;
-          if (status.playerState === "PLAYING") {
-            if (!started) {
-              started = true;
-              emit({ type: "playback-started" });
-            } else if (paused) {
-              emit({ type: "playback-resumed" });
+    let session: GoogleCastSession;
+    try {
+      session = await this.runtime.connect(
+        { host: target.host, port: target.port ?? 8009 },
+        {
+          onStatus: (status) => {
+            if (typeof status.currentTime === "number") lastPosition = status.currentTime;
+            if (typeof status.media?.duration === "number") duration = status.media.duration;
+            if (status.playerState === "PLAYING") {
+              if (!started) {
+                started = true;
+                emit({ type: "playback-started" });
+              } else if (paused) {
+                emit({ type: "playback-resumed" });
+              }
+              paused = false;
+              emit({
+                type: "playback-progress",
+                positionSeconds: lastPosition,
+                durationSeconds: duration,
+              });
+            } else if (status.playerState === "PAUSED") {
+              if (!paused) emit({ type: "playback-paused" });
+              paused = true;
+            } else if (status.playerState === "BUFFERING") {
+              emit({ type: "network-buffering" });
+            } else if (status.playerState === "IDLE" && mediaLoadAccepted) {
+              finish(
+                status.idleReason === "FINISHED"
+                  ? "eof"
+                  : status.idleReason === "ERROR"
+                    ? "error"
+                    : "quit",
+              );
             }
-            paused = false;
-            emit({
-              type: "playback-progress",
-              positionSeconds: lastPosition,
-              durationSeconds: duration,
-            });
-          } else if (status.playerState === "PAUSED") {
-            if (!paused) emit({ type: "playback-paused" });
-            paused = true;
-          } else if (status.playerState === "BUFFERING") {
-            emit({ type: "network-buffering" });
-          } else if (status.playerState === "IDLE") {
-            finish(
-              status.idleReason === "FINISHED"
-                ? "eof"
-                : status.idleReason === "ERROR"
-                  ? "error"
-                  : "quit",
-            );
-          }
+          },
+          onError: () => finish("error"),
+          onClose: () => finish(started ? "quit" : "error"),
         },
-        onError: () => finish("error"),
-        onClose: () => finish(started ? "quit" : "error"),
-      },
-      withTimeoutSignal(request.options.abortSignal, 8_000),
-    );
+        withTimeoutSignal(request.options.abortSignal, 8_000),
+      );
+    } catch (error) {
+      gateway?.close();
+      if (this.activeGateway === gateway) this.activeGateway = null;
+      throw error;
+    }
     this.activeSession = session;
     const controlId = `google-cast:${target.id}`;
     this.playerControl?.setActive({
@@ -170,18 +203,31 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
     });
     emit({ type: "opening-stream" });
     const media: GoogleCastMedia = {
-      contentId: request.stream.url,
-      contentType: compatibility.contentType,
+      contentId: mediaUrl,
+      contentType,
       streamType: request.stream.isLive ? "LIVE" : "BUFFERED",
       metadata: { metadataType: 0, title: request.options.displayTitle },
     };
-    const initialStatus = await session.load(media, request.options.startAt ?? 0);
+    let initialStatus;
+    try {
+      initialStatus = await session.load(media, request.options.startAt ?? 0);
+      mediaLoadAccepted = true;
+    } catch (error) {
+      session.close();
+      gateway?.close();
+      if (this.activeSession === session) this.activeSession = null;
+      if (this.activeGateway === gateway) this.activeGateway = null;
+      if (this.playerControl?.getActive()?.id === controlId) this.playerControl.setActive(null);
+      throw error;
+    }
     request.options.onPlayerReady?.();
     emit({ type: "player-ready" });
 
     if (initialStatus.playerState === "PLAYING") {
       started = true;
       emit({ type: "playback-started" });
+    } else if (initialStatus.playerState === "IDLE" && initialStatus.idleReason) {
+      finish(initialStatus.idleReason === "FINISHED" ? "eof" : "error");
     }
 
     const abort = () => {
@@ -198,6 +244,8 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
       if (this.activeSession === session) this.activeSession = null;
       if (this.playerControl?.getActive()?.id === controlId) this.playerControl.setActive(null);
       session.close();
+      gateway?.close();
+      if (this.activeGateway === gateway) this.activeGateway = null;
     }
   }
 
@@ -215,9 +263,16 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
 
   async stop(): Promise<void> {
     const session = this.activeSession;
-    if (!session) return;
-    await session.stop();
-    session.close();
-    if (this.activeSession === session) this.activeSession = null;
+    const gateway = this.activeGateway;
+    try {
+      if (session) {
+        await session.stop();
+        session.close();
+        if (this.activeSession === session) this.activeSession = null;
+      }
+    } finally {
+      gateway?.close();
+      if (this.activeGateway === gateway) this.activeGateway = null;
+    }
   }
 }

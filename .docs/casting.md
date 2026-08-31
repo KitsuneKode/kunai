@@ -25,11 +25,14 @@ generation-stamped playback events.
 ```text
 resolved StreamInfo -> PlaybackRouter
   -> local target       -> LocalPlaybackBackend -> PlayerService -> mpv
-  -> google-cast target -> compatibility gate -> Cast V2 -> receiver
+  -> google-cast target -> compatibility gate
+       -> direct URL -> Cast V2 -> receiver
+       -> protected URL -> session media gateway -> receiver
 ```
 
-The receiver fetches the media URL directly. Kunai remains the controller; it
-does not encode or retransmit direct-compatible media.
+The receiver fetches direct-compatible URLs itself. Header-protected streams
+use a session-scoped gateway on the laptop; Kunai forwards source bytes without
+rendering, transcoding, or screen capture.
 
 ## Experimental launch surface
 
@@ -49,13 +52,19 @@ normalized so straight and curly apostrophes identify the same receiver.
 
 ## Compatibility boundary
 
-Phase-2 direct playback accepts HTTP(S) HLS, DASH, MP4, WebM, and MP3 URLs with
-no provider request headers. Local files, deferred media, or streams carrying
-headers are classified as `gateway-required`; they are not handed to the
-receiver and are not routed through `packages/relay`.
+Direct playback accepts HTTP(S) HLS, DASH, MP4, WebM, and MP3 URLs with no
+provider request headers. Streams with provider headers use the local media
+gateway. The gateway forwards provider headers and byte ranges and rewrites HLS
+playlist resources (variants, segments, encryption keys, and maps) plus basic
+DASH URL fields into tokenized local routes. Local files and deferred media are
+still rejected rather than silently routed incorrectly.
 
-The Phase-3 local media gateway will own protected manifests and segments.
-Kunai's provider relay remains metadata-only.
+The gateway binds only to the receiver-facing LAN address, uses a fresh 256-bit
+path token per playback, accepts only GET/HEAD/OPTIONS, and resolves opaque
+in-memory resource IDs. Clients cannot place arbitrary upstream URLs in a
+request. The server and all resource mappings are destroyed when playback
+ends, is stopped, or fails to connect/load. Error bodies never echo upstream
+URLs or provider credentials. Kunai's `packages/relay` remains metadata-only.
 
 ## Lifecycle
 
@@ -75,7 +84,8 @@ Google Cast status maps as follows:
 | `IDLE/ERROR`   | playback error     |
 | disconnect     | quit after start; error before start |
 
-Shutdown stops the active remote media session before releasing local mpv.
+Shutdown stops the active remote media session and closes its gateway before
+releasing local mpv.
 
 ## Testing
 
@@ -92,6 +102,7 @@ bun run --cwd apps/cli test:file \
   test/unit/services/playback/google-cast-dial-discovery.test.ts \
   test/unit/services/playback/google-cast-native-discovery.test.ts \
   test/unit/services/playback/google-cast-playback-backend.test.ts \
+  test/unit/services/playback/session-media-gateway.test.ts \
   test/unit/services/playback/cast-compatibility.test.ts \
   test/unit/services/playback/cast-target-selector.test.ts \
   test/unit/app/playback/choose-google-cast-target-shell.test.ts \

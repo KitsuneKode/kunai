@@ -36,16 +36,18 @@ describe("GoogleCastPlaybackBackend", () => {
       load: async (media, startAt) => {
         loaded.push({ media, startAt });
         queueMicrotask(() => {
-          clientEvents?.onStatus({
-            playerState: "PLAYING",
-            currentTime: 43,
-            media: { duration: 120 },
-          });
-          clientEvents?.onStatus({
-            playerState: "IDLE",
-            idleReason: "FINISHED",
-            currentTime: 120,
-            media: { duration: 120 },
+          queueMicrotask(() => {
+            clientEvents?.onStatus({
+              playerState: "PLAYING",
+              currentTime: 43,
+              media: { duration: 120 },
+            });
+            clientEvents?.onStatus({
+              playerState: "IDLE",
+              idleReason: "FINISHED",
+              currentTime: 120,
+              media: { duration: 120 },
+            });
           });
         });
         return { playerState: "BUFFERING" };
@@ -68,6 +70,11 @@ describe("GoogleCastPlaybackBackend", () => {
         discovery: {
           browse: () => {
             throw new Error("discovery should not run for an endpoint-backed target");
+          },
+        },
+        gateway: {
+          start: async () => {
+            throw new Error("gateway should not run for a direct stream");
           },
         },
       },
@@ -107,9 +114,9 @@ describe("GoogleCastPlaybackBackend", () => {
     expect(emitted.map((event) => event.type)).toEqual([
       "launching-player",
       "opening-stream",
+      "player-ready",
       "playback-started",
       "playback-progress",
-      "player-ready",
     ]);
     expect(result).toMatchObject({
       endReason: "eof",
@@ -120,10 +127,85 @@ describe("GoogleCastPlaybackBackend", () => {
     expect(activeControlIds).toEqual(["google-cast:cast-1", null]);
   });
 
-  test("refuses protected streams until the Phase-3 gateway exists", async () => {
-    const backend = new GoogleCastPlaybackBackend();
+  test("routes header-protected media through a session gateway and closes it", async () => {
+    const loaded: GoogleCastMedia[] = [];
+    let clientEvents: GoogleCastClientEvents | null = null;
+    let gatewayClosed = 0;
+    const backend = new GoogleCastPlaybackBackend({
+      connect: (async (_endpoint: unknown, events: GoogleCastClientEvents) => {
+        clientEvents = events;
+        return {
+          load: async (media: GoogleCastMedia) => {
+            loaded.push(media);
+            queueMicrotask(() => {
+              queueMicrotask(() =>
+                clientEvents?.onStatus({ playerState: "IDLE", idleReason: "FINISHED" }),
+              );
+            });
+            return { playerState: "BUFFERING" };
+          },
+          play: async () => undefined,
+          pause: async () => undefined,
+          seek: async () => undefined,
+          stop: async () => undefined,
+          close: () => undefined,
+        };
+      }) as never,
+      discovery: {
+        browse: () => {
+          throw new Error("discovery should not run for an endpoint-backed target");
+        },
+      },
+      gateway: {
+        start: async ({ stream, receiverHost }) => {
+          expect(stream.headers).toEqual({ Referer: "https://provider.example" });
+          expect(receiverHost).toBe("192.168.1.20");
+          return {
+            mediaUrl: "http://192.168.1.10:43210/cast/token/1",
+            contentType: "video/mp4",
+            close: () => {
+              gatewayClosed += 1;
+            },
+          };
+        },
+      },
+    });
 
-    expect(
+    await backend.play(
+      {
+        stream: { ...STREAM, headers: { Referer: "https://provider.example" } },
+        options: { url: STREAM.url, displayTitle: "Example Movie" },
+      },
+      TARGET,
+    );
+
+    expect(loaded[0]?.contentId).toBe("http://192.168.1.10:43210/cast/token/1");
+    expect(gatewayClosed).toBe(1);
+  });
+
+  test("closes the session gateway when the receiver connection fails", async () => {
+    let gatewayClosed = 0;
+    const backend = new GoogleCastPlaybackBackend({
+      connect: (async () => {
+        throw new Error("receiver unavailable");
+      }) as never,
+      discovery: {
+        browse: () => {
+          throw new Error("discovery should not run for an endpoint-backed target");
+        },
+      },
+      gateway: {
+        start: async () => ({
+          mediaUrl: "http://192.168.1.10:43210/cast/token/1",
+          contentType: "video/mp4",
+          close: () => {
+            gatewayClosed += 1;
+          },
+        }),
+      },
+    });
+
+    await expect(
       backend.play(
         {
           stream: { ...STREAM, headers: { Referer: "https://provider.example" } },
@@ -131,6 +213,58 @@ describe("GoogleCastPlaybackBackend", () => {
         },
         TARGET,
       ),
-    ).rejects.toThrow("requires the local media gateway: headers");
+    ).rejects.toThrow("receiver unavailable");
+    expect(gatewayClosed).toBe(1);
+  });
+
+  test("ignores the receiver's pre-load IDLE status instead of closing a fresh gateway", async () => {
+    let gatewayClosed = 0;
+    let loadCalled = false;
+    const backend = new GoogleCastPlaybackBackend({
+      connect: (async (_endpoint: unknown, events: GoogleCastClientEvents) => {
+        events.onStatus({ playerState: "IDLE", currentTime: 0 });
+        return {
+          load: async () => {
+            loadCalled = true;
+            return { playerState: "IDLE", idleReason: "FINISHED" };
+          },
+          play: async () => undefined,
+          pause: async () => undefined,
+          seek: async () => undefined,
+          stop: async () => undefined,
+          close: () => undefined,
+        };
+      }) as never,
+      discovery: {
+        browse: () => {
+          throw new Error("discovery should not run for an endpoint-backed target");
+        },
+      },
+      gateway: {
+        start: async () => ({
+          mediaUrl: "http://192.168.1.10:43210/cast/token/1",
+          contentType: "application/x-mpegURL",
+          close: () => {
+            gatewayClosed += 1;
+          },
+        }),
+      },
+    });
+
+    const result = await backend.play(
+      {
+        stream: {
+          ...STREAM,
+          url: "https://media.example/master.m3u8",
+          headers: { Referer: "https://provider.example" },
+        },
+        options: { url: STREAM.url, displayTitle: "Example Episode" },
+      },
+      TARGET,
+    );
+
+    expect(loadCalled).toBe(true);
+    expect(result.endReason).toBe("eof");
+    expect(gatewayClosed).toBe(1);
   });
 });
