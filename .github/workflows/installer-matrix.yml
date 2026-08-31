@@ -52,11 +52,10 @@ jobs:
       - name: Build linux-x64 + musl
         run: bun run --cwd apps/cli build:binaries -- --only linux-x64 --only linux-x64-musl
       - name: Assert every release companion exists
-        # `if-no-files-found` is evaluated across the combined path set, so a
-        # missing archive or checksum file uploads silently and only surfaces
-        # later as "release companion not found" inside every matrix scenario —
-        # which reads like an installer regression rather than a missing file.
-        # Checking here names the missing path at the point it went missing.
+        # Names the missing path at the point it goes missing, rather than
+        # letting an incomplete upload resurface as an installer failure in
+        # every matrix cell. See the upload step below for why the artifact
+        # action cannot enforce this itself.
         run: |
           missing=0
           for f in \
@@ -77,15 +76,17 @@ jobs:
         with:
           name: kunai-linux-binaries-matrix
           retention-days: 1
-          # `prepare-fixture` checks for three companions beside the binary —
-          # the .tar.gz, SHA256SUMS and SHA256SUMS.archives — and dies on the
-          # first one missing. Uploading only the raw executables made every
-          # scenario in the matrix fail identically with "release companion not
-          # found", which reads like an installer regression and is really a
-          # missing upload. `ci.yml` uploads the same six paths.
+          # Must match the list in `ci.yml`'s `native-installer` job
+          # (`ci.yml:594-599`). `prepare-fixture` resolves a release *companion*
+          # archive beside each binary — the .tar.gz, SHA256SUMS and
+          # SHA256SUMS.archives — and dies on the first one missing, so
+          # uploading the raw executables alone made every cell fail identically
+          # with "release companion not found". That reads like an installer
+          # regression and is really a missing upload, and it is what this
+          # nightly matrix did from 2026-08-26 until it was fixed.
           #
-          # `if-no-files-found: error` does NOT cover this: it fires only when
-          # *no* pattern matches, so five-of-six still uploads silently. The
+          # `if-no-files-found: error` does NOT cover it: the check runs across
+          # the combined path set, so five-of-six still uploads silently. The
           # step above is what actually enforces the set.
           if-no-files-found: error
           path: |
