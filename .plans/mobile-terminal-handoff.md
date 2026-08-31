@@ -14,14 +14,15 @@ hands qualified direct streams to an installed Android player through
 `ACTION_VIEW`. VLC and mpv-android are supported player choices.
 
 iOS remains a separately named feasibility gate. A Bun executable cannot run in
-stock iSH or a-Shell, and this repository will not add a second runtime
-entrypoint or claim iOS parity without a physical-device proof for a supported
-runtime. The preferred next experiment is a Node-compatible bundle in iSH;
-shell/Python provider duplication is a fallback requiring its own approved
-design.
+stock iSH or a-Shell, and this repository will not claim iOS parity without a
+physical-device proof for a supported runtime. The reviewed direction is now a
+separate `apps/mobile` application with a portable TypeScript-built JavaScript
+artifact for a-Shell mini; see
+[`mobile-app-runtime.md`](./mobile-app-runtime.md). That design must explicitly
+revise the single-entrypoint rule when implementation creates the new app.
 
-This design does not add a native mobile app, media proxy, public relay, or
-second Kunai entrypoint.
+This Android handoff design does not itself add a native mobile app, media
+proxy, public relay, or second Kunai entrypoint.
 
 ## Product contract
 
