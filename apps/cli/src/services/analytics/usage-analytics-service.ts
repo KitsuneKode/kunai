@@ -5,6 +5,7 @@ import {
   resolveConsentState,
   type ConsentEnv,
 } from "@/domain/analytics/consent-policy";
+import { dbgErr } from "@/logger";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { ensureInstallId, installIdDigest } from "./install-id";
@@ -221,6 +222,9 @@ export class UsageAnalyticsService {
 
     const endpoint = this.deps.endpoint.trim();
     if (!endpoint) return;
+    // Second gate, not a duplicate of `resolveAnalyticsEndpoint`: the endpoint
+    // is injected, so nothing else guarantees what arrives here.
+    if (!isTransportSafeAnalyticsEndpoint(endpoint)) return;
 
     const now = this.now();
     if (
@@ -268,6 +272,10 @@ export class UsageAnalyticsService {
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal,
+        // An https endpoint that 302s to http:// would carry the payload right
+        // back out in cleartext, so the scheme check above has to survive the
+        // hop. Refusing to follow one at all is simpler than re-validating each.
+        redirect: "error",
       });
       return response.status >= 500 ? "retry" : "permanent";
     } catch {
@@ -279,13 +287,62 @@ export class UsageAnalyticsService {
   }
 }
 
+/**
+ * Loopback hosts allowed over cleartext http, so a self-hoster can develop
+ * against `apps/analytics-ingest` locally. Same list, same reason as
+ * `normalizeRelayBaseUrl` in `packages/relay`.
+ */
+const LOOPBACK_ANALYTICS_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
+ * https only, plus the loopback exception above.
+ *
+ * The payload carries `sha256(installId)` with version, OS, and architecture.
+ * Over cleartext http anything on the path reads it and can follow one install
+ * from day to day — the digest exists so no *endpoint* holds the raw id, and
+ * that is worth little if the wire is readable.
+ */
+export function isTransportSafeAnalyticsEndpoint(endpoint: string): boolean {
+  const trimmed = endpoint.trim();
+  if (!trimmed) return false;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === "https:") return true;
+    return url.protocol === "http:" && LOOPBACK_ANALYTICS_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Where this install would ping: `KUNAI_ANALYTICS_URL`, then
+ * `analyticsEndpoint`, then the built-in default.
+ *
+ * An override that is not transport-safe returns `""`, which stops sending
+ * entirely — it is **not** redirected to the built-in default. Somebody who
+ * pointed their installs at their own ingest asked for their telemetry to go
+ * there and nowhere else; quietly sending it to Kunai's endpoint instead would
+ * be the same class of breach as enabling analytics for them. This is the
+ * posture `normalizeRelayBaseUrl` already takes: an unusable base URL turns the
+ * feature off rather than substituting one the user did not choose.
+ */
 export function resolveAnalyticsEndpoint(
   env: NodeJS.ProcessEnv = process.env,
   configured = "",
 ): string {
   const fromEnv = typeof env.KUNAI_ANALYTICS_URL === "string" ? env.KUNAI_ANALYTICS_URL.trim() : "";
-  if (fromEnv) return fromEnv;
+  if (fromEnv) return acceptOverride(fromEnv, "KUNAI_ANALYTICS_URL");
   const fromConfig = configured.trim();
-  if (fromConfig) return fromConfig;
+  if (fromConfig) return acceptOverride(fromConfig, "analyticsEndpoint");
   return DEFAULT_ANALYTICS_ENDPOINT;
+}
+
+function acceptOverride(endpoint: string, source: string): string {
+  if (isTransportSafeAnalyticsEndpoint(endpoint)) return endpoint;
+  dbgErr(
+    "analytics.endpoint",
+    `${source} must be https (loopback http allowed); analytics will not send`,
+    new Error("rejected non-https analytics endpoint"),
+  );
+  return "";
 }

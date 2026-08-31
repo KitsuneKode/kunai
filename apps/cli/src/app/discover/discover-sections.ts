@@ -7,6 +7,7 @@
 
 import { loadDiscoveryList } from "@/app/discover/discovery-lists";
 import type { Container } from "@/container";
+import type { SearchResult } from "@/domain/types";
 import {
   historyContentType,
   readLatestHistoryByTitle,
@@ -65,11 +66,13 @@ export async function buildDiscoverSections(
           .getForTitle(recentHistoryId, historyContentType(mostRecentCompleted[1]))
           .then((s) => ({ ...s, label: `Because you watched ${mostRecentCompleted[1].title}` }))
       : null,
-    loadDiscoveryList(mode).then((items) => ({
-      label: mode === "anime" ? "Anime trending this week" : "Trending this week",
-      reason: "trending" as const,
-      items,
-    })),
+    loadDiscoveryList(mode)
+      .catch((): readonly SearchResult[] => [])
+      .then((items) => ({
+        label: mode === "anime" ? "Anime trending this week" : "Trending this week",
+        reason: "trending" as const,
+        items,
+      })),
     !options.light && mode !== "anime" && completedHistorySeeds.length > 0
       ? container.recommendationService
           .getPersonalizedByHistory(completedHistorySeeds)
