@@ -636,6 +636,26 @@ export class HistoryRepository {
       );
   }
 
+  /**
+   * Give a row a poster only if it does not already have one.
+   *
+   * Consolidation picks the survivor by recency, and the row touched most
+   * recently is often the one that arrived with the least metadata. The poster
+   * then went out with the row being deleted — the same shape as the legacy-key
+   * migration losing it, and the reason `upsertProgress` COALESCEs rather than
+   * overwrites. Never replaces an existing poster: a survivor that has one has
+   * a more recent one.
+   */
+  fillMissingPosterByKey(key: string, posterUrl: string): void {
+    const trimmed = posterUrl.trim();
+    if (!trimmed) return;
+    this.db
+      .query(
+        "UPDATE history_progress SET poster_url = ? WHERE key = ? AND (poster_url IS NULL OR poster_url = '')",
+      )
+      .run(trimmed, key);
+  }
+
   updateProgressExternalIdsByKey(key: string, externalIds: ProviderExternalIds): void {
     const externalIdsJson = serializeExternalIds(externalIds);
     if (!externalIdsJson) return;

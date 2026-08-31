@@ -203,6 +203,61 @@ test("a corrupt updated_at never wins the identity, in either operand order", ()
   }
 });
 
+test("merging a forked row keeps a poster only the dropped row had", () => {
+  // The survivor is chosen by recency, and the most recently touched row is
+  // often the one that arrived with the least metadata. Title and external ids
+  // already merge across the deletion; the poster did not, so the entry lost its
+  // artwork in the library and continue-watching rows. Same shape as the
+  // legacy-key migration losing it, and only visible once both paths exist.
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new HistoryRepository(db);
+  repo.upsertProgress({
+    title: { id: "20431", kind: "anime", title: "Canonical", externalIds: { anilistId: "20431" } },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 100,
+    posterUrl: "https://img.example/poster.jpg",
+    updatedAt: "2026-06-02T00:00:00.000Z",
+  });
+  repo.upsertProgress({
+    title: { id: "bxCKTopaque", kind: "anime", title: "Fork", externalIds: { anilistId: "20431" } },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 10,
+    updatedAt: "2026-06-03T00:00:00.000Z",
+  });
+
+  expect(runHistoryIdentityConsolidator(db).merged).toBe(1);
+
+  const merged = repo.getLatestForTitle("20431");
+  expect(merged?.positionSeconds).toBe(100);
+  expect(merged?.posterUrl).toBe("https://img.example/poster.jpg");
+});
+
+test("merging never replaces a poster the surviving row already has", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new HistoryRepository(db);
+  repo.upsertProgress({
+    title: { id: "20431", kind: "anime", title: "Canonical", externalIds: { anilistId: "20431" } },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 100,
+    posterUrl: "https://img.example/old.jpg",
+    updatedAt: "2026-06-02T00:00:00.000Z",
+  });
+  repo.upsertProgress({
+    title: { id: "bxCKTopaque", kind: "anime", title: "Fork", externalIds: { anilistId: "20431" } },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 10,
+    posterUrl: "https://img.example/new.jpg",
+    updatedAt: "2026-06-03T00:00:00.000Z",
+  });
+
+  expect(runHistoryIdentityConsolidator(db).merged).toBe(1);
+
+  // The survivor's own poster is the more recent one and must win.
+  expect(repo.getLatestForTitle("20431")?.posterUrl).toBe("https://img.example/new.jpg");
+});
+
 test("consolidator moves anime-class series rows onto their AniList unit", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

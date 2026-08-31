@@ -142,6 +142,11 @@ export function runHistoryIdentityConsolidator(
           repo.updateProgressExternalIdsByKey(keepNewer.key, mergedExternalIds);
         }
         repo.updateProgressWatchStateByKey(keepNewer.key, watchState);
+        // The survivor is the most recently touched row, which is often the one
+        // that arrived with the least metadata. Title and external ids already
+        // merge across; the poster did not, so it went out with the deleted row
+        // and the entry lost its artwork in the library and continue-watching.
+        if (drop.posterUrl) repo.fillMissingPosterByKey(keepNewer.key, drop.posterUrl);
         repo.deleteProgressByKey(drop.key);
         if (keepNewer.key !== newKey) {
           repo.rekeyProgressRow(keepNewer.key, canonicalId, newKey);
