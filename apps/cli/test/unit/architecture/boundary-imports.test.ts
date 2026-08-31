@@ -10,6 +10,7 @@ import {
 
 const ACTIVE_ROOTS = [
   "apps/cli/src",
+  "apps/mobile/src",
   "packages/core/src",
   "packages/storage/src",
   "packages/types/src",
@@ -21,6 +22,7 @@ const APP_SHELL_FORBIDDEN_IMPORT =
   /^@\/services\/providers(?:\/|$)|^@\/(infra\/mpv|infra\/player|mpv|scraper)(?:\/|$)|^@kunai\/providers(?:\/|$)/;
 const APP_SHELL_IMPORT = /^(?:@\/app-shell|(?:\.\.\/)+app-shell|\.\/app-shell)(?:\/|$)/;
 const INK_IMPORT = /^ink(?:\/|$)/;
+const IOS_FORBIDDEN_IMPORT = /^(?:bun:|node:|ink(?:\/|$)|react(?:\/|$)|bun:sqlite$)/;
 const PROVIDER_PACKAGE_IMPORT = /^@kunai\/providers(?:\/|$)|packages\/providers/;
 const HISTORY_STORE_ADAPTER_IMPORT =
   /^@\/services\/persistence\/(?:HistoryStore|SqliteHistoryStoreImpl)$/;
@@ -163,6 +165,14 @@ function collectSourceFiles(root: string): string[] {
 }
 
 describe("runtime boundary imports", () => {
+  test("the mobile application is a declared workspace", () => {
+    const rootPackage = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
+      workspaces: { packages: string[] };
+    };
+
+    expect(rootPackage.workspaces.packages).toContain("apps/mobile");
+  });
+
   /**
    * Every allowlist, baseline and skip prefix in this file is written with
    * forward slashes, so a backslashed scan result silently misses all of them
@@ -179,6 +189,33 @@ describe("runtime boundary imports", () => {
     const offenders = ACTIVE_ROOTS.flatMap(collectSourceFiles).filter((file) => {
       return collectImports(file).some((specifier) => ACTIVE_FORBIDDEN_IMPORT.test(specifier));
     });
+
+    expect(offenders).toEqual([]);
+  });
+
+  test("desktop and mobile applications do not import each other", () => {
+    const offenders = [
+      ...collectSourceFiles("apps/mobile/src").flatMap((file) =>
+        collectImports(file)
+          .filter((specifier) => specifier.includes("apps/cli"))
+          .map((specifier) => `${file} -> ${specifier}`),
+      ),
+      ...collectSourceFiles("apps/cli/src").flatMap((file) =>
+        collectImports(file)
+          .filter((specifier) => specifier.includes("apps/mobile"))
+          .map((specifier) => `${file} -> ${specifier}`),
+      ),
+    ];
+
+    expect(offenders).toEqual([]);
+  });
+
+  test("the a-Shell runtime imports no desktop or native runtime modules", () => {
+    const offenders = collectSourceFiles("apps/mobile/src/runtime/ashell").flatMap((file) =>
+      collectImports(file)
+        .filter((specifier) => IOS_FORBIDDEN_IMPORT.test(specifier))
+        .map((specifier) => `${file} -> ${specifier}`),
+    );
 
     expect(offenders).toEqual([]);
   });

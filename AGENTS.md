@@ -47,7 +47,9 @@ Each of these is enforced by a test or is expensive to get wrong.
   imports no provider or player runtime; nothing outside the shell imports
   `ink`; no active code imports `.archive/legacy` or `.reference/experiments`.
   Map in [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md).
-- **`apps/cli/src/main.ts` is the only entrypoint.** Do not add a second one.
+- **Entrypoints are app-scoped.** `apps/cli/src/main.ts` is the only desktop CLI
+  entrypoint. The `apps/mobile` application may add exactly one mobile
+  entrypoint; neither app may import the other.
 - **Production providers are the ones
   `loadProductionProviderModules()` returns** in
   `apps/cli/src/container/bootstrap-providers.ts`. A module existing under
