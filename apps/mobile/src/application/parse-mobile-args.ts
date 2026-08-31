@@ -1,3 +1,5 @@
+import { requirePortableHttpUrl } from "./portable-url";
+
 export type MobileCommand =
   | { readonly kind: "help" }
   | { readonly kind: "version" }
@@ -6,25 +8,6 @@ export type MobileCommand =
       readonly probeUrl: string;
       readonly mediaUrl: string;
     };
-
-function requirePortableUrl(value: string, flag: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error(`${flag} must be an absolute credential-free HTTP(S) URL`);
-  }
-
-  if (
-    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
-    parsed.username !== "" ||
-    parsed.password !== "" ||
-    parsed.hash !== ""
-  ) {
-    throw new Error(`${flag} must be an absolute credential-free HTTP(S) URL`);
-  }
-  return value;
-}
 
 export function parseMobileArgs(argv: readonly string[]): MobileCommand {
   if (argv.length === 0 || (argv.length === 1 && argv[0] === "--help")) {
@@ -48,10 +31,10 @@ export function parseMobileArgs(argv: readonly string[]): MobileCommand {
       if (!value || value.startsWith("--")) throw new Error(`Missing value for ${argument}`);
       if (argument === "--probe-url") {
         if (probeUrl !== undefined) throw new Error("Duplicate --probe-url");
-        probeUrl = requirePortableUrl(value, argument);
+        probeUrl = requirePortableHttpUrl(value, argument);
       } else {
         if (mediaUrl !== undefined) throw new Error("Duplicate --media-url");
-        mediaUrl = requirePortableUrl(value, argument);
+        mediaUrl = requirePortableHttpUrl(value, argument);
       }
       index += 1;
       continue;
