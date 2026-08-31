@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-24
+Last updated: 2026-08-31
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -34,14 +34,15 @@ archive and put only the residue here.
 
 ### Shell and UI
 
-| Track                       | Remaining                                             | Plan                                                                                   |
-| --------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Single mounted content tree | Collapse `SearchPhase`/`PlaybackPhase` launcher loops | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md) |
-| Persistent shell            | Full back-stack, root-owned footer                    | [persistent-shell-implementation.md](./persistent-shell-implementation.md)             |
-| Fullscreen root shell       | Flatten remaining nested chrome                       | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)               |
-| Sakura theme rollout        | Remaining surfaces after the token foundation         | [sakura-rollout.md](./sakura-rollout.md)                                               |
-| Terminal image protocol     | Flicker hardening and `ink-shell` split               | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
-| Kanna voice and presence    | Remaining voice moments, terminal reactions, pose map | [kanna-mascot-personality.md](./kanna-mascot-personality.md)                           |
+| Track                       | Remaining                                               | Plan                                                                                   |
+| --------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Single mounted content tree | Collapse `SearchPhase`/`PlaybackPhase` launcher loops   | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md) |
+| Persistent shell            | Full back-stack, root-owned footer                      | [persistent-shell-implementation.md](./persistent-shell-implementation.md)             |
+| Fullscreen root shell       | Flatten remaining nested chrome                         | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)               |
+| Sakura theme rollout        | Remaining surfaces after the token foundation           | [sakura-rollout.md](./sakura-rollout.md)                                               |
+| Terminal image protocol     | Flicker hardening and `ink-shell` split                 | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
+| Kanna character system      | One layered SVG, a job per pose, roamer attention model | [2026-08-31-kanna-character-system.md](./2026-08-31-kanna-character-system.md)         |
+| Kanna voice and presence    | Remaining voice moments, terminal reactions, pose map   | [kanna-mascot-personality.md](./kanna-mascot-personality.md)                           |
 
 ### Playback and providers
 
