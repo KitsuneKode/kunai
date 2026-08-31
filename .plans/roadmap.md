@@ -109,6 +109,7 @@ the K-reconciliation below and the commit history both cite them by id.
 | [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles               |
 | [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
 | [044](./044-namespace-mal-history-keys.md)          | Namespace MAL-derived history keys                                        | READY (needs migration review)                    |
+| [045](./045-repoint-title-id-references-on-merge.md) | Repoint `title_id` references when consolidation merges                   | READY (classify tables first)                     |
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
