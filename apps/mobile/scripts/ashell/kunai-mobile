@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$script_dir"
+mkdir -p .runtime
+mobile_status_file=".runtime/exit-code"
+rm -f "$mobile_status_file"
+mobile_jsc_status=0
+jsc ./kunai-mobile-ios.js "$@" || mobile_jsc_status=$?
+if [ "$mobile_jsc_status" -ne 0 ]; then
+  rm -f "$mobile_status_file"
+  exit "$mobile_jsc_status"
+fi
+if [ ! -f "$mobile_status_file" ]; then
+  exit 1
+fi
+mobile_status=$(cat "$mobile_status_file")
+rm -f "$mobile_status_file"
+case "$mobile_status" in
+  0 | 1 | 2) exit "$mobile_status" ;;
+  *) exit 1 ;;
+esac
