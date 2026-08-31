@@ -44,6 +44,16 @@ Read this before touching `apps/cli/src/services/analytics/`,
   `analyticsEndpoint` (the shipped default) means “use the built-in URL”, not
   “disable sending”. Disable in Settings, or with `DO_NOT_TRACK` / `CI` / a
   non-TTY session.
+- **An override must be https.** `http://localhost`, `127.0.0.1`, and `[::1]`
+  are the only cleartext exceptions, so `apps/analytics-ingest` can be developed
+  against locally. Anything else — an `http://` host, a non-URL — is refused and
+  **stops sending entirely**; it is never redirected to the built-in default,
+  because someone who pointed their installs at their own ingest did not consent
+  to sending here instead. The wire carries `sha256(installId)` with version,
+  OS, and architecture: over http that is readable on the path and one install
+  is followable day to day, which is exactly what the digest exists to prevent.
+  Same rule and same loopback exception as `normalizeRelayBaseUrl` in
+  `packages/relay`.
 - The default is a domain Kunai controls, never a hosting provider's own URL.
   This string is baked into immutable npm tarballs and compiled binaries, so it
   must outlive whatever serves it today: DNS can be re-pointed, a published

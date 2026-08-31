@@ -1,4 +1,4 @@
-import type { PlaybackTimingMetadata } from "@/domain/types";
+import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
 
 export function mergeTimingMetadata(
   primary: PlaybackTimingMetadata | null,
@@ -11,9 +11,36 @@ export function mergeTimingMetadata(
   return {
     tmdbId: primary.tmdbId,
     type: primary.type,
-    intro: primary.intro.length ? primary.intro : secondary.intro,
-    recap: primary.recap.length ? primary.recap : secondary.recap,
-    credits: primary.credits.length ? primary.credits : secondary.credits,
-    preview: primary.preview.length ? primary.preview : secondary.preview,
+    intro: preferUsable(primary.intro, secondary.intro),
+    recap: preferUsable(primary.recap, secondary.recap),
+    credits: preferUsable(primary.credits, secondary.credits),
+    preview: preferUsable(primary.preview, secondary.preview),
   };
+}
+
+/**
+ * A segment only counts if something could actually be skipped with it.
+ *
+ * `normalizeSegments` in `introdb.ts` builds a segment per upstream row without
+ * dropping a degenerate one, so IntroDB can answer with `[{startMs: 0, endMs: 0}]`.
+ * Choosing on `.length` alone treated that as "the primary source has intro
+ * timing" and discarded a real AniSkip window in `secondary` — the skip prompt
+ * then never appeared, even though a usable window had been fetched.
+ *
+ * The usable test mirrors `normalizeEndSeconds` in `infra/player/playback-skip.ts`,
+ * which is what ultimately decides whether a segment can drive a skip.
+ */
+function preferUsable(
+  primary: readonly PlaybackTimingSegment[],
+  secondary: readonly PlaybackTimingSegment[],
+): readonly PlaybackTimingSegment[] {
+  if (primary.some(isUsableSegment)) return primary;
+  if (secondary.some(isUsableSegment)) return secondary;
+  // Neither can drive a skip; keep whichever is non-empty so callers that only
+  // ask "did any source answer?" still see the primary's shape.
+  return primary.length ? primary : secondary;
+}
+
+function isUsableSegment(segment: PlaybackTimingSegment): boolean {
+  return typeof segment.endMs === "number" && Number.isFinite(segment.endMs) && segment.endMs > 0;
 }

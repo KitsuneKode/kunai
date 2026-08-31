@@ -65,6 +65,36 @@ describe("FileStorage", () => {
     },
   );
 
+  test("reads a missing file as nothing stored, without a backup or a warning", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const warnings: string[] = [];
+    const storage = new FileStorage({ config: configPath }, (message) => warnings.push(message));
+
+    // The read path used to chmod outside its guard, so a file that vanished
+    // after the existence check rejected with ENOENT instead of returning null.
+    await expect(storage.read("config")).resolves.toBeNull();
+    expect(warnings).toEqual([]);
+    await expect(stat(`${configPath}.corrupt.bak`)).rejects.toThrow();
+  });
+
+  test("backs up the corrupt file's actual bytes, not an empty placeholder", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const corrupt = '{"providerRelay":{"token":"secret"}';
+    await writeFile(configPath, corrupt);
+
+    const warnings: string[] = [];
+    const storage = new FileStorage({ config: configPath }, (message) => warnings.push(message));
+
+    await expect(storage.read("config")).resolves.toBeNull();
+    // The backup exists to preserve the content — an empty one destroys it.
+    await expect(readFile(`${configPath}.corrupt.bak`, "utf8")).resolves.toBe(corrupt);
+    expect(warnings).toHaveLength(1);
+  });
+
   test("keeps the write queue usable after a failed write", async () => {
     const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
     tempDirs.push(dir);

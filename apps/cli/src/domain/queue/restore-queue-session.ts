@@ -7,6 +7,7 @@
 // already belongs to the restored session — never to invent a new queue row.
 // =============================================================================
 
+import { sameEpisodeNumbering } from "@/domain/media/episode-numbering";
 import type { QueueEntry } from "@kunai/storage";
 import type { HistoryProgress } from "@kunai/storage";
 import { isHistoryProgressFinished as isFinished } from "@kunai/storage";
@@ -54,13 +55,17 @@ function isResumable(progress: HistoryProgress): boolean {
   return !isFinished(progress) && progress.positionSeconds >= RESUME_MIN_POSITION_SECONDS;
 }
 
-/** Exact media identity, including absolute anime episode when present. */
+/**
+ * Exact media identity, including absolute anime episode when present.
+ *
+ * The numbering rule is shared with the offline keep/delete sets. Requiring
+ * only *one* side to carry an absolute episode compared `13 === undefined`, so
+ * an absolute-numbered history row never matched its own season-relative queue
+ * entry and the resume head was never promoted after a crash.
+ */
 function sameEpisodeIdentity(left: EpisodeIdentity, right: EpisodeIdentity): boolean {
   if (left.titleId !== right.titleId) return false;
-  if (left.absoluteEpisode !== undefined || right.absoluteEpisode !== undefined) {
-    return left.absoluteEpisode === right.absoluteEpisode;
-  }
-  return (left.season ?? 1) === (right.season ?? 1) && (left.episode ?? 0) === (right.episode ?? 0);
+  return sameEpisodeNumbering(left, right);
 }
 
 function withinSessionWindow(

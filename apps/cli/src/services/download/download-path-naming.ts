@@ -62,16 +62,21 @@ function utf8Length(value: string): number {
  * pairs), and slicing those by UTF-16 index produces a lone surrogate that some
  * filesystems reject and others store as a name the user cannot delete.
  */
-function truncateToBytes(value: string, maxBytes: number): string {
-  if (utf8Length(value) <= maxBytes) return value;
+function truncateToLimits(value: string, maxBytes: number, maxUtf16: number): string {
+  if (utf8Length(value) <= maxBytes && value.length <= maxUtf16) return value;
 
   let out = "";
-  let used = 0;
+  let usedBytes = 0;
+  let usedUtf16 = 0;
   for (const char of value) {
     const size = utf8Length(char);
-    if (used + size > maxBytes) break;
+    if (usedBytes + size > maxBytes) break;
+    // `char.length` is UTF-16 code units — 2 for an astral character. That is
+    // the unit Windows counts, so it is measured separately from the bytes.
+    if (usedUtf16 + char.length > maxUtf16) break;
     out += char;
-    used += size;
+    usedBytes += size;
+    usedUtf16 += char.length;
   }
   return out;
 }
@@ -107,16 +112,23 @@ export function sanitizePathPart(value: string): string {
  * The extension is what makes the file playable and what mpv and the library
  * scanner match on, so it is preserved and the stem absorbs the truncation.
  */
-export function clampComponent(name: string, maxBytes: number = MAX_COMPONENT_BYTES): string {
-  if (utf8Length(name) <= maxBytes) return name;
+export function clampComponent(
+  name: string,
+  limits: number | ComponentLimits = MAX_COMPONENT_BYTES,
+): string {
+  const { maxBytes, maxUtf16 } =
+    typeof limits === "number" ? { maxBytes: limits, maxUtf16: Number.POSITIVE_INFINITY } : limits;
+
+  if (utf8Length(name) <= maxBytes && name.length <= maxUtf16) return name;
 
   const dot = name.lastIndexOf(".");
   const hasExtension = dot > 0 && dot > name.length - 12;
   const extension = hasExtension ? name.slice(dot) : "";
   const stem = hasExtension ? name.slice(0, dot) : name;
 
-  const budget = Math.max(1, maxBytes - utf8Length(extension));
-  return `${stripTrailingDotsAndSpaces(truncateToBytes(stem, budget)) || "file"}${extension}`;
+  const byteBudget = Math.max(1, maxBytes - utf8Length(extension));
+  const utf16Budget = Math.max(1, maxUtf16 - extension.length);
+  return `${stripTrailingDotsAndSpaces(truncateToLimits(stem, byteBudget, utf16Budget)) || "file"}${extension}`;
 }
 
 export type DownloadPathInput = {
@@ -180,8 +192,30 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
     join,
   });
 
-  const safeComponents = components.map((part) => clampComponent(part, budget));
-  const safeFile = clampComponent(`${fileStem}${input.extension}`, budget);
+  let limits = budget;
+  let safeComponents = components.map((part) => clampComponent(part, limits));
+  let safeFile = clampComponent(`${fileStem}${input.extension}`, limits);
+
+  if (platform === "win32") {
+    // `componentBudget` is an estimate: it shares the overrun across every
+    // component, but a "Season 01" folder and the SxxEyy suffix cannot shrink,
+    // so the estimate can still land over MAX_PATH. Measuring the real joined
+    // path and tightening is exact, and this runs once per download.
+    const cap = WINDOWS_MAX_PATH - WINDOWS_PATH_RESERVE;
+    const variableCount = Math.max(1, components.length);
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      const overrun = join(input.baseDir, ...safeComponents, safeFile).length - cap;
+      if (overrun <= 0) break;
+      const next = Math.max(16, limits.maxUtf16 - Math.max(1, Math.ceil(overrun / variableCount)));
+      // Floor reached: the base directory alone is too deep. Truncating the
+      // title further destroys it without making the path legal, so stop and
+      // let the write surface the real error rather than silently mangling.
+      if (next === limits.maxUtf16) break;
+      limits = { ...limits, maxUtf16: next };
+      safeComponents = components.map((part) => clampComponent(part, limits));
+      safeFile = clampComponent(`${fileStem}${input.extension}`, limits);
+    }
+  }
 
   return join(input.baseDir, ...safeComponents, safeFile);
 }
@@ -194,6 +228,21 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
  * overrun has to be shared between them rather than charged to whichever
  * component happens to be clamped first.
  */
+/**
+ * What one path component may spend, in each unit that actually constrains it.
+ *
+ * The two are not interchangeable and used to be conflated: the Windows
+ * `MAX_PATH` arithmetic below counts UTF-16 code units, while the per-component
+ * cap and the truncator count UTF-8 bytes. Returning one number meant a budget
+ * derived from UTF-16 lengths was spent as bytes, so a CJK title (1 unit, 3
+ * bytes per character) was measured against the wrong limit.
+ */
+export type ComponentLimits = {
+  readonly maxBytes: number;
+  /** UTF-16 code units — the unit Windows `MAX_PATH` counts. */
+  readonly maxUtf16: number;
+};
+
 function componentBudget(input: {
   readonly platform: NodeJS.Platform;
   readonly baseDir: string;
@@ -201,16 +250,23 @@ function componentBudget(input: {
   readonly fileStem: string;
   readonly extension: string;
   readonly join: (...segments: string[]) => string;
-}): number {
-  if (input.platform !== "win32") return MAX_COMPONENT_BYTES;
+}): ComponentLimits {
+  const unconstrained: ComponentLimits = {
+    maxBytes: MAX_COMPONENT_BYTES,
+    maxUtf16: Number.POSITIVE_INFINITY,
+  };
+  if (input.platform !== "win32") return unconstrained;
 
   const full = input.join(
     input.baseDir,
     ...input.components,
     `${input.fileStem}${input.extension}`,
   );
+  // `.length` throughout this block: MAX_PATH is a UTF-16 code-unit budget, so
+  // the overrun and the per-component allowance derived from it are too. The
+  // byte cap rides alongside rather than being conflated with it.
   const overrun = full.length - (WINDOWS_MAX_PATH - WINDOWS_PATH_RESERVE);
-  if (overrun <= 0) return MAX_COMPONENT_BYTES;
+  if (overrun <= 0) return unconstrained;
 
   // Only the title-derived components can shrink; separators, the season
   // folder and the SxxEyy suffix are structure the user needs to keep.
@@ -219,12 +275,15 @@ function componentBudget(input: {
     ...input.components.map((part) => part.length),
     input.fileStem.length + input.extension.length,
   );
-  return Math.max(16, longest - Math.ceil(overrun / variableCount));
+  return {
+    maxBytes: MAX_COMPONENT_BYTES,
+    maxUtf16: Math.max(16, longest - Math.ceil(overrun / variableCount)),
+  };
 }
 
 export const __testing = {
   MAX_COMPONENT_BYTES,
   WINDOWS_MAX_PATH,
   WINDOWS_PATH_RESERVE,
-  truncateToBytes,
+  truncateToLimits,
 };

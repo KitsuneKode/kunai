@@ -814,9 +814,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
             const mode = stateManager.getState().mode;
+            // Trending rejects when the upstream is down, which is what lets
+            // `observeOnline` see the failure at all. Browse still degrades to
+            // the empty-state copy below rather than tearing down the phase.
             const results = await observeOnline(container, "search-error", () =>
               loadDiscoveryList(mode, context.signal),
-            );
+            ).catch((): SearchResult[] => []);
 
             logger.info("Discovery list loaded", {
               mode,
@@ -1241,7 +1244,7 @@ async function loadSearchRoute(
   const bundle =
     route === "trending"
       ? {
-          results: await loadDiscoveryList(mode, context.signal),
+          results: await loadDiscoveryList(mode, context.signal).catch((): SearchResult[] => []),
           subtitle:
             mode === "anime"
               ? "AniList trending"

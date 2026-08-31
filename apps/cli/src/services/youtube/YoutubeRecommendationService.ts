@@ -220,7 +220,10 @@ export async function loadYoutubeRecommendations(input: {
 /** YouTube trending for `/trending` in youtube shell mode. */
 export async function loadYoutubeTrending(signal?: AbortSignal): Promise<readonly SearchResult[]> {
   const preferredInstanceUrl = getYoutubeProviderConfig().invidiousInstanceUrl;
-  const items = await invidiousGetTrending({ preferredInstanceUrl, signal }).catch(() => []);
+  // Rejects when every instance is down: callers decide whether to degrade to an
+  // empty tray. Folding it into `[]` here hid the failure from the discovery
+  // cache, which then served that empty tray for the rest of its TTL.
+  const items = await invidiousGetTrending({ preferredInstanceUrl, signal });
   return mapInvidiousTrendingVideos([...items]).map(providerResultToSearchResult);
 }
 

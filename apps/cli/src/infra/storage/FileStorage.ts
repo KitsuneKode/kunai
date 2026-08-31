@@ -35,17 +35,36 @@ export class FileStorage implements StorageService {
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
     const file = Bun.file(path);
-    if (!(await file.exists())) return null;
-    if (process.platform !== "win32") await chmod(path, 0o600);
+
+    let raw: string;
     try {
-      return (await file.json()) as T;
+      if (process.platform !== "win32") await chmod(path, 0o600);
+      raw = await file.text();
     } catch (error) {
-      // Corrupt JSON — back it up so we don't nuke it permanently, and say so:
-      // a silently reset config used to look exactly like a fresh install.
+      // "Not there" is nothing stored, not a read error for the caller to
+      // handle. An `exists()` pre-check used to answer this, but it left both
+      // the chmod and the read outside the guard: a file that vanished in
+      // between (another process, a concurrent `delete()`) made `read()` reject
+      // with ENOENT instead of returning null.
+      if (errorCode(error) === "ENOENT") return null;
+      // Unreadable for another reason (permissions, I/O). Nothing was read, so
+      // there is no content to preserve — writing a backup here would replace a
+      // good earlier `.corrupt.bak` with an empty file.
+      dbgErr("storage.file", `Unreadable file at ${path}`, error);
+      this.warn?.("Config file could not be read; defaults are in use", { path });
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw) as T;
+    } catch (error) {
+      // Corrupt JSON — back up the bytes we actually read so we don't nuke them
+      // permanently, and say so: a silently reset config used to look exactly
+      // like a fresh install.
       const corruptPath = `${path}.corrupt.bak`;
       const parent = dirname(corruptPath);
       if (parent) await mkdir(parent, { recursive: true }).catch(() => {});
-      await writeAtomicSecretText(corruptPath, await file.text().catch(() => "")).catch(() => {});
+      await writeAtomicSecretText(corruptPath, raw).catch(() => {});
       dbgErr("storage.file", `Corrupt JSON at ${path}; backed up to ${corruptPath}`, error);
       this.warn?.("Config file was unreadable and has been reset to defaults", {
         corruptBackup: corruptPath,
@@ -85,4 +104,8 @@ export class FileStorage implements StorageService {
     if (!path) return false;
     return Bun.file(path).exists();
   }
+}
+
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | null)?.code;
 }
