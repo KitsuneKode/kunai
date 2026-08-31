@@ -10,21 +10,21 @@ import {
 
 const MOBILE_ROOT = join(import.meta.dir, "../..");
 const DIST = join(MOBILE_ROOT, "dist");
+const BUILD_METADATA = JSON.parse(
+  readFileSync(join(DIST, "mobile-build-meta.json"), "utf8"),
+) as MobileBuildMetadata;
 
 function sha256(bytes: Uint8Array): string {
   return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 }
 
 describe("mobile build artifacts", () => {
-  test("match the target, checksum, size, and executable-mode manifest", () => {
-    const metadata = JSON.parse(
-      readFileSync(join(DIST, "mobile-build-meta.json"), "utf8"),
-    ) as MobileBuildMetadata;
-    expect(metadata.schemaVersion).toBe(1);
-    expect(metadata.targets.map((target) => target.id)).toEqual(
+  test("declares the exact target and artifact manifest", () => {
+    expect(BUILD_METADATA.schemaVersion).toBe(1);
+    expect(BUILD_METADATA.targets.map((target) => target.id)).toEqual(
       MOBILE_TARGETS.map((target) => target.id),
     );
-    expect(metadata.artifacts.map((artifact) => artifact.path)).toEqual([
+    expect(BUILD_METADATA.artifacts.map((artifact) => artifact.path)).toEqual([
       "kunai-mobile-android-arm64",
       "kunai-mobile-android-x64",
       "ios/kunai-mobile",
@@ -33,8 +33,10 @@ describe("mobile build artifacts", () => {
       "ios/kunai-mobile-open-vlc",
       "ios/kunai-mobile-read-line",
     ]);
+  });
 
-    for (const artifact of metadata.artifacts) {
+  for (const artifact of BUILD_METADATA.artifacts) {
+    test(`matches checksum, size, and mode for ${artifact.path}`, () => {
       const path = join(DIST, artifact.path);
       const bytes = readFileSync(path);
       expect(artifact.bytes).toBe(bytes.byteLength);
@@ -43,8 +45,8 @@ describe("mobile build artifacts", () => {
       if (artifact.path !== "ios/kunai-mobile-ios.js") {
         expect(statSync(path).mode & 0o777).toBe(0o755);
       }
-    }
-  });
+    });
+  }
 
   test("produces the requested little-endian 64-bit Android ELF machines", () => {
     for (const [name, machine] of [
