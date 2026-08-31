@@ -55,10 +55,18 @@ jobs:
         with:
           name: kunai-linux-binaries-matrix
           retention-days: 1
+          # Must match the list in ci.yml's `native-installer` job. The
+          # scenarios' `prepare-fixture` step resolves a release *companion*
+          # archive next to each binary, so uploading the raw binaries alone
+          # makes every cell fail with "release companion not found" — which is
+          # what this matrix did nightly from 2026-08-26 until this was fixed.
           path: |
             apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-x64.tar.gz
             apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
             apps/cli/dist/bin/SHA256SUMS
+            apps/cli/dist/bin/SHA256SUMS.archives
 
   matrix:
     name: ${{ matrix.scenario }} / ${{ matrix.variant }}
