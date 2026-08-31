@@ -13,6 +13,7 @@ import type { ContinueSourcePreference } from "@/services/continuation/continuat
 import { OfflineTitleIdentityService } from "@/services/offline/offline-title-identity";
 import { OfflineAssetService } from "@/services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
+import { createLocalPlaybackRouter } from "@/services/playback/LocalPlaybackBackend";
 import {
   DownloadJobsRepository,
   HistoryTitleAliasRepository,
@@ -203,7 +204,7 @@ describe("offline local playback resolution", () => {
       stream: resolution.stream,
       title: movieTitle,
       episode: { season: 1, episode: 1 },
-      player,
+      playbackRouter: createLocalPlaybackRouter(player),
       playOptions: {},
       subtitleStatus: "local",
       startAt: 0,

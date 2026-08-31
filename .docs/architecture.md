@@ -33,7 +33,8 @@ Kunai is a terminal CLI that:
 5. Returns to the same shell for post-playback actions, settings, and provider changes
 
 ```text
-user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules -> mpv -> shell
+user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules
+    -> PlaybackRouter -> LocalPlaybackBackend -> mpv -> shell
 ```
 
 ## Entrypoint
@@ -59,7 +60,8 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 | Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                                              |
 | Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                                       |
 | Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                          |
-| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking                                                       |
+| Playback routing      | `apps/cli/src/services/playback/PlaybackRouter.ts`                                      | Selects a target backend; local playback remains the default                                                |
+| Local playback        | `apps/cli/src/services/playback/LocalPlaybackBackend.ts`, `apps/cli/src/infra/player/*` | Adapts the existing `PlayerService`; owns `mpv` launch, IPC, and Lua-assisted progress tracking             |
 | Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                   |
 | Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                         |
 | Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                        |

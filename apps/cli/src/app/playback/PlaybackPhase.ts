@@ -3861,7 +3861,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     localPlaybackSource?: LocalPlaybackSource,
   ): Promise<PlaybackResult> {
     const {
-      player,
       stateManager,
       config,
       historyRepository,
@@ -3933,7 +3932,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stream,
       title,
       episode,
-      player,
+      playbackRouter: context.container.playbackRouter,
       subtitleStatus,
       startAt,
       sessionAborted: context.signal.aborted,

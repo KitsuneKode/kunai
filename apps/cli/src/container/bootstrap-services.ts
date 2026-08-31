@@ -42,6 +42,7 @@ import { OfflineAssetService } from "../services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "../services/offline/OfflineLibraryService";
 import { OfflineMaintenanceService } from "../services/offline/OfflineMaintenanceService";
 import { OfflineRunwayService } from "../services/offline/OfflineRunwayService";
+import { createLocalPlaybackRouter } from "../services/playback/LocalPlaybackBackend";
 import { DurablePlaylistService } from "../services/playlists/DurablePlaylistService";
 import { PresenceServiceImpl } from "../services/presence/PresenceServiceImpl";
 import { RecommendationServiceImpl } from "../services/recommendations/RecommendationServiceImpl";
@@ -143,6 +144,7 @@ export function bootstrapServices(input: {
     mpv: options?.mpv,
     presentation: playerPresentation,
   });
+  const playbackRouter = createLocalPlaybackRouter(player);
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
   const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases, offlineAssets);
@@ -463,6 +465,7 @@ export function bootstrapServices(input: {
     dataDir: persistence.paths.dataDir,
     shell,
     player,
+    playbackRouter,
     playerControl,
     workControl,
     storage,

@@ -15,6 +15,7 @@ import type {
   PlayerService,
 } from "@/infra/player/PlayerService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import { createLocalPlaybackRouter } from "@/services/playback/LocalPlaybackBackend";
 
 const TITLE: TitleInfo = { id: "1396", name: "Test", type: "series" };
 const EPISODE: EpisodeInfo = { season: 1, episode: 1 };
@@ -151,7 +152,7 @@ async function runSession(
     stream: STREAM,
     title: TITLE,
     episode: EPISODE,
-    player,
+    playbackRouter: createLocalPlaybackRouter(player),
     playOptions: {},
     subtitleStatus: "none",
     startAt: 0,
@@ -397,7 +398,7 @@ describe("runMpvPlaybackSession completion", () => {
       stream: { ...STREAM, url: LOCAL_SOURCE.filePath },
       title: TITLE,
       episode: EPISODE,
-      player,
+      playbackRouter: createLocalPlaybackRouter(player),
       playOptions: {},
       subtitleStatus: "local",
       startAt: 42,

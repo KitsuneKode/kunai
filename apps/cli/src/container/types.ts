@@ -59,6 +59,7 @@ import type { SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import type { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
 import type { MediaTrackService } from "../services/playback/MediaTrackService";
 import type { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
+import type { PlaybackRouter } from "../services/playback/PlaybackRouter";
 import type { ProviderEndpointHealthService } from "../services/playback/ProviderEndpointHealthService";
 import type { SourceInventoryService } from "../services/playback/SourceInventoryService";
 import type { TitlePlaybackSourceService } from "../services/playback/TitlePlaybackSourceService";
@@ -98,6 +99,7 @@ export interface Container {
   // Infrastructure
   readonly shell: ShellService;
   readonly player: PlayerService;
+  readonly playbackRouter: PlaybackRouter;
   readonly playerControl: PlayerControlService;
   readonly workControl: WorkControlService;
   readonly storage: StorageService;
