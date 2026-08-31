@@ -55,11 +55,35 @@ row in the database.
 - [ ] Change the anime branch to `anilistId ?? (malId ? \`mal:${malId}\` : undefined) ?? id`.
       Keep the AniList branch byte-identical — a change there rekeys every
       existing anime row and is not what this plan buys.
-- [ ] Audit readers that assume a bare integer:
-      `grep -rn 'anilistId\|malId' apps/cli/src packages --include='*.ts'` and
-      check `resolveAniListIdentity` (`services/sync/sync-identity.ts`), the
-      consolidator, and share-link parsing. **STOP** and report if any reader
-      round-trips `title_id` back into a tracker id by parsing it as a number.
+- [ ] **Add a `mal:` branch to `collectLookupTitleIds`.** This is required, not
+      optional. `packages/storage/src/repositories/history.ts:554` reads:
+
+      ```ts
+          if (title.kind === "anime" && /^\d+$/.test(title.id)) {
+            add(this.titleAliases.lookupTitleId("anilist", title.id));
+            add(this.titleAliases.lookupTitleId("mal", title.id));
+          }
+          ```
+
+          A namespaced `mal:16498` fails the `\d+` test, so **neither** alias lookup
+          runs and MAL titles lose alias resolution entirely. Note this block is also
+          the collision at the read layer — it asks both namespaces for the same bare
+          number, which is the same conflation the key format has.
+
+- [x] Readers that assume a bare integer — audited at `ec2e90e6`, five sites: - `packages/storage/src/repositories/history.ts:554` — **must change**, above. - `apps/cli/src/services/catalog/CatalogScheduleService.ts:677` —
+      `Number(input.titleId)` used as an **AniList media id**, guarded by
+      `Number.isFinite`. Today a bare MAL id is silently queried against
+      AniList and returns another show's schedule. After this change it
+      becomes `NaN` and returns null, so this site is **fixed** by the plan,
+      not broken. No edit needed; assert it in a test. - `apps/cli/src/services/recommendations/RecommendationServiceImpl.ts:303,311`
+      and `apps/cli/src/domain/lists/WatchGenreStats.ts:104` — treat a bare
+      `\d+` id as a **TMDB** id. Pre-existing and orthogonal: they already
+      misread a bare AniList id the same way. Out of scope, but do not make
+      it worse. - `apps/cli/src/services/sync/sync-identity.ts` — **safe**. It uses
+      `namespacedId(titleId, "anilist")`, which requires an explicit prefix, so
+      `mal:16498` returns null cleanly rather than `NaN`. Nothing anywhere
+      reads a `mal:` prefix today, which is why the branch above must be added
+      rather than assumed.
 - [ ] Write a data migration that rekeys existing bare-MAL history rows to
       `mal:<id>`, moving `history_progress`, `history_title_aliases`, and every
       table holding a `title_id` reference (queue, download jobs, follows,
@@ -76,8 +100,10 @@ row in the database.
 
 ## STOP conditions
 
-- A reader parses `title_id` as an integer to recover a tracker id — resolve
-  that first; the namespaced form will silently become `NaN`.
+- A reader not in the audited list above parses `title_id` as an integer to
+  recover a tracker id. The five known sites are resolved in the tasks; a sixth
+  found during implementation means the audit was incomplete — stop and re-run it
+  rather than patching that one site.
 - The migration cannot be made single-transaction across every referencing
   table. A partial rekey leaves dangling references, which is worse than the
   collision this plan fixes.
