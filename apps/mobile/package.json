@@ -10,7 +10,8 @@
     "fmt:check": "oxfmt --check .",
     "test": "bun test test",
     "test:unit": "bun test test/unit",
-    "test:integration": "bun test test/integration"
+    "test:integration": "bun test test/integration",
+    "test:live:mobile-host-proof": "bun test/live/device-host-proof.ts"
   },
   "dependencies": {
     "@kunai/core": "workspace:*"
