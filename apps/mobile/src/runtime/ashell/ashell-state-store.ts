@@ -25,9 +25,23 @@ function removeIfPresent(jsc: AShellJsc, path: string): void {
 export function createAShellStateStore(jsc: AShellJsc): MobileStateStore {
   return {
     async load() {
-      return jsc.isFile(CURRENT_PATH)
-        ? parseStateJson(jsc.readFile(CURRENT_PATH))
-        : decodeMobileState(undefined);
+      if (jsc.isFile(CURRENT_PATH)) return parseStateJson(jsc.readFile(CURRENT_PATH));
+      if (jsc.isFile(PREVIOUS_PATH)) {
+        const recovered = parseStateJson(jsc.readFile(PREVIOUS_PATH));
+        if (jsc.move(PREVIOUS_PATH, CURRENT_PATH) !== 0) {
+          throw new Error("state restoration failed");
+        }
+        removeIfPresent(jsc, TEMPORARY_PATH);
+        return recovered;
+      }
+      if (jsc.isFile(TEMPORARY_PATH)) {
+        const recovered = parseStateJson(jsc.readFile(TEMPORARY_PATH));
+        if (jsc.move(TEMPORARY_PATH, CURRENT_PATH) !== 0) {
+          throw new Error("state restoration failed");
+        }
+        return recovered;
+      }
+      return decodeMobileState(undefined);
     },
     async commit(next) {
       if (jsc.makeFolder(RUNTIME_DIRECTORY) !== 0) {

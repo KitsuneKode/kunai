@@ -79,4 +79,31 @@ describe("Bun Android state store", () => {
     expect(fake.files.get(currentPath)).toBe(previous);
     await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 4 });
   });
+
+  test("recovers the prior state after interruption between backup and activation", async () => {
+    const currentPath = "/sandbox/mobile-state.json";
+    const previousPath = `${currentPath}.previous`;
+    const temporaryPath = `${currentPath}.tmp`;
+    const previous = JSON.stringify({ schemaVersion: 1, hostProofRuns: 7 });
+    const staged = JSON.stringify({ schemaVersion: 1, hostProofRuns: 8 });
+    const fake = fakeRuntime({ [previousPath]: previous, [temporaryPath]: staged });
+    const store = createBunStateStore({ root: "/sandbox", runtime: fake.runtime });
+
+    await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 7 });
+    expect(fake.files.get(currentPath)).toBe(previous);
+    expect(fake.files.has(previousPath)).toBe(false);
+    expect(fake.files.has(temporaryPath)).toBe(false);
+  });
+
+  test("recovers a staged first write when no prior state exists", async () => {
+    const currentPath = "/sandbox/mobile-state.json";
+    const temporaryPath = `${currentPath}.tmp`;
+    const staged = JSON.stringify({ schemaVersion: 1, hostProofRuns: 1 });
+    const fake = fakeRuntime({ [temporaryPath]: staged });
+    const store = createBunStateStore({ root: "/sandbox", runtime: fake.runtime });
+
+    await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 1 });
+    expect(fake.files.get(currentPath)).toBe(staged);
+    expect(fake.files.has(temporaryPath)).toBe(false);
+  });
 });
