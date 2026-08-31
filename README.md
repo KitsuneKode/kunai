@@ -630,39 +630,65 @@ not ship as runtime behavior.
 
 ## FAQ
 
-**Search works but playback fails or stalls.**
+<details>
+<summary><b>Search works but playback fails or stalls.</b></summary>
+
 Providers break when upstream sites change. In playback, press `r` to recover the
 stream, `⇧F` to fall back to the next compatible provider, `o` to pick another
 source, or `k` to pick quality. If sources look stale, `/recompute` bypasses cached provider
 memory. Persistent issues → `/diagnostics`, then `/export-diagnostics` for a
 redacted snapshot to attach to a bug report.
 
-**"No results found" for a title I know exists.**
+</details>
+
+<details>
+<summary><b>"No results found" for a title I know exists.</b></summary>
+
 Try the other mode — series, anime, and YouTube use different provider sets (`Tab`
 cycles modes, `/anime` and `/series` jump directly, or launch with `-a`). Some
 titles are only indexed under an alternate name.
 
-**Kunai won't start playback.**
+</details>
+
+<details>
+<summary><b>Kunai won't start playback.</b></summary>
+
 mpv isn't installed or isn't on your `PATH`. Install it (see
 [Dependencies by platform](#dependencies-by-platform)) and re-run.
 
-**I don't see download options.**
+</details>
+
+<details>
+<summary><b>I don't see download options.</b></summary>
+
 Install **yt-dlp** and restart. Download features are hidden when yt-dlp is
 missing; everything else keeps working.
 
-**No poster previews.**
+</details>
+
+<details>
+<summary><b>No poster previews.</b></summary>
+
 Kitty and Ghostty render natively, iTerm2 and VS Code ≥1.80 use inline images,
 sixel terminals use sixel, and everything else falls back to built-in
 **half-block**. Nothing needs installing. Check `/diagnostics` for the detected
 renderer, or set `KUNAI_IMAGE_DEBUG=1` for verbose logging. Inside tmux or screen
 Kunai stays on half-block, because it emits no passthrough wrapper.
 
-**How do I update?**
+</details>
+
+<details>
+<summary><b>How do I update?</b></summary>
+
 Keep it current with `kunai upgrade` (channel-aware). Kunai also notifies you
 in-shell when a newer version is published. Package-manager reinstall and source
 `git pull && bun run relink:global` remain secondary paths.
 
-**`kunai` missing, shadowed, or install ownership wrong?**
+</details>
+
+<details>
+<summary><b>`kunai` missing, shadowed, or install ownership wrong?</b></summary>
+
 Run `kunai doctor` (or `kunai doctor --json`). List every binary with
 `type -a` / `which -a` (bash), `whence -a` (zsh), or `Get-Command kunai -All`
 (PowerShell). Rollback with `kunai rollback --list` / `kunai rollback`. Uninstall
@@ -670,17 +696,27 @@ only via the owning channel (`kunai uninstall`, or `npm uninstall -g` for npm).
 Checksums/404s → `kunai install --force` / pin a version or re-verify
 `SHA256SUMS`.
 
-**Windows SmartScreen or macOS Gatekeeper blocks the binary?**
+</details>
+
+<details>
+<summary><b>Windows SmartScreen or macOS Gatekeeper blocks the binary?</b></summary>
+
 Release binaries are unsigned during beta. On Windows, `install.ps1` runs
 `Unblock-File`; you can also right-click → Properties → Unblock. On macOS:
 `xattr -dr com.apple.quarantine ~/.local/bin/kunai` (or your install path).
 See [Install Kunai](#install-kunai) and
 [Install and update](docs/users/install-and-update.mdx#unsigned-binaries-beta).
 
-**YouTube age-restricted / members content?**
+</details>
+
+<details>
+<summary><b>YouTube age-restricted / members content?</b></summary>
+
 Set `youtubeMetadata.cookiesFromBrowser` or an absolute `cookiesFile` in
 `config.json`. Never paste cookie contents into issues; review redacted
 `/export-diagnostics` bundles first. Kunai does not bypass DRM.
+
+</details>
 
 ---
 
