@@ -703,10 +703,12 @@ Return `{ kind: "accepted", launcher: "openurl" }` only for exit 0. This remains
 
 `composition.ts` reads arguments only from a-Shell's documented
 `globalThis.process.argv` host value, using a local structural type rather than
-Node declarations. No other `process` property is read. `exitMobile(0)` is a
-no-op; a non-zero code throws one fixed redacted error so `jsc` returns failure.
-The player adapter deletes `.runtime/player-url` in `finally` after the fixed
-helper returns.
+Node declarations. No other `process` property is read. `exitMobile()` writes a
+validated `0`, `1`, or `2` to `.runtime/exit-code` atomically; a non-zero code
+then throws one fixed redacted error. The launcher consumes that status because
+the current a-Shell wrapper does not propagate the JavaScript result. The player
+adapter deletes `.runtime/player-url` in `finally` after the fixed helper
+returns.
 
 - [ ] **Step 5: Compose and verify iOS**
 
@@ -789,11 +791,17 @@ After the iOS build:
 - copy shell helpers with mode `0755` into `dist/ios`;
 - hash each output and write actual raw/gzip byte sizes without a fabricated ceiling.
 
-The installed `kunai-mobile` launcher changes to its own directory and runs:
+The installed `kunai-mobile` launcher changes to its own directory, removes a
+stale `.runtime/exit-code`, runs:
 
 ```sh
-exec jsc ./kunai-mobile-ios.js "$@"
+jsc ./kunai-mobile-ios.js "$@"
 ```
+
+and exits with the validated `0`, `1`, or `2` status that `exitMobile()` wrote
+atomically. This is required because the current a-Shell `jsc_internal` wrapper
+returns `0` after dispatching WebView JavaScript even when application work
+fails. A missing or malformed status fails closed with exit `1`.
 
 - [ ] **Step 4: Run real cross-builds**
 

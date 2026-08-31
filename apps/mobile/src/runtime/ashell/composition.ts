@@ -35,5 +35,13 @@ export function mobileVersion(): string {
 }
 
 export function exitMobile(code: number): void {
+  const jsc = requireAShellJsc();
+  const exitCode = code === 0 || code === 1 || code === 2 ? code : 1;
+  if (
+    jsc.makeFolder(".runtime") !== 0 ||
+    jsc.writeFile(".runtime/exit-code", String(exitCode)) !== 0
+  ) {
+    throw new Error("Mobile host proof failed");
+  }
   if (code !== 0) throw new Error("Mobile host proof failed");
 }
