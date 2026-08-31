@@ -2,7 +2,7 @@ import { KunaiSocialCard } from "@/lib/brand/social-card";
 import generatedMascot from "@/lib/generated-mascot.json";
 import { ImageResponse } from "next/og";
 
-export const alt = "Kunai — the pink kitsune watcher, with anime, series, and movie companions";
+export const alt = "Kunai — Kanna the kitsune, with anime, series, and movie companions";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 

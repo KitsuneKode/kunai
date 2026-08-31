@@ -72,6 +72,28 @@ playback connected — while staying a deterministic, scriptable CLI.
 
 ---
 
+## Meet Kanna
+
+<img src="apps/docs/public/brand/fox/idle.webp" alt="" align="right" width="120" />
+
+A **kanna** (鉋) is a Japanese hand plane. You run it over rough wood and the
+roughness leaves in one curl.
+
+Kunai is the blade. Kanna is who holds it — twelve tabs, three dead mirrors and
+a stream that stalls go in; the thing that plays comes out. She works nights,
+hands it to `mpv`, and gets out of the frame.
+
+She shows up on setup, on empty shelves, when a resolve fails, and on the way
+out. On Kitty, Ghostty, iTerm2 and WezTerm you get the illustrated fox;
+everywhere else she is a `🦊` and one short line, which is the same character
+doing the same job. Redirected output gets neither.
+
+`KUNAI_PET=off` retires her entirely — text included. `KUNAI_PET=glyph` keeps
+her as the glyph. Full story in the
+[Kanna guide](https://kunai.kitsunekode.in/docs/users/kanna).
+
+---
+
 ## Showcase
 
 The command palette (`/`) reaches every surface — here, the offline shell touring
