@@ -53,7 +53,23 @@ export function createBunStateStore(input: {
   return {
     async load() {
       const current = await runtime.readText(currentPath);
-      return current === undefined ? decodeMobileState(undefined) : parseStateJson(current);
+      if (current !== undefined) return parseStateJson(current);
+
+      const previous = await runtime.readText(previousPath);
+      if (previous !== undefined) {
+        const recovered = parseStateJson(previous);
+        await runtime.move(previousPath, currentPath);
+        await runtime.remove(temporaryPath);
+        return recovered;
+      }
+
+      const temporary = await runtime.readText(temporaryPath);
+      if (temporary !== undefined) {
+        const recovered = parseStateJson(temporary);
+        await runtime.move(temporaryPath, currentPath);
+        return recovered;
+      }
+      return decodeMobileState(undefined);
     },
     async commit(next) {
       await runtime.ensureDirectory(input.root);

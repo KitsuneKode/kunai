@@ -67,10 +67,21 @@ describe("mobile build artifacts", () => {
     expect(launcher).toContain('exit "$mobile_status"');
   });
 
+  test("keeps the emitted HTTP helper on the bounded redirect contract", () => {
+    const helper = readFileSync(join(DIST, "ios/kunai-mobile-http"), "utf8");
+    expect(helper).toContain("--proto '=http,https' --proto-redir '=http,https'");
+    expect(helper).toContain("--location --max-redirs 3 --silent --show-error");
+    expect(helper).toContain("--config .runtime/curl.conf");
+  });
+
   test("runs the complete host proof through fake a-Shell globals without leaking URLs", async () => {
     const files = new Map<string, string>();
     const commands: string[] = [];
     const output: string[] = [];
+    let completeHostProof: () => void = () => {};
+    const hostProofCompleted = new Promise<void>((resolveCompletion) => {
+      completeHostProof = resolveCompletion;
+    });
     const mediaUrl = "https://media.example/video.m3u8?token=media-secret";
     const probeUrl = "https://probe.example/status?token=probe-secret";
     const previousArgv = process.argv;
@@ -94,9 +105,10 @@ describe("mobile build artifacts", () => {
       },
       move(from, to) {
         const value = files.get(from);
-        if (value === undefined) return 1;
+        if (value === undefined || files.has(to)) return 1;
         files.delete(from);
         files.set(to, value);
+        if (to === ".runtime/exit-code") completeHostProof();
         return 0;
       },
       system(command) {
@@ -122,7 +134,7 @@ describe("mobile build artifacts", () => {
     console.log = (...values: unknown[]) => output.push(values.map(String).join(" "));
     try {
       Function(readFileSync(join(DIST, "ios/kunai-mobile-ios.js"), "utf8"))();
-      await new Promise<void>((resolveWait) => setTimeout(resolveWait, 0));
+      await hostProofCompleted;
     } finally {
       console.log = previousLog;
       process.argv = previousArgv;

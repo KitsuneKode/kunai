@@ -163,16 +163,16 @@ The two caches are intentionally separate layers, not duplication:
 Dependency direction between these is enforced — see
 [runtime-boundary-map.md](./runtime-boundary-map.md#package-dependency-direction).
 
-| Package            | Owns                                                                                           |
-| ------------------ | ---------------------------------------------------------------------------------------------- |
-| `@kunai/types`     | Serializable contracts crossing package, storage, and provider boundaries. Depends on nothing. |
-| `@kunai/design`    | Design tokens and color resolution. Depends on nothing.                                        |
-| `@kunai/schemas`   | Runtime validation for untrusted or persisted data                                             |
-| `@kunai/core`      | Provider engine, cycle engine, failure classifier, cache-key and manifest policy               |
-| `@kunai/config`    | Config schema, defaults, and parsing — the shape `ConfigService` persists                      |
-| `@kunai/providers` | Provider-specific extraction, decryption, source evidence                                      |
-| `@kunai/relay`     | Relay validation, host allowlists, fetch-port adapter                                          |
-| `@kunai/storage`   | SQLite paths, migrations, repositories, TTL helpers                                            |
+| Package            | Owns                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `@kunai/types`     | Serializable contracts crossing package, storage, and provider boundaries. Depends on nothing.                |
+| `@kunai/design`    | Design tokens and color resolution. Depends on nothing.                                                       |
+| `@kunai/schemas`   | Runtime validation for untrusted or persisted data                                                            |
+| `@kunai/core`      | Provider engine, cycle engine, failure classifier, cache-key/manifest policy, pure shared Android intent plan |
+| `@kunai/config`    | Config schema, defaults, and parsing — the shape `ConfigService` persists                                     |
+| `@kunai/providers` | Provider-specific extraction, decryption, source evidence                                                     |
+| `@kunai/relay`     | Relay validation, host allowlists, fetch-port adapter                                                         |
+| `@kunai/storage`   | SQLite paths, migrations, repositories, TTL helpers                                                           |
 
 ## Not in the active runtime
 

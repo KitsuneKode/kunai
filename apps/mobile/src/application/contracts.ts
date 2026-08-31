@@ -25,14 +25,18 @@ export interface MobileStateStore {
   commit(next: MobileState): Promise<void>;
 }
 
+export type MobileChoiceRequest = {
+  readonly prompt: string;
+  readonly choices: readonly { readonly value: string; readonly label: string }[];
+};
+
+export type MobileChoiceResult =
+  | { readonly kind: "selected"; readonly value: string }
+  | { readonly kind: "cancelled" };
+
 export interface MobileTerminalPort {
   render(lines: readonly string[]): Promise<void>;
-  choose(input: {
-    readonly prompt: string;
-    readonly choices: readonly { readonly value: string; readonly label: string }[];
-  }): Promise<
-    { readonly kind: "selected"; readonly value: string } | { readonly kind: "cancelled" }
-  >;
+  choose(input: MobileChoiceRequest): Promise<MobileChoiceResult>;
 }
 
 export interface MobilePlayerPort {

@@ -111,4 +111,26 @@ describe("a-Shell state store", () => {
     expect(fixture.files.get(CURRENT)).toBe(previous);
     await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 8 });
   });
+
+  test("recovers the prior state after interruption between backup and activation", async () => {
+    const previous = JSON.stringify({ schemaVersion: 1, hostProofRuns: 7 });
+    const staged = JSON.stringify({ schemaVersion: 1, hostProofRuns: 8 });
+    const fixture = stateFixture({ [PREVIOUS]: previous, [TEMPORARY]: staged });
+    const store = createAShellStateStore(fixture.jsc);
+
+    await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 7 });
+    expect(fixture.files.get(CURRENT)).toBe(previous);
+    expect(fixture.files.has(PREVIOUS)).toBe(false);
+    expect(fixture.files.has(TEMPORARY)).toBe(false);
+  });
+
+  test("recovers a staged first write when no prior state exists", async () => {
+    const staged = JSON.stringify({ schemaVersion: 1, hostProofRuns: 1 });
+    const fixture = stateFixture({ [TEMPORARY]: staged });
+    const store = createAShellStateStore(fixture.jsc);
+
+    await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 1 });
+    expect(fixture.files.get(CURRENT)).toBe(staged);
+    expect(fixture.files.has(TEMPORARY)).toBe(false);
+  });
 });

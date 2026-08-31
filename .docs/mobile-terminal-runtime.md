@@ -92,11 +92,14 @@ without cookies or custom headers. Do not put either URL in evidence or logs.
    cancels without HTTP or VLC. Run it again, choose `Run proof`, confirm the
    bounded probe succeeds, Android accepts the VLC intent, and the video
    actually begins.
-6. Preserve the valid private state file, replace the working copy with invalid
-   JSON, and rerun. It must fail closed before HTTP/VLC. Restore the preserved
-   copy (or remove the corrupt copy for a clean state) and prove a normal rerun.
-   This is operator recovery evidence; the preview does not claim automatic
-   recovery from arbitrary external corruption.
+6. In the isolated `HOME`, preserve
+   `.local/share/kunai-mobile/mobile-state.json` as an operator backup. Simulate
+   interruption between backup and activation by moving the working file to
+   `mobile-state.json.previous` and copying it to `mobile-state.json.tmp`. Rerun
+   the host proof and cancel at the prompt. Confirm the previous file was
+   restored as current and the staged file was removed. This proves interrupted
+   replacement recovery. Separately replacing current with invalid JSON must
+   fail closed before HTTP/VLC; restore the operator backup afterward.
 7. Delete the temporary `HOME` after recording only the redacted observations.
 
 Android x64 follows the same steps on an x64 Android device. An emulator may
@@ -131,10 +134,13 @@ Alpine userland, or on-device package installation is part of this path.
    is not playback evidence. If the current VLC x-callback route closes or does
    not start playback, record failure; do not silently substitute a different
    URL scheme and call the existing artifact qualified.
-6. Preserve `.runtime/mobile-state.json`, corrupt the working copy, and prove a
-   fail-closed rerun. Restore the preserved copy (or remove the corrupt copy)
-   and prove a normal rerun. Delete the entire proof directory after exporting
-   only redacted observations.
+6. Preserve `.runtime/mobile-state.json` as an operator backup. Simulate an
+   interrupted activation by moving the working file to
+   `.runtime/mobile-state.previous` and copying it to
+   `.runtime/mobile-state.json.tmp`. Rerun and cancel at the prompt; current
+   must be restored and the staged file removed. Separately corrupt current and
+   prove a fail-closed rerun, then restore the operator backup. Delete the proof
+   directory after exporting only redacted observations.
 
 ## Redacted evidence
 
