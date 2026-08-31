@@ -255,29 +255,26 @@ function MascotStage({
     );
   }
 
-  // The idle still is a peek from the bottom-right of a dark square. The crew
-  // stands in the empty left, so they read as companions beside the watcher
-  // rather than a legend under a thumbnail.
+  // Stacked, not overlaid. The crew used to sit absolutely in the lower-left,
+  // which worked when the mascot was a corner peek on a dark square with empty
+  // space beside it. Kanna's bust is centred and fills its frame, so that
+  // placement put three figures on top of her face — and their labels off the
+  // bottom edge. The premise changed with the art; the layout has to follow.
+  //
+  // 260 rather than 360: the baked master is 192px square, sized to its inline
+  // budget, and drawing it half again as large only makes it soft.
   return (
     <div
       style={{
         display: "flex",
-        position: "relative",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 18,
         width: 360,
-        height: 360,
       }}
     >
-      <img src={mascotSrc} alt="" width={360} height={360} style={{ objectFit: "contain" }} />
-      <div
-        style={{
-          display: "flex",
-          position: "absolute",
-          left: 10,
-          bottom: 18,
-        }}
-      >
-        <KindCrew highlight={kind} />
-      </div>
+      <img src={mascotSrc} alt="" width={260} height={260} style={{ objectFit: "contain" }} />
+      <KindCrew highlight={kind} />
     </div>
   );
 }
