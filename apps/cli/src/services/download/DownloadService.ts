@@ -1126,6 +1126,7 @@ export class DownloadService {
         cookiesFile: youtubeConfig.cookiesFile ?? this.deps.config.youtubeMetadata.cookiesFile,
         extractorArgs:
           youtubeConfig.extractorArgs ?? this.deps.config.youtubeMetadata.extractorArgs,
+        poToken: youtubeConfig.poToken ?? this.deps.config.youtubeMetadata.poToken,
         sponsorblockRemove:
           youtubeConfig.sponsorblockRemove ?? this.deps.config.youtubeMetadata.sponsorblockRemove,
         forDownload: true,

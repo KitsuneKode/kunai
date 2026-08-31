@@ -13,8 +13,8 @@
   ✓ Anime language        Original audio · English subtitles
   ✓ YouTube language      Original audio · English subtitles
   △ Downloads off         stream-only · change in /settings
-  ✓ Auto-skip             intros and credits
-  ✓ Autoplay on           next episode rolls on
+  △ Auto-skip off         nothing skipped
+  △ Autoplay off          stops after each episode
   ✓ Usage ping on         change any time in /settings
 
   Try these first

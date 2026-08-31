@@ -55,6 +55,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                   query,
                   preferredAudioLanguage: opts.audioPreference,
                   preferredSubtitleLanguage: opts.subtitlePreference,
+                  preferredContentShape: opts.contentShape,
                 },
                 this.engine.createRuntimeContext(module.providerId, signal),
               );

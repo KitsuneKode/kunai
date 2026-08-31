@@ -77,14 +77,42 @@ A last review pass over the release train, from real sessions:
   before it can reach the picker.
 - **Setup keeps a language per media type.** Shows, Movies, Anime, and YouTube each hydrate from
   and write back to their own profile, so rerunning `/setup` no longer flattens choices made in
-  Settings. `1`-`4` pick the lane, `tab` switches audio and subtitles.
+  Settings. `Tab`/`Shift+Tab` cycle the lane, `←`/`→` switch audio and subtitles, and `a` copies
+  the active profile to all four lanes. Playback toggles start off until the recommendation is
+  chosen. Accepting remaining defaults now lands on the final review screen before saving.
+- **YouTube results identify what will open.** Videos, Shorts, playlists, and channels retain
+  their shape through search, filters, and the details panel. `type:short` narrows YouTube search,
+  preferring backends that provide an explicit Shorts signal, while live/upcoming/post-live
+  status remains a separate badge so a collection or live entry is not mistaken for a regular
+  video. Backends that omit a signal remain labelled conservatively.
+- **YouTube live streams play.** mpv's ytdl hook turns each `ytdl-raw-options` entry into a bare
+  `--flag` when its value is empty, so Kunai's `live-from-start=no` reached yt-dlp as
+  `--live-from-start no` and `no` was read as a second URL. Live playback now joins at the live
+  edge, holds a short demuxer buffer to stay there — at spawn and on every in-session
+  replacement alike — and suppresses every seek that assumes a fixed position: the start
+  argument, the loadfile offset, the watch-later resume prompt, and the seek that used to fire
+  after an in-process reconnect.
+- **YouTube quality is no longer capped at 360p, and a PO token is actually used.** The default
+  player clients now lead with `visionos`, matching yt-dlp's own default: it is the one client
+  with no Proof-of-Origin requirement, and yt-dlp skips rather than attempts formats whose token
+  is missing, so a token-gated client in front spent a whole failover lane on formats that were
+  never going to be offered. A configured PO token now survives a restart, reaches downloads as
+  well as playback, and is written in the single-prefix form yt-dlp can actually parse — before,
+  it was dropped by config normalization, omitted by downloads, and malformed on the wire.
+- **A YouTube premiere says it has not started.** Opening one reports that instead of handing
+  mpv a stream that cannot play yet, and rows carry view counts, humanized upload times, and
+  live state.
+- **Post-play keeps its escape hatches visible.** `/analytics`, `/sync`, and diagnostics are
+  available from the command palette after playback, so a stopped session can inspect telemetry,
+  tracker state, or recovery details without returning to browse.
 - **A tracker sign-in can be cancelled.** Linking now runs in its own screen with visible
   progress, `esc` to cancel, and `r` to retry a failure. It previously passed a signal from a
   controller nobody held, so cancelling was impossible and the wizard waited on an unresponsive
   screen until the tracker's own deadline expired.
 - **Stopping early shows where you stopped.** The post-play bar read season progress — "3 / 10"
-  after 23 seconds of an episode — and films got no bar at all. It now reads position over
-  runtime for both.
+  after 23 seconds of an episode — and films got no bar at all. It now reads elapsed position
+  over runtime for both, without a misleading percentage or a season fallback when runtime is
+  unavailable.
 - **Discord presence clears when Kunai exits.** A single Discord IPC frame was allowed ten
   seconds while shutdown force-exits after four, and the clear also queued behind any update
   already in flight, so the card outlived the session. It now runs first and within the

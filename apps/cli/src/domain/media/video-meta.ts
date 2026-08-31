@@ -25,6 +25,7 @@ export function videoMetaFromSearchResult(result: SearchResult): VideoMeta | nul
     result.durationSeconds !== undefined ||
     result.contentShape !== undefined ||
     result.liveStatus !== undefined ||
+    result.episodeCount !== undefined ||
     result.premium !== undefined ||
     result.paid !== undefined;
   if (!hasVideoFields) return null;
@@ -36,6 +37,7 @@ export function videoMetaFromSearchResult(result: SearchResult): VideoMeta | nul
     durationSeconds: result.durationSeconds,
     contentShape: result.contentShape,
     liveStatus: result.liveStatus,
+    videoCount: result.episodeCount,
     premium: result.premium,
     paid: result.paid,
   };

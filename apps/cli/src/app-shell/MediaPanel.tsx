@@ -20,7 +20,7 @@ import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { measureColumns, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
-import { palette } from "./shell-theme";
+import { palette, statusColor } from "./shell-theme";
 import { PosterOutput } from "./SixelPosterPane";
 import { usePosterPreview } from "./use-poster-preview";
 
@@ -131,7 +131,7 @@ function FactRows({
           <Text color={palette.muted}>
             {padColumnsEnd(truncateLine(fact.label, FACT_LABEL_WIDTH), FACT_LABEL_WIDTH)}{" "}
           </Text>
-          <Text color={fact.tone === "success" ? palette.ok : palette.textDim}>
+          <Text color={fact.tone ? statusColor(fact.tone) : palette.textDim}>
             {truncateLine(fact.value, valueWidth)}
           </Text>
         </Box>

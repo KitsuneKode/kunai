@@ -86,6 +86,7 @@ If the metadata push fails under branch protection, recover manually with a cont
 
 ## After release
 
+- Repoint the `/install.sh` redirect in `apps/docs/next.config.mjs` at the tag just published, e.g. `.../KitsuneKode/kunai/v0.3.0/install.sh`. It otherwise serves `main`, so every new `curl … | bash` runs whatever last landed on the default branch rather than the installer that shipped with the release. The installer verifies SHA-256 of the binaries it downloads, but an unpinned installer is the script that enforces those checksums — pin it after the tag exists, never before, or the redirect points at the previous release's script.
 - Verify `/releases` shows the new tag as **published** latest (staged-only versions stay under Upcoming)
 - Optional local Lighthouse: `bun run --cwd apps/docs lighthouse:docs`
 

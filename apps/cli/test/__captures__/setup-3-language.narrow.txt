@@ -8,9 +8,9 @@
   Each media type keeps its own defaults. Change either again per
   episode.
 
-  [1] Shows Original/English [2] Movies Original/English
+  ▌ Shows Original/English   Movies Original/English
 
-  [3] Anime Original/English [4] YouTube Original/English
+    Anime Original/English   YouTube Original/English
 
   ❯ Audio                              Subtitles
   ▌ Original                         ▌ English
@@ -22,8 +22,11 @@
                                        French
                                        Japanese
 
-  1–4 switches profile · tab or ←→ switches field · ↑↓ chooses
+  tab / shift-tab switches profile · ←→ picks audio or subtitles · ↑↓
+  chooses · a applies this profile to all
 ────────────────────────────────────────────────────────────────────────
-  [enter]  next  ·  [tab]  profile  ·  [←→]  audio / subs  ·  [s]Setup
+  [enter]  next  ·  [tab/shift-tab]  profile  ·  [←→]            Setup
 
-   recommended  ·  [S]  remaining defaults  ·  [b]  back
+   audio / subs  ·  [a]  apply to all  ·  [s]  recommended  ·
+
+  [S]  remaining defaults  ·  [b]  back

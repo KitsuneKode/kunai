@@ -81,3 +81,53 @@ describe("parseCachedYoutubeMetadata", () => {
     expect(migrated?.durationSeconds).toBe(42);
   });
 });
+
+describe("parseCachedYoutubeMetadata schema drift", () => {
+  test("a payload from a previous schema version is a cache miss, not a hollow record", () => {
+    // Bumping the version for `publishedAt` made every existing entry take the
+    // raw-blob path, which reads yt-dlp's snake_case names. A normalized camelCase
+    // payload has none of them, so it came back with no duration, no channel and an
+    // empty quality ladder — worse than the missing field the bump was meant to fix.
+    const stale = JSON.stringify({
+      schemaVersion: YOUTUBE_METADATA_SCHEMA_VERSION - 1,
+      videoId: "abc123",
+      title: "Cached title",
+      durationSeconds: 754,
+      channelTitle: "Some Channel",
+      uploadDate: "20240115",
+      qualities: [{ label: "1080p", formatId: "137", height: 1080 }],
+      subtitles: [],
+    });
+
+    expect(parseCachedYoutubeMetadata(stale, "abc123")).toBeNull();
+  });
+
+  test("a payload from a future schema version is also a cache miss", () => {
+    const future = JSON.stringify({
+      schemaVersion: YOUTUBE_METADATA_SCHEMA_VERSION + 1,
+      videoId: "abc123",
+      title: "From a newer build",
+      qualities: [],
+      subtitles: [],
+    });
+
+    expect(parseCachedYoutubeMetadata(future, "abc123")).toBeNull();
+  });
+
+  test("a current payload keeps every field it was written with", () => {
+    const current = JSON.stringify({
+      schemaVersion: YOUTUBE_METADATA_SCHEMA_VERSION,
+      videoId: "abc123",
+      title: "Cached title",
+      durationSeconds: 754,
+      publishedAt: "2024-01-15T00:00:00.000Z",
+      qualities: [{ label: "1080p", formatId: "137", height: 1080 }],
+      subtitles: [],
+    });
+
+    const parsed = parseCachedYoutubeMetadata(current, "abc123");
+    expect(parsed?.durationSeconds).toBe(754);
+    expect(parsed?.publishedAt).toBe("2024-01-15T00:00:00.000Z");
+    expect(parsed?.qualities).toHaveLength(1);
+  });
+});

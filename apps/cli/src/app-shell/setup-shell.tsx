@@ -101,13 +101,24 @@ export type SetupLanguageProfiles = Readonly<Record<SetupLanguageLane, SetupLang
 export const SETUP_LANGUAGE_LANES: readonly {
   readonly value: SetupLanguageLane;
   readonly label: string;
-  readonly key: string;
 }[] = [
-  { value: "series", label: "Shows", key: "1" },
-  { value: "movie", label: "Movies", key: "2" },
-  { value: "anime", label: "Anime", key: "3" },
-  { value: "youtube", label: "YouTube", key: "4" },
+  { value: "series", label: "Shows" },
+  { value: "movie", label: "Movies" },
+  { value: "anime", label: "Anime" },
+  { value: "youtube", label: "YouTube" },
 ];
+
+/** Move between media-type language profiles with a wrapping, reversible cycle. */
+export function cycleSetupLanguageLane(
+  current: SetupLanguageLane,
+  delta: number,
+): SetupLanguageLane {
+  const index = SETUP_LANGUAGE_LANES.findIndex((lane) => lane.value === current);
+  const safeIndex = index >= 0 ? index : 0;
+  const next = (safeIndex + delta) % SETUP_LANGUAGE_LANES.length;
+  const wrapped = next < 0 ? next + SETUP_LANGUAGE_LANES.length : next;
+  return SETUP_LANGUAGE_LANES[wrapped]?.value ?? "series";
+}
 
 export interface SetupPrefs {
   mode: "series" | "anime" | "youtube";
@@ -161,9 +172,9 @@ export interface SetupInitialState {
 export const FACTORY_INITIAL_STATE: SetupInitialState = {
   mode: "series",
   languageProfiles: recommendedLanguageProfiles(),
-  autoNext: true,
-  skipIntro: true,
-  skipCredits: true,
+  autoNext: false,
+  skipIntro: false,
+  skipCredits: false,
   downloadsEnabled: false,
   downloadQuality: "1080p",
   anilistSync: false,
@@ -239,6 +250,7 @@ export function SetupShell({
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [rechecking, setRechecking] = useState(false);
   const [screenIdx, setScreenIdx] = useState(0);
+  const [completionOutcome, setCompletionOutcome] = useState<SetupFlowResult>("completed");
   /** Deepest screen reached — an abort after this point was a real decision. */
   const deepestRef = React.useRef(0);
   const [confirmingAbort, setConfirmingAbort] = useState(false);
@@ -333,7 +345,7 @@ export function SetupShell({
       deepestRef.current = Math.max(deepestRef.current, screenIdx + 1);
       setScreenIdx((current) => current + 1);
     } else {
-      finish("completed", buildPrefs(analyticsDecision), deepestRef.current);
+      finish(completionOutcome, buildPrefs(analyticsDecision), deepestRef.current);
     }
   }
 
@@ -346,29 +358,45 @@ export function SetupShell({
   }
 
   /**
-   * Accept every remaining recommendation and finish.
+   * Accept every remaining recommendation and show the final review.
    *
    * Analytics is excluded when the consent screen has not been reached: a
    * blanket "yes to everything" is not consent to send data. Same rule keeps
    * AniList, TMDB, and Discord off — no skip path may perform an outward-facing
-   * action.
+   * action. The user still gets one final chance to inspect the applied values
+   * before pressing Enter to save.
    */
   function acceptRemainingDefaults() {
     const prefs = buildPrefs(analyticsDecision);
     const remaining = new Set(SCREEN_ORDER.slice(screenIdx));
-    finish(
-      "defaults",
-      {
-        ...prefs,
-        ...(remaining.has("mode") ? { mode: MODE_RECOMMENDED } : {}),
-        ...(remaining.has("language") ? { languageProfiles: recommendedLanguageProfiles() } : {}),
-        ...(remaining.has("playback")
-          ? { autoNext: true, skipIntro: true, skipCredits: true }
-          : {}),
-        ...(remaining.has("library") ? { downloadQuality: DOWNLOAD_QUALITY_RECOMMENDED } : {}),
-      },
-      deepestRef.current,
+    const nextPrefs: SetupPrefs = {
+      ...prefs,
+      ...(remaining.has("mode") ? { mode: MODE_RECOMMENDED } : {}),
+      ...(remaining.has("language") ? { languageProfiles: recommendedLanguageProfiles() } : {}),
+      ...(remaining.has("playback") ? { autoNext: true, skipIntro: true, skipCredits: true } : {}),
+      ...(remaining.has("library") ? { downloadQuality: DOWNLOAD_QUALITY_RECOMMENDED } : {}),
+    };
+
+    setModeIdx(
+      indexOfValue(
+        MODE_OPTIONS.map((option) => option.value),
+        nextPrefs.mode,
+      ),
     );
+    setLanguageProfiles(nextPrefs.languageProfiles);
+    setAutoNext(nextPrefs.autoNext);
+    setSkipIntro(nextPrefs.skipIntro);
+    setSkipCredits(nextPrefs.skipCredits);
+    setDownloadsEnabled(nextPrefs.downloadsEnabled);
+    setQualityIdx(indexOfValue(DOWNLOAD_QUALITIES, nextPrefs.downloadQuality));
+    setConnectAniList(nextPrefs.connectAniList);
+    setConnectTmdb(nextPrefs.connectTmdb);
+    setPresenceDiscord(nextPrefs.presenceDiscord);
+    setShowFix(false);
+    setConfirmingAbort(false);
+    setCompletionOutcome("defaults");
+    deepestRef.current = Math.max(deepestRef.current, SCREEN_ORDER.length - 1);
+    setScreenIdx(SCREEN_ORDER.length - 1);
   }
 
   function abort() {
@@ -480,6 +508,16 @@ export function SetupShell({
     else if (screen === "analytics") setAnalyticsIdx((i) => clamp(i + delta, 1));
   }
 
+  function applyLanguageProfileToAll() {
+    const selected = languageProfiles[languageLane];
+    setLanguageProfiles({
+      series: { ...selected },
+      movie: { ...selected },
+      anime: { ...selected },
+      youtube: { ...selected },
+    });
+  }
+
   function toggle() {
     if (screen === "playback") {
       if (playbackIdx === 0) setAutoNext((v) => !v);
@@ -522,11 +560,9 @@ export function SetupShell({
       return;
     }
 
-    // `S` — accept every remaining recommendation and finish. On the consent
-    // screen it advances instead of passing through, so analytics is never
-    // enabled by a keystroke aimed at everything else. Anywhere else it
-    // finishes carrying whatever the consent screen has actually recorded,
-    // which for a user who never answered it is `unchanged`.
+    // `S` — accept every remaining recommendation and open the final review.
+    // On the consent screen it advances instead of passing through, so
+    // analytics is never enabled by a keystroke aimed at everything else.
     if (input === "S") {
       if (screen === "analytics") {
         commitAnalytics("disabled");
@@ -570,38 +606,22 @@ export function SetupShell({
     }
 
     if (screen === "language") {
-      const selectedLane = SETUP_LANGUAGE_LANES.find((lane) => lane.key === input);
-      if (selectedLane) {
-        setLanguageLane(selectedLane.value);
-        return;
-      }
-
-      // Tab cycles the profile, because the profile is this screen's tab group.
-      // Every other tabbed surface — history, downloads, analytics, library,
-      // browse — already reads Tab that way, and this screen used to be the one
-      // exception, with the tab group stranded on 1-4.
       if (key.tab) {
-        const index = SETUP_LANGUAGE_LANES.findIndex((lane) => lane.value === languageLane);
-        const count = SETUP_LANGUAGE_LANES.length;
-        const next = (index + (key.shift ? -1 : 1) + count) % count;
-        setLanguageLane(
-          (SETUP_LANGUAGE_LANES[next] as (typeof SETUP_LANGUAGE_LANES)[number]).value,
-        );
+        setLanguageLane((current) => cycleSetupLanguageLane(current, key.shift ? -1 : 1));
         return;
       }
-
-      // The two columns sit left and right on screen, so the arrows walk them.
+      if (key.leftArrow) {
+        setLangFocus("audio");
+        return;
+      }
       if (key.rightArrow) {
         setLangFocus("subtitle");
         return;
       }
-      if (key.leftArrow && langFocus === "subtitle") {
-        setLangFocus("audio");
+      if (input === "a" || input === "A") {
+        applyLanguageProfileToAll();
         return;
       }
-      // Left at the leftmost column falls through to `back()` below. That is
-      // what keeps "left goes back" true on every setup screen while still
-      // letting the arrows mean something inside this one.
     }
 
     if (input === " ") {
@@ -720,8 +740,9 @@ function buildFooter(
       // footer keeps only the decisions.
       return [
         { key: "enter", label: "next" },
-        { key: "tab", label: "profile" },
+        { key: "tab/shift-tab", label: "profile" },
         { key: "←→", label: "audio / subs" },
+        { key: "a", label: "apply to all" },
         { key: "s", label: "recommended" },
         { key: "S", label: "remaining defaults" },
         ...back,

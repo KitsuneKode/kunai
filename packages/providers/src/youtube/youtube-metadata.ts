@@ -1,4 +1,7 @@
-export const YOUTUBE_METADATA_SCHEMA_VERSION = 2 as const;
+// Bumped to 3 when `publishedAt` was added. A cached schema-2 payload is accepted
+// as-is and never re-normalized, so without the bump every existing entry would
+// keep answering without an upload date until its TTL expired.
+export const YOUTUBE_METADATA_SCHEMA_VERSION = 3 as const;
 
 export type YoutubeVideoQuality = {
   readonly label: string;
@@ -23,6 +26,7 @@ export type YoutubeVideoMetadata = {
   readonly channelId?: string;
   readonly viewCount?: number;
   readonly uploadDate?: string;
+  readonly publishedAt?: string;
   readonly isLive?: boolean;
   readonly liveStatus?: string;
   readonly qualities: readonly YoutubeVideoQuality[];

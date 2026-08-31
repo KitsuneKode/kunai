@@ -17,6 +17,7 @@ import type {
   SubtitleCandidate,
   ProviderVariantCandidate,
   YouTubeLiveStatus,
+  YouTubeContentShape,
 } from "@kunai/types";
 
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -35,6 +36,7 @@ import {
 import { YOUTUBE_PROVIDER_ID, youtubeManifest } from "./manifest";
 import { mapInvidiousSearchResults, mapPipedSearchResults } from "./map-search-result";
 import { classifyYoutubeMetadataFailure } from "./metadata-failure";
+import { parseUploadDate } from "./metadata-normalize";
 import { pipedSearch } from "./piped-client";
 import { selectYoutubeQuality, youtubeQualityHeight } from "./quality-selection";
 import { spawnYtDlpWithTimeout } from "./spawn-ytdlp";
@@ -56,6 +58,7 @@ type YoutubeProviderConfig = {
   readonly cookiesFromBrowser?: string;
   readonly cookiesFile?: string;
   readonly extractorArgs?: string;
+  readonly poToken?: string;
   readonly sponsorblockRemove?: string;
   readonly metadataService?: YoutubeMetadataService;
   /** @deprecated Prefer metadataService; kept for tests and lazy service bootstrap. */
@@ -71,6 +74,7 @@ function resolveMetadataService(config: YoutubeProviderConfig): YoutubeMetadataS
       cookiesFromBrowser: config.cookiesFromBrowser,
       cookiesFile: config.cookiesFile,
       extractorArgs: config.extractorArgs,
+      poToken: config.poToken,
     },
   });
 }
@@ -97,12 +101,39 @@ async function searchYoutube(
   const query = input.query.trim();
   if (!query) return [];
 
+  // Invidious does not consistently identify Shorts. Prefer a provider path
+  // that carries an explicit shape signal when the caller asks for them, and
+  // never return regular videos under a `type:short` filter.
+  if (input.preferredContentShape === "short") {
+    // yt-dlp reads YouTube's own Shorts filter, so when it answers at all its
+    // answer is authoritative -- including an empty one. Falling through to a
+    // backend that cannot filter by shape would either invent non-Shorts results
+    // or, when that backend is down, report "search failed" for a query that
+    // simply has no Shorts.
+    const ytsearch = await searchYoutubeViaYtsearch(query, context, "short");
+    if (ytsearch) return ytsearch;
+    if (globalYoutubeConfig.pipedApiUrl?.trim()) {
+      try {
+        const piped = await pipedSearch(query, {
+          apiBaseUrl: globalYoutubeConfig.pipedApiUrl,
+          signal: context.signal,
+        });
+        const mapped = mapPipedSearchResults(piped.items).filter(
+          (result) => result.contentShape === "short",
+        );
+        if (mapped.length > 0) return mapped;
+      } catch {
+        // fall through to Invidious for forks that expose Shorts there
+      }
+    }
+  }
+
   try {
     const items = await invidiousSearch(query, {
       preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
       signal: context.signal,
     });
-    return mapInvidiousSearchResults(items);
+    return filterYoutubeContentShape(mapInvidiousSearchResults(items), input.preferredContentShape);
   } catch (invidiousError) {
     if (globalYoutubeConfig.pipedApiUrl?.trim()) {
       try {
@@ -110,7 +141,10 @@ async function searchYoutube(
           apiBaseUrl: globalYoutubeConfig.pipedApiUrl,
           signal: context.signal,
         });
-        const mapped = mapPipedSearchResults(piped.items);
+        const mapped = filterYoutubeContentShape(
+          mapPipedSearchResults(piped.items),
+          input.preferredContentShape,
+        );
         if (mapped.length > 0) return mapped;
       } catch {
         // fall through
@@ -119,18 +153,52 @@ async function searchYoutube(
 
     if (context.signal?.aborted) return null;
 
-    const ytsearchResults = await searchYoutubeViaYtsearch(query, context);
-    if (ytsearchResults) return ytsearchResults;
+    const ytsearchResults = await searchYoutubeViaYtsearch(
+      query,
+      context,
+      input.preferredContentShape,
+    );
+    // Last-resort lane: an empty answer here should surface the original backend
+    // error rather than a bare "no results", so only a non-empty list short-circuits.
+    if (ytsearchResults?.length) return ytsearchResults;
 
     throw invidiousError;
   }
 }
 
+function filterYoutubeContentShape(
+  results: readonly ProviderSearchResult[],
+  shape: YouTubeContentShape | undefined,
+): readonly ProviderSearchResult[] {
+  return shape ? results.filter((result) => result.contentShape === shape) : results;
+}
+
 const YTSEARCH_RESULT_LIMIT = 12;
+
+/**
+ * YouTube's own "Shorts" search filter.
+ *
+ * `ytsearch:` runs the ordinary search, which excludes Shorts entirely -- a probe
+ * of `ytsearch12:cooking` returned 12 entries and not one carried a Shorts signal,
+ * so a `type:short` query could only ever filter its way down to nothing and then
+ * fall through to a provider that was never asked for Shorts either. The results
+ * page with `sp=EgIYAQ%3D%3D` is the filter YouTube itself uses, and yt-dlp reads
+ * it as an ordinary playlist.
+ */
+const YOUTUBE_SHORTS_SEARCH_FILTER = "EgIYAQ%3D%3D";
+
+export function youtubeSearchTarget(
+  query: string,
+  requestedShape: YouTubeContentShape | undefined,
+): string {
+  if (requestedShape !== "short") return `ytsearch${YTSEARCH_RESULT_LIMIT}:${query}`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${YOUTUBE_SHORTS_SEARCH_FILTER}`;
+}
 
 async function searchYoutubeViaYtsearch(
   query: string,
   context: ProviderRuntimeContext,
+  requestedShape?: YouTubeContentShape,
 ): Promise<readonly ProviderSearchResult[] | null> {
   if (!Bun.which("yt-dlp")) return null;
 
@@ -138,7 +206,9 @@ async function searchYoutubeViaYtsearch(
     "--flat-playlist",
     "--dump-json",
     "--no-warnings",
-    `ytsearch${YTSEARCH_RESULT_LIMIT}:${query}`,
+    "--playlist-end",
+    String(YTSEARCH_RESULT_LIMIT),
+    youtubeSearchTarget(query, requestedShape),
   ];
   try {
     const proc = await spawnYtDlpWithTimeout({ args, signal: context.signal, timeoutMs: 30_000 });
@@ -158,7 +228,16 @@ async function searchYoutubeViaYtsearch(
           uploader?: string;
           channel_id?: string;
           view_count?: number;
+          upload_date?: string;
+          timestamp?: number;
+          release_timestamp?: number;
           thumbnail?: string;
+          // `--flat-playlist` emits `url`; the full-extraction fields are absent.
+          // Reading only those meant a `/shorts/` result was still labelled a video.
+          url?: string;
+          webpage_url?: string;
+          original_url?: string;
+          is_short?: boolean;
           is_live?: boolean;
           live_status?: string;
         };
@@ -178,8 +257,15 @@ async function searchYoutubeViaYtsearch(
           channelTitle: entry.uploader,
           channelId: entry.channel_id,
           viewCount: entry.view_count,
+          publishedAt: parseUploadDate(entry),
           liveStatus: mapYtDlpLiveStatus(entry.is_live, entry.live_status),
-          contentShape: "video",
+          contentShape:
+            entry.is_short === true ||
+            [entry.url, entry.webpage_url, entry.original_url].some((url) =>
+              /\/shorts\//i.test(url ?? ""),
+            )
+              ? "short"
+              : "video",
           externalIds: { youtubeId: entry.id, youtubeChannelId: entry.channel_id },
           artwork: {
             thumbnailUrl: poster,
@@ -190,13 +276,22 @@ async function searchYoutubeViaYtsearch(
         // skip malformed line
       }
     }
-    return results.length > 0 ? results : null;
+    // An empty array means "this search ran and found nothing"; `null` is reserved
+    // for "the search could not run". The Shorts caller relies on that distinction
+    // so a genuine no-Shorts answer is not mistaken for a dead lane.
+    return filterYoutubeContentShape(results, requestedShape);
   } catch {
     return null;
   }
 }
 
-function mapYtDlpLiveStatus(isLive?: boolean, liveStatus?: string): YouTubeLiveStatus {
+/**
+ * yt-dlp's `live_status` vocabulary is closed: `not_live`, `is_live`,
+ * `is_upcoming`, `was_live`, `post_live`. Bare `live`/`upcoming` are what the
+ * Invidious and Piped mappers emit, so they are handled there rather than
+ * carried here as aliases that can never match.
+ */
+export function mapYtDlpLiveStatus(isLive?: boolean, liveStatus?: string): YouTubeLiveStatus {
   const normalized = liveStatus?.trim().toLowerCase();
   if (normalized === "is_upcoming") return "upcoming";
   if (normalized === "was_live" || normalized === "post_live") return "post_live";

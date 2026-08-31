@@ -9,7 +9,7 @@ import {
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
-import { render } from "../../harness/render-capture";
+import { render, stripAnsi } from "../../harness/render-capture";
 
 // The capture harness cannot deliver a lone escape byte in a form Ink's
 // useInput resolves (see #227's own verification notes), so these drive `q`,
@@ -110,7 +110,10 @@ test("[s] applies the screen's recommendation, not wherever the cursor sits (#23
     handle.stdin.enqueue("s"); // "use recommended" -> back to series, advance
     expect(handle.lastFrame()).toContain("Language");
 
-    handle.stdin.enqueue("S"); // accept the rest
+    handle.stdin.enqueue("S"); // accept the rest and review
+    expect(results).toHaveLength(0);
+    expect(handle.lastFrame()).toContain("You're all set");
+    handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.result).toBe("defaults");
     expect(results[0]?.prefs.mode).toBe("series");
@@ -186,15 +189,16 @@ test("language profile hotkeys edit one media lane without rewriting the others"
   try {
     handle.stdin.enqueue("\r"); // -> mode
     handle.stdin.enqueue("\r"); // -> language
-    expect(handle.lastFrame()).toContain("Shows Original/English");
-    expect(handle.lastFrame()).toContain("Anime Japanese/None");
+    expect(stripAnsi(handle.lastFrame())).toContain("Shows Original/English");
+    expect(stripAnsi(handle.lastFrame())).toContain("Anime Japanese/None");
 
     handle.stdin.enqueue("\x1b[B"); // Shows audio: Original -> English
-    handle.stdin.enqueue("3"); // edit Anime
+    handle.stdin.enqueue("\t"); // Shows -> Movies
+    handle.stdin.enqueue("\t"); // Movies -> Anime
     handle.stdin.enqueue("\x1b[C"); // focus subtitles
     handle.stdin.enqueue("\x1b[B"); // None -> Arabic
 
-    const frame = handle.lastFrame();
+    const frame = stripAnsi(handle.lastFrame());
     expect(frame).toContain("Shows English/English");
     expect(frame).toContain("Anime Japanese/Arabic");
     expect(frame).toContain("Movies English/Spanish");
@@ -231,6 +235,9 @@ test("accept-all on a fresh install asks for no account and no presence (#232)",
   const { handle, results } = start({ anilistSync: false, tmdbSync: false });
   try {
     handle.stdin.enqueue("S");
+    expect(results).toHaveLength(0);
+    expect(handle.lastFrame()).toContain("You're all set");
+    handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.result).toBe("defaults");
     expect(results[0]?.prefs.connectAniList).toBe(false);

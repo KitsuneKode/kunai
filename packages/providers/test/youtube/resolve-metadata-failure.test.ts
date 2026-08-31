@@ -105,7 +105,7 @@ describe("youtube resolve on metadata failure", () => {
     const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
     expect(selected?.qualityLabel).toBe("720p");
     // The ceiling has to reach yt-dlp, not just the label.
-    expect(String(selected?.metadata?.ytdlFormat)).toContain("height<=720");
+    expect(String(selected?.metadata?.ytdlFormat)).toContain("height<=?720");
     expect(selected?.metadata?.metadataUnavailable).toBe(true);
   });
 

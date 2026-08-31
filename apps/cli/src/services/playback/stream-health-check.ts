@@ -30,7 +30,7 @@ export type StreamHealthCheckInput = {
 export async function checkStreamPreflight(
   url: string,
   headers?: Record<string, string>,
-  timeoutMs = STREAM_HEALTH_DEFAULTS.preflightTimeoutMs,
+  timeoutMs: number = STREAM_HEALTH_DEFAULTS.preflightTimeoutMs,
   options: {
     readonly cachedAt?: number | null;
     readonly streamReachabilityVerified?: boolean;

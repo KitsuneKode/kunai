@@ -330,7 +330,7 @@ export type BrowseIdleContextLoader = () => Promise<BrowseIdleContext | undefine
 
 export type BrowseLocalFilterFacts = {
   readonly mediaType?: "movie" | "series";
-  readonly contentShape?: "video" | "playlist" | "channel";
+  readonly contentShape?: "video" | "short" | "playlist" | "channel";
   readonly isAnime?: boolean;
   readonly downloaded?: boolean;
   readonly watched?: WatchFilter;

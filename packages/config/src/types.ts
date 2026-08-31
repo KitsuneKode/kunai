@@ -31,6 +31,8 @@ export interface YouTubeMetadataConfig {
   readonly cookiesFromBrowser?: string;
   readonly cookiesFile?: string;
   readonly extractorArgs?: string;
+  /** Proof of Origin (PO) token passed to yt-dlp to unlock DASH streams. */
+  readonly poToken?: string;
   /** Comma-separated SponsorBlock categories passed to yt-dlp on play/download (e.g. sponsor,intro). */
   readonly sponsorblockRemove?: string;
 }

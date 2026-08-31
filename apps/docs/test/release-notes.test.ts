@@ -99,12 +99,57 @@ describe("release notes artifacts", () => {
     expect(derived[0]?.items.length ?? 0).toBeGreaterThan(0);
   });
 
-  test("keeps explicit sections when present", () => {
+  test("keeps explicit sections, in order, without re-deriving them", () => {
     const withSections = releaseNotesArtifacts.find((release) => release.sections.length > 0);
     expect(withSections).toBeDefined();
     if (!withSections) return;
 
     const displayed = displaySectionsForRelease(withSections);
-    expect(displayed).toEqual(withSections.sections);
+    // Every explicit section survives untouched and in order. A summary the
+    // sections do not cover is prepended as Overview rather than dropped, so the
+    // displayed list is the explicit sections optionally preceded by one entry.
+    const tail = displayed.slice(displayed.length - withSections.sections.length);
+    expect(tail.length).toBe(withSections.sections.length);
+    withSections.sections.forEach((section, index) => {
+      expect(tail[index]).toEqual(section);
+    });
+    const extra = displayed.slice(0, displayed.length - withSections.sections.length);
+    expect(extra.length).toBeLessThanOrEqual(1);
+    for (const section of extra) {
+      expect(section.title).toBe("Overview");
+      expect(section.body).toBe(withSections.summary.trim());
+    }
   });
+});
+
+test("an artifact whose only heading is trailing still shows the text above it", () => {
+  // 0.3.0 carries a single `### Privacy` at the end, so everything else lives in
+  // `summary`. Returning explicit sections alone rendered the release page as the
+  // Privacy list and nothing else.
+  const sections = displaySectionsForRelease({
+    version: "0.3.0",
+    tag: "v0.3.0",
+    title: "Kunai 0.3.0",
+    date: null,
+    summary: "Lead paragraph.\n\n- first bullet",
+    changelogBody: "Lead paragraph.\n\n- first bullet\n\n### Privacy\n\n- privacy bullet",
+    sections: [{ title: "Privacy", body: "- privacy bullet", items: ["privacy bullet"] }],
+  } as never);
+
+  expect(sections.map((section) => section.title)).toEqual(["Overview", "Privacy"]);
+  expect(sections[0]?.items).toContain("first bullet");
+});
+
+test("a summary already represented by a section is not duplicated", () => {
+  const sections = displaySectionsForRelease({
+    version: "0.3.0",
+    tag: "v0.3.0",
+    title: "Kunai 0.3.0",
+    date: null,
+    summary: "",
+    changelogBody: "### Privacy\n\n- privacy bullet",
+    sections: [{ title: "Privacy", body: "- privacy bullet", items: ["privacy bullet"] }],
+  } as never);
+
+  expect(sections.map((section) => section.title)).toEqual(["Privacy"]);
 });

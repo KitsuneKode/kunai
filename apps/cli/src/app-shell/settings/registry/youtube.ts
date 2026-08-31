@@ -86,6 +86,17 @@ export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     },
     {
       kind: "text",
+      id: "youtubeMetadataPoToken",
+      label: "PO token",
+      detail: "Proof of Origin token as CLIENT.CONTEXT+TOKEN, e.g. visionos.gvs+MnRt...",
+      placeholder: "visionos.gvs+MnRt...",
+      sensitive: true,
+      read: (config) => readYoutubeMetadata(config).poToken?.trim() ?? "",
+      apply: (config, value) => mergeYoutubeField(config, "poToken", value),
+      validate: () => null,
+    },
+    {
+      kind: "text",
       id: "youtubeMetadataSponsorblockRemove",
       label: "SponsorBlock remove",
       detail: "Comma-separated categories to skip on play/download (e.g. sponsor,intro,outro)",

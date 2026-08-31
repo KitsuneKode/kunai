@@ -158,7 +158,7 @@ describe("stopped-early progress", () => {
     });
 
     expect(view.heroKind).toBe("stopped-early");
-    expect(view.progressBar?.label).toBe("0:23 / 48:11 · 1%");
+    expect(view.progressBar?.label).toBe("0:23 / 48:11");
     expect(view.progressBar?.percent).toBe(1);
     // The season numbers must not be what the bar reports.
     expect(view.progressBar?.label).not.toContain("3 / 10");
@@ -175,13 +175,13 @@ describe("stopped-early progress", () => {
       episodeDurationSeconds: 7200,
     });
 
-    expect(view.progressBar?.label).toBe("30:00 / 2:00:00 · 25%");
+    expect(view.progressBar?.label).toBe("30:00 / 2:00:00");
   });
 
-  it("falls back to the season bar when the player reported no runtime", () => {
+  it("omits progress when the player reported no runtime", () => {
     const view = buildPostPlayView({ ...stoppedEarly, resumePositionSeconds: 23 });
 
-    expect(view.progressBar?.label).toBe("3 / 10 · 30%");
+    expect(view.progressBar).toBeUndefined();
   });
 
   it("never invents a denominator from a zero or negative runtime", () => {
@@ -191,7 +191,7 @@ describe("stopped-early progress", () => {
         resumePositionSeconds: 23,
         episodeDurationSeconds: duration,
       });
-      expect(view.progressBar?.label).toBe("3 / 10 · 30%");
+      expect(view.progressBar).toBeUndefined();
     }
   });
 

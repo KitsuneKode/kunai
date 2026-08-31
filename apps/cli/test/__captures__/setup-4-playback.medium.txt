@@ -7,11 +7,11 @@
           How playback should feel
           All three are easy to change later.
 
-          ▌ ◉ Play the next episode automatically
+          ▌ ○ Play the next episode automatically
                 Keeps a binge going without a keystroke
-            ◉ Skip intros
+            ○ Skip intros
                 Uses AniSkip and IntroDB timings when they exist
-            ◉ Skip credits
+            ○ Skip credits
                 Jumps the end card and rolls on
 ────────────────────────────────────────────────────────────────────────────────────────────────────
   [space]  toggle  ·  [↑↓]  choose  ·  [enter]  next  ·  [s]  recommended  ·  [S]            Setup

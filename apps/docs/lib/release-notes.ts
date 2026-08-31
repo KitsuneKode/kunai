@@ -125,7 +125,25 @@ export function displaySectionsForRelease(
   release: ReleaseNotesArtifact,
 ): readonly ReleaseNotesSection[] {
   if (release.sections.length > 0) {
-    return release.sections;
+    // Explicit sections only cover text under a `###` heading. A body whose only
+    // heading is trailing -- 0.3.0 carries one `### Privacy` at the end -- puts the
+    // whole release above it into `summary`, and returning sections alone dropped it.
+    const summary = release.summary?.trim();
+    const summaryAlreadyShown =
+      !summary ||
+      release.sections.some(
+        (section) => section.title === "Overview" || section.body.trim() === summary,
+      );
+    if (summaryAlreadyShown) return release.sections;
+    const items = sectionItemsFromMarkdownBody(summary);
+    return [
+      {
+        title: "Overview",
+        body: summary,
+        items: items.length > 0 ? items : [summary.split(/\n{2,}/)[0]?.trim() ?? summary],
+      },
+      ...release.sections,
+    ];
   }
 
   const source = (release.changelogBody ?? release.summary).trim();

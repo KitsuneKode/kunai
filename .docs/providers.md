@@ -310,20 +310,40 @@ names instances that work. Instance order is left as the registry returns it
 rotate via cooldown rather than round-robin, which would spread load onto less
 healthy instances.
 
-Third lane provider for standalone videos, playlists, and channels.
+Third lane provider for standalone videos, Shorts, playlists, and channels.
 
-- **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail.
-- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default quality ceiling is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → Language → YouTube quality.
-- **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` (DASH `bestvideo+bestaudio` capped to the profile) and `--ytdl-raw-options` (SponsorBlock, live-from-start). Kunai disables mpv-ytdlautoformat overrides via `--script-opts=ytdlautoformat-domains=` so a user-level `ytdlautoformat` script cannot force 720p. **No full video file is written for play** — mpv streams via yt-dlp; only JSON metadata is cached in SQLite.
+- **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail (a `type:short` query leads with yt-dlp instead, see below). Badges distinguish active live streams (`● LIVE`), premieres (`Upcoming`), archived streams (`Was Live`), Shorts, playlists, and channels.
+- Search results preserve a `contentShape` of `video`, `short`, `playlist`, or
+  `channel`; `liveStatus` separately identifies `live`, `upcoming`, and
+  `post_live`. The browse UI labels these shapes before playback, so channels,
+  playlists, Shorts, and live entries cannot be mistaken for ordinary videos.
+  Invidious forks that omit a shape/status signal are labelled conservatively.
+  Shape comes from the provider — `is_short` or a `/shorts/` URL — never from
+  duration: YouTube raised the Shorts ceiling to three minutes in October 2024,
+  so a length test both mislabels brief videos and misses long Shorts.
+- `type:short` is YouTube-only and runs its own search rather than filtering one.
+  `ytsearch:` excludes Shorts outright — a probe of `ytsearch12:cooking` returned
+  twelve entries and not one carried a Shorts signal — so filtering that lane could
+  only ever empty it and then fall through to a backend that was never asked for
+  Shorts either. The Shorts lane instead asks yt-dlp for YouTube's own results page
+  with `sp=EgIYAQ%3D%3D`, the filter YouTube itself uses, and reads the `/shorts/`
+  URLs it returns. An empty answer from that lane is authoritative ("no Shorts"),
+  not a dead lane to fall through. It never relabels an unclassified video as a
+  Short, and is intentionally unsupported in TMDB and AniList modes, just like the
+  other YouTube content shapes.
+- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default quality ceiling is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → Language → YouTube quality. Format selector uses `bv*[height<=?H]+ba/bv*[height<=?H]/bv*+ba/b` — `bv*` (not `bv`) so pre-merged renditions stay eligible, `<=?H` so live HLS variants with no reported height are not rejected, and the ceiling repeated on the fallback so a failed merge cannot silently promote the viewer above the quality they asked for.
+- **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` and `--ytdl-raw-options` (SponsorBlock, live edge via `no-live-from-start=`, PO tokens). Live broadcasts apply a short-buffer demuxer profile (`demuxer-readahead-secs=10`, `demuxer-max-bytes=32MiB`, `cache-pause-wait=1`) at spawn **and** on every persistent loadfile replacement — a replacement inherits nothing from spawn argv, so both paths read one shared constant. Live playback also suppresses the `--start` seek, the loadfile `start`, the watch-later resume prompt, and the in-process reconnect seek: a broadcast has no absolute position to return to. Kunai disables mpv-ytdlautoformat overrides via `--script-opts=ytdlautoformat-domains=` so a user-level `ytdlautoformat` script cannot force 720p. **No full video file is written for play** — mpv streams via yt-dlp; only JSON metadata is cached in SQLite.
+- **Subtitles:** Automatically attaches all human-authored tracks, the original language track (`-orig`), and user-configured language translations while filtering out machine-translation spam and `live_chat` JSON metadata.
 - **Downloads:** explicit queue via `d` / download flows; yt-dlp writes `.mp4` to `downloadPath` (or OS default) with `-f` from the same format selector, `--merge-output-format mp4`, cookies/extractor args, and optional `--sponsorblock-remove`; live streams rejected at enqueue.
 - **Process output is bounded:** metadata mode caps complete stdout/stderr payloads, while download progress mode caps each incomplete output line and retains only a bounded stderr tail. A malformed or stalled yt-dlp process is terminated instead of growing an unbounded in-memory progress buffer.
 - **History:** persisted as `mediaKind: "video"`; resume/continue restores youtube shell mode; playlist rows label `#N`.
 - **Share:** `kunai://` links use `cat=youtube:VIDEO_ID` and `kind=video`.
-- **Settings:** `/settings` → YouTube section for Invidious instance, Piped URL, cookies, extractor args, SponsorBlock categories (`config.youtubeMetadata.*`). Rebinds provider without restart.
+- **Settings:** `/settings` → YouTube section for Invidious instance, Piped URL, cookies, extractor args, PO token, SponsorBlock categories (`config.youtubeMetadata.*`). Rebinds provider without restart.
+- **Extractor args are one `youtube:` prefix.** yt-dlp strips `IE_KEY:` exactly once and splits the rest on `;`, so `youtube:a=1;youtube:b=2` parses `b` as the key `youtube:b` and the value is never read. Everything that edits these args goes through the parse/serialize pair in `packages/providers/src/youtube/ytdl-options.ts`. The default is `player_client=visionos,web`, mirroring yt-dlp's own `_DEFAULT_CLIENTS`: `visionos` is the only client with no GVS PO-token policy, and yt-dlp skips rather than attempts formats whose token is missing, so a token-gated client in front wastes a whole failover lane.
 - **Diagnostics:** `/diagnostics` shows yt-dlp version and Invidious health (`youtube.ytdlp.probe`, `youtube.invidious.health` events).
 - **Stats:** watch time aggregates under the `video` kind in `/stats`.
 - **Dependencies:** `yt-dlp` required for playback and downloads; search can work via Invidious/Piped without it.
-- **Age-restricted / members content:** configure `config.youtubeMetadata.cookiesFromBrowser` or `cookiesFile` (no shipped default cookies).
+- **Age-restricted / members content & PO tokens:** configure `config.youtubeMetadata.cookiesFromBrowser`, `cookiesFile`, or `poToken` under `/settings` → YouTube.
 
 ## When A Browser-Requiring Source Can Become Browser-Less
 

@@ -36,11 +36,37 @@ function publishedAtFromEpochSeconds(epochSeconds?: number): string | undefined 
   return new Date(epochSeconds * 1000).toISOString();
 }
 
-function mapLiveStatus(item: InvidiousSearchVideo): YouTubeLiveStatus {
+type LiveStatusSource = {
+  readonly liveNow?: boolean;
+  readonly liveStatus?: string;
+  readonly publishedText?: string;
+};
+
+/** `premiere`/`premieres` as whole words — deliberately not `premiered`. */
+const UPCOMING_PREMIERE_TEXT = /\bpremieres?\b/;
+
+function mapLiveStatus(item: LiveStatusSource): YouTubeLiveStatus {
   if (item.liveNow) return "live";
+  const status = item.liveStatus?.trim().toLowerCase();
+  if (status === "live" || status === "is_live") return "live";
+  if (status === "upcoming" || status === "is_upcoming") return "upcoming";
+  if (status === "post_live" || status === "was_live") return "post_live";
+  // Last resort: no structured field, so read the human-readable date line. Tense
+  // is the whole signal here — "Premieres in 2 hours" has not started, while
+  // "Premiered 2 years ago" is an ordinary video that happens to have begun as a
+  // premiere. Matching `premiere` as a substring collapses those two into
+  // "upcoming" and puts a years-old video behind a "has not started yet" notice,
+  // so the word boundary is load-bearing rather than tidiness.
   const publishedText = item.publishedText?.toLowerCase() ?? "";
-  if (publishedText.includes("scheduled") || publishedText.includes("premieres")) {
+  if (
+    publishedText.includes("scheduled") ||
+    UPCOMING_PREMIERE_TEXT.test(publishedText) ||
+    publishedText.includes("upcoming")
+  ) {
     return "upcoming";
+  }
+  if (publishedText.includes("streamed") || publishedText.includes("was live")) {
+    return "post_live";
   }
   return "none";
 }
@@ -65,7 +91,7 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
       liveStatus: mapLiveStatus(item),
       premium: item.premium,
       paid: item.paid,
-      contentShape: "video",
+      contentShape: item.isShort === true || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
       externalIds: {
         youtubeId: item.videoId,
         youtubeChannelId: item.authorId,
@@ -147,8 +173,8 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
     channelId: channelId ?? undefined,
     viewCount: item.views,
     publishedAt: uploadedMs ? new Date(uploadedMs).toISOString() : undefined,
-    liveStatus: "none",
-    contentShape: "video",
+    liveStatus: mapPipedLiveStatus(item),
+    contentShape: item.isShort || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
     externalIds: {
       youtubeId: videoId,
       ...(channelId ? { youtubeChannelId: channelId } : {}),
@@ -158,6 +184,16 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
       thumbnailUrl: poster,
     },
   };
+}
+
+function mapPipedLiveStatus(
+  item: Pick<PipedSearchItem, "isLive" | "liveStatus">,
+): YouTubeLiveStatus {
+  const status = item.liveStatus?.trim().toLowerCase();
+  if (item.isLive === true || status === "live" || status === "is_live") return "live";
+  if (status === "upcoming" || status === "is_upcoming") return "upcoming";
+  if (status === "post_live" || status === "was_live") return "post_live";
+  return "none";
 }
 
 /** Extract a channel id from Piped `uploaderUrl` paths like `/channel/UCxxx`. */
@@ -197,8 +233,8 @@ export function mapInvidiousRecommendedVideo(
     channelId: item.authorId,
     viewCount: item.viewCount,
     publishedAt: publishedAtFromEpochSeconds(item.published),
-    liveStatus: "none",
-    contentShape: "video",
+    liveStatus: mapLiveStatus(item),
+    contentShape: item.isShort === true || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
     externalIds: {
       youtubeId: videoId,
       ...(item.authorId ? { youtubeChannelId: item.authorId } : {}),

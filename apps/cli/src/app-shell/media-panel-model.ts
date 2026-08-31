@@ -17,13 +17,15 @@ import type { ContentKind } from "@/domain/media/content-kind";
 import type { ContentType, VideoMeta } from "@/domain/types";
 
 import { resolveEpisodeThumbUrl, resolveSeasonAwarePosterUrl } from "./media-art";
+import type { ShellStatus } from "./types";
 
 // ── Model ──────────────────────────────────────────────────────────────────
 
 export type MediaPanelFact = {
   readonly label: string;
   readonly value: string;
-  readonly tone?: "success" | "muted";
+  /** Shares the shell status vocabulary so `statusColor` stays the only palette map. */
+  readonly tone?: ShellStatus["tone"];
 };
 
 export type MediaPanelMiniCardKind = "resume" | "prev" | "next";
@@ -334,6 +336,10 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   const views = formatViewCount(meta?.viewCount);
   const isChannel = meta?.contentShape === "channel";
   const isPlaylist = meta?.contentShape === "playlist";
+  // Shape comes from the provider (`is_short` / a `/shorts/` URL), never from
+  // duration: YouTube raised the Shorts ceiling to three minutes in Oct 2024, so
+  // a length test both mislabels short videos and misses long Shorts.
+  const isShort = meta?.contentShape === "short";
   const secondary = meta?.channelTitle || undefined;
 
   const facts: MediaPanelFact[] = [];
@@ -342,8 +348,20 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   if (views) facts.push({ label: "views", value: views });
   if (posted) facts.push({ label: "posted", value: posted });
   if (length) facts.push({ label: "length", value: length });
-  if (meta?.liveStatus === "live") facts.push({ label: "live", value: "● live", tone: "success" });
-  else if (meta?.premium) facts.push({ label: "premium", value: "members" });
+  if (meta?.liveStatus === "live") {
+    facts.push({ label: "live", value: "● live", tone: "error" });
+  } else if (meta?.liveStatus === "upcoming") {
+    facts.push({ label: "live", value: "◷ upcoming", tone: "warning" });
+  } else if (meta?.liveStatus === "post_live") {
+    facts.push({ label: "live", value: "↺ was live", tone: "neutral" });
+  } else if (meta?.premium) facts.push({ label: "premium", value: "members" });
+
+  if (meta?.videoCount !== undefined && (isChannel || isPlaylist)) {
+    facts.push({
+      label: "videos",
+      value: meta.videoCount === 1 ? "1 video" : `${meta.videoCount} videos`,
+    });
+  }
 
   // Up next: playlist/channel head when shaped that way, else the related queue
   // head. YouTube thumbnails always exist so the slot is reliably full.
@@ -363,14 +381,14 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
       kind: "next",
       section: "up next",
       label: nextLabel,
-      meta: shaped ? (isChannel ? "channel" : "playlist") : "related",
+      meta: shaped ? (isChannel ? "channel" : "playlist") : isShort ? "short" : "related",
       thumbUrl: ctx.nextEpisodeThumbUrl,
     });
   }
 
   return {
     kind: "video",
-    kindBadge: isChannel ? "channel" : isPlaylist ? "playlist" : "video",
+    kindBadge: isChannel ? "channel" : isPlaylist ? "playlist" : isShort ? "short" : "video",
     posterUrl: ctx.posterUrl,
     title: ctx.title,
     secondary,

@@ -84,9 +84,9 @@ describe("command registry — full surface coverage", () => {
       "surprise",
       // commands.ts:resolveCommandContext replaces the registry's
       // postPlayback context with a curated POST_PLAYBACK_SURFACE_COMMANDS
-      // list of 18 ids. The remaining ids from the registry's
-      // postPlayback context are only reachable through surface-specific
-      // keyboard handlers, not the palette.
+      // list. The remaining ids from the registry's postPlayback context are
+      // only reachable through surface-specific keyboard handlers, not the
+      // palette.
       "toggle-mode",
       "series-mode",
       "anime-mode",
@@ -115,6 +115,13 @@ describe("command registry — full surface coverage", () => {
         expect(alias.includes("  ")).toBe(false);
       }
     }
+  });
+
+  test("post-playback exposes recovery, insight, and sync commands", () => {
+    const post = resolveCommandContext(baseState(), "postPlayback").map((c) => c.id);
+    expect(post).toContain("analytics");
+    expect(post).toContain("analytics-show");
+    expect(post).toContain("sync");
   });
 
   test("post-playback never exposes destructive commands (quit, settings, clear-history)", () => {

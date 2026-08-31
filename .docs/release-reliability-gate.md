@@ -206,6 +206,13 @@ The generated `.changeset/*.md` file should summarize behavior, migration, and r
 The release workflow uses Changesets to open a version PR, update package changelogs, and publish after
 that PR is merged.
 
+There is one narrow exception: fixes discovered after the release finalizer has
+consumed the candidate changesets may be folded directly into that candidate. In
+that case, the release owner must record the exception in the PR description and
+update both package/root changelogs and the generated release artifact in the
+same change. Do not leave a loose changeset behind, because Changesets would
+otherwise open a follow-up version bump on top of the unreleased candidate.
+
 ## Provider Reality Gate
 
 For a release candidate, run the route-derived signoff first. It derives cases

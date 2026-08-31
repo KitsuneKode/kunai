@@ -36,6 +36,47 @@
 }
 
 /*
+ * The two-series install pair.
+ *
+ * `active` is a SUBSET of `lifetime` — an install that pinged yesterday has by
+ * definition been seen before — so the chart nests them rather than stacking,
+ * and the colours encode that: one hue, two steps, the loud step on the series
+ * the reader came for. This is a sequential relationship (the same measure at
+ * two aggregations), not a categorical one, which is why it takes two steps of
+ * the sakura hue instead of two unrelated hues.
+ *
+ * Machine-checked as an adjacent pair, against the surface each actually
+ * renders on:
+ *
+ *   dark  — #b84a6e / #ff8fb0 · ΔE 21.5 normal, 19.4 worst-CVD, both >= 3:1
+ *   light — #d9899f / #a8123f · ΔE 25.9 normal, 24.1 worst-CVD
+ *
+ * The light `lifetime` step sits at 2.55:1, under the 3:1 bar. That is a WARN
+ * the layout discharges rather than dismisses: the legend is always rendered
+ * and every plotted value is also in the table twin below the chart, so the
+ * band is never the only way to read a number.
+ *
+ * Loudness is measured against the surface, not flipped between modes — which
+ * is why the light pair runs dark-on-pale where the dark pair runs pale-on-dark.
+ */
+:root {
+  --kunai-chart-lifetime: #d9899f;
+  --kunai-chart-active: #a8123f;
+}
+
+:root.dark {
+  --kunai-chart-lifetime: #b84a6e;
+  --kunai-chart-active: var(--kunai-accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --kunai-chart-lifetime: #b84a6e;
+    --kunai-chart-active: var(--kunai-accent);
+  }
+}
+
+/*
  * Ordinal version ramp.
  *
  * Releases are an ordered sequence, not a set of names, so the bands take one
@@ -80,117 +121,11 @@
 }
 
 /*
- * Time-series plot. Hairline axes one shade off the surface, never dashed —
- * dashing reads as "projection" when it is just a grid.
+ * The time-series plots are rendered by recharts (`components/ui/chart.tsx`),
+ * which takes its series colours from the tokens above via `ChartConfig` and
+ * draws its own grid and axes. The hand-rolled `.kunai-plot*` marks that used
+ * to live here were removed with `trend-plot.tsx`.
  */
-.kunai-plot {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-}
-
-.kunai-plot-axis {
-  stroke: var(--kunai-chart-axis);
-  stroke-width: 1;
-  fill: none;
-  vector-effect: non-scaling-stroke;
-}
-
-.kunai-plot-line {
-  fill: none;
-  stroke: var(--kunai-chart-series);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-}
-
-.kunai-plot-area {
-  fill: color-mix(in oklab, var(--kunai-chart-series) 14%, transparent);
-  stroke: none;
-}
-
-/* The endpoint is the one point worth marking; the rest live in the table. */
-.kunai-plot-endpoint {
-  fill: var(--kunai-chart-series);
-  stroke: var(--kunai-chart-surface);
-  stroke-width: 2;
-}
-
-/*
- * Stacked bands. The 2px separator is the surface showing through, not a
- * border drawn around each mark.
- */
-.kunai-plot-band {
-  stroke: var(--kunai-chart-surface);
-  stroke-width: 2;
-  stroke-linejoin: round;
-}
-
-.kunai-plot-band[data-residual="true"] {
-  fill: var(--kunai-chart-residual);
-}
-
-.kunai-plot-band[data-band="1"] {
-  fill: var(--kunai-chart-band-1);
-}
-.kunai-plot-band[data-band="2"] {
-  fill: var(--kunai-chart-band-2);
-}
-.kunai-plot-band[data-band="3"] {
-  fill: var(--kunai-chart-band-3);
-}
-.kunai-plot-band[data-band="4"] {
-  fill: var(--kunai-chart-band-4);
-}
-.kunai-plot-band[data-band="5"] {
-  fill: var(--kunai-chart-band-5);
-}
-
-/* Legend swatches reuse the band tokens so identity can never drift. */
-.kunai-legend-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  flex: none;
-}
-
-.kunai-legend-swatch[data-residual="true"] {
-  background-color: var(--kunai-chart-residual);
-}
-
-.kunai-legend-swatch[data-band="1"] {
-  background-color: var(--kunai-chart-band-1);
-}
-.kunai-legend-swatch[data-band="2"] {
-  background-color: var(--kunai-chart-band-2);
-}
-.kunai-legend-swatch[data-band="3"] {
-  background-color: var(--kunai-chart-band-3);
-}
-.kunai-legend-swatch[data-band="4"] {
-  background-color: var(--kunai-chart-band-4);
-}
-.kunai-legend-swatch[data-band="5"] {
-  background-color: var(--kunai-chart-band-5);
-}
-
-/*
- * Forced-colors and print drop the hue channel entirely. Bands keep their
- * order as an ordered hatch density rather than collapsing into one block.
- */
-@media (forced-colors: active), print {
-  .kunai-plot-band {
-    fill: transparent;
-    stroke: currentcolor;
-    stroke-width: 1;
-  }
-
-  .kunai-plot-area {
-    fill: transparent;
-  }
-}
 
 /*
  * Ranked horizontal bars. Table semantics — the printed value beside each bar
