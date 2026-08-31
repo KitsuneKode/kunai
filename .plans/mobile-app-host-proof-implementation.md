@@ -77,6 +77,7 @@
 - Modify: `package.json`
 - Modify: `bun.lock`
 - Modify: `AGENTS.md`
+- Modify: `.docs/architecture.md`
 - Modify: `apps/cli/test/unit/architecture/boundary-imports.test.ts`
 
 **Interfaces:**
@@ -224,12 +225,19 @@ Do not add catalog/provider fields yet; no reader exists in this slice.
 
 - [ ] **Step 4: Register the workspace and explicit entrypoint exception**
 
-Add `apps/mobile` to the root workspace list. Change the AGENTS rule to state:
+Add `apps/mobile` to the root workspace list. Because Task 1 has not created the
+entrypoint yet, change the AGENTS rule to state the current enforceable rule:
 
 ```text
-apps/cli/src/main.ts is the only desktop CLI entrypoint. apps/mobile/src/entry.ts
-is the only mobile entrypoint; neither app may import the other.
+apps/cli/src/main.ts is the only desktop CLI entrypoint. The apps/mobile
+application may add exactly one mobile entrypoint; neither app may import the
+other.
 ```
+
+Make the same desktop/mobile distinction in `.docs/architecture.md` without
+changing the documented desktop runtime flow. Task 2 replaces this prospective
+wording with the exact `apps/mobile/src/entry.ts` path in both documents when
+the file exists.
 
 Run `bun install` so `bun.lock` records the workspace without changing dependency versions.
 
@@ -247,7 +255,7 @@ Expected: all pass; the only lockfile change is workspace registration.
 - [ ] **Step 6: Commit**
 
 ```sh
-git add AGENTS.md package.json bun.lock apps/mobile/package.json apps/mobile/tsconfig.json apps/mobile/src/application/contracts.ts apps/mobile/test/unit/architecture/mobile-boundary.test.ts apps/cli/test/unit/architecture/boundary-imports.test.ts
+git add AGENTS.md .docs/architecture.md package.json bun.lock apps/mobile/package.json apps/mobile/tsconfig.json apps/mobile/src/application/contracts.ts apps/mobile/test/unit/architecture/mobile-boundary.test.ts apps/cli/test/unit/architecture/boundary-imports.test.ts
 git commit -m "feat(mobile): establish runtime boundaries"
 ```
 

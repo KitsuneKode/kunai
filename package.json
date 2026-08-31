@@ -5,6 +5,7 @@
   "workspaces": {
     "packages": [
       "apps/cli",
+      "apps/mobile",
       "apps/docs",
       "apps/relay-server",
       "apps/analytics-ingest",
