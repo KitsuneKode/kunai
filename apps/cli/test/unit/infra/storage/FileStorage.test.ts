@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { FileStorage } from "@/infra/storage/FileStorage";
+import { getKunaiPaths } from "@kunai/storage";
+
+import { applyStorageRootEnv } from "../../../helpers/storage-env";
 
 const tempDirs: string[] = [];
 
@@ -18,32 +21,33 @@ describe("FileStorage default path resolution", () => {
   // The module used to build its path map as a module-level constant, so
   // `getKunaiPaths()` ran while the file was being imported and froze the
   // developer's real config.json in. A suite that imported this file — however
-  // indirectly — before pointing HOME/XDG/APPDATA at a sandbox then wrote the
+  // indirectly — before pointing its storage root at a sandbox then wrote the
   // live profile. Import has already happened by the time this test runs, which
-  // is exactly the condition that used to lose: the environment set here must
-  // still win.
-  const ENV_KEYS = ["HOME", "USERPROFILE", "XDG_CONFIG_HOME", "APPDATA"] as const;
-
+  // is exactly the condition that used to lose: the root set here must still win.
   test("honours a storage root set after this module was imported", async () => {
     const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-root-"));
     tempDirs.push(dir);
 
-    const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
-    for (const key of ENV_KEYS) process.env[key] = dir;
-    process.env.XDG_CONFIG_HOME = join(dir, ".config");
-
+    const restore = applyStorageRootEnv(dir);
     try {
+      // The same resolver the production default uses, evaluated now. Asserting
+      // against it rather than a hard-coded layout keeps this honest on every
+      // platform: Linux reads XDG, macOS `~/Library/Application Support`, and
+      // Windows `%APPDATA%`, and none of that is what this test is about.
+      const expected = getKunaiPaths().configPath;
+
+      // Refuse to write until the sandbox is proven to be in effect. `realpath`
+      // because macOS hands out `/var/folders/...` for a directory that resolves
+      // to `/private/var/folders/...`.
+      expect(await realpath(dirname(expected)).catch(() => expected)).toStartWith(
+        await realpath(dir),
+      );
+
       await new FileStorage().write("config", { sandboxed: true });
 
-      // Written somewhere under the sandbox, and nowhere else.
-      const files = await readdir(dir, { recursive: true });
-      expect(files.some((entry) => String(entry).endsWith("config.json"))).toBe(true);
+      expect(await Bun.file(expected).exists()).toBe(true);
     } finally {
-      for (const key of ENV_KEYS) {
-        const value = saved.get(key);
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
+      restore();
     }
   });
 
