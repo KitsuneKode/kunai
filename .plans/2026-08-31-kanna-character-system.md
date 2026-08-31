@@ -1,6 +1,6 @@
 # Kanna Character System
 
-Status: designed, not started
+Status: steps 1-6 landed in #285; residue below
 Owner: brand
 Created: 2026-08-31
 Target: 0.3.0
@@ -288,15 +288,27 @@ it; if it does, the header stays text and this decision is revisited.
 
 ## Sequencing
 
-Ordered so nothing waits on the trace.
+Ordered so nothing waits on the trace. Everything below landed in #285 except
+where noted.
 
-1. **Expression reassignment** — `idle` gets `squint`. No new art if batch 1 is
-   restored as reference first.
-2. **Pose wiring** — the hunt, plus `peek` on the 404. Kills the dead weight.
-3. **Roamer rework** — independent of everything above.
-4. **Header spike** — prove or drop.
-5. **The trace** — layered SVG, then repoint every surface at it.
-6. **Delete `generate-mascot.mjs`** — last, once nothing reads its output.
+1. **Expression reassignment** — done. `idle` and the nav bust render from the
+   vector with `squint`; the other poses already carried their intended face.
+2. **Pose wiring** — done, as `CompanionHost` rather than per-surface pets. Every
+   embedded pose is reachable and every moment has a reporter, both asserted.
+   `peek` on the 404 is **not** done: it is one of the two held-back poses.
+3. **Roamer rework** — done. Notice, commit, turn cost, three-stage rest, in a
+   pure clock-injected machine.
+4. **Header spike** — done, and the answer was no. `sixel-overlay.ts` already
+   records that a once-per-second timer made a poster blink on ConPTY; the header
+   re-renders on every keystroke. `APP_LABEL` stays text.
+5. **The trace** — done for the bust and `idle`. Full-body poses for the other
+   four are still raster, snapped to the brand palette on export.
+6. **`generate-mascot.mjs` deleted** — done. One source of truth.
 
-Steps 1–3 are the ones that change what a user sees. Step 5 is the long pole and
-the one that makes "one character everywhere" literally true.
+## What is actually left
+
+- **`seek` and `peek` redraws.** Until then `seeking` draws `go`, which is one
+  line in `companion-moment.ts`, and the 404 keeps `oops`.
+- **Trace the four remaining full-body poses**, so every still comes from vector
+  rather than a palette-snapped raster.
+- **Graphics tier on a real terminal** for the surfaces beyond setup.

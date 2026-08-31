@@ -41,6 +41,8 @@ Spike: `spike/kunai-mascot-ip`. Also copied into `kanna-polish` (`feat/kanna-pre
 
 Seek is the weak cell: a raised paw, not a low lean with ears swept back. Do not mix it with a later redraw of carry — redraw the pair together.
 
-## Not wired
+## Wiring
 
-Nothing in `kunai-fox.tsx` or `export-fox-assets.ts` points at these yet. Point `STILLS` / `DOCS_STILLS_BY_NAME` / `CLI_PETS_BY_NAME` only after a human pick, then re-run the export.
+`carry` and `watch` are wired: `export-fox-assets.ts` maps `kanna-pose-carry.png` to `go` and `kanna-pose-watch.png` to `watch`, for both the site stills and the CLI pets.
+
+`seek` and `peek` are not, and are the two queued for a redraw — `seek` reads as a low idle at companion size, and `peek`'s ledge is the same rose as her fur so the alpha cut ships her welded to it. Until then `seeking` draws `go`, which is one line in `companion-moment.ts`. Point `STILLS` / `DOCS_STILLS_BY_NAME` / `CLI_PETS_BY_NAME` at a redraw only after a human pick, then re-run the export.

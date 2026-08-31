@@ -514,13 +514,15 @@ export const LoadingShell = React.memo(function LoadingShell({
   // a bare title never renders a lonely panel.
   const hasPanelContent = Boolean(state.posterUrl || state.titleDetail || state.videoMeta);
   const showSidePanel = isWide && (isPlaying || hasPanelContent);
-  // `showSidePanel` is already the answer to "is there content artwork here",
-  // which is the rule the companion obeys: the poster wins, and she fills the
-  // empty frame rather than crowding a full one.
+  // The rule is "the poster wins", so this asks for a poster — not for the side
+  // panel, which also opens for a title detail or video metadata with no
+  // artwork at all. Reusing `showSidePanel` here silenced her on exactly the
+  // surface she exists for: a resolve that has text but nothing to look at.
+  const hasPosterArt = isWide && Boolean(state.posterUrl);
   const companionMoment = momentForLoading({
     operation: state.operation,
     stage: state.stage,
-    hasPoster: showSidePanel,
+    hasPoster: hasPosterArt,
     failed: recoveryView !== null,
   });
   const totalPlayingWidth = Math.max(60, terminalColumns - 2);

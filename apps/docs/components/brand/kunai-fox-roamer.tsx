@@ -45,16 +45,21 @@ const STEP_MS = 190;
  * is not asleep — and walking the shortest, because that is when you are most
  * likely to be looking at her.
  */
-const CHATTER_WINDOW_MS: Record<RoamerPhase, readonly [number, number]> = {
+const CHATTER_WINDOW_MS: Partial<Record<RoamerPhase, readonly [number, number]>> = {
   walking: [16000, 34000],
   // Arriving and looking at you: she has just moved, so she is not due a line yet.
   sitting: [24000, 52000],
   // Bored is where an unprompted line lands best — she has nothing else to do.
   idle: [14000, 30000],
-  // A 350ms beat before committing. Long enough to see, far too short to talk in.
-  noticing: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
   asleep: [45000, 90000],
+  // `noticing` is absent on purpose. It is a 350ms beat before she commits —
+  // long enough to see, far too short to talk in. Absent rather than given a
+  // huge delay: browsers store the delay in a signed 32-bit integer, so
+  // anything past ~24.8 days overflows and the callback fires on the next tick.
+  // A sentinel meant to silence her would have made her talk immediately.
 };
+/** How long to wait before re-checking a phase that has no line of its own. */
+const CHATTER_RECHECK_MS = 1200;
 const BUBBLE_MS = 4200;
 const STORAGE_KEY = "kunai.roamer.dismissed";
 
@@ -247,7 +252,14 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     if (!enabled) return undefined;
     let timer: number;
     const schedule = () => {
-      const [min, max] = CHATTER_WINDOW_MS[phaseRef.current];
+      const window_ = CHATTER_WINDOW_MS[phaseRef.current];
+      if (!window_) {
+        // A phase with nothing to say. Re-check soon rather than scheduling a
+        // long timer she would have to be interrupted out of.
+        timer = window.setTimeout(schedule, CHATTER_RECHECK_MS);
+        return;
+      }
+      const [min, max] = window_;
       timer = window.setTimeout(
         () => {
           // Silent until she has actually been seen, and never over a line the

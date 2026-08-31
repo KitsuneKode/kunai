@@ -27,7 +27,12 @@ describe("poses", () => {
     const reachable = new Set(COMPANION_MOMENTS.map((moment) => poseForMoment(moment)));
     // `seek` is held back for a redraw, so `seeking` draws `go` for now.
     expect(embedded.length).toBeGreaterThan(0);
-    for (const pose of embedded) expect(reachable).toContain(pose as CompanionPose);
+    for (const pose of embedded) {
+      // SAFETY: the assertion only satisfies `Set<CompanionPose>.has`, which
+      // compares the captured string at runtime. A key that is not a pose fails
+      // the assertion rather than being smuggled through by the cast.
+      expect(reachable).toContain(pose as CompanionPose);
+    }
   });
 });
 
@@ -52,6 +57,15 @@ describe("momentForLoading", () => {
 
   test("a generic load says nothing, so she says nothing", () => {
     expect(momentForLoading({ ...base, operation: "loading" })).toBeNull();
+  });
+
+  test("metadata without artwork is not a poster", () => {
+    // The regression: the shell passed its side-panel gate as `hasPoster`, and
+    // that panel also opens for a title detail or video metadata with no
+    // artwork — silencing her on exactly the surface she exists for.
+    expect(momentForLoading({ ...base, operation: "resolving", hasPoster: false })).toBe("seeking");
+    expect(read("loading-shell.tsx")).toContain("Boolean(state.posterUrl)");
+    expect(read("loading-shell.tsx")).not.toMatch(/hasPoster: showSidePanel/u);
   });
 
   test("the handoff stage outranks the operation it happens during", () => {

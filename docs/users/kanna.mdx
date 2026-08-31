@@ -45,12 +45,12 @@ Each pose maps to something real that is happening, so she never becomes decorat
 | `idle` | sitting, ears up, eyes soft | terminal: at rest and on the setup summary · site: home, social cards |
 | `wait` | square and composed | terminal: the setup wizard · site: empty shelves, install |
 | `go` | mid-motion, ears swept back | site only: searching, resolving, install pages |
-| `watch` | knowing, one ear tipped | site only: 404s, [troubleshooting](/docs/users/troubleshooting) |
+| `watch` | knowing, one ear tipped | terminal: playback · site: docs hub |
+| `oops` | ears flat, brows angled | terminal: a failed resolve · site: 404s |
+| `nap` | curled, eyes closed | terminal: the goodbye screen · site: the roamer asleep |
 
-The terminal currently uses `idle` and `wait` only. The remaining poses need a
-pose sheet drawn from one locked character, which is in progress — until then
-she falls back to the two the current art supports rather than shipping a fox
-that changes species between screens.
+All six ship, drawn from one locked character. Two more — `seek` and `peek` —
+are drawn but held back for a redraw, so a resolve currently borrows `go`.
 
 ## Two tiers, and neither is required
 
@@ -78,7 +78,9 @@ KUNAI_PET=off kunai
 
 ## Reduced motion
 
-Every animation on this site and in the terminal is gated on your system's reduced-motion preference. With it on, Kanna holds still — she does not breathe, lean, or react. Nothing is hidden; only the movement stops.
+Every animation on this site and in the terminal is gated on your system's reduced-motion preference. With it on, the illustrated stills hold still — she does not breathe, lean, or react.
+
+The roaming fox is the exception: she is not frozen, she is not rendered at all. Something that follows your pointer has no still version worth showing, so `KunaiFoxRoamer` returns nothing under reduced motion and the stylesheet hides her as a second guard. Every other surface keeps its artwork; only the movement stops.
 
 ## Credits
 
