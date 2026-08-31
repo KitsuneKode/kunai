@@ -62,12 +62,15 @@ export function resolveFoxStill(pose: KunaiFoxPose, facing: KunaiFoxFacing): Res
   const drawn = pair[facing];
   if (drawn) return { src: drawn, mirrored: false };
   const opposite = facing === "left" ? pair.right : pair.left;
-  // Every pose has at least one drawn direction, so this is always populated.
+  // SAFETY: every pose in STILLS declares at least one drawn direction, so the
+  // side that is not `drawn` is always populated. The pose-union guard in
+  // kunai-fox.test.ts fails if a pose is ever added without one.
   return { src: opposite as string, mirrored: true };
 }
 
 /**
- * The illustrated kitsune stills — Operator, Courier, Watcher — not a traced SVG.
+ * The illustrated Kanna stills — one character across the pose sheet, not a
+ * traced SVG.
  *
  * Decorative by default: with no `title` the image is `aria-hidden` and carries
  * an empty alt, because on most surfaces she sits beside copy that already says
