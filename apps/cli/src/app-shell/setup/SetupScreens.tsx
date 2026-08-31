@@ -8,7 +8,6 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { companionMode } from "../companion-policy";
 import { CompanionHost } from "../CompanionHost";
 import { BLOOM_FRAMES, reducedMotionEnabled, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { palette } from "../shell-theme";
@@ -462,11 +461,7 @@ export function DoneScreen({
           thing seen before the shell opens. `idle` rather than the wizard's
           `wait` — the waiting is over. */}
       <Box marginBottom={1} flexDirection="row">
-        {companionMode() === "off" ? null : (
-          <Box marginRight={2}>
-            <CompanionHost moment="settled" rows={3} />
-          </Box>
-        )}
+        <CompanionHost moment="settled" rows={3} marginRight={2} />
         <Box flexDirection="column">
           <Text color={palette.ok} bold>
             {STATIC_PETAL}

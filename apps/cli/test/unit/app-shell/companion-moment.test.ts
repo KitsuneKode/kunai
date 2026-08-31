@@ -136,9 +136,32 @@ describe("single ownership", () => {
     expect(slots.map((m) => m[1])).toEqual(["companion"]);
   });
 
-  test("a surface with nothing to say passes null and draws nothing", () => {
+  test("a surface with nothing to say draws nothing, margin included", () => {
+    // An Ink `Box` with a margin around a null child still lays out its margin,
+    // so a caller that wraps the companion and forgets to gate the wrapper
+    // leaves an empty row behind under `KUNAI_PET=off`. Three of four call
+    // sites remembered the guard; one did not. The host owns the margin now, so
+    // there is no wrapper left to forget.
     const host = readFileSync(path.join(SHELL, "CompanionHost.tsx"), "utf8");
-    expect(host).toContain("if (moment === null) return null;");
+    expect(host).toContain('if (moment === null || companionMode() === "off") return null;');
+  });
+
+  test("no call site wraps the companion in its own spacing Box", () => {
+    // The regression this replaced: a `<Box marginTop={1}>` around the host in
+    // `loading-shell.tsx` that no `KUNAI_PET=off` check gated.
+    const offenders: string[] = [];
+    for (const file of [
+      "setup/SetupFrame.tsx",
+      "setup/SetupScreens.tsx",
+      "exit-shell.tsx",
+      "loading-shell.tsx",
+    ]) {
+      // A Box whose *only* child is the host exists to space it. A Box that
+      // also holds siblings — the summary screen's row, which carries the text
+      // column beside her — is layout, and correctly stays.
+      if (/<Box[^>]*>\s*<CompanionHost[^/]*\/>\s*<\/Box>/u.test(read(file))) offenders.push(file);
+    }
+    expect(offenders).toEqual([]);
   });
 
   test("the setup frame stands down where the screen inside draws its own", () => {

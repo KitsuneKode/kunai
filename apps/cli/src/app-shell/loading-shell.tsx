@@ -777,11 +777,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* She is here only when the side panel is not: on a narrow
                   terminal, or before any artwork has arrived. A resolve is the
                   longest wait in the product and the emptiest surface in it. */}
-                {companionMoment ? (
-                  <Box marginTop={1}>
-                    <CompanionHost moment={companionMoment} rows={3} />
-                  </Box>
-                ) : null}
+                <CompanionHost moment={companionMoment} rows={3} marginTop={1} />
 
                 {/* Failure / recovery surface takes priority over the bare issue
                   line: it names what failed and offers recover/fallback/sources/

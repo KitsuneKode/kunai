@@ -63,15 +63,7 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
 
   return (
     <Box flexDirection="column" paddingY={1}>
-      {/* The wrapper is conditional, not just the companion: a Box with a
-          margin around a null child still lays out its margin, so `KUNAI_PET=off`
-          would leave an empty row on the way out — which is not "retired
-          entirely". Same shape as the guard in `SetupFrame`. */}
-      {showFox && companionMode() !== "off" ? (
-        <Box marginBottom={1}>
-          <CompanionHost moment="farewell" rows={4} />
-        </Box>
-      ) : null}
+      <CompanionHost moment={showFox ? "farewell" : null} rows={4} marginBottom={1} />
       <Text dimColor={isDim} color={palette.dim}>
         {showFox ? "◉  see you next time" : ""}
       </Text>

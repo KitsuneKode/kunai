@@ -17,7 +17,6 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import type { CompanionMoment } from "../companion-moment";
-import { companionMode } from "../companion-policy";
 import { CompanionHost } from "../CompanionHost";
 import { APP_LABEL, palette } from "../shell-theme";
 
@@ -172,11 +171,7 @@ export function SetupFrame({
             The wrapper is conditional, not just the pet: a Box with a margin
             around a null child still lays out its margin, so `KUNAI_PET=off`
             left an empty row behind — which is not "retired entirely". */}
-        {companion !== null && companionMode() !== "off" ? (
-          <Box marginBottom={1}>
-            <CompanionHost moment={companion} rows={4} />
-          </Box>
-        ) : null}
+        <CompanionHost moment={companion} rows={4} marginBottom={1} />
         {children}
       </Box>
 
