@@ -109,12 +109,6 @@
   padding: 1rem 1.25rem;
 }
 
-.kunai-fox-banner--compact {
-  gap: 0.85rem;
-  padding: 0.7rem 0.9rem;
-  border-radius: 0.85rem;
-}
-
 .kunai-fox-banner__copy {
   min-width: 0;
 }

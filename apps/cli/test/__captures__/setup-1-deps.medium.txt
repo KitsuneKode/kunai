@@ -3,7 +3,6 @@
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-
           ❀  Let's get you watching
 
           Kunai finds playable streams and hands them to mpv.

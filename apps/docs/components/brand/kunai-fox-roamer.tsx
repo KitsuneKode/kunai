@@ -201,7 +201,15 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       // A tab that was backgrounded returns one enormous delta; clamping it
       // stops her teleporting across the page on the first frame back.
       const dt = Math.min((timestamp - previous) / 1000, 0.05);
-      if (!host || !seeded.current) return;
+      if (!host) return;
+      if (!seeded.current) {
+        // `.kunai-roamer` is fixed at the origin, so without this she is parked
+        // in the top-left corner of the viewport from mount until the pointer
+        // first moves. `pos` already holds an off-screen point; it just has to
+        // reach the element before the first paint.
+        host.style.transform = `translate3d(${pos.current.x}px, ${pos.current.y}px, 0)`;
+        return;
+      }
 
       const dx = target.current.x - pos.current.x;
       const dy = target.current.y - pos.current.y;

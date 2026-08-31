@@ -3,7 +3,6 @@
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-
                               Language
                               Each media type keeps its own defaults. Change either again per episode.
 

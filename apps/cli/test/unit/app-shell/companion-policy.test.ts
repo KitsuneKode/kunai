@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  companionFallbackGlyph,
-  companionMode,
-  isCompanionGraphicsEnabled,
-} from "@/app-shell/companion-policy";
+import { companionFallbackGlyph, companionMode } from "@/app-shell/companion-policy";
 
 const TTY = { isTTY: true } as const;
 const PIPE = { isTTY: false } as const;
@@ -54,7 +50,6 @@ describe("companion mode", () => {
   test("a capable terminal gets the illustrated still", () => {
     withRealTty(() => {
       expect(companionMode(KITTY, TTY)).toBe("graphics");
-      expect(isCompanionGraphicsEnabled(KITTY, TTY)).toBe(true);
     });
   });
 
@@ -85,7 +80,6 @@ describe("companion mode", () => {
 
   test("a terminal with no image capability falls to the glyph, never half-block", () => {
     expect(companionMode({ TERM: "xterm" }, TTY)).toBe("glyph");
-    expect(isCompanionGraphicsEnabled({ TERM: "xterm" }, TTY)).toBe(false);
   });
 
   test("fallback glyph stays the portable fox", () => {

@@ -58,19 +58,6 @@ export function companionMode(
     : "glyph";
 }
 
-/**
- * Whether the illustrated fox pet may use a graphics protocol.
- *
- * Kept as the narrow question most call sites ask; `companionMode` is the one
- * that can also tell you the companion is switched off.
- */
-export function isCompanionGraphicsEnabled(
-  env: NodeJS.ProcessEnv = process.env,
-  stdout: { readonly isTTY?: boolean } = process.stdout,
-): boolean {
-  return companionMode(env, stdout) === "graphics";
-}
-
 export function companionFallbackGlyph(): string {
   return "🦊";
 }

@@ -16,6 +16,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { companionMode } from "../companion-policy";
 import { CompanionPet } from "../CompanionPet";
 import { APP_LABEL, palette } from "../shell-theme";
 
@@ -157,10 +158,16 @@ export function SetupFrame({
       <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={2}>
         {/* One pose for the whole wizard. Flipping it on the last step meant a
             fresh placement upload on a step transition, which is the one moment
-            the pane is already re-laying out. */}
-        <Box marginBottom={1}>
-          <CompanionPet pose="wait" rows={4} />
-        </Box>
+            the pane is already re-laying out.
+
+            The wrapper is conditional, not just the pet: a Box with a margin
+            around a null child still lays out its margin, so `KUNAI_PET=off`
+            left an empty row behind — which is not "retired entirely". */}
+        {companionMode() === "off" ? null : (
+          <Box marginBottom={1}>
+            <CompanionPet pose="wait" rows={4} />
+          </Box>
+        )}
         {children}
       </Box>
 
