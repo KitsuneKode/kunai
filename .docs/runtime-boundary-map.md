@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-27"
+lastReviewed: "2026-09-01"
 ---
 
 # Kunai Runtime Boundary Map
@@ -56,6 +56,8 @@ The same test also gates workspace dependencies per package, so a new
 | `apps/cli/src/domain/queue`    | Queue playback intents, restore-with-resume, planner placement, `QueueService` adapters over storage              | Ink rendering, mpv launch, provider resolve |
 | `apps/cli/src/infra`           | mpv/IPC and Android intent mechanics; only observed players emit `playback-started`                               | User-facing playback or queue policy        |
 | `apps/cli/src/app-shell`       | Ink components, overlays, footer, command palette, picker rendering; exact-ID queue play bridge                   | Stream resolution, provider fallback policy |
+| `apps/mobile/src/application`  | Portable mobile host-proof policy behind HTTP, state, terminal, and player ports                                  | Bun, a-Shell, Ink, provider implementations |
+| `apps/mobile/src/runtime`      | Android/Bun and a-Shell/JavaScriptCore host adapters selected at build time                                       | Portable workflow policy, desktop CLI code  |
 | `.archive/legacy/apps/cli/src` | Quarantined old runtime/provider/browser reference code                                                           | Active beta runtime imports                 |
 | `.reference/experiments`       | Provider research and scratchpads                                                                                 | Production runtime behavior                 |
 
@@ -133,6 +135,20 @@ facts and stream qualification, app owns observed-versus-detached policy, infra
 owns mpv or Android launch mechanics, and app-shell renders the resulting state.
 An intent-launch exit code is launch acceptance only; infra must not synthesize
 progress, completion, EOF, provider health, or queue acknowledgement.
+
+## Mobile application ownership
+
+`apps/mobile` is a separate deep application module with one entrypoint and no
+cross-app imports. Its application directory owns runtime-neutral policy. Its
+runtime directory owns two build-selected compositions: Bun/Bionic for Termux
+and conservative JavaScript plus fixed helpers for a-Shell mini. The iOS graph
+must not contain Node, Bun, native, SQLite, Ink, or React runtime dependencies.
+
+The current slice is a host proof, not desktop feature parity: it exercises
+terminal input, bounded HTTP, atomic state, and detached VLC handoff using
+tester-owned URLs. Search, catalog, provider resolution, progress, analytics,
+installers, and release support are not implied. Qualification and physical
+procedures live in [mobile-terminal-runtime.md](./mobile-terminal-runtime.md).
 
 ## Command Ownership
 

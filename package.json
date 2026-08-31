@@ -83,6 +83,7 @@
     "test:installer:scenarios": "bash test/install/run.sh",
     "test:live:allanime": "bun run --cwd apps/cli test:live:allanime",
     "test:live:android-handoff": "bun run --cwd apps/cli test:live:android-handoff",
+    "test:live:mobile-host-proof": "bun run --cwd apps/mobile test:live:mobile-host-proof",
     "test:live:analytics": "bun run --cwd apps/cli test:live:analytics",
     "test:live:anidb": "bun run --cwd apps/cli test:live:anidb",
     "test:live:tracker-sync": "bun run --cwd apps/cli test:live:tracker-sync",
