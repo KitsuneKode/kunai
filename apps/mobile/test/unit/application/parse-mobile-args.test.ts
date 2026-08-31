@@ -47,6 +47,8 @@ describe("parseMobileArgs", () => {
       "/relative/probe",
       "https://user:password@probe.example/status",
       "https://probe.example/status#fragment",
+      "https://probe.example/status\r\noutput=/tmp/pwn",
+      "https://probe.example/status\0ignored",
     ]) {
       expect(() =>
         parseMobileArgs([
