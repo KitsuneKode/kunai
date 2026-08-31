@@ -21,6 +21,7 @@ function frame(selectedIndex = 0): string {
 
 const READY: CapabilitySnapshot = {
   mpv: true,
+  mpvRequired: true,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },

@@ -1,6 +1,6 @@
 name: Build all release binaries
 
-# Full 8-target cross-compile is too slow for every PR (~5+ min). Run on a
+# Full 10-target cross-compile is too slow for every PR (~5+ min). Run on a
 # schedule, manually, or when release binaries workflow inputs change.
 on:
   workflow_dispatch:

@@ -2459,7 +2459,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Save history — use effectiveTiming.current so that a background retry
           // that completed during playback is reflected in completion status.
           const quitThresholdMode = config.quitNearEndThresholdMode;
-          if (shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode)) {
+          if (
+            container.player.capabilities.completion &&
+            shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode)
+          ) {
             const didComplete = didPlaybackReachCompletionThreshold(
               result,
               effectiveTiming.current,

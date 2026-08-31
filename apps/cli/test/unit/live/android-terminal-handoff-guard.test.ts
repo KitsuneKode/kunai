@@ -6,6 +6,7 @@ const BASE_ENV = {
   TERMUX_VERSION: "0.119.0",
   KUNAI_ANDROID_HANDOFF_PLAYER: "vlc",
   KUNAI_ANDROID_HANDOFF_URL: "https://media.example/video.m3u8?token=secret",
+  KUNAI_ANDROID_HANDOFF_BINARY: "/data/data/com.termux/files/usr/bin/kunai",
   KUNAI_ANDROID_SMOKE_ROOT: "/tmp/kunai-android-handoff-123",
 } as const;
 
@@ -16,13 +17,35 @@ describe("validateAndroidHandoffSmoke", () => {
         platform: "linux",
         env: BASE_ENV,
         realHome: "/data/data/com.termux/files/home",
+        fileExists: () => true,
       }),
     ).toEqual({
       ok: true,
       player: "vlc",
       url: "https://media.example/video.m3u8?token=secret",
+      binaryPath: "/data/data/com.termux/files/usr/bin/kunai",
       storageRoot: "/tmp/kunai-android-handoff-123",
     });
+  });
+
+  test("requires an existing absolute compiled binary", () => {
+    expect(
+      validateAndroidHandoffSmoke({
+        platform: "linux",
+        env: { ...BASE_ENV, KUNAI_ANDROID_HANDOFF_BINARY: "kunai" },
+        realHome: "/data/data/com.termux/files/home",
+        fileExists: () => true,
+      }),
+    ).toMatchObject({ ok: false, reason: "binary-required" });
+
+    expect(
+      validateAndroidHandoffSmoke({
+        platform: "linux",
+        env: BASE_ENV,
+        realHome: "/data/data/com.termux/files/home",
+        fileExists: () => false,
+      }),
+    ).toMatchObject({ ok: false, reason: "binary-not-found" });
   });
 
   test("refuses non-Android hosts before launcher execution", () => {

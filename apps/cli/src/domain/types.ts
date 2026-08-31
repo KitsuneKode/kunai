@@ -217,12 +217,10 @@ export interface PlaybackHandoffEvidence {
   readonly launcher: string;
 }
 
-export interface PlaybackResult {
+interface PlaybackResultBase {
   readonly watchedSeconds: number;
   readonly duration: number;
   readonly endReason: EndReason;
-  readonly resultSource?: PlaybackStatsSource;
-  readonly handoff?: PlaybackHandoffEvidence;
   readonly playerExitedCleanly?: boolean;
   readonly playerExitCode?: number | null;
   readonly playerExitSignal?: string | null;
@@ -240,10 +238,21 @@ export interface PlaybackResult {
   readonly streamRejectedBeforePlayerLaunch?: boolean;
 }
 
-export function isDetachedHandoffResult(result: PlaybackResult): result is PlaybackResult & {
+export type ManagedPlaybackResult = PlaybackResultBase & {
+  readonly resultSource?: Exclude<PlaybackStatsSource, "handoff">;
+  readonly handoff?: never;
+};
+
+export type DetachedHandoffPlaybackResult = PlaybackResultBase & {
   readonly resultSource: "handoff";
   readonly handoff: PlaybackHandoffEvidence;
-} {
+};
+
+export type PlaybackResult = ManagedPlaybackResult | DetachedHandoffPlaybackResult;
+
+export function isDetachedHandoffResult(
+  result: PlaybackResult,
+): result is DetachedHandoffPlaybackResult {
   return result.resultSource === "handoff" && result.handoff?.accepted === true;
 }
 

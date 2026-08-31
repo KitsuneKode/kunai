@@ -55,6 +55,8 @@ export interface CurlCapability {
 
 export interface CapabilitySnapshot {
   readonly mpv: boolean;
+  /** Whether the selected player mode requires a managed mpv binary. */
+  readonly mpvRequired: boolean;
   /** Optional post-download probe (`ffprobe` on PATH); not required for the queue. */
   readonly ffprobe: boolean;
   readonly ytDlp: boolean;
@@ -82,7 +84,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .sort()
     .join(",");
   const curlBits = `${snapshot.curl.present ? "1" : "0"}:${snapshot.curl.profile ?? "plain"}`;
-  return `mpv:${snapshot.mpv ? "1" : "0"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}:${snapshot.mpvRequired ? "required" : "optional"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -220,6 +222,7 @@ export async function probeCapabilities(
 
   return {
     mpv,
+    mpvRequired: requireMpv,
     ffprobe,
     ytDlp,
     curl,

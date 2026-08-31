@@ -54,7 +54,7 @@ export function buildDependencyRows(
   const rows: ScopedDependencyRow[] = [];
 
   const mpvIssue = issue("mpv-missing");
-  const mpvRequired = snapshot.mpv || Boolean(mpvIssue);
+  const mpvRequired = snapshot.mpvRequired;
   rows.push({
     id: "mpv",
     name: "mpv",

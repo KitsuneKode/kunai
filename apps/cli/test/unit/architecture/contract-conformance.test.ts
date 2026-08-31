@@ -97,6 +97,7 @@ describe("contract conformance", () => {
     const nativeUpdater = readRepoFile(
       "apps/cli/src/services/update/native-installer/install-latest.ts",
     );
+    const commandUpdater = readRepoFile("apps/cli/src/services/update/run-upgrade.ts");
     const npmLauncher = readRepoFile("apps/cli/scripts/npm-launcher.mjs");
     const installer = readRepoFile("install.sh");
 
@@ -107,6 +108,8 @@ describe("contract conformance", () => {
     expect(platformAssets).toContain('libc: "bionic"');
     expect(binaryBuilder).toContain("RELEASE_BINARY_TARGETS");
     expect(nativeUpdater).toContain("resolveReleaseBinaryTarget");
+    expect(nativeUpdater).toContain("resolvePlatformLibc");
+    expect(commandUpdater).toContain("resolvePlatformLibc");
     expect(installer).toContain('target="android-${arch}-bionic"');
   });
 

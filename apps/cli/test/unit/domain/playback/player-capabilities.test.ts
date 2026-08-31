@@ -13,6 +13,9 @@ describe("player capabilities", () => {
       externalSubtitles: true,
       localFiles: true,
       progressEvents: true,
+      completion: true,
+      autoSkip: true,
+      trackControl: true,
     });
     expect(Object.isFrozen(MANAGED_MPV_CAPABILITIES)).toBe(true);
   });
@@ -24,6 +27,9 @@ describe("player capabilities", () => {
       externalSubtitles: false,
       localFiles: false,
       progressEvents: false,
+      completion: false,
+      autoSkip: false,
+      trackControl: false,
     });
     expect(Object.isFrozen(DETACHED_HANDOFF_CAPABILITIES)).toBe(true);
   });

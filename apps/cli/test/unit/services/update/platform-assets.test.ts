@@ -7,11 +7,19 @@ import {
   normalizePlatformOs,
   releaseAssetName,
   releaseAssetSupported,
+  resolvePlatformLibc,
   resolveHostReleaseBinaryTarget,
   resolveReleaseBinaryTarget,
 } from "@/services/update/platform-assets";
 
 describe("platform release assets", () => {
+  test("selects Bionic for Android without falling through to GNU", () => {
+    expect(resolvePlatformLibc("android", false)).toBe("bionic");
+    expect(resolvePlatformLibc("linux", false)).toBe("gnu");
+    expect(resolvePlatformLibc("linux", true)).toBe("musl");
+    expect(resolvePlatformLibc("darwin", false)).toBe("gnu");
+  });
+
   test("maps unix and node platform identifiers", () => {
     expect(normalizePlatformOs("linux")).toBe("linux");
     expect(normalizePlatformOs("android")).toBe("android");

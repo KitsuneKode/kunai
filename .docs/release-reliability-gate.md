@@ -407,11 +407,14 @@ proof. On an Android/Termux device, install
 ```sh
 KUNAI_ANDROID_HANDOFF_PLAYER=vlc \
 KUNAI_ANDROID_HANDOFF_URL="<direct-test-media-url>" \
+KUNAI_ANDROID_HANDOFF_BINARY="$(realpath ./apps/cli/dist/bin/kunai-android-arm64)" \
 bun run test:live:android-handoff
 ```
 
-Repeat with `mpv`. Record separately: binary startup/help/version, real Ink TTY
-input and resume, SQLite WAL/reopen under isolated Termux storage, installer and
+Repeat with `mpv`. The harness invokes the compiled canonical entrypoint for
+help, version, and the handoff scenario, then creates a WAL database and proves
+it can reopen the written row under isolated Termux storage. Record separately: real Ink TTY
+input and resume, installer and
 upgrade, VLC/mpv-android launch, media start, return to Kunai, qualifying anime
 and TMDB providers, rejection of header/subtitle-dependent streams, analytics
 remaining disabled, cold start, responsiveness, and memory. Until at least one

@@ -1,3 +1,5 @@
+import { isAndroidRuntime } from "@/domain/platform-runtime";
+
 /**
  * Frozen release asset naming contract shared by:
  *   - scripts/build-binaries.ts
@@ -158,17 +160,19 @@ export function detectPlatform(
   libc: PlatformLibc = "gnu",
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): DetectedPlatform {
-  const androidRuntime =
-    platform === "android" ||
-    Boolean(env["TERMUX_VERSION"]) ||
-    Boolean(env["ANDROID_ROOT"]) ||
-    env["PREFIX"]?.includes("com.termux") === true;
+  const androidRuntime = isAndroidRuntime(platform, env);
   const os = androidRuntime ? "android" : normalizePlatformOs(platform);
   return {
     os,
     arch: normalizePlatformArch(arch),
     libc: os === "android" ? "bionic" : os === "linux" ? libc : undefined,
   };
+}
+
+export function resolvePlatformLibc(os: PlatformOs | undefined, linuxMusl: boolean): PlatformLibc {
+  if (os === "android") return "bionic";
+  if (os === "linux" && linuxMusl) return "musl";
+  return "gnu";
 }
 
 /** Published GitHub Release asset filename for the given OS/arch/libc. */

@@ -391,12 +391,14 @@ Android handoff has its own physical-device smoke and is likewise opt-in:
 ```sh
 KUNAI_ANDROID_HANDOFF_PLAYER=vlc \
 KUNAI_ANDROID_HANDOFF_URL="<direct-test-media-url>" \
+KUNAI_ANDROID_HANDOFF_BINARY="$(realpath ./apps/cli/dist/bin/kunai-android-arm64)" \
 bun run test:live:android-handoff
 ```
 
 Run it only inside Android/Termux. The harness creates an isolated temporary
-HOME/XDG profile, refuses desktop hosts and roots inside the real profile, and
-prints binary/runtime, TTY, SQLite-path, player, and launcher evidence. A green
+HOME/XDG profile, requires an explicit compiled binary path, refuses desktop
+hosts and roots inside the real profile, and prints compiled entrypoint,
+binary/runtime, TTY, SQLite WAL/reopen, player, and launcher evidence. A green
 launcher smoke proves only that Android accepted the intent; provider playback,
 media start, completion, app suspension, return-to-terminal, cold start,
 responsiveness, and memory remain separate device observations.

@@ -1,3 +1,5 @@
+import { isAndroidRuntime } from "@/domain/platform-runtime";
+
 export type PlayerChoice = "auto" | "mpv" | "vlc";
 export type DetachedPlayerTarget = "chooser" | "mpv" | "vlc";
 export type SupportedPlayerPlatform = "android" | "linux" | "darwin" | "win32" | "other";
@@ -33,12 +35,7 @@ export function detectPlayerPlatform(
 ): SupportedPlayerPlatform {
   const platform = input.platform ?? process.platform;
   const env = input.env ?? process.env;
-  if (
-    platform === "android" ||
-    Boolean(env["TERMUX_VERSION"]) ||
-    Boolean(env["ANDROID_ROOT"]) ||
-    env["PREFIX"]?.includes("com.termux") === true
-  ) {
+  if (isAndroidRuntime(platform, env)) {
     return "android";
   }
   return normalizePlayerPlatform(platform);

@@ -223,6 +223,7 @@ describeBinary("compiled linux binary smoke", () => {
       "failed-handoff",
       "shutdown-restore",
       "return-to-shell",
+      "android-handoff",
     ];
     expect([...COMPILED_SMOKE_SCENARIO_IDS].sort()).toEqual([...covered].sort());
   });

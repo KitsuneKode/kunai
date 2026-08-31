@@ -26,11 +26,30 @@ export async function dispatchAppCommand(
   return {
     status,
     surface: "active-playback",
-    reason: status === "ignored" ? ignoredActivePlaybackReason(input.action) : undefined,
+    reason:
+      status === "ignored"
+        ? ignoredActivePlaybackReason(input.action, input.activePlayback.capabilities)
+        : undefined,
   };
 }
 
-function ignoredActivePlaybackReason(action: ShellAction): string | undefined {
+function ignoredActivePlaybackReason(
+  action: ShellAction,
+  capabilities: ActivePlaybackCommandDispatchInput["capabilities"],
+): string | undefined {
+  if (action === "toggle-autoskip" && !capabilities.autoSkip) {
+    return "Autoskip controls are available in managed mpv playback only";
+  }
+  if (
+    !capabilities.trackControl &&
+    (action === "provider" ||
+      action === "source" ||
+      action === "quality" ||
+      action === "audio" ||
+      action === "subtitle")
+  ) {
+    return "Track controls are available in managed mpv playback only";
+  }
   switch (action) {
     case "next":
       return "No next episode available";

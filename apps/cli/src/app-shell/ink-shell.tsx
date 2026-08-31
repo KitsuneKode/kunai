@@ -938,6 +938,7 @@ function AppRoot({ container }: { container: Container }) {
           action,
           source: "runtime",
           activePlayback: {
+            capabilities: container.player.capabilities,
             deps: {
               playerControl: container.playerControl,
               workControl: container.workControl,

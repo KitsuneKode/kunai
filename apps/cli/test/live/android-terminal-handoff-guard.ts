@@ -9,6 +9,7 @@ export type AndroidHandoffSmokeGuardResult =
       readonly ok: true;
       readonly player: AndroidHandoffSmokePlayer;
       readonly url: string;
+      readonly binaryPath: string;
       readonly storageRoot: string;
     }
   | {
@@ -19,7 +20,9 @@ export type AndroidHandoffSmokeGuardResult =
         | "url-required"
         | "invalid-url"
         | "storage-root-required"
-        | "storage-root-not-isolated";
+        | "storage-root-not-isolated"
+        | "binary-required"
+        | "binary-not-found";
       readonly message: string;
     };
 
@@ -32,6 +35,7 @@ export function validateAndroidHandoffSmoke(input: {
   readonly platform?: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly realHome: string;
+  readonly fileExists?: (path: string) => boolean;
 }): AndroidHandoffSmokeGuardResult {
   if (detectPlayerPlatform({ platform: input.platform, env: input.env }) !== "android") {
     return {
@@ -96,5 +100,22 @@ export function validateAndroidHandoffSmoke(input: {
     };
   }
 
-  return { ok: true, player, url: url.toString(), storageRoot };
+  const rawBinaryPath = input.env["KUNAI_ANDROID_HANDOFF_BINARY"];
+  if (!rawBinaryPath || !isAbsolute(rawBinaryPath)) {
+    return {
+      ok: false,
+      reason: "binary-required",
+      message: "KUNAI_ANDROID_HANDOFF_BINARY must be an absolute compiled Kunai binary path.",
+    };
+  }
+  const binaryPath = resolve(rawBinaryPath);
+  if (!(input.fileExists ?? (() => false))(binaryPath)) {
+    return {
+      ok: false,
+      reason: "binary-not-found",
+      message: "KUNAI_ANDROID_HANDOFF_BINARY does not exist.",
+    };
+  }
+
+  return { ok: true, player, url: url.toString(), binaryPath, storageRoot };
 }

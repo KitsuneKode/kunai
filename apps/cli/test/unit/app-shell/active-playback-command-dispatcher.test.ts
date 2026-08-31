@@ -5,6 +5,10 @@ import {
   type ActivePlaybackCommandDispatchDeps,
 } from "@/app-shell/active-playback-command-dispatcher";
 import type { ShellAction } from "@/app-shell/types";
+import {
+  DETACHED_HANDOFF_CAPABILITIES,
+  MANAGED_MPV_CAPABILITIES,
+} from "@/domain/playback/player-capabilities";
 
 describe("dispatchActivePlaybackCommand", () => {
   test("fallback cancels active work before asking player control to fallback", async () => {
@@ -20,6 +24,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("fallback", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -41,6 +46,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("fallback", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -59,6 +65,7 @@ describe("dispatchActivePlaybackCommand", () => {
     for (const action of ["provider", "source", "quality", "audio", "subtitle"] as const) {
       await dispatchActivePlaybackCommand(action, {
         deps,
+        capabilities: MANAGED_MPV_CAPABILITIES,
         canGoNext: false,
         canGoPrevious: false,
         canToggleAutoplay: false,
@@ -80,6 +87,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     const result = await dispatchActivePlaybackCommand("next", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -95,18 +103,21 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("next", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: true,
       canGoPrevious: false,
       canToggleAutoplay: false,
     });
     await dispatchActivePlaybackCommand("previous", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: true,
       canToggleAutoplay: false,
     });
     await dispatchActivePlaybackCommand("quit", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -133,6 +144,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("quit", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -157,6 +169,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("search", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -181,6 +194,7 @@ describe("dispatchActivePlaybackCommand", () => {
 
     await dispatchActivePlaybackCommand("toggle-autoskip", {
       deps,
+      capabilities: MANAGED_MPV_CAPABILITIES,
       canGoNext: false,
       canGoPrevious: false,
       canToggleAutoplay: false,
@@ -190,6 +204,24 @@ describe("dispatchActivePlaybackCommand", () => {
       "dispatch:SET_SESSION_AUTOSKIP_PAUSED",
       "autoskip:false:playback-loading-command-autoskip",
     ]);
+  });
+
+  test("detached playback rejects managed controls before dispatch", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls);
+
+    for (const action of ["toggle-autoskip", "quality", "audio", "subtitle"] as const) {
+      const result = await dispatchActivePlaybackCommand(action, {
+        deps,
+        capabilities: DETACHED_HANDOFF_CAPABILITIES,
+        canGoNext: false,
+        canGoPrevious: false,
+        canToggleAutoplay: false,
+      });
+      expect(result).toBe("ignored");
+    }
+
+    expect(calls).toEqual([]);
   });
 });
 
