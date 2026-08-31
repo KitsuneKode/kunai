@@ -42,5 +42,13 @@ function preferUsable(
 }
 
 function isUsableSegment(segment: PlaybackTimingSegment): boolean {
-  return typeof segment.endMs === "number" && Number.isFinite(segment.endMs) && segment.endMs > 0;
+  const { startMs, endMs } = segment;
+  if (typeof endMs !== "number" || !Number.isFinite(endMs) || endMs <= 0) return false;
+  // `findPlaybackSegmentAtPosition` also requires the window to move forwards, so
+  // an inverted segment is not something this can defer to either. Checking only
+  // the end let `{startMs: 9999, endMs: 1}` count as timing here and then be
+  // dropped by the player — the same "present but unusable" shape the degenerate
+  // `{0, 0}` case already caused.
+  const start = typeof startMs === "number" && Number.isFinite(startMs) ? startMs : 0;
+  return endMs > start;
 }

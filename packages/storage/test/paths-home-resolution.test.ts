@@ -46,6 +46,26 @@ describe("getKunaiPaths home resolution", () => {
     expect(paths.configDir).toBe("/from-home/Library/Application Support/kunai");
   });
 
+  test("an empty HOME is treated as unset, not as a root", () => {
+    // `??` treats "" as a value, so `HOME=""` used to survive the fallback chain
+    // and become the storage root — every path joined from it came out relative
+    // to the working directory instead of a profile.
+    const paths = getKunaiPaths({
+      platform: "darwin",
+      env: { HOME: "", USERPROFILE: "/sandbox" },
+    });
+
+    expect(paths.configDir).toBe("/sandbox/Library/Application Support/kunai");
+  });
+
+  test("whitespace-only HOME is also treated as unset", () => {
+    const paths = getKunaiPaths({ platform: "darwin", env: { HOME: "   " } });
+
+    // Falls through to homedir(), so it is at least absolute rather than relative.
+    expect(paths.configDir.startsWith("/")).toBe(true);
+    expect(paths.configDir).not.toStartWith("   ");
+  });
+
   test("Linux still prefers the XDG variables over home", () => {
     const paths = getKunaiPaths({
       platform: "linux",

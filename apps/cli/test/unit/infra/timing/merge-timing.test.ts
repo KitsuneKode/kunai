@@ -37,6 +37,19 @@ describe("mergeTimingMetadata", () => {
     ]);
   });
 
+  test("an inverted primary segment defers to a usable secondary window", () => {
+    // `findPlaybackSegmentAtPosition` requires the window to move forwards, so a
+    // segment whose end precedes its start is no more skippable than `{0, 0}`.
+    // Checking only the end let this count as timing here and be dropped by the
+    // player, which is the failure this merge rule exists to prevent.
+    const primary = timing({ intro: [{ startMs: 9_999, endMs: 1 }] });
+    const secondary = timing({ intro: [{ startMs: 80_000, endMs: 90_000 }] });
+
+    expect(mergeTimingMetadata(primary, secondary)?.intro).toEqual([
+      { startMs: 80_000, endMs: 90_000 },
+    ]);
+  });
+
   test("a usable primary window still wins", () => {
     const primary = timing({ intro: [{ startMs: 10_000, endMs: 100_000 }] });
     const secondary = timing({ intro: [{ startMs: 80_000, endMs: 90_000 }] });

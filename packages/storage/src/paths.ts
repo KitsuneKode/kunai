@@ -58,7 +58,7 @@ export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
   // redirect its storage root from the environment at all: a test that set the
   // documented variables still resolved the real `~/Library/Application Support`
   // and wrote the developer's live profile.
-  const home = options.homeDir ?? env.HOME ?? env.USERPROFILE ?? homedir();
+  const home = options.homeDir ?? firstNonEmpty(env.HOME, env.USERPROFILE) ?? homedir();
   const join = joinerFor(platform);
 
   const dirs = getBaseDirs(platform, env, home);
@@ -79,6 +79,21 @@ function normalizePlatform(platform: NodeJS.Platform): StoragePlatform {
   }
 
   return "linux";
+}
+
+/**
+ * `??` treats an empty string as a value, not as absent.
+ *
+ * `HOME=""` therefore survived the fallback chain and became the storage root,
+ * and every path joined from it came out relative to the process's working
+ * directory rather than to a profile. An empty variable means "unset" here.
+ */
+function firstNonEmpty(...values: readonly (string | undefined)[]): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
 }
 
 function getBaseDirs(
