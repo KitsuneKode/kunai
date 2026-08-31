@@ -89,6 +89,27 @@ describe("playback session lifecycle", () => {
 });
 
 describe("resolvePlaybackResultDecision", () => {
+  test("pauses autoplay for a detached handoff without inferring playback outcomes", () => {
+    const decision = resolvePlaybackResultDecision({
+      result: {
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "unknown",
+        resultSource: "handoff",
+        handoff: { accepted: true, player: "vlc", launcher: "termux-am" },
+      },
+      controlAction: null,
+      session: createPlaybackSessionState({ autoNextEnabled: true }),
+    });
+
+    expect(decision).toMatchObject({
+      session: { autoplayPauseReason: "detached", autoplayPaused: true },
+      shouldRefreshSource: false,
+      shouldFallbackProvider: false,
+      shouldTreatAsInterrupted: false,
+    });
+  });
+
   test("marks manual stop as interrupted autoplay pause unless the user already paused it", () => {
     const session = createPlaybackSessionState({ autoNextEnabled: true });
     expect(

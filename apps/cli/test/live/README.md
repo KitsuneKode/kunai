@@ -19,6 +19,9 @@ bun run test:live:youtube
 bun run test:live:matrix
 bun run test:live:matrix anime
 bun run test:live:matrix videasy
+KUNAI_ANDROID_HANDOFF_PLAYER=vlc KUNAI_ANDROID_HANDOFF_URL="<direct-url>" \
+  KUNAI_ANDROID_HANDOFF_BINARY="$(realpath ./dist/bin/kunai-android-arm64)" \
+  bun run test:live:android-handoff
 KUNAI_LIVE_RELEASE_SIGNOFF=1 bun run test:live:release-signoff
 KUNAI_LIVE_DISCORD_PRESENCE=1 bun run test:live:discord
 ```
@@ -122,6 +125,17 @@ PR gate. It uploads the redacted JSON as an artifact and summarizes classificati
 summary. Do not add shared relay URLs or credentials to that workflow.
 
 Do not mark a provider down from a local offline/DNS failure. Confirm general connectivity first, then compare the smoke output with `/diagnostics` and the provider attempt timeline before changing provider code.
+
+### Android handoff smoke
+
+`test:live:android-handoff` runs only inside Android/Termux and requires an
+explicit `vlc` or `mpv` selection, an absolute compiled Kunai binary path, and
+a caller-owned direct media URL. It
+creates and removes a temporary HOME/XDG profile, refuses any root inside the
+real profile, invokes the canonical compiled entrypoint, and proves SQLite
+WAL/reopen behavior while reporting only the media host. Intent acceptance is not media
+start or completion evidence; record VLC/mpv-android playback and return-to-
+terminal observations separately.
 
 Provider etiquette:
 

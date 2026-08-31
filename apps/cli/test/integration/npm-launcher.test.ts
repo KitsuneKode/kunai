@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { removeTempDir } from "../support/remove-temp-dir";
 
@@ -200,6 +201,37 @@ nodeTest("launcher is plain Node ESM with a node shebang and no bun: imports", (
   const source = readFileSync(LAUNCHER_SOURCE, "utf8");
   expect(source.startsWith("#!/usr/bin/env node")).toBe(true);
   expect(/from\s+["']bun:|require\(["']bun:/.test(source)).toBe(false);
+});
+
+nodeTest("resolves Android ARM64 and x64 without Linux libc fallback", () => {
+  const probe = `
+    import { resolveTargetId } from ${JSON.stringify(pathToFileURL(LAUNCHER_SOURCE).href)};
+    const rows = [
+      resolveTargetId({ platform: "android", arch: "arm64", libc: "gnu" }),
+      resolveTargetId({ platform: "android", arch: "x64", libc: "musl" }),
+      resolveTargetId({
+        platform: "linux",
+        arch: "arm64",
+        libc: "gnu",
+        env: { TERMUX_VERSION: "0.119.0" },
+      }),
+      resolveTargetId({ platform: "linux", arch: "arm64", libc: "musl" }),
+    ];
+    process.stdout.write(JSON.stringify(rows));
+  `;
+  const result = Bun.spawnSync({
+    cmd: [NODE_BIN as string, "--input-type=module", "--eval", probe],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  expect(result.exitCode, result.stderr.toString()).toBe(0);
+  expect(JSON.parse(result.stdout.toString())).toEqual([
+    "android-arm64",
+    "android-x64",
+    "android-arm64",
+    "linux-arm64-musl",
+  ]);
 });
 
 execTest("runs under node with no bun on PATH", () => {

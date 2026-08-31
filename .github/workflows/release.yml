@@ -233,6 +233,10 @@ jobs:
             apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz \
             apps/cli/dist/bin/kunai-linux-arm64-musl \
             apps/cli/dist/bin/kunai-linux-arm64-musl.tar.gz \
+            apps/cli/dist/bin/kunai-android-arm64 \
+            apps/cli/dist/bin/kunai-android-arm64.tar.gz \
+            apps/cli/dist/bin/kunai-android-x64 \
+            apps/cli/dist/bin/kunai-android-x64.tar.gz \
             apps/cli/dist/bin/kunai-darwin-x64 \
             apps/cli/dist/bin/kunai-darwin-x64.tar.gz \
             apps/cli/dist/bin/kunai-darwin-arm64 \
@@ -1039,6 +1043,8 @@ jobs:
           VERSION="${{ needs.confirmation.outputs.version }}"
           PKGS=(
             "@kitsunekode/kunai"
+            "@kitsunekode/kunai-android-arm64"
+            "@kitsunekode/kunai-android-x64"
             "@kitsunekode/kunai-linux-x64"
             "@kitsunekode/kunai-linux-arm64"
             "@kitsunekode/kunai-linux-x64-musl"
@@ -1141,6 +1147,10 @@ jobs:
             .release-download/native/kunai-linux-x64-musl.tar.gz
             .release-download/native/kunai-linux-arm64-musl
             .release-download/native/kunai-linux-arm64-musl.tar.gz
+            .release-download/native/kunai-android-arm64
+            .release-download/native/kunai-android-arm64.tar.gz
+            .release-download/native/kunai-android-x64
+            .release-download/native/kunai-android-x64.tar.gz
             .release-download/native/kunai-darwin-x64
             .release-download/native/kunai-darwin-x64.tar.gz
             .release-download/native/kunai-darwin-arm64

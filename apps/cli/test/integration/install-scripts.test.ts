@@ -218,7 +218,54 @@ function runInstallShForDarwin(
   }
 }
 
+function runInstallShForAndroid(machine: "aarch64" | "x86_64"): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+} {
+  const sandbox = createInstallerSandbox(`install-sh-android-${machine}`);
+  try {
+    const shimDir = join(sandbox.root, "shims");
+    const termuxPrefix = join(sandbox.root, "termux-prefix");
+    mkdirSync(shimDir, { recursive: true });
+    mkdirSync(termuxPrefix, { recursive: true });
+    installCommandShim(
+      shimDir,
+      "uname",
+      `#!/bin/sh\nif [ "\${1:-}" = "-s" ]; then echo Linux; else echo ${machine}; fi\n`,
+    );
+
+    const androidEnv = { ...sandbox.env };
+    delete androidEnv.KUNAI_BIN_DIR;
+    return runInstallSh(["--dry-run", "--yes", "--skip-deps", "--version", "9.8.7"], {
+      ...androidEnv,
+      PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+      PREFIX: termuxPrefix,
+      TERMUX_VERSION: "0.118.3",
+    });
+  } finally {
+    sandbox.cleanup();
+  }
+}
+
 describe("install.sh dry-run", () => {
+  test.each([
+    ["aarch64", "android-arm64-bionic", "kunai-android-arm64.tar.gz"],
+    ["x86_64", "android-x64-bionic", "kunai-android-x64.tar.gz"],
+  ] as const)("selects the Android Bionic archive for Termux %s", (machine, target, archive) => {
+    const result = runInstallShForAndroid(machine);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`Detected native target: ${target}`);
+    expect(result.stdout).toContain(archive);
+    expect(result.stdout).toMatch(/termux-prefix\/bin\/kunai/);
+    expect(result.stdout).toContain("VLC");
+    expect(result.stdout).toContain("mpv-android");
+    expect(result.stdout).toContain("termux-am");
+    expect(result.stdout).not.toContain("sudo apt");
+    expect(result.stdout).not.toContain("sudo pacman");
+  });
+
   test("prints the binary install plan without downloading", () => {
     const result = spawnSync("bash", [INSTALL_SH, "--dry-run", "--yes"], {
       encoding: "utf8",

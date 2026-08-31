@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-08-27"
 ---
 
 # Kunai — Quickstart
@@ -12,7 +12,8 @@ Use this doc for setup, local execution, and common environment issues. Architec
 ## Prerequisites
 
 - Bun `>=1.3.14` for source installs during beta
-- `mpv` in `PATH`
+- Desktop: `mpv` in `PATH`. Android preview: Termux plus VLC or mpv-android;
+  desktop mpv is not installed inside Termux.
 - No poster dependency: every renderer consumes one natively prepared image.
   Kitty/Ghostty get native Kitty graphics, iTerm2 and VSCode 1.80+ get inline
   images, sixel terminals get sixel, and half-block truecolour is the universal
@@ -58,6 +59,25 @@ Windows options:
 Posters need nothing installed. Kunai's Windows CI provisions mpv from the
 official pinned binary archive rather than relying on a package-manager mirror;
 the commands above are user-install choices, not CI dependencies.
+
+Android Termux preview (Android 9 / API 28 or newer, ARM64 or x64 only):
+
+```sh
+pkg update
+pkg install curl termux-am
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
+kunai --player vlc
+# or: kunai --player mpv
+```
+
+The cross-built ELF declares API 28 as its platform floor; physical-device
+qualification is still pending. Install VLC or mpv-android as an Android app.
+`--player auto` opens the system
+chooser. This preview hands off only direct HTTP(S) streams that need no custom
+headers, cookies, yt-dlp, local file, or external subtitle. Launch acceptance
+does not give Kunai progress/completion evidence, so autoplay, auto-skip,
+automatic history progress, and queue acknowledgement are disabled for that
+handoff. iOS is not supported by this runtime.
 
 Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Packaged binaries are the preferred future path for users who should not need to install Bun manually.
 
@@ -142,6 +162,7 @@ Summary:
 | `--anime`               | `-a`        | Anime mode                                                        |
 | `--minimal` / `--quick` | `-m` / `-q` | Session shell chrome; `-q` with `-S` also auto-picks first result |
 | `--jump`                |             | With `-S`, auto-pick *n*th result (1-based)                       |
+| `--player`              |             | `auto`, `mpv`, or `vlc`; Android uses an external-player handoff  |
 | `--debug`               |             | Verbose logging                                                   |
 
 Use `/export-diagnostics` in the shell (or the command palette) to write a **redacted** JSON snapshot of recent diagnostics next to the process working directory for bug reports.

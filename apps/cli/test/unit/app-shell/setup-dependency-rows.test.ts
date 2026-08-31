@@ -117,6 +117,18 @@ describe("every dependency is installable on every platform we ship to", () => {
 });
 
 describe("buildDependencyRows", () => {
+  test("treats missing mpv as not required when the probe deliberately omitted its issue", async () => {
+    const snapshot = await probeCapabilities({
+      which: () => null,
+      listPathEntries: () => [],
+      requireMpv: false,
+    });
+    const row = buildDependencyRows(snapshot).find((candidate) => candidate.id === "mpv");
+
+    expect(row).toMatchObject({ state: "ok", detail: "not required by selected player" });
+    expect(row?.consequence).toBeUndefined();
+  });
+
   test("names ffmpeg, not ffprobe", async () => {
     // No platform ships a package called ffprobe — it arrives inside ffmpeg —
     // so telling a user to install ffprobe is unactionable everywhere.

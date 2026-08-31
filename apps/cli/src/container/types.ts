@@ -20,6 +20,7 @@ import type { AttentionFeatureFlags } from "../domain/features/feature-flags";
 import type { ListService } from "../domain/lists/ListService";
 import type { StatsFormatter } from "../domain/lists/StatsFormatter";
 import type { StatsService } from "../domain/lists/StatsService";
+import type { PlayerChoice, PlayerMode } from "../domain/playback/player-choice";
 import type { QueueService } from "../domain/queue/QueueService";
 import type { SessionStateManager } from "../domain/session/SessionStateManager";
 import type { Logger } from "../infra/logger/Logger";
@@ -192,6 +193,8 @@ export interface Container {
   readonly shellChrome: ShellChrome;
   /** Startup capability checks captured before container bootstrap. */
   readonly capabilitySnapshot: CapabilitySnapshot | null;
+  /** Runtime-selected player implementation; consumed by playback and presentation policies. */
+  readonly playerMode: PlayerMode;
   /** JSONL diagnostics trace path when --debug-json or --debug-session is active. */
   readonly debugTracePath?: string;
   /** Human-readable startup notes for developer debug sessions only. */
@@ -219,6 +222,7 @@ export interface ContainerOptions {
   mpv?: MpvRuntimeOptions;
   shellChrome?: ShellChrome;
   capabilitySnapshot?: CapabilitySnapshot | null;
+  playerChoice?: PlayerChoice;
   appVersion?: string;
   debugJson?: boolean;
   debugSession?: boolean;

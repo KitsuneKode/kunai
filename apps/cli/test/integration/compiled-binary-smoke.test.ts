@@ -76,7 +76,7 @@ describeBinary("compiled linux binary smoke", () => {
     expect(result.stdout.toString().trim()).toMatch(/^kunai \d+\.\d+\.\d+/);
   });
 
-  test("dist/bin satisfies the exact 18-file release asset contract", () => {
+  test("dist/bin satisfies the exact 22-file release asset contract", () => {
     assertCompleteReleaseAssetSet(listRegularReleaseFiles(BIN_DIR));
   });
 
@@ -223,6 +223,7 @@ describeBinary("compiled linux binary smoke", () => {
       "failed-handoff",
       "shutdown-restore",
       "return-to-shell",
+      "android-handoff",
     ];
     expect([...COMPILED_SMOKE_SCENARIO_IDS].sort()).toEqual([...covered].sort());
   });

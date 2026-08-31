@@ -61,6 +61,7 @@
     "test:installer:docker:scenario": "bash test/docker/native-installer/run-local.sh --scenario",
     "test:installer:ci": "KUNAI_INSTALLER_DOCKER=1 bash test/docker/native-installer/run-local.sh",
     "test:live:allanime": "bun test/live/allanime-demonslayer.smoke.ts",
+    "test:live:android-handoff": "bun test/live/android-terminal-handoff.ts",
     "test:live:anidb": "bun test/live/anidb-onigiri.smoke.ts",
     "test:live:tracker-sync": "bun -e \"await import('./test/live/tracker-sync-oauth.smoke.ts')\"",
     "test:live:discord": "bun -e \"await import('./test/live/discord-presence.smoke.ts')\"",
@@ -125,6 +126,8 @@
     "typescript": "catalog:"
   },
   "optionalDependencies": {
+    "@kitsunekode/kunai-android-arm64": "0.3.0",
+    "@kitsunekode/kunai-android-x64": "0.3.0",
     "@kitsunekode/kunai-darwin-arm64": "0.3.0",
     "@kitsunekode/kunai-darwin-x64": "0.3.0",
     "@kitsunekode/kunai-linux-arm64": "0.3.0",

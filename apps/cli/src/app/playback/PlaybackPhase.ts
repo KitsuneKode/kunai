@@ -142,8 +142,8 @@ import {
   createResolveTraceStub,
   finalizeResolveTrace,
 } from "@/app/playback/resolve-trace";
-import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import { planEpisodeIterationDirective } from "@/app/playback/run-playback-episode-iteration";
+import { runPlaybackSession } from "@/app/playback/run-playback-session";
 import {
   applyPreferredStreamSelection,
   shouldSkipExternalSubtitleLookup,
@@ -203,6 +203,7 @@ import type {
   SubtitleTrack,
   SearchResult,
 } from "@/domain/types";
+import { isDetachedHandoffResult } from "@/domain/types";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
@@ -638,7 +639,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     try {
       // Gate before episode/provider/history work so finally still rolls back
       // unacknowledged queue claims when mpv (or other deps) are missing.
-      const dependencyGate = await gatePlaybackDependencies({ player });
+      const dependencyGate = await gatePlaybackDependencies({
+        player,
+        playerMode: container.playerMode,
+      });
       if (!dependencyGate.ok) {
         diagnosticsService.record({
           category: "playback",
@@ -2416,6 +2420,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               },
               run.localPlaybackSource ?? undefined,
             );
+            if (isDetachedHandoffResult(result)) {
+              queueAttempt?.rollbackIfUnacknowledged(
+                "playback-aborted",
+                "external handoff is not observable",
+              );
+            }
           } catch (error) {
             if (error instanceof PlaybackAbortedError || context.signal.aborted) {
               stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
@@ -2449,7 +2459,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Save history — use effectiveTiming.current so that a background retry
           // that completed during playback is reflected in completion status.
           const quitThresholdMode = config.quitNearEndThresholdMode;
-          if (shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode)) {
+          if (
+            container.player.capabilities.completion &&
+            shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode)
+          ) {
             const didComplete = didPlaybackReachCompletionThreshold(
               result,
               effectiveTiming.current,
@@ -3879,13 +3892,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       }),
     );
 
-    this.startLateSubtitleResolver({
-      stream,
-      title,
-      episode,
-      context,
-      playbackIterationSignal,
-    });
+    if (player.capabilities.externalSubtitles) {
+      this.startLateSubtitleResolver({
+        stream,
+        title,
+        episode,
+        context,
+        playbackIterationSignal,
+      });
+    }
 
     const playbackProviderId = successfulProviderId ?? stateManager.getState().provider;
     // One cycle has one start instant. Recomputing it per update made every
@@ -3904,32 +3919,34 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
       providerId: ledgerProviderId,
     });
-    this.playbackLedger = new PlaybackHistoryLedger(historyRepository, playbackEventRepository);
-    // Shutdown flushes this before releasing mpv, so the latest resume
-    // position survives a Ctrl+C mid-playback. Null-safe once finalized.
-    this.unregisterActiveCheckpoint = context.container.activePlaybackCheckpoint.register(() => {
-      this.playbackLedger?.checkpoint();
-    });
-    this.playbackLedger.start(
-      {
-        title: {
-          id: title.id,
-          kind: persistedKind,
-          title: title.name,
-          externalIds: enrichExternalIdsWithVideoMeta(
-            title.externalIds,
-            stateManager.getState().videoMeta,
-          ),
+    if (player.capabilities.progressEvents) {
+      this.playbackLedger = new PlaybackHistoryLedger(historyRepository, playbackEventRepository);
+      // Shutdown flushes this before releasing mpv, so the latest resume
+      // position survives a Ctrl+C mid-playback. Null-safe once finalized.
+      this.unregisterActiveCheckpoint = context.container.activePlaybackCheckpoint.register(() => {
+        this.playbackLedger?.checkpoint();
+      });
+      this.playbackLedger.start(
+        {
+          title: {
+            id: title.id,
+            kind: persistedKind,
+            title: title.name,
+            externalIds: enrichExternalIdsWithVideoMeta(
+              title.externalIds,
+              stateManager.getState().videoMeta,
+            ),
+          },
+          episode: episodeIdentityForHistory(title, episode),
+          providerId: ledgerProviderId,
+          posterUrl: title.posterUrl,
+          mediaKind: persistedKind,
         },
-        episode: episodeIdentityForHistory(title, episode),
-        providerId: ledgerProviderId,
-        posterUrl: title.posterUrl,
-        mediaKind: persistedKind,
-      },
-      startAt,
-    );
+        startAt,
+      );
+    }
 
-    return runMpvPlaybackSession({
+    return runPlaybackSession({
       stream,
       title,
       episode,

@@ -9,7 +9,7 @@ import {
 } from "@/app/playback/policies/playback-result-policy";
 import { playbackSessionPhaseForEvent } from "@/app/playback/policies/playback-session-phase-policy";
 
-export type PlaybackAutoplayPauseReason = "user" | "interrupted" | null;
+export type PlaybackAutoplayPauseReason = "user" | "interrupted" | "detached" | null;
 export type PlaybackSessionPhase =
   | "selecting"
   | "resolving"

@@ -9,6 +9,7 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("-S, --search <query>");
   expect(help).toContain("--continue, --resume");
   expect(help).toContain("--install-protocol-handler");
+  expect(help).toContain("--player <auto|mpv|vlc>");
   expect(help).toContain("Register the Linux-only kunai:// URL handler");
   expect(help).toContain("-y, --youtube");
   expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
@@ -25,6 +26,17 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("kunai upgrade");
   expect(help).toContain("kunai upgrade --check");
   expect(help).toContain("kunai uninstall");
+});
+
+test("parseArgs exposes an explicit player choice with an auto default", () => {
+  expect(parseArgs([]).player).toBe("auto");
+  expect(parseArgs(["--player", "auto"]).player).toBe("auto");
+  expect(parseArgs(["--player", "mpv"]).player).toBe("mpv");
+  expect(parseArgs(["--player", "vlc"]).player).toBe("vlc");
+});
+
+test("parseArgs rejects unknown player choices", () => {
+  expect(() => parseArgs(["--player", "potato"])).toThrow(/--player.*auto.*mpv.*vlc/i);
 });
 
 test("parseArgs treats --json as a known maintenance flag", () => {

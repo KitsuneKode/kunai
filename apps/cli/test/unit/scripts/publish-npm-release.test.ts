@@ -19,6 +19,8 @@ const PLATFORM_IDS = [
   "linux-x64-musl",
   "linux-arm64",
   "linux-arm64-musl",
+  "android-arm64",
+  "android-x64",
   "darwin-x64",
   "darwin-arm64",
   "windows-x64",
@@ -140,9 +142,13 @@ describe("local npm publication candidates", () => {
         "launcher" as const,
       ];
       expect(result.map((candidate) => candidate.role)).toEqual(expectedRoles);
-      expect(commands.slice(0, 8).every((invocation) => invocation[0] === "npm")).toBe(true);
       expect(
-        commands.slice(0, 8).every((invocation) => invocation.includes("--pack-destination")),
+        commands.slice(0, PLATFORM_IDS.length).every((invocation) => invocation[0] === "npm"),
+      ).toBe(true);
+      expect(
+        commands
+          .slice(0, PLATFORM_IDS.length)
+          .every((invocation) => invocation.includes("--pack-destination")),
       ).toBe(true);
       expect(commands.at(-1)).toEqual([
         "npm",
@@ -202,8 +208,8 @@ describe("local npm publication candidates", () => {
         platformTarballMode: "inspect",
       });
 
-      expect(result).toHaveLength(9);
-      expect(commands).toHaveLength(9);
+      expect(result).toHaveLength(PLATFORM_IDS.length + 1);
+      expect(commands).toHaveLength(PLATFORM_IDS.length + 1);
       expect(commands.every((invocation) => invocation.includes("--dry-run"))).toBe(true);
       expect(commands.every((invocation) => !invocation.includes("--pack-destination"))).toBe(true);
       for (const id of PLATFORM_IDS) {
@@ -512,7 +518,7 @@ describe("resumable npm publication orchestration", () => {
       },
     });
 
-    expect(result).toHaveLength(9);
+    expect(result).toHaveLength(PLATFORM_IDS.length + 1);
     expect(result.every((decision) => decision.action === "publish")).toBe(true);
     expect(commands).toEqual([]);
   });

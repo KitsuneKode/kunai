@@ -1,4 +1,5 @@
 import type { ShellChrome } from "@/container";
+import { parsePlayerChoice, type PlayerChoice } from "@/domain/playback/player-choice";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { Command } from "commander";
 
@@ -14,6 +15,7 @@ export type CliArgs = {
   supportBundle: boolean;
   zen: boolean;
   mpv: MpvRuntimeOptions;
+  player: PlayerChoice;
   minimal: boolean;
   quick: boolean;
   jump?: number;
@@ -65,7 +67,10 @@ DISPLAY
   -q, --quick                Quick layout
       --jump <n>             Auto-pick the n-th search result (1-based, with -S)
 
-mpv
+PLAYER
+      --player <auto|mpv|vlc>  Player backend (auto chooses for this platform)
+
+mpv OPTIONS
       --mpv-debug            Verbose mpv logging
       --mpv-clean            Ignore your mpv config for this run
       --no-user-mpv-config   Same, explicit
@@ -165,6 +170,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--mpv-clean",
   "--no-user-mpv-config",
   "--mpv-log-file",
+  "--player",
   "-h",
   "--help",
   "-v",
@@ -188,6 +194,7 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--open",
   "--handoff-url",
   "--mpv-log-file",
+  "--player",
   "--to",
 ]);
 
@@ -229,6 +236,7 @@ type CommanderCliOptions = {
    */
   readonly userMpvConfig?: boolean;
   readonly mpvLogFile?: string;
+  readonly player?: string;
   readonly help?: boolean;
   readonly version?: boolean;
 };
@@ -271,6 +279,7 @@ function createCliCommand(): Command {
     .option("--mpv-clean")
     .option("--no-user-mpv-config")
     .option("--mpv-log-file <path>")
+    .option("--player <player>")
     .option("-h, --help")
     .option("-v, --version")
     .argument("[query...]");
@@ -327,6 +336,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     supportBundle: false,
     zen: false,
     mpv: {},
+    player: "auto",
     minimal: false,
     quick: false,
     setup: false,
@@ -395,6 +405,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     ...(options.userMpvConfig === false ? { noUserConfig: true } : {}),
     ...(options.mpvLogFile ? { logFile: options.mpvLogFile } : {}),
   };
+  args.player = parsePlayerChoice(options.player);
   args.help = Boolean(options.help);
   args.version = Boolean(options.version);
 

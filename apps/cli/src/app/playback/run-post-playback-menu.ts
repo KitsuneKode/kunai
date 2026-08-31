@@ -399,6 +399,7 @@ export async function runPostPlaybackMenu(
       isAnime: mode === "anime",
       nextAirDateHint: iteration.catalogAutoplayEndBanner?.replace(/^Caught up ·\s*/i, ""),
       playbackStarted,
+      handoff: result.handoff,
     });
     const postPlayState = resolvePostPlayState(postPlayInput);
     const watchTimeSummary =

@@ -17,6 +17,7 @@ import type {
   PlaybackTimingMetadata,
   TitleInfo,
 } from "@/domain/types";
+import { isDetachedHandoffResult } from "@/domain/types";
 import type { PlaybackControlAction } from "@/infra/player/PlayerControlService";
 
 export type AutoAdvanceBlockReason =
@@ -50,6 +51,7 @@ export type AutoAdvanceArgs = {
 
 /** True when mpv never meaningfully started (load failure, dead URL, immediate exit). */
 export function didPlaybackFailToStart(result: PlaybackResult): boolean {
+  if (isDetachedHandoffResult(result)) return false;
   if (result.endReason === "eof" || result.endReason === "quit") {
     return false;
   }
@@ -95,6 +97,16 @@ export function resolvePlaybackResultDecision({
   timing,
   endPolicy = DEFAULT_PLAYBACK_END_POLICY,
 }: PlaybackResultDecisionArgs): PlaybackResultDecision {
+  if (isDetachedHandoffResult(result)) {
+    const pauseReason = session.autoplayPauseReason === "user" ? "user" : "detached";
+    return {
+      session: withPauseReason(session, pauseReason),
+      shouldRefreshSource: false,
+      shouldFallbackProvider: false,
+      shouldTreatAsInterrupted: false,
+    };
+  }
+
   const nearNaturalEnd = didPlaybackEndNearNaturalEnd(
     result,
     timing,

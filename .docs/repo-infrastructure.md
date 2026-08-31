@@ -140,8 +140,8 @@ Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` cov
 `bun run build` at the repo root runs `build` + `build:binary:host` in parallel.
 Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size budget.
 
-The 0.3.0 GitHub Release compatibility bridge is an exact 18-file set: eight
-canonical archives, the same eight raw standalone binaries, legacy
+The 0.3.0 GitHub Release compatibility bridge is an exact 22-file set: ten
+canonical archives, the same ten raw standalone binaries, legacy
 `SHA256SUMS` for raw binaries, and `SHA256SUMS.archives` for archives. Keeping
 raw hashes under the legacy name preserves already-published installer/updater
 compatibility. Each archive contains exactly
@@ -156,7 +156,7 @@ boundaries use the downloaded files directly without a rebuild, native copy, or
 recompression. GitHub downloads may discard the raw binary's executable mode,
 so the Linux smoke restores that filesystem metadata after byte verification;
 the canonical `0755` mode inside tar archives remains independently verified.
-The candidate job then creates GitHub artifact attestations for the exact 18
+The candidate job then creates GitHub artifact attestations for the exact 22
 verified paths. Confirmation and publication fail closed unless every file
 verifies against `KitsuneKode/kunai/.github/workflows/release.yml`, the main
 branch ref, and the current release commit. The verifier also rejects extra or
@@ -224,7 +224,7 @@ Open Windows parity backlog:
 ```sh
 bun run verify:build-pipeline       # fast: build + pkg:check + turbo cache
 bun run verify:build-pipeline:pr    # PR parity: + 2 Linux binaries
-KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 8-target build
+KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 10-target build
 ```
 
 ## Release guardrails

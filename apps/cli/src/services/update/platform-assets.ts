@@ -1,3 +1,5 @@
+import { isAndroidRuntime } from "@/domain/platform-runtime";
+
 /**
  * Frozen release asset naming contract shared by:
  *   - scripts/build-binaries.ts
@@ -7,9 +9,9 @@
  * Asset names are version-agnostic; only the download base + tag change per release.
  */
 
-export type PlatformOs = "linux" | "darwin" | "windows";
+export type PlatformOs = "linux" | "android" | "darwin" | "windows";
 export type PlatformArch = "x64" | "arm64";
-export type PlatformLibc = "gnu" | "musl";
+export type PlatformLibc = "gnu" | "musl" | "bionic";
 export type ReleaseArchiveFormat = "tar.gz" | "zip";
 
 const MAX_RELEASE_BINARY_BYTES = 128 * 1024 * 1024;
@@ -54,7 +56,7 @@ function releaseBinaryTarget(input: ReleaseBinaryTargetInput): ReleaseBinaryTarg
   };
 }
 
-/** Cross-compile targets published on every GitHub Release (grouped: Linux → macOS → Windows). */
+/** Cross-compile targets published on every GitHub Release (Linux → Android → macOS → Windows). */
 export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
   releaseBinaryTarget({
     id: "linux-x64",
@@ -85,6 +87,22 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     os: "linux",
     arch: "arm64",
     libc: "musl",
+  }),
+  releaseBinaryTarget({
+    id: "android-arm64",
+    triple: "bun-linux-arm64-android",
+    out: "kunai-android-arm64",
+    os: "android",
+    arch: "arm64",
+    libc: "bionic",
+  }),
+  releaseBinaryTarget({
+    id: "android-x64",
+    triple: "bun-linux-x64-android",
+    out: "kunai-android-x64",
+    os: "android",
+    arch: "x64",
+    libc: "bionic",
   }),
   releaseBinaryTarget({
     id: "darwin-x64",
@@ -124,6 +142,7 @@ export type DetectedPlatform = {
 
 export function normalizePlatformOs(platform: string): PlatformOs | undefined {
   if (platform === "linux") return "linux";
+  if (platform === "android") return "android";
   if (platform === "darwin") return "darwin";
   if (platform === "win32" || platform === "windows") return "windows";
   return undefined;
@@ -139,19 +158,28 @@ export function detectPlatform(
   platform: string = process.platform,
   arch: string = process.arch,
   libc: PlatformLibc = "gnu",
+  env: Readonly<Record<string, string | undefined>> = process.env,
 ): DetectedPlatform {
+  const androidRuntime = isAndroidRuntime(platform, env);
+  const os = androidRuntime ? "android" : normalizePlatformOs(platform);
   return {
-    os: normalizePlatformOs(platform),
+    os,
     arch: normalizePlatformArch(arch),
-    libc: normalizePlatformOs(platform) === "linux" ? libc : undefined,
+    libc: os === "android" ? "bionic" : os === "linux" ? libc : undefined,
   };
+}
+
+export function resolvePlatformLibc(os: PlatformOs | undefined, linuxMusl: boolean): PlatformLibc {
+  if (os === "android") return "bionic";
+  if (os === "linux" && linuxMusl) return "musl";
+  return "gnu";
 }
 
 /** Published GitHub Release asset filename for the given OS/arch/libc. */
 export function releaseAssetName(
   os: PlatformOs,
   arch: PlatformArch,
-  libc: PlatformLibc = "gnu",
+  libc: PlatformLibc = os === "android" ? "bionic" : "gnu",
 ): string {
   if (os === "windows") {
     return arch === "arm64" ? "kunai-windows-arm64.exe" : "kunai-windows-x64.exe";
@@ -165,7 +193,7 @@ export function releaseAssetName(
 export function releaseAssetSupported(
   os: PlatformOs,
   arch: PlatformArch,
-  libc: PlatformLibc = "gnu",
+  libc: PlatformLibc = os === "android" ? "bionic" : "gnu",
 ): boolean {
   return resolveReleaseBinaryTarget(os, arch, libc) !== undefined;
 }
@@ -174,9 +202,9 @@ export function releaseAssetSupported(
 export function resolveReleaseBinaryTarget(
   os: PlatformOs,
   arch: PlatformArch,
-  libc: PlatformLibc = "gnu",
+  libc: PlatformLibc = os === "android" ? "bionic" : "gnu",
 ): ReleaseBinaryTarget | undefined {
-  const effectiveLibc = os === "linux" ? libc : "gnu";
+  const effectiveLibc = os === "linux" || os === "android" ? libc : "gnu";
   return RELEASE_BINARY_TARGETS.find(
     (target) =>
       target.os === os && target.arch === arch && (target.libc ?? "gnu") === effectiveLibc,
@@ -187,6 +215,7 @@ export type HostReleaseBinaryTargetInput = {
   readonly platform?: string;
   readonly arch?: string;
   readonly libc?: PlatformLibc;
+  readonly env?: Readonly<Record<string, string | undefined>>;
 };
 
 /**
@@ -200,6 +229,7 @@ export function resolveHostReleaseBinaryTarget(
     input.platform ?? process.platform,
     input.arch ?? process.arch,
     input.libc ?? "gnu",
+    input.env ?? process.env,
   );
   if (!detected.os || !detected.arch) {
     const platform = input.platform ?? process.platform;
@@ -210,12 +240,16 @@ export function resolveHostReleaseBinaryTarget(
     );
   }
 
-  const libc = input.libc ?? (detected.os === "linux" ? (detected.libc ?? "gnu") : "gnu");
+  const libc = input.libc ?? detected.libc ?? "gnu";
   const target = resolveReleaseBinaryTarget(detected.os, detected.arch, libc);
   if (!target) {
     throw new Error(
       `[platform] no release binary for host ${detected.os}/${detected.arch}` +
-        (detected.os === "linux" && libc === "musl" ? " (musl)" : "") +
+        (detected.os === "linux" && libc === "musl"
+          ? " (musl)"
+          : detected.os === "android"
+            ? " (bionic)"
+            : "") +
         `. Published targets: ${RELEASE_BINARY_TARGETS.map((t) => t.id).join(", ")}`,
     );
   }

@@ -54,17 +54,24 @@ export function buildDependencyRows(
   const rows: ScopedDependencyRow[] = [];
 
   const mpvIssue = issue("mpv-missing");
+  const mpvRequired = snapshot.mpvRequired;
   rows.push({
     id: "mpv",
     name: "mpv",
     scope: "always",
     // Degraded, not blocking: browsing, the watchlist, and the calendar all
     // work without it. Calling it blocking would be a lie about what is broken.
-    state: snapshot.mpv ? "ok" : "degraded",
+    state: mpvRequired && !snapshot.mpv ? "degraded" : "ok",
     role: "playback",
-    detail: snapshot.mpv ? "found on PATH" : "not found",
+    detail: snapshot.mpv
+      ? "found on PATH"
+      : mpvRequired
+        ? "not found"
+        : "not required by selected player",
     fix: mpvIssue ? fixFor(mpvIssue.install, which) : null,
-    ...(snapshot.mpv ? {} : { consequence: "Nothing can play until this is installed." }),
+    ...(mpvRequired && !snapshot.mpv
+      ? { consequence: "Nothing can play until this is installed." }
+      : {}),
   });
 
   const ytDlpIssue = issue("yt-dlp-missing");

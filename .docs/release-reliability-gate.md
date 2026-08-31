@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-08-27"
 ---
 
 # Kunai Release Reliability Gate
@@ -36,8 +36,8 @@ Expected result:
 - unit and integration tests report 0 failures
 - typecheck exits 0
 - build writes `apps/cli/dist/kunai.js` and the host compiled binary under `apps/cli/dist/bin/`
-- an all-target release build writes exactly eight deterministic archives,
-  eight preserved raw binaries, `SHA256SUMS`, and `SHA256SUMS.archives`
+- an all-target release build writes exactly ten deterministic archives,
+  ten preserved raw binaries, `SHA256SUMS`, and `SHA256SUMS.archives`
 - package check rejects `dist/bin/**`, source/maps, analyze metafiles, lifecycle scripts, dependency drift, and oversized launcher tarballs
 - release dry-run completes build, checks, and packability without publishing
 
@@ -48,9 +48,8 @@ upload and after protected-job download. It must contain only `package.json`,
 uses those same verified bytes rather than repacking them.
 
 For native release assets, the legacy `SHA256SUMS` name continues to cover the
-eight raw compatibility binaries because already-published installers and
-updaters request it. `SHA256SUMS.archives` separately covers the eight
-archives. Verification rejects
+ten raw compatibility binaries because installers and updaters request it.
+`SHA256SUMS.archives` separately covers the ten archives. Verification rejects
 missing, duplicate, unexpected, empty, oversized, hash-mismatched, or
 non-canonical assets. A canonical archive has one entry whose name is the raw
 asset name and no directory prefix; tar metadata is normalized with executable
@@ -58,7 +57,7 @@ mode `0755`, while zip records that Unix mode but Windows extraction does not
 promise to restore it. GitHub artifact and release downloads do not preserve the
 raw file's Unix executable mode either, so verification restores mode only for
 the Linux smoke after hashes pass; this does not change file bytes. CI isolates
-the 18 native files under the candidate's `native/` directory and runs the exact
+the 22 native files under the candidate's `native/` directory and runs the exact
 directory verifier immediately before candidate upload, confirmation, draft
 asset upload, and public promotion. No boundary rebuilds or recompresses them.
 The blocking native smoke matrix then serves only the preserved host archive
@@ -69,7 +68,7 @@ the recorded archive provenance and executes the sandboxed installed launcher
 with `--version` and `--help`; the separate raw and musl executions remain
 compatibility checks.
 
-After the final candidate-directory verification, `actions/attest` signs all 18
+After the final candidate-directory verification, `actions/attest` signs all 22
 subjects with GitHub OIDC. The upload's immutable artifact ID is passed through
 the provenance, execution, confirmation, and publication jobs so every boundary
 downloads the same candidate rather than resolving it again by name. A dedicated
@@ -396,6 +395,33 @@ later.
 Two known wall-clock-dependent tests currently fail under it and are not
 release blockers: the install-manifest `updatedAt` test and the `downloadToFile`
 total-deadline test. Investigate any _new_ name that appears.
+
+## Android terminal preview gate
+
+Android artifacts (`android-arm64`, `android-x64`) are Bun/Bionic binaries that
+declare Android API 28 as their platform floor. A Linux cross-compile, archive
+verification, or installer dry-run must not be reported as Android runtime
+proof. On an Android/Termux device, install
+`termux-am` and VLC or mpv-android, then run:
+
+```sh
+KUNAI_ANDROID_HANDOFF_PLAYER=vlc \
+KUNAI_ANDROID_HANDOFF_URL="<direct-test-media-url>" \
+KUNAI_ANDROID_HANDOFF_BINARY="$(realpath ./apps/cli/dist/bin/kunai-android-arm64)" \
+bun run test:live:android-handoff
+```
+
+Repeat with `mpv`. The harness invokes the compiled canonical entrypoint for
+help, version, and the handoff scenario, then creates a WAL database and proves
+it can reopen the written row under isolated Termux storage. Record separately: real Ink TTY
+input and resume, installer and
+upgrade, VLC/mpv-android launch, media start, return to Kunai, qualifying anime
+and TMDB providers, rejection of header/subtitle-dependent streams, analytics
+remaining disabled, cold start, responsiveness, and memory. Until at least one
+ARM64 device passes the preview matrix, Android remains unverified; general
+availability additionally needs minimum/middle/current Android versions.
+
+iOS, Android TV, and other TV platforms are not part of this gate.
 
 ## Manual Smoke
 

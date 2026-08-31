@@ -51,7 +51,11 @@ describe("distribution release-asset contract", () => {
     expect([...REQUIRED_RELEASE_ASSET_NAMES]).toEqual(
       [...requiredBinaryNames, ...requiredArchiveNames, "SHA256SUMS", "SHA256SUMS.archives"].sort(),
     );
-    expect(REQUIRED_RELEASE_ASSET_NAMES).toHaveLength(18);
+    expect(REQUIRED_RELEASE_ASSET_NAMES).toHaveLength(22);
+    expect(requiredBinaryNames).toContain("kunai-android-arm64");
+    expect(requiredBinaryNames).toContain("kunai-android-x64");
+    expect(requiredArchiveNames).toContain("kunai-android-arm64.tar.gz");
+    expect(requiredArchiveNames).toContain("kunai-android-x64.tar.gz");
   });
 
   test("assertRequiredReleaseAssets accepts a complete set and rejects gaps", () => {
@@ -260,7 +264,7 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(npmPublishIdx).toBeGreaterThan(binaryBuildIdx);
   });
 
-  // The launcher pins all 8 platform packages as exact-version
+  // The launcher pins all 10 platform packages as exact-version
   // optionalDependencies, so publishing it alone ships a CLI with no binary.
   test("platform packages are built, preserved, and published with the launcher", () => {
     const cand = candidate();
@@ -730,7 +734,7 @@ describe("release:pack script contract", () => {
 });
 
 describe("verifyReleaseArtifactDirectory", () => {
-  test("accepts eight canonical archives, eight raw binaries, and two manifests", async () => {
+  test("accepts ten canonical archives, ten raw binaries, and two manifests", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
       writeCompleteReleaseFixture(dir);
@@ -873,7 +877,7 @@ describe("verifyReleaseArtifactDirectory", () => {
           expectedVersion: "9.9.9",
           skipVersionSmoke: true,
         }),
-      ).rejects.toThrow(/8/);
+      ).rejects.toThrow(/10/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

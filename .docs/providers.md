@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-08-27"
 ---
 
 # Kunai — Provider Guide
@@ -24,7 +24,7 @@ apps/cli shell
   -> ProviderEngine (retry, timeout, fallback, abort)
   -> CoreProviderModule.resolve(input, context) -> ProviderResolveResult
   -> provider-result-adapter -> StreamInfo
-  -> mpv
+  -> PlayerService (managed mpv or qualified Android handoff)
 ```
 
 ### Package Ownership
@@ -48,8 +48,24 @@ User selects title + episode
   -> providerResolveResultToStreamInfo(result, title, subtitlePreference)
   -> StreamInfo { url, headers, subtitles, providerResolveResult }
   -> providerHealth.set(healthDelta)  [persist health for adaptive fallback]
-  -> mpv
+  -> PlayerService
 ```
+
+### Android stream qualification
+
+Android support does not label whole providers mobile-compatible. Every final
+`StreamInfo` is checked at the player boundary. The initial detached handoff
+accepts only absolute HTTP(S) media URLs with empty headers and no cookies,
+yt-dlp requirement, unresolved locator, local source, or external subtitle.
+Anything else fails visibly before Android is launched; Kunai does not proxy or
+rewrite media to make a candidate fit.
+
+Production providers and fallback order remain exactly those loaded by
+`loadProductionProviderModules()`. Provider-side curl or yt-dlp subprocesses may
+still participate in resolution when available in Termux, but a final stream
+that needs player-side yt-dlp or request headers is not handoff-safe. Qualifying
+anime and TMDB lanes must be proven separately on a physical device before a
+provider is reported as working on Android.
 
 ### Fallback Layers
 

@@ -12,6 +12,7 @@ import {
   isSamePlaybackGeneration,
   type PlaybackGeneration,
 } from "@/domain/playback/playback-generation";
+import { MANAGED_MPV_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
@@ -59,6 +60,7 @@ import type {
 } from "./PlayerService";
 
 export class PlayerServiceImpl implements PlayerService {
+  readonly capabilities = MANAGED_MPV_CAPABILITIES;
   private persistentSession: PersistentMpvSession | null = null;
   private persistentSessionCreation: Promise<PersistentMpvSession> | null = null;
   private persistentSessionEpoch = 0;

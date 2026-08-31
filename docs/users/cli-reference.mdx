@@ -128,9 +128,17 @@ More: [Share links](/docs/users/share-links).
 
 ## mpv and diagnostics
 
+- **Player selection:** `--player auto|mpv|vlc` chooses the backend for one run.
+  Desktop `auto` and `mpv` use supervised mpv; desktop VLC is not supported.
+  Android `auto` opens the chooser, while `mpv` and `vlc` target those installed
+  Android apps.
 - **mpv:** `--mpv-debug`, `--mpv-clean`, `--no-user-mpv-config`, `--mpv-log-file <path>` forward into the player for this run.
 - **Diagnostics:** `--debug` writes verbose logs to `./logs.txt`. `--debug-json` and `--debug-session` add structured traces for support bundles.
 - **Dry run:** `--dry-run` prints the planned bootstrap without changing state.
+
+Android handoff reports launch acceptance only. Kunai cannot observe external
+progress, completion, EOF, track changes, or player controls, so it does not
+infer history progress, autoplay, or queue acknowledgement from the intent.
 
 ## Providers
 
