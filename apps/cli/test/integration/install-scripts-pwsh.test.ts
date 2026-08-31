@@ -129,6 +129,25 @@ function installPwshCommandShim(
   writeFileSync(join(root, name), contents.unix, { mode: 0o755 });
 }
 
+/**
+ * Keep the installer's own patience inside the test's.
+ *
+ * `install.ps1` defaults to a 300 second download budget, three attempts, and a
+ * one-second backoff — fifteen times the 20 second budget `test:integration`
+ * gives a whole test. So one transient hiccup on a slow runner has the
+ * installer still waiting politely while the harness kills the test, and the
+ * failure reads as "timed out after 20000ms" with nothing to act on. That is
+ * what took the Windows job red on a commit whose diff was Markdown only.
+ *
+ * A few tests already set these by hand to exercise retry and timeout paths;
+ * spreading the caller's env last keeps those overrides winning.
+ */
+const BOUNDED_DOWNLOAD_ENV = {
+  KUNAI_DOWNLOAD_TOTAL_SECONDS: "8",
+  KUNAI_DOWNLOAD_MAX_ATTEMPTS: "2",
+  KUNAI_DOWNLOAD_RETRY_BASE_MS: "50",
+} as const;
+
 /** Async so Bun.serve can answer while the installer runs (spawnSync deadlocks the fixture). */
 async function runInstallPs1Async(
   args: string[],
@@ -137,7 +156,7 @@ async function runInstallPs1Async(
 ): Promise<{ status: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["pwsh", "-NoProfile", "-File", INSTALL_PS1, ...args], {
     cwd,
-    env,
+    env: { ...BOUNDED_DOWNLOAD_ENV, ...env },
     stdout: "pipe",
     stderr: "pipe",
   });
