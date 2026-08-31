@@ -46,7 +46,33 @@ describe("release notes artifacts", () => {
    */
   test("no release artifact sits between 0.2.5 and 0.3.0", () => {
     expect(getReleaseByTag("0.2.6")).toBeNull();
-    expect(releaseNotesArtifacts.map((release) => release.version)).toEqual(["0.3.0", "0.2.5"]);
+
+    // The invariant is the *gap*, not the census. Pinning the exact list made
+    // this fail on any version above 0.3.0 — a release-blocking time bomb that
+    // fired the first time a patch changeset produced 0.3.1, and would have
+    // fired on whatever came next regardless. Assert what the comment above
+    // actually describes: nothing strictly between the two anchors.
+    const between = releaseNotesArtifacts
+      .map((release) => release.version)
+      .filter(
+        (version) => compareVersions(version, "0.2.5") > 0 && compareVersions(version, "0.3.0") < 0,
+      );
+    expect(between).toEqual([]);
+
+    // Both anchors are still present, so the filter above is testing a real
+    // range rather than passing because the list emptied out.
+    const versions = releaseNotesArtifacts.map((release) => release.version);
+    expect(versions).toContain("0.2.5");
+    expect(versions).toContain("0.3.0");
+  });
+
+  test("artifacts are ordered newest first", () => {
+    // The exact-list assertion used to cover ordering as a side effect. It is
+    // worth keeping on its own: `latestReleaseNotesArtifact` reads position, so
+    // an out-of-order artifact would silently advertise the wrong release.
+    const versions = releaseNotesArtifacts.map((release) => release.version);
+    const sorted = [...versions].sort((left, right) => compareVersions(right, left));
+    expect(versions).toEqual(sorted);
   });
 
   test("staged releases have no GitHub URL or visible assets", () => {
@@ -153,3 +179,16 @@ test("a summary already represented by a section is not duplicated", () => {
 
   expect(sections.map((section) => section.title)).toEqual(["Privacy"]);
 });
+
+/** Numeric semver-ish compare, enough for the `major.minor.patch` tags shipped here. */
+function compareVersions(left: string, right: string): number {
+  const parse = (value: string): number[] =>
+    value.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const a = parse(left);
+  const b = parse(right);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const diff = (a[index] ?? 0) - (b[index] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
