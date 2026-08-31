@@ -1142,10 +1142,10 @@ is_inside_staging_root() {
 	local root="$CACHE_DIR/staging"
 	[[ -n "$candidate" ]] || return 1
 	case "$candidate" in
-		..|../*|*/../*|*/..) return 1 ;;
+	.. | ../* | */../* | */..) return 1 ;;
 	esac
 	case "$candidate" in
-		"$root"/?*) return 0 ;;
+	"$root"/?*) return 0 ;;
 	esac
 	return 1
 }
