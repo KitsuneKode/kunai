@@ -48,6 +48,32 @@ describe("validateAndroidHandoffSmoke", () => {
     ).toMatchObject({ ok: false, reason: "binary-not-found" });
   });
 
+  test("always validates Termux paths with Android POSIX semantics", () => {
+    expect(
+      validateAndroidHandoffSmoke({
+        platform: "linux",
+        env: {
+          ...BASE_ENV,
+          KUNAI_ANDROID_HANDOFF_BINARY: String.raw`D:\data\data\com.termux\files\usr\bin\kunai`,
+        },
+        realHome: "/data/data/com.termux/files/home",
+        fileExists: () => true,
+      }),
+    ).toMatchObject({ ok: false, reason: "binary-required" });
+
+    expect(
+      validateAndroidHandoffSmoke({
+        platform: "linux",
+        env: {
+          ...BASE_ENV,
+          KUNAI_ANDROID_SMOKE_ROOT: String.raw`D:\tmp\kunai-android-handoff-123`,
+        },
+        realHome: "/data/data/com.termux/files/home",
+        fileExists: () => true,
+      }),
+    ).toMatchObject({ ok: false, reason: "storage-root-required" });
+  });
+
   test("refuses non-Android hosts before launcher execution", () => {
     expect(
       validateAndroidHandoffSmoke({

@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { posix as androidPath } from "node:path";
 
 import { detectPlayerPlatform } from "@/domain/playback/player-choice";
 
@@ -27,8 +27,8 @@ export type AndroidHandoffSmokeGuardResult =
     };
 
 function isWithin(candidate: string, parent: string): boolean {
-  const offset = relative(parent, candidate);
-  return offset === "" || (!offset.startsWith("..") && !isAbsolute(offset));
+  const offset = androidPath.relative(parent, candidate);
+  return offset === "" || (!offset.startsWith("..") && !androidPath.isAbsolute(offset));
 }
 
 export function validateAndroidHandoffSmoke(input: {
@@ -82,7 +82,7 @@ export function validateAndroidHandoffSmoke(input: {
   }
 
   const rawStorageRoot = input.env["KUNAI_ANDROID_SMOKE_ROOT"];
-  if (!rawStorageRoot || !isAbsolute(rawStorageRoot)) {
+  if (!rawStorageRoot || !androidPath.isAbsolute(rawStorageRoot)) {
     return {
       ok: false,
       reason: "storage-root-required",
@@ -90,8 +90,8 @@ export function validateAndroidHandoffSmoke(input: {
     };
   }
 
-  const storageRoot = resolve(rawStorageRoot);
-  const realHome = resolve(input.realHome);
+  const storageRoot = androidPath.resolve(rawStorageRoot);
+  const realHome = androidPath.resolve(input.realHome);
   if (isWithin(storageRoot, realHome)) {
     return {
       ok: false,
@@ -101,14 +101,14 @@ export function validateAndroidHandoffSmoke(input: {
   }
 
   const rawBinaryPath = input.env["KUNAI_ANDROID_HANDOFF_BINARY"];
-  if (!rawBinaryPath || !isAbsolute(rawBinaryPath)) {
+  if (!rawBinaryPath || !androidPath.isAbsolute(rawBinaryPath)) {
     return {
       ok: false,
       reason: "binary-required",
       message: "KUNAI_ANDROID_HANDOFF_BINARY must be an absolute compiled Kunai binary path.",
     };
   }
-  const binaryPath = resolve(rawBinaryPath);
+  const binaryPath = androidPath.resolve(rawBinaryPath);
   if (!(input.fileExists ?? (() => false))(binaryPath)) {
     return {
       ok: false,
