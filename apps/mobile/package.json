@@ -12,8 +12,12 @@
     "test:unit": "bun test test/unit",
     "test:integration": "bun test test/integration"
   },
+  "dependencies": {
+    "@kunai/core": "workspace:*"
+  },
   "devDependencies": {
     "@types/bun": "catalog:",
+    "@types/node": "catalog:",
     "typescript": "catalog:"
   }
 }
