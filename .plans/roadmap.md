@@ -48,6 +48,7 @@ archive and put only the residue here.
 
 | Track                        | Remaining                                                               | Plan                                                                               |
 | ---------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Mobile terminal runtime      | Implement and physically qualify Android and iOS host proofs            | [mobile-app-runtime.md](./mobile-app-runtime.md)                                   |
 | Provider playback resilience | Miruro gate budget, scheduled crypto freshness check                    | [provider-playback-resilience.md](./provider-playback-resilience.md)               |
 | Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)   |
 | Provider hardening           | Research and scraper capability roadmap                                 | [provider-hardening.md](./provider-hardening.md)                                   |
