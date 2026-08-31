@@ -1,4 +1,9 @@
 import type { MobileTerminalPort } from "../../application/contracts";
+import {
+  formatMobileChoiceOptions,
+  interpretMobileChoiceAnswer,
+  MOBILE_INVALID_SELECTION,
+} from "../../application/mobile-choice";
 
 export type AndroidReadLineResult = string | null | { readonly kind: "cancelled" };
 
@@ -84,21 +89,16 @@ export function createBunTerminalPort(
       await runtime.write(`${lines.join("\n")}\n`);
     },
     async choose(input) {
-      await runtime.write(
-        `${input.choices.map((choice, index) => `${index + 1}. ${choice.label}`).join("\n")}\n0. Cancel\n`,
-      );
+      await runtime.write(formatMobileChoiceOptions(input));
       while (true) {
         await runtime.write(`${input.prompt} `);
         const answer = await runtime.readLine();
-        if (answer === null || typeof answer !== "string" || answer === "0") {
-          return { kind: "cancelled" };
-        }
-        const numeric = Number(answer);
-        const numericChoice = Number.isInteger(numeric) ? input.choices[numeric - 1] : undefined;
-        const choice =
-          numericChoice ?? input.choices.find((candidate) => candidate.value === answer);
-        if (choice) return { kind: "selected", value: choice.value };
-        await runtime.write("Invalid selection. Try again.\n");
+        const decision = interpretMobileChoiceAnswer(
+          input,
+          typeof answer === "string" ? answer : undefined,
+        );
+        if (decision.kind !== "invalid") return decision;
+        await runtime.write(MOBILE_INVALID_SELECTION);
       }
     },
   };

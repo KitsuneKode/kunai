@@ -1,4 +1,9 @@
 import type { MobileTerminalPort } from "../../application/contracts";
+import {
+  formatMobileChoiceOptions,
+  interpretMobileChoiceAnswer,
+  MOBILE_INVALID_SELECTION,
+} from "../../application/mobile-choice";
 import type { AShellCommandBridge } from "./ashell-command-bridge";
 import type { AShellJsc } from "./ashell-globals";
 
@@ -30,11 +35,7 @@ export function createAShellTerminalPort(input: {
       write(`${lines.join("\n")}\n`);
     },
     async choose(selection) {
-      write(
-        `${selection.choices
-          .map((choice, index) => `${index + 1}. ${choice.label}`)
-          .join("\n")}\n0. Cancel\n`,
-      );
+      write(formatMobileChoiceOptions(selection));
       while (true) {
         write(`${selection.prompt} `);
         if (!removeAnswer()) return { kind: "cancelled" };
@@ -43,17 +44,9 @@ export function createAShellTerminalPort(input: {
           return { kind: "cancelled" };
         }
         const answer = readAnswer();
-        if (answer === undefined || answer === "" || answer === "0") {
-          return { kind: "cancelled" };
-        }
-        const numeric = /^[1-9]\d*$/u.test(answer) ? Number(answer) : Number.NaN;
-        const numericChoice = Number.isSafeInteger(numeric)
-          ? selection.choices[numeric - 1]
-          : undefined;
-        const choice =
-          numericChoice ?? selection.choices.find((candidate) => candidate.value === answer);
-        if (choice) return { kind: "selected", value: choice.value };
-        write("Invalid selection. Try again.\n");
+        const decision = interpretMobileChoiceAnswer(selection, answer);
+        if (decision.kind !== "invalid") return decision;
+        write(MOBILE_INVALID_SELECTION);
       }
     },
   };

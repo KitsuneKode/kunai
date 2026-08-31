@@ -131,21 +131,37 @@ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
   const previousJsc = host.jsc;
   const previousLog = console.log;
   const output: string[] = [];
+  const files = new Map<string, string>();
+  let completeHostProof: () => void = () => {};
+  const hostProofCompleted = new Promise<void>((resolveCompletion) => {
+    completeHostProof = resolveCompletion;
+  });
   host.jsc = {
-    readFile: () => "",
-    writeFile: () => 0,
-    isFile: () => false,
+    readFile: (path: string) => files.get(path) ?? "",
+    writeFile: (path: string, value: string) => {
+      files.set(path, value);
+      return 0;
+    },
+    isFile: (path: string) => files.has(path),
     makeFolder: () => 0,
-    deleteFile: () => 0,
-    move: () => 0,
+    deleteFile: (path: string) => {
+      files.delete(path);
+      return 0;
+    },
+    move: (from: string, to: string) => {
+      const value = files.get(from);
+      if (value === undefined || files.has(to)) return 1;
+      files.delete(from);
+      files.set(to, value);
+      if (to === ".runtime/exit-code") completeHostProof();
+      return 0;
+    },
     system: () => "0",
   };
   console.log = (...values: unknown[]) => output.push(values.map(String).join(" "));
   try {
     Function(source)();
-    await Promise.resolve();
-    await Promise.resolve();
-    await new Promise<void>((resolveWait) => setTimeout(resolveWait, 0));
+    await hostProofCompleted;
   } finally {
     console.log = previousLog;
     if (previousJsc === undefined) delete host.jsc;
