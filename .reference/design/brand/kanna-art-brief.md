@@ -28,13 +28,14 @@ Three eye treatments across four poses never gives them the chance.
 
 ## The locked character
 
-**Kanna is direction A, the Operator.** She is the roundest, the only one with
-both ears intact and symmetrical, she keeps the cream chest blaze, and she is
-the only one that stays legible at 28px — which the nav needs and the test
-`apps/docs/test/kunai-fox.test.ts` enforces.
+**Kanna is the v1 model sheet.** Six views generated in a single pass, which is
+what kept her one animal. Seven poses ship from it — `idle`, `wait`, `go`,
+`watch`, `oops`, `nap`, and the nav bust — and the alpha, size and facing guards
+in `apps/docs/test/kunai-fox.test.ts` enforce the contract they land under.
 
-Use `kunai-ip-A2-operator-lr.png` as the visual reference for every generation
-below. Do not restyle her. The construction is now fixed:
+Use `ip-as-logo-batch/kanna-model-sheet-v1.png` as the visual reference for
+every generation below — it is the locked character. Do not restyle her. The
+construction is fixed:
 
 - one soft rounded continuous silhouette, no outline
 - two triangular ears with **blunt rounded tips**, symmetrical, both always visible
