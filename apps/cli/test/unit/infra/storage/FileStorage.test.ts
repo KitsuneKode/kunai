@@ -49,11 +49,15 @@ describe("FileStorage default path resolution", () => {
       await new FileStorage().write("config", { sandboxed: true });
 
       expect(await Bun.file(expected).exists()).toBe(true);
-      expect(
-        await Bun.file(liveConfigPath)
-          .text()
-          .catch(() => null),
-      ).not.toContain("sandboxed");
+
+      // Empty string, never null: `toContain` rejects a null receiver, and
+      // whether the machine running this happens to have a real config.json is
+      // not something the test may depend on — it does on a developer box and
+      // does not on a fresh CI runner.
+      const liveContents = await Bun.file(liveConfigPath)
+        .text()
+        .catch(() => "");
+      expect(liveContents).not.toContain("sandboxed");
     } finally {
       restore();
     }
