@@ -7,7 +7,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = join(HERE, "../..");
+// Three levels: brand → design → .reference → repo root. Two lands on
+// `.reference/`, which silently wrote `.reference/.github/social-preview.png`.
+const REPO = join(HERE, "../../..");
 
 const PALETTE = {
   bg: "#100b0f",
@@ -29,10 +31,16 @@ const PALETTE = {
   info: "#5fb6ff",
 };
 
-const mascotBody = readFileSync(join(HERE, "kunai-mascot.svg"), "utf8")
-  .replace(/[\s\S]*?<g>\s*/u, "")
-  .replace(/\s*<\/g>[\s\S]*/u, "")
-  .trim();
+// Kanna, traced. `kanna-bust.svg` carries her own <defs> (the #shade gradients
+// and clip paths), so both halves are lifted: the defs are merged into each
+// card's <defs>, and the drawable groups are placed like any other art.
+const kannaSvg = readFileSync(join(HERE, "kanna-bust.svg"), "utf8");
+const mascotDefs = kannaSvg.match(/<defs>([\s\S]*?)<\/defs>/u)[1].trim();
+const mascotBody = kannaSvg.match(/<\/defs>([\s\S]*)<\/svg>/u)[1].trim();
+// Her art is 928 square with the ink inset; these place it like the old 128px
+// grid did, so the call sites keep passing a scale in the same units.
+const MASCOT_BOX = 928;
+const mascotFit = (targetPx) => targetPx / MASCOT_BOX;
 
 const markPaths = readFileSync(join(HERE, "kunai-mark.svg"), "utf8")
   .replace(/[\s\S]*?<svg[^>]*>/u, "")
@@ -97,11 +105,12 @@ function docsSocialCard(width, height) {
       <stop offset="0%" stop-color="${PALETTE.accentGlow}"/>
       <stop offset="100%" stop-color="transparent"/>
     </radialGradient>
+    ${mascotDefs}
   </defs>
   <rect width="${width}" height="${height}" fill="url(#bg)"/>
   <rect width="${width}" height="${height}" fill="url(#glow)"/>
   ${gridOverlay(width, height)}
-  <g transform="translate(${mascotX} ${mascotY}) scale(${mascotScale})" shape-rendering="crispEdges">
+  <g transform="translate(${mascotX} ${mascotY}) scale(${mascotFit(128 * mascotScale)})">
     ${mascotBody}
   </g>
   <g transform="translate(72 56) scale(0.72)">
@@ -135,12 +144,13 @@ function githubSocialCard(width, height) {
       <stop offset="0%" stop-color="${PALETTE.accentGlow}"/>
       <stop offset="100%" stop-color="transparent"/>
     </radialGradient>
+    ${mascotDefs}
   </defs>
   <rect width="${width}" height="${height}" fill="url(#bg)"/>
   <rect width="${width}" height="${height}" fill="url(#glow)"/>
   ${gridOverlay(width, height)}
   <rect x="${panelX - 24}" y="56" width="${panelW + 48}" height="${height - 112}" rx="18" fill="${PALETTE.surface}" stroke="${PALETTE.line}" stroke-width="1"/>
-  <g transform="translate(${mascotX} ${mascotY}) scale(${mascotScale})" shape-rendering="crispEdges">
+  <g transform="translate(${mascotX} ${mascotY}) scale(${mascotFit(128 * mascotScale)})">
     ${mascotBody}
   </g>
   <g transform="translate(${panelX} 108)">
@@ -247,7 +257,7 @@ const docsPngPath = join(HERE, "kunai-social-docs.png");
 writeFileSync(docsSvgPath, docsSvg);
 writeFileSync(githubSvgPath, githubSvg);
 
-const mascotSvgPath = join(HERE, "kunai-mascot.svg");
+const mascotSvgPath = join(HERE, "kanna-bust.svg");
 const mascotOgPngPath = join(HERE, "kunai-mascot-og.png");
 
 exportPng(docsSvgPath, docsPngPath, 1200);

@@ -37,7 +37,7 @@ The illustrated kitsune is the warm face. Raster masters live in `ip-as-logo-bat
 
 Docs animate with CSS (`apps/docs/app/styles/fox.css`); `prefers-reduced-motion: reduce` freezes on the pose. Favicons, badges, and header chrome keep the **mark**. CLI headers keep `🦊 Kunai`. On Kitty/Ghostty/iTerm/WezTerm the same rasters render as a companion pane (`KUNAI_PET=off` retires her, `KUNAI_PET=glyph` pins 🦊; half-block is skipped because this art turns to noise at two pixels per cell).
 
-The pixel-grid generator (`generate-mascot.mjs`) is no longer the source of truth.
+The old `generate-mascot.mjs` pixel-grid generator was removed; `kanna-bust.svg` is the source of truth.
 
 ## 4. Color — "Ember Dusk" (proposed token redesign)
 
@@ -114,10 +114,10 @@ Short, precise, a little dry. "Finds the playable stream." "Nothing fabricated."
 ## 6. Asset index
 
 - `kunai-mark.svg` — logo mark (fox + blade)
-- `kunai-mascot.svg` / `kunai-mascot-animated.svg` — retired pixel kitsune (kept until docs SVG is the only consumer)
+- `kanna-bust.svg` — the traced vector source; every static surface renders from it
 - `ip-as-logo-batch/` — raster masters (A/B/C)
 - `apps/docs/components/brand/kunai-fox.tsx` — live SVG character
-- `generate-mascot.mjs` — former ASCII-grid source; not the source of truth
+- `trace-kanna.sh` — regenerates `kanna-bust.svg` from the raster master
 - `generate-social-cards.mjs` — docs OG + GitHub social SVG/PNG exports
 - `kunai-social-docs.svg` / `kunai-social-docs.png` — docs Open Graph master (1200×630)
 - `kunai-social-github.svg` — GitHub social master (1280×640)
