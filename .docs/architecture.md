@@ -41,8 +41,8 @@ user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provi
 `apps/cli/src/main.ts` is the only desktop CLI entrypoint. It owns the DI
 container, config service, history store, cache store, provider registry, shared
 shell workflows, and the search/playback phases. Package scripts and the desktop
-build both point at it. The `apps/mobile` application may add exactly one
-separately declared mobile entrypoint; neither app imports the other.
+build both point at it. `apps/mobile/src/entry.ts` is the separately declared
+mobile entrypoint; neither app imports the other.
 
 The old `apps/cli/index.ts` compatibility wrapper has been **removed**. Do not
 reintroduce a second entrypoint; migrate behavior into `main.ts` instead.

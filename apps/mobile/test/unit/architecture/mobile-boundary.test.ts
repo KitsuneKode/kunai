@@ -49,4 +49,12 @@ describe("mobile application boundary", () => {
     expect(importsUnder("apps/mobile/src").filter((edge) => edge.includes("apps/cli"))).toEqual([]);
     expect(importsUnder("apps/cli/src").filter((edge) => edge.includes("apps/mobile"))).toEqual([]);
   });
+
+  test("has exactly one runtime entrypoint", () => {
+    const entrypoints = sourceFiles("apps/mobile/src")
+      .map((file) => relative(REPO_ROOT, file).replaceAll("\\", "/"))
+      .filter((file) => file.endsWith("/entry.ts") || file.endsWith("/main.ts"));
+
+    expect(entrypoints).toEqual(["apps/mobile/src/entry.ts"]);
+  });
 });
