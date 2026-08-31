@@ -20,7 +20,11 @@ export type KittyPlacementSlot =
   | "details-primary"
   | "details-secondary"
   | "details-sheet"
-  | "generic";
+  | "generic"
+  // One companion, one slot. `CompanionHost` is the only thing that draws one,
+  // so concurrent owners — which is what made the setup wizard's two pets erase
+  // each other — are not expressible any more.
+  | "companion";
 
 type PlacementEntry = {
   readonly imageId: number;

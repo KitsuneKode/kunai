@@ -26,6 +26,7 @@ import type { EpisodeInfo } from "@/domain/types";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import { decodeProviderEpisodeIdentity, providerEpisodeIdentitiesEqual } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -668,11 +669,13 @@ function AppRoot({ container }: { container: Container }) {
         // Presence is opt-in, so if Discord is enabled but can't connect
         // ("unavailable" / error), a transient warning is accurate feedback — it
         // auto-dismisses after ~6s, warning the user without nagging.
-        const rawDetail = snapshot.detail.trim() || snapshot.status;
-        const detail = rawDetail.length > 56 ? `${rawDetail.slice(0, 53).trimEnd()}…` : rawDetail;
+        // `detail` already leads with the status for an unavailable provider, so
+        // composing it here is what produced "unavailable · unavailable · …".
+        const composed = presenceStatusDetail(snapshot.status, snapshot.detail, " · ");
+        const detail = composed.length > 56 ? `${composed.slice(0, 53).trimEnd()}…` : composed;
         const tone: ShellStatusTone = snapshot.status === "error" ? "error" : "warning";
         setPresenceBootLine({
-          text: `Discord presence · ${snapshot.status} · ${detail}`,
+          text: `Discord presence · ${detail}`,
           tone,
         });
       }

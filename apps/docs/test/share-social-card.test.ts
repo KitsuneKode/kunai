@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { decodePlaybackTargetWebCode, encodePlaybackTargetShortCode } from "@kunai/types";
 
 import { splitHeadline } from "../app/w/[code]/opengraph-image";
+import { isKindCrewActive } from "../lib/brand/social-card";
 import { catalogFor, initialFor, positionFor, titleFor } from "../lib/share-presentation";
 
 describe("splitHeadline", () => {
@@ -90,5 +91,25 @@ describe("share presentation is shared with the landing page", () => {
 
   test("initialFor survives a title that is only whitespace", () => {
     expect(initialFor("   ")).toBe("K");
+  });
+});
+
+describe("kind crew on social cards", () => {
+  test("docs cards show every companion", () => {
+    expect(isKindCrewActive(undefined, "anime")).toBe(true);
+    expect(isKindCrewActive(undefined, "series")).toBe(true);
+    expect(isKindCrewActive(undefined, "movie")).toBe(true);
+  });
+
+  test("a share lights the matching companion", () => {
+    expect(isKindCrewActive("anime", "anime")).toBe(true);
+    expect(isKindCrewActive("anime", "movie")).toBe(false);
+    expect(isKindCrewActive("series", "series")).toBe(true);
+    expect(isKindCrewActive("movie", "movie")).toBe(true);
+  });
+
+  test("a youtube video share uses the movie companion", () => {
+    expect(isKindCrewActive("video", "movie")).toBe(true);
+    expect(isKindCrewActive("video", "anime")).toBe(false);
   });
 });

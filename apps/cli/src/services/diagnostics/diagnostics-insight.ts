@@ -3,6 +3,7 @@ import { formatPlaybackGeneration } from "@/domain/playback/playback-generation"
 import type { PlaybackProblemAction } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
+import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import type { ReleaseProgressDiagnosticsSummary } from "@/services/storage/storage-read-models";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
@@ -752,7 +753,7 @@ function resolveProviderReason(
 
 function resolveDiscordReason(presenceSnapshot: PresenceSnapshot | null | undefined): string {
   if (!presenceSnapshot) return "Disabled or not used this session";
-  return `${presenceSnapshot.status} · ${presenceSnapshot.detail}`;
+  return presenceStatusDetail(presenceSnapshot.status, presenceSnapshot.detail, " · ");
 }
 
 function resolveProviderAction(

@@ -72,6 +72,28 @@ playback connected — while staying a deterministic, scriptable CLI.
 
 ---
 
+## Meet Kanna
+
+<img src="apps/docs/public/brand/fox/idle.webp" alt="" align="right" width="120" />
+
+A **kanna** (鉋) is a Japanese hand plane. You run it over rough wood and the
+roughness leaves in one curl.
+
+Kunai is the blade. Kanna is who holds it — twelve tabs, three dead mirrors and
+a stream that stalls go in; the thing that plays comes out. She works nights,
+hands it to `mpv`, and gets out of the frame.
+
+She shows up on setup, on empty shelves, when a resolve fails, and on the way
+out. On Kitty, Ghostty, iTerm2 and WezTerm you get the illustrated fox;
+everywhere else she is a `🦊` and one short line, which is the same character
+doing the same job. Redirected output gets neither.
+
+`KUNAI_PET=off` retires her entirely — text included. `KUNAI_PET=glyph` keeps
+her as the glyph. Full story in the
+[Kanna guide](https://kunai.kitsunekode.in/docs/users/kanna).
+
+---
+
 ## Showcase
 
 The command palette (`/`) reaches every surface — here, the offline shell touring
@@ -292,6 +314,10 @@ Inside the persistent shell, sixel currently degrades to a text renderer: it
 paints at the cursor and does not reflow, so it cannot be hosted in the Ink
 layout yet. Force a specific path with `KUNAI_IMAGE_PROTOCOL=kitty|sixel|symbols|half-block`,
 or disable posters with `KUNAI_POSTER=0`.
+
+Setup and goodbye can show the illustrated fox companion on Kitty, Ghostty, iTerm2, and WezTerm.
+Other terminals keep 🦊, and redirected output gets neither. `KUNAI_PET` takes `off` to retire her
+entirely, or `glyph` to stay on 🦊 even where the picture would render.
 
 If mpv is missing, Kunai won't start playback — setup and browsing remain available.
 Everything else is optional and detected automatically — the setup wizard
@@ -524,6 +550,8 @@ Environment overrides:
 
 ```bash
 KUNAI_POSTER=0                          # Disable posters
+KUNAI_PET=off                           # Retire the fox companion entirely
+KUNAI_PET=glyph                         # Keep the companion, but only as 🦊
 KUNAI_IMAGE_PROTOCOL=kitty              # Force protocol
 KUNAI_IMAGE_SIZE=30x18                  # Custom dimensions
 KUNAI_IMAGE_DEBUG=1                     # Verbose poster logging
@@ -602,39 +630,65 @@ not ship as runtime behavior.
 
 ## FAQ
 
-**Search works but playback fails or stalls.**
+<details>
+<summary><b>Search works but playback fails or stalls.</b></summary>
+
 Providers break when upstream sites change. In playback, press `r` to recover the
 stream, `⇧F` to fall back to the next compatible provider, `o` to pick another
 source, or `k` to pick quality. If sources look stale, `/recompute` bypasses cached provider
 memory. Persistent issues → `/diagnostics`, then `/export-diagnostics` for a
 redacted snapshot to attach to a bug report.
 
-**"No results found" for a title I know exists.**
+</details>
+
+<details>
+<summary><b>"No results found" for a title I know exists.</b></summary>
+
 Try the other mode — series, anime, and YouTube use different provider sets (`Tab`
 cycles modes, `/anime` and `/series` jump directly, or launch with `-a`). Some
 titles are only indexed under an alternate name.
 
-**Kunai won't start playback.**
+</details>
+
+<details>
+<summary><b>Kunai won't start playback.</b></summary>
+
 mpv isn't installed or isn't on your `PATH`. Install it (see
 [Dependencies by platform](#dependencies-by-platform)) and re-run.
 
-**I don't see download options.**
+</details>
+
+<details>
+<summary><b>I don't see download options.</b></summary>
+
 Install **yt-dlp** and restart. Download features are hidden when yt-dlp is
 missing; everything else keeps working.
 
-**No poster previews.**
+</details>
+
+<details>
+<summary><b>No poster previews.</b></summary>
+
 Kitty and Ghostty render natively, iTerm2 and VS Code ≥1.80 use inline images,
 sixel terminals use sixel, and everything else falls back to built-in
 **half-block**. Nothing needs installing. Check `/diagnostics` for the detected
 renderer, or set `KUNAI_IMAGE_DEBUG=1` for verbose logging. Inside tmux or screen
 Kunai stays on half-block, because it emits no passthrough wrapper.
 
-**How do I update?**
+</details>
+
+<details>
+<summary><b>How do I update?</b></summary>
+
 Keep it current with `kunai upgrade` (channel-aware). Kunai also notifies you
 in-shell when a newer version is published. Package-manager reinstall and source
 `git pull && bun run relink:global` remain secondary paths.
 
-**`kunai` missing, shadowed, or install ownership wrong?**
+</details>
+
+<details>
+<summary><b>`kunai` missing, shadowed, or install ownership wrong?</b></summary>
+
 Run `kunai doctor` (or `kunai doctor --json`). List every binary with
 `type -a` / `which -a` (bash), `whence -a` (zsh), or `Get-Command kunai -All`
 (PowerShell). Rollback with `kunai rollback --list` / `kunai rollback`. Uninstall
@@ -642,17 +696,27 @@ only via the owning channel (`kunai uninstall`, or `npm uninstall -g` for npm).
 Checksums/404s → `kunai install --force` / pin a version or re-verify
 `SHA256SUMS`.
 
-**Windows SmartScreen or macOS Gatekeeper blocks the binary?**
+</details>
+
+<details>
+<summary><b>Windows SmartScreen or macOS Gatekeeper blocks the binary?</b></summary>
+
 Release binaries are unsigned during beta. On Windows, `install.ps1` runs
 `Unblock-File`; you can also right-click → Properties → Unblock. On macOS:
 `xattr -dr com.apple.quarantine ~/.local/bin/kunai` (or your install path).
 See [Install Kunai](#install-kunai) and
 [Install and update](docs/users/install-and-update.mdx#unsigned-binaries-beta).
 
-**YouTube age-restricted / members content?**
+</details>
+
+<details>
+<summary><b>YouTube age-restricted / members content?</b></summary>
+
 Set `youtubeMetadata.cookiesFromBrowser` or an absolute `cookiesFile` in
 `config.json`. Never paste cookie contents into issues; review redacted
 `/export-diagnostics` bundles first. Kunai does not bypass DRM.
+
+</details>
 
 ---
 
@@ -703,14 +767,23 @@ suite, changesets, and the release gate are all in
 
 ## Appreciation
 
-Kunai stands on the shoulders of terminal-first and streaming UX inspirations:
+Kunai stands on the shoulders of the tools that did this first, and does not
+work without most of them:
 
-- **ani-cli** for proving fast, shell-native playback can be joyful
-- App-grade browsing UX patterns that keep search, details, episodes, and playback connected
-- **mpv** and **yt-dlp**, which make reliable playback and offline downloads possible
+- [**ani-cli**](https://github.com/pystardust/ani-cli) — proved that fast,
+  shell-native playback can be joyful. The AllAnime decoder in
+  `packages/providers/src/allmanga` is checked for parity against it.
+- [**mpv**](https://mpv.io) — the player. Kunai finds a stream and gets out of
+  the way; everything you actually watch, you watch in mpv.
+- [**yt-dlp**](https://github.com/yt-dlp/yt-dlp) — extraction and offline
+  downloads.
+- [**AniSkip**](https://aniskip.com) — the community skip-times database behind
+  auto-skip. Every intro and outro Kunai skips was timed by someone there.
+- [**VLC**](https://www.videolan.org/vlc/) — for two decades of proving a media
+  player can be free, universal, and answer to nobody.
 
-The goal is not to clone those tools, but to bring that same daily-driver
-confidence into a deterministic CLI workflow.
+The goal is not to clone them, but to bring that same daily-driver confidence
+into a deterministic CLI workflow.
 
 ---
 

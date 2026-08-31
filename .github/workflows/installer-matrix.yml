@@ -51,14 +51,51 @@ jobs:
           turbo-cache-prefix: installer-matrix-binaries
       - name: Build linux-x64 + musl
         run: bun run --cwd apps/cli build:binaries -- --only linux-x64 --only linux-x64-musl
+      - name: Assert every release companion exists
+        # Names the missing path at the point it goes missing, rather than
+        # letting an incomplete upload resurface as an installer failure in
+        # every matrix cell. See the upload step below for why the artifact
+        # action cannot enforce this itself.
+        run: |
+          missing=0
+          for f in \
+            apps/cli/dist/bin/kunai-linux-x64 \
+            apps/cli/dist/bin/kunai-linux-x64.tar.gz \
+            apps/cli/dist/bin/kunai-linux-x64-musl \
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz \
+            apps/cli/dist/bin/SHA256SUMS \
+            apps/cli/dist/bin/SHA256SUMS.archives; do
+            if [ ! -s "$f" ]; then
+              echo "::error file=$f::missing or empty release companion"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
       - uses: actions/upload-artifact@v4
         with:
           name: kunai-linux-binaries-matrix
           retention-days: 1
+          # Must match the list in `ci.yml`'s `native-installer` job
+          # (`ci.yml:594-599`). `prepare-fixture` resolves a release *companion*
+          # archive beside each binary — the .tar.gz, SHA256SUMS and
+          # SHA256SUMS.archives — and dies on the first one missing, so
+          # uploading the raw executables alone made every cell fail identically
+          # with "release companion not found". That reads like an installer
+          # regression and is really a missing upload, and it is what this
+          # nightly matrix did from 2026-08-26 until it was fixed.
+          #
+          # `if-no-files-found: error` does NOT cover it: the check runs across
+          # the combined path set, so five-of-six still uploads silently. The
+          # step above is what actually enforces the set.
+          if-no-files-found: error
           path: |
             apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-x64.tar.gz
             apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
             apps/cli/dist/bin/SHA256SUMS
+            apps/cli/dist/bin/SHA256SUMS.archives
 
   matrix:
     name: ${{ matrix.scenario }} / ${{ matrix.variant }}
