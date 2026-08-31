@@ -18,6 +18,14 @@ export type EpisodeNumbering = {
 export function sameEpisodeNumbering(left: EpisodeNumbering, right: EpisodeNumbering): boolean {
   // Absolute numbers are authoritative, but only when both sides carry one:
   // an absolute number on its own says nothing about the other side's season.
+  //
+  // This under-matches on purpose, and there is a real case it gets wrong. For a
+  // show whose first season has twelve episodes, absolute 13 *is* S02E01, and
+  // this returns false. Nothing in the tree knows per-season episode counts, so
+  // any rule without that data has to choose a direction: a false negative
+  // leaves two rows unmerged, while a false positive merges two different
+  // episodes and loses one of them. Only the second is unrecoverable, so this
+  // errs toward not matching. Give it season lengths and the rule can tighten.
   if (left.absoluteEpisode !== undefined && right.absoluteEpisode !== undefined) {
     return left.absoluteEpisode === right.absoluteEpisode;
   }

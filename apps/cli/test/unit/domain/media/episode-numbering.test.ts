@@ -44,6 +44,13 @@ describe("sameEpisodeNumbering", () => {
     test("a season beyond the first is not assumed to map onto an absolute number", () => {
       // Absolute 13 may or may not be S02E01; nothing here knows the season
       // boundaries, so the conservative answer is "not the same episode".
+      //
+      // Pinned as a KNOWN false negative, not as desired behaviour: for a show
+      // whose first season has twelve episodes this pair really is one episode.
+      // A false positive merges two different episodes and loses one, which is
+      // unrecoverable; a false negative leaves two rows unmerged, which is not.
+      // If season lengths ever reach this seam, this assertion is the one to
+      // revisit first.
       expect(sameEpisodeNumbering({ absoluteEpisode: 13 }, { season: 2, episode: 1 })).toBe(false);
     });
   });

@@ -59,11 +59,17 @@ describe("getKunaiPaths home resolution", () => {
   });
 
   test("whitespace-only HOME is also treated as unset", () => {
-    const paths = getKunaiPaths({ platform: "darwin", env: { HOME: "   " } });
+    // Every other case here supplies the whole environment so the result does
+    // not depend on the host. The first version of this one let HOME fall
+    // through to `homedir()` and asserted the result was absolute — which is
+    // true on POSIX and false on a Windows runner, where `homedir()` is
+    // `C:\Users\...`. Pin the fallback instead of the shape.
+    const paths = getKunaiPaths({
+      platform: "darwin",
+      env: { HOME: "   ", USERPROFILE: "/sandbox" },
+    });
 
-    // Falls through to homedir(), so it is at least absolute rather than relative.
-    expect(paths.configDir.startsWith("/")).toBe(true);
-    expect(paths.configDir).not.toStartWith("   ");
+    expect(paths.configDir).toBe("/sandbox/Library/Application Support/kunai");
   });
 
   test("Linux still prefers the XDG variables over home", () => {
