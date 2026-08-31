@@ -15,24 +15,36 @@ import { getKunaiPaths } from "@kunai/storage";
 
 import type { StorageService } from "./StorageService";
 
-// Key → file path mapping (history and cache are SQLite — no JSON paths here)
-const PATHS: Record<string, string> = {
-  config: join(getKunaiPaths().configDir, "config.json"),
-};
+/**
+ * Key → file path mapping (history and cache are SQLite — no JSON paths here).
+ *
+ * Built on first use, never at import. As a module-level constant this called
+ * `getKunaiPaths()` while the module was being loaded, so the developer's real
+ * `config.json` path was frozen in before a test could point HOME/XDG/APPDATA
+ * at a sandbox — a suite that imported this file early, however indirectly,
+ * then wrote the live profile. Resolving lazily means the environment in effect
+ * when a path is actually needed is the one that decides it.
+ */
+function defaultPaths(): Record<string, string> {
+  return {
+    config: join(getKunaiPaths().configDir, "config.json"),
+  };
+}
 
 export class FileStorage implements StorageService {
   // Simple mutex to prevent concurrent writes from interleaving and corrupting files
   private writeLock: Promise<void> = Promise.resolve();
+  private resolvedPaths: Record<string, string> | undefined;
 
   constructor(
-    private readonly paths: Record<string, string> = PATHS,
+    /** Explicit paths win; omitted means resolve the real profile on first use. */
+    private readonly paths?: Record<string, string>,
     /** Warn channel for user-relevant events; debug-only detail goes through dbg(). */
     private readonly warn?: (message: string, context?: Record<string, unknown>) => void,
   ) {}
 
   async read<T>(key: string): Promise<T | null> {
-    const path = this.paths[key];
-    if (!path) throw new Error(`Unknown storage key: ${key}`);
+    const path = this.pathFor(key);
 
     const file = Bun.file(path);
 
@@ -74,8 +86,7 @@ export class FileStorage implements StorageService {
   }
 
   async write<T>(key: string, data: T): Promise<void> {
-    const path = this.paths[key];
-    if (!path) throw new Error(`Unknown storage key: ${key}`);
+    const path = this.pathFor(key);
 
     const task = this.writeLock.then(async () => {
       await writeAtomicSecretJson(path, data);
@@ -87,8 +98,7 @@ export class FileStorage implements StorageService {
   }
 
   async delete(key: string): Promise<void> {
-    const path = this.paths[key];
-    if (!path) throw new Error(`Unknown storage key: ${key}`);
+    const path = this.pathFor(key);
 
     const task = this.writeLock.then(async () => {
       if (await Bun.file(path).exists()) await unlink(path);
@@ -99,8 +109,19 @@ export class FileStorage implements StorageService {
     await task;
   }
 
+  private lookupPath(key: string): string | undefined {
+    this.resolvedPaths ??= this.paths ?? defaultPaths();
+    return this.resolvedPaths[key];
+  }
+
+  private pathFor(key: string): string {
+    const path = this.lookupPath(key);
+    if (!path) throw new Error(`Unknown storage key: ${key}`);
+    return path;
+  }
+
   async exists(key: string): Promise<boolean> {
-    const path = this.paths[key];
+    const path = this.lookupPath(key);
     if (!path) return false;
     return Bun.file(path).exists();
   }

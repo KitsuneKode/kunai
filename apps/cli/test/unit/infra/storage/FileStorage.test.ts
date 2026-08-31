@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,6 +12,47 @@ afterEach(async () => {
     const dir = tempDirs.pop();
     if (dir) await rm(dir, { recursive: true, force: true });
   }
+});
+
+describe("FileStorage default path resolution", () => {
+  // The module used to build its path map as a module-level constant, so
+  // `getKunaiPaths()` ran while the file was being imported and froze the
+  // developer's real config.json in. A suite that imported this file — however
+  // indirectly — before pointing HOME/XDG/APPDATA at a sandbox then wrote the
+  // live profile. Import has already happened by the time this test runs, which
+  // is exactly the condition that used to lose: the environment set here must
+  // still win.
+  const ENV_KEYS = ["HOME", "USERPROFILE", "XDG_CONFIG_HOME", "APPDATA"] as const;
+
+  test("honours a storage root set after this module was imported", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-root-"));
+    tempDirs.push(dir);
+
+    const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
+    for (const key of ENV_KEYS) process.env[key] = dir;
+    process.env.XDG_CONFIG_HOME = join(dir, ".config");
+
+    try {
+      await new FileStorage().write("config", { sandboxed: true });
+
+      // Written somewhere under the sandbox, and nowhere else.
+      const files = await readdir(dir, { recursive: true });
+      expect(files.some((entry) => String(entry).endsWith("config.json"))).toBe(true);
+    } finally {
+      for (const key of ENV_KEYS) {
+        const value = saved.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  test("an unknown key still throws, and exists() still answers false", async () => {
+    const storage = new FileStorage({ config: "/tmp/kunai-unused.json" });
+
+    expect(storage.read("nope")).rejects.toThrow("Unknown storage key: nope");
+    expect(await storage.exists("nope")).toBe(false);
+  });
 });
 
 describe("FileStorage", () => {

@@ -12,3 +12,4 @@ Fix a set of silent failures found while auditing the tree.
 - Long CJK and emoji titles could still produce a Windows path over `MAX_PATH`; the path is now measured and tightened rather than estimated.
 - An intro-skip window from AniSkip is no longer discarded when IntroDB answers with an untimed segment.
 - A config file that is unreadable, or that vanishes mid-read, no longer throws or overwrites its own corrupt-backup with an empty file.
+- The config path is now resolved when it is first needed rather than when the module loads, so a sandboxed run can never fall back to the real profile.
