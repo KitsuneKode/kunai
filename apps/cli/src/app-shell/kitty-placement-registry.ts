@@ -21,7 +21,11 @@ export type KittyPlacementSlot =
   | "details-secondary"
   | "details-sheet"
   | "generic"
-  | "companion";
+  // One slot per companion that can be on screen at once. The setup wizard
+  // mounts two — the frame's and the summary screen's — and a single shared
+  // slot made them delete each other's placement on every render.
+  | "companion"
+  | "companion-summary";
 
 type PlacementEntry = {
   readonly imageId: number;

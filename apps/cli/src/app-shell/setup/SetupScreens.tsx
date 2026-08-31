@@ -464,7 +464,7 @@ export function DoneScreen({
       <Box marginBottom={1} flexDirection="row">
         {companionMode() === "off" ? null : (
           <Box marginRight={2}>
-            <CompanionPet pose="idle" rows={3} />
+            <CompanionPet pose="idle" rows={3} slot="companion-summary" />
           </Box>
         )}
         <Box flexDirection="column">

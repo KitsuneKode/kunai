@@ -52,12 +52,16 @@
  *
  *   bun .reference/design/brand/export-fox-assets.ts
  */
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { applyExpression } from "./kanna-expressions.mjs";
+
 const ROOT = path.resolve(import.meta.dir, "../../..");
-const BATCH = path.join(ROOT, ".reference/design/brand/ip-as-logo-batch");
-const BRAND = path.join(ROOT, ".reference/design/brand");
+const HERE = path.join(ROOT, ".reference/design/brand");
+const BATCH = path.join(HERE, "ip-as-logo-batch");
+const BRAND = HERE;
 const DOCS_STILLS = path.join(ROOT, "apps/docs/public/brand/fox");
 const CLI_PETS = path.join(ROOT, "apps/cli/src/app-shell/brand/pets");
 
@@ -117,6 +121,23 @@ const NAV_MASTER = "kanna-sheet-6-bust.png";
 const NAV_CROP = 100;
 
 /**
+ * Poses that render from the traced vector instead of a raster master.
+ *
+ * `idle` is the reason this exists. It is the hero at 120px, the nav mark at
+ * 28px and the roamer at rest — the three most-seen surfaces in the product —
+ * and the master draws it with plain round eyes, which is the one face in the
+ * set with no expression in it. `watch`, `oops` and `nap` already carry a
+ * half-lid, a brow and closed eyes in their own art, so they stay raster.
+ *
+ * The vector is already cut to alpha, so these skip the flood-fill and erode
+ * that a plated master needs.
+ */
+const VECTOR_SOURCES = {
+  idle: { svg: "kanna-idle.svg", expression: "squint" },
+  nav: { svg: "kanna-bust.svg", expression: "squint" },
+} as const;
+
+/**
  * Why this shells out instead of using `Bun.Image`.
  *
  * `Bun.Image` covers resize, rotate, flip, and encoding to png/webp/avif — but
@@ -163,6 +184,57 @@ type StillFormat = "webp" | "png";
  * `crop` keeps only the top fraction of the trimmed character, for the bust the
  * nav needs. The whole figure is unreadable at 28px.
  */
+/**
+ * Rasterize a traced pose at one expression.
+ *
+ * No alpha cut here: the vector carries transparency already, and running the
+ * flood fill over it would eat the eyes, which are the same colour the plate
+ * used to be. Density is set so the vector is rendered at the target size
+ * rather than scaled up from a default 96dpi bitmap.
+ */
+async function exportVectorStill(
+  svgName: string,
+  expression: string,
+  dest: string,
+  size: number,
+  format: StillFormat,
+  crop?: number,
+): Promise<number> {
+  const svg = await Bun.file(path.join(HERE, svgName)).text();
+  const posed = applyExpression(svg, expression);
+  const tmp = path.join(tmpdir(), `kanna-${expression}-${path.basename(dest)}.svg`);
+  await Bun.write(tmp, posed);
+
+  const inner = Math.round(size * FILL_RATIO);
+  const encode =
+    format === "webp"
+      ? ["-quality", WEBP_QUALITY, "-define", "webp:alpha-quality=100", "-strip", dest]
+      : ["-strip", `PNG32:${dest}`];
+
+  await magick([
+    "-background",
+    "none",
+    "-density",
+    "384",
+    tmp,
+    "-trim",
+    "+repage",
+    ...(crop === undefined ? [] : ["-gravity", "north", "-crop", `100%x${crop}%+0+0`, "+repage"]),
+    "-resize",
+    `${inner}x${inner}`,
+    "-background",
+    "none",
+    "-gravity",
+    "center",
+    "-extent",
+    `${size}x${size}`,
+    ...encode,
+  ]);
+
+  rmSync(tmp, { force: true });
+  return Bun.file(dest).size;
+}
+
 async function exportStill(
   sourceName: string,
   dest: string,
@@ -230,17 +302,28 @@ mkdirSync(CLI_PETS, { recursive: true });
 
 for (const [name, file] of Object.entries(DOCS_STILLS_BY_NAME)) {
   const dest = path.join(DOCS_STILLS, `${name}.webp`);
-  console.log(`docs ${name}.webp ${await exportStill(file, dest, 320, "webp")} bytes`);
+  const vector = VECTOR_SOURCES[name as keyof typeof VECTOR_SOURCES];
+  const bytes = vector
+    ? await exportVectorStill(vector.svg, vector.expression, dest, 320, "webp")
+    : await exportStill(file, dest, 320, "webp");
+  console.log(`docs ${name}.webp ${bytes} bytes${vector ? ` (vector, ${vector.expression})` : ""}`);
 }
 
 const navDest = path.join(DOCS_STILLS, "nav.webp");
-console.log(`docs nav.webp ${await exportStill(NAV_MASTER, navDest, 128, "webp", NAV_CROP)} bytes`);
+const nav = VECTOR_SOURCES.nav;
+console.log(
+  `docs nav.webp ${await exportVectorStill(nav.svg, nav.expression, navDest, 128, "webp", NAV_CROP)} bytes (vector, ${nav.expression})`,
+);
 
 // The companion slot is 4 rows x 6 cols, which is well under 128px on any
 // realistic cell size, so a larger source would only cost decode time.
 for (const [name, file] of Object.entries(CLI_PETS_BY_NAME)) {
+  const vector = VECTOR_SOURCES[name as keyof typeof VECTOR_SOURCES];
   const dest = path.join(CLI_PETS, `${name}.png`);
-  console.log(`cli  ${name}.png ${await exportStill(file, dest, 128, "png")} bytes`);
+  const bytes = vector
+    ? await exportVectorStill(vector.svg, vector.expression, dest, 128, "png")
+    : await exportStill(file, dest, 128, "png");
+  console.log(`cli  ${name}.png ${bytes} bytes${vector ? ` (vector, ${vector.expression})` : ""}`);
 }
 
 // Inlined as base64 into two OG route bundles, so this one is sized to its
@@ -248,4 +331,6 @@ for (const [name, file] of Object.entries(CLI_PETS_BY_NAME)) {
 // read small; the softness costs less than doubling two bundles would.
 // Guarded by `kunai-fox.test.ts`, which fails if the data URL grows past it.
 const ogDest = path.join(BRAND, "kunai-mascot-og.png");
-console.log(`og   kunai-mascot-og.png ${await exportStill(NAV_MASTER, ogDest, 192, "png")} bytes`);
+console.log(
+  `og   kunai-mascot-og.png ${await exportVectorStill(nav.svg, nav.expression, ogDest, 192, "png")} bytes (vector, ${nav.expression})`,
+);

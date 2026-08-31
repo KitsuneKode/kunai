@@ -1,6 +1,12 @@
 "use client";
 
 import { KunaiFox, type KunaiFoxPose } from "@/components/brand/kunai-fox";
+import {
+  createRoamerState,
+  poseForPhase,
+  stepRoamer,
+  type RoamerPhase,
+} from "@/lib/roamer-machine";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
@@ -24,35 +30,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * freezing her mid-page.
  */
 
-type Phase = "walking" | "sitting" | "asleep";
-
 /**
- * Travel speed, in pixels per second — not per frame.
- *
- * Per-second with a delta time is what holds her pace even across a 60Hz and a
- * 144Hz display, and it is the difference between walking and being dragged:
- * easing by a fraction of the remaining distance makes speed a function of how
- * far away she is, so she lurches when far, crawls when near, and is never
- * still.
- *
- * This is the number to turn if she feels wrong. Too low and she trails so far
- * behind that following reads as lag; too high and she snaps to the cursor and
- * stops looking like an animal. 620 crosses a 1400px screen in a bit over two
- * seconds, which keeps her in frame without her ever catching you.
+ * How the movement itself works — notice, commit, travel, settle, rest — lives
+ * in `lib/roamer-machine.ts`, which is pure and clock-injected so every timing
+ * rule in it is testable without a browser or a real sleep. What stays here is
+ * the presentation: the gait clock, what she says, and when she is allowed to
+ * exist at all.
  */
-const SPEED_PX_PER_SEC = 620;
-/** Inside this she is arriving, and eases down to a walk rather than stopping dead. */
-const SLOW_ZONE_PX = 220;
-/** Slowest she will travel while still closing, as a fraction of full speed. */
-const MIN_SPEED_FACTOR = 0.28;
-/** She settles this far out rather than climbing onto the cursor. */
-const DEAD_ZONE_PX = 64;
-/** How long one footfall lasts. The bob alternates on this, not on the frame. */
 const STEP_MS = 190;
-/** Stillness before she sits down. */
-const SIT_AFTER_MS = 2000;
-/** Once sitting, the chance per second of curling up. Roughly 20s. */
-const SLEEP_ODDS_PER_SEC = 0.05;
 /**
  * How long she goes between unprompted lines, by state.
  *
@@ -60,9 +45,14 @@ const SLEEP_ODDS_PER_SEC = 0.05;
  * is not asleep — and walking the shortest, because that is when you are most
  * likely to be looking at her.
  */
-const CHATTER_WINDOW_MS: Record<Phase, readonly [number, number]> = {
+const CHATTER_WINDOW_MS: Record<RoamerPhase, readonly [number, number]> = {
   walking: [16000, 34000],
+  // Arriving and looking at you: she has just moved, so she is not due a line yet.
   sitting: [24000, 52000],
+  // Bored is where an unprompted line lands best — she has nothing else to do.
+  idle: [14000, 30000],
+  // A 350ms beat before committing. Long enough to see, far too short to talk in.
+  noticing: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
   asleep: [45000, 90000],
 };
 const BUBBLE_MS = 4200;
@@ -120,7 +110,7 @@ const SLEEPY_LINES = [
 const POKED_LINES = ["hey.", "you clicked me. bold.", "yes?", "i'm working.", "rude."] as const;
 
 /** The pool that matches what she is visibly doing. */
-function poolFor(phase: Phase): readonly string[] {
+function poolFor(phase: RoamerPhase): readonly string[] {
   if (phase === "asleep") return SLEEPY_LINES;
   if (phase === "walking") return WALKING_LINES;
   return RESTING_LINES;
@@ -136,17 +126,17 @@ function pickLine(pool: readonly string[], last: string | null): string {
 export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
-  // Position and target live in refs, not state: this updates every frame and
-  // must never queue a React render to move her.
-  const pos = useRef({ x: -400, y: -400 });
-  const target = useRef({ x: -400, y: -400 });
-  const stillMs = useRef(0);
+  // Her whole movement state lives in a ref, not React state: it advances every
+  // frame and must never queue a render to move her. What React does hold is
+  // `phase` and `facing`, which change rarely and drive what is drawn.
+  const machine = useRef(createRoamerState({ x: -400, y: -400 }));
+  const pointer = useRef<{ x: number; y: number } | null>(null);
   const stepFlag = useRef(false);
   const stepMs = useRef(0);
   const lastFrame = useRef(0);
   const seeded = useRef(false);
 
-  const [phase, setPhase] = useState<Phase>("sitting");
+  const [phase, setPhase] = useState<RoamerPhase>("sitting");
   const [facing, setFacing] = useState<"left" | "right">("right");
   const [line, setLine] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -180,82 +170,59 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     if (!enabled) return undefined;
 
     function onMove(event: PointerEvent) {
-      target.current = { x: event.clientX, y: event.clientY };
+      pointer.current = { x: event.clientX, y: event.clientY };
       if (!seeded.current) {
         // Drop her in beside the pointer on first sight rather than marching
         // her across the whole viewport from wherever she was parked.
         seeded.current = true;
-        pos.current = { x: event.clientX - 90, y: event.clientY + 50 };
+        const at = { x: event.clientX - 90, y: event.clientY + 50 };
+        machine.current = { ...createRoamerState(at), phase: "sitting" };
       }
     }
 
     function tick(timestamp: number) {
       frameRef.current = window.requestAnimationFrame(tick);
       const host = hostRef.current;
+      if (!host) return;
+
       // Every frame, so motion is smooth; the *pace* is held constant by delta
-      // time rather than by throttling the clock. Stepping the position at
-      // 10fps is what made her look laggy — that cadence belongs to a pixel-art
-      // sprite, not to a vector one on a 120Hz display.
+      // time rather than by throttling the clock. A backgrounded tab returns
+      // one enormous delta, which without the clamp teleports her across the
+      // page on the first frame back.
       const previous = lastFrame.current || timestamp;
       lastFrame.current = timestamp;
-      // A tab that was backgrounded returns one enormous delta; clamping it
-      // stops her teleporting across the page on the first frame back.
       const dt = Math.min((timestamp - previous) / 1000, 0.05);
-      if (!host) return;
+
       if (!seeded.current) {
         // `.kunai-roamer` is fixed at the origin, so without this she is parked
-        // in the top-left corner of the viewport from mount until the pointer
-        // first moves. `pos` already holds an off-screen point; it just has to
-        // reach the element before the first paint.
-        host.style.transform = `translate3d(${pos.current.x}px, ${pos.current.y}px, 0)`;
+        // in the top-left corner from mount until the pointer first moves.
+        const parked = machine.current.pos;
+        host.style.transform = `translate3d(${parked.x}px, ${parked.y}px, 0)`;
         return;
       }
 
-      const dx = target.current.x - pos.current.x;
-      const dy = target.current.y - pos.current.y;
-      const distance = Math.hypot(dx, dy);
+      const before = machine.current;
+      const next = stepRoamer(before, { pointer: pointer.current, dt });
+      machine.current = next;
 
-      if (distance > DEAD_ZONE_PX) {
-        stillMs.current = 0;
-        // Full pace while travelling, easing down through the slow zone so she
-        // arrives instead of stopping dead on the spot.
-        const closeness = Math.min(1, (distance - DEAD_ZONE_PX) / SLOW_ZONE_PX);
-        const factor = MIN_SPEED_FACTOR + (1 - MIN_SPEED_FACTOR) * closeness;
-        const travel = Math.min(SPEED_PX_PER_SEC * factor * dt, distance - DEAD_ZONE_PX);
-        pos.current.x += (dx / distance) * travel;
-        pos.current.y += (dy / distance) * travel;
-
-        // The gait runs on its own clock so footfalls stay even whatever the
-        // frame rate is doing.
+      // The gait runs on its own clock so footfalls stay even whatever the
+      // frame rate is doing.
+      if (next.phase === "walking") {
         stepMs.current += dt * 1000;
         if (stepMs.current >= STEP_MS) {
           stepMs.current = 0;
           stepFlag.current = !stepFlag.current;
           host.dataset.step = stepFlag.current ? "a" : "b";
         }
-
-        setPhase("walking");
-        // Only commit to a direction on real horizontal travel, so she does not
-        // flip back and forth while the pointer wanders vertically.
-        if (Math.abs(dx) > 10) setFacing(dx > 0 ? "right" : "left");
-      } else {
-        stillMs.current += dt * 1000;
-        if (stillMs.current > SIT_AFTER_MS) {
-          // Sleep is a coin flip she keeps making while nothing happens, scaled
-          // by dt so the odds are per-second rather than per-frame — otherwise
-          // a faster display would put her to sleep sooner.
-          setPhase((current) =>
-            current === "asleep"
-              ? current
-              : Math.random() < SLEEP_ODDS_PER_SEC * dt
-                ? "asleep"
-                : "sitting",
-          );
-        }
       }
 
-      host.style.transform = `translate3d(${(pos.current.x - size / 2).toFixed(1)}px, ${(
-        pos.current.y -
+      // React state only when it actually changed: this runs every frame, and
+      // setting an identical phase would re-render the whole subtree at 60Hz.
+      if (next.phase !== before.phase) setPhase(next.phase);
+      if (next.facing !== before.facing) setFacing(next.facing);
+
+      host.style.transform = `translate3d(${(next.pos.x - size / 2).toFixed(1)}px, ${(
+        next.pos.y -
         size / 2
       ).toFixed(1)}px, 0)`;
     }
@@ -273,7 +240,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   // on purpose: as a dependency it re-ran this effect every time she started or
   // stopped walking, which cleared the pending timer, so the delay almost never
   // elapsed and she was close to silent.
-  const phaseRef = useRef<Phase>(phase);
+  const phaseRef = useRef<RoamerPhase>(phase);
   phaseRef.current = phase;
 
   useEffect(() => {
@@ -306,9 +273,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
 
   if (!enabled) return null;
 
-  // `go` is the only directional still in the current sheet, so it carries
-  // walking. When the seek/carry pair lands this becomes seek → carry.
-  const pose: KunaiFoxPose = phase === "walking" ? "go" : phase === "asleep" ? "wait" : "idle";
+  const pose: KunaiFoxPose = poseForPhase(phase);
 
   return (
     // Hidden from assistive tech, and out of the tab order, on purpose: she
