@@ -831,6 +831,20 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   globalContainer = container;
   const { logger, config, stateManager } = container;
 
+  if (args.castDevice) {
+    try {
+      const { resolveGoogleCastTargetSelector } =
+        await import("./services/playback/cast/cast-target-selector");
+      container.playbackRouter.selectTarget(await resolveGoogleCastTargetSelector(args.castDevice));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      await disposeContainer(container);
+      globalContainer = null;
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   // Compiled-binary smoke runner: deterministic fake-provider / fake-mpv scenarios.
   // Opt-in only — requires KUNAI_COMPILED_SMOKE=1 + absolute fixture path (above) and a scenario id.
   if (process.env.KUNAI_COMPILED_SMOKE === "1" && process.env.KUNAI_COMPILED_SMOKE_SCENARIO) {
@@ -1061,12 +1075,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
   }
 
-  if (args.castPicker) {
-    const { chooseGoogleCastTargetShell } = await import("./app-shell/cast-target-picker");
-    const target = await chooseGoogleCastTargetShell();
-    if (target) container.playbackRouter.selectTarget(target);
-  }
-
   const shellLoadStartedAt = args.debug ? performance.now() : 0;
   const { launchSessionApp } = await import("./app-shell/ink-shell");
   recordCliStartupMilestone(container.diagnosticsService, "shell-module-loaded");
@@ -1099,6 +1107,15 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       ],
     }),
   });
+  // Root-content pickers require AppRoot to be mounted. Opening this before
+  // launchSessionApp creates a valid picker session with no renderer or input
+  // owner, leaving bare `--cast` apparently frozen while direct-name launches
+  // work. Keep startup selection before setup/search, but after the root mount.
+  if (args.castPicker) {
+    const { chooseGoogleCastTargetShell } = await import("./app-shell/cast-target-picker");
+    const target = await chooseGoogleCastTargetShell();
+    if (target) container.playbackRouter.selectTarget(target);
+  }
   // Must stay after first paint: the enrich loop and the consolidator it can
   // trigger run synchronous SQLite work that would starve the awaited shell
   // import and delay the first render.

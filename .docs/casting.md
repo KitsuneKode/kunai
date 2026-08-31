@@ -44,6 +44,8 @@ With no device argument, `--cast` opens Kunai's playback-device picker. It
 offers local mpv, discovered receivers, refresh, and manual address entry.
 Friendly names resolve through mDNS. A direct IPv4 address, `host.local`, or
 `host.local:port` bypasses discovery for LANs that suppress multicast.
+Explicit friendly names are validated before the shell opens; punctuation is
+normalized so straight and curly apostrophes identify the same receiver.
 
 ## Compatibility boundary
 

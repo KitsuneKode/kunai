@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { googleCastTargetFromSelector } from "@/services/playback/cast/cast-target-selector";
+import {
+  googleCastTargetFromSelector,
+  normalizeGoogleCastDeviceName,
+  resolveGoogleCastTargetSelector,
+} from "@/services/playback/cast/cast-target-selector";
 
 describe("Google Cast target selector", () => {
   test("keeps a friendly name for mDNS resolution", () => {
@@ -21,5 +25,27 @@ describe("Google Cast target selector", () => {
       host: "living-room.local",
       port: 9009,
     });
+  });
+
+  test("matches discovered names while treating curly and straight apostrophes equally", async () => {
+    const target = {
+      kind: "google-cast" as const,
+      id: "tv-1",
+      name: "Alfie’s TV",
+      host: "192.168.0.240",
+      port: 8009,
+      capabilities: ["audio", "video"] as const,
+    };
+
+    expect(normalizeGoogleCastDeviceName(" Alfie's TV ")).toBe("alfie's tv");
+    expect(await resolveGoogleCastTargetSelector("Alfie's TV", async () => [target])).toEqual(
+      target,
+    );
+  });
+
+  test("rejects friendly names that do not identify a discovered receiver", async () => {
+    expect(resolveGoogleCastTargetSelector("This doesn't exist", async () => [])).rejects.toThrow(
+      "Google Cast device not found: This doesn't exist",
+    );
   });
 });

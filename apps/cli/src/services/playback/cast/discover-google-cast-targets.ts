@@ -10,11 +10,15 @@ export async function discoverGoogleCastTargets(
 ): Promise<readonly GoogleCastPlaybackTarget[]> {
   const mdns = new GoogleCastDiscoveryService().browse();
   try {
-    const [, dialTargets, nativeTargets] = await Promise.all([
+    const [, dialTargets, firstNativeTargets] = await Promise.all([
       Bun.sleep(durationMs),
       new GoogleCastDialDiscoveryService().discover(durationMs, signal),
       new GoogleCastNativeDiscoveryService().discover(),
     ]);
+    const nativeTargets =
+      firstNativeTargets.length > 0
+        ? firstNativeTargets
+        : await new GoogleCastNativeDiscoveryService().discover();
     const targets = new Map<string, GoogleCastPlaybackTarget>();
     for (const target of [...mdns.targets, ...dialTargets, ...nativeTargets]) {
       const key = target.host ? `${target.host}:${target.port ?? 8009}` : target.id;
