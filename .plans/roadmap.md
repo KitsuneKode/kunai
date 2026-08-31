@@ -106,7 +106,6 @@ the K-reconciliation below and the commit history both cite them by id.
 | [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
 | [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles               |
 | [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
-| [043](./043-history-key-migration-transaction.md)   | Transactional legacy history-key migration                                | TODO; independent data-migration PR               |
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
@@ -145,7 +144,9 @@ Count: **17 fixed, 0 open**.
 1. The docs/truth reconciliation and plan 047 lifecycle slice are complete.
 2. Provider routing plan 046 and the plan 021 K-04/K-08 release slice are
    complete. PR #144 completed K-16 without narrowing valid launch previews.
-3. Execute plan 043 as its own migration PR.
+3. Plan 043 is complete — the transaction had already landed; the rollback and
+   accumulated-field tests that prove it, and a poster-URL loss those tests
+   exposed on the legacy-key migration path, shipped separately.
 4. The rebased tracker-sync implementation and plan 032's deterministic work
    are complete. Keep sync experimental until the disposable-account live smoke
    proves the production container → SQLite outbox → restart → remote mutation path.
