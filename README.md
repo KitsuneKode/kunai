@@ -731,14 +731,23 @@ suite, changesets, and the release gate are all in
 
 ## Appreciation
 
-Kunai stands on the shoulders of terminal-first and streaming UX inspirations:
+Kunai stands on the shoulders of the tools that did this first, and does not
+work without most of them:
 
-- **ani-cli** for proving fast, shell-native playback can be joyful
-- App-grade browsing UX patterns that keep search, details, episodes, and playback connected
-- **mpv** and **yt-dlp**, which make reliable playback and offline downloads possible
+- [**ani-cli**](https://github.com/pystardust/ani-cli) — proved that fast,
+  shell-native playback can be joyful. The AllAnime decoder in
+  `packages/providers/src/allmanga` is checked for parity against it.
+- [**mpv**](https://mpv.io) — the player. Kunai finds a stream and gets out of
+  the way; everything you actually watch, you watch in mpv.
+- [**yt-dlp**](https://github.com/yt-dlp/yt-dlp) — extraction and offline
+  downloads.
+- [**AniSkip**](https://aniskip.com) — the community skip-times database behind
+  auto-skip. Every intro and outro Kunai skips was timed by someone there.
+- [**VLC**](https://www.videolan.org/vlc/) — for two decades of proving a media
+  player can be free, universal, and answer to nobody.
 
-The goal is not to clone those tools, but to bring that same daily-driver
-confidence into a deterministic CLI workflow.
+The goal is not to clone them, but to bring that same daily-driver confidence
+into a deterministic CLI workflow.
 
 ---
 
