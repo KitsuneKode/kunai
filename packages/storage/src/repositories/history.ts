@@ -51,6 +51,18 @@ export interface HistoryProgress {
   readonly createdAt: string;
 }
 
+/** The watch-state half of a history row — everything consolidation must not lose. */
+export type HistoryProgressWatchState = Pick<
+  HistoryProgress,
+  | "positionSeconds"
+  | "durationSeconds"
+  | "watchedSeconds"
+  | "completed"
+  | "completedAt"
+  | "lastWatchedAt"
+  | "createdAt"
+>;
+
 /** Canonical title lookup for history reads (resume, continue, episode progress). */
 export interface HistoryTitleLookup {
   readonly id: string;
@@ -589,6 +601,59 @@ export class HistoryRepository {
 
   deleteProgressByKey(key: string): void {
     this.db.query("DELETE FROM history_progress WHERE key = ?").run(key);
+  }
+
+  /**
+   * Overwrite the watch state of one row.
+   *
+   * Consolidation merges two rows that turned out to be the same title, and the
+   * surviving key is chosen by identity (most recently touched), not by who
+   * watched further. Without this the loser's progress went out with
+   * `deleteProgressByKey` and a resume position could travel backwards.
+   */
+  updateProgressWatchStateByKey(key: string, state: HistoryProgressWatchState): void {
+    this.db
+      .query(
+        `UPDATE history_progress
+         SET position_seconds = ?,
+             duration_seconds = ?,
+             watched_seconds = ?,
+             completed = ?,
+             completed_at = ?,
+             last_watched_at = ?,
+             created_at = ?
+         WHERE key = ?`,
+      )
+      .run(
+        Math.round(state.positionSeconds),
+        state.durationSeconds === undefined ? null : Math.round(state.durationSeconds),
+        Math.round(state.watchedSeconds ?? 0),
+        state.completed ? 1 : 0,
+        state.completedAt ?? null,
+        state.lastWatchedAt ?? null,
+        state.createdAt,
+        key,
+      );
+  }
+
+  /**
+   * Give a row a poster only if it does not already have one.
+   *
+   * Consolidation picks the survivor by recency, and the row touched most
+   * recently is often the one that arrived with the least metadata. The poster
+   * then went out with the row being deleted — the same shape as the legacy-key
+   * migration losing it, and the reason `upsertProgress` COALESCEs rather than
+   * overwrites. Never replaces an existing poster: a survivor that has one has
+   * a more recent one.
+   */
+  fillMissingPosterByKey(key: string, posterUrl: string): void {
+    const trimmed = posterUrl.trim();
+    if (!trimmed) return;
+    this.db
+      .query(
+        "UPDATE history_progress SET poster_url = ? WHERE key = ? AND (poster_url IS NULL OR poster_url = '')",
+      )
+      .run(trimmed, key);
   }
 
   updateProgressExternalIdsByKey(key: string, externalIds: ProviderExternalIds): void {
