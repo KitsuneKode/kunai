@@ -84,6 +84,72 @@ test("consolidator merges forked rows that share the same anilist id", () => {
   expect(repo.getLatestForTitle("20431")?.positionSeconds).toBe(100);
 });
 
+test("merging a forked row never moves the resume position backwards", () => {
+  // The existing merge test above happens to have the newer row also be the
+  // further one, so it passed either way. This is the case that lost data: the
+  // survivor is chosen by `updated_at`, and the row touched most recently is
+  // the one that had barely been started.
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new HistoryRepository(db);
+  repo.upsertProgress({
+    title: { id: "20431", kind: "anime", title: "Canonical", externalIds: { anilistId: "20431" } },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 100,
+    updatedAt: "2026-06-02T00:00:00.000Z",
+  });
+  repo.upsertProgress({
+    title: {
+      id: "bxCKTopaque",
+      kind: "anime",
+      title: "Fork",
+      externalIds: { anilistId: "20431" },
+    },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 10,
+    updatedAt: "2026-06-03T00:00:00.000Z",
+  });
+
+  const stats = runHistoryIdentityConsolidator(db);
+
+  expect(stats.merged).toBe(1);
+  expect(repo.listAllProgress()).toHaveLength(1);
+  expect(repo.getLatestForTitle("20431")?.positionSeconds).toBe(100);
+});
+
+test("merging a forked row keeps a completion the surviving row does not have", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new HistoryRepository(db);
+  repo.upsertProgress({
+    title: { id: "20431", kind: "anime", title: "Canonical", externalIds: { anilistId: "20431" } },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 1_400,
+    durationSeconds: 1_440,
+    completed: true,
+    updatedAt: "2026-06-02T00:00:00.000Z",
+  });
+  repo.upsertProgress({
+    title: {
+      id: "bxCKTopaque",
+      kind: "anime",
+      title: "Fork",
+      externalIds: { anilistId: "20431" },
+    },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 30,
+    updatedAt: "2026-06-03T00:00:00.000Z",
+  });
+
+  expect(runHistoryIdentityConsolidator(db).merged).toBe(1);
+
+  const merged = repo.getLatestForTitle("20431");
+  expect(merged?.completed).toBe(true);
+  // Finished, so it offers a replay rather than a seek into the credits.
+  expect(merged?.positionSeconds).toBe(0);
+  expect(merged?.durationSeconds).toBe(1_440);
+});
+
 test("consolidator moves anime-class series rows onto their AniList unit", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

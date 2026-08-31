@@ -1,3 +1,4 @@
+import { mergeHistoryWatchState } from "@/domain/continuation/merge-history-progress";
 import { mergeBackfillExternalIds, resolveCanonicalCatalogTitleId } from "@kunai/core";
 import {
   createHistoryKey,
@@ -125,16 +126,23 @@ export function runHistoryIdentityConsolidator(
         continue;
       }
 
+      // The newer row wins the *identity* — its key, title and ids are the ones
+      // the user most recently touched. It does not automatically win the watch
+      // state: a row opened a minute ago at 10s does not undo yesterday's 100s.
       const keepNewer =
         Date.parse(row.updatedAt) >= Date.parse(existing.updatedAt) ? row : existing;
       const drop = keepNewer.key === row.key ? existing : row;
+      const watchState = mergeHistoryWatchState(keepNewer, drop);
 
-      log(`merge ${drop.key} into ${keepNewer.key} (keep newer updated_at)`);
+      log(
+        `merge ${drop.key} into ${keepNewer.key} (keep newer updated_at, keep furthest progress)`,
+      );
       if (!options.dryRun) {
         const mergedExternalIds = mergeBackfillExternalIds(keepNewer.externalIds, drop.externalIds);
         if (mergedExternalIds) {
           repo.updateProgressExternalIdsByKey(keepNewer.key, mergedExternalIds);
         }
+        repo.updateProgressWatchStateByKey(keepNewer.key, watchState);
         repo.deleteProgressByKey(drop.key);
         if (keepNewer.key !== newKey) {
           repo.rekeyProgressRow(keepNewer.key, canonicalId, newKey);

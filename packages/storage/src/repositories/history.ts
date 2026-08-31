@@ -51,6 +51,18 @@ export interface HistoryProgress {
   readonly createdAt: string;
 }
 
+/** The watch-state half of a history row — everything consolidation must not lose. */
+export type HistoryProgressWatchState = Pick<
+  HistoryProgress,
+  | "positionSeconds"
+  | "durationSeconds"
+  | "watchedSeconds"
+  | "completed"
+  | "completedAt"
+  | "lastWatchedAt"
+  | "createdAt"
+>;
+
 /** Canonical title lookup for history reads (resume, continue, episode progress). */
 export interface HistoryTitleLookup {
   readonly id: string;
@@ -589,6 +601,39 @@ export class HistoryRepository {
 
   deleteProgressByKey(key: string): void {
     this.db.query("DELETE FROM history_progress WHERE key = ?").run(key);
+  }
+
+  /**
+   * Overwrite the watch state of one row.
+   *
+   * Consolidation merges two rows that turned out to be the same title, and the
+   * surviving key is chosen by identity (most recently touched), not by who
+   * watched further. Without this the loser's progress went out with
+   * `deleteProgressByKey` and a resume position could travel backwards.
+   */
+  updateProgressWatchStateByKey(key: string, state: HistoryProgressWatchState): void {
+    this.db
+      .query(
+        `UPDATE history_progress
+         SET position_seconds = ?,
+             duration_seconds = ?,
+             watched_seconds = ?,
+             completed = ?,
+             completed_at = ?,
+             last_watched_at = ?,
+             created_at = ?
+         WHERE key = ?`,
+      )
+      .run(
+        Math.round(state.positionSeconds),
+        state.durationSeconds === undefined ? null : Math.round(state.durationSeconds),
+        Math.round(state.watchedSeconds ?? 0),
+        state.completed ? 1 : 0,
+        state.completedAt ?? null,
+        state.lastWatchedAt ?? null,
+        state.createdAt,
+        key,
+      );
   }
 
   updateProgressExternalIdsByKey(key: string, externalIds: ProviderExternalIds): void {
