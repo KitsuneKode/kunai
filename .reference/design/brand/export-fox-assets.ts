@@ -67,6 +67,20 @@ const CLI_PETS = path.join(ROOT, "apps/cli/src/app-shell/brand/pets");
 
 /** The plate colour the masters were drawn on, and the colour of the eyes. */
 const PLATE = "#1c1620";
+/**
+ * The brand palette every still is snapped to.
+ *
+ * The masters drifted. Their fur measures around `#f990a0`, a salmon, and it is
+ * not even consistent between them — `go` is `#f695a1`, `watch` is `#fa94a2`.
+ * Beside a still exported from the vector, which is exactly `#ff8fb0`, the
+ * difference is visible as two foxes in slightly different pinks.
+ *
+ * `PLATE` has to be in this list even though the plate itself is transparent by
+ * the time the remap runs: it is also the colour of her eyes and nose, and a
+ * palette without it snaps them to the nearest pink and she comes out blind.
+ * That is the same trap as `-transparent` on the masters, one step later.
+ */
+const BRAND_PALETTE = ["#ff8fb0", "#ffc6d8", PLATE] as const;
 /** Corner-to-corner spread across the six masters is ~10 levels; 22% clears it. */
 const PLATE_FUZZ = "22%";
 /** Lossy WebP quality. Flat art holds up well below this; edges do not. */
@@ -294,7 +308,56 @@ async function exportStill(
     ...encode,
   ]);
 
+  await snapToBrandPalette(dest);
   return Bun.file(dest).size;
+}
+
+// One 3px swatch the remap reads. Written once rather than per still.
+const palettePath = path.join(tmpdir(), "kanna-brand-palette.png");
+await magick(["-size", "1x1", ...BRAND_PALETTE.map((hex) => `xc:${hex}`), "+append", palettePath]);
+
+/**
+ * Snap a finished still to the brand palette, in place.
+ *
+ * The masters drifted off-brand and off each other — fur measures `#f990a0` on
+ * `wait`, `#f695a1` on `go`, `#fa94a2` on `watch` — while a still exported from
+ * the vector is exactly `#ff8fb0`. Side by side in one shell that reads as two
+ * foxes in two different pinks.
+ *
+ * Alpha has to be carried around the remap by hand. `-remap` reduces colour,
+ * and every single-invocation form of this — `-alpha off … -alpha on`,
+ * `-channel RGB`, an `mpr:` round trip — either dropped the cut or snapped the
+ * whole image to the darkest palette entry, because transparent pixels still
+ * hold plate-coloured RGB and the reduction counts them. Extracting the mask,
+ * remapping opaque, and copying the mask back is the form that survives.
+ *
+ * `PLATE` must be in the palette even though the plate is long gone by now: it
+ * is also the colour of her eyes and nose, and a palette without it snaps them
+ * to the nearest pink and she comes out blind. Same trap as `-transparent` on
+ * the masters, two steps later.
+ */
+async function snapToBrandPalette(file: string): Promise<void> {
+  const mask = path.join(tmpdir(), `kanna-mask-${path.basename(file)}.png`);
+  const rgb = path.join(tmpdir(), `kanna-rgb-${path.basename(file)}.png`);
+  const isWebp = file.endsWith(".webp");
+
+  await magick([file, "-alpha", "extract", mask]);
+  await magick([file, "-alpha", "off", "+dither", "-remap", palettePath, rgb]);
+  await magick([
+    rgb,
+    mask,
+    "-alpha",
+    "off",
+    "-compose",
+    "CopyOpacity",
+    "-composite",
+    ...(isWebp
+      ? ["-quality", WEBP_QUALITY, "-define", "webp:alpha-quality=100", "-strip", file]
+      : ["-strip", `PNG32:${file}`]),
+  ]);
+
+  rmSync(mask, { force: true });
+  rmSync(rgb, { force: true });
 }
 
 mkdirSync(DOCS_STILLS, { recursive: true });

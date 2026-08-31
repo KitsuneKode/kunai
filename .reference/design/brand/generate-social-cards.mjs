@@ -257,12 +257,12 @@ const docsPngPath = join(HERE, "kunai-social-docs.png");
 writeFileSync(docsSvgPath, docsSvg);
 writeFileSync(githubSvgPath, githubSvg);
 
-const mascotSvgPath = join(HERE, "kanna-bust.svg");
-const mascotOgPngPath = join(HERE, "kunai-mascot-og.png");
+// `kunai-mascot-og.png` is NOT written here. `export-fox-assets.ts` owns it —
+// it applies the expression, and this script used to overwrite the result at a
+// different size with a neutral face, silently undoing that.
 
 exportPng(docsSvgPath, docsPngPath, 1200);
 exportPng(githubSvgPath, githubPngPath, 1280);
-exportPng(mascotSvgPath, mascotOgPngPath, 320);
 
 const githubUpload = exportGithubSocialUpload(githubPngPath, githubJpgPath);
 
@@ -270,7 +270,6 @@ console.log("Wrote:");
 console.log(`  ${docsSvgPath}`);
 console.log(`  ${docsPngPath}`);
 console.log(`  ${githubSvgPath}`);
-console.log(`  ${mascotOgPngPath}`);
 console.log(
   `  GitHub upload: ${githubUpload.path} (${githubUpload.format}, ${githubUpload.bytes} bytes` +
     (githubUpload.quality ? `, q${githubUpload.quality}` : "") +
