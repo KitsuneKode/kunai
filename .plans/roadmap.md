@@ -108,6 +108,7 @@ the K-reconciliation below and the commit history both cite them by id.
 | [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
 | [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles               |
 | [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
+| [044](./044-namespace-mal-history-keys.md)          | Namespace MAL-derived history keys                                        | READY (needs migration review)                    |
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
