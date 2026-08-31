@@ -1132,9 +1132,14 @@ finish_transaction() {
 #   - siblings — with no `/` boundary, `$CACHE_DIR/staging-old` matched too.
 #
 # `realpath` is not portable enough to rely on here (BSD and GNU differ, and it
-# is absent on some minimal images), but the installer never creates a staging
-# path containing `..`, so rejecting the segment outright is both sufficient and
-# portable. This mirrors `isInsideStagingRoot` in
+# is absent on some minimal images), but `cd` + `pwd -P` resolves symlinks in any
+# POSIX shell, which covers the case a textual check cannot: a staging directory
+# that *is* a symlink pointing out of the cache passes every string test and then
+# takes the `rm -rf` somewhere else entirely.
+#
+# The textual checks stay in front of it, because resolution needs the directory
+# to exist and a path that never existed is not ours to delete either way. This
+# mirrors `isInsideStagingRoot` in
 # `apps/cli/src/services/update/native-installer/install-layout.ts`, which
 # resolves both paths and refuses anything that escapes the root.
 is_inside_staging_root() {
@@ -1145,7 +1150,20 @@ is_inside_staging_root() {
 	.. | ../* | */../* | */..) return 1 ;;
 	esac
 	case "$candidate" in
-	"$root"/?*) return 0 ;;
+	"$root"/?*) ;;
+	*) return 1 ;;
+	esac
+
+	# Not a directory: nothing to recurse into, and the textual checks already
+	# proved the name is inside the root.
+	[[ -d "$candidate" ]] || return 0
+
+	local resolved resolved_root
+	resolved="$(cd -- "$candidate" 2>/dev/null && pwd -P)" || return 1
+	resolved_root="$(cd -- "$root" 2>/dev/null && pwd -P)" || return 1
+	# Re-test after resolution: a symlinked staging dir now shows its real path.
+	case "$resolved" in
+	"$resolved_root"/?*) return 0 ;;
 	esac
 	return 1
 }

@@ -1,6 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+const tempDirs: string[] = [];
 
 const ROOT = join(import.meta.dir, "../../../../..");
 const INSTALL_SH = readFileSync(join(ROOT, "install.sh"), "utf8");
@@ -19,10 +23,13 @@ function extractShellFunction(name: string): string {
   return INSTALL_SH.slice(start, end + 3);
 }
 
-async function isInsideStagingRoot(candidate: string): Promise<boolean> {
+async function isInsideStagingRoot(
+  candidate: string,
+  cacheDir = "/home/u/.cache/kunai",
+): Promise<boolean> {
   const script = [
     "set -u",
-    'CACHE_DIR="/home/u/.cache/kunai"',
+    `CACHE_DIR=${JSON.stringify(cacheDir)}`,
     extractShellFunction("is_inside_staging_root"),
     'if is_inside_staging_root "$1"; then echo ACCEPT; else echo REJECT; fi',
   ].join("\n");
@@ -38,6 +45,13 @@ async function isInsideStagingRoot(candidate: string): Promise<boolean> {
   }
   return out === "ACCEPT";
 }
+
+afterEach(async () => {
+  while (tempDirs.length) {
+    const dir = tempDirs.pop();
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
+});
 
 describe("install.sh is_inside_staging_root", () => {
   const ROOT_DIR = "/home/u/.cache/kunai/staging";
@@ -59,6 +73,37 @@ describe("install.sh is_inside_staging_root", () => {
     // The old test was a bare string prefix with no `/` boundary.
     expect(await isInsideStagingRoot(`${ROOT_DIR}-old`)).toBe(false);
     expect(await isInsideStagingRoot(`${ROOT_DIR}evil/x`)).toBe(false);
+  });
+
+  test("rejects a staging directory that is a symlink out of the cache", async () => {
+    // The textual checks cannot see this: the name is inside the root, contains
+    // no `..`, and clears the `/` boundary — but following it lands in $HOME.
+    // Resolution is what closes it.
+    const base = await mkdtemp(join(tmpdir(), "kunai-staging-symlink-"));
+    tempDirs.push(base);
+    const cache = join(base, "cache");
+    const staging = join(cache, "staging");
+    const outside = join(base, "outside");
+    await mkdir(staging, { recursive: true });
+    await mkdir(outside, { recursive: true });
+    await symlink(outside, join(staging, "escape"), "dir");
+    await mkdir(join(staging, "0.3.0"), { recursive: true });
+
+    expect(await isInsideStagingRoot(join(staging, "escape"), cache)).toBe(false);
+    // A real directory in the same root is still accepted, so the resolution
+    // step did not simply reject everything.
+    expect(await isInsideStagingRoot(join(staging, "0.3.0"), cache)).toBe(true);
+  });
+
+  test("accepts a path inside the root that does not exist yet", async () => {
+    // Resolution needs the directory to exist; a name that never existed is not
+    // ours to delete either way, and must not be rejected on that basis alone.
+    const base = await mkdtemp(join(tmpdir(), "kunai-staging-missing-"));
+    tempDirs.push(base);
+    const cache = join(base, "cache");
+    await mkdir(join(cache, "staging"), { recursive: true });
+
+    expect(await isInsideStagingRoot(join(cache, "staging", "0.9.9"), cache)).toBe(true);
   });
 
   test("rejects the staging root itself and anything outside it", async () => {
