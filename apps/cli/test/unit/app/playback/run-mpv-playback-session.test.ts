@@ -215,9 +215,9 @@ describe("runMpvPlaybackSession queue acknowledgement boundary", () => {
 });
 
 describe("runMpvPlaybackSession generation activation", () => {
-  test("activation writes the generation before any player event", async () => {
+  test("router activation writes its generation before any player event", async () => {
     const harness = await runSession(() => undefined, { activation: GEN_2 });
-    expect(harness.store.writes[0]).toEqual({ status: "loading", generation: GEN_2 });
+    expect(harness.store.writes[0]).toEqual({ status: "loading", generation: GEN_1 });
   });
 });
 

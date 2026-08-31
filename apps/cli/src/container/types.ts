@@ -224,6 +224,10 @@ export interface ContainerOptions {
   appVersion?: string;
   debugJson?: boolean;
   debugSession?: boolean;
+  /** Experimental Phase-2 direct Google Cast target selected for this run. */
+  castDevice?: string;
+  /** Register the Cast backend so an interactive target can be selected after bootstrap. */
+  enableCastPlayback?: boolean;
   /**
    * Test-only provider module override (compiled binary smokes).
    * Production startup never sets this; prefer `loadCompiledSmokeProviderOverride`.

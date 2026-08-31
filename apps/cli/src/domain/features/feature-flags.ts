@@ -4,6 +4,7 @@ export interface AttentionFeatureFlags {
   readonly playlistSharing: boolean;
   readonly newEpisodeProjection: boolean;
   readonly providerAvailabilitySync: boolean;
+  readonly castPlayback: boolean;
 }
 
 export interface ResolveAttentionFeatureFlagsOptions {
@@ -25,6 +26,7 @@ export function resolveAttentionFeatureFlags(
   const env = options.env ?? process.env;
   const envAvailabilitySync = readBoolean(env.KUNAI_EXPERIMENTAL_PROVIDER_AVAILABILITY_SYNC);
   const envPlaylistSharing = readBoolean(env.KUNAI_PLAYLIST_SHARING);
+  const envCastPlayback = readBoolean(env.KUNAI_EXPERIMENTAL_CAST);
 
   return {
     attentionInbox: options.overrides?.attentionInbox ?? true,
@@ -33,5 +35,6 @@ export function resolveAttentionFeatureFlags(
     newEpisodeProjection: options.overrides?.newEpisodeProjection ?? true,
     providerAvailabilitySync:
       options.overrides?.providerAvailabilitySync ?? envAvailabilitySync ?? false,
+    castPlayback: options.overrides?.castPlayback ?? envCastPlayback ?? false,
   };
 }

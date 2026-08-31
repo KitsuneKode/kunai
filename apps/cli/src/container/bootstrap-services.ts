@@ -42,7 +42,11 @@ import { OfflineAssetService } from "../services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "../services/offline/OfflineLibraryService";
 import { OfflineMaintenanceService } from "../services/offline/OfflineMaintenanceService";
 import { OfflineRunwayService } from "../services/offline/OfflineRunwayService";
-import { createLocalPlaybackRouter } from "../services/playback/LocalPlaybackBackend";
+import { googleCastTargetFromSelector } from "../services/playback/cast/cast-target-selector";
+import { GoogleCastPlaybackBackend } from "../services/playback/cast/GoogleCastPlaybackBackend";
+import { LocalPlaybackBackend } from "../services/playback/LocalPlaybackBackend";
+import type { PlaybackBackend } from "../services/playback/PlaybackBackend";
+import { PlaybackRouter } from "../services/playback/PlaybackRouter";
 import { DurablePlaylistService } from "../services/playlists/DurablePlaylistService";
 import { PresenceServiceImpl } from "../services/presence/PresenceServiceImpl";
 import { RecommendationServiceImpl } from "../services/recommendations/RecommendationServiceImpl";
@@ -144,7 +148,17 @@ export function bootstrapServices(input: {
     mpv: options?.mpv,
     presentation: playerPresentation,
   });
-  const playbackRouter = createLocalPlaybackRouter(player);
+  const castDeviceName = options?.castDevice?.trim() || process.env.KUNAI_CAST_DEVICE?.trim();
+  const castPlaybackEnabled =
+    featureFlags.castPlayback || Boolean(castDeviceName) || options?.enableCastPlayback === true;
+  const playbackBackends: PlaybackBackend[] = [
+    new LocalPlaybackBackend(player),
+    ...(castPlaybackEnabled ? [new GoogleCastPlaybackBackend(undefined, playerControl)] : []),
+  ];
+  const playbackRouter = new PlaybackRouter(playbackBackends);
+  if (castDeviceName) {
+    playbackRouter.selectTarget(googleCastTargetFromSelector(castDeviceName));
+  }
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
   const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases, offlineAssets);

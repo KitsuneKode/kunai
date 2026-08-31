@@ -49,6 +49,7 @@ export class SessionController {
   /** Bounded external cleanup (mpv session, Discord presence), failure-isolated. */
   public async releaseExternalResources(): Promise<void> {
     const cleanupResults = await Promise.allSettled([
+      this.container.playbackRouter.stop(),
       this.container.player.releasePersistentSession(),
       this.container.presence.shutdown(),
     ]);

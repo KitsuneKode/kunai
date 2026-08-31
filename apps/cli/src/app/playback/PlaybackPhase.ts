@@ -3590,6 +3590,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         this.updatePlaybackFeedback(context, { detail: null, note: null });
         return { status: "cancelled" };
       }
+      stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+      stateManager.dispatch({ type: "SET_STREAM", stream: null });
       logger.error("Playback phase error", { error: String(e) });
       return {
         status: "error",

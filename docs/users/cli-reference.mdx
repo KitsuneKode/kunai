@@ -95,8 +95,9 @@ For a quick trial without installing, evaluate it in the current session —
 5. **Continue watching** — `--continue` / `--resume`: newest unfinished local history entry.
 6. **History first** — `--history`: watch history picker at startup.
 7. **Offline library first** — `--offline`: completed downloads only (same intent as `/library`).
-8. **Discover / calendar / random** — `--discover`, `--calendar`, `--random`: open those trays first without auto-play.
-9. **Share link handoff** — `--open <kunai://url>`: trusted launch without protocol confirmation; `--install-protocol-handler` registers the **Linux-only** OS handler.
+8. **Experimental Google Cast** — `--cast` opens the playback-device picker; `--cast <device>` targets a receiver directly; `--cast-list` discovers receivers and exits.
+9. **Discover / calendar / random** — `--discover`, `--calendar`, `--random`: open those trays first without auto-play.
+10. **Share link handoff** — `--open <kunai://url>`: trusted launch without protocol confirmation; `--install-protocol-handler` registers the **Linux-only** OS handler.
 
 ## Share links
 
@@ -129,6 +130,7 @@ More: [Share links](/docs/users/share-links).
 ## mpv and diagnostics
 
 - **mpv:** `--mpv-debug`, `--mpv-clean`, `--no-user-mpv-config`, `--mpv-log-file <path>` forward into the player for this run.
+- **Google Cast (experimental):** `--cast` opens a Kunai picker with local playback, discovered receivers, refresh, and manual address entry. `--cast-list` prints discovered receivers and exits. `--cast <name|ip>` selects a receiver directly for HTTP(S) HLS, DASH, MP4, WebM, or MP3 playback. Header-protected streams require the local gateway planned for a later phase.
 - **Diagnostics:** `--debug` writes verbose logs to `./logs.txt`. `--debug-json` and `--debug-session` add structured traces for support bundles.
 - **Dry run:** `--dry-run` prints the planned bootstrap without changing state.
 

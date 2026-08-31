@@ -650,12 +650,36 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     process.stdout.write(`${await formatVersionLine(KUNAI_VERSION)}\n`);
     return;
   }
+  if (args.castList) {
+    const { discoverGoogleCastTargets } =
+      await import("./services/playback/cast/discover-google-cast-targets");
+    const targets = await discoverGoogleCastTargets();
+    if (targets.length === 0) {
+      console.log(
+        "No Google Cast devices found. Check that multicast/mDNS is allowed on this LAN.",
+      );
+      return;
+    }
+    for (const target of targets) {
+      console.log(
+        `${target.name}\t${target.modelName ?? "Google Cast"}\t${target.host}:${target.port}`,
+      );
+    }
+    return;
+  }
   // Asking for the wizard where nothing can drive it is a mistake worth naming.
   // Silently continuing would leave the user believing setup ran; mounting it
   // anyway would block on a keystroke that can never arrive.
   if (args.setup && !(process.stdin.isTTY && process.stdout.isTTY)) {
     console.error(
       "kunai --setup needs an interactive terminal. Run it directly rather than through a pipe, and unset CI if it is set.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (args.castPicker && !(process.stdin.isTTY && process.stdout.isTTY)) {
+    console.error(
+      "kunai --cast needs an interactive terminal to choose a device. Use --cast <device-or-ip> in a non-interactive run.",
     );
     process.exitCode = 1;
     return;
@@ -796,6 +820,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     debug: args.debug,
     debugJson: args.debugJson,
     debugSession: args.debugSession,
+    castDevice: args.castDevice,
+    enableCastPlayback: args.castPicker,
     mpv: args.mpv,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
@@ -1033,6 +1059,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
           .map((issue) => issue.message),
       },
     });
+  }
+
+  if (args.castPicker) {
+    const { chooseGoogleCastTargetShell } = await import("./app-shell/cast-target-picker");
+    const target = await chooseGoogleCastTargetShell();
+    if (target) container.playbackRouter.selectTarget(target);
   }
 
   const shellLoadStartedAt = args.debug ? performance.now() : 0;

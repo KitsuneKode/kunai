@@ -11,4 +11,5 @@ export type PlaybackBackendRequest = {
 export interface PlaybackBackend {
   readonly kind: PlaybackTarget["kind"];
   play(request: PlaybackBackendRequest, target: PlaybackTarget): Promise<PlaybackResult>;
+  stop?(): Promise<void>;
 }
