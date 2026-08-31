@@ -53,6 +53,16 @@ afterEach(async () => {
   }
 });
 
+/**
+ * The two filesystem-backed cases are POSIX-only.
+ *
+ * `install.sh` never runs on Windows — that is `install.ps1`, which does not
+ * replay `stagingDir` from a transaction file and so needs no equivalent guard.
+ * The cases below build real directories and a real symlink and hand native
+ * paths to a bash `case` pattern, none of which survives a Windows path
+ * separator or an unprivileged `symlink()`. The string-only cases still run
+ * everywhere, so the guard's logic stays covered on every platform.
+ */
 describe("install.sh is_inside_staging_root", () => {
   const ROOT_DIR = "/home/u/.cache/kunai/staging";
 
@@ -75,36 +85,42 @@ describe("install.sh is_inside_staging_root", () => {
     expect(await isInsideStagingRoot(`${ROOT_DIR}evil/x`)).toBe(false);
   });
 
-  test("rejects a staging directory that is a symlink out of the cache", async () => {
-    // The textual checks cannot see this: the name is inside the root, contains
-    // no `..`, and clears the `/` boundary — but following it lands in $HOME.
-    // Resolution is what closes it.
-    const base = await mkdtemp(join(tmpdir(), "kunai-staging-symlink-"));
-    tempDirs.push(base);
-    const cache = join(base, "cache");
-    const staging = join(cache, "staging");
-    const outside = join(base, "outside");
-    await mkdir(staging, { recursive: true });
-    await mkdir(outside, { recursive: true });
-    await symlink(outside, join(staging, "escape"), "dir");
-    await mkdir(join(staging, "0.3.0"), { recursive: true });
+  test.skipIf(process.platform === "win32")(
+    "rejects a staging directory that is a symlink out of the cache",
+    async () => {
+      // The textual checks cannot see this: the name is inside the root, contains
+      // no `..`, and clears the `/` boundary — but following it lands in $HOME.
+      // Resolution is what closes it.
+      const base = await mkdtemp(join(tmpdir(), "kunai-staging-symlink-"));
+      tempDirs.push(base);
+      const cache = join(base, "cache");
+      const staging = join(cache, "staging");
+      const outside = join(base, "outside");
+      await mkdir(staging, { recursive: true });
+      await mkdir(outside, { recursive: true });
+      await symlink(outside, join(staging, "escape"), "dir");
+      await mkdir(join(staging, "0.3.0"), { recursive: true });
 
-    expect(await isInsideStagingRoot(join(staging, "escape"), cache)).toBe(false);
-    // A real directory in the same root is still accepted, so the resolution
-    // step did not simply reject everything.
-    expect(await isInsideStagingRoot(join(staging, "0.3.0"), cache)).toBe(true);
-  });
+      expect(await isInsideStagingRoot(join(staging, "escape"), cache)).toBe(false);
+      // A real directory in the same root is still accepted, so the resolution
+      // step did not simply reject everything.
+      expect(await isInsideStagingRoot(join(staging, "0.3.0"), cache)).toBe(true);
+    },
+  );
 
-  test("accepts a path inside the root that does not exist yet", async () => {
-    // Resolution needs the directory to exist; a name that never existed is not
-    // ours to delete either way, and must not be rejected on that basis alone.
-    const base = await mkdtemp(join(tmpdir(), "kunai-staging-missing-"));
-    tempDirs.push(base);
-    const cache = join(base, "cache");
-    await mkdir(join(cache, "staging"), { recursive: true });
+  test.skipIf(process.platform === "win32")(
+    "accepts a path inside the root that does not exist yet",
+    async () => {
+      // Resolution needs the directory to exist; a name that never existed is not
+      // ours to delete either way, and must not be rejected on that basis alone.
+      const base = await mkdtemp(join(tmpdir(), "kunai-staging-missing-"));
+      tempDirs.push(base);
+      const cache = join(base, "cache");
+      await mkdir(join(cache, "staging"), { recursive: true });
 
-    expect(await isInsideStagingRoot(join(cache, "staging", "0.9.9"), cache)).toBe(true);
-  });
+      expect(await isInsideStagingRoot(join(cache, "staging", "0.9.9"), cache)).toBe(true);
+    },
+  );
 
   test("rejects the staging root itself and anything outside it", async () => {
     expect(await isInsideStagingRoot(ROOT_DIR)).toBe(false);
