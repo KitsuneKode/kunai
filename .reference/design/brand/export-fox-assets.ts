@@ -52,11 +52,21 @@
  *
  *   bun .reference/design/brand/export-fox-assets.ts
  */
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { applyExpression } from "./kanna-expressions.mjs";
+
+/**
+ * A private scratch directory for this run.
+ *
+ * `mkdtemp` creates it 0700 with an unpredictable name. Fixed names under a
+ * shared `/tmp` are pre-creatable by any other user on the box — as a symlink,
+ * which `Bun.write` follows — so the intermediate SVG and the mask/RGB pair
+ * could be redirected, or read while they exist.
+ */
+const SCRATCH = mkdtempSync(path.join(tmpdir(), "kanna-export-"));
 
 const ROOT = path.resolve(import.meta.dir, "../../..");
 const HERE = path.join(ROOT, ".reference/design/brand");
@@ -216,7 +226,7 @@ async function exportVectorStill(
 ): Promise<number> {
   const svg = await Bun.file(path.join(HERE, svgName)).text();
   const posed = applyExpression(svg, expression);
-  const tmp = path.join(tmpdir(), `kanna-${expression}-${path.basename(dest)}.svg`);
+  const tmp = path.join(SCRATCH, `${expression}-${path.basename(dest)}.svg`);
   await Bun.write(tmp, posed);
 
   const inner = Math.round(size * FILL_RATIO);
@@ -313,7 +323,7 @@ async function exportStill(
 }
 
 // One 3px swatch the remap reads. Written once rather than per still.
-const palettePath = path.join(tmpdir(), "kanna-brand-palette.png");
+const palettePath = path.join(SCRATCH, "brand-palette.png");
 await magick(["-size", "1x1", ...BRAND_PALETTE.map((hex) => `xc:${hex}`), "+append", palettePath]);
 
 /**
@@ -337,8 +347,8 @@ await magick(["-size", "1x1", ...BRAND_PALETTE.map((hex) => `xc:${hex}`), "+appe
  * the masters, two steps later.
  */
 async function snapToBrandPalette(file: string): Promise<void> {
-  const mask = path.join(tmpdir(), `kanna-mask-${path.basename(file)}.png`);
-  const rgb = path.join(tmpdir(), `kanna-rgb-${path.basename(file)}.png`);
+  const mask = path.join(SCRATCH, `mask-${path.basename(file)}.png`);
+  const rgb = path.join(SCRATCH, `rgb-${path.basename(file)}.png`);
   const isWebp = file.endsWith(".webp");
 
   await magick([file, "-alpha", "extract", mask]);
@@ -397,3 +407,8 @@ const ogDest = path.join(BRAND, "kunai-mascot-og.png");
 console.log(
   `og   kunai-mascot-og.png ${await exportVectorStill(nav.svg, nav.expression, ogDest, 192, "png")} bytes (vector, ${nav.expression})`,
 );
+
+// The scratch directory holds only intermediates; every real output is already
+// written. Removing it here rather than per-file keeps a failed run's artifacts
+// around for inspection, which is the useful behaviour for a manual design step.
+rmSync(SCRATCH, { recursive: true, force: true });

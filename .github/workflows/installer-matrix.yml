@@ -51,6 +51,28 @@ jobs:
           turbo-cache-prefix: installer-matrix-binaries
       - name: Build linux-x64 + musl
         run: bun run --cwd apps/cli build:binaries -- --only linux-x64 --only linux-x64-musl
+      - name: Assert every release companion exists
+        # `if-no-files-found` is evaluated across the combined path set, so a
+        # missing archive or checksum file uploads silently and only surfaces
+        # later as "release companion not found" inside every matrix scenario —
+        # which reads like an installer regression rather than a missing file.
+        # Checking here names the missing path at the point it went missing.
+        run: |
+          missing=0
+          for f in \
+            apps/cli/dist/bin/kunai-linux-x64 \
+            apps/cli/dist/bin/kunai-linux-x64.tar.gz \
+            apps/cli/dist/bin/kunai-linux-x64-musl \
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz \
+            apps/cli/dist/bin/SHA256SUMS \
+            apps/cli/dist/bin/SHA256SUMS.archives; do
+            if [ ! -s "$f" ]; then
+              echo "::error file=$f::missing or empty release companion"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
       - uses: actions/upload-artifact@v4
         with:
           name: kunai-linux-binaries-matrix
@@ -63,7 +85,8 @@ jobs:
           # missing upload. `ci.yml` uploads the same six paths.
           #
           # `if-no-files-found: error` does NOT cover this: it fires only when
-          # *no* pattern matches, so five-of-six still uploads silently.
+          # *no* pattern matches, so five-of-six still uploads silently. The
+          # step above is what actually enforces the set.
           if-no-files-found: error
           path: |
             apps/cli/dist/bin/kunai-linux-x64

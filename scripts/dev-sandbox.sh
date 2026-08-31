@@ -27,7 +27,33 @@ SANDBOX="${SANDBOX_DIR:-${TMPDIR:-/tmp}/kunai-sandbox}"
 if [[ "${KEEP:-0}" != "1" ]]; then
   rm -rf "$SANDBOX"
 fi
+
+# A retained or pre-existing sandbox is not automatically trustworthy. The
+# default lives in a world-writable /tmp, so anyone on the box can create it
+# first — as a symlink, or as a directory they own — and every storage root
+# below then redirects Kunai's writes wherever they pointed. That is the exact
+# failure this script exists to prevent, so refuse rather than repair: a
+# surprising path here is worth a stop, and `rm -rf` on someone else's
+# directory is not an improvement.
+if [[ -L "$SANDBOX" ]]; then
+  echo "refusing: $SANDBOX is a symlink" >&2
+  exit 1
+fi
+if [[ -e "$SANDBOX" ]]; then
+  if [[ ! -d "$SANDBOX" ]]; then
+    echo "refusing: $SANDBOX exists and is not a directory" >&2
+    exit 1
+  fi
+  # `-O` is "owned by the effective user", which is the check that matters.
+  if [[ ! -O "$SANDBOX" ]]; then
+    echo "refusing: $SANDBOX is not owned by you" >&2
+    exit 1
+  fi
+fi
+
 mkdir -p "$SANDBOX"
+# Owner-only from the start: the profile holds tracker tokens once setup runs.
+chmod 700 "$SANDBOX"
 
 echo "kunai sandbox → $SANDBOX"
 echo "  real profile untouched; delete the directory to reset"
