@@ -150,6 +150,59 @@ test("merging a forked row keeps a completion the surviving row does not have", 
   expect(merged?.durationSeconds).toBe(1_440);
 });
 
+test("a corrupt updated_at never wins the identity, in either operand order", () => {
+  // `Date.parse(x) >= NaN` is false for every x, so the corrupt row won whenever
+  // it happened to be the right-hand operand — which row survived depended on
+  // iteration order rather than on the data.
+  //
+  // `upsertProgress` rejects an unparseable timestamp, so this state only ever
+  // arrives from a database written by something else: an older build, or
+  // external corruption. It is written directly here for that reason.
+  for (const corruptFirst of [true, false]) {
+    const db = openKunaiDatabase(":memory:");
+    runMigrations(db, "data");
+    const repo = new HistoryRepository(db);
+
+    const insertCorrupt = () => {
+      db.query(
+        `INSERT INTO history_progress (
+           key, title_id, media_kind, title, season, episode, position_seconds,
+           completed, external_ids_json, updated_at, created_at
+         ) VALUES (?, ?, 'anime', 'Corrupt', 1, 1, 5, 0, ?, 'not-a-date', 'not-a-date')`,
+      ).run("bxCKTopaque:s1e1", "bxCKTopaque", JSON.stringify({ anilistId: "20431" }));
+    };
+    const insertGood = () => {
+      repo.upsertProgress({
+        title: {
+          id: "20431",
+          kind: "anime",
+          title: "Readable",
+          externalIds: { anilistId: "20431" },
+        },
+        episode: { season: 1, episode: 1 },
+        positionSeconds: 120,
+        updatedAt: "2026-06-02T00:00:00.000Z",
+      });
+    };
+
+    if (corruptFirst) {
+      insertCorrupt();
+      insertGood();
+    } else {
+      insertGood();
+      insertCorrupt();
+    }
+
+    expect(runHistoryIdentityConsolidator(db).merged).toBe(1);
+
+    const merged = repo.getLatestForTitle("20431");
+    // The readable row keeps the identity...
+    expect(merged?.title).toBe("Readable");
+    // ...and the merge still keeps the furthest progress from either side.
+    expect(merged?.positionSeconds).toBe(120);
+  }
+});
+
 test("consolidator moves anime-class series rows onto their AniList unit", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

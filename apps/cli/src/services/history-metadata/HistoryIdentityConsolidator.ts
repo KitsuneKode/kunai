@@ -129,8 +129,7 @@ export function runHistoryIdentityConsolidator(
       // The newer row wins the *identity* — its key, title and ids are the ones
       // the user most recently touched. It does not automatically win the watch
       // state: a row opened a minute ago at 10s does not undo yesterday's 100s.
-      const keepNewer =
-        Date.parse(row.updatedAt) >= Date.parse(existing.updatedAt) ? row : existing;
+      const keepNewer = selectIdentitySurvivor(row, existing);
       const drop = keepNewer.key === row.key ? existing : row;
       const watchState = mergeHistoryWatchState(keepNewer, drop);
 
@@ -159,4 +158,25 @@ export function runHistoryIdentityConsolidator(
   consolidate();
 
   return stats;
+}
+/**
+ * Which of two rows keeps the identity: the one touched most recently.
+ *
+ * A direct `Date.parse(a) >= Date.parse(b)` cannot express this, because every
+ * comparison against `NaN` is false. A corrupt `updated_at` therefore won
+ * whenever it happened to sit on the right-hand side and lost whenever it sat on
+ * the left — the survivor depended on iteration order rather than on the data.
+ * A row with a readable timestamp is always the better identity than one without.
+ */
+function selectIdentitySurvivor<T extends { readonly updatedAt: string }>(left: T, right: T): T {
+  const leftAt = Date.parse(left.updatedAt);
+  const rightAt = Date.parse(right.updatedAt);
+  const leftOk = Number.isFinite(leftAt);
+  const rightOk = Number.isFinite(rightAt);
+
+  if (leftOk !== rightOk) return leftOk ? left : right;
+  // Both unreadable: keep `right`, which is the already-stored row, so a merge
+  // between two corrupt rows stays put instead of shuffling on every pass.
+  if (!leftOk) return right;
+  return leftAt >= rightAt ? left : right;
 }
