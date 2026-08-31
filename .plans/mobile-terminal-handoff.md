@@ -337,6 +337,8 @@ Provider-side subprocesses remain capability-driven:
 ### Build verification
 
 - Cross-compile both Android targets from the production entrypoint.
+- Inspect the ELF platform floor (currently Android API 28) without treating it
+  as physical-device compatibility evidence.
 - Inspect artifacts and archives without executing them on the host.
 - Measure binary and archive size independently from desktop targets.
 - Run root typecheck, lint, formatting, tests, build, doc paths, and build

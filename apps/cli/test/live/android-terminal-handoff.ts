@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
-import { HandoffPlayerService } from "@/infra/player/HandoffPlayerService";
+import { HandoffPlayerService } from "@/infra/player/handoff-player-service";
 import { getKunaiPaths } from "@kunai/storage";
 
 import packageJson from "../../package.json" with { type: "json" };

@@ -398,9 +398,10 @@ total-deadline test. Investigate any _new_ name that appears.
 
 ## Android terminal preview gate
 
-Android artifacts (`android-arm64`, `android-x64`) are Bun/Bionic binaries. A
-Linux cross-compile, archive verification, or installer dry-run must not be
-reported as Android runtime proof. On an Android/Termux device, install
+Android artifacts (`android-arm64`, `android-x64`) are Bun/Bionic binaries that
+declare Android API 28 as their platform floor. A Linux cross-compile, archive
+verification, or installer dry-run must not be reported as Android runtime
+proof. On an Android/Termux device, install
 `termux-am` and VLC or mpv-android, then run:
 
 ```sh

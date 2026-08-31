@@ -59,7 +59,8 @@ Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-a
 <Tab value="Android (Termux)">
 
 Android support is an experimental terminal preview for ARM64 and x64 Termux.
-It is not a native Android app.
+The artifact targets Android 9 / API 28 or newer, but physical-device
+qualification is still pending. It is not a native Android app.
 
 ```sh
 pkg update
@@ -251,7 +252,7 @@ You can snooze automatic checks for seven days or disable them from the update p
 | `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                   |
 | `windows-x64`                                 | **Beta**                                                                   |
 | `windows-arm64`                               | **Experimental**                                                           |
-| `android-arm64`, `android-x64` (Bionic)       | **Experimental preview; physical-device qualification pending**            |
+| `android-arm64`, `android-x64` (Bionic)       | **Experimental preview; API 28 artifact floor, device qualification pending** |
 | WSL                                           | Linux binary + Linux mpv/PATH/data — not Windows-native                    |
 | FreeBSD / other BSD                           | **Unsupported** binary — npm/bun/source only                               |
 | iOS / iPadOS                                  | **Unsupported** — terminal runtime and VLC handoff remain unproven         |

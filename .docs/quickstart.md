@@ -60,7 +60,7 @@ Posters need nothing installed. Kunai's Windows CI provisions mpv from the
 official pinned binary archive rather than relying on a package-manager mirror;
 the commands above are user-install choices, not CI dependencies.
 
-Android Termux preview (ARM64 or x64 only):
+Android Termux preview (Android 9 / API 28 or newer, ARM64 or x64 only):
 
 ```sh
 pkg update
@@ -70,7 +70,9 @@ kunai --player vlc
 # or: kunai --player mpv
 ```
 
-Install VLC or mpv-android as an Android app. `--player auto` opens the system
+The cross-built ELF declares API 28 as its platform floor; physical-device
+qualification is still pending. Install VLC or mpv-android as an Android app.
+`--player auto` opens the system
 chooser. This preview hands off only direct HTTP(S) streams that need no custom
 headers, cookies, yt-dlp, local file, or external subtitle. Launch acceptance
 does not give Kunai progress/completion evidence, so autoplay, auto-skip,

@@ -31,7 +31,7 @@
 - `apps/cli/src/domain/playback/player-capabilities.ts` — portable managed/detached capability facts shared by policy and player implementations.
 - `apps/cli/src/domain/playback/handoff-plan.ts` — pure stream qualification and typed blocker vocabulary.
 - `apps/cli/src/infra/player/android-intent-launcher.ts` — Android launcher discovery and fixed `ACTION_VIEW` argv construction.
-- `apps/cli/src/infra/player/HandoffPlayerService.ts` — detached `PlayerService` adapter and handoff result mapping.
+- `apps/cli/src/infra/player/handoff-player-service.ts` — detached `PlayerService` adapter and handoff result mapping.
 - `apps/cli/src/app/playback/run-playback-session.ts` — one caller-facing session runner that selects observed mpv or detached handoff behavior.
 - `apps/cli/test/live/android-terminal-handoff.ts` — opt-in, isolated real-device smoke entrypoint.
 
@@ -453,8 +453,8 @@ git commit -m "feat: launch Android external players"
 - Modify: `apps/cli/src/domain/types.ts`
 - Modify: `apps/cli/src/infra/player/PlayerService.ts`
 - Modify: `apps/cli/src/infra/player/PlayerServiceImpl.ts`
-- Create: `apps/cli/src/infra/player/HandoffPlayerService.ts`
-- Create: `apps/cli/test/unit/infra/player/HandoffPlayerService.test.ts`
+- Create: `apps/cli/src/infra/player/handoff-player-service.ts`
+- Create: `apps/cli/test/unit/infra/player/handoff-player-service.test.ts`
 - Modify: `apps/cli/src/app/playback/policies/playback-result-policy.ts`
 - Modify: `apps/cli/test/unit/app/playback-session-controller.test.ts`
 - Modify: `apps/cli/test/unit/app/playback/run-mpv-playback-session.test.ts`
@@ -485,7 +485,7 @@ Assert the adapter advertises detached/no-progress/no-completion capabilities, r
 - [ ] **Step 2: Run and verify the missing behavior fails**
 
 ```sh
-bun run --cwd apps/cli test:file test/unit/infra/player/HandoffPlayerService.test.ts
+bun run --cwd apps/cli test:file test/unit/infra/player/handoff-player-service.test.ts
 bun run --cwd apps/cli test:file test/unit/app/playback-session-controller.test.ts
 ```
 
@@ -508,7 +508,7 @@ Lifecycle methods are deterministic no-ops because the adapter owns no media pro
 - [ ] **Step 4: Run focused tests and existing player characterization**
 
 ```sh
-bun run --cwd apps/cli test:file test/unit/infra/player/HandoffPlayerService.test.ts
+bun run --cwd apps/cli test:file test/unit/infra/player/handoff-player-service.test.ts
 bun run --cwd apps/cli test:file test/unit/app/playback-session-controller.test.ts
 bun run --cwd apps/cli test:file test/unit/infra/player/PlayerServiceImpl.test.ts
 bun run --cwd apps/cli test:file test/unit/app/playback/run-mpv-playback-session.test.ts
@@ -518,7 +518,7 @@ bun run --cwd apps/cli test:file test/integration/queue-playback-lifecycle.test.
 - [ ] **Step 5: Commit**
 
 ```sh
-git add apps/cli/src/domain/types.ts apps/cli/src/infra/player/PlayerService.ts apps/cli/src/infra/player/PlayerServiceImpl.ts apps/cli/src/infra/player/HandoffPlayerService.ts apps/cli/test/unit/infra/player/HandoffPlayerService.test.ts apps/cli/src/app/playback/policies/playback-result-policy.ts apps/cli/test/unit/app/playback-session-controller.test.ts apps/cli/test/unit/app/playback/run-mpv-playback-session.test.ts apps/cli/test/integration/queue-playback-lifecycle.test.ts
+git add apps/cli/src/domain/types.ts apps/cli/src/infra/player/PlayerService.ts apps/cli/src/infra/player/PlayerServiceImpl.ts apps/cli/src/infra/player/handoff-player-service.ts apps/cli/test/unit/infra/player/handoff-player-service.test.ts apps/cli/src/app/playback/policies/playback-result-policy.ts apps/cli/test/unit/app/playback-session-controller.test.ts apps/cli/test/unit/app/playback/run-mpv-playback-session.test.ts apps/cli/test/integration/queue-playback-lifecycle.test.ts
 git commit -m "feat: model detached playback evidence"
 ```
 

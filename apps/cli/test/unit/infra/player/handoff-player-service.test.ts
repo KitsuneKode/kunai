@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { DETACHED_HANDOFF_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import type { StreamInfo } from "@/domain/types";
 import type { AndroidIntentRuntime } from "@/infra/player/android-intent-launcher";
-import { HandoffPlaybackError, HandoffPlayerService } from "@/infra/player/HandoffPlayerService";
+import { HandoffPlaybackError, HandoffPlayerService } from "@/infra/player/handoff-player-service";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 
 const STREAM: StreamInfo = {

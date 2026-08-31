@@ -5,7 +5,7 @@ import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playbac
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { detectPlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
-import { HandoffPlayerService } from "../infra/player/HandoffPlayerService";
+import { HandoffPlayerService } from "../infra/player/handoff-player-service";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
