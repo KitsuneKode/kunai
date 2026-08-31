@@ -191,7 +191,12 @@ export class HistoryRepository {
         completedAt,
         input.providerId ?? null,
         serializeExternalIds(externalIds),
-        input.posterUrl ?? null,
+        // Falls back to `existing` for the same reason the ON CONFLICT clause
+        // COALESCEs: a write that does not carry a poster must not remove one.
+        // The COALESCE alone is not enough, because the legacy-key migration
+        // DELETEs the old row first — there is then no conflict to COALESCE
+        // against, and the poster was dropped on the way across.
+        input.posterUrl ?? existing?.posterUrl ?? null,
         now,
         now,
       );
