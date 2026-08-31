@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-26"
+lastReviewed: "2026-09-01"
 ---
 
 # Kunai internal docs
@@ -29,22 +29,23 @@ end to end.
 
 ## Subsystems
 
-| Subject                                     | File                                                                                                                                                     |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider contract, resolve, fallback, relay | [providers.md](./providers.md)                                                                                                                           |
-| Adding or hardening a provider              | [provider-intake.md](./provider-intake.md) · [provider-agent-workflow.md](./provider-agent-workflow.md) · [provider-examples.md](./provider-examples.md) |
-| Provider health, cache layers, reset        | [title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md)                                                                   |
-| Source, quality, audio, subtitle inventory  | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md)                                                                         |
-| IntroDB/AniSkip, MAL resolution, auto-skip  | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)                                                                                       |
-| mpv reconnect on the persistent session     | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                                                                                             |
-| Shell flow, hotkeys, overlays, setup UX     | [ux-architecture.md](./ux-architecture.md) · [keybindings.md](./keybindings.md)                                                                          |
-| Terminal styling and interaction patterns   | [design-system.md](./design-system.md) · [ui-redesign-playbook.md](./ui-redesign-playbook.md)                                                            |
-| Poster previews, Kitty/iTerm2/Sixel         | [poster-image-rendering.md](./poster-image-rendering.md)                                                                                                 |
-| `/discover` and recommendations             | [recommendations-and-discover.md](./recommendations-and-discover.md)                                                                                     |
-| Share URLs, `/share`, `/watch`, `--open`    | [share-links.md](./share-links.md)                                                                                                                       |
-| Discord presence and social status          | [presence-integrations.md](./presence-integrations.md)                                                                                                   |
-| Download, offline library, onboarding       | [download-offline-onboarding.md](./download-offline-onboarding.md)                                                                                       |
-| AniList/TMDB sync, the outbox, tracker auth | [tracker-sync.md](./tracker-sync.md)                                                                                                                     |
+| Subject                                               | File                                                                                                                                                     |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider contract, resolve, fallback, relay           | [providers.md](./providers.md)                                                                                                                           |
+| Adding or hardening a provider                        | [provider-intake.md](./provider-intake.md) · [provider-agent-workflow.md](./provider-agent-workflow.md) · [provider-examples.md](./provider-examples.md) |
+| Provider health, cache layers, reset                  | [title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md)                                                                   |
+| Source, quality, audio, subtitle inventory            | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md)                                                                         |
+| IntroDB/AniSkip, MAL resolution, auto-skip            | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)                                                                                       |
+| mpv reconnect on the persistent session               | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                                                                                             |
+| Shell flow, hotkeys, overlays, setup UX               | [ux-architecture.md](./ux-architecture.md) · [keybindings.md](./keybindings.md)                                                                          |
+| Terminal styling and interaction patterns             | [design-system.md](./design-system.md) · [ui-redesign-playbook.md](./ui-redesign-playbook.md)                                                            |
+| Poster previews, Kitty/iTerm2/Sixel                   | [poster-image-rendering.md](./poster-image-rendering.md)                                                                                                 |
+| Android/iOS terminal preview and device qualification | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md)                                                                                               |
+| `/discover` and recommendations                       | [recommendations-and-discover.md](./recommendations-and-discover.md)                                                                                     |
+| Share URLs, `/share`, `/watch`, `--open`              | [share-links.md](./share-links.md)                                                                                                                       |
+| Discord presence and social status                    | [presence-integrations.md](./presence-integrations.md)                                                                                                   |
+| Download, offline library, onboarding                 | [download-offline-onboarding.md](./download-offline-onboarding.md)                                                                                       |
+| AniList/TMDB sync, the outbox, tracker auth           | [tracker-sync.md](./tracker-sync.md)                                                                                                                     |
 
 ## Contracts and policy
 
