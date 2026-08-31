@@ -34,6 +34,13 @@ history_title_aliases     playlist_queue
 The consolidator touches the two history ones. The other twelve keep pointing at
 the pre-merge id.
 
+A fifteenth column named `title_id` exists on `diagnostic_events`
+(`migrations.ts:1022`, nullable). It is telemetry, not a reference to user
+state, and is deliberately excluded from the set above — so "fourteen" is the
+count of tables where a stale id can orphan something a person can see, not the
+count of columns with that name. If you grep and find fifteen, this is the one
+missing, and leaving it stale is the intended answer.
+
 Reads do not rescue them. `followed-titles.ts:64` is
 `SELECT * FROM followed_titles WHERE title_id = ?` — a direct comparison, with no
 alias resolution anywhere in that repository (nor in `lists.ts` or
