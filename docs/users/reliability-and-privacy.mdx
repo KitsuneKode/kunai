@@ -119,8 +119,8 @@ Preview the exact JSON with `/analytics show`.
 
 If you turn analytics on, pings go to `analytics.kunai.kitsunekode.in`. Point
 them somewhere else by setting a **non-empty** `KUNAI_ANALYTICS_URL` or
-`analyticsEndpoint`. That address must use **https** — `http://localhost` and
-`127.0.0.1` are the only exceptions, for testing your own ingest. Any other
+`analyticsEndpoint`. That address must use **https** — `http://localhost`, `127.0.0.1`, and `[::1]`
+are the only exceptions, for testing your own ingest. Any other
 cleartext address is refused and nothing is sent at all; your pings are never
 silently rerouted to the built-in URL. An empty `analyticsEndpoint` (the shipped
 default) means “use the built-in URL”, not “disable”. Turn analytics off in Settings, or set

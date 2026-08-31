@@ -793,6 +793,11 @@ export class ConfigServiceImpl implements ConfigService {
     this.savePending = null;
     this.savePendingResolve = null;
     this.savePendingReject = null;
+    // Tracked *before* the write starts. `store.save()` throwing synchronously
+    // runs the catch and the finally before this assignment would have happened,
+    // so assigning afterwards left an already-rejected promise in `saveInFlight`
+    // that every later `flushPending()` would await.
+    this.saveInFlight = pending;
     void (async () => {
       try {
         await this.store.save(this.config);
@@ -803,11 +808,6 @@ export class ConfigServiceImpl implements ConfigService {
         if (this.saveInFlight === pending) this.saveInFlight = null;
       }
     })();
-    // Tracked so a `flushPending()` landing after this point still awaits the
-    // write. `pending` always carries a handler — the debounce timer attaches
-    // one, and the direct flush path awaits it — so this cannot surface as an
-    // unhandled rejection.
-    this.saveInFlight = pending;
     return pending;
   }
 

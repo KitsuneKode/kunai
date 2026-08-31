@@ -27,9 +27,14 @@ export function historyMatchesDownloadJob(
     HistoryProgress,
     "season" | "episode" | "absoluteEpisode" | "mediaKind" | "completed"
   >,
-  job: Pick<DownloadJobRecord, "season" | "episode" | "mediaKind">,
+  job: Pick<DownloadJobRecord, "season" | "episode" | "mediaKind" | "contentType">,
 ): boolean {
-  const historyKind = job.mediaKind === "movie" ? "movie" : "series";
+  // `contentType` is the job's own answer and outranks the badge: an anime film
+  // is `mediaKind: "anime"` with `contentType: "movie"`, and deriving from the
+  // badge alone called it a series, then demanded an episode match it could
+  // never satisfy. `historyContentType` already resolves the history side this
+  // way, so without this the two sides disagreed on exactly that title.
+  const historyKind = job.contentType ?? (job.mediaKind === "movie" ? "movie" : "series");
   if (historyContentType(entry) !== historyKind) return false;
   if (historyKind === "movie") return true;
   return sameEpisodeNumbering(entry, job);

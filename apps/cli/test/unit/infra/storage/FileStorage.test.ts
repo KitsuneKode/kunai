@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { FileStorage } from "@/infra/storage/FileStorage";
 import { getKunaiPaths } from "@kunai/storage";
@@ -28,24 +28,32 @@ describe("FileStorage default path resolution", () => {
     const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-root-"));
     tempDirs.push(dir);
 
+    // Captured before the override so the guard below is a plain inequality.
+    // Comparing path *spelling* is what two earlier versions of this test got
+    // wrong: macOS hands out `/var/...` for a directory that resolves to
+    // `/private/var/...`, and Windows reports the 8.3 form (`RUNNER~1`) where
+    // `realpath` gives the long one. Neither is the point.
+    const liveConfigPath = getKunaiPaths().configPath;
+
     const restore = applyStorageRootEnv(dir);
     try {
-      // The same resolver the production default uses, evaluated now. Asserting
-      // against it rather than a hard-coded layout keeps this honest on every
-      // platform: Linux reads XDG, macOS `~/Library/Application Support`, and
-      // Windows `%APPDATA%`, and none of that is what this test is about.
+      // The same resolver the production default calls, evaluated now — so this
+      // asserts deferral without hard-coding any platform's storage layout.
       const expected = getKunaiPaths().configPath;
 
-      // Refuse to write until the sandbox is proven to be in effect. `realpath`
-      // because macOS hands out `/var/folders/...` for a directory that resolves
-      // to `/private/var/folders/...`.
-      expect(await realpath(dirname(expected)).catch(() => expected)).toStartWith(
-        await realpath(dir),
-      );
+      // Refuse to write until the sandbox is proven to be in effect. If a
+      // platform ever stops honouring the override this fails here, rather than
+      // writing the developer's real profile.
+      expect(expected).not.toBe(liveConfigPath);
 
       await new FileStorage().write("config", { sandboxed: true });
 
       expect(await Bun.file(expected).exists()).toBe(true);
+      expect(
+        await Bun.file(liveConfigPath)
+          .text()
+          .catch(() => null),
+      ).not.toContain("sandboxed");
     } finally {
       restore();
     }

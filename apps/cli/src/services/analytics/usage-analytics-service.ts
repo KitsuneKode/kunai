@@ -272,6 +272,10 @@ export class UsageAnalyticsService {
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal,
+        // An https endpoint that 302s to http:// would carry the payload right
+        // back out in cleartext, so the scheme check above has to survive the
+        // hop. Refusing to follow one at all is simpler than re-validating each.
+        redirect: "error",
       });
       return response.status >= 500 ? "retry" : "permanent";
     } catch {

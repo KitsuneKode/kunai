@@ -86,6 +86,39 @@ describe("historyMatchesDownloadJob", () => {
     expect(historyMatchesDownloadJob(entry, job({ mediaKind: "movie" }))).toBe(true);
   });
 
+  test("an anime film matches on contentType, not the anime badge", () => {
+    // `mediaKind: "anime"` with `contentType: "movie"` is a film. Deriving the
+    // kind from the badge alone called it a series and then demanded an episode
+    // match it could never satisfy, so the film was never seen as watched.
+    const entry = watched({ mediaKind: "anime", season: undefined, episode: undefined });
+    const record = job({
+      mediaKind: "anime",
+      contentType: "movie",
+      season: undefined,
+      episode: undefined,
+    });
+
+    expect(historyMatchesDownloadJob(entry, record)).toBe(true);
+  });
+
+  test("an anime series is still matched by episode", () => {
+    const entry = watched({
+      mediaKind: "anime",
+      season: undefined,
+      absoluteEpisode: 13,
+      episode: undefined,
+    });
+    const series = job({
+      mediaKind: "anime",
+      contentType: "series",
+      season: undefined,
+      episode: 13,
+    });
+
+    expect(historyMatchesDownloadJob(entry, series)).toBe(true);
+    expect(historyMatchesDownloadJob(entry, job({ ...series, episode: 14 }))).toBe(false);
+  });
+
   test("a movie job never matches an episodic history row", () => {
     expect(historyMatchesDownloadJob(watched(), job({ mediaKind: "movie" }))).toBe(false);
   });

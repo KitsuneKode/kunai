@@ -131,6 +131,37 @@ describe("ConfigService.save debounce", () => {
     expect((await saved)?.message).toBe("disk full");
     expect((await flushed)?.message).toBe("disk full");
   });
+
+  test("a synchronous store throw does not strand the in-flight handle", async () => {
+    // `store.save()` throwing synchronously runs the catch and the finally before
+    // `saveInFlight` was assigned, so assigning afterwards parked an
+    // already-rejected promise there and every later flushPending() awaited it.
+    let mode: "throw" | "ok" = "throw";
+    let saves = 0;
+    const store = {
+      load: async () => ({ ...DEFAULT_CONFIG }),
+      save: () => {
+        if (mode === "throw") throw new Error("disk full");
+        saves += 1;
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    await service.save().then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    // The failed write must not be left behind as a permanent flush target.
+    mode = "ok";
+    await service.flushPending();
+
+    await service.save();
+    expect(saves).toBe(1);
+    await service.flushPending();
+  });
 });
 
 /**

@@ -51,7 +51,14 @@ export function joinerForNodePlatform(
 export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
   const platform = options.platform ?? normalizePlatform(process.platform);
   const env = options.env ?? process.env;
-  const home = options.homeDir ?? homedir();
+  // `homedir()` is the last resort, not the first. On Linux the XDG variables
+  // below already override every root, and on Windows APPDATA/LOCALAPPDATA do —
+  // but the macOS layout derives *everything* from `home`, and Bun's `homedir()`
+  // reads the account record rather than `HOME`. That left macOS with no way to
+  // redirect its storage root from the environment at all: a test that set the
+  // documented variables still resolved the real `~/Library/Application Support`
+  // and wrote the developer's live profile.
+  const home = options.homeDir ?? env.HOME ?? env.USERPROFILE ?? homedir();
   const join = joinerFor(platform);
 
   const dirs = getBaseDirs(platform, env, home);

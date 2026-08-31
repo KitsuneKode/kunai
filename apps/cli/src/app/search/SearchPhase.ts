@@ -819,7 +819,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             // the empty-state copy below rather than tearing down the phase.
             const results = await observeOnline(container, "search-error", () =>
               loadDiscoveryList(mode, context.signal),
-            ).catch((): SearchResult[] => []);
+            ).catch((error: unknown): SearchResult[] => {
+              // A cancelled navigation is not an empty tray. Swallowing it here
+              // recorded a "succeeded / healthy" discovery event and pushed state
+              // into a phase the user had already left.
+              if (context.signal.aborted) throw error;
+              return [];
+            });
 
             logger.info("Discovery list loaded", {
               mode,
@@ -1244,7 +1250,12 @@ async function loadSearchRoute(
   const bundle =
     route === "trending"
       ? {
-          results: await loadDiscoveryList(mode, context.signal).catch((): SearchResult[] => []),
+          results: await loadDiscoveryList(mode, context.signal).catch(
+            (error: unknown): SearchResult[] => {
+              if (context.signal.aborted) throw error;
+              return [];
+            },
+          ),
           subtitle:
             mode === "anime"
               ? "AniList trending"
