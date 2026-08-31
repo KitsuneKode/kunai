@@ -68,7 +68,7 @@ describe("fox stills on disk", () => {
     // uncut still paints a box on whatever sits behind it. And a still cut to
     // only two alpha levels has hard stair-stepped edges, which is what a
     // palette PNG produces and what made the nav mark look ragged.
-    for (const name of ["idle", "watch", "go", "go-left", "wait", "wait-right", "nav"]) {
+    for (const name of [...KUNAI_FOX_POSES, "nav"]) {
       const file = path.join(DOCS_APP_ROOT, "public/brand/fox", `${name}.webp`);
       expect(hasPerPixelAlpha(file), `${name} per-pixel alpha`).toBe(true);
     }
@@ -78,7 +78,7 @@ describe("fox stills on disk", () => {
     // The terminal is where an opaque or hard-edged pet is most obvious,
     // because the background belongs to the user, not to us.
     const pets = path.resolve(DOCS_APP_ROOT, "../cli/src/app-shell/brand/pets");
-    for (const name of ["idle", "watch", "go", "wait"]) {
+    for (const name of KUNAI_FOX_POSES) {
       const file = path.join(pets, `${name}.png`);
       expect(hasPerPixelAlpha(file), `${name} per-pixel alpha`).toBe(true);
     }
@@ -104,24 +104,25 @@ describe("fox stills on disk", () => {
 });
 
 describe("facing", () => {
-  test("a drawn pair is used as drawn, never mirrored", () => {
-    // `go` and `wait` are the only poses with a real mirrored master.
-    for (const pose of ["go", "wait"] as const) {
-      for (const facing of FACINGS) {
-        expect(resolveFoxStill(pose, facing).mirrored, `${pose}/${facing}`).toBe(false);
-      }
-    }
-    expect(resolveFoxStill("go", "left").src).not.toBe(resolveFoxStill("go", "right").src);
-  });
-
-  test("a pose drawn only one way is flipped rather than silently ignored", () => {
-    // The shape this replaced returned the same file for both directions, so
-    // `facing` was a prop that changed nothing on half the poses.
-    for (const pose of ["idle", "watch"] as const) {
+  test("every pose is drawn once and flipped for the other direction", () => {
+    // The sheet draws each pose in whichever direction reads best for it, so
+    // exactly one side is the drawn still and the other is a CSS flip. The
+    // shape this replaced returned the same file for both directions on half
+    // the poses, which made `facing` a prop that changed nothing.
+    for (const pose of KUNAI_FOX_POSES) {
       const left = resolveFoxStill(pose, "left");
       const right = resolveFoxStill(pose, "right");
-      expect(left.src, pose).toBe(right.src);
+      expect(left.src, `${pose} uses one master`).toBe(right.src);
       expect(left.mirrored !== right.mirrored, `${pose} flips exactly one side`).toBe(true);
+    }
+  });
+
+  test("the default facing is the direction the still was actually drawn in", () => {
+    // If a pose defaulted to its mirrored side, every unstyled usage would show
+    // a flipped fox for no reason.
+    for (const pose of KUNAI_FOX_POSES) {
+      const html = renderToStaticMarkup(KunaiFox({ pose }));
+      expect(html, `${pose} default`).not.toContain("kunai-fox--mirrored");
     }
   });
 });

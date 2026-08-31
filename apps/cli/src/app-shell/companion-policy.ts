@@ -1,7 +1,7 @@
 import { detectImageCapability } from "@/image";
 import { isMultiplexed } from "@/image/capability";
 
-export type CompanionPose = "idle" | "watch" | "go" | "wait";
+export type CompanionPose = "idle" | "watch" | "go" | "wait" | "oops" | "nap";
 
 /**
  * What the companion is allowed to be on this run.

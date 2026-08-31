@@ -65,7 +65,7 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
     <Box flexDirection="column" paddingY={1}>
       {showFox ? (
         <Box marginBottom={1}>
-          <CompanionPet pose="idle" rows={4} />
+          <CompanionPet pose="nap" rows={4} />
         </Box>
       ) : null}
       <Text dimColor={isDim} color={palette.dim}>

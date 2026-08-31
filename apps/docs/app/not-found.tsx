@@ -5,7 +5,7 @@ export default function NotFound() {
   return (
     <main className="mx-auto flex min-h-[70dvh] w-[min(720px,calc(100vw-32px))] flex-col items-start justify-center gap-6 py-16">
       <KunaiFoxBanner
-        pose="watch"
+        pose="oops"
         heading="h1"
         eyebrow="404"
         title="This page is not in the docs tree."

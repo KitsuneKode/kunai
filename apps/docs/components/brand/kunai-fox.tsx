@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-export const KUNAI_FOX_POSES = ["idle", "watch", "go", "wait"] as const;
+export const KUNAI_FOX_POSES = ["idle", "watch", "go", "wait", "oops", "nap"] as const;
 export type KunaiFoxPose = (typeof KUNAI_FOX_POSES)[number];
 export type KunaiFoxFacing = "left" | "right";
 
@@ -19,17 +19,19 @@ type KunaiFoxProps = {
 /**
  * The still each pose was drawn at, and which way that drawing faces.
  *
- * Only `go` and `wait` have a real mirrored pair in the master batch. Rather
- * than accept a `facing` the art cannot honour — the shape this had before,
- * where `watch` and `idle` silently returned the same file for both
- * directions — the odd direction is produced by flipping the still. Every
- * `facing` value therefore changes what renders.
+ * The sheet draws each pose once, in whichever direction reads best for it, so
+ * the opposite direction is produced by flipping that still rather than by
+ * silently returning the same file for both — which is the shape this had
+ * before, where `facing` changed nothing on half the poses. Every value now
+ * changes what renders.
  */
 const STILLS = {
-  wait: { left: "/brand/fox/wait.webp", right: "/brand/fox/wait-right.webp" },
-  go: { left: "/brand/fox/go-left.webp", right: "/brand/fox/go.webp" },
-  watch: { left: "/brand/fox/watch.webp", right: null },
   idle: { left: null, right: "/brand/fox/idle.webp" },
+  wait: { left: "/brand/fox/wait.webp", right: null },
+  go: { left: null, right: "/brand/fox/go.webp" },
+  watch: { left: "/brand/fox/watch.webp", right: null },
+  oops: { left: null, right: "/brand/fox/oops.webp" },
+  nap: { left: "/brand/fox/nap.webp", right: null },
 } satisfies Record<KunaiFoxPose, { left: string | null; right: string | null }>;
 
 /** Where each pose looks when the caller does not ask for a direction. */
@@ -38,6 +40,8 @@ const DEFAULT_FACING = {
   watch: "left",
   go: "right",
   wait: "left",
+  oops: "right",
+  nap: "left",
 } satisfies Record<KunaiFoxPose, KunaiFoxFacing>;
 
 /**

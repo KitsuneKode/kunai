@@ -18,7 +18,7 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
   return (
     <section className="kunai-hero-static kunai-reveal flex flex-col justify-center">
       <div className="kunai-hero-fox">
-        <KunaiFoxLive pose="idle" alertPose="wait" size={120} />
+        <KunaiFoxLive pose="idle" alertPose="watch" size={120} />
       </div>
       <p className="kunai-eyebrow">{homeHero.eyebrow}</p>
       <h1 className="kunai-display-title mt-3 max-w-3xl text-balance">{homeHero.title}</h1>

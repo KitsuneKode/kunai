@@ -71,40 +71,50 @@ const WEBP_QUALITY = "88";
 const FILL_RATIO = 0.88;
 
 /**
- * Docs stills. `*-right` / `*-left` names describe which way the character
- * faces, which is not the same as the `ll` / `lr` corner the master emerged
- * from — see `kunai-fox.tsx` for how facing is resolved.
+ * Every still the site and the terminal load, all from the Kanna v1 sheet.
+ *
+ * One character now. The previous set drew from three separate generation
+ * directions — Operator, Courier, Watcher — which meant three eye treatments,
+ * three ear silhouettes and a chest blaze that came and went, so the mascot
+ * never read as the same animal twice.
+ *
+ * Two poses from that sheet are deliberately not here. `seek` reads as a low
+ * idle rather than a hunt, and `peek` was drawn leaning on a ledge in the same
+ * rose as her fur, so the alpha cut keeps the ledge and she ships welded to a
+ * pink slab. Both are queued for a redraw; shipping six good poses of one fox
+ * beats eight where two are wrong.
+ *
+ * Facing is resolved by `kunai-fox.tsx`, which flips the drawn still when a
+ * direction has no master of its own.
  */
 const DOCS_STILLS_BY_NAME = {
-  wait: "kunai-ip-A1-operator-ll.png",
-  "wait-right": "kunai-ip-A2-operator-lr.png",
-  go: "kunai-ip-B1-courier-ll.png",
-  "go-left": "kunai-ip-B2-courier-lr.png",
-  watch: "kunai-ip-C1-watcher-ll.png",
-  idle: "kunai-ip-C2-watcher-lr.png",
+  idle: "kanna-sheet-1-front-sit.png",
+  wait: "kanna-sheet-2-three-quarter.png",
+  go: "kanna-pose-carry.png",
+  watch: "kanna-pose-watch.png",
+  oops: "kanna-sheet-5-oops.png",
+  nap: "kanna-sheet-4-nap.png",
 } as const;
 
 /** The four poses the terminal companion loads, same masters as the docs set. */
 const CLI_PETS_BY_NAME = {
-  wait: "kunai-ip-A1-operator-ll.png",
-  go: "kunai-ip-B1-courier-ll.png",
-  watch: "kunai-ip-C1-watcher-ll.png",
-  idle: "kunai-ip-C2-watcher-lr.png",
+  idle: "kanna-sheet-1-front-sit.png",
+  wait: "kanna-sheet-2-three-quarter.png",
+  go: "kanna-pose-carry.png",
+  watch: "kanna-pose-watch.png",
+  oops: "kanna-sheet-5-oops.png",
+  nap: "kanna-sheet-4-nap.png",
 } as const;
 
 /**
  * The nav mark, and the OG bake.
  *
- * Both are C2 — the same still the home hero uses. An earlier pass used A2 here
- * because the Operator survives 28px better, but the nav sits on every page
- * directly above the hero, so the two most-seen foxes on the site were visibly
- * different animals. Matching the hero matters more than the extra legibility.
- *
- * `NAV_CROP` keeps the top of the figure: the whole character at 28px is a
- * smudge, the head alone reads.
+ * The sheet's own head-and-shoulders view, which is drawn for this job rather
+ * than cropped down to it — the full figure is a smudge at 28px, and cropping a
+ * standing pose put her eyes on the bottom edge.
  */
-const NAV_MASTER = "kunai-ip-C2-watcher-lr.png";
-const NAV_CROP = 85;
+const NAV_MASTER = "kanna-sheet-6-bust.png";
+const NAV_CROP = 100;
 
 /**
  * Why this shells out instead of using `Bun.Image`.
@@ -234,7 +244,8 @@ for (const [name, file] of Object.entries(CLI_PETS_BY_NAME)) {
 }
 
 // Inlined as base64 into two OG route bundles, so this one is sized to its
-// budget rather than to the 360px the card draws it at. A social card is read
-// small; the softness costs less than doubling two bundles would.
+// ~40 KB budget rather than to the 360px the card draws it at. A social card is
+// read small; the softness costs less than doubling two bundles would.
+// Guarded by `kunai-fox.test.ts`, which fails if the data URL grows past it.
 const ogDest = path.join(BRAND, "kunai-mascot-og.png");
-console.log(`og   kunai-mascot-og.png ${await exportStill(NAV_MASTER, ogDest, 224, "png")} bytes`);
+console.log(`og   kunai-mascot-og.png ${await exportStill(NAV_MASTER, ogDest, 192, "png")} bytes`);
