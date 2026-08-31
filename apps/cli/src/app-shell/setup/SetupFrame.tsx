@@ -117,6 +117,7 @@ export function SetupFrame({
   totalSteps,
   footer,
   children,
+  companion = true,
 }: {
   readonly width: number;
   readonly context: string;
@@ -124,6 +125,15 @@ export function SetupFrame({
   readonly totalSteps: number;
   readonly footer: readonly FooterKey[];
   readonly children: React.ReactNode;
+  /**
+   * Whether the frame draws the companion.
+   *
+   * A screen that draws its own passes `false`. Two Kannas on one screen is not
+   * twice the character — it reads as a rendering fault, and the summary screen
+   * has always intended to *replace* the wizard's `wait` with `idle` rather
+   * than sit beneath it.
+   */
+  readonly companion?: boolean;
 }) {
   const gutter = setupGutter(width);
 
@@ -163,11 +173,11 @@ export function SetupFrame({
             The wrapper is conditional, not just the pet: a Box with a margin
             around a null child still lays out its margin, so `KUNAI_PET=off`
             left an empty row behind — which is not "retired entirely". */}
-        {companionMode() === "off" ? null : (
+        {companion && companionMode() !== "off" ? (
           <Box marginBottom={1}>
             <CompanionPet pose="wait" rows={4} />
           </Box>
-        )}
+        ) : null}
         {children}
       </Box>
 

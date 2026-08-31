@@ -48,6 +48,18 @@ describe("companion placement slots", () => {
     for (const slot of used) expect(declared).toContain(slot);
   });
 
+  test("the setup frame stands down where a screen draws its own companion", () => {
+    // Two Kannas on one screen is not twice the character — it reads as a
+    // rendering fault. The frame renders its pet for every screen except the
+    // summary, which draws its own in a pose that means the waiting is over.
+    const shell = read("setup-shell.tsx");
+    expect(shell).toMatch(/companion=\{screen !== "done"\}/u);
+
+    const frame = read("setup/SetupFrame.tsx");
+    // The prop has to actually gate the render, not just exist.
+    expect(frame).toMatch(/\{companion && companionMode\(\) !== "off" \?/u);
+  });
+
   test("CompanionPet defaults to the shared slot rather than inventing one", () => {
     // A mount that does not name a slot is the single-companion case, which is
     // every surface outside setup. Defaulting keeps those call sites unchanged.
