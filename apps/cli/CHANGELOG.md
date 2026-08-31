@@ -2,6 +2,58 @@
 
 ## 0.3.0
 
+Give Kunai a mascot, and one of her rather than two.
+
+Kanna is a rose kitsune. A **kanna** (鉋) is a Japanese hand plane — you run it
+over rough wood and the roughness leaves in one curl. Kunai is the blade; she is
+who holds it.
+
+- **She appears where waiting happens, and nowhere else.** Setup, the setup
+  summary, the goodbye screen, and — as one short line of text — every empty and
+  error state. That text tier is the one that matters: the illustrated fox needs
+  a graphics protocol and reaches four terminals, while copy reaches all of them.
+  She is silent on `loading`, `info` and `success`, which already say what is
+  happening.
+- **`KUNAI_PET=off` retires her entirely**, text included; `glyph` pins the
+  portable 🦊; non-TTY output gets neither, instead of a stray emoji in a pipe.
+- **Quitting is no longer slower for people who never see her.** The exit
+  animation budget had tripled as a constant, so every user paid 440ms on every
+  quit for a still that most terminals would never paint. It is now derived from
+  whether the still will actually render.
+
+Kunai had been shipping two mascots. A pixel-grid generator called itself the
+source of truth and fed the README hero, both social cards, the GitHub preview
+and the Discord icon, so everything a person met _before_ installing was a
+different animal from the one inside the program. There is now a single traced
+vector source, and every one of those surfaces renders from it.
+
+On the docs site she roams: she walks after the pointer at a constant speed in
+pixels per second, delta-timed per frame and verified identical at 30, 60 and
+144Hz, settles into a dead zone, and eventually curls up. She is goofier there
+than in the terminal on purpose — the CLI is her at work, where a chatty line in
+someone's shell is a bug.
+
+Fixes found while building it, all pre-existing:
+
+- **Ctrl-K search on the docs site returned nothing for every term.** The route
+  declared `dynamic = "force-static"` while exporting a `GET` that answers one
+  `?query=` per request, so Next prerendered it once with no query and served
+  that forever. The built payload was two bytes.
+- **A failed clipboard write still reported success.** The copy button did not
+  await `writeText`, so a rejected write — insecure context, denied permission,
+  no clipboard API — still said "Copied" and still fired the event the fox
+  reacts to.
+- **Discord presence printed its status twice** on the shell boot line, both
+  settings actions, and the diagnostics reason: "unavailable · unavailable ·
+  Could not connect to…". Four surfaces composed that line by hand and all four
+  repeated a status the detail already carried.
+- **The social card drew its type row on top of the mascot.** The layout was
+  written for a corner peek on a dark square with empty space beside it; the art
+  changed to a centred bust and the layout did not follow.
+- **The installer Docker matrix was failing every scenario on both libc
+  variants** with `release companion not found` — the build job uploaded raw
+  executables while the fixture installs from the archive.
+
 Security, honesty, and platform fixes from a full codebase review.
 
 Provider source reliability and lower cold-start waiting.

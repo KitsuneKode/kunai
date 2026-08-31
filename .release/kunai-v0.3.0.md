@@ -90,6 +90,7 @@ A last review pass over the release train, from real sessions:
   replacement alike — and suppresses every seek that assumes a fixed position: the start
   argument, the loadfile offset, the watch-later resume prompt, and the seek that used to fire
   after an in-process reconnect.
+
 - **YouTube quality is no longer capped at 360p, and a PO token is actually used.** The default
   player clients now lead with `visionos`, matching yt-dlp's own default: it is the one client
   with no Proof-of-Origin requirement, and yt-dlp skips rather than attempts formats whose token
