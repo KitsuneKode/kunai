@@ -43,8 +43,8 @@ describe("a-Shell VLC player port", () => {
     expect(toVlcXCallbackUrl(MEDIA_URL)).toBe(
       "vlc-x-callback://x-callback-url/stream?url=https%3A%2F%2Fmedia.example%2Fa%20b.m3u8%3Ftoken%3Da%26x%3Db",
     );
-    expect(() => toVlcXCallbackUrl("file:///private/video.mp4")).toThrow("HTTP(S)");
-    expect(() => toVlcXCallbackUrl("https://x.example/a\r\nopenurl bad")).toThrow("HTTP(S)");
+    expect(() => toVlcXCallbackUrl("file:///private/video.mp4")).toThrow("HTTPS");
+    expect(() => toVlcXCallbackUrl("https://x.example/a\r\nopenurl bad")).toThrow("HTTPS");
   });
 
   test("writes the scheme to a private file and runs only the fixed helper", async () => {

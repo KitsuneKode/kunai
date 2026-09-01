@@ -14,7 +14,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 function requireHttpUrl(rawUrl: string): URL {
   const url = new URL(rawUrl);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
+  if (url.protocol !== "https:") {
     throw new Error("unsupported protocol");
   }
   return url;
