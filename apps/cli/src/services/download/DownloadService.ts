@@ -71,6 +71,13 @@ const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
+/**
+ * How long a job waits when storage is unusable rather than the download being
+ * wrong — an unavailable folder, a breached reserve, or a volume that filled
+ * mid-transfer. Long enough that a full disk is not re-attempted in a tight
+ * loop, short enough that freeing space is noticed within one sitting.
+ */
+const STORAGE_DEFERRAL_RETRY_MS = 30 * 60 * 1000;
 const FFPROBE_DEADLINE_MS = 30_000;
 const FFPROBE_TERMINATION_GRACE_MS = 2_500;
 const FFPROBE_FORCE_WAIT_MS = 2_500;
@@ -648,7 +655,7 @@ export class DownloadService {
     } catch (error) {
       this.claimedJobIds.delete(next.id);
       const detail = error instanceof Error ? error.message : String(error);
-      const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
       this.deps.repo.pause(
         next.id,
         `Download paused because the download folder is unavailable: ${detail}`,
@@ -667,7 +674,7 @@ export class DownloadService {
 
     if (!storage.allowed) {
       this.claimedJobIds.delete(next.id);
-      const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
       this.deps.repo.pause(
         next.id,
         this.formatInsufficientDiskMessage(storage.requiredBytes),
@@ -744,7 +751,29 @@ export class DownloadService {
       } else {
         const analysis = analyzeDownloadFailure(message);
         const retriesLeft = next.retryCount + 1 < next.maxAttempts;
-        if (analysis.retryable && retriesLeft) {
+        if (analysis.failureKind === "disk-full") {
+          // The pre-flight reserve check only sees the volume as it was before
+          // the transfer started. A disk that fills underneath a running job —
+          // because the estimate was low, or because something else consumed
+          // the space — used to land in `unknown`, which is retryable: the job
+          // re-downloaded from zero into the same full disk until it had spent
+          // every attempt. Defer it the way the pre-flight check defers, so
+          // both discoveries of the same condition behave the same and the
+          // retry budget survives to be useful once space is freed.
+          this.deps.repo.pause(
+            next.id,
+            this.formatDiskExhaustedMessage(),
+            new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString(),
+            failedAt,
+          );
+          this.deps.diagnostics?.record({
+            category: "download",
+            level: "warn",
+            operation: "download.capacity.midflight",
+            message: "Download paused because the download volume filled during the transfer",
+            context: { jobId: next.id },
+          });
+        } else if (analysis.retryable && retriesLeft) {
           const retryAt = new Date(Date.now() + retryDelayMs(next.retryCount)).toISOString();
           this.deps.repo.scheduleRetry(next.id, message, retryAt, failedAt);
         } else {
@@ -1665,10 +1694,22 @@ export class DownloadService {
   }
 
   /**
-   * Auto-resume on return: a previous quit pauses active jobs with
-   * `next_retry_at = now`, so on the next launch they are immediately eligible —
-   * re-queue them. Disk-space pauses carry a FUTURE retry time and stay paused
-   * until that elapses, so they are not prematurely resumed here.
+   * Repair for an unparseable `next_retry_at`, not the ordinary resume path.
+   *
+   * The ordinary case needs nothing from here: `selectEligibleQueuedJob` scans
+   * `listQueued`, which is unfiltered by retry time, and takes any job whose
+   * `next_retry_at` has elapsed. A shutdown pause (`next_retry_at = now`) is
+   * therefore already eligible on the next pass.
+   *
+   * What it does do is narrow and load-bearing. `listPaused` compares
+   * `next_retry_at` as a *string* in SQL, so a corrupt value like `not-a-date`
+   * sorts greater than any timestamp and is returned here, while
+   * `selectEligibleQueuedJob` requires `Number.isFinite` and skips it forever.
+   * Without this pass such a row is stranded for the life of the install.
+   *
+   * Verified against a real database rather than by reading: a future-dated
+   * pause is returned by `listPaused` and requeued by nobody; a corrupt one is
+   * requeued only here.
    */
   private resumeEligiblePausedJobs(): void {
     const now = Date.now();
@@ -1882,6 +1923,22 @@ export class DownloadService {
     );
   }
 
+  /**
+   * Deliberately not phrased as a reserve breach: the reserve message names a
+   * figure the pre-flight check computed, and there is no such figure once the
+   * volume is actually full.
+   *
+   * It also does not promise an automatic resume. Freeing space triggers
+   * nothing on its own — the deferral is time-based, and a queue pass only
+   * happens on a `kickQueue` (startup, opening downloads, queueing another,
+   * offline repair). There is no periodic tick, so an idle session can hold a
+   * due job indefinitely. Stating the action the user can actually take beats
+   * a promise the runtime does not keep.
+   */
+  private formatDiskExhaustedMessage(): string {
+    return "Download paused because the download volume ran out of space. Free space, then retry it from /downloads.";
+  }
+
   private formatInsufficientDiskMessage(requiredBytes: number): string {
     const requiredGB = requiredBytes / (1024 * 1024 * 1024);
     return `Download paused because the offline safety reserve needs ${requiredGB.toFixed(1)}GB available on the download volume.`;
@@ -2042,6 +2099,24 @@ export function analyzeDownloadFailure(message: string): DownloadFailureAnalysis
   if (normalized.includes("artifact-invalid")) {
     return { failureKind: "artifact-invalid", retryable: false };
   }
+
+  // After the two `artifact-*` branches and before everything else.
+  //
+  // Those two prefixes are markers this file constructs itself, with terminal
+  // semantics chosen deliberately; the disk phrases below are unstructured
+  // vendor text scraped from yt-dlp, ffmpeg or the OS. A structured marker we
+  // wrote outranks a substring we found — otherwise a stray "no space left on
+  // device" anywhere in an artifact-validation message silently re-routes our
+  // own classification.
+  //
+  // Never `retryable`: a retry re-downloads the whole file from zero and fails
+  // at the same byte, spending a provider request per attempt against a disk
+  // that is still full. `processNextQueued` defers this kind into the same
+  // pause lane the pre-flight reserve check uses, so a volume that fills
+  // mid-transfer ends up where one that was already full does.
+  if (isDiskExhaustionMessage(normalized)) {
+    return { failureKind: "disk-full", retryable: false };
+  }
   if (normalized.includes("download aborted") || normalized.includes("aborted")) {
     return { failureKind: "aborted", retryable: false };
   }
@@ -2095,6 +2170,25 @@ export function analyzeDownloadFailure(message: string): DownloadFailureAnalysis
     return { failureKind: "network", retryable: true };
   }
   return { failureKind: "unknown", retryable: true };
+}
+
+/**
+ * Every spelling of "the volume is full" that can reach us.
+ *
+ * Matched on phrases rather than the bare words "disk" or "space" so an
+ * upstream message like `HTTP Error 500: disk backend unavailable` is not
+ * claimed as a local storage failure.
+ */
+function isDiskExhaustionMessage(normalized: string): boolean {
+  return (
+    // POSIX ENOSPC as yt-dlp, ffmpeg and node:fs each render it.
+    normalized.includes("no space left on device") ||
+    normalized.includes("enospc") ||
+    // Windows ERROR_DISK_FULL never uses the POSIX wording.
+    normalized.includes("not enough space on the disk") ||
+    // EDQUOT is a full disk from the writer's side: same cause and remedy.
+    normalized.includes("disk quota exceeded")
+  );
 }
 
 function resolveThumbnailArtifactPath(outputPath: string): string {
