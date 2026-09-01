@@ -296,6 +296,12 @@ jobs:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}-${{ github.sha }}
           retention-days: 14
           if-no-files-found: error
+          # upload-artifact excludes hidden paths by default from v4.4 onward,
+          # and every candidate file lives under the dot-prefixed staging
+          # directory. Without this the action reports "No files were found"
+          # and fails the release *after* staging, reverification, and
+          # attestation have all already passed against those same bytes.
+          include-hidden-files: true
           path: .candidate-upload/
 
       - name: Upload repository gate evidence
@@ -339,6 +345,11 @@ jobs:
         with:
           name: gate-releaseAssets-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
+          # Same hidden-path exclusion as the candidate upload: this evidence
+          # set spans a visible gate document and a checksum manifest under the
+          # dot-prefixed staging directory, so the manifest is dropped without
+          # this and the gate ships incomplete.
+          include-hidden-files: true
           path: |
             artifacts/gates/releaseAssets.json
             .candidate-upload/native/SHA256SUMS
