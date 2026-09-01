@@ -86,11 +86,11 @@ four executable helpers, and `mobile-build-meta.json`. A cross-build proves the
 artifact shape, not that Android's loader or current App Store applications
 accept it.
 
-Review `apps/mobile/dist/mobile-build-meta.json` after every build. The
-integration suite recomputes each hash, raw size, gzip size, executable mode,
-Android ELF machine, iOS dependency scan, fixed-launcher contract, and fake-host
-workflow. Do not transfer an artifact if that suite fails or if the transferred
-file's SHA-256 differs from the metadata.
+Review the generated `mobile-build-meta.json` in the ignored mobile output
+directory after every build. The integration suite recomputes each hash, raw
+size, gzip size, executable mode, Android ELF machine, iOS dependency scan,
+fixed-launcher contract, and fake-host workflow. Do not transfer an artifact if
+that suite fails or if the transferred file's SHA-256 differs from the metadata.
 
 ## Physical Android ARM64 procedure
 
