@@ -27,11 +27,12 @@ describe("a-Shell curl config", () => {
     for (const url of [
       "https://x.example/\r\noutput=/tmp/pwn",
       "https://x.example/a\0b",
+      "http://x.example/probe",
       "file:///private/probe",
       "https://user:secret@x.example/probe",
       "https://x.example/probe#fragment",
     ]) {
-      expect(() => encodeCurlConfig({ ...REQUEST, url })).toThrow("HTTP(S)");
+      expect(() => encodeCurlConfig({ ...REQUEST, url })).toThrow("HTTPS");
     }
   });
 

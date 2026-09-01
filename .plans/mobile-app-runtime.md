@@ -130,12 +130,16 @@ plain JavaScript bundle under a-Shell mini's built-in `jsc` command.
 This avoids making runtime identity the product abstraction. The stable
 abstraction is the mobile application's behavior and its small host seams.
 
-### Rejected as primary: one QuickJS artifact everywhere
+### Follow-up candidate, not primary: QuickJS-ng on Android
 
 QuickJS-ng is available in Termux and could run a portable bundle, but it adds
 an Android package, gives up Bun's qualified Android implementation, and still
-requires different OS adapters. It remains a fallback experiment, not a v1
-dependency or support promise.
+requires different OS adapters. The host proof measured Bun/Bionic artifacts
+at roughly 90–92 MB raw and 36–38 MB gzip, while stripping recovered only about
+0.07 percent on x64. That makes a QuickJS-ng composition worth a bounded
+Android-lite spike after the Bun host is physically qualified. It remains an
+opt-in fallback experiment—not a v1 dependency or support promise—until the
+same physical matrix proves both the smaller payload and the extra install step.
 
 ### Rejected: POSIX shell owns the application
 
@@ -379,8 +383,13 @@ application still owns every prompt, choice, validation, back, and cancel
 decision. The command string is constant and contains no provider or user data.
 The host proof must validate this blocking bridge and Ctrl+C recovery on a
 physical iPhone. It must not use the explicitly unstable private `term_` API.
-The adapter may read command arguments from the documented a-Shell
-`process.argv` host value; it may not use any other Node-style `process` API.
+The foreground launcher must not pass raw arguments to `jsc`: a-Shell builds
+JavaScript source from that command boundary before Kunai validation runs. It
+stages a bounded argument vector as separately numbered, mode-private files,
+publishes the count last, and invokes `jsc` with only the fixed bundle path. The
+adapter reads and deletes the complete transport before parsing it. Missing,
+malformed, excessive, or undeletable staging fails closed. The iOS source graph
+and emitted bundle may not use any Node-style `process` API.
 
 Primary artifacts:
 
@@ -407,13 +416,13 @@ not provide one stable cross-origin Fetch contract for this use case.
 Untrusted provider data is never interpolated into a shell command. The
 adapter:
 
-1. accepts only absolute HTTP(S) URLs;
+1. accepts only absolute HTTPS URLs;
 2. rejects NUL, CR, LF, and invalid header names/values;
 3. writes an app-owned curl config and request body under a fixed private
    working directory;
 4. invokes a fixed helper command whose arguments contain only validated,
    app-generated paths;
-5. restricts protocols to HTTP and HTTPS;
+5. restricts initial and redirect protocols to HTTPS;
 6. caps redirects, time, and response bytes;
 7. parses status and headers from separate files;
 8. deletes request secrets and temporary responses on success, cancellation,
@@ -499,7 +508,7 @@ mobile v1 is described as supported.
 The portable handoff planner accepts only streams the selected adapter can
 represent. Mobile v1 requires:
 
-- absolute HTTP(S) URL;
+- absolute HTTPS URL;
 - no unresolved locator;
 - no yt-dlp requirement;
 - no cookies or custom player headers;
@@ -621,8 +630,7 @@ profile.
   where available;
 - execute the Android app as a normal host bundle with fake adapters;
 - scan the iOS bundle for `Bun`, `Buffer`, `node:`, dynamic import, native addon
-  edges, and any `process` use other than the audited a-Shell `process.argv`
-  adapter;
+  edges, and any `process` use;
 - preserve fixture parity between desktop and mobile for each shared provider.
 
 A simulator or compatibility engine is supporting evidence, not a substitute
@@ -704,7 +712,7 @@ These decisions must be accepted before implementation planning:
 3. The existing documented public TMDB application key and proxy/direct
    fallback may move to `@kunai/catalog`; no account or private credential is
    embedded, and query values remain redacted.
-4. QuickJS is fallback-only, not a required Android runtime.
+4. QuickJS-ng is an Android-lite follow-up candidate, not a required runtime.
 5. iOS v1 is foreground a-Shell mini only.
 6. The feature branch is stacked on `feat/mobile-terminal-handoff` until the
    Android prerequisite lands or is rebased.

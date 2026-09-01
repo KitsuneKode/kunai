@@ -44,7 +44,7 @@ describe("Bun Android HTTP port", () => {
     ).rejects.toThrow("response too large");
   });
 
-  test("follows at most three HTTP(S) redirects manually", async () => {
+  test("follows at most three HTTPS redirects manually", async () => {
     const requested: string[] = [];
     const port = createBunHttpPort({
       fetch: async (url, init) => {
@@ -66,5 +66,21 @@ describe("Bun Android HTTP port", () => {
       }),
     ).rejects.toThrow("too many redirects");
     expect(requested).toHaveLength(4);
+  });
+
+  test("rejects plaintext initial URLs and HTTPS downgrade redirects", async () => {
+    const port = createBunHttpPort({
+      fetch: async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "http://probe.example/downgrade" },
+        }),
+    });
+
+    for (const url of ["http://probe.example/start", "https://probe.example/start"]) {
+      await expect(
+        port.request({ method: "GET", url, timeoutMs: 8_000, maxBytes: 65_536 }),
+      ).rejects.toThrow("unsupported protocol");
+    }
   });
 });

@@ -30,6 +30,62 @@ describe("Bun Android terminal port", () => {
     expect(interrupt).toBeUndefined();
   });
 
+  test("SIGINT wins over buffered partial input even when reader cancellation settles read", async () => {
+    let interrupt: (() => void) | undefined;
+    let settleRead:
+      | ((result: { readonly done: boolean; readonly value?: Uint8Array }) => void)
+      | undefined;
+    let readCount = 0;
+    const readLine = createBufferedAndroidReadLine({
+      read: async () => {
+        readCount += 1;
+        if (readCount === 1) {
+          return { done: false, value: new TextEncoder().encode("first\n1") };
+        }
+        return await new Promise((resolve) => {
+          settleRead = resolve;
+        });
+      },
+      cancel: async () => settleRead?.({ done: true }),
+      onInterrupt(handler) {
+        interrupt = handler;
+        return () => {
+          interrupt = undefined;
+        };
+      },
+    });
+
+    await expect(readLine()).resolves.toBe("first");
+    const pending = readLine();
+    interrupt?.();
+
+    await expect(pending).resolves.toEqual({ kind: "cancelled" });
+  });
+
+  test("returns an EOF partial line once, then returns null", async () => {
+    const readLine = createBufferedAndroidReadLine({
+      read: async () => ({ done: true }),
+      cancel: async () => {},
+      onInterrupt: () => () => {},
+    });
+    const decoderInput = createBufferedAndroidReadLine({
+      read: (() => {
+        const results = [
+          { done: false, value: new TextEncoder().encode("invalid") },
+          { done: true },
+          { done: true },
+        ];
+        return async () => results.shift() ?? { done: true };
+      })(),
+      cancel: async () => {},
+      onInterrupt: () => () => {},
+    });
+
+    await expect(decoderInput()).resolves.toBe("invalid");
+    await expect(decoderInput()).resolves.toBeNull();
+    await expect(readLine()).resolves.toBeNull();
+  });
+
   test("accepts either a choice number or exact value", async () => {
     for (const answer of ["1", "continue"]) {
       const output: string[] = [];

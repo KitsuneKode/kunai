@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -43,6 +43,35 @@ describe("a-Shell launcher", () => {
     }
   });
 
+  test("never passes user-controlled arguments to jsc", async () => {
+    const fixture = await launcherFixture(
+      '#!/bin/sh\nprintf \'%s\\n\' "$#" "$@" > jsc-arguments\nprintf 0 > .runtime/exit-code\n',
+    );
+    const maliciousUrl = "https://example.com/'];globalThis.kunaiReviewMarker=123;//";
+    const child = Bun.spawn(
+      [
+        fixture.launcher,
+        "--host-proof",
+        "--probe-url",
+        maliciousUrl,
+        "--media-url",
+        "https://media.example/video.m3u8",
+      ],
+      {
+        cwd: fixture.directory,
+        env: { ...process.env, PATH: `${fixture.binaryDirectory}:${process.env.PATH ?? ""}` },
+        stdout: "ignore",
+        stderr: "ignore",
+      },
+    );
+
+    expect(await child.exited).toBe(0);
+    expect(await Bun.file(join(fixture.directory, "jsc-arguments")).text()).toBe(
+      "1\n./kunai-mobile-ios.js\n",
+    );
+    expect((await readdir(join(fixture.directory, ".runtime"))).sort()).toEqual([]);
+  });
+
   test("fails closed when jsc writes no status or a malformed status", async () => {
     for (const fakeJsc of ["#!/bin/sh\nexit 0\n", "#!/bin/sh\nprintf bad > .runtime/exit-code\n"]) {
       const fixture = await launcherFixture(fakeJsc);
@@ -53,6 +82,7 @@ describe("a-Shell launcher", () => {
         stderr: "ignore",
       });
       expect(await child.exited).toBe(1);
+      expect((await readdir(join(fixture.directory, ".runtime"))).sort()).toEqual([]);
     }
   });
 });

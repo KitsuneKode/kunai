@@ -59,36 +59,32 @@ describe("mobile artifact build contract", () => {
     ]);
   });
 
-  test("allows only the audited a-Shell global process lookup", () => {
+  test("rejects every process API from the iOS graph", () => {
     expect(
       findForbiddenIosProcessUses({
         "src/entry.ts": "const value = 1;",
-        "src/runtime/ashell/composition.ts":
-          "const host = (globalThis as { process?: unknown }).process;",
       }),
     ).toEqual([]);
     expect(
       findForbiddenIosProcessUses({
-        "src/runtime/ashell/composition.ts": "const value = process.argv;",
+        "src/runtime/ashell/composition.ts":
+          "const host = (globalThis as { process?: unknown }).process;",
+        "src/runtime/ashell/bad.ts": "const value = process.argv;",
         "src/application/bad.ts": "process.exit(1);",
       }),
-    ).toEqual(["src/application/bad.ts", "src/runtime/ashell/composition.ts"]);
+    ).toEqual([
+      "src/application/bad.ts",
+      "src/runtime/ashell/bad.ts",
+      "src/runtime/ashell/composition.ts",
+    ]);
   });
 
   test("finds runtime-only tokens in emitted iOS JavaScript", () => {
     expect(findForbiddenIosOutputTokens("(()=>{console.log('ok')})()")).toEqual([]);
     expect(
       findForbiddenIosOutputTokens(
-        "require('x'); process.env.X; process.cwd(); process.exit(1); Buffer.from('x'); Bun.file('x'); node:fs",
+        "require('x'); process.env.X; process['argv']; Buffer.from('x'); Bun.file('x'); node:fs",
       ),
-    ).toEqual([
-      "Buffer",
-      "Bun.",
-      "node:",
-      "process.cwd",
-      "process.env",
-      "process.exit",
-      "require(",
-    ]);
+    ).toEqual(["Buffer", "Bun.", "node:", "process.", "process[", "require("]);
   });
 });

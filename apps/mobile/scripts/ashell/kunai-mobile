@@ -1,21 +1,43 @@
 #!/bin/sh
 set -eu
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+umask 077
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 cd "$script_dir"
 mkdir -p .runtime
+chmod 700 .runtime
 mobile_status_file=".runtime/exit-code"
-rm -f "$mobile_status_file"
+mobile_argc_file=".runtime/argv-count"
+mobile_argc_limit=32
+
+cleanup_mobile_runtime() {
+  rm -f "$mobile_status_file" "$mobile_argc_file" "${mobile_argc_file}.tmp" \
+    .runtime/argv-[0-9]*
+}
+
+trap cleanup_mobile_runtime EXIT
+trap 'exit 130' HUP INT TERM
+cleanup_mobile_runtime
+
+mobile_argc=0
+for mobile_argument in "$@"; do
+  if [ "$mobile_argc" -ge "$mobile_argc_limit" ]; then
+    exit 2
+  fi
+  printf '%s' "$mobile_argument" > ".runtime/argv-$mobile_argc"
+  mobile_argc=$((mobile_argc + 1))
+done
+printf '%s' "$mobile_argc" > "${mobile_argc_file}.tmp"
+mv "${mobile_argc_file}.tmp" "$mobile_argc_file"
+
 mobile_jsc_status=0
-jsc ./kunai-mobile-ios.js "$@" || mobile_jsc_status=$?
+jsc ./kunai-mobile-ios.js || mobile_jsc_status=$?
 if [ "$mobile_jsc_status" -ne 0 ]; then
-  rm -f "$mobile_status_file"
   exit "$mobile_jsc_status"
 fi
 if [ ! -f "$mobile_status_file" ]; then
   exit 1
 fi
 mobile_status=$(cat "$mobile_status_file")
-rm -f "$mobile_status_file"
 case "$mobile_status" in
   0 | 1 | 2) exit "$mobile_status" ;;
   *) exit 1 ;;
