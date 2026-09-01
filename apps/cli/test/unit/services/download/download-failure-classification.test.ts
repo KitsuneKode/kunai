@@ -88,6 +88,35 @@ describe("disk exhaustion", () => {
     });
   });
 
+  test("our own artifact markers outrank scraped vendor text", () => {
+    // The `artifact-*` prefixes are constructed in DownloadService itself and
+    // carry deliberate terminal semantics. The disk phrases are unstructured
+    // text scraped from yt-dlp, ffmpeg or the OS. If a stray "no space left on
+    // device" rode along in an artifact-validation message, letting it win
+    // would silently re-route our own classification into the pause lane and
+    // make a corrupt artifact look like a recoverable storage condition.
+    expect(
+      analyzeDownloadFailure("artifact-invalid: ffprobe rejected output; No space left on device"),
+    ).toEqual({ failureKind: "artifact-invalid", retryable: false });
+    expect(
+      analyzeDownloadFailure(
+        "artifact-validation-timeout: ffprobe exceeded 30000ms; no space left on device",
+      ),
+    ).toEqual({ failureKind: "artifact-timeout", retryable: false });
+  });
+
+  test("a self-abort caused by the disk filling is classified as the disk", () => {
+    // A user-initiated cancel never reaches the classifier — `processNextQueued`
+    // checks `activeProcesses`/`cancellationRequests` first — so this string
+    // only arises when yt-dlp aborts itself over the write failure. The cause
+    // is the disk, and the disk is what the user has to act on.
+    expect(
+      analyzeDownloadFailure(
+        "ERROR: unable to write data; download aborted: [Errno 28] No space left on device",
+      ),
+    ).toEqual({ failureKind: "disk-full", retryable: false });
+  });
+
   test("does not claim unrelated failures that merely mention space or disk", () => {
     expect(analyzeDownloadFailure("HTTP Error 500: disk backend unavailable")).toEqual({
       failureKind: "http-server",

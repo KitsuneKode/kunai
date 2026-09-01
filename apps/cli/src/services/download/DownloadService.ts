@@ -2074,19 +2074,29 @@ function redactDownloadQueueAggregateText(value: string, maxStringLength: number
 
 export function analyzeDownloadFailure(message: string): DownloadFailureAnalysis {
   const normalized = message.toLowerCase();
-  // First, and never `retryable`: a retry re-downloads the whole file from
-  // zero and fails at the same byte, spending a provider request per attempt
-  // against a disk that is still full. `processNextQueued` defers this kind
-  // into the same pause lane the pre-flight reserve check uses, so a volume
-  // that fills mid-transfer ends up where one that was already full does.
-  if (isDiskExhaustionMessage(normalized)) {
-    return { failureKind: "disk-full", retryable: false };
-  }
   if (normalized.includes("artifact-validation-timeout")) {
     return { failureKind: "artifact-timeout", retryable: false };
   }
   if (normalized.includes("artifact-invalid")) {
     return { failureKind: "artifact-invalid", retryable: false };
+  }
+
+  // After the two `artifact-*` branches and before everything else.
+  //
+  // Those two prefixes are markers this file constructs itself, with terminal
+  // semantics chosen deliberately; the disk phrases below are unstructured
+  // vendor text scraped from yt-dlp, ffmpeg or the OS. A structured marker we
+  // wrote outranks a substring we found — otherwise a stray "no space left on
+  // device" anywhere in an artifact-validation message silently re-routes our
+  // own classification.
+  //
+  // Never `retryable`: a retry re-downloads the whole file from zero and fails
+  // at the same byte, spending a provider request per attempt against a disk
+  // that is still full. `processNextQueued` defers this kind into the same
+  // pause lane the pre-flight reserve check uses, so a volume that fills
+  // mid-transfer ends up where one that was already full does.
+  if (isDiskExhaustionMessage(normalized)) {
+    return { failureKind: "disk-full", retryable: false };
   }
   if (normalized.includes("download aborted") || normalized.includes("aborted")) {
     return { failureKind: "aborted", retryable: false };
