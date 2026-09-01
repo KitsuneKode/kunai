@@ -41,7 +41,9 @@ export const ANIDB_HTTP_API_CLIENT_VERSION = "1";
 export const ANIDB_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-const episodeCache = new TTLCache<string, readonly AnidbEpisodeEntry[]>(1_800_000);
+const episodeCache = new TTLCache<string, AnidbEpisodeCatalog>(1_800_000);
+/** A miss is cached far shorter than a hit: reindexes are permanent, 404s from a hiccup are not. */
+const ANIDB_MISSING_CATALOG_TTL_MS = 120_000;
 const languageCache = new TTLCache<string, readonly AnidbLanguageEntry[]>(300_000);
 const malCache = new TTLCache<string, number | null>(3_600_000);
 const externalIdsCache = new TTLCache<
@@ -127,12 +129,48 @@ export function resolveAnidbCurl(environment: Partial<CurlEnvironment> = {}): Cu
  * and is frequently still challenged, since Cloudflare fingerprints the TLS
  * handshake rather than trusting the User-Agent.
  */
+/**
+ * An AniDB HTTP status a caller is allowed to branch on.
+ *
+ * `anidb.app` reindexes slugs, so "this id is gone" (404) and "this id is
+ * blocked right now" (403 / Cloudflare) demand opposite responses: re-search
+ * for the first, keep the id and surface a retryable error for the second.
+ * Reading that distinction back out of a message string is how it gets lost,
+ * so the status rides on the error.
+ */
+export class AnidbHttpStatusError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    // Message shape preserved from the untyped throw this replaces.
+    super(`anidb fetch HTTP ${status}`);
+    this.name = "AnidbHttpStatusError";
+    this.status = status;
+  }
+}
+
+/** curl reports the final status after redirects; the body keeps the rest. */
+const ANIDB_STATUS_WRITE_OUT = ["-w", "\n%{http_code}"] as const;
+
+function splitAnidbStatus(stdout: string): { readonly body: string; readonly status: number } {
+  const cut = stdout.lastIndexOf("\n");
+  if (cut < 0) return { body: "", status: Number.parseInt(stdout, 10) || 0 };
+  const status = Number.parseInt(stdout.slice(cut + 1), 10);
+  return { body: stdout.slice(0, cut), status: Number.isFinite(status) ? status : 0 };
+}
+
 export async function anidbFetchText(
   url: string,
   options: {
     readonly context?: ProviderRuntimeContext;
     readonly signal?: AbortSignal;
     readonly maxTimeSec?: number;
+    /**
+     * Turn an HTTP error status into an {@link AnidbHttpStatusError} instead of
+     * an opaque failure. Only the JSON API reads need it; HTML scrapes are
+     * happier with the existing best-effort behaviour.
+     */
+    readonly reportStatus?: boolean;
   } = {},
 ): Promise<string> {
   if (options.context?.fetch) {
@@ -146,8 +184,15 @@ export async function anidbFetchText(
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
+      } else if (options.reportStatus === true && response.status === 404) {
+        // Falling through to curl exists so a Cloudflare challenge gets a
+        // second chance with a better TLS fingerprint. A 404 is not a
+        // fingerprint problem — curl would spend a request to be told the same
+        // thing — so it is answered here.
+        throw new AnidbHttpStatusError(404);
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof AnidbHttpStatusError) throw error;
       // Fallback to local curl/impersonate
     }
   }
@@ -159,7 +204,7 @@ export async function anidbFetchText(
       signal: createTimeoutSignal(options.signal, 15_000),
     });
     if (!response.ok) {
-      throw new Error(`anidb fetch HTTP ${response.status}`);
+      throw new AnidbHttpStatusError(response.status);
     }
     const text = await response.text();
     if (isCloudflareChallengeText(text)) {
@@ -179,9 +224,22 @@ export async function anidbFetchText(
     "--max-time",
     maxTime,
     ...anidbCipherArgs(curl.impersonates),
+    ...(options.reportStatus === true ? ANIDB_STATUS_WRITE_OUT : []),
     url,
   ];
   const stdout = await runAnidbCurlWithRetry(args, options.signal);
+  // `-sL` has no `--fail`, so curl exits 0 and hands back the error page for a
+  // 404. Without asking for the status explicitly the miss is indistinguishable
+  // from a body that merely failed to parse, which is how a reindexed id used
+  // to look exactly like an empty catalogue.
+  if (options.reportStatus === true) {
+    const { body, status } = splitAnidbStatus(stdout);
+    if (status >= 400) throw new AnidbHttpStatusError(status);
+    if (isCloudflareChallengeText(body)) {
+      throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
+    }
+    return body;
+  }
   if (isCloudflareChallengeText(stdout)) {
     throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
   }
@@ -420,32 +478,54 @@ function readMetaContent(html: string, property: string): string | undefined {
   return propertyFirst.exec(html)?.[1] ?? contentFirst.exec(html)?.[1];
 }
 
-export async function fetchAnidbEpisodes(
+/**
+ * An episode list, plus whether the show id itself resolved.
+ *
+ * `episodes: []` alone cannot carry this: a season announced but not yet
+ * listed is legitimately empty, and treating that the same as a reindexed id
+ * sends the caller off to search and hand back a *different show*. The two
+ * need separate answers, so they get separate fields.
+ */
+export type AnidbEpisodeCatalog = {
+  readonly episodes: readonly AnidbEpisodeEntry[];
+  /** The id is gone (HTTP 404) — not merely empty. */
+  readonly missing: boolean;
+};
+
+const ANIDB_EMPTY_CATALOG: AnidbEpisodeCatalog = { episodes: [], missing: false };
+const ANIDB_MISSING_CATALOG: AnidbEpisodeCatalog = { episodes: [], missing: true };
+
+export async function fetchAnidbEpisodeCatalog(
   showId: string,
   signal?: AbortSignal,
   context?: ProviderRuntimeContext,
-): Promise<readonly AnidbEpisodeEntry[]> {
+): Promise<AnidbEpisodeCatalog> {
   const numericId = anidbNumericId(showId);
-  if (!numericId) return [];
+  if (!numericId) return ANIDB_EMPTY_CATALOG;
   const cached = episodeCache.get(showId);
   if (cached) return cached;
 
   const url = `${ANIDB_BASE}/api/frontend/anime/${numericId}/episodes`;
   let text: string;
   try {
-    text = await anidbFetchText(url, { signal, context });
+    text = await anidbFetchText(url, { signal, context, reportStatus: true });
   } catch (error) {
-    // A reindexed slug (e.g. Solo Leveling 19413 → 4883) 404s forever.
-    // Treat as empty catalog so resolve surfaces `catalog-unavailable`
-    // rather than a retryable `network-error` that would loop.
-    if (error instanceof Error && /HTTP 404/.test(error.message)) return [];
+    // A reindexed slug (Solo Leveling 19413 → 4883) 404s permanently. Record
+    // it as a miss so the caller can re-search, and cache it briefly so a dead
+    // id is not re-requested once per call site on the same resolve.
+    if (error instanceof AnidbHttpStatusError && error.status === 404) {
+      episodeCache.set(showId, ANIDB_MISSING_CATALOG, ANIDB_MISSING_CATALOG_TTL_MS);
+      return ANIDB_MISSING_CATALOG;
+    }
     throw error;
   }
   let parsed: { episodes?: readonly Record<string, unknown>[] };
   try {
     parsed = JSON.parse(text) as { episodes?: readonly Record<string, unknown>[] };
   } catch {
-    return [];
+    // Unparseable is not the same as absent: the id may be fine and the body
+    // mangled, so this must not be reported as a miss.
+    return ANIDB_EMPTY_CATALOG;
   }
   const episodes = (parsed.episodes ?? [])
     .flatMap((entry) => {
@@ -461,8 +541,18 @@ export async function fetchAnidbEpisodes(
     })
     .sort((left, right) => left.number - right.number);
 
-  episodeCache.set(showId, episodes);
-  return episodes;
+  const catalog: AnidbEpisodeCatalog = { episodes, missing: false };
+  episodeCache.set(showId, catalog);
+  return catalog;
+}
+
+/** Episode list only, for the callers that cannot act on a missing id. */
+export async function fetchAnidbEpisodes(
+  showId: string,
+  signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
+): Promise<readonly AnidbEpisodeEntry[]> {
+  return (await fetchAnidbEpisodeCatalog(showId, signal, context)).episodes;
 }
 
 export async function fetchAnidbLanguages(
@@ -477,9 +567,10 @@ export async function fetchAnidbLanguages(
   const url = `${ANIDB_BASE}/api/frontend/episode/${episodeId}/languages`;
   let text: string;
   try {
-    text = await anidbFetchText(url, { signal, context });
+    text = await anidbFetchText(url, { signal, context, reportStatus: true });
   } catch (error) {
-    if (error instanceof Error && /HTTP 404/.test(error.message)) return [];
+    // No languages row for this episode is a real answer, not a failure.
+    if (error instanceof AnidbHttpStatusError && error.status === 404) return [];
     throw error;
   }
   let parsed: { languages?: readonly Record<string, unknown>[] };

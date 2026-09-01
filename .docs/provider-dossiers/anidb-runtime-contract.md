@@ -57,6 +57,18 @@ instead of pretending those fields came from `anidb.app`.
   remains `sub/dub` only (`jpn`/`eng` case-insensitive, exact).
 - A missing requested language is an exhausted AniDB attempt. It must not fall back to the other
   language and label the stream incorrectly.
+- A reindexed show id (`19413` → `4883`) is repaired, but only on proof. `fetchAnidbEpisodeCatalog`
+  reports `missing: true` for an HTTP 404 and `missing: false` for a catalogue that is merely empty
+  or unparseable; `resolveAnidbShow` re-searches on the first and never on the second, because an
+  announced season with no episodes listed is not a stale id. The repair also requires real title
+  evidence (`chooseAnidbSearchMatch(..., { requireTitleEvidence: true })`) — the ordinary
+  "best guess is the top card" fallback is disabled there, since substituting a search result for a
+  _persisted_ id would silently swap the show the user chose.
+- The 404 has to be asked for. `anidb.app` is fetched with `curl -sL`, which has no `--fail`, so a
+  missing id returns the error page with exit 0 and is otherwise indistinguishable from a body that
+  failed to parse. Reads that branch on the status pass `reportStatus: true`, which appends
+  `-w '\n%{http_code}'` and raises `AnidbHttpStatusError`. A caller that reads the status out of a
+  message string is reading prose, not a status.
 - Only exact `jpn` (sub/original) and `eng` (dub) catalog evidence is accepted.
   The requested mode resolves first; the alternate starts concurrently but is
   skipped for `fast`, bounded to 1 second for `balanced`, and bounded to 4
