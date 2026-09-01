@@ -16,7 +16,7 @@ cleanup_mobile_runtime() {
     .runtime/curl.conf \
     .runtime/http-body .runtime/http-body.tmp \
     .runtime/http-meta .runtime/http-meta.tmp \
-    .runtime/terminal-answer \
+    .runtime/terminal-answer .runtime/terminal-answer.tmp \
     .runtime/player-url
 }
 
