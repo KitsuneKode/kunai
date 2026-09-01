@@ -126,6 +126,13 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres lifetime accounting", () => {
   });
 
   test("a returning install refreshes last_seen instead of being retired", async () => {
+    // Hermetic on purpose. The rest of this block accumulates state across
+    // tests, and the survivor of the retirement test above still carries
+    // last_seen 1999-05-03 — earlier than this cutoff, so the sweep would
+    // rightly retire it and `retired` would report that unrelated row rather
+    // than anything about the returning install.
+    await resetAnalyticsTables();
+
     const store = storeWith();
     await ping(store, "1999-05-10", 1);
     await ping(store, "1999-06-20", 1);
