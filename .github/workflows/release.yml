@@ -277,6 +277,12 @@ jobs:
             --artifact-path .candidate-upload/native/SHA256SUMS \
             --output artifacts/gates/releaseAssets.json
 
+          # The manifest is hashed above from its staged location, then copied
+          # beside the document that references it so the upload spans a single
+          # non-hidden root. Copied rather than moved: the candidate artifact
+          # and the exact-directory verifier both still read the original.
+          cp .candidate-upload/native/SHA256SUMS artifacts/gates/SHA256SUMS
+
       - name: Reverify exact staged native candidate
         run: |
           set -euo pipefail
@@ -345,14 +351,22 @@ jobs:
         with:
           name: gate-releaseAssets-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
-          # Same hidden-path exclusion as the candidate upload: this evidence
-          # set spans a visible gate document and a checksum manifest under the
-          # dot-prefixed staging directory, so the manifest is dropped without
-          # this and the gate ships incomplete.
-          include-hidden-files: true
+          # Both paths deliberately sit under `artifacts/gates`, and neither is
+          # hidden. upload-artifact roots an artifact at the least common
+          # ancestor of its paths, so pairing this document with the manifest
+          # at `.candidate-upload/native/SHA256SUMS` moved that root to the
+          # workspace and nested both a level deeper. The confirmation gate
+          # downloads every `gate-*` artifact with `merge-multiple` into
+          # `artifacts/gates`, so it then looked for `releaseAssets.json` and
+          # found `artifacts/gates/releaseAssets.json` instead.
+          #
+          # `include-hidden-files` on the candidate upload is still required —
+          # that whole tree is dot-prefixed. Here the fix is to not span two
+          # roots in the first place, which is sturdier than depending on where
+          # the LCA happens to land.
           path: |
             artifacts/gates/releaseAssets.json
-            .candidate-upload/native/SHA256SUMS
+            artifacts/gates/SHA256SUMS
 
   # ---------------------------------------------------------------------------
   # Verify the preserved candidate's bytes and provenance before any downstream
