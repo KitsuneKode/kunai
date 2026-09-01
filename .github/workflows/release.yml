@@ -291,7 +291,7 @@ jobs:
 
       - name: Upload candidate artifacts
         id: upload-candidate
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}-${{ github.sha }}
           retention-days: 14
@@ -305,7 +305,7 @@ jobs:
           path: .candidate-upload/
 
       - name: Upload repository gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-repository-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -314,7 +314,7 @@ jobs:
             artifacts/gates/repository.log
 
       - name: Upload package gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-package-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -323,7 +323,7 @@ jobs:
             artifacts/gates/package.log
 
       - name: Upload npm global install gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-npmGlobalInstall-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -332,7 +332,7 @@ jobs:
             artifacts/gates/npmGlobalInstall.log
 
       - name: Upload compiled playback gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-compiledPlayback-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -341,7 +341,7 @@ jobs:
             artifacts/gates/compiledPlayback.log
 
       - name: Upload release assets gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-releaseAssets-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -376,7 +376,7 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download preserved native candidate
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
@@ -459,7 +459,7 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download exact preserved candidate
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
@@ -570,7 +570,7 @@ jobs:
           $help | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
 
       - name: Upload native smoke log
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: native-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-${{ matrix.id }}
           retention-days: 14
@@ -594,7 +594,7 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download every native smoke log
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           pattern: native-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-*
           path: artifacts/native-logs
@@ -621,7 +621,7 @@ jobs:
             --output artifacts/nativePlatforms.json
 
       - name: Upload native platform gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-nativePlatforms-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           retention-days: 14
@@ -673,7 +673,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload installer harness log
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: installer-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-${{ matrix.id }}
           if-no-files-found: error
@@ -694,7 +694,7 @@ jobs:
         with:
           turbo-cache-prefix: release-installer-aggregate
           skip-turbo-cache: "true"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           pattern: installer-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-*
           path: artifacts/installer-logs
@@ -719,7 +719,7 @@ jobs:
             --output artifacts/installer.json
 
       - name: Upload installer gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-installer-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -742,7 +742,7 @@ jobs:
         with:
           turbo-cache-prefix: release-readme-commands
           skip-turbo-cache: "true"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
@@ -774,7 +774,7 @@ jobs:
             --output artifacts/readmeCommands.json
 
       - name: Upload README commands gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-readmeCommands-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -826,7 +826,7 @@ jobs:
             --output artifacts/liveProviders.json
 
       - name: Upload live provider gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-liveProviders-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -865,14 +865,14 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download candidate artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
           merge-multiple: "true"
 
       - name: Download every gate evidence document and hashed artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           pattern: gate-*-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: artifacts/gates
@@ -935,7 +935,7 @@ jobs:
           echo "binary_artifact=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload confirmation evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: release-confirmation-${{ needs.candidate.outputs.version }}
           retention-days: 14
@@ -995,7 +995,7 @@ jobs:
           npm --version
 
       - name: Download candidate artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.confirmation.outputs.candidate_artifact_id }}
           path: .release-download

@@ -150,7 +150,7 @@ jobs:
 
       - name: Upload redacted matrix artifact
         if: ${{ always() && (github.event_name == 'schedule' || github.event.inputs.mode != 'release-signoff') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: provider-matrix-${{ github.run_id }}
           path: artifacts/provider-matrix.json
@@ -159,7 +159,7 @@ jobs:
 
       - name: Upload release provider signoff artifact
         if: ${{ always() && github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release-signoff' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: release-provider-signoff-${{ github.run_id }}
           path: artifacts/release-provider-signoff.json
