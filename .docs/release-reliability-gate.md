@@ -299,11 +299,18 @@ way.
 
 Run the storage path against a real Postgres. The local harness needs only
 Docker — it starts a throwaway database plus the Neon HTTP proxy the driver
-requires, migrates, runs, and tears down:
+requires, migrates, runs the whole `test/` directory, and tears down:
 
 ```sh
 bun run --cwd apps/analytics-ingest test:pg
 ```
+
+CI runs this same command in the `Analytics Postgres suites` job whenever
+`apps/analytics-ingest/**` changes, and fails if any case reports `skip` — a
+database that never starts otherwise produces a green run with every Postgres
+case silently skipped. Release signoff still needs a local or Neon run recorded
+against the release commit, but a regression no longer waits for that run to
+surface.
 
 Against an isolated Neon project instead, opt in explicitly. The suites write
 and prune, so they gate on `ANALYTICS_TEST_DATABASE_URL` rather than
