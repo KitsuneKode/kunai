@@ -1,5 +1,5 @@
 import type { MobileHttpPort, MobileHttpRequest } from "../../application/contracts";
-import { requirePortableHttpUrl } from "../../application/portable-url";
+import { parsePortableHttpUrl } from "../../application/portable-url";
 
 type TimeoutToken = unknown;
 type AndroidFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -13,8 +13,8 @@ export type BunHttpRuntime = {
 const MAX_REDIRECTS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-function requireHttpUrl(rawUrl: string): URL {
-  return new URL(requirePortableHttpUrl(rawUrl, "Probe URL"));
+function requireHttpUrl(rawUrl: string, base?: URL): URL {
+  return parsePortableHttpUrl(rawUrl, "Probe URL", base);
 }
 
 async function countBodyBytes(response: Response, maxBytes: number): Promise<number> {
@@ -74,7 +74,7 @@ export function createBunHttpPort(overrides: Partial<BunHttpRuntime> = {}): Mobi
           if (redirects >= MAX_REDIRECTS) throw new Error("too many redirects");
           const location = response.headers.get("location");
           if (!location) throw new Error("redirect missing location");
-          url = requireHttpUrl(new URL(location, url).toString());
+          url = requireHttpUrl(location, url);
         }
       } finally {
         runtime.cancelTimeout(timeout);

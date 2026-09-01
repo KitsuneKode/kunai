@@ -118,10 +118,11 @@ describe("Bun Android HTTP port", () => {
     }
   });
 
-  test("rejects redirect targets with credentials or fragments", async () => {
+  test("rejects redirect targets with credentials, fragments, or controls", async () => {
     for (const location of [
       "https://user:password@redirect.example/path",
       "https://redirect.example/path#fragment",
+      "https://redirect.example/a\tb",
     ]) {
       let requests = 0;
       const port = createBunHttpPort({
