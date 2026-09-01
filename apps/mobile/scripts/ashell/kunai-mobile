@@ -10,8 +10,14 @@ mobile_argc_file=".runtime/argv-count"
 mobile_argc_limit=32
 
 cleanup_mobile_runtime() {
-  rm -f "$mobile_status_file" "$mobile_argc_file" "${mobile_argc_file}.tmp" \
-    .runtime/argv-[0-9]*
+  rm -f "$mobile_status_file" "${mobile_status_file}.tmp" \
+    "$mobile_argc_file" "${mobile_argc_file}.tmp" \
+    .runtime/argv-[0-9]* \
+    .runtime/curl.conf \
+    .runtime/http-body .runtime/http-body.tmp \
+    .runtime/http-meta .runtime/http-meta.tmp \
+    .runtime/terminal-answer \
+    .runtime/player-url
 }
 
 trap cleanup_mobile_runtime EXIT

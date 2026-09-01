@@ -85,4 +85,41 @@ describe("a-Shell launcher", () => {
       expect((await readdir(join(fixture.directory, ".runtime"))).sort()).toEqual([]);
     }
   });
+
+  test("removes every fixed transient artifact when jsc terminates abruptly", async () => {
+    const fixture = await launcherFixture(`#!/bin/sh
+for file in exit-code.tmp curl.conf http-body http-body.tmp http-meta http-meta.tmp terminal-answer player-url; do
+  printf sensitive > ".runtime/$file"
+done
+exit 1
+`);
+    const child = Bun.spawn([fixture.launcher, "--host-proof"], {
+      cwd: fixture.directory,
+      env: { ...process.env, PATH: `${fixture.binaryDirectory}:${process.env.PATH ?? ""}` },
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+
+    expect(await child.exited).toBe(1);
+    expect((await readdir(join(fixture.directory, ".runtime"))).sort()).toEqual([]);
+  });
+
+  test("removes every fixed transient artifact when jsc interrupts the launcher", async () => {
+    const fixture = await launcherFixture(`#!/bin/sh
+for file in curl.conf http-body http-meta terminal-answer player-url; do
+  printf sensitive > ".runtime/$file"
+done
+kill -INT "$PPID"
+exit 130
+`);
+    const child = Bun.spawn([fixture.launcher, "--host-proof"], {
+      cwd: fixture.directory,
+      env: { ...process.env, PATH: `${fixture.binaryDirectory}:${process.env.PATH ?? ""}` },
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+
+    expect(await child.exited).toBe(130);
+    expect((await readdir(join(fixture.directory, ".runtime"))).sort()).toEqual([]);
+  });
 });

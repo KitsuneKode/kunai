@@ -66,8 +66,6 @@ const IOS_FORBIDDEN_INPUT_MARKERS = [
 const IOS_FORBIDDEN_OUTPUT_TOKENS = [
   "import(",
   "require(",
-  "process.",
-  "process[",
   "Buffer",
   "Bun.",
   "node:",
@@ -102,7 +100,11 @@ export function findForbiddenIosProcessUses(
 }
 
 export function findForbiddenIosOutputTokens(source: string): readonly string[] {
-  return IOS_FORBIDDEN_OUTPUT_TOKENS.filter((token) => source.includes(token)).sort();
+  const violations: string[] = IOS_FORBIDDEN_OUTPUT_TOKENS.filter((token) =>
+    source.includes(token),
+  );
+  if (/\bprocess\b/u.test(source)) violations.push("process");
+  return violations.sort();
 }
 
 export async function waitForMobileHostProof(
