@@ -29,7 +29,8 @@ describe("chooseGoogleCastTargetShell", () => {
     const selected = await chooseGoogleCastTargetShell({
       discover: async () => [tv],
       choose: async (options) =>
-        options.find((option) => option.label === "Living Room TV · Audio only")!.value,
+        options.find((option) => option.label === "Living Room TV · Audio only · Experimental")!
+          .value,
       enterAddress: async () => null,
     });
 
@@ -66,5 +67,20 @@ describe("chooseGoogleCastTargetShell", () => {
     });
 
     expect(selected).toMatchObject({ kind: "local", id: "local" });
+  });
+
+  test("cast-only mode preserves full A/V Cast without advertising experimental audio", async () => {
+    const labels: string[] = [];
+    const selected = await chooseGoogleCastTargetShell("cast-only", {
+      discover: async () => [tv],
+      choose: async (options) => {
+        labels.push(...options.map((option) => option.label));
+        return options.find((option) => option.label === "Living Room TV · Video + audio")!.value;
+      },
+      enterAddress: async () => null,
+    });
+
+    expect(selected).toEqual(tv);
+    expect(labels.some((label) => label.includes("Audio only"))).toBe(false);
   });
 });

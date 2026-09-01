@@ -677,9 +677,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  if (args.castPicker && !(process.stdin.isTTY && process.stdout.isTTY)) {
+  if ((args.castPicker || args.castAudioPicker) && !(process.stdin.isTTY && process.stdout.isTTY)) {
     console.error(
-      "kunai --cast needs an interactive terminal to choose a device. Use --cast <device-or-ip> in a non-interactive run.",
+      "A bare --cast or --cast-audio needs an interactive terminal. Provide a device name or IP in a non-interactive run.",
     );
     process.exitCode = 1;
     return;
@@ -821,7 +821,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     debugJson: args.debugJson,
     debugSession: args.debugSession,
     castDevice: args.castDevice,
-    enableCastPlayback: args.castPicker,
+    castReceiverAppId: process.env.KUNAI_CAST_RECEIVER_APP_ID,
+    enableCastPlayback: args.castPicker || Boolean(args.castDevice),
+    enableCastAudioPlayback:
+      args.castAudioPicker ||
+      Boolean(args.castAudioDevice) ||
+      Boolean(args.castPicker && process.env.KUNAI_CAST_RECEIVER_APP_ID),
     mpv: args.mpv,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
@@ -836,6 +841,22 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const { resolveGoogleCastTargetSelector } =
         await import("./services/playback/cast/cast-target-selector");
       container.playbackRouter.selectTarget(await resolveGoogleCastTargetSelector(args.castDevice));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      await disposeContainer(container);
+      globalContainer = null;
+      process.exitCode = 1;
+      return;
+    }
+  }
+  if (args.castAudioDevice) {
+    try {
+      const { resolveGoogleCastTargetSelector } =
+        await import("./services/playback/cast/cast-target-selector");
+      const { splitAudioTarget } = await import("./services/playback/split-audio-playback-backend");
+      container.playbackRouter.selectTarget(
+        splitAudioTarget(await resolveGoogleCastTargetSelector(args.castAudioDevice)),
+      );
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
       await disposeContainer(container);
@@ -1111,9 +1132,15 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // launchSessionApp creates a valid picker session with no renderer or input
   // owner, leaving bare `--cast` apparently frozen while direct-name launches
   // work. Keep startup selection before setup/search, but after the root mount.
-  if (args.castPicker) {
+  if (args.castPicker || args.castAudioPicker) {
     const { chooseGoogleCastTargetShell } = await import("./app-shell/cast-target-picker");
-    const target = await chooseGoogleCastTargetShell();
+    const target = await chooseGoogleCastTargetShell(
+      args.castAudioPicker
+        ? "audio-only"
+        : process.env.KUNAI_CAST_RECEIVER_APP_ID
+          ? "all"
+          : "cast-only",
+    );
     if (target) container.playbackRouter.selectTarget(target);
   }
   // Must stay after first paint: the enrich loop and the consolidator it can

@@ -6,6 +6,7 @@ import {
 } from "@/domain/playback/playback-target";
 import { googleCastTargetFromSelector } from "@/services/playback/cast/cast-target-selector";
 import { discoverGoogleCastTargets } from "@/services/playback/cast/discover-google-cast-targets";
+import { splitAudioTarget } from "@/services/playback/split-audio-playback-backend";
 
 type TargetChoice =
   | { readonly kind: "target"; readonly target: PlaybackTarget }
@@ -21,7 +22,11 @@ type ChooseGoogleCastTargetDeps = {
 };
 
 export async function chooseGoogleCastTargetShell(
-  deps: ChooseGoogleCastTargetDeps = {
+  modeOrDeps: "all" | "audio-only" | "cast-only" | ChooseGoogleCastTargetDeps = "all",
+  injectedDeps?: ChooseGoogleCastTargetDeps,
+): Promise<PlaybackTarget | null> {
+  const mode = typeof modeOrDeps === "string" ? modeOrDeps : "all";
+  const deps = (typeof modeOrDeps === "string" ? injectedDeps : modeOrDeps) ?? {
     discover: () => discoverGoogleCastTargets(),
     choose: (options) =>
       chooseFromListShell({
@@ -36,36 +41,47 @@ export async function chooseGoogleCastTargetShell(
         label: "Device address",
         placeholder: "192.168.1.50 or living-room-tv.local",
       }),
-  },
-): Promise<PlaybackTarget | null> {
+  };
   for (;;) {
     const targets = await deps.discover();
     const selected = await deps.choose([
-      {
-        value: { kind: "target", target: LOCAL_PLAYBACK_TARGET },
-        label: "This device",
-        detail: "Local · mpv",
-      },
+      ...(mode !== "audio-only"
+        ? [
+            {
+              value: { kind: "target", target: LOCAL_PLAYBACK_TARGET },
+              label: "This device",
+              detail: "Local · mpv",
+            } satisfies { value: TargetChoice; label: string; detail: string },
+          ]
+        : []),
       ...targets.flatMap((target) => [
-        {
-          value: { kind: "target" as const, target },
-          label: `${target.name} · Video + audio`,
-          detail: `${target.modelName ?? "Google Cast"} · ${target.host}:${target.port ?? 8009}`,
-        },
-        {
-          value: {
-            kind: "target" as const,
-            target: {
-              kind: "split-audio" as const,
-              id: `split-audio:${target.id}`,
-              name: `This device + ${target.name}`,
-              audioTarget: target,
-              capabilities: ["audio", "video"] as const,
-            },
-          },
-          label: `${target.name} · Audio only`,
-          detail: "Video on this device · experimental synchronized remote audio",
-        },
+        ...(mode !== "audio-only"
+          ? [
+              {
+                value: { kind: "target" as const, target },
+                label: `${target.name} · Video + audio`,
+                detail: `${target.modelName ?? "Google Cast"} · ${target.host}:${target.port ?? 8009}`,
+              },
+            ]
+          : []),
+        ...(mode !== "cast-only"
+          ? [
+              {
+                value: {
+                  kind: "target" as const,
+                  target: {
+                    kind: "split-audio" as const,
+                    id: `split-audio:${target.id}`,
+                    name: `This device + ${target.name}`,
+                    audioTarget: target,
+                    capabilities: ["audio", "video"] as const,
+                  },
+                },
+                label: `${target.name} · Audio only · Experimental`,
+                detail: "Video on this device · experimental Custom Receiver audio",
+              },
+            ]
+          : []),
       ]),
       {
         value: { kind: "manual" },
@@ -85,6 +101,9 @@ export async function chooseGoogleCastTargetShell(
     if (selected.kind === "target") return selected.target;
     if (selected.kind === "refresh") continue;
     const address = await deps.enterAddress();
-    if (address?.trim()) return googleCastTargetFromSelector(address);
+    if (address?.trim()) {
+      const target = googleCastTargetFromSelector(address);
+      return mode === "audio-only" ? splitAudioTarget(target) : target;
+    }
   }
 }

@@ -287,6 +287,9 @@ export class PersistentMpvSession {
       togglePause: async () => {
         await this.ipcSession?.send(["cycle", "pause"], 1_000);
       },
+      setPaused: async (paused) => {
+        await this.ipcSession?.send(["set_property", "pause", paused], 1_000);
+      },
       seekRelative: async (seconds) => {
         await this.ipcSession?.send(["seek", seconds, "relative"], 2_000);
       },

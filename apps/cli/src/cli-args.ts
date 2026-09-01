@@ -23,6 +23,8 @@ export type CliArgs = {
   continuePlayback: boolean;
   castPicker: boolean;
   castDevice?: string;
+  castAudioPicker: boolean;
+  castAudioDevice?: string;
   castList: boolean;
   download: boolean;
   downloadPath?: string;
@@ -57,6 +59,7 @@ LAUNCH
       --history              Open watch history
       --offline              Offline library only (no provider calls)
       --cast [device]        Experimental: choose a Google Cast device, or target one directly
+      --cast-audio [device]  Experimental: local video with audio on a Google Cast device
       --cast-list            Experimental: discover Google Cast devices and exit
       --discover             Open recommendations
       --calendar             Open the release calendar
@@ -155,6 +158,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--setup",
   "--offline",
   "--cast",
+  "--cast-audio",
   "--cast-list",
   "--discover",
   "--calendar",
@@ -215,6 +219,7 @@ type CommanderCliOptions = {
   readonly setup?: boolean;
   readonly offline?: boolean;
   readonly cast?: string | boolean;
+  readonly castAudio?: string | boolean;
   readonly castList?: boolean;
   readonly discover?: boolean;
   readonly calendar?: boolean;
@@ -265,6 +270,7 @@ function createCliCommand(): Command {
     .option("--setup")
     .option("--offline")
     .option("--cast [device]")
+    .option("--cast-audio [device]")
     .option("--cast-list")
     .option("--discover")
     .option("--calendar")
@@ -343,6 +349,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     setup: false,
     offline: false,
     castPicker: false,
+    castAudioPicker: false,
     castList: false,
     history: false,
     continuePlayback: false,
@@ -390,6 +397,9 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.offline = Boolean(options.offline);
   args.castPicker = options.cast === true;
   args.castDevice = typeof options.cast === "string" ? options.cast.trim() || undefined : undefined;
+  args.castAudioPicker = options.castAudio === true;
+  args.castAudioDevice =
+    typeof options.castAudio === "string" ? options.castAudio.trim() || undefined : undefined;
   args.castList = Boolean(options.castList);
   if (options.discover) args.initialRoute = "recommendation";
   if (options.calendar) args.initialRoute = "calendar";

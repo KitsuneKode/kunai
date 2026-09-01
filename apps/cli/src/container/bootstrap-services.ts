@@ -152,12 +152,24 @@ export function bootstrapServices(input: {
   const castDeviceName = options?.castDevice?.trim() || process.env.KUNAI_CAST_DEVICE?.trim();
   const castPlaybackEnabled =
     featureFlags.castPlayback || Boolean(castDeviceName) || options?.enableCastPlayback === true;
+  const castAudioPlaybackEnabled = options?.enableCastAudioPlayback === true;
+  const castReceiverAppId =
+    options?.castReceiverAppId?.trim() || process.env.KUNAI_CAST_RECEIVER_APP_ID?.trim();
+  if (castAudioPlaybackEnabled && !castReceiverAppId) {
+    throw new Error(
+      "Experimental Cast audio-only playback requires the registered Kunai Custom Receiver app id. Set KUNAI_CAST_RECEIVER_APP_ID and try again.",
+    );
+  }
   const playbackBackends: PlaybackBackend[] = [
     new LocalPlaybackBackend(player),
-    ...(castPlaybackEnabled
+    ...(castPlaybackEnabled ? [new GoogleCastPlaybackBackend(undefined, playerControl)] : []),
+    ...(castAudioPlaybackEnabled && castReceiverAppId
       ? [
-          new GoogleCastPlaybackBackend(undefined, playerControl),
-          new SplitAudioPlaybackBackend(player, playerControl),
+          new SplitAudioPlaybackBackend(
+            player,
+            playerControl,
+            new GoogleCastPlaybackBackend(undefined, undefined, false, castReceiverAppId),
+          ),
         ]
       : []),
   ];

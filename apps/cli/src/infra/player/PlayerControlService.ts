@@ -63,6 +63,7 @@ export interface ActivePlayerControl {
   readonly id: string;
   stop(reason?: string): Promise<void>;
   togglePause?(): Promise<void>;
+  setPaused?(paused: boolean): Promise<void>;
   seekRelative?(seconds: number): Promise<void>;
   seekAbsolute?(seconds: number): Promise<void>;
   stopCurrentFile?(reason?: string): Promise<void>;

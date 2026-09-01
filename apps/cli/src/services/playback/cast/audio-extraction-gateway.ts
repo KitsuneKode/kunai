@@ -44,20 +44,8 @@ export function buildAudioExtractionArgs(stream: StreamInfo, startAt = 0): strin
   const headerBlock = ffmpegHeaderBlock(stream.headers);
   if (headerBlock) args.push("-headers", headerBlock);
   if (startAt > 0) args.push("-ss", String(startAt));
-  args.push(
-    "-i",
-    stream.url,
-    "-map",
-    "0:a:0",
-    "-vn",
-    "-c:a",
-    "libmp3lame",
-    "-b:a",
-    "192k",
-    "-f",
-    "mp3",
-    "pipe:1",
-  );
+  args.push("-i", stream.url);
+  args.push("-map", "0:a:0", "-vn", "-c:a", "libmp3lame", "-b:a", "192k", "-f", "mp3", "pipe:1");
   return args;
 }
 

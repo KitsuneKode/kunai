@@ -120,12 +120,22 @@ describe("GoogleCastPlaybackBackend", () => {
         loaded.push({ media, startAt });
         queueMicrotask(() => {
           queueMicrotask(() => {
+            // Receivers may briefly report a non-terminal IDLE after accepting
+            // LOAD. It must not tear down the fresh media session.
             clientEvents?.onStatus({
+              mediaSessionId: 8,
+              playerState: "IDLE",
+              idleReason: "CANCELLED",
+              currentTime: 42,
+            });
+            clientEvents?.onStatus({
+              mediaSessionId: 9,
               playerState: "PLAYING",
               currentTime: 43,
               media: { duration: 120 },
             });
             clientEvents?.onStatus({
+              mediaSessionId: 9,
               playerState: "IDLE",
               idleReason: "FINISHED",
               currentTime: 120,
@@ -133,7 +143,7 @@ describe("GoogleCastPlaybackBackend", () => {
             });
           });
         });
-        return { playerState: "BUFFERING" };
+        return { mediaSessionId: 9, playerState: "BUFFERING" };
       },
       play: async () => undefined,
       pause: async () => undefined,

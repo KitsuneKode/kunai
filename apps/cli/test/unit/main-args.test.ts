@@ -53,6 +53,8 @@ test("parseArgs wires experimental Cast discovery and target selection", () => {
   const selected = parseArgs(["--cast", "Living Room TV", "-S", "Dune"]);
   const picker = parseArgs(["--cast", "-S", "Dune"]);
   const discovery = parseArgs(["--cast-list"]);
+  const audioSelected = parseArgs(["--cast-audio", "Kitchen Speaker"]);
+  const audioPicker = parseArgs(["--cast-audio"]);
 
   expect(selected.castDevice).toBe("Living Room TV");
   expect(selected.castPicker).toBe(false);
@@ -61,6 +63,10 @@ test("parseArgs wires experimental Cast discovery and target selection", () => {
   expect(picker.castDevice).toBeUndefined();
   expect(picker.search).toBe("Dune");
   expect(discovery.castList).toBe(true);
+  expect(audioSelected.castAudioDevice).toBe("Kitchen Speaker");
+  expect(audioSelected.castAudioPicker).toBe(false);
+  expect(audioPicker.castAudioPicker).toBe(true);
+  expect(audioPicker.castAudioDevice).toBeUndefined();
 });
 
 test("parseArgs prefers --youtube over --anime when both are set", () => {

@@ -13,30 +13,37 @@ import {
 import { GoogleCastPlaybackBackend } from "./cast/google-cast-playback-backend";
 import type { PlaybackBackend, PlaybackBackendRequest } from "./playback-backend";
 
-const SYNC_INTERVAL_MS = 1_000;
-const DRIFT_TOLERANCE_SECONDS = 0.2;
 const REMOTE_START_TIMEOUT_MS = 20_000;
+const DRIFT_TOLERANCE_SECONDS = 0.25;
 
-export function splitRemoteSourcePosition(sourceStartAt: number, remotePosition: number): number {
-  return Math.max(0, sourceStartAt + remotePosition);
+export function splitAudioVideoCorrection(
+  localPosition: number | undefined,
+  remoteSourcePosition: number,
+): number | null {
+  if (localPosition === undefined) return null;
+  return Math.abs(remoteSourcePosition - localPosition) >= DRIFT_TOLERANCE_SECONDS
+    ? Math.max(0, remoteSourcePosition)
+    : null;
 }
 
-export function isAdvancingRemoteClock(previous: number | null, current: number): boolean {
-  return previous !== null && current > previous + 0.1;
-}
+type RemoteAudioState = {
+  readonly abort: AbortController;
+  readonly gateway: AudioExtractionGatewayHandle;
+  readonly playback: Promise<unknown>;
+};
 
-/** Experimental local-video / Google-Cast-audio coordinator. */
+/** Experimental local-video / Google-Cast-audio coordinator. Local mpv owns time. */
 export class SplitAudioPlaybackBackend implements PlaybackBackend {
   readonly kind = "split-audio" as const;
-  private abortCast: AbortController | null = null;
-  private activeAudioGateway: AudioExtractionGatewayHandle | null = null;
+  private activeRemoteStop: (() => Promise<void>) | null = null;
+  private activeLocalStop: ((reason?: string) => Promise<void>) | null = null;
 
   constructor(
     private readonly player: PlayerService,
     private readonly playerControl: PlayerControlService,
     private readonly cast: Pick<
       GoogleCastPlaybackBackend,
-      "play" | "stop" | "getPosition" | "togglePause" | "seek"
+      "play" | "getPosition"
     > = new GoogleCastPlaybackBackend(undefined, undefined, false),
     private readonly audioGateway: AudioExtractionGatewayFactory = new AudioExtractionGateway(),
   ) {}
@@ -46,168 +53,222 @@ export class SplitAudioPlaybackBackend implements PlaybackBackend {
     if (!target.audioTarget.host) {
       throw new Error("Split Cast audio requires a discovered receiver address");
     }
+    const receiverHost = target.audioTarget.host;
     request.options.onPlaybackEvent?.({
       generation: { process: 0, cycle: 0 },
       event: { type: "network-buffering" },
     });
-    const audioGateway = await this.audioGateway.start({
-      stream: request.stream,
-      receiverHost: target.audioTarget.host,
-      startAt: request.options.startAt,
+
+    let markLocalReady!: () => void;
+    const localReady = new Promise<void>((resolve) => {
+      markLocalReady = resolve;
     });
-    this.activeAudioGateway = audioGateway;
     const sourceStartAt = request.options.startAt ?? 0;
-    let localPlayback: ReturnType<PlayerService["play"]>;
-    let localControl: ActivePlayerControl;
-    try {
-      let markLocalReady!: () => void;
-      const localReady = new Promise<void>((resolve) => {
-        markLocalReady = resolve;
-      });
-      localPlayback = this.player.play(request.stream, {
-        ...request.options,
-        startAt: sourceStartAt,
-        videoOnly: true,
-        onPlayerReady: () => {
-          request.options.onPlayerReady?.();
-          markLocalReady();
-        },
-      });
-      await Promise.race([
-        localReady,
-        localPlayback.then(() => {
-          throw new Error("Local video ended before it became ready");
-        }),
-      ]);
-      const preparedControl = await this.playerControl.waitForActivePlayer({ timeoutMs: 8_000 });
-      if (!preparedControl?.togglePause) {
-        throw new Error("Local video could not be paused for split-output synchronization");
-      }
-      await preparedControl.togglePause();
-      localControl = preparedControl;
-    } catch (error) {
-      await audioGateway.close();
-      if (this.activeAudioGateway === audioGateway) this.activeAudioGateway = null;
-      throw error;
-    }
-    const audioStream = {
-      ...request.stream,
-      url: audioGateway.mediaUrl,
-      headers: {},
-      subtitle: undefined,
-      subtitleList: undefined,
-      isLive: true,
-      title: `${request.options.displayTitle} · Audio`,
-      timestamp: Date.now(),
-    };
-    const castAbort = new AbortController();
-    this.abortCast = castAbort;
-    let remoteStarted!: () => void;
-    const started = new Promise<void>((resolve) => {
-      remoteStarted = resolve;
+    const localPlayback = this.player.play(request.stream, {
+      ...request.options,
+      startAt: sourceStartAt,
+      videoOnly: true,
+      onPlayerReady: () => {
+        request.options.onPlayerReady?.();
+        markLocalReady();
+      },
     });
-    const castPlayback = this.cast.play(
-      {
-        stream: audioStream,
-        options: {
-          ...request.options,
-          startAt: 0,
-          abortSignal: castAbort.signal,
-          onGenerationActivated: undefined,
-          onPlaybackEvent: ({ event }) => {
-            if (event.type === "playback-started") remoteStarted();
+    await Promise.race([
+      localReady,
+      localPlayback.then(() => {
+        throw new Error("Local video ended before it became ready");
+      }),
+    ]);
+    const localControl = await this.playerControl.waitForActivePlayer({ timeoutMs: 8_000 });
+    if (!localControl?.setPaused || !localControl.seekAbsolute) {
+      await localControl?.stop("split audio controls unavailable");
+      throw new Error("Local video does not expose the controls required for split output");
+    }
+    await localControl.setPaused(true);
+    const stopLocal = (reason?: string) => localControl.stop(reason);
+    this.activeLocalStop = stopLocal;
+
+    let remote: RemoteAudioState | null = null;
+    let stopping = false;
+    const pauseState = { paused: true };
+    let syncQueue: Promise<void> = Promise.resolve();
+    const alignVideoToRemote = (remoteSourcePosition: number) => {
+      if (stopping || pauseState.paused) return;
+      const correction = splitAudioVideoCorrection(
+        localControl.getStatsSnapshot?.()?.positionSeconds,
+        remoteSourcePosition,
+      );
+      if (correction === null) return;
+      syncQueue = syncQueue
+        .catch(() => undefined)
+        .then(async () => {
+          if (!stopping && !pauseState.paused) await localControl.seekAbsolute?.(correction);
+          return undefined;
+        });
+    };
+    const stopRemote = async () => {
+      const current = remote;
+      if (!current) return;
+      remote = null;
+      current.abort.abort("split audio restart");
+      await current.gateway.close();
+      await current.playback.catch(() => undefined);
+    };
+    this.activeRemoteStop = stopRemote;
+
+    const startRemoteAt = async (position: number) => {
+      await stopRemote();
+      if (stopping) return 0;
+      const gateway = await this.audioGateway.start({
+        stream: request.stream,
+        receiverHost,
+        startAt: Math.max(0, position),
+      });
+      const abort = new AbortController();
+      const sourcePosition = Math.max(0, position);
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      const playback = this.cast.play(
+        {
+          stream: {
+            ...request.stream,
+            url: gateway.mediaUrl,
+            headers: {},
+            subtitle: undefined,
+            subtitleList: undefined,
+            isLive: true,
+            title: `${request.options.displayTitle} · Audio`,
+            timestamp: Date.now(),
+          },
+          options: {
+            ...request.options,
+            startAt: 0,
+            abortSignal: abort.signal,
+            onGenerationActivated: undefined,
+            onPlaybackEvent: ({ event }) => {
+              if (event.type === "playback-started") markStarted();
+              if (event.type === "playback-progress" && remote?.abort === abort) {
+                alignVideoToRemote(sourcePosition + event.positionSeconds);
+              }
+            },
           },
         },
-      },
-      target.audioTarget,
-    );
-    let localPlaybackFinished = false;
-
-    try {
-      let startTimer: ReturnType<typeof setTimeout> | null = null;
+        target.audioTarget,
+      );
+      remote = { abort, gateway, playback };
+      let timer: ReturnType<typeof setTimeout> | null = null;
       try {
         await Promise.race([
           started,
-          castPlayback.then(() => {
+          playback.then(() => {
             throw new Error("Remote audio ended before playback started");
           }),
-          localPlayback.then(() => {
-            throw new Error("Local video ended before remote audio started");
-          }),
           new Promise<never>((_resolve, reject) => {
-            startTimer = setTimeout(
+            timer = setTimeout(
               () => reject(new Error("Audio receiver did not start playback")),
               REMOTE_START_TIMEOUT_MS,
             );
           }),
         ]);
+      } catch (error) {
+        await stopRemote();
+        throw error;
       } finally {
-        if (startTimer) clearTimeout(startTimer);
+        if (timer) clearTimeout(timer);
       }
-      const remotePosition = splitRemoteSourcePosition(sourceStartAt, this.cast.getPosition() ?? 0);
-      await localControl.seekAbsolute?.(remotePosition);
-      await localControl.togglePause?.();
-      const composite = this.compositeControl(localControl);
-      this.playerControl.setActive(composite);
-      let previousRemotePosition: number | null = this.cast.getPosition();
-      const sync = setInterval(() => {
-        const local = localControl.getStatsSnapshot?.()?.positionSeconds;
-        const remote = this.cast.getPosition();
-        const remoteClockAdvanced =
-          remote !== null && isAdvancingRemoteClock(previousRemotePosition, remote);
-        previousRemotePosition = remote;
-        if (
-          local === undefined ||
-          remote === null ||
-          !remoteClockAdvanced ||
-          Math.abs(splitRemoteSourcePosition(sourceStartAt, remote) - local) <
-            DRIFT_TOLERANCE_SECONDS
-        )
-          return;
-        void localControl.seekAbsolute?.(splitRemoteSourcePosition(sourceStartAt, remote));
-      }, SYNC_INTERVAL_MS);
-      try {
-        const result = await localPlayback;
-        localPlaybackFinished = true;
-        return result;
-      } finally {
-        clearInterval(sync);
-      }
+      return Math.max(0, this.cast.getPosition() ?? 0);
+    };
+
+    let restartQueue: Promise<number> = Promise.resolve(0);
+    const restartRemoteAt = (position: number) => {
+      restartQueue = restartQueue.catch(() => 0).then(() => startRemoteAt(position));
+      return restartQueue;
+    };
+    let localPlaybackFinished = false;
+    try {
+      const remoteElapsed = await restartRemoteAt(sourceStartAt);
+      if (remoteElapsed > 0) await localControl.seekAbsolute(sourceStartAt + remoteElapsed);
+      await localControl.setPaused(false);
+      pauseState.paused = false;
+      this.playerControl.setActive(
+        this.compositeControl(localControl, pauseState, restartRemoteAt, stopRemote),
+      );
+      const result = await localPlayback;
+      localPlaybackFinished = true;
+      return result;
     } finally {
-      castAbort.abort();
-      await this.cast.stop();
-      await castPlayback.catch(() => undefined);
+      stopping = true;
+      await restartQueue.catch(() => undefined);
+      await syncQueue.catch(() => undefined);
+      await stopRemote();
       if (!localPlaybackFinished) await localControl.stop("split audio stopped");
-      await audioGateway.close();
-      if (this.activeAudioGateway === audioGateway) this.activeAudioGateway = null;
-      if (this.abortCast === castAbort) this.abortCast = null;
+      if (this.activeRemoteStop === stopRemote) this.activeRemoteStop = null;
+      if (this.activeLocalStop === stopLocal) this.activeLocalStop = null;
     }
   }
 
   async stop(): Promise<void> {
-    this.abortCast?.abort();
-    await Promise.all([this.cast.stop(), this.activeAudioGateway?.close()]);
-    this.activeAudioGateway = null;
+    const stopLocal = this.activeLocalStop;
+    const stopRemote = this.activeRemoteStop;
+    this.activeLocalStop = null;
+    this.activeRemoteStop = null;
+    await Promise.all([stopLocal?.("split audio stopped"), stopRemote?.()]);
   }
 
-  private compositeControl(local: ActivePlayerControl): ActivePlayerControl {
+  private compositeControl(
+    local: ActivePlayerControl,
+    pauseState: { paused: boolean },
+    restartRemoteAt: (position: number) => Promise<number>,
+    stopRemote: () => Promise<void>,
+  ): ActivePlayerControl {
+    let controlQueue: Promise<void> = Promise.resolve();
+    const serialize = (operation: () => Promise<void>) => {
+      const result = controlQueue.then(operation, operation);
+      controlQueue = result.catch(() => undefined);
+      return result;
+    };
+    const seek = (position: number) =>
+      serialize(async () => {
+        const wasPaused = pauseState.paused;
+        await local.setPaused?.(true);
+        pauseState.paused = true;
+        await local.seekAbsolute?.(position);
+        if (wasPaused) return;
+        const remoteElapsed = await restartRemoteAt(position);
+        if (remoteElapsed > 0) await local.seekAbsolute?.(position + remoteElapsed);
+        await local.setPaused?.(false);
+        pauseState.paused = false;
+      });
+    const setSplitPaused = (paused: boolean) =>
+      serialize(async () => {
+        if (paused === pauseState.paused) return;
+        if (paused) {
+          await local.setPaused?.(true);
+          pauseState.paused = true;
+          await stopRemote();
+          return;
+        }
+        const position = local.getStatsSnapshot?.()?.positionSeconds ?? 0;
+        const remoteElapsed = await restartRemoteAt(position);
+        if (remoteElapsed > 0) await local.seekAbsolute?.(position + remoteElapsed);
+        await local.setPaused?.(false);
+        pauseState.paused = false;
+      });
     return {
       ...local,
       id: `split-audio:${local.id}`,
       stop: async (reason) => {
-        await Promise.all([local.stop(reason), this.cast.stop()]);
+        await Promise.all([local.stop(reason), this.activeRemoteStop?.()]);
       },
-      togglePause: async () => {
-        await Promise.all([local.togglePause?.(), this.cast.togglePause()]);
-      },
+      togglePause: async () => await setSplitPaused(!pauseState.paused),
+      setPaused: setSplitPaused,
       seekRelative: async (seconds) => {
         const localPosition = local.getStatsSnapshot?.()?.positionSeconds ?? 0;
-        const target = Math.max(0, localPosition + seconds);
-        await Promise.all([local.seekAbsolute?.(target), this.cast.seek(target)]);
+        await seek(Math.max(0, localPosition + seconds));
       },
-      seekAbsolute: async (seconds) => {
-        await Promise.all([local.seekAbsolute?.(seconds), this.cast.seek(seconds)]);
-      },
+      seekAbsolute: async (seconds) => await seek(Math.max(0, seconds)),
     };
   }
 }

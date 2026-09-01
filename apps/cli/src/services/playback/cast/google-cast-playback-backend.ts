@@ -70,6 +70,7 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
     },
     private readonly playerControl?: Pick<PlayerControlService, "getActive" | "setActive">,
     private readonly registerPlayerControls = true,
+    private readonly receiverAppId?: string,
   ) {}
 
   private async resolveTarget(
@@ -166,6 +167,7 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
     let started = false;
     let paused = false;
     let mediaLoadAccepted = false;
+    let activeMediaSessionId: number | undefined;
     let settled = false;
     let pendingResult: PlaybackResult | null = null;
     let settleResult: ((result: PlaybackResult) => void) | null = null;
@@ -197,6 +199,13 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
         { host: target.host, port: target.port ?? 8009 },
         {
           onStatus: (status) => {
+            if (
+              activeMediaSessionId !== undefined &&
+              status.mediaSessionId !== undefined &&
+              status.mediaSessionId !== activeMediaSessionId
+            ) {
+              return;
+            }
             if (typeof status.currentTime === "number") {
               lastPosition = status.currentTime;
               this.lastKnownPosition = status.currentTime;
@@ -225,7 +234,7 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
             } else if (status.playerState === "BUFFERING") {
               this.positionAdvancing = false;
               emit({ type: "network-buffering" });
-            } else if (status.playerState === "IDLE" && mediaLoadAccepted) {
+            } else if (status.playerState === "IDLE" && mediaLoadAccepted && status.idleReason) {
               this.positionAdvancing = false;
               finish(
                 status.idleReason === "FINISHED"
@@ -237,6 +246,26 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
             }
             if (status.playerState === "PLAYING") this.paused = false;
           },
+          onReceiverClock: (clock) => {
+            if (typeof clock.currentTime === "number") {
+              lastPosition = clock.currentTime;
+              this.lastKnownPosition = clock.currentTime;
+              this.lastKnownPositionObservedAt = (this.runtime.now ?? Date.now)();
+            }
+            if (typeof clock.duration === "number") duration = clock.duration;
+            this.positionAdvancing = clock.state === "PLAYING";
+            if (clock.state === "PLAYING") {
+              if (!started) {
+                started = true;
+                emit({ type: "playback-started" });
+              }
+              emit({
+                type: "playback-progress",
+                positionSeconds: lastPosition,
+                durationSeconds: duration,
+              });
+            }
+          },
           onError: () => finish("error"),
           onClose: () => {
             this.positionAdvancing = false;
@@ -244,6 +273,7 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
           },
         },
         withTimeoutSignal(request.options.abortSignal, 8_000),
+        this.receiverAppId,
       );
     } catch (error) {
       gateway?.close();
@@ -301,6 +331,7 @@ export class GoogleCastPlaybackBackend implements PlaybackBackend {
         request.options.startAt ?? 0,
         subtitleGateway?.tracks[0] ? [subtitleGateway.tracks[0].trackId] : undefined,
       );
+      activeMediaSessionId = initialStatus.mediaSessionId;
       mediaLoadAccepted = true;
     } catch (error) {
       session.close();

@@ -2,26 +2,35 @@ import { expect, test } from "bun:test";
 
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import {
-  isAdvancingRemoteClock,
-  splitRemoteSourcePosition,
+  splitAudioVideoCorrection,
   SplitAudioPlaybackBackend,
 } from "@/services/playback/split-audio-playback-backend";
 
+test("split audio follows meaningful receiver drift without chasing jitter", () => {
+  expect(splitAudioVideoCorrection(undefined, 12)).toBeNull();
+  expect(splitAudioVideoCorrection(12, 12.2)).toBeNull();
+  expect(splitAudioVideoCorrection(12, 12.25)).toBe(12.25);
+  expect(splitAudioVideoCorrection(12, 13.5)).toBe(13.5);
+});
+
 test("split audio starts muted local video at the receiver position and couples seeks", async () => {
-  const seeks: Array<[string, number]> = [];
-  let localPauseToggles = 0;
+  const seeks: number[] = [];
+  const pausedStates: boolean[] = [];
   let active: ActivePlayerControl | null = null;
   let resolveActive!: () => void;
   const activeReady = new Promise<void>((resolve) => (resolveActive = resolve));
   let resolveLocal!: (value: any) => void;
   const localResult = new Promise<any>((resolve) => (resolveLocal = resolve));
+  let localStops = 0;
   const localControl: ActivePlayerControl = {
     id: "local-1",
-    stop: async () => {},
-    togglePause: async () => {
-      localPauseToggles += 1;
+    stop: async () => {
+      localStops += 1;
+      resolveLocal({ endReason: "quit" });
     },
-    seekAbsolute: async (seconds) => void seeks.push(["local", seconds]),
+    togglePause: async () => {},
+    setPaused: async (paused) => void pausedStates.push(paused),
+    seekAbsolute: async (seconds) => void seeks.push(seconds),
     getStatsSnapshot: () => ({ positionSeconds: 12, durationSeconds: 120, updatedAt: Date.now() }),
   };
   const playerControl = {
@@ -33,8 +42,9 @@ test("split audio starts muted local video at the receiver position and couples 
     waitForActivePlayer: async () => localControl,
   };
   let localOptions: any;
-  let castStream: any;
-  let audioGatewayClosed = false;
+  const castStreams: any[] = [];
+  const gatewayStarts: number[] = [];
+  let gatewaysClosed = 0;
   const player = {
     play: (_stream: any, options: any) => {
       localOptions = options;
@@ -44,7 +54,7 @@ test("split audio starts muted local video at the receiver position and couples 
   };
   const cast = {
     play: async (request: any) => {
-      castStream = request.stream;
+      castStreams.push(request.stream);
       request.options.onPlaybackEvent?.({
         generation: { process: 1, cycle: 1 },
         event: { type: "playback-started" },
@@ -54,19 +64,20 @@ test("split audio starts muted local video at the receiver position and couples 
       );
       return { endReason: "quit" };
     },
-    stop: async () => {},
-    getPosition: () => 12,
+    getPosition: () => 0.75,
     togglePause: async () => {},
-    seek: async (seconds: number) => void seeks.push(["cast", seconds]),
   };
   const audioGateway = {
-    start: async () => ({
-      mediaUrl: "http://192.168.1.10:41000/cast-audio/token/audio.mp3",
-      contentType: "audio/mpeg" as const,
-      close: async () => {
-        audioGatewayClosed = true;
-      },
-    }),
+    start: async ({ startAt }: { startAt?: number }) => {
+      gatewayStarts.push(startAt ?? 0);
+      return {
+        mediaUrl: `http://192.168.1.10:41000/cast-audio/token-${startAt}/audio.mp3`,
+        contentType: "audio/mpeg" as const,
+        close: async () => {
+          gatewaysClosed += 1;
+        },
+      };
+    },
   };
   const backend = new SplitAudioPlaybackBackend(
     player as any,
@@ -100,27 +111,25 @@ test("split audio starts muted local video at the receiver position and couples 
   );
 
   await activeReady;
-  expect(castStream).toMatchObject({
-    url: "http://192.168.1.10:41000/cast-audio/token/audio.mp3",
+  expect(castStreams[0]).toMatchObject({
+    url: "http://192.168.1.10:41000/cast-audio/token-0/audio.mp3",
     headers: {},
     isLive: true,
   });
   expect(localOptions).toMatchObject({ videoOnly: true, startAt: 0 });
-  expect(localPauseToggles).toBe(2);
+  expect(pausedStates).toEqual([true, false]);
   await active!.seekAbsolute!(45);
-  expect(seeks).toEqual([
-    ["local", 12],
-    ["local", 45],
-    ["cast", 45],
-  ]);
-  resolveLocal({ endReason: "quit" });
+  expect(seeks).toEqual([0.75, 45, 45.75]);
+  expect(gatewayStarts).toEqual([0, 45]);
+  expect(pausedStates).toEqual([true, false, true, false]);
+  await active!.togglePause!();
+  expect(gatewaysClosed).toBe(2);
+  await active!.togglePause!();
+  expect(gatewayStarts).toEqual([0, 45, 12]);
+  expect(seeks).toEqual([0.75, 45, 45.75, 12.75]);
+  expect(pausedStates).toEqual([true, false, true, false, true, false]);
+  await backend.stop();
   await playing;
-  expect(audioGatewayClosed).toBe(true);
-});
-
-test("split audio ignores a stalled receiver clock and maps advancing time to the source", () => {
-  expect(isAdvancingRemoteClock(null, 0)).toBe(false);
-  expect(isAdvancingRemoteClock(0, 0)).toBe(false);
-  expect(isAdvancingRemoteClock(0, 0.2)).toBe(true);
-  expect(splitRemoteSourcePosition(120, 3.5)).toBe(123.5);
+  expect(localStops).toBe(1);
+  expect(gatewaysClosed).toBe(3);
 });

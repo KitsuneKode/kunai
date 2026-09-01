@@ -33,6 +33,9 @@ test("audio extraction starts at the requested source position", () => {
     { url: "https://media.example/video.mp4", headers: {}, timestamp: 1 },
     42.5,
   );
-  expect(args.slice(args.indexOf("-ss"), args.indexOf("-ss") + 2)).toEqual(["-ss", "42.5"]);
-  expect(args.indexOf("-ss")).toBeLessThan(args.indexOf("-i"));
+  const inputIndex = args.indexOf("-i");
+  const seekIndexes = args.flatMap((arg, index) => (arg === "-ss" ? [index] : []));
+  expect(seekIndexes).toHaveLength(1);
+  expect(args.slice(seekIndexes[0], (seekIndexes[0] ?? 0) + 2)).toEqual(["-ss", "42.5"]);
+  expect(seekIndexes[0]).toBeLessThan(inputIndex);
 });

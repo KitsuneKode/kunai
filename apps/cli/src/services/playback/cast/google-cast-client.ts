@@ -2,11 +2,20 @@ import { randomBytes } from "node:crypto";
 import { connect as connectTls, type TLSSocket } from "node:tls";
 
 const RECEIVER_ID = "receiver-0";
-const DEFAULT_MEDIA_RECEIVER_APP_ID = "CC1AD845";
+export const DEFAULT_MEDIA_RECEIVER_APP_ID = "CC1AD845";
 const CONNECTION_NAMESPACE = "urn:x-cast:com.google.cast.tp.connection";
 const HEARTBEAT_NAMESPACE = "urn:x-cast:com.google.cast.tp.heartbeat";
 const RECEIVER_NAMESPACE = "urn:x-cast:com.google.cast.receiver";
 const MEDIA_NAMESPACE = "urn:x-cast:com.google.cast.media";
+const KUNAI_RECEIVER_NAMESPACE = "urn:x-cast:dev.kunai.receiver.v1";
+
+export type KunaiReceiverClock = {
+  readonly type: "clock";
+  readonly state?: "IDLE" | "BUFFERING" | "PLAYING" | "PAUSED";
+  readonly currentTime?: number;
+  readonly duration?: number;
+  readonly observedAt?: number;
+};
 
 export type CastMediaStatus = {
   readonly mediaSessionId?: number;
@@ -36,6 +45,7 @@ export type GoogleCastMediaTrack = {
 
 export type GoogleCastClientEvents = {
   readonly onStatus: (status: CastMediaStatus) => void;
+  readonly onReceiverClock?: (clock: KunaiReceiverClock) => void;
   readonly onError: (error: Error) => void;
   readonly onClose: () => void;
 };
@@ -160,6 +170,7 @@ export async function connectGoogleCast(
   endpoint: { readonly host: string; readonly port?: number },
   events: GoogleCastClientEvents,
   signal?: AbortSignal,
+  receiverAppId = DEFAULT_MEDIA_RECEIVER_APP_ID,
 ): Promise<GoogleCastSession> {
   const sourceId = `sender-${randomBytes(4).toString("hex")}`;
   const pending = new Map<number, PendingRequest>();
@@ -225,6 +236,10 @@ export async function connectGoogleCast(
       send(HEARTBEAT_NAMESPACE, envelope.sourceId, { type: "PONG" });
       return;
     }
+    if (envelope.namespace === KUNAI_RECEIVER_NAMESPACE && message.type === "clock") {
+      events.onReceiverClock?.(message as KunaiReceiverClock);
+      return;
+    }
     const id = typeof message.requestId === "number" ? message.requestId : undefined;
     if (id !== undefined) {
       const waiter = pending.get(id);
@@ -274,20 +289,23 @@ export async function connectGoogleCast(
   heartbeat = setInterval(() => send(HEARTBEAT_NAMESPACE, RECEIVER_ID, { type: "PING" }), 5_000);
   const launch = await request(RECEIVER_NAMESPACE, RECEIVER_ID, {
     type: "LAUNCH",
-    appId: DEFAULT_MEDIA_RECEIVER_APP_ID,
+    appId: receiverAppId,
   });
   const applications = (launch.status as { applications?: unknown[] } | undefined)?.applications;
   const application = Array.isArray(applications)
     ? (applications.find(
-        (candidate) => (candidate as { appId?: string }).appId === DEFAULT_MEDIA_RECEIVER_APP_ID,
+        (candidate) => (candidate as { appId?: string }).appId === receiverAppId,
       ) as { transportId?: string } | undefined)
     : undefined;
   if (!application?.transportId) {
     socket.destroy();
-    throw new Error("Google Cast Default Media Receiver did not launch");
+    throw new Error(`Google Cast receiver ${receiverAppId} did not launch`);
   }
   mediaDestination = application.transportId;
   send(CONNECTION_NAMESPACE, mediaDestination, { type: "CONNECT" });
+  if (receiverAppId !== DEFAULT_MEDIA_RECEIVER_APP_ID) {
+    send(KUNAI_RECEIVER_NAMESPACE, mediaDestination, { type: "clock-request" });
+  }
 
   const mediaRequest = async (message: Record<string, unknown>) => {
     const response = await request(

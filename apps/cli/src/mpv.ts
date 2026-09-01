@@ -242,6 +242,18 @@ async function launchMpvInner(
       }
       mpv.kill("SIGTERM");
     },
+    async togglePause() {
+      await ipcSession?.send(["cycle", "pause"], 1_000);
+    },
+    async setPaused(paused) {
+      await ipcSession?.send(["set_property", "pause", paused], 1_000);
+    },
+    async seekRelative(seconds) {
+      await ipcSession?.send(["seek", seconds, "relative"], 2_000);
+    },
+    async seekAbsolute(seconds) {
+      await ipcSession?.send(["seek", seconds, "absolute"], 2_000);
+    },
     async reloadSubtitles() {
       void ipcSession?.send(["sub-reload"]);
     },

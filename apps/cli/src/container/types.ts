@@ -228,6 +228,10 @@ export interface ContainerOptions {
   castDevice?: string;
   /** Register the Cast backend so an interactive target can be selected after bootstrap. */
   enableCastPlayback?: boolean;
+  /** Register experimental local-video / remote-audio playback. */
+  enableCastAudioPlayback?: boolean;
+  /** Registered Kunai Custom Web Receiver application id for experimental audio-only Cast. */
+  castReceiverAppId?: string;
   /**
    * Test-only provider module override (compiled binary smokes).
    * Production startup never sets this; prefer `loadCompiledSmokeProviderOverride`.
