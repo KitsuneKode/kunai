@@ -212,6 +212,10 @@ that case, the release owner must record the exception in the PR description and
 update both package/root changelogs and the generated release artifact in the
 same change. Do not leave a loose changeset behind, because Changesets would
 otherwise open a follow-up version bump on top of the unreleased candidate.
+`bun run guard` enforces that staged-release combination. It scopes changesets by
+package name, so a file that names no package (an empty bookkeeping changeset) or
+names a different one cannot bump the published package and does not trip the
+rule.
 
 ## Provider Reality Gate
 
@@ -286,8 +290,12 @@ with a maintainer's real library.
 
 ## Analytics Deployment Gate
 
-Analytics may ship with an empty endpoint and explicit opt-in because that
-configuration sends nothing. Before deploying or configuring a public endpoint:
+Kunai ships a Kunai-owned HTTPS endpoint for explicitly opted-in installs. That
+makes the deployment checks below part of release signoff while the default is
+present. Leaving the override unset uses that default rather than disabling the
+endpoint; only a non-HTTPS override is rejected, and it fails closed to an empty
+endpoint instead of falling back. Nothing sends without explicit consent either
+way.
 
 Run the storage path against a real Postgres. The local harness needs only
 Docker — it starts a throwaway database plus the Neon HTTP proxy the driver
@@ -310,8 +318,8 @@ Expected evidence: all 12 Postgres integration cases run instead of skip;
 the production stable-hash secret is configured; Vercel/Neon secrets, firewall,
 retention, cron freshness, and cost limits are verified; a live opt-in ping is
 stored once, appears only as bounded aggregate data, and disabling analytics in
-Settings stops later sends. These checks block endpoint deployment, not a code
-release whose endpoint remains empty.
+Settings stops later sends. These checks block release while the production
+endpoint remains the shipped default.
 
 ## Discord Presence Gate
 

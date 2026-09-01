@@ -67,9 +67,9 @@ archive and put only the residue here.
 
 ### Analytics
 
-| Track                    | Remaining                                                                                                                                  | Plan                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Usage analytics redesign | Explicit opt-in implementation is complete; verified Neon/Vercel deployment, secret/firewall/cost controls, and live endpoint smoke remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+| Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
 
 ### Docs
 
@@ -93,22 +93,22 @@ archive and put only the residue here.
 Numbered plans from an external audit. They keep their original numbers because
 the K-reconciliation below and the commit history both cite them by id.
 
-| Plan                                                | Remaining work                                                            | Status                                            |
-| --------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
-| [006](./006-startup-defer-network-and-providers.md) | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)  |
-| [008](./008-tui-timer-and-poster-perf.md)           | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
-| [010](./010-characterization-tests-for-giants.md)   | Characterization net for private `AppRoot`                                | BLOCKED (needs a full-container harness)          |
-| [011](./011-split-shell-workflows.md)               | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
-| [012](./012-decompose-playback-phase.md)            | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
-| [013](./013-split-ink-shell-host-surface.md)        | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
-| [014](./014-enforce-layering-boundaries.md)         | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)              |
-| [015](./015-retire-legacy-flat-modules.md)          | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                            |
-| [021](./021-provider-contract-enforcement.md)       | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 release slice complete         |
-| [022](./022-shell-interaction-coherence.md)         | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                             |
-| [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
-| [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles               |
-| [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
-| [044](./044-namespace-mal-history-keys.md)          | Namespace MAL-derived history keys                                        | READY (needs migration review)                    |
+| Plan                                                 | Remaining work                                                            | Status                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
+| [006](./006-startup-defer-network-and-providers.md)  | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)  |
+| [008](./008-tui-timer-and-poster-perf.md)            | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
+| [010](./010-characterization-tests-for-giants.md)    | Characterization net for private `AppRoot`                                | BLOCKED (needs a full-container harness)          |
+| [011](./011-split-shell-workflows.md)                | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
+| [012](./012-decompose-playback-phase.md)             | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
+| [013](./013-split-ink-shell-host-surface.md)         | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
+| [014](./014-enforce-layering-boundaries.md)          | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)              |
+| [015](./015-retire-legacy-flat-modules.md)           | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                            |
+| [021](./021-provider-contract-enforcement.md)        | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 release slice complete         |
+| [022](./022-shell-interaction-coherence.md)          | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                             |
+| [023](./023-cli-surface-honesty.md)                  | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
+| [030](./030-distribution-documentation-truth.md)     | Distribution documentation truth                                          | TODO after release behavior settles               |
+| [032](./032-sync-identity-and-capability-truth.md)   | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
+| [044](./044-namespace-mal-history-keys.md)           | Namespace MAL-derived history keys                                        | READY (needs migration review)                    |
 | [045](./045-repoint-title-id-references-on-merge.md) | Repoint `title_id` references when consolidation merges                   | READY (classify tables first)                     |
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
