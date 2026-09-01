@@ -186,6 +186,11 @@ gnu/musl builds are all published — and put its `curl_<browser><version>`
 wrappers on your `PATH`. Kunai picks the newest desktop wrapper automatically;
 you do not configure which one.
 
+On Windows those wrappers are `.bat` files around `curl-impersonate.exe`, which
+is what the archive ships and what Kunai looks for. Extract the whole folder and
+add it to `PATH` rather than copying the `.exe` out on its own — the `.exe`
+alone is not a wrapper and `doctor` will keep reporting `plain`.
+
 This is optional. Without it Kunai still runs and still falls back to plain
 `curl`; you may just get empty anime searches on a restricted network.
 
