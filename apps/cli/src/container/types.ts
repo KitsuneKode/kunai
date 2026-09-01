@@ -58,8 +58,8 @@ import type { StorageMaintenanceService } from "../services/persistence/StorageM
 import type { SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import type { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
 import type { MediaTrackService } from "../services/playback/MediaTrackService";
+import type { PlaybackRouter } from "../services/playback/playback-router";
 import type { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
-import type { PlaybackRouter } from "../services/playback/PlaybackRouter";
 import type { ProviderEndpointHealthService } from "../services/playback/ProviderEndpointHealthService";
 import type { SourceInventoryService } from "../services/playback/SourceInventoryService";
 import type { TitlePlaybackSourceService } from "../services/playback/TitlePlaybackSourceService";

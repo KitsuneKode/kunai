@@ -21,7 +21,18 @@ export type GoogleCastPlaybackTarget = {
   readonly capabilities: readonly PlaybackTargetCapability[];
 };
 
-export type PlaybackTarget = LocalPlaybackTarget | GoogleCastPlaybackTarget;
+export type SplitAudioPlaybackTarget = {
+  readonly kind: "split-audio";
+  readonly id: string;
+  readonly name: string;
+  readonly audioTarget: GoogleCastPlaybackTarget;
+  readonly capabilities: readonly ["audio", "video"];
+};
+
+export type PlaybackTarget =
+  | LocalPlaybackTarget
+  | GoogleCastPlaybackTarget
+  | SplitAudioPlaybackTarget;
 
 export const LOCAL_PLAYBACK_TARGET: LocalPlaybackTarget = {
   kind: "local",

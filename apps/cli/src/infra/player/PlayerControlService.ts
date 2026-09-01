@@ -62,6 +62,9 @@ export type EpisodeNavigationAvailability = {
 export interface ActivePlayerControl {
   readonly id: string;
   stop(reason?: string): Promise<void>;
+  togglePause?(): Promise<void>;
+  seekRelative?(seconds: number): Promise<void>;
+  seekAbsolute?(seconds: number): Promise<void>;
   stopCurrentFile?(reason?: string): Promise<void>;
   reloadSubtitles?(): Promise<void>;
   selectSubtitle?(selection: PlaybackSubtitleSelection): Promise<boolean>;
@@ -101,6 +104,9 @@ export interface PlayerControlService {
   ): Promise<boolean>;
   selectCurrentPlaybackEpisode(episode: EpisodeInfo, reason?: string): Promise<boolean>;
   stopCurrentPlayback(reason?: string): Promise<boolean>;
+  toggleCurrentPlaybackPause(reason?: string): Promise<boolean>;
+  seekCurrentPlaybackRelative(seconds: number, reason?: string): Promise<boolean>;
+  seekCurrentPlaybackAbsolute(seconds: number, reason?: string): Promise<boolean>;
   refreshCurrentPlayback(reason?: string): Promise<boolean>;
   recoverCurrentPlayback(reason?: string): Promise<boolean>;
   recomputeCurrentPlayback(reason?: string): Promise<boolean>;

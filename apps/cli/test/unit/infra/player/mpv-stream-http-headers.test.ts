@@ -139,6 +139,18 @@ describe("shouldDisableMpvTlsVerify", () => {
 });
 
 describe("buildPersistentLoadfileOptions", () => {
+  test("scopes split-output audio disabling to each loaded file", () => {
+    expect(
+      buildPersistentLoadfileOptions("https://cdn.example/video.m3u8", 0, undefined, {
+        videoOnly: true,
+      }).aid,
+    ).toBe("no");
+    expect(
+      buildPersistentLoadfileOptions("https://cdn.example/video.m3u8", 0, undefined, {
+        videoOnly: false,
+      }).aid,
+    ).toBe("auto");
+  });
   // mpv's `ytdl` is a yes/no Flag and `ytdl-format` is a String. Setting the
   // format on `ytdl` made mpv answer "unsupported format for accessing
   // property" over IPC and drop the option, so the ceiling never applied.

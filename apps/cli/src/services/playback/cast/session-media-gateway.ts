@@ -278,7 +278,7 @@ export function createSessionMediaGatewayHandler(input: {
   };
 }
 
-async function receiverFacingAddress(receiverHost: string): Promise<string> {
+export async function receiverFacingAddress(receiverHost: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const socket = createSocket("udp4");
     const timer = setTimeout(() => {

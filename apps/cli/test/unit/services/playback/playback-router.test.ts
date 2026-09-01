@@ -4,8 +4,8 @@ import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import { LOCAL_PLAYBACK_TARGET } from "@/domain/playback/playback-target";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { PlayerOptions } from "@/infra/player/PlayerService";
-import { createLocalPlaybackRouter } from "@/services/playback/LocalPlaybackBackend";
-import { PlaybackRouter } from "@/services/playback/PlaybackRouter";
+import { createLocalPlaybackRouter } from "@/services/playback/local-playback-backend";
+import { PlaybackRouter } from "@/services/playback/playback-router";
 
 const STREAM: StreamInfo = {
   url: "https://media.example/episode/master.m3u8",

@@ -43,10 +43,11 @@ import { OfflineLibraryService } from "../services/offline/OfflineLibraryService
 import { OfflineMaintenanceService } from "../services/offline/OfflineMaintenanceService";
 import { OfflineRunwayService } from "../services/offline/OfflineRunwayService";
 import { googleCastTargetFromSelector } from "../services/playback/cast/cast-target-selector";
-import { GoogleCastPlaybackBackend } from "../services/playback/cast/GoogleCastPlaybackBackend";
-import { LocalPlaybackBackend } from "../services/playback/LocalPlaybackBackend";
-import type { PlaybackBackend } from "../services/playback/PlaybackBackend";
-import { PlaybackRouter } from "../services/playback/PlaybackRouter";
+import { GoogleCastPlaybackBackend } from "../services/playback/cast/google-cast-playback-backend";
+import { LocalPlaybackBackend } from "../services/playback/local-playback-backend";
+import type { PlaybackBackend } from "../services/playback/playback-backend";
+import { PlaybackRouter } from "../services/playback/playback-router";
+import { SplitAudioPlaybackBackend } from "../services/playback/split-audio-playback-backend";
 import { DurablePlaylistService } from "../services/playlists/DurablePlaylistService";
 import { PresenceServiceImpl } from "../services/presence/PresenceServiceImpl";
 import { RecommendationServiceImpl } from "../services/recommendations/RecommendationServiceImpl";
@@ -153,7 +154,12 @@ export function bootstrapServices(input: {
     featureFlags.castPlayback || Boolean(castDeviceName) || options?.enableCastPlayback === true;
   const playbackBackends: PlaybackBackend[] = [
     new LocalPlaybackBackend(player),
-    ...(castPlaybackEnabled ? [new GoogleCastPlaybackBackend(undefined, playerControl)] : []),
+    ...(castPlaybackEnabled
+      ? [
+          new GoogleCastPlaybackBackend(undefined, playerControl),
+          new SplitAudioPlaybackBackend(player, playerControl),
+        ]
+      : []),
   ];
   const playbackRouter = new PlaybackRouter(playbackBackends);
   if (castDeviceName) {

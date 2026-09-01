@@ -101,6 +101,7 @@ type PlayerCycleOptions = {
   urlKind?: MpvUrlKind;
   subtitleUrlKind?: MpvUrlKind;
   audioPreference?: string;
+  videoOnly?: boolean;
   subtitlePreference?: string;
   primarySubtitle: string | null;
   subtitleTracks?: readonly SubtitleTrack[];
@@ -283,6 +284,15 @@ export class PersistentMpvSession {
         }
         this.mpv?.kill("SIGTERM");
       },
+      togglePause: async () => {
+        await this.ipcSession?.send(["cycle", "pause"], 1_000);
+      },
+      seekRelative: async (seconds) => {
+        await this.ipcSession?.send(["seek", seconds, "relative"], 2_000);
+      },
+      seekAbsolute: async (seconds) => {
+        await this.ipcSession?.send(["seek", seconds, "absolute"], 2_000);
+      },
       stopCurrentFile: async () => {
         if (!this.ipcSession) {
           this.mpv?.kill("SIGTERM");
@@ -430,6 +440,7 @@ export class PersistentMpvSession {
           ytdlRawOptions: stream.ytdlRawOptions,
           isLive: stream.isLive,
           urlKind: options.urlKind,
+          videoOnly: options.videoOnly,
         },
       ),
       3_000,
@@ -571,6 +582,7 @@ export class PersistentMpvSession {
         urlKind: this.initialOptions.urlKind,
         headers: this.initialStream.headers ?? {},
         audioPreference: this.initialOptions.audioPreference,
+        videoOnly: this.initialOptions.videoOnly,
         subtitlePreference: this.initialOptions.subtitlePreference,
         subtitle: this.initialOptions.primarySubtitle,
         subtitleUrlKind: this.initialOptions.subtitleUrlKind,
@@ -1584,6 +1596,7 @@ export class PersistentMpvSession {
             ytdlRawOptions: this.playbackStream.ytdlRawOptions,
             isLive: this.playbackStream.isLive,
             urlKind: opts.urlKind,
+            videoOnly: opts.videoOnly,
           },
         ),
         12_000,

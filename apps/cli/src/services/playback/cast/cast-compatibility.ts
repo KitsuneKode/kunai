@@ -20,9 +20,11 @@ export function castContentTypeForUrl(value: string): string {
       ? "application/dash+xml"
       : path.endsWith(".webm")
         ? "video/webm"
-        : path.endsWith(".mp3")
-          ? "audio/mpeg"
-          : "video/mp4";
+        : path.endsWith(".m4a")
+          ? "audio/mp4"
+          : path.endsWith(".mp3")
+            ? "audio/mpeg"
+            : "video/mp4";
 }
 
 export function assessDirectCastCompatibility(stream: StreamInfo): CastCompatibility {

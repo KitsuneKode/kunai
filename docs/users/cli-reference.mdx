@@ -130,7 +130,7 @@ More: [Share links](/docs/users/share-links).
 ## mpv and diagnostics
 
 - **mpv:** `--mpv-debug`, `--mpv-clean`, `--no-user-mpv-config`, `--mpv-log-file <path>` forward into the player for this run.
-- **Google Cast (experimental):** `--cast` opens a Kunai picker with local playback, discovered receivers, refresh, and manual address entry. `--cast-list` prints discovered receivers and exits. `--cast <name|ip>` selects a receiver directly for HTTP(S) HLS, DASH, MP4, WebM, or MP3 playback. Header-protected HTTP(S) streams use a tokenized, session-scoped gateway on this device; it closes when playback ends or is stopped.
+- **Google Cast (experimental):** `--cast` opens a Kunai picker with local playback, full A/V Cast, or split local-video/remote-audio output. Split output requires `ffmpeg`; Kunai progressively encodes audio-only MP3 behind a session token and disables local mpv audio, so the receiver can start before the complete episode has been processed. Full A/V Cast publishes selected SRT, ASS, and WebVTT subtitles to the receiver as WebVTT text tracks. `--cast-list` prints discovered receivers and exits. `--cast <name|ip>` selects a receiver directly for HTTP(S) HLS, DASH, MP4, WebM, or MP3 playback. Header-protected HTTP(S) streams use a tokenized, session-scoped gateway on this device; it closes when playback ends or is stopped. During playback, Space pauses/resumes, Left/Right seek 10 seconds, and clicking the progress bar seeks directly.
 - **Diagnostics:** `--debug` writes verbose logs to `./logs.txt`. `--debug-json` and `--debug-session` add structured traces for support bundles.
 - **Dry run:** `--dry-run` prints the planned bootstrap without changing state.
 

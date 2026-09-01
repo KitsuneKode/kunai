@@ -1,19 +1,19 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseAvahiGoogleCastTargets } from "@/services/playback/cast/GoogleCastNativeDiscoveryService";
+import { parseAvahiGoogleCastTargets } from "@/services/playback/cast/google-cast-native-discovery-service";
 
 describe("Google Cast native discovery", () => {
   test("maps resolved IPv4 Avahi rows and decodes escaped UTF-8 names", () => {
     const targets = parseAvahiGoogleCastTargets(
-      '=;wlan0;IPv4;Chromecast-Ultra;_googlecast._tcp;local;cast.local;192.168.0.240;8009;"ca=201221" "fn=Alfie\\226\\128\\153s TV" "md=Chromecast Ultra" "id=cast-123"',
+      '=;wlan0;IPv4;Chromecast-Ultra;_googlecast._tcp;local;cast.local;192.168.1.50;8009;"ca=201221" "fn=Viewer\\226\\128\\153s TV" "md=Chromecast Ultra" "id=cast-123"',
     );
 
     expect(targets).toEqual([
       {
         kind: "google-cast",
         id: "cast-123",
-        name: "Alfie’s TV",
-        host: "192.168.0.240",
+        name: "Viewer’s TV",
+        host: "192.168.1.50",
         port: 8009,
         modelName: "Chromecast Ultra",
         capabilities: ["audio", "video"],

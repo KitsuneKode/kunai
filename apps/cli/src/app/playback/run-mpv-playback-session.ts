@@ -28,8 +28,8 @@ import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import type { PlayerOptions, PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { DiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import type { PlaybackRouterPort } from "@/services/playback/playback-router";
 import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
-import type { PlaybackRouterPort } from "@/services/playback/PlaybackRouter";
 
 export type MpvPlaybackSessionHooks = {
   readonly onFeedback: (update: MpvPlaybackFeedback) => void;

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildGoogleCastMdnsQuery,
   googleCastTargetFromService,
-} from "@/services/playback/cast/GoogleCastDiscoveryService";
+} from "@/services/playback/cast/google-cast-discovery-service";
 
 describe("Google Cast discovery mapping", () => {
   test("builds a standard PTR query for _googlecast._tcp.local", () => {

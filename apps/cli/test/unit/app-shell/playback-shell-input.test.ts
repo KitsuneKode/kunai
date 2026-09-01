@@ -68,7 +68,11 @@ describe("resolvePlaybackShellInput", () => {
       canOpenSourcePicker: true,
       recoveryViewActive: false,
       playbackTroubleActive: false,
-      handlers: handlers({ onPickQuality: () => {} }),
+      handlers: handlers({
+        onPickQuality: () => {},
+        onTogglePause: () => {},
+        onSeekRelative: () => {},
+      }),
     };
     expect(resolvePlaybackShellInput("e", emptyKey(), ctx)?.kind).toBe("pick-episode");
     expect(resolvePlaybackShellInput("a", emptyKey(), ctx)?.kind).toBe("toggle-autoplay");
@@ -76,6 +80,15 @@ describe("resolvePlaybackShellInput", () => {
     expect(resolvePlaybackShellInput("r", emptyKey(), ctx)?.kind).toBe("recover");
     expect(resolvePlaybackShellInput("k", emptyKey(), ctx)?.kind).toBe("pick-quality");
     expect(resolvePlaybackShellInput("v", emptyKey(), ctx)?.kind).toBe("pick-quality");
+    expect(resolvePlaybackShellInput(" ", emptyKey(), ctx)?.kind).toBe("toggle-pause");
+    expect(resolvePlaybackShellInput("", { leftArrow: true }, ctx)).toEqual({
+      kind: "seek-relative",
+      seconds: -10,
+    });
+    expect(resolvePlaybackShellInput("", { rightArrow: true }, ctx)).toEqual({
+      kind: "seek-relative",
+      seconds: 10,
+    });
   });
 
   test("bootstrap footer keys resolve before playback starts", () => {

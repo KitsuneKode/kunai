@@ -77,6 +77,7 @@ export async function launchMpv(opts: {
   subtitle: string | null;
   subtitleUrlKind?: MpvUrlKind;
   audioPreference?: string;
+  videoOnly?: boolean;
   subtitlePreference?: string;
   subtitleTracks?: readonly SubtitleTrack[];
   displayTitle: string;
@@ -515,6 +516,7 @@ export function buildMpvArgs(
     subtitle: string | null;
     subtitleUrlKind?: MpvUrlKind;
     audioPreference?: string;
+    videoOnly?: boolean;
     subtitlePreference?: string;
     subtitleTracks?: readonly SubtitleTrack[];
     displayTitle: string;
@@ -542,6 +544,7 @@ export function buildMpvArgs(
   }
 
   const args: string[] = [];
+  if (opts.videoOnly) args.push("--audio=no");
 
   if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
     args.push(`--ytdl-format=${opts.ytdlFormat ?? "bv*+ba/b"}`);

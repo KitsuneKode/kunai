@@ -95,6 +95,7 @@ export function shouldDisableMpvTlsVerify(
 
 export type PersistentLoadfileOptions = {
   readonly start: string;
+  readonly aid?: string;
   readonly referrer?: string;
   readonly "user-agent"?: string;
   readonly "http-header-fields"?: string;
@@ -158,12 +159,16 @@ export function buildPersistentLoadfileOptions(
     readonly ytdlRawOptions?: string;
     readonly isLive?: boolean;
     readonly urlKind?: MpvUrlKind;
+    readonly videoOnly?: boolean;
   },
 ): PersistentLoadfileOptions {
   const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(headers);
   const loadOptions: Record<string, string> = {
     start: !ytdlOptions?.isLive && shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
   };
+  if (typeof ytdlOptions?.videoOnly === "boolean") {
+    loadOptions.aid = ytdlOptions.videoOnly ? "no" : "auto";
+  }
 
   if (referer) {
     loadOptions.referrer = referer;
@@ -224,6 +229,7 @@ export function buildPersistentLoadfileCommand(
     readonly ytdlRawOptions?: string;
     readonly isLive?: boolean;
     readonly urlKind?: MpvUrlKind;
+    readonly videoOnly?: boolean;
   },
 ): ["loadfile", string, "replace", -1, PersistentLoadfileOptions] {
   if (!isAllowedMpvUrl(url, ytdlOptions?.urlKind ?? "remote")) {

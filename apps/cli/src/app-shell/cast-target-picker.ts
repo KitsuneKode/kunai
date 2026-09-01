@@ -34,7 +34,7 @@ export async function chooseGoogleCastTargetShell(
         title: "Connect to Google Cast",
         subtitle: "Use an IP address or .local hostname when LAN discovery is unavailable",
         label: "Device address",
-        placeholder: "192.168.0.240 or living-room-tv.local",
+        placeholder: "192.168.1.50 or living-room-tv.local",
       }),
   },
 ): Promise<PlaybackTarget | null> {
@@ -46,11 +46,27 @@ export async function chooseGoogleCastTargetShell(
         label: "This device",
         detail: "Local · mpv",
       },
-      ...targets.map((target) => ({
-        value: { kind: "target" as const, target },
-        label: target.name,
-        detail: `${target.modelName ?? "Google Cast"} · ${target.host}:${target.port ?? 8009}`,
-      })),
+      ...targets.flatMap((target) => [
+        {
+          value: { kind: "target" as const, target },
+          label: `${target.name} · Video + audio`,
+          detail: `${target.modelName ?? "Google Cast"} · ${target.host}:${target.port ?? 8009}`,
+        },
+        {
+          value: {
+            kind: "target" as const,
+            target: {
+              kind: "split-audio" as const,
+              id: `split-audio:${target.id}`,
+              name: `This device + ${target.name}`,
+              audioTarget: target,
+              capabilities: ["audio", "video"] as const,
+            },
+          },
+          label: `${target.name} · Audio only`,
+          detail: "Video on this device · experimental synchronized remote audio",
+        },
+      ]),
       {
         value: { kind: "manual" },
         label: "Enter device address…",

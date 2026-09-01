@@ -7,8 +7,11 @@ import type {
   GoogleCastClientEvents,
   GoogleCastMedia,
   GoogleCastSession,
-} from "@/services/playback/cast/GoogleCastClient";
-import { GoogleCastPlaybackBackend } from "@/services/playback/cast/GoogleCastPlaybackBackend";
+} from "@/services/playback/cast/google-cast-client";
+import {
+  extrapolateCastPosition,
+  GoogleCastPlaybackBackend,
+} from "@/services/playback/cast/google-cast-playback-backend";
 
 const TARGET: GoogleCastPlaybackTarget = {
   kind: "google-cast",
@@ -26,6 +29,86 @@ const STREAM: StreamInfo = {
 };
 
 describe("GoogleCastPlaybackBackend", () => {
+  test("extrapolates an advancing receiver clock but freezes paused positions", () => {
+    expect(extrapolateCastPosition(10, 1_000, 2_250, true)).toBe(11.25);
+    expect(extrapolateCastPosition(10, 1_000, 2_250, false)).toBe(10);
+    expect(extrapolateCastPosition(10, 2_000, 1_000, true)).toBe(10);
+  });
+
+  test("loads subtitle tracks through the session gateway and enables the selected track", async () => {
+    const loadedMedia: GoogleCastMedia[] = [];
+    let activeTrackIds: readonly number[] | undefined;
+    let subtitlesClosed = false;
+    let clientEvents: GoogleCastClientEvents | null = null;
+    const backend = new GoogleCastPlaybackBackend({
+      connect: (async (_endpoint: unknown, events: GoogleCastClientEvents) => {
+        clientEvents = events;
+        return {
+          load: async (media: GoogleCastMedia, _startAt: number, trackIds?: readonly number[]) => {
+            loadedMedia.push(media);
+            activeTrackIds = trackIds;
+            queueMicrotask(() =>
+              queueMicrotask(() =>
+                clientEvents?.onStatus({ playerState: "IDLE", idleReason: "FINISHED" }),
+              ),
+            );
+            return { playerState: "BUFFERING" };
+          },
+          play: async () => undefined,
+          pause: async () => undefined,
+          seek: async () => undefined,
+          stop: async () => undefined,
+          close: () => undefined,
+        };
+      }) as never,
+      discovery: {
+        browse: () => {
+          throw new Error("discovery should not run");
+        },
+      },
+      gateway: {
+        start: async () => {
+          throw new Error("media gateway should not run");
+        },
+      },
+      subtitles: {
+        start: async ({ tracks }) => {
+          expect(tracks[0]?.url).toBe("https://subs.example/en.srt");
+          return {
+            tracks: [
+              {
+                trackId: 1,
+                url: "http://192.168.1.10:41000/cast-subtitles/token/1.vtt",
+                name: "Selected subtitle",
+                language: "en",
+              },
+            ],
+            close: async () => {
+              subtitlesClosed = true;
+            },
+          };
+        },
+      },
+    });
+
+    await backend.play(
+      {
+        stream: { ...STREAM, subtitle: "https://subs.example/en.srt" },
+        options: { url: STREAM.url, displayTitle: "Example Movie" },
+      },
+      TARGET,
+    );
+
+    expect(loadedMedia[0]?.tracks?.[0]).toMatchObject({
+      trackId: 1,
+      type: "TEXT",
+      trackContentType: "text/vtt",
+      language: "en",
+    });
+    expect(activeTrackIds).toEqual([1]);
+    expect(subtitlesClosed).toBe(true);
+  });
+
   test("loads direct media and maps receiver status into the playback lifecycle", async () => {
     const loaded: Array<{ media: GoogleCastMedia; startAt: number }> = [];
     const emitted: PlayerPlaybackEvent[] = [];

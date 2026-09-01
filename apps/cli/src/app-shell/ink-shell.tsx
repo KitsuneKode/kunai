@@ -1005,6 +1005,24 @@ function AppRoot({ container }: { container: Container }) {
     onCommandAction("quit");
   }, [onCommandAction]);
 
+  const onTogglePause = useCallback(() => {
+    void container.playerControl.toggleCurrentPlaybackPause("playback-shell-space");
+  }, [container]);
+
+  const onSeekRelative = useCallback(
+    (seconds: number) => {
+      void container.playerControl.seekCurrentPlaybackRelative(seconds, "playback-shell-arrow");
+    },
+    [container],
+  );
+
+  const onSeekAbsolute = useCallback(
+    (seconds: number) => {
+      void container.playerControl.seekCurrentPlaybackAbsolute(seconds, "playback-shell-seek-bar");
+    },
+    [container],
+  );
+
   const onNextHandler = useCallback(() => {
     onCommandAction("next");
   }, [onCommandAction]);
@@ -1071,6 +1089,9 @@ function AppRoot({ container }: { container: Container }) {
       onCommandAction,
       onCancel,
       onStop,
+      onTogglePause,
+      onSeekRelative,
+      onSeekAbsolute,
       onNext: onNextHandler,
       onPrevious: onPreviousHandler,
       onRecover,
@@ -1090,6 +1111,9 @@ function AppRoot({ container }: { container: Container }) {
       onCommandAction,
       onCancel,
       onStop,
+      onTogglePause,
+      onSeekRelative,
+      onSeekAbsolute,
       onNextHandler,
       onPreviousHandler,
       onRecover,

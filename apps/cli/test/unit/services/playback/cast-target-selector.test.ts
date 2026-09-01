@@ -31,14 +31,14 @@ describe("Google Cast target selector", () => {
     const target = {
       kind: "google-cast" as const,
       id: "tv-1",
-      name: "Alfie’s TV",
-      host: "192.168.0.240",
+      name: "Viewer’s TV",
+      host: "192.168.1.50",
       port: 8009,
       capabilities: ["audio", "video"] as const,
     };
 
-    expect(normalizeGoogleCastDeviceName(" Alfie's TV ")).toBe("alfie's tv");
-    expect(await resolveGoogleCastTargetSelector("Alfie's TV", async () => [target])).toEqual(
+    expect(normalizeGoogleCastDeviceName(" Viewer's TV ")).toBe("viewer's tv");
+    expect(await resolveGoogleCastTargetSelector("Viewer's TV", async () => [target])).toEqual(
       target,
     );
   });

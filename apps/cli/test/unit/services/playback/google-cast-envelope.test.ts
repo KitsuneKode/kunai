@@ -4,7 +4,7 @@ import {
   buildCastMediaCommand,
   decodeCastEnvelope,
   encodeCastEnvelope,
-} from "@/services/playback/cast/GoogleCastClient";
+} from "@/services/playback/cast/google-cast-client";
 
 describe("Cast V2 protobuf envelope", () => {
   test("round-trips the UTF-8 JSON message fields used by Cast namespaces", () => {

@@ -10,7 +10,7 @@ const stream = (url: string, headers: Record<string, string> = {}): StreamInfo =
 });
 
 describe("direct Cast compatibility", () => {
-  test("maps direct HLS, DASH, MP4, WebM, and MP3 media types", () => {
+  test("maps direct HLS, DASH, MP4, WebM, M4A, and MP3 media types", () => {
     expect(assessDirectCastCompatibility(stream("https://media.test/master.m3u8"))).toEqual({
       kind: "direct",
       contentType: "application/x-mpegURL",
@@ -30,6 +30,10 @@ describe("direct Cast compatibility", () => {
     expect(assessDirectCastCompatibility(stream("https://media.test/audio.mp3"))).toEqual({
       kind: "direct",
       contentType: "audio/mpeg",
+    });
+    expect(assessDirectCastCompatibility(stream("https://media.test/audio.m4a"))).toEqual({
+      kind: "direct",
+      contentType: "audio/mp4",
     });
   });
 

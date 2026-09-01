@@ -204,6 +204,26 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     return await this.deliverStopBackedIntent("stop", reason);
   }
 
+  async toggleCurrentPlaybackPause(reason = "user-requested"): Promise<boolean> {
+    return await this.deliverTransportCommand("toggle-pause", reason, (active) =>
+      active.togglePause?.(),
+    );
+  }
+
+  async seekCurrentPlaybackRelative(seconds: number, reason = "user-requested"): Promise<boolean> {
+    if (!Number.isFinite(seconds) || seconds === 0) return false;
+    return await this.deliverTransportCommand("seek-relative", reason, (active) =>
+      active.seekRelative?.(seconds),
+    );
+  }
+
+  async seekCurrentPlaybackAbsolute(seconds: number, reason = "user-requested"): Promise<boolean> {
+    if (!Number.isFinite(seconds) || seconds < 0) return false;
+    return await this.deliverTransportCommand("seek-absolute", reason, (active) =>
+      active.seekAbsolute?.(seconds),
+    );
+  }
+
   async refreshCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     return await this.deliverStopBackedIntent("refresh", reason, { stopCurrentFile: true });
   }
@@ -525,6 +545,33 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       this.clearPlaybackIntent(generation);
       throw error;
     }
+  }
+
+  private async deliverTransportCommand(
+    action: string,
+    reason: string,
+    run: (active: ActivePlayerControl) => Promise<void> | undefined,
+  ): Promise<boolean> {
+    const active = this.active;
+    if (!active) {
+      this.deps.diagnostics.record({
+        category: "playback",
+        message: "Playback transport requested without active player",
+        context: { action, reason },
+      });
+      return false;
+    }
+    const command = run(active);
+    if (!command) {
+      this.deps.diagnostics.record({
+        category: "playback",
+        message: "Playback transport unavailable for active player",
+        context: { id: active.id, action, reason },
+      });
+      return false;
+    }
+    await this.enqueueCommand(action, reason, async () => await command);
+    return true;
   }
 
   private async stopWithAction(

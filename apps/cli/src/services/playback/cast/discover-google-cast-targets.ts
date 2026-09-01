@@ -1,8 +1,8 @@
 import type { GoogleCastPlaybackTarget } from "@/domain/playback/playback-target";
 
-import { GoogleCastDialDiscoveryService } from "./GoogleCastDialDiscoveryService";
-import { GoogleCastDiscoveryService } from "./GoogleCastDiscoveryService";
-import { GoogleCastNativeDiscoveryService } from "./GoogleCastNativeDiscoveryService";
+import { GoogleCastDialDiscoveryService } from "./google-cast-dial-discovery-service";
+import { GoogleCastDiscoveryService } from "./google-cast-discovery-service";
+import { GoogleCastNativeDiscoveryService } from "./google-cast-native-discovery-service";
 
 export async function discoverGoogleCastTargets(
   durationMs = 2_500,

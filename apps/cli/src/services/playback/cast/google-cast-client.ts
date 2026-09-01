@@ -21,6 +21,17 @@ export type GoogleCastMedia = {
   readonly contentType: string;
   readonly streamType: "BUFFERED" | "LIVE";
   readonly metadata: { readonly metadataType: 0; readonly title: string };
+  readonly tracks?: readonly GoogleCastMediaTrack[];
+};
+
+export type GoogleCastMediaTrack = {
+  readonly trackId: number;
+  readonly type: "TEXT";
+  readonly trackContentId: string;
+  readonly trackContentType: "text/vtt";
+  readonly subtype: "SUBTITLES";
+  readonly name: string;
+  readonly language?: string;
 };
 
 export type GoogleCastClientEvents = {
@@ -30,7 +41,11 @@ export type GoogleCastClientEvents = {
 };
 
 export interface GoogleCastSession {
-  load(media: GoogleCastMedia, startAt: number): Promise<CastMediaStatus>;
+  load(
+    media: GoogleCastMedia,
+    startAt: number,
+    activeTrackIds?: readonly number[],
+  ): Promise<CastMediaStatus>;
   play(): Promise<CastMediaStatus | undefined>;
   pause(): Promise<CastMediaStatus | undefined>;
   seek(seconds: number): Promise<CastMediaStatus | undefined>;
@@ -285,12 +300,13 @@ export async function connectGoogleCast(
     return status;
   };
   return {
-    load: async (media, startAt) => {
+    load: async (media, startAt, activeTrackIds) => {
       const status = await mediaRequest({
         type: "LOAD",
         media,
         autoplay: true,
         currentTime: startAt,
+        ...(activeTrackIds?.length ? { activeTrackIds } : {}),
       });
       if (!status) throw new Error("Google Cast returned no media status after LOAD");
       return status;

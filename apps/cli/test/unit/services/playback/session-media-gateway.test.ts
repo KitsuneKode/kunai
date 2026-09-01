@@ -6,7 +6,7 @@ import {
   createSessionMediaGatewayHandler,
   rewriteDashManifestForGateway,
   rewriteHlsManifestForGateway,
-} from "@/services/playback/cast/SessionMediaGateway";
+} from "@/services/playback/cast/session-media-gateway";
 
 const UPSTREAM = "https://media.example/path/master.m3u8?session=abc";
 const ORIGIN = "http://192.168.0.10:43123";

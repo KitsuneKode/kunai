@@ -2,7 +2,7 @@ import { LOCAL_PLAYBACK_TARGET, type PlaybackTarget } from "@/domain/playback/pl
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { PlayerOptions } from "@/infra/player/PlayerService";
 
-import type { PlaybackBackend } from "./PlaybackBackend";
+import type { PlaybackBackend } from "./playback-backend";
 
 export type PlaybackRouterPort = Pick<PlaybackRouter, "play">;
 

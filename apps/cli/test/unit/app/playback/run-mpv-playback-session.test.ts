@@ -15,7 +15,7 @@ import type {
   PlayerService,
 } from "@/infra/player/PlayerService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
-import { createLocalPlaybackRouter } from "@/services/playback/LocalPlaybackBackend";
+import { createLocalPlaybackRouter } from "@/services/playback/local-playback-backend";
 
 const TITLE: TitleInfo = { id: "1396", name: "Test", type: "series" };
 const EPISODE: EpisodeInfo = { season: 1, episode: 1 };

@@ -1,8 +1,8 @@
 import type { PlaybackTarget } from "@/domain/playback/playback-target";
 import type { PlayerService } from "@/infra/player/PlayerService";
 
-import type { PlaybackBackend, PlaybackBackendRequest } from "./PlaybackBackend";
-import { PlaybackRouter } from "./PlaybackRouter";
+import type { PlaybackBackend, PlaybackBackendRequest } from "./playback-backend";
+import { PlaybackRouter } from "./playback-router";
 
 /** Preserves the existing mpv handoff behind the receiver-neutral backend seam. */
 export class LocalPlaybackBackend implements PlaybackBackend {
