@@ -40,6 +40,8 @@ import {
   ANIDB_USER_AGENT,
   anidbNumericId,
   chooseAnidbSearchMatch,
+  fetchAnidbEpisodeCatalog,
+  type AnidbEpisodeCatalog,
   fetchAnidbEpisodes,
   fetchAnidbExternalIds,
   fetchAnidbOfficialEpisodeMetadata,
@@ -61,6 +63,7 @@ export {
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
   collectAnidbAvailableAudioModes,
+  fetchAnidbEpisodeCatalog,
   fetchAnidbExternalIds,
   fetchAnidbOfficialEpisodeMetadata,
   fetchAnidbMalId,
@@ -72,6 +75,7 @@ export {
   runAnidbCurlWithRetry,
   resolveAnidbEpisodeStreams,
   searchAnidb,
+  type AnidbEpisodeCatalog,
   type AnidbSearchResult,
   type AnidbSeasonEvidence,
 } from "./client";
@@ -98,7 +102,40 @@ async function resolveAnidbShow(
   context?: ProviderRuntimeContext,
 ): Promise<AnidbSearchResult | null> {
   const direct = directAnidbShowFromInput(input);
-  if (direct) return direct;
+  if (direct) {
+    // A persisted `providerNativeIds.anidb` can point at a reindexed slug
+    // (Solo Leveling 19413 → 4883), which 404s permanently. Re-search so a
+    // history entry does not strand — but only on evidence that the id is
+    // actually gone.
+    const query = input.title.title?.trim() ?? "";
+    if (!query) return direct;
+
+    let catalog: AnidbEpisodeCatalog;
+    try {
+      catalog = await fetchAnidbEpisodeCatalog(direct.id, signal, context);
+    } catch (error) {
+      // The caller cancelling is a decision, not an anidb condition: returning
+      // a result nobody awaits hides it. An internal timeout is different and
+      // stays below, where keeping the id is right.
+      if (signal?.aborted === true) throw error;
+      // Cloudflare or a transient fault says nothing about whether the id is
+      // valid, so keep it and let the caller surface something retryable.
+      return direct;
+    }
+
+    // Only a 404 means the id is gone. An empty-but-present catalogue is a
+    // season that exists with no episodes listed yet; re-searching that would
+    // trade a correct id for whatever the browse page happens to rank first.
+    if (!catalog.missing) return direct;
+
+    const searched = await searchAnidb(query, signal, context);
+    return (
+      chooseAnidbSearchMatch(query, searched, { requireTitleEvidence: true }) ??
+      // No titled match: the dead id is more honest than a guess. Resolve
+      // surfaces `catalog-unavailable` from here.
+      direct
+    );
+  }
 
   const query = input.title.title?.trim() ?? "";
   if (!query) return null;

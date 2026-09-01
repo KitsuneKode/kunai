@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-26"
+lastReviewed: "2026-09-01"
 ---
 
 # Provider: AniDB — runtime contract
@@ -52,9 +52,23 @@ instead of pretending those fields came from `anidb.app`.
 
 - `anidb.app` language evidence is per episode: `jpn` is the sub/original embed and `eng` is the
   dub embed when present. Search does not advertise both modes blindly; availability is confirmed
-  only by the episode languages response.
+  only by the episode languages response. Live `2026-09` also returns `kor` (e.g. Solo
+  Leveling S1 E1 `16704` → `eng,jpn,kor`); `kor` is ignored — `collectAnidbAvailableAudioModes`
+  remains `sub/dub` only (`jpn`/`eng` case-insensitive, exact).
 - A missing requested language is an exhausted AniDB attempt. It must not fall back to the other
   language and label the stream incorrectly.
+- A reindexed show id (`19413` → `4883`) is repaired, but only on proof. `fetchAnidbEpisodeCatalog`
+  reports `missing: true` for an HTTP 404 and `missing: false` for a catalogue that is merely empty
+  or unparseable; `resolveAnidbShow` re-searches on the first and never on the second, because an
+  announced season with no episodes listed is not a stale id. The repair also requires real title
+  evidence (`chooseAnidbSearchMatch(..., { requireTitleEvidence: true })`) — the ordinary
+  "best guess is the top card" fallback is disabled there, since substituting a search result for a
+  _persisted_ id would silently swap the show the user chose.
+- The 404 has to be asked for. `anidb.app` is fetched with `curl -sL`, which has no `--fail`, so a
+  missing id returns the error page with exit 0 and is otherwise indistinguishable from a body that
+  failed to parse. Reads that branch on the status pass `reportStatus: true`, which appends
+  `-w '\n%{http_code}'` and raises `AnidbHttpStatusError`. A caller that reads the status out of a
+  message string is reading prose, not a status.
 - Only exact `jpn` (sub/original) and `eng` (dub) catalog evidence is accepted.
   The requested mode resolves first; the alternate starts concurrently but is
   skipped for `fast`, bounded to 1 second for `balanced`, and bounded to 4
@@ -92,7 +106,10 @@ AniDB models each season as its own title, so `routeAnidbSeason()` in
 - Season 1 retains the base title.
 - Season 2+ searches `<normalized base> Season N` and requires both a matching parsed season and
   exact/prefix normalized base-title evidence. An ambiguous best score fails closed with a
-  structured `not-found` rather than resolving the wrong title.
+  structured `not-found` rather than resolving the wrong title. A suffixed title such as
+  `Solo Leveling Season 2: Arise from the Shadow` (live `4884`, was `19837`) leaves
+  `solo leveling arise from the shadow` and matches via `prefix` (score 1) — covered by
+  `anidb-season-routing.test.ts` prefix test.
 - If no numbered sibling matches, a standalone `Final Season` may route to the ordinal immediately
   after the show's highest explicitly numbered sibling. Movie cards, final-season parts, and
   prefixed spin-off seasons provide no ordinal evidence; ambiguous or arc-named runs fail closed.
