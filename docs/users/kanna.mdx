@@ -1,0 +1,87 @@
+---
+title: Kanna
+description: "Who the fox in your terminal is, what each of her poses means, when she speaks, and exactly how to turn her off."
+status: shipped
+---
+
+A **kanna** (鉋) is a Japanese hand plane. You run it over rough wood and the roughness leaves in one curl.
+
+Kunai is the blade. Kanna is who holds it.
+
+<KunaiFoxBanner pose="idle" eyebrow="The companion" title="She finds the stream, hands it to mpv, and gets out of the frame.">
+  Twelve tabs, three dead mirrors, a 480p stream that stalls — she runs the plane over it once and gives you the thing that plays.
+</KunaiFoxBanner>
+
+## She is deliberately brief
+
+Kanna works nights. She is not a viewing companion and she will not watch with you.
+
+That restraint is the point, not a limitation. Kunai's whole promise is getting out of your way, and a mascot that chatters in your terminal contradicts the product it belongs to. So she is never excited — her range runs from calm, to focused, to mildly put-out. A full session from launch to quit shows at most four lines from her.
+
+If she ever feels like she is talking too much, that is a bug. [Open an issue](https://github.com/KitsuneKode/kunai/issues).
+
+## Where she shows up
+
+She appears on the surfaces that would otherwise leave you looking at nothing — an empty list, a failed resolve, the setup wizard from [Getting Started](/docs/users/getting-started), and the goodbye screen. She stays quiet while something is loading or when a step already succeeded, because those already tell you what is happening.
+
+```text
+·  No results for "dune 2099"
+   Try a different spelling, or switch catalog.
+   🦊 empty for now.
+```
+
+```text
+×  Could not resolve a stream
+   3 providers tried · allanime, miruro, vidlink
+   🦊 couldn't get there.
+```
+
+## Poses
+
+Each pose maps to something real that is happening, so she never becomes decoration.
+
+| Pose | Reads as | Where |
+| --- | --- | --- |
+| `idle` | sitting, ears up, eyes soft | terminal: at rest and on the setup summary · site: home, social cards |
+| `wait` | square and composed | terminal: the setup wizard · site: empty shelves, install |
+| `go` | mid-motion, ears swept back | site only: searching, resolving, install pages |
+| `watch` | knowing, one ear tipped | terminal: playback · site: docs hub |
+| `oops` | ears flat, brows angled | terminal: a failed resolve · site: 404s |
+| `nap` | curled, eyes closed | terminal: the goodbye screen · site: the roamer asleep |
+
+All six ship, drawn from one locked character. Two more — `seek` and `peek` —
+are drawn but held back for a redraw, so a resolve currently borrows `go`.
+
+## Two tiers, and neither is required
+
+Kanna has a picture tier and a text tier, and **the text tier is the one that matters**. The illustrated fox needs a terminal that can host a graphics protocol — Kitty, Ghostty, iTerm2, or WezTerm. Which terminals qualify on your system is covered in [Platforms](/docs/users/platforms). Everywhere else she is a `🦊` and a line of text, which is the same character doing the same job.
+
+Half-block rendering is deliberately skipped. This art turns to noise at two pixels per cell, and a smear is worse than a glyph.
+
+## Turning her off
+
+Three states, and the way out is a real way out.
+
+| Setting | Effect |
+| --- | --- |
+| unset | the picture where your terminal can draw it, the glyph everywhere else |
+| `KUNAI_PET=glyph` | keep the companion, but only ever as `🦊` |
+| `KUNAI_PET=off` | retire her entirely — no picture, no glyph, no lines |
+
+```bash
+KUNAI_PET=off kunai
+```
+
+`KUNAI_PET=off` silences the text too, not just the artwork. Redirected output — a pipe, a redirect, a captured log — never gets either, so nothing decorative can end up in a file or break a parser.
+
+`KUNAI_POSTER=0` turns off images without retiring her, since the glyph is not an image. Both variables sit alongside the rest of the environment overrides in [Customization](/docs/users/customization).
+
+## Reduced motion
+
+Every animation on this site and in the terminal is gated on your system's reduced-motion preference. With it on, the illustrated stills hold still — she does not breathe, lean, or react.
+
+The roaming fox is the exception: she is not frozen, she is not rendered at all. Something that follows your pointer has no still version worth showing, so `KunaiFoxRoamer` returns nothing under reduced motion and the stylesheet hides her as a second guard. Every other surface keeps its artwork; only the movement stops.
+
+## Credits
+
+Kanna is drawn as a rose kitsune in the Ember Dusk palette: `#ff8fb0` fur, `#ffc6d8` cream, on `#1c1620`. The blade mark stays on favicons and badges — she is the character, not the logo.

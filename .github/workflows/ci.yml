@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
+      analytics: ${{ steps.filter.outputs.analytics }}
       cli: ${{ steps.filter.outputs.cli }}
       docs: ${{ steps.filter.outputs.docs }}
       doc-coverage: ${{ steps.filter.outputs.doc-coverage }}
@@ -51,6 +52,17 @@ jobs:
         id: filter
         with:
           filters: |
+            # The ingest's Postgres suites are gated on ANALYTICS_TEST_DATABASE_URL
+            # and skip silently without it, so the ordinary `Test` job proves
+            # nothing about them. Anything that can change what that SQL does —
+            # the app, its migrations, or the harness that runs them — has to
+            # reach the analytics-postgres job below.
+            analytics:
+              - 'apps/analytics-ingest/**'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-bun-monorepo/**'
             cli:
               - 'apps/cli/**'
               - 'packages/**'
@@ -202,6 +214,50 @@ jobs:
       - name: Test (full on main)
         if: github.event_name == 'push'
         run: bunx turbo run test --summarize
+
+  analytics-postgres:
+    name: Analytics Postgres suites
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.analytics == 'true'
+    runs-on: ubuntu-latest
+    # The whole run is a container start, two migrations and ~110 assertions;
+    # observed well under a minute. This ceiling identifies a wedged container
+    # pull rather than budgeting for slow tests.
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: analytics-pg
+
+      # Deliberately the same command a developer runs locally, rather than a
+      # second copy of the compose topology expressed as `services:`. The store
+      # talks to Neon over HTTP, so it needs the proxy as well as Postgres, and
+      # two definitions of that pair would drift — which is the class of bug
+      # this job exists to catch.
+      #
+      # The database is a throwaway container the harness starts and destroys:
+      # loopback-only, tmpfs-backed, seeded credentials, empty every run. No
+      # real project or production URL is ever reachable from this job.
+      #
+      # The skip assertion is the point of the step, not a flourish. Every skip
+      # construct in this suite is `describe.skipIf(!TEST_DATABASE_URL)`, so a
+      # database that never came up produces a *green* run — measured at 82 pass
+      # / 33 skip / 0 fail — against 109 pass / 0 skip when it did. A zero exit
+      # code alone would therefore prove nothing, which is the exact false pass
+      # this job exists to close.
+      - name: Run the Postgres-backed analytics suites
+        run: |
+          set -euo pipefail
+          bun run --cwd apps/analytics-ingest test:pg 2>&1 | tee pg-suites.log
+          if grep -qE '^ *[0-9]+ skip' pg-suites.log; then
+            echo "::error::Postgres cases skipped — the database never came up, so this job proved nothing"
+            exit 1
+          fi
+          echo "Every Postgres-gated case executed against a real database."
 
   windows-cli:
     name: Windows CLI parity
@@ -586,7 +642,7 @@ jobs:
 
       - name: Upload linux binaries for installer job
         if: needs.changes.outputs.installer == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: kunai-linux-binaries
           retention-days: 1
@@ -616,13 +672,13 @@ jobs:
         run: bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios >/dev/null
 
       - name: Download linux binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           name: kunai-linux-binaries
           path: apps/cli/dist/bin
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # docker/setup-buildx-action@v4
 
       - name: Cache installer smoke images
         uses: actions/cache@v5
@@ -634,7 +690,7 @@ jobs:
 
       - name: Build glibc smoke image
         if: matrix.variant == 'glibc'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # docker/build-push-action@v7
         with:
           context: apps/cli/test/docker/native-installer
           file: apps/cli/test/docker/native-installer/Dockerfile
@@ -646,7 +702,7 @@ jobs:
 
       - name: Build musl smoke image
         if: matrix.variant == 'musl'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # docker/build-push-action@v7
         with:
           context: apps/cli/test/docker/native-installer
           file: apps/cli/test/docker/native-installer/Dockerfile

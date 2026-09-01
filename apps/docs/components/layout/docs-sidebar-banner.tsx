@@ -1,3 +1,4 @@
+import { KunaiFox } from "@/components/brand/kunai-fox";
 import { codeMetadata } from "@/lib/code-metadata";
 import { provenance } from "@/lib/provenance";
 import Link from "next/link";
@@ -12,29 +13,32 @@ export function DocsSidebarBanner() {
   return (
     <div
       data-sidebar-banner
-      className="mb-3 flex flex-col gap-2 border-b border-[var(--kunai-line)] pb-3"
+      className="kunai-sidebar-banner mb-3 flex flex-col gap-2 border-b border-[var(--kunai-line)] pb-3"
     >
-      <p className="text-fd-muted-foreground m-0 text-xs leading-relaxed tabular-nums">
-        <Link
-          href="/releases"
-          className="text-fd-foreground font-medium underline-offset-4 hover:underline"
-        >
-          v{codeMetadata.version}
-        </Link>
-        {revision && commitUrl ? (
-          <>
-            {" · "}
-            <a
-              href={commitUrl}
-              className="text-fd-muted-foreground underline-offset-4 hover:underline"
-              rel="noreferrer"
-              target="_blank"
-            >
-              {revision.slice(0, 7)}
-            </a>
-          </>
-        ) : null}
-      </p>
+      <div className="flex items-center gap-2">
+        <KunaiFox pose="wait" size={36} />
+        <p className="text-fd-muted-foreground m-0 text-xs leading-relaxed tabular-nums">
+          <Link
+            href="/releases"
+            className="text-fd-foreground font-medium underline-offset-4 hover:underline"
+          >
+            v{codeMetadata.version}
+          </Link>
+          {revision && commitUrl ? (
+            <>
+              {" · "}
+              <a
+                href={commitUrl}
+                className="text-fd-muted-foreground underline-offset-4 hover:underline"
+                rel="noreferrer"
+                target="_blank"
+              >
+                {revision.slice(0, 7)}
+              </a>
+            </>
+          ) : null}
+        </p>
+      </div>
       {/* Each count links to the page that actually lists it — a number with
           nowhere to go is the reason this block read as decoration. */}
       <p className="text-fd-muted-foreground m-0 text-xs tabular-nums">

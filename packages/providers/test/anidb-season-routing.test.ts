@@ -133,6 +133,29 @@ describe("routeAnidbSeason", () => {
     });
   });
 
+  test("routes a suffixed season title via prefix match (live: Arise from the Shadow)", async () => {
+    // Live `anidb.app` now serves `Solo Leveling Season 2: Arise from the
+    // Shadow` (4884). `parseAnidbSeasonEvidence` strips `Season 2` leaving
+    // `solo leveling arise from the shadow`, so the base `solo leveling`
+    // matches via `prefix` (score 1) not `exact`. This was the reindex drift
+    // `19413→4884` and must not fail closed.
+    const route = await routeAnidbSeason({
+      base: result("solo-leveling-4883", "Solo Leveling"),
+      episode: { season: 2, episode: 1 },
+      search: async () => [
+        result(
+          "solo-leveling-season-2-arise-from-the-shadow-4884",
+          "Solo Leveling Season 2: Arise from the Shadow",
+        ),
+        result("solo-leveling-how-to-get-stronger-4885", "Solo Leveling: How to Get Stronger"),
+      ],
+      episodes: noEpisodes,
+    });
+
+    expect(route?.routedShowId).toBe("solo-leveling-season-2-arise-from-the-shadow-4884");
+    expect(route?.evidence).toMatchObject({ titleMatch: "prefix", matchedSeason: 2 });
+  });
+
   test("returns null when equally ranked season siblings are ambiguous", async () => {
     const route = await routeAnidbSeason({
       base: result("demo-1", "Demo"),

@@ -3,6 +3,8 @@ import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import { momentForLoading } from "./companion-moment";
+import { CompanionHost } from "./CompanionHost";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
 import { footerKeyFromBinding, KEYBINDINGS } from "./keybindings";
 import { buildLoadingFooterActions } from "./loading-shell-model";
@@ -522,6 +524,17 @@ export const LoadingShell = React.memo(function LoadingShell({
   // a bare title never renders a lonely panel.
   const hasPanelContent = Boolean(state.posterUrl || state.titleDetail || state.videoMeta);
   const showSidePanel = isWide && (isPlaying || hasPanelContent);
+  // The rule is "the poster wins", so this asks for a poster — not for the side
+  // panel, which also opens for a title detail or video metadata with no
+  // artwork at all. Reusing `showSidePanel` here silenced her on exactly the
+  // surface she exists for: a resolve that has text but nothing to look at.
+  const hasPosterArt = isWide && Boolean(state.posterUrl);
+  const companionMoment = momentForLoading({
+    operation: state.operation,
+    stage: state.stage,
+    hasPoster: hasPosterArt,
+    failed: recoveryView !== null,
+  });
   const totalPlayingWidth = Math.max(60, terminalColumns - 2);
   const sidePanelWidth = showSidePanel
     ? Math.min(36, Math.max(28, Math.floor(totalPlayingWidth * 0.27)))
@@ -770,6 +783,11 @@ export const LoadingShell = React.memo(function LoadingShell({
                     </Text>
                   </Box>
                 ) : null}
+
+                {/* She is here only when the side panel is not: on a narrow
+                  terminal, or before any artwork has arrived. A resolve is the
+                  longest wait in the product and the emptiest surface in it. */}
+                <CompanionHost moment={companionMoment} rows={3} marginTop={1} />
 
                 {/* Failure / recovery surface takes priority over the bare issue
                   line: it names what failed and offers recover/fallback/sources/

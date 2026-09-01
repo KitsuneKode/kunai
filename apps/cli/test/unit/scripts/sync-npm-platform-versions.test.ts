@@ -129,6 +129,52 @@ describe("npm platform version synchronization", () => {
 });
 
 describe("release guard platform pin contract", () => {
+  test("distinguishes package entries from empty bookkeeping changesets", async () => {
+    const { changesetTargetsPackage } = await import(GUARD_PATH);
+
+    expect(changesetTargetsPackage("---\n---\n", "@kitsunekode/kunai")).toBe(false);
+    expect(
+      changesetTargetsPackage(
+        '---\n"@kitsunekode/kunai": patch\n---\n\nA user-facing fix.\n',
+        "@kitsunekode/kunai",
+      ),
+    ).toBe(true);
+  });
+
+  test("ignores a changeset that bumps a different package", async () => {
+    const { changesetTargetsPackage } = await import(GUARD_PATH);
+
+    // Only @kitsunekode/kunai is published, so a changeset naming anything else
+    // cannot version it and must stay invisible to the staged-release rule.
+    expect(
+      changesetTargetsPackage(
+        '---\n"@kunai/relay": patch\n---\n\nInternal.\n',
+        "@kitsunekode/kunai",
+      ),
+    ).toBe(false);
+    expect(
+      changesetTargetsPackage(
+        '---\n"@kunai/relay": patch\n"@kitsunekode/kunai": patch\n---\n\nBoth.\n',
+        "@kitsunekode/kunai",
+      ),
+    ).toBe(true);
+  });
+
+  test("fails closed when the manifest has no package name", async () => {
+    const { collectReleaseGuardErrors } = await import(GUARD_PATH);
+    const manifest = validManifest("1.2.3") as Record<string, unknown>;
+    delete manifest.name;
+
+    expect(
+      collectReleaseGuardErrors({
+        packageManifest: manifest,
+        cliChangelog: "## 1.2.3\n",
+        rootChangelog: "## v1.2.3\n",
+        changesetFiles: [],
+      }),
+    ).toContainEqual(expect.stringMatching(/no "name" field/));
+  });
+
   test("calls the same pure synchronization check used by file check mode", async () => {
     const guardSource = readFileSync(join(REPO_ROOT, "scripts/release-guard.ts"), "utf8");
 
@@ -149,6 +195,31 @@ describe("release guard platform pin contract", () => {
         changesetFiles: [],
       }),
     ).toContainEqual(expect.stringMatching(/platform|exact|optional/i));
+  });
+
+  test("blocks a loose changeset only on the current staged release", async () => {
+    const { collectReleaseGuardErrors } = await import(GUARD_PATH);
+
+    for (const [status, blocked] of [
+      ["staged", true],
+      ["published", false],
+    ] as const) {
+      const errors = collectReleaseGuardErrors({
+        packageManifest: validManifest("1.2.3"),
+        cliChangelog: "## 1.2.3\n",
+        rootChangelog: "## v1.2.3\n",
+        changesetFiles: ["late-fix.md"],
+        currentReleaseArtifact: {
+          version: "1.2.3",
+          status,
+        },
+      });
+
+      const resolution = errors.some((error: string) =>
+        /fold.*staged.*consume|publish.*first/i.test(error),
+      );
+      expect(resolution).toBe(blocked);
+    }
   });
 });
 

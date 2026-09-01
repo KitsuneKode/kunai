@@ -126,11 +126,27 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres lifetime accounting", () => {
   });
 
   test("a returning install refreshes last_seen instead of being retired", async () => {
+    // Hermetic on purpose. The rest of this block accumulates state across
+    // tests, and the survivor of the retirement test above still carries
+    // last_seen 1999-05-03 — earlier than this cutoff, so the sweep would
+    // rightly retire it and `retired` would report that unrelated row rather
+    // than anything about the returning install.
+    await resetAnalyticsTables();
+
     const store = storeWith();
+    // Two installs, one either side of the cutoff, so the sweep has to
+    // discriminate rather than trivially retire nothing: install 2 is silent
+    // after May, install 1 comes back in June. Asserting only "retired is 0"
+    // against a single install would still pass if the sweep stopped working
+    // altogether.
+    await ping(store, "1999-05-03", 2);
     await ping(store, "1999-05-10", 1);
     await ping(store, "1999-06-20", 1);
-    // Retention cutoff sits between the two visits: the later one saves it.
-    expect((await store.pruneLifetimeBefore("1999-06-01")).retired).toBe(0);
+
+    // Exactly the silent one. Were last_seen not refreshed on the return visit,
+    // install 1 would still read 1999-05-10 and be swept too — retired 2,
+    // nothing left behind.
+    expect((await store.pruneLifetimeBefore("1999-06-01")).retired).toBe(1);
     expect(await tableCount("install_lifetime")).toBe(1);
   });
 });

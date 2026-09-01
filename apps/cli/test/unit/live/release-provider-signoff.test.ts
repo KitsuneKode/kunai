@@ -213,6 +213,32 @@ describe("release provider signoff", () => {
       }),
     ).toBe("harness-failure");
   });
+
+  test("a Cloudflare block is an environment failure, not provider drift", () => {
+    // The real 0.3.0 signoff message. The client reports the block in words
+    // rather than a status code, so matching only `403` filed a runner refused
+    // on TLS fingerprint as drift and pointed the investigation at a provider
+    // that was healthy the whole time.
+    for (const error of [
+      "anidb blocked by Cloudflare (try curl-impersonate)",
+      "anidb blocked by Cloudflare (install curl)",
+      "unexpected page: Just a moment...",
+    ]) {
+      expect(classifyReleaseSignoffFailure({ resolved: false, streamReachable: null, error })).toBe(
+        "environment-network",
+      );
+    }
+
+    // Still drift when the route itself is the problem: the widened pattern
+    // must not swallow genuine upstream contract failures.
+    expect(
+      classifyReleaseSignoffFailure({
+        resolved: false,
+        streamReachable: null,
+        error: "no playable source for episode 1",
+      }),
+    ).toBe("provider-drift");
+  });
 });
 
 describe("release provider route derivation", () => {

@@ -740,6 +740,13 @@ export class ConfigServiceImpl implements ConfigService {
   private savePending: Promise<void> | null = null;
   private savePendingResolve: (() => void) | null = null;
   private savePendingReject: ((reason: unknown) => void) | null = null;
+  /**
+   * The store write started by a fired debounce, until it settles.
+   *
+   * `savePending` is cleared the moment the write starts, so it alone cannot
+   * tell shutdown that a write is still running.
+   */
+  private saveInFlight: Promise<void> | null = null;
 
   // Trailing debounce: every call re-arms the timer so the latest config wins,
   // and all callers in a burst share one promise that settles once the write
@@ -764,8 +771,14 @@ export class ConfigServiceImpl implements ConfigService {
 
   /** Persist any pending debounced save immediately (shutdown path). */
   async flushPending(): Promise<void> {
-    if (!this.savePending) return;
-    await this.persistPendingSave();
+    if (this.savePending) {
+      await this.persistPendingSave();
+      return;
+    }
+    // A debounce that already fired cleared `savePending` while its store write
+    // is still running. Returning here let shutdown reach `process.exit()`
+    // under an in-flight write and truncate config.json.
+    if (this.saveInFlight) await this.saveInFlight;
   }
 
   private persistPendingSave(): Promise<void> {
@@ -780,12 +793,19 @@ export class ConfigServiceImpl implements ConfigService {
     this.savePending = null;
     this.savePendingResolve = null;
     this.savePendingReject = null;
+    // Tracked *before* the write starts. `store.save()` throwing synchronously
+    // runs the catch and the finally before this assignment would have happened,
+    // so assigning afterwards left an already-rejected promise in `saveInFlight`
+    // that every later `flushPending()` would await.
+    this.saveInFlight = pending;
     void (async () => {
       try {
         await this.store.save(this.config);
         resolve?.();
       } catch (error) {
         reject?.(error);
+      } finally {
+        if (this.saveInFlight === pending) this.saveInFlight = null;
       }
     })();
     return pending;

@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-24
+Last updated: 2026-08-31
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -34,13 +34,15 @@ archive and put only the residue here.
 
 ### Shell and UI
 
-| Track                       | Remaining                                             | Plan                                                                                   |
-| --------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Single mounted content tree | Collapse `SearchPhase`/`PlaybackPhase` launcher loops | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md) |
-| Persistent shell            | Full back-stack, root-owned footer                    | [persistent-shell-implementation.md](./persistent-shell-implementation.md)             |
-| Fullscreen root shell       | Flatten remaining nested chrome                       | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)               |
-| Sakura theme rollout        | Remaining surfaces after the token foundation         | [sakura-rollout.md](./sakura-rollout.md)                                               |
-| Terminal image protocol     | Flicker hardening and `ink-shell` split               | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
+| Track                       | Remaining                                                 | Plan                                                                                   |
+| --------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Single mounted content tree | Collapse `SearchPhase`/`PlaybackPhase` launcher loops     | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md) |
+| Persistent shell            | Full back-stack, root-owned footer                        | [persistent-shell-implementation.md](./persistent-shell-implementation.md)             |
+| Fullscreen root shell       | Flatten remaining nested chrome                           | [fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md)               |
+| Sakura theme rollout        | Remaining surfaces after the token foundation             | [sakura-rollout.md](./sakura-rollout.md)                                               |
+| Terminal image protocol     | Flicker hardening and `ink-shell` split                   | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
+| Kanna character system      | `seek`/`peek` redraws, then tracing the four raster poses | [2026-08-31-kanna-character-system.md](./2026-08-31-kanna-character-system.md)         |
+| Kanna voice and presence    | Remaining voice moments, terminal reactions, pose map     | [kanna-mascot-personality.md](./kanna-mascot-personality.md)                           |
 
 ### Playback and providers
 
@@ -65,9 +67,9 @@ archive and put only the residue here.
 
 ### Analytics
 
-| Track                    | Remaining                                                                                                                                  | Plan                                                                                                          |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Usage analytics redesign | Explicit opt-in implementation is complete; verified Neon/Vercel deployment, secret/firewall/cost controls, and live endpoint smoke remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+| Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
 
 ### Docs
 
@@ -91,22 +93,23 @@ archive and put only the residue here.
 Numbered plans from an external audit. They keep their original numbers because
 the K-reconciliation below and the commit history both cite them by id.
 
-| Plan                                                | Remaining work                                                            | Status                                            |
-| --------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
-| [006](./006-startup-defer-network-and-providers.md) | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)  |
-| [008](./008-tui-timer-and-poster-perf.md)           | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
-| [010](./010-characterization-tests-for-giants.md)   | Characterization net for private `AppRoot`                                | BLOCKED (needs a full-container harness)          |
-| [011](./011-split-shell-workflows.md)               | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
-| [012](./012-decompose-playback-phase.md)            | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
-| [013](./013-split-ink-shell-host-surface.md)        | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
-| [014](./014-enforce-layering-boundaries.md)         | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)              |
-| [015](./015-retire-legacy-flat-modules.md)          | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                            |
-| [021](./021-provider-contract-enforcement.md)       | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 release slice complete         |
-| [022](./022-shell-interaction-coherence.md)         | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                             |
-| [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
-| [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                                          | TODO after release behavior settles               |
-| [032](./032-sync-identity-and-capability-truth.md)  | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
-| [043](./043-history-key-migration-transaction.md)   | Transactional legacy history-key migration                                | TODO; independent data-migration PR               |
+| Plan                                                 | Remaining work                                                            | Status                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
+| [006](./006-startup-defer-network-and-providers.md)  | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)  |
+| [008](./008-tui-timer-and-poster-perf.md)            | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
+| [010](./010-characterization-tests-for-giants.md)    | Characterization net for private `AppRoot`                                | BLOCKED (needs a full-container harness)          |
+| [011](./011-split-shell-workflows.md)                | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
+| [012](./012-decompose-playback-phase.md)             | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
+| [013](./013-split-ink-shell-host-surface.md)         | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
+| [014](./014-enforce-layering-boundaries.md)          | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)              |
+| [015](./015-retire-legacy-flat-modules.md)           | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                            |
+| [021](./021-provider-contract-enforcement.md)        | Enforce or remove unread provider/relay contracts                         | PARTIAL; K-04/K-08 release slice complete         |
+| [022](./022-shell-interaction-coherence.md)          | Destructive confirms, filter capture, errors, Esc semantics               | PARTIAL; 022.1 landed                             |
+| [023](./023-cli-surface-honesty.md)                  | CLI surface honesty                                                       | PARTIAL; K-16 fixed by PR #144                    |
+| [030](./030-distribution-documentation-truth.md)     | Distribution documentation truth                                          | TODO after release behavior settles               |
+| [032](./032-sync-identity-and-capability-truth.md)   | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
+| [044](./044-namespace-mal-history-keys.md)           | Namespace MAL-derived history keys                                        | READY (needs migration review)                    |
+| [045](./045-repoint-title-id-references-on-merge.md) | Repoint `title_id` references when consolidation merges                   | READY (classify tables first)                     |
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
@@ -145,7 +148,9 @@ Count: **17 fixed, 0 open**.
 1. The docs/truth reconciliation and plan 047 lifecycle slice are complete.
 2. Provider routing plan 046 and the plan 021 K-04/K-08 release slice are
    complete. PR #144 completed K-16 without narrowing valid launch previews.
-3. Execute plan 043 as its own migration PR.
+3. Plan 043 is complete — the transaction had already landed; the rollback and
+   accumulated-field tests that prove it, and a poster-URL loss those tests
+   exposed on the legacy-key migration path, shipped separately.
 4. The rebased tracker-sync implementation and plan 032's deterministic work
    are complete. Keep sync experimental until the disposable-account live smoke
    proves the production container → SQLite outbox → restart → remote mutation path.

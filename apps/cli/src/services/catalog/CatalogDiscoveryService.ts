@@ -12,6 +12,23 @@ type DiscoveryCacheEntry = {
   readonly results: readonly SearchResult[];
 };
 
+/**
+ * Raised when a discovery source could not be read — offline, upstream error,
+ * malformed payload, or an aborted request.
+ *
+ * A loader must reject rather than fold a failure into `[]`: the service caches
+ * a resolved list for the whole TTL, so `[]`-on-failure poisons trending for
+ * half an hour and the only way out is `clearTrendingCache()`. Rejecting keeps
+ * "the upstream is down" distinct from "the provider genuinely has nothing",
+ * and only the second is worth caching.
+ */
+export class DiscoveryUnavailableError extends Error {
+  constructor(source: string, reason: string, options?: { readonly cause?: unknown }) {
+    super(`${source} discovery is unavailable: ${reason}`, options);
+    this.name = "DiscoveryUnavailableError";
+  }
+}
+
 export type CatalogDiscoveryLoader = (signal?: AbortSignal) => Promise<readonly SearchResult[]>;
 export type CatalogSurpriseLoader = (
   options: CatalogSurpriseLoadOptions,
@@ -64,18 +81,7 @@ export class CatalogDiscoveryService {
         : mode === "youtube"
           ? (this.loaders.youtube ?? loadYoutubeDiscoveryList)
           : this.loaders.tmdb;
-    const task = loader(signal).then((results) => {
-      this.cache.set(key, {
-        expiresAt: this.now() + DISCOVERY_CACHE_TTL_MS,
-        results,
-      });
-      return results;
-    });
-    this.inflight.set(key, task);
-
-    const results = await task.finally(() => {
-      this.inflight.delete(key);
-    });
+    const results = await this.runLoad(key, DISCOVERY_CACHE_TTL_MS, () => loader(signal));
     return [...results];
   }
 
@@ -99,19 +105,37 @@ export class CatalogDiscoveryService {
         : mode === "youtube"
           ? (this.loaders.youtubeSurprise ?? loadYoutubeSurpriseList)
           : (this.loaders.tmdbSurprise ?? loadTmdbSurpriseList);
-    const task = loader(options, signal).then((results) => {
-      this.cache.set(key, {
-        expiresAt: this.now() + SURPRISE_CACHE_TTL_MS,
-        results,
-      });
+    const results = await this.runLoad(key, SURPRISE_CACHE_TTL_MS, () => loader(options, signal));
+    return shuffleResults(results, options.random);
+  }
+
+  /**
+   * Runs a loader once per key, caching only a load that actually succeeded.
+   *
+   * A rejection — an offline blip, an upstream error, or the `AbortError` from
+   * navigating away mid-fetch — leaves the cache untouched and propagates, so
+   * the next call retries instead of serving an empty tray for the rest of the
+   * TTL. An empty resolved list is not cached either: the loaders below reject
+   * on failure, but an injected loader that still folds one into `[]` must not
+   * be able to poison the cache through this path. In-flight dedup is
+   * unchanged — concurrent callers share the one promise, success or failure.
+   */
+  private async runLoad(
+    key: string,
+    ttlMs: number,
+    load: () => Promise<readonly SearchResult[]>,
+  ): Promise<readonly SearchResult[]> {
+    const task = load().then((results) => {
+      if (results.length > 0) {
+        this.cache.set(key, { expiresAt: this.now() + ttlMs, results });
+      }
       return results;
     });
     this.inflight.set(key, task);
 
-    const results = await task.finally(() => {
+    return task.finally(() => {
       this.inflight.delete(key);
     });
-    return shuffleResults(results, options.random);
   }
 }
 
@@ -139,9 +163,13 @@ async function loadTmdbDiscoveryList(signal?: AbortSignal): Promise<SearchResult
     "/trending/all/week?language=en-US&page=1",
     signal,
     3500,
-  ).catch(() => null)) as Record<string, unknown> | null;
-  if (!data) return [];
-  const rawResults = Array.isArray(data.results) ? data.results : [];
+  ).catch((error: unknown) => {
+    throw new DiscoveryUnavailableError("TMDB trending", "request failed", { cause: error });
+  })) as Record<string, unknown> | null;
+  if (!data || !Array.isArray(data.results)) {
+    throw new DiscoveryUnavailableError("TMDB trending", "malformed payload");
+  }
+  const rawResults = data.results;
 
   return rawResults
     .map(readRecord)
@@ -182,9 +210,13 @@ async function loadTmdbSurpriseList(
     `/discover/${mediaType}?language=en-US&page=${page}&sort_by=${sortBy}&vote_count.gte=${voteFloor}`,
     signal,
     3500,
-  ).catch(() => null)) as Record<string, unknown> | null;
-  if (!data) return [];
-  const rawResults = Array.isArray(data.results) ? data.results : [];
+  ).catch((error: unknown) => {
+    throw new DiscoveryUnavailableError("TMDB surprise", "request failed", { cause: error });
+  })) as Record<string, unknown> | null;
+  if (!data || !Array.isArray(data.results)) {
+    throw new DiscoveryUnavailableError("TMDB surprise", "malformed payload");
+  }
+  const rawResults = data.results;
   return rawResults
     .map(readRecord)
     .filter((record) => record.id !== null && record.id !== undefined)
@@ -228,26 +260,8 @@ async function loadAnimeDiscoveryList(signal?: AbortSignal): Promise<SearchResul
     }
   }`;
 
-  const response = await fetch(ANILIST_GRAPHQL_URL, {
-    method: "POST",
-    signal: signal ?? AbortSignal.timeout(3500),
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({ query: gqlQuery }),
-  }).catch(() => null);
-  if (!response?.ok) return [];
-
-  const data = (await response.json()) as {
-    readonly data?: {
-      readonly Page?: {
-        readonly media?: readonly AniListDiscoveryMedia[];
-      };
-    };
-  };
-
-  return (data.data?.Page?.media ?? []).map(anilistMediaToSearchResult);
+  const media = await fetchAniListMedia("AniList trending", { query: gqlQuery }, signal);
+  return media.map(anilistMediaToSearchResult);
 }
 
 async function loadAnimeSurpriseList(
@@ -289,6 +303,31 @@ async function loadAnimeSurpriseList(
     }
   }`;
 
+  const media = await fetchAniListMedia(
+    "AniList surprise",
+    { query: gqlQuery, variables: { page, sort: [sort], genre } },
+    signal,
+  );
+
+  return media.map((entry) => ({
+    ...anilistMediaToSearchResult(entry),
+    metadataSource: `AniList surprise · ${genre ?? "mixed"} · ${sort.toLowerCase().replace("_desc", "")}`,
+  }));
+}
+
+/**
+ * Posts a GraphQL document to AniList and returns the media page.
+ *
+ * Rejects with {@link DiscoveryUnavailableError} on every failure shape —
+ * transport error, non-2xx, unparseable body, or a GraphQL error (AniList
+ * answers those with HTTP 200 and no `data`). An empty `media` array is a
+ * genuine "nothing matched" and resolves normally.
+ */
+async function fetchAniListMedia(
+  source: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<readonly AniListDiscoveryMedia[]> {
   const response = await fetch(ANILIST_GRAPHQL_URL, {
     method: "POST",
     signal: signal ?? AbortSignal.timeout(3500),
@@ -296,11 +335,15 @@ async function loadAnimeSurpriseList(
       "content-type": "application/json",
       accept: "application/json",
     },
-    body: JSON.stringify({ query: gqlQuery, variables: { page, sort: [sort], genre } }),
-  }).catch(() => null);
-  if (!response?.ok) return [];
+    body: JSON.stringify(body),
+  }).catch((error: unknown) => {
+    throw new DiscoveryUnavailableError(source, "request failed", { cause: error });
+  });
+  if (!response.ok) throw new DiscoveryUnavailableError(source, `HTTP ${response.status}`);
 
-  const data = (await response.json()) as {
+  const payload = (await response.json().catch((error: unknown) => {
+    throw new DiscoveryUnavailableError(source, "unreadable payload", { cause: error });
+  })) as {
     readonly data?: {
       readonly Page?: {
         readonly media?: readonly AniListDiscoveryMedia[];
@@ -308,10 +351,9 @@ async function loadAnimeSurpriseList(
     };
   };
 
-  return (data.data?.Page?.media ?? []).map((media) => ({
-    ...anilistMediaToSearchResult(media),
-    metadataSource: `AniList surprise · ${genre ?? "mixed"} · ${sort.toLowerCase().replace("_desc", "")}`,
-  }));
+  const media = payload.data?.Page?.media;
+  if (!media) throw new DiscoveryUnavailableError(source, "response carried no media page");
+  return media;
 }
 
 type AniListDiscoveryMedia = {

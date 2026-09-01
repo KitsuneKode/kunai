@@ -1120,6 +1120,54 @@ finish_transaction() {
 	rm -f "$path"
 }
 
+# Does this path genuinely live under our staging root?
+#
+# The value comes out of a transaction JSON file, and what happens next is
+# `rm -rf`, so it is attacker-shaped input even though only the same user can
+# write it. The previous test was a bare string prefix, which accepted two
+# things it should not have:
+#
+#   - traversal — `$CACHE_DIR/staging/../../../.ssh` starts with the prefix and
+#     resolves somewhere else entirely;
+#   - siblings — with no `/` boundary, `$CACHE_DIR/staging-old` matched too.
+#
+# `realpath` is not portable enough to rely on here (BSD and GNU differ, and it
+# is absent on some minimal images), but `cd` + `pwd -P` resolves symlinks in any
+# POSIX shell, which covers the case a textual check cannot: a staging directory
+# that *is* a symlink pointing out of the cache passes every string test and then
+# takes the `rm -rf` somewhere else entirely.
+#
+# The textual checks stay in front of it, because resolution needs the directory
+# to exist and a path that never existed is not ours to delete either way. This
+# mirrors `isInsideStagingRoot` in
+# `apps/cli/src/services/update/native-installer/install-layout.ts`, which
+# resolves both paths and refuses anything that escapes the root.
+is_inside_staging_root() {
+	local candidate="$1"
+	local root="$CACHE_DIR/staging"
+	[[ -n "$candidate" ]] || return 1
+	case "$candidate" in
+	.. | ../* | */../* | */..) return 1 ;;
+	esac
+	case "$candidate" in
+	"$root"/?*) ;;
+	*) return 1 ;;
+	esac
+
+	# Not a directory: nothing to recurse into, and the textual checks already
+	# proved the name is inside the root.
+	[[ -d "$candidate" ]] || return 0
+
+	local resolved resolved_root
+	resolved="$(cd -- "$candidate" 2>/dev/null && pwd -P)" || return 1
+	resolved_root="$(cd -- "$root" 2>/dev/null && pwd -P)" || return 1
+	# Re-test after resolution: a symlinked staging dir now shows its real path.
+	case "$resolved" in
+	"$resolved_root"/?*) return 0 ;;
+	esac
+	return 1
+}
+
 # Remove transaction records whose owning PID is dead, and delete any staging
 # directories those records still point at. Safe to call under a version lock.
 cleanup_abandoned_transactions() {
@@ -1133,7 +1181,7 @@ cleanup_abandoned_transactions() {
 			continue
 		fi
 		staging_dir="$(sed -n 's/.*"stagingDir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$path" | head -1)"
-		if [[ -n "$staging_dir" && "$staging_dir" == "$CACHE_DIR/staging"* ]]; then
+		if is_inside_staging_root "$staging_dir"; then
 			rm -rf "$staging_dir" 2>/dev/null || true
 			rmdir "$(dirname "$staging_dir")" 2>/dev/null || true
 		fi

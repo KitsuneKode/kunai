@@ -151,7 +151,12 @@ export function classifyReleaseSignoffFailure(input: {
   const haystack = [input.error ?? "", ...(input.failureCodes ?? [])].join(" ").toLowerCase();
   if (
     input.timedOut ||
-    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket/.test(
+    // `cloudflare`/`just a moment`/`challenge` are as much a WAF-shaped block as
+    // a bare 403, and the anidb client reports one in words rather than a status
+    // code: "anidb blocked by Cloudflare (try curl-impersonate)". Without them a
+    // runner refused on TLS fingerprint was filed as provider drift, which sent
+    // a release investigation at a provider that was healthy the whole time.
+    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket|cloudflare|just a moment|challenge|blocked by/.test(
       haystack,
     )
   ) {

@@ -80,12 +80,14 @@ async function main(): Promise<number> {
     const migrated = await run("bun", ["run", "scripts/migrate.ts"], env);
     if (migrated !== 0) return migrated;
 
+    // The whole directory, not a hand-listed subset. Naming files here meant
+    // postgres-hardening.test.ts was never run by the command documented as
+    // "the Postgres-backed analytics tests", so a case in it stayed red
+    // indefinitely with nothing reporting it. Running the directory picks up
+    // every new postgres-*.test.ts automatically; the suites that need no
+    // database are cheap and pass either way.
     console.log("→ running postgres-backed suites");
-    return await run(
-      "bun",
-      ["test", "test/postgres-store.test.ts", "test/postgres-ingest-lifecycle.test.ts"],
-      env,
-    );
+    return await run("bun", ["test", "test"], env);
   } finally {
     if (!external && !keep) {
       console.log("→ tearing down");

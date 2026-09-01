@@ -50,8 +50,16 @@ export type CurlEnvironment = {
  */
 const FAMILY_RANK = ["chrome", "firefox", "ff", "safari", "edge"] as const;
 
-/** `curl_chrome150`, `curl_chrome133a`, `curl_firefox147`, `curl_safari260_ios`. */
-const WRAPPER_PATTERN = /^curl_([a-z]+?)(\d+)([a-z]*)(?:_(android|ios))?(?:\.exe)?$/i;
+/**
+ * `curl_chrome150`, `curl_chrome133a`, `curl_firefox147`, `curl_safari260_ios`.
+ *
+ * The Windows release ships its wrappers as `.bat` around `curl-impersonate.exe`
+ * — there are no extensionless wrappers in that archive at all — so matching
+ * only `.exe` meant no Windows install could ever be discovered, however
+ * correctly the user had set it up. `.cmd` is accepted alongside it because a
+ * repackager may ship either.
+ */
+const WRAPPER_PATTERN = /^curl_([a-z]+?)(\d+)([a-z]*)(?:_(android|ios))?(?:\.(?:exe|bat|cmd))?$/i;
 
 type ParsedWrapper = {
   readonly name: string;

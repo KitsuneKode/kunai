@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { copyAndAnnounce } from "@/lib/clipboard-copy";
 import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useState, type ReactNode } from "react";
@@ -28,15 +29,25 @@ export function CopyButton({
   const [localCopied, setLocalCopied] = useState(false);
   const copied = externalCopied !== undefined ? externalCopied === label : localCopied;
 
-  const handleCopy = useCallback(() => {
-    void navigator.clipboard.writeText(text);
-    if (externalOnCopy) {
-      externalOnCopy(text, label);
-      return;
-    }
-    setLocalCopied(true);
-    window.setTimeout(() => setLocalCopied(false), 1800);
-  }, [externalOnCopy, label, text]);
+  const handleCopy = useCallback(
+    () =>
+      copyAndAnnounce(text, label, {
+        writeText: (value) => navigator.clipboard.writeText(value),
+        onCopied: () => {
+          if (externalOnCopy) {
+            externalOnCopy(text, label);
+            return;
+          }
+          setLocalCopied(true);
+          window.setTimeout(() => setLocalCopied(false), 1800);
+        },
+        // Announced rather than wired: the fox reacts to a successful copy, and
+        // this button should not have to know that a fox exists.
+        announce: (name) =>
+          window.dispatchEvent(new CustomEvent("kunai:copied", { detail: { label: name } })),
+      }),
+    [externalOnCopy, label, text],
+  );
 
   return (
     <TooltipProvider>
@@ -47,7 +58,9 @@ export function CopyButton({
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleCopy}
+              onClick={() => {
+                void handleCopy();
+              }}
               className={className}
               aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
             />

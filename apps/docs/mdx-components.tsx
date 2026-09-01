@@ -1,3 +1,4 @@
+import { KunaiFoxBanner } from "@/components/brand/kunai-fox-banner";
 import { DocSectionCards } from "@/components/docs/doc-section-cards";
 import { DocsHubIntro } from "@/components/docs/docs-hub-intro";
 import { DocsRootCards } from "@/components/docs/docs-root-cards";
@@ -37,6 +38,7 @@ const kunaiMdxComponents = {
   QuickStartSteps,
   ScopeCallout,
   ProviderDocSection,
+  KunaiFoxBanner,
 } satisfies MDXComponents;
 
 export function useMDXComponents(components?: MDXComponents): MDXComponents {
