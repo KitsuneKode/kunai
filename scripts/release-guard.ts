@@ -6,16 +6,26 @@
 //      entry in apps/cli/CHANGELOG.md.
 //   2. If the repo-root CHANGELOG.md exists, it must contain `## vX.Y.Z` for
 //      the current package version (not just an older highest entry).
-//   3. If apps/cli/package.json has been bumped, a `.changeset/*.md` must
-//      exist (or the change must already be reflected in apps/cli/CHANGELOG.md).
+//   3. If apps/cli/package.json has been bumped, a `.changeset/*.md` naming the
+//      published package must exist (or the change must already be reflected in
+//      apps/cli/CHANGELOG.md).
 //   4. A staged, unpublished release cannot carry loose changesets, because
 //      Changesets would version them on top of the release that has not shipped.
+//
+// Rules 3 and 4 both read the same package-scoped list: a changeset that names
+// no package (an empty bookkeeping file) or names a different one cannot bump
+// the published package, so neither rule should react to it.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { type ReleasePublicationStatus } from "./release-artifact.ts";
 import { compareSemver, highestChangelogVersion } from "./release-changelog.ts";
 import { assertNpmPlatformVersionsSynchronized } from "./sync-npm-platform-versions.ts";
+
+// Typed so renaming the union member upstream fails typecheck here rather than
+// leaving rule 4 silently comparing against a status that no longer exists.
+const STAGED: ReleasePublicationStatus = "staged";
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const CLI_PKG = join(REPO_ROOT, "apps/cli/package.json");
@@ -73,6 +83,12 @@ export function collectReleaseGuardErrors({
     errors.push(`apps/cli/package.json has no "version" field.`);
     return errors;
   }
+  // Rules 3 and 4 scope changesets by package name. Without one, main() cannot
+  // build that list, so both rules would go quiet instead of failing closed.
+  if (!pkg.name) {
+    errors.push(`apps/cli/package.json has no "name" field, so changesets cannot be scoped to it.`);
+    return errors;
+  }
 
   try {
     assertNpmPlatformVersionsSynchronized(packageManifest);
@@ -106,7 +122,7 @@ export function collectReleaseGuardErrors({
   if (cliChangelogTop && compareSemver(cliVersion, cliChangelogTop) > 0) {
     if (changesetFiles.length === 0) {
       errors.push(
-        `apps/cli/package.json (${cliVersion}) is ahead of apps/cli/CHANGELOG.md (${cliChangelogTop}) but no .changeset/*.md exists. Add a changeset describing the bump.`,
+        `apps/cli/package.json (${cliVersion}) is ahead of apps/cli/CHANGELOG.md (${cliChangelogTop}) but no .changeset/*.md names ${pkg.name}. Add a changeset describing the bump.`,
       );
     }
   }
@@ -118,7 +134,7 @@ export function collectReleaseGuardErrors({
   if (
     changesetFiles.length > 0 &&
     releaseArtifact?.version === cliVersion &&
-    releaseArtifact.status === "staged"
+    releaseArtifact.status === STAGED
   ) {
     errors.push(
       `Pending changesets (${changesetFiles.join(", ")}) would version on top of staged, unpublished ${cliVersion}. Fold them into the staged release notes and consume them, or publish ${cliVersion} first.`,
