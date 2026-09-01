@@ -5,14 +5,14 @@ function hasUnsafeControlCharacter(value: string): boolean {
   });
 }
 
-export function requirePortableHttpUrl(value: string, label: string): string {
+export function parsePortableHttpUrl(value: string, label: string, base?: string | URL): URL {
   if (hasUnsafeControlCharacter(value)) {
     throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
   }
 
   let parsed: URL;
   try {
-    parsed = new URL(value);
+    parsed = new URL(value, base);
   } catch {
     throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
   }
@@ -24,5 +24,10 @@ export function requirePortableHttpUrl(value: string, label: string): string {
   ) {
     throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
   }
+  return parsed;
+}
+
+export function requirePortableHttpUrl(value: string, label: string): string {
+  parsePortableHttpUrl(value, label);
   return value;
 }

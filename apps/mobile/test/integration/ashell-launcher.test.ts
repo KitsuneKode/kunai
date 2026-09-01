@@ -88,7 +88,7 @@ describe("a-Shell launcher", () => {
 
   test("removes every fixed transient artifact when jsc terminates abruptly", async () => {
     const fixture = await launcherFixture(`#!/bin/sh
-for file in exit-code.tmp curl.conf http-body http-body.tmp http-meta http-meta.tmp terminal-answer player-url; do
+for file in exit-code.tmp curl.conf http-body http-body.tmp http-meta http-meta.tmp terminal-answer terminal-answer.tmp player-url; do
   printf sensitive > ".runtime/$file"
 done
 exit 1
@@ -106,7 +106,7 @@ exit 1
 
   test("removes every fixed transient artifact when jsc interrupts the launcher", async () => {
     const fixture = await launcherFixture(`#!/bin/sh
-for file in curl.conf http-body http-meta terminal-answer player-url; do
+for file in curl.conf http-body http-meta terminal-answer terminal-answer.tmp player-url; do
   printf sensitive > ".runtime/$file"
 done
 kill -INT "$PPID"
