@@ -63,8 +63,10 @@ Cron runs at `5 0 * * *` (see `vercel.json`).
    DATABASE_URL="postgres://..." bun run --cwd apps/analytics-ingest migrate
    ```
 
-4. Deploy and run a live smoke. Then explicitly set `KUNAI_ANALYTICS_URL` and
-   `KUNAI_ANALYTICS_METRICS_URL`; neither has a production default.
+4. Deploy and run a live smoke. The CLI and docs ship Kunai-owned production
+   defaults for the ping and public aggregate endpoints. Set `KUNAI_ANALYTICS_URL`
+   or `KUNAI_ANALYTICS_METRICS_URL` only to override those defaults; CLI endpoint
+   overrides must use HTTPS.
 
 5. Treat `ANALYTICS_HASH_SECRET` as stable. Do not rotate it in place: plan a
    versioned migration and reconciliation first, or exact lifetime counts will

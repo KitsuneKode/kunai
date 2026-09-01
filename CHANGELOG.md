@@ -365,6 +365,19 @@ A last review pass over the release train, from real sessions:
 - **Windows install guidance names the real mpv package.** The README, npm package page, and
   platform guide use `mpv-player.mpv-CI.MSVC`, which provides the `mpv.exe` Kunai probes and
   controls, instead of the ambiguous package name that can leave only `mpvnet.exe` available.
+- **History consolidation keeps the furthest watch state.** When an opaque row and its catalog
+  row resolve to the same episode, the newer identity still wins while progress, completion,
+  duration, and first-watched time keep the most useful evidence from both rows.
+- **Legacy YouTube history keeps its poster while migrating.** Rekeying an older video row no
+  longer drops its thumbnail from Library and Continue Watching.
+- **Installer recovery refuses unsafe staging paths.** Bash now matches the TypeScript
+  installer: abandoned transactions cannot escape the cache through traversal, prefix-sharing
+  siblings, or a staging-directory symlink before cleanup.
+- **Silent persistence and fallback failures are closed.** Shutdown waits for an in-flight
+  settings save; failed discovery fetches are not cached as empty; absolute-numbered anime works
+  in retention, cleanup, and crash resume; analytics rejects insecure overrides; relay sub-paths
+  are preserved; Windows paths are measured before tightening; AniSkip survives an untimed
+  IntroDB segment; unreadable config is not overwritten; and sandbox paths resolve only when used.
 
 Also new since 0.2.5, the last release you could install:
 
@@ -437,7 +450,8 @@ Make anonymous usage analytics explicit opt-in. Setup now defaults to off, Setti
 ### Privacy
 
 - Do not send analytics before consent, without an interactive terminal, or when DNT or CI blocks it.
-- Leave the production endpoint disabled until an operator configures and verifies one.
+- Send only to the Kunai-owned HTTPS endpoint after explicit consent; reject insecure overrides
+  without falling back to the default.
 
 Recover active playback from transient buffer, stall, and seek states while rejecting stale mpv cycle events and presence updates.
 

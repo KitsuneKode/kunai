@@ -8,6 +8,8 @@
 //      the current package version (not just an older highest entry).
 //   3. If apps/cli/package.json has been bumped, a `.changeset/*.md` must
 //      exist (or the change must already be reflected in apps/cli/CHANGELOG.md).
+//   4. A staged, unpublished release cannot carry loose changesets, because
+//      Changesets would version them on top of the release that has not shipped.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,11 +31,24 @@ function readText(path: string): string {
   return readFileSync(path, "utf8");
 }
 
-function listChangesetFiles(): string[] {
+export function changesetTargetsPackage(contents: string, packageName: string): boolean {
+  const frontmatter = contents.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
+  if (!frontmatter) return false;
+  return frontmatter.split(/\r?\n/).some((line) => {
+    const separator = line.indexOf(":");
+    if (separator < 0) return false;
+    const rawKey = line.slice(0, separator).trim();
+    const key = rawKey.replace(/^(["'])(.*)\1$/, "$2");
+    return key === packageName;
+  });
+}
+
+function listPackageChangesetFiles(packageName: string): string[] {
   if (!existsSync(CHANGESET_DIR)) return [];
-  return readdirSync(CHANGESET_DIR).filter(
-    (f) => f.endsWith(".md") && f !== "README.md" && f !== "config.json",
-  );
+  return readdirSync(CHANGESET_DIR).filter((file) => {
+    if (!file.endsWith(".md") || file === "README.md") return false;
+    return changesetTargetsPackage(readText(join(CHANGESET_DIR, file)), packageName);
+  });
 }
 
 export interface ReleaseGuardInputs {
@@ -41,6 +56,7 @@ export interface ReleaseGuardInputs {
   readonly cliChangelog: string;
   readonly rootChangelog: string | null;
   readonly changesetFiles: readonly string[];
+  readonly currentReleaseArtifact?: unknown;
 }
 
 export function collectReleaseGuardErrors({
@@ -48,6 +64,7 @@ export function collectReleaseGuardErrors({
   cliChangelog,
   rootChangelog,
   changesetFiles,
+  currentReleaseArtifact,
 }: ReleaseGuardInputs): string[] {
   const errors: string[] = [];
   const pkg = packageManifest as { version?: string; name?: string };
@@ -94,15 +111,39 @@ export function collectReleaseGuardErrors({
     }
   }
 
+  const releaseArtifact = currentReleaseArtifact as {
+    readonly version?: unknown;
+    readonly status?: unknown;
+  } | null;
+  if (
+    changesetFiles.length > 0 &&
+    releaseArtifact?.version === cliVersion &&
+    releaseArtifact.status === "staged"
+  ) {
+    errors.push(
+      `Pending changesets (${changesetFiles.join(", ")}) would version on top of staged, unpublished ${cliVersion}. Fold them into the staged release notes and consume them, or publish ${cliVersion} first.`,
+    );
+  }
+
   return errors;
 }
 
+function readCurrentReleaseArtifact(packageManifest: unknown): unknown | null {
+  const version = (packageManifest as { readonly version?: unknown }).version;
+  if (typeof version !== "string" || !version) return null;
+  const path = join(REPO_ROOT, ".release", `kunai-v${version}.json`);
+  return existsSync(path) ? readJson(path) : null;
+}
+
 function main(): void {
+  const packageManifest = readJson(CLI_PKG);
+  const packageName = (packageManifest as { readonly name?: unknown }).name;
   const errors = collectReleaseGuardErrors({
-    packageManifest: readJson(CLI_PKG),
+    packageManifest,
     cliChangelog: readText(CLI_CHANGELOG),
     rootChangelog: existsSync(ROOT_CHANGELOG) ? readText(ROOT_CHANGELOG) : null,
-    changesetFiles: listChangesetFiles(),
+    changesetFiles: typeof packageName === "string" ? listPackageChangesetFiles(packageName) : [],
+    currentReleaseArtifact: readCurrentReleaseArtifact(packageManifest),
   });
   printAndExit(errors);
 }

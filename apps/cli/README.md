@@ -41,10 +41,16 @@ substitute. Install YouTube support with `winget install yt-dlp`. Add `ffprobe`
 ## Install
 
 ```bash
+# npm
 npm install -g @kitsunekode/kunai
+
+# Bun
+bun install -g @kitsunekode/kunai
 ```
 
-Optional platform binaries ship as optional dependencies. Diagnose PATH with `kunai doctor`.
+Both commands install the same Node launcher and exact platform binary, so Node remains required
+at runtime for this package-manager channel. Optional platform binaries ship as optional
+dependencies. Diagnose PATH and ownership with `kunai doctor`.
 
 Run:
 

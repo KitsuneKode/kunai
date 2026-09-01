@@ -129,6 +129,18 @@ describe("npm platform version synchronization", () => {
 });
 
 describe("release guard platform pin contract", () => {
+  test("distinguishes package entries from empty bookkeeping changesets", async () => {
+    const { changesetTargetsPackage } = await import(GUARD_PATH);
+
+    expect(changesetTargetsPackage("---\n---\n", "@kitsunekode/kunai")).toBe(false);
+    expect(
+      changesetTargetsPackage(
+        '---\n"@kitsunekode/kunai": patch\n---\n\nA user-facing fix.\n',
+        "@kitsunekode/kunai",
+      ),
+    ).toBe(true);
+  });
+
   test("calls the same pure synchronization check used by file check mode", async () => {
     const guardSource = readFileSync(join(REPO_ROOT, "scripts/release-guard.ts"), "utf8");
 
@@ -149,6 +161,31 @@ describe("release guard platform pin contract", () => {
         changesetFiles: [],
       }),
     ).toContainEqual(expect.stringMatching(/platform|exact|optional/i));
+  });
+
+  test("blocks a loose changeset only on the current staged release", async () => {
+    const { collectReleaseGuardErrors } = await import(GUARD_PATH);
+
+    for (const [status, blocked] of [
+      ["staged", true],
+      ["published", false],
+    ] as const) {
+      const errors = collectReleaseGuardErrors({
+        packageManifest: validManifest("1.2.3"),
+        cliChangelog: "## 1.2.3\n",
+        rootChangelog: "## v1.2.3\n",
+        changesetFiles: ["late-fix.md"],
+        currentReleaseArtifact: {
+          version: "1.2.3",
+          status,
+        },
+      });
+
+      const resolution = errors.some((error: string) =>
+        /fold.*staged.*consume|publish.*first/i.test(error),
+      );
+      expect(resolution).toBe(blocked);
+    }
   });
 });
 
