@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 import {
   collectSourceFiles as collectRepoSourceFiles,
@@ -164,6 +164,17 @@ function collectSourceFiles(root: string): string[] {
   return collectRepoSourceFiles(root, { skipPrefixes: [".reference/experiments"] });
 }
 
+function resolvesUnderApplication(
+  file: string,
+  specifier: string,
+  applicationRoot: string,
+): boolean {
+  const target = specifier.startsWith(".")
+    ? relative(REPO_ROOT, resolve(REPO_ROOT, dirname(file), specifier)).replaceAll("\\", "/")
+    : specifier.replaceAll("\\", "/");
+  return target === applicationRoot || target.startsWith(`${applicationRoot}/`);
+}
+
 describe("runtime boundary imports", () => {
   test("the mobile application is a declared workspace", () => {
     const rootPackage = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
@@ -194,15 +205,29 @@ describe("runtime boundary imports", () => {
   });
 
   test("desktop and mobile applications do not import each other", () => {
+    expect(
+      resolvesUnderApplication(
+        "apps/mobile/src/runtime/example.ts",
+        "../../../cli/src/main",
+        "apps/cli",
+      ),
+    ).toBe(true);
+    expect(
+      resolvesUnderApplication(
+        "apps/cli/src/app/example.ts",
+        "../../../mobile/src/entry",
+        "apps/mobile",
+      ),
+    ).toBe(true);
     const offenders = [
       ...collectSourceFiles("apps/mobile/src").flatMap((file) =>
         collectImports(file)
-          .filter((specifier) => specifier.includes("apps/cli"))
+          .filter((specifier) => resolvesUnderApplication(file, specifier, "apps/cli"))
           .map((specifier) => `${file} -> ${specifier}`),
       ),
       ...collectSourceFiles("apps/cli/src").flatMap((file) =>
         collectImports(file)
-          .filter((specifier) => specifier.includes("apps/mobile"))
+          .filter((specifier) => resolvesUnderApplication(file, specifier, "apps/mobile"))
           .map((specifier) => `${file} -> ${specifier}`),
       ),
     ];

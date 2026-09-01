@@ -15,6 +15,7 @@ import {
   type MobileBuildMetadata,
   type MobileTarget,
   resolveRuntimeModule,
+  waitForMobileHostProof,
 } from "./build-contract";
 
 const MOBILE_ROOT = resolve(import.meta.dir, "..");
@@ -131,7 +132,10 @@ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
   const previousJsc = host.jsc;
   const previousLog = console.log;
   const output: string[] = [];
-  const files = new Map<string, string>();
+  const files = new Map<string, string>([
+    [".runtime/argv-count", "1"],
+    [".runtime/argv-0", "--help"],
+  ]);
   let completeHostProof: () => void = () => {};
   const hostProofCompleted = new Promise<void>((resolveCompletion) => {
     completeHostProof = resolveCompletion;
@@ -161,7 +165,7 @@ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
   console.log = (...values: unknown[]) => output.push(values.map(String).join(" "));
   try {
     Function(source)();
-    await hostProofCompleted;
+    await waitForMobileHostProof(hostProofCompleted, "[mobile-build] fake JSC host proof");
   } finally {
     console.log = previousLog;
     if (previousJsc === undefined) delete host.jsc;

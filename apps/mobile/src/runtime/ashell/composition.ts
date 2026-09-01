@@ -8,6 +8,10 @@ import { createAShellTerminalPort } from "./ashell-terminal-port";
 
 declare const __KUNAI_MOBILE_VERSION__: string;
 
+const MOBILE_ARGV_COUNT_PATH = ".runtime/argv-count";
+const MOBILE_ARGV_PREFIX = ".runtime/argv-";
+const MOBILE_ARGV_LIMIT = 32;
+
 export function createMobileEnvironment(jscHost: unknown = globalThis.jsc): MobileEnvironment {
   const jsc = requireAShellJsc(jscHost);
   const bridge = createAShellCommandBridge(jsc);
@@ -19,15 +23,48 @@ export function createMobileEnvironment(jscHost: unknown = globalThis.jsc): Mobi
   };
 }
 
-export function mobileArgv(processHost: unknown = (globalThis as { process?: unknown }).process) {
-  if (processHost === null || typeof processHost !== "object") {
-    throw new Error("a-Shell process argv is unavailable");
+function removeStagedMobileArgv(
+  jsc: ReturnType<typeof requireAShellJsc>,
+  argumentCount: number,
+): boolean {
+  let removed = true;
+  for (const path of [
+    MOBILE_ARGV_COUNT_PATH,
+    `${MOBILE_ARGV_COUNT_PATH}.tmp`,
+    ...Array.from({ length: argumentCount }, (_, index) => `${MOBILE_ARGV_PREFIX}${index}`),
+  ]) {
+    try {
+      if (jsc.isFile(path) && (jsc.deleteFile(path) !== 0 || jsc.isFile(path))) removed = false;
+    } catch {
+      removed = false;
+    }
   }
-  const argv = (processHost as { argv?: unknown }).argv;
-  if (!Array.isArray(argv) || argv.some((value) => typeof value !== "string")) {
-    throw new Error("a-Shell process argv is invalid");
+  return removed;
+}
+
+export function mobileArgv(jscHost: unknown = globalThis.jsc): readonly string[] {
+  const jsc = requireAShellJsc(jscHost);
+  let argv: string[] | undefined;
+  let cleanupCount = MOBILE_ARGV_LIMIT;
+  try {
+    if (!jsc.isFile(MOBILE_ARGV_COUNT_PATH)) throw new Error("missing count");
+    const rawCount = jsc.readFile(MOBILE_ARGV_COUNT_PATH);
+    if (!/^(?:0|[1-9][0-9]?)$/u.test(rawCount)) throw new Error("invalid count");
+    const count = Number(rawCount);
+    if (count > MOBILE_ARGV_LIMIT) throw new Error("excessive count");
+    cleanupCount = count;
+    argv = [];
+    for (let index = 0; index < count; index += 1) {
+      const path = `${MOBILE_ARGV_PREFIX}${index}`;
+      if (!jsc.isFile(path)) throw new Error("missing argument");
+      argv.push(jsc.readFile(path));
+    }
+  } catch {
+    argv = undefined;
   }
-  return (argv as string[]).slice(2);
+  const removed = removeStagedMobileArgv(jsc, cleanupCount);
+  if (!argv || !removed) throw new Error("a-Shell staged arguments are invalid");
+  return argv;
 }
 
 export function mobileVersion(): string {
@@ -53,5 +90,4 @@ export function exitMobile(code: number): void {
     if (jsc.isFile(temporaryPath)) jsc.deleteFile(temporaryPath);
     throw new Error("Mobile host proof failed");
   }
-  if (code !== 0) throw new Error("Mobile host proof failed");
 }

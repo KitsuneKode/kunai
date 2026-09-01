@@ -23,11 +23,11 @@ function runtime(input: {
 
 describe("Android mobile player port", () => {
   test("hands VLC one opaque URL argument through the shared plan", async () => {
-    const spawned: readonly string[][] = [];
+    const spawned: string[][] = [];
     const player = createAndroidPlayerPort({
       runtime: runtime({
         commands: { "termux-am": "/usr/bin/termux-am" },
-        onSpawn: (argv) => (spawned as string[][]).push([...argv]),
+        onSpawn: (argv) => spawned.push([...argv]),
       }),
     });
 

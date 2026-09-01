@@ -6,10 +6,13 @@ import {
   findForbiddenIosOutputTokens,
   MOBILE_TARGETS,
   type MobileBuildMetadata,
+  waitForMobileHostProof,
 } from "../../scripts/build-contract";
 
 const MOBILE_ROOT = join(import.meta.dir, "../..");
 const DIST = join(MOBILE_ROOT, "dist");
+// SAFETY: The build script writes this generated manifest from a MobileBuildMetadata value,
+// and the tests below independently verify its complete target and artifact fields.
 const BUILD_METADATA = JSON.parse(
   readFileSync(join(DIST, "mobile-build-meta.json"), "utf8"),
 ) as MobileBuildMetadata;
@@ -65,19 +68,27 @@ describe("mobile build artifacts", () => {
     const bundle = readFileSync(join(DIST, "ios/kunai-mobile-ios.js"), "utf8");
     expect(findForbiddenIosOutputTokens(bundle)).toEqual([]);
     const launcher = readFileSync(join(DIST, "ios/kunai-mobile"), "utf8");
-    expect(launcher).toContain('jsc ./kunai-mobile-ios.js "$@"');
+    expect(launcher).toContain("jsc ./kunai-mobile-ios.js");
+    expect(launcher).not.toContain('jsc ./kunai-mobile-ios.js "$@"');
     expect(launcher).toContain('exit "$mobile_status"');
   });
 
   test("keeps the emitted HTTP helper on the bounded redirect contract", () => {
     const helper = readFileSync(join(DIST, "ios/kunai-mobile-http"), "utf8");
-    expect(helper).toContain("--proto '=http,https' --proto-redir '=http,https'");
+    expect(helper).toContain("--proto '=https' --proto-redir '=https'");
     expect(helper).toContain("--location --max-redirs 3 --silent --show-error");
     expect(helper).toContain("--config .runtime/curl.conf");
   });
 
   test("runs the complete host proof through fake a-Shell globals without leaking URLs", async () => {
-    const files = new Map<string, string>();
+    const files = new Map<string, string>([
+      [".runtime/argv-count", "5"],
+      [".runtime/argv-0", "--host-proof"],
+      [".runtime/argv-1", "--probe-url"],
+      [".runtime/argv-2", "https://probe.example/status?token=probe-secret"],
+      [".runtime/argv-3", "--media-url"],
+      [".runtime/argv-4", "https://media.example/video.m3u8?token=media-secret"],
+    ]);
     const commands: string[] = [];
     const output: string[] = [];
     let completeHostProof: () => void = () => {};
@@ -86,7 +97,6 @@ describe("mobile build artifacts", () => {
     });
     const mediaUrl = "https://media.example/video.m3u8?token=media-secret";
     const probeUrl = "https://probe.example/status?token=probe-secret";
-    const previousArgv = process.argv;
     const previousJsc = globalThis.jsc;
     const previousLog = console.log;
     globalThis.jsc = {
@@ -124,22 +134,12 @@ describe("mobile build artifacts", () => {
         return "0";
       },
     };
-    process.argv = [
-      "jsc",
-      "kunai-mobile-ios.js",
-      "--host-proof",
-      "--probe-url",
-      probeUrl,
-      "--media-url",
-      mediaUrl,
-    ];
     console.log = (...values: unknown[]) => output.push(values.map(String).join(" "));
     try {
       Function(readFileSync(join(DIST, "ios/kunai-mobile-ios.js"), "utf8"))();
-      await hostProofCompleted;
+      await waitForMobileHostProof(hostProofCompleted, "fake a-Shell integration host proof");
     } finally {
       console.log = previousLog;
-      process.argv = previousArgv;
       globalThis.jsc = previousJsc;
     }
 

@@ -7,22 +7,22 @@ function hasUnsafeControlCharacter(value: string): boolean {
 
 export function requirePortableHttpUrl(value: string, label: string): string {
   if (hasUnsafeControlCharacter(value)) {
-    throw new Error(`${label} must be an absolute credential-free HTTP(S) URL`);
+    throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
   }
 
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
-    throw new Error(`${label} must be an absolute credential-free HTTP(S) URL`);
+    throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
   }
   if (
-    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.protocol !== "https:" ||
     parsed.username !== "" ||
     parsed.password !== "" ||
     parsed.hash !== ""
   ) {
-    throw new Error(`${label} must be an absolute credential-free HTTP(S) URL`);
+    throw new Error(`${label} must be an absolute credential-free HTTPS URL`);
   }
   return value;
 }

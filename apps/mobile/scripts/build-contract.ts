@@ -66,18 +66,13 @@ const IOS_FORBIDDEN_INPUT_MARKERS = [
 const IOS_FORBIDDEN_OUTPUT_TOKENS = [
   "import(",
   "require(",
-  "process.env",
-  "process.cwd",
-  "process.exit",
-  "process.versions",
+  "process.",
+  "process[",
   "Buffer",
   "Bun.",
   "node:",
   "bun:",
 ] as const;
-
-const ASHELL_COMPOSITION_SUFFIX = "src/runtime/ashell/composition.ts";
-const AUDITED_PROCESS_LOOKUP = "(globalThis as { process?: unknown }).process";
 
 export function resolveRuntimeModule(targetId: MobileTargetId): string {
   const target = MOBILE_TARGETS.find((candidate) => candidate.id === targetId);
@@ -101,16 +96,27 @@ export function findForbiddenIosProcessUses(
   const violations: string[] = [];
   for (const [rawPath, source] of Object.entries(sources)) {
     const path = rawPath.replaceAll("\\", "/");
-    const hasAuditedLookup = source.includes(AUDITED_PROCESS_LOOKUP);
-    const remaining = source.replaceAll(AUDITED_PROCESS_LOOKUP, "");
-    const hasDirectProcessUse = /\bprocess\s*(?:\.|\[)/u.test(remaining);
-    if (hasDirectProcessUse || (hasAuditedLookup && !path.endsWith(ASHELL_COMPOSITION_SUFFIX))) {
-      violations.push(path);
-    }
+    if (/\bprocess\b/u.test(source)) violations.push(path);
   }
   return violations.sort();
 }
 
 export function findForbiddenIosOutputTokens(source: string): readonly string[] {
   return IOS_FORBIDDEN_OUTPUT_TOKENS.filter((token) => source.includes(token)).sort();
+}
+
+export async function waitForMobileHostProof(
+  completion: Promise<void>,
+  label: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} did not complete`)), timeoutMs);
+  });
+  try {
+    await Promise.race([completion, deadline]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }

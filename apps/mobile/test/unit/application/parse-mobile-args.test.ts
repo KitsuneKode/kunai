@@ -41,8 +41,9 @@ describe("parseMobileArgs", () => {
     expect(() => parseMobileArgs(["--unknown"])).toThrow("Unknown option");
   });
 
-  test("accepts only absolute credential-free HTTP(S) URLs without fragments", () => {
+  test("accepts only absolute credential-free HTTPS URLs without fragments", () => {
     for (const url of [
+      "http://probe.example/status",
       "file:///tmp/probe",
       "/relative/probe",
       "https://user:password@probe.example/status",
@@ -58,7 +59,7 @@ describe("parseMobileArgs", () => {
           "--media-url",
           "https://media.example/video.m3u8",
         ]),
-      ).toThrow("absolute credential-free HTTP(S)");
+      ).toThrow("absolute credential-free HTTPS");
     }
   });
 });

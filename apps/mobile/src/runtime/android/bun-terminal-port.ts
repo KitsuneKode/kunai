@@ -39,10 +39,10 @@ export function createBufferedAndroidReadLine(
       let interrupt: (() => void) | undefined;
       const interrupted = new Promise<{ readonly kind: "cancelled" }>((resolve) => {
         interrupt = () => {
-          void runtime.cancel().then(
-            () => resolve({ kind: "cancelled" }),
-            () => resolve({ kind: "cancelled" }),
-          );
+          resolve({ kind: "cancelled" });
+          void runtime.cancel().catch(() => {
+            // Cancellation already owns the result; a closed reader needs no recovery.
+          });
         };
       });
       const removeInterrupt = runtime.onInterrupt(() => interrupt?.());
@@ -50,7 +50,9 @@ export function createBufferedAndroidReadLine(
         const result = await Promise.race([runtime.read(), interrupted]);
         if ("kind" in result) return result;
         if (result.done || result.value === undefined) {
-          return buffered.length > 0 ? buffered : null;
+          const line = buffered;
+          buffered = "";
+          return line.length > 0 ? line : null;
         }
         buffered += decoder.decode(result.value, { stream: true });
       } finally {
