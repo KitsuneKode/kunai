@@ -98,7 +98,25 @@ async function resolveAnidbShow(
   context?: ProviderRuntimeContext,
 ): Promise<AnidbSearchResult | null> {
   const direct = directAnidbShowFromInput(input);
-  if (direct) return direct;
+  if (direct) {
+    // A persisted `providerNativeIds.anidb` can point at a reindexed slug
+    // (fixtures used 19413, live is 4883). If the direct id's catalog 404s,
+    // fall back to title search so history doesn't strand.
+    const query = input.title.title?.trim() ?? "";
+    if (query) {
+      try {
+        const episodes = await fetchAnidbEpisodes(direct.id, signal, context);
+        if (episodes.length === 0) {
+          const searched = await searchAnidb(query, signal, context);
+          const match = chooseAnidbSearchMatch(query, searched);
+          if (match) return match;
+        }
+      } catch {
+        // Transient / Cloudflare — keep direct, let caller surface retryable
+      }
+    }
+    return direct;
+  }
 
   const query = input.title.title?.trim() ?? "";
   if (!query) return null;

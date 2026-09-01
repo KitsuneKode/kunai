@@ -431,7 +431,16 @@ export async function fetchAnidbEpisodes(
   if (cached) return cached;
 
   const url = `${ANIDB_BASE}/api/frontend/anime/${numericId}/episodes`;
-  const text = await anidbFetchText(url, { signal, context });
+  let text: string;
+  try {
+    text = await anidbFetchText(url, { signal, context });
+  } catch (error) {
+    // A reindexed slug (e.g. Solo Leveling 19413 → 4883) 404s forever.
+    // Treat as empty catalog so resolve surfaces `catalog-unavailable`
+    // rather than a retryable `network-error` that would loop.
+    if (error instanceof Error && /HTTP 404/.test(error.message)) return [];
+    throw error;
+  }
   let parsed: { episodes?: readonly Record<string, unknown>[] };
   try {
     parsed = JSON.parse(text) as { episodes?: readonly Record<string, unknown>[] };
@@ -466,7 +475,13 @@ export async function fetchAnidbLanguages(
   if (cached) return cached;
 
   const url = `${ANIDB_BASE}/api/frontend/episode/${episodeId}/languages`;
-  const text = await anidbFetchText(url, { signal, context });
+  let text: string;
+  try {
+    text = await anidbFetchText(url, { signal, context });
+  } catch (error) {
+    if (error instanceof Error && /HTTP 404/.test(error.message)) return [];
+    throw error;
+  }
   let parsed: { languages?: readonly Record<string, unknown>[] };
   try {
     parsed = JSON.parse(text) as { languages?: readonly Record<string, unknown>[] };
@@ -506,8 +521,10 @@ export async function collectAnidbAvailableAudioModes(
 ): Promise<readonly ("sub" | "dub")[]> {
   const languages = await fetchAnidbLanguages(episodeId, signal, context);
   const modes: ("sub" | "dub")[] = [];
-  if (languages.some((entry) => entry.code === "jpn")) modes.push("sub");
-  if (languages.some((entry) => entry.code === "eng")) modes.push("dub");
+  // Exact `jpn`/`eng` only — `kor`/future codes are runtime evidence, not a
+  // third audio mode. Case-insensitive to match `languageEntryForMode`.
+  if (languages.some((entry) => entry.code.toLowerCase() === "jpn")) modes.push("sub");
+  if (languages.some((entry) => entry.code.toLowerCase() === "eng")) modes.push("dub");
   return modes;
 }
 
