@@ -1,0 +1,60 @@
+name: Setup curl-impersonate
+description: >
+  Put TLS-fingerprint-impersonating curl wrappers on PATH for live provider runs.
+
+# Why this exists:
+#
+# anidb.app sits behind Cloudflare, which scores the TLS handshake as well as
+# the source IP. A residential IP is waved through with a plain handshake, so
+# `curl https://anidb.app/browse?q=...` returns the real page on a developer
+# machine. From a GitHub-hosted runner the same request is answered with
+# `403 Just a moment...` in under 100ms.
+#
+# The provider client already prefers an impersonate build when one is on PATH
+# (see `resolveCurlCandidate` in packages/providers/src/shared/curl-impersonate.ts)
+# and falls back to plain curl otherwise. Nothing installed it in CI, so every
+# live anime run silently parsed a challenge page as "zero results" — which the
+# release signoff then reported as provider drift rather than an environment
+# block. Measured on a runner: plain curl 403, curl_chrome150 200 with results.
+
+inputs:
+  version:
+    description: curl-impersonate release tag to install
+    required: false
+    default: v2.2.1
+  sha256:
+    description: Expected SHA-256 of the release tarball
+    required: false
+    default: 9c4b52e1ce89c9cc55e2dd190159bbcdc89e6a04fde80fbfb9d3cc497380677c
+
+runs:
+  using: composite
+  steps:
+    - name: Install curl-impersonate
+      shell: bash
+      env:
+        CURL_IMPERSONATE_VERSION: ${{ inputs.version }}
+        CURL_IMPERSONATE_SHA256: ${{ inputs.sha256 }}
+      run: |
+        set -euo pipefail
+        install_root=/opt/curl-impersonate
+        tarball="$(mktemp -d)/curl-impersonate.tar.gz"
+
+        curl -fsSL -o "${tarball}" \
+          "https://github.com/lexiforest/curl-impersonate/releases/download/${CURL_IMPERSONATE_VERSION}/curl-impersonate-${CURL_IMPERSONATE_VERSION}.x86_64-linux-gnu.tar.gz"
+
+        # Pinned by digest for the same reason every action here is pinned by
+        # SHA: this puts a network-facing binary on PATH for live provider runs.
+        echo "${CURL_IMPERSONATE_SHA256}  ${tarball}" | sha256sum --check --strict
+
+        sudo mkdir -p "${install_root}"
+        sudo tar -xzf "${tarball}" -C "${install_root}"
+        echo "${install_root}" >> "${GITHUB_PATH}"
+
+        # Fail here rather than let a silent miss become "zero results" later:
+        # the resolver only recognises `curl_<family><version>` wrappers.
+        if ! ls "${install_root}" | grep -qE '^curl_chrome[0-9]+$'; then
+          echo "::error::no curl_chrome* wrappers found in ${install_root}"
+          exit 1
+        fi
+        echo "Installed $(ls "${install_root}" | grep -cE '^curl_' || true) wrappers from ${CURL_IMPERSONATE_VERSION}"

@@ -48,6 +48,11 @@ jobs:
           turbo-cache-prefix: provider-matrix
           skip-turbo-cache: "true"
 
+      # Cloudflare-fronted providers answer a plain TLS handshake from a runner
+      # with `403 Just a moment...`. Without this the anime lane parses that
+      # challenge as zero results and signoff reports provider drift.
+      - uses: ./.github/actions/setup-curl-impersonate
+
       - name: Run serial provider matrix
         id: matrix
         if: ${{ github.event_name == 'schedule' || github.event.inputs.mode != 'release-signoff' }}
