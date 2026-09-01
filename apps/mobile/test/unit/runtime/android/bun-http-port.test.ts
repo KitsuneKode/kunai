@@ -46,14 +46,22 @@ describe("Bun Android HTTP port", () => {
 
   test("follows at most three HTTPS redirects manually", async () => {
     const requested: string[] = [];
+    let cancelledBodies = 0;
     const port = createBunHttpPort({
       fetch: async (url, init) => {
         requested.push(String(url));
         expect(init?.redirect).toBe("manual");
-        return new Response(null, {
-          status: 302,
-          headers: { location: `/hop-${requested.length}` },
-        });
+        return new Response(
+          new ReadableStream({
+            cancel() {
+              cancelledBodies += 1;
+            },
+          }),
+          {
+            status: 302,
+            headers: { location: `/hop-${requested.length}` },
+          },
+        );
       },
     });
 
@@ -66,6 +74,32 @@ describe("Bun Android HTTP port", () => {
       }),
     ).rejects.toThrow("too many redirects");
     expect(requested).toHaveLength(4);
+    expect(cancelledBodies).toBe(4);
+  });
+
+  test("cancels a redirect body before rejecting a missing location", async () => {
+    let redirectBodyCancelled = false;
+    const port = createBunHttpPort({
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            cancel() {
+              redirectBodyCancelled = true;
+            },
+          }),
+          { status: 302 },
+        ),
+    });
+
+    await expect(
+      port.request({
+        method: "GET",
+        url: "https://probe.example/start",
+        timeoutMs: 8_000,
+        maxBytes: 65_536,
+      }),
+    ).rejects.toThrow("redirect missing location");
+    expect(redirectBodyCancelled).toBe(true);
   });
 
   test("rejects plaintext initial URLs and HTTPS downgrade redirects", async () => {
@@ -80,7 +114,64 @@ describe("Bun Android HTTP port", () => {
     for (const url of ["http://probe.example/start", "https://probe.example/start"]) {
       await expect(
         port.request({ method: "GET", url, timeoutMs: 8_000, maxBytes: 65_536 }),
-      ).rejects.toThrow("unsupported protocol");
+      ).rejects.toThrow("credential-free HTTPS");
     }
+  });
+
+  test("rejects redirect targets with credentials or fragments", async () => {
+    for (const location of [
+      "https://user:password@redirect.example/path",
+      "https://redirect.example/path#fragment",
+    ]) {
+      let requests = 0;
+      const port = createBunHttpPort({
+        fetch: async () => {
+          requests += 1;
+          return new Response(null, { status: 302, headers: { location } });
+        },
+      });
+
+      await expect(
+        port.request({
+          method: "GET",
+          url: "https://probe.example/start",
+          timeoutMs: 8_000,
+          maxBytes: 65_536,
+        }),
+      ).rejects.toThrow();
+      expect(requests).toBe(1);
+    }
+  });
+
+  test("cancels a redirect response body before following the next hop", async () => {
+    let redirectBodyCancelled = false;
+    let requests = 0;
+    const port = createBunHttpPort({
+      fetch: async () => {
+        requests += 1;
+        if (requests === 2) return new Response(null, { status: 204 });
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.enqueue(new Uint8Array(65_536));
+            },
+            cancel() {
+              redirectBodyCancelled = true;
+            },
+          }),
+          { status: 302, headers: { location: "https://probe.example/final" } },
+        );
+      },
+    });
+
+    await expect(
+      port.request({
+        method: "GET",
+        url: "https://probe.example/start",
+        timeoutMs: 8_000,
+        maxBytes: 65_536,
+      }),
+    ).resolves.toEqual({ status: 204, bytes: 0 });
+    expect(redirectBodyCancelled).toBe(true);
   });
 });
