@@ -13,6 +13,7 @@ const CHOICES = [
 function terminalFixture(input: {
   readonly answers?: readonly (string | undefined)[];
   readonly helperStatus?: number;
+  readonly retainDeletedFiles?: boolean;
 }) {
   const files = new Map<string, string>();
   const answers = [...(input.answers ?? [])];
@@ -30,7 +31,7 @@ function terminalFixture(input: {
     isFile: (path) => files.has(path),
     makeFolder: () => 0,
     deleteFile: (path) => {
-      files.delete(path);
+      if (!input.retainDeletedFiles) files.delete(path);
       return 0;
     },
     move: () => 0,
@@ -88,5 +89,14 @@ describe("a-Shell terminal port", () => {
       );
       expect(fixture.files.has(ANSWER_PATH)).toBe(false);
     }
+  });
+
+  test("cancels when answer-file deletion is not observable", async () => {
+    const fixture = terminalFixture({ answers: ["1"], retainDeletedFiles: true });
+
+    await expect(fixture.port.choose({ prompt: "Continue?", choices: CHOICES })).resolves.toEqual({
+      kind: "cancelled",
+    });
+    expect(fixture.files.has(ANSWER_PATH)).toBe(true);
   });
 });

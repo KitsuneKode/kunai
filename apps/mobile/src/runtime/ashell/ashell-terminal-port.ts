@@ -24,9 +24,11 @@ export function createAShellTerminalPort(input: {
   function readAnswer(): string | undefined {
     if (!input.jsc.isFile(ANSWER_PATH)) return undefined;
     try {
-      return input.jsc.readFile(ANSWER_PATH).replace(/\r?\n$/u, "");
-    } finally {
+      const answer = input.jsc.readFile(ANSWER_PATH).replace(/\r?\n$/u, "");
+      return removeAnswer() ? answer : undefined;
+    } catch {
       removeAnswer();
+      return undefined;
     }
   }
 

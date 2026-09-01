@@ -85,6 +85,9 @@ describe("mobile artifact build contract", () => {
       findForbiddenIosOutputTokens(
         "require('x'); process.env.X; process['argv']; Buffer.from('x'); Bun.file('x'); node:fs",
       ),
-    ).toEqual(["Buffer", "Bun.", "node:", "process.", "process[", "require("]);
+    ).toEqual(["Buffer", "Bun.", "node:", "process", "require("]);
+    for (const source of ["process?.env", "const {env}=process", 'globalThis["process"].env']) {
+      expect(findForbiddenIosOutputTokens(source)).toContain("process");
+    }
   });
 });
