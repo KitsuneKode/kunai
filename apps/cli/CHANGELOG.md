@@ -96,6 +96,22 @@
     The field is documented as ordering rather than an allowlist; registered
     AllAnime and Miruro providers remain available behind AniDB.
 
+  Google Cast playback.
+
+  - **Cast to devices on the local network.** Discover receivers through mDNS,
+    DIAL/SSDP, and supported native resolvers, then choose local playback or a
+    receiver from Kunai's playback-device picker.
+  - **Play full video and audio with remote controls.** Cast-compatible media
+    uses Google's Default Media Receiver, with pause, resume, relative seek,
+    direct timeline seek, stop, and playback progress shared with Kunai.
+  - **Deliver protected media and subtitles safely.** Header-protected streams
+    and converted WebVTT subtitles use tokenized, session-scoped LAN gateways
+    that close when playback ends.
+  - **Try experimental audio-only Cast.** `--cast-audio` keeps muted video in
+    local mpv while sending ffmpeg-extracted audio to a registered Kunai Custom
+    Receiver, with coupled controls and receiver-clock drift correction. Regular
+    `--cast` remains on the existing full audio and video receiver path.
+
   Launch flags, discovery, and the queue.
 
   - **`-S <query>` shows its results.** The search ran, but the view and the shell

@@ -25,13 +25,15 @@
     "sortScripts": false
   },
 
-  "sortTailwindcss": {
-    "functions": ["cn", "clsx", "cva", "twMerge"]
-  },
-
   "ignorePatterns": [
     ".reference/experiments/**/*.ts",
     ".reference/experiments/**/node_modules/**",
+    "README.md",
+    "**/README.md",
+    "CHANGELOG.md",
+    "**/CHANGELOG.md",
+    "**/test/fixtures/**",
+    "**/docker-compose.yml",
     "apps/cli/dist/**",
     "dist/**",
     "node_modules/**",

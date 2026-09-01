@@ -1,12 +1,11 @@
 import { Database } from "bun:sqlite";
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, describe as bunDescribe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
 
-import { describePosixOnly as describe } from "../helpers/platform-gates";
 import { buildPtyCommand } from "../helpers/pty-command";
 import { storageRootEnv } from "../helpers/storage-env";
 import { removeTempDir } from "../support/remove-temp-dir";
@@ -33,6 +32,9 @@ const exitTimeoutMs = 10_000;
 // macOS cold boot is allowed the full startup deadline before the helper can
 // either signal the CLI or report its transcript.
 const testTimeoutMs = startupTimeoutMs + 1_500 + exitTimeoutMs + 5_000;
+const ptyTool = process.platform === "darwin" ? "expect" : "script";
+const describe =
+  process.platform !== "win32" && Bun.which(ptyTool) ? bunDescribe : bunDescribe.skip;
 
 afterEach(() => {
   for (const pid of spawnedPids.splice(0)) {
