@@ -59,6 +59,19 @@ describe("episode catalogue", () => {
     expect(catalog).toEqual({ episodes: [], missing: false });
   });
 
+  test("a non-array episodes field is empty-but-present, not a crash", async () => {
+    // `{"episodes":{}}` parses cleanly, so `?? []` never fires and the value
+    // reaches `.flatMap`. That threw a TypeError out of the catalogue call —
+    // malformed upstream data became a crash instead of an empty listing, and
+    // an id that is probably fine would have looked broken.
+    const catalog = await fetchAnidbEpisodeCatalog(
+      "object-episodes-5003",
+      undefined,
+      contextReturning(() => ({ status: 200, body: JSON.stringify({ episodes: {} }) })),
+    );
+    expect(catalog).toEqual({ episodes: [], missing: false });
+  });
+
   test("an unparseable body is not reported as missing", async () => {
     // The id may be perfectly good and the response mangled; claiming the id is
     // gone would re-search on no evidence.
@@ -68,6 +81,34 @@ describe("episode catalogue", () => {
       contextReturning(() => ({ status: 200, body: "<html>nope" })),
     );
     expect(catalog.missing).toBe(false);
+  });
+
+  test("a cancelled caller is not retried through the curl fallback", async () => {
+    // The fallback exists so a Cloudflare challenge gets a second chance with a
+    // better TLS fingerprint. An abort is not a fingerprint problem: swallowing
+    // it spent a whole curl request on work nobody was waiting for. The
+    // internal 15s timeout still earns its retry, because this keys off the
+    // caller's signal rather than the error shape.
+    // Asserting "it rejects" would prove nothing: the fallback also rejects on
+    // an aborted signal, so both behaviours look identical from outside. The
+    // sentinel message only survives if the original error propagated instead
+    // of curl being consulted and producing its own.
+    const controller = new AbortController();
+    controller.abort();
+    let contextFetches = 0;
+    const context = {
+      fetch: {
+        async fetch() {
+          contextFetches += 1;
+          throw new Error("anidb-abort-sentinel");
+        },
+      },
+    } as unknown as ProviderRuntimeContext;
+
+    await expect(
+      fetchAnidbEpisodeCatalog("cancelled-5004", controller.signal, context),
+    ).rejects.toThrow("anidb-abort-sentinel");
+    expect(contextFetches).toBe(1);
   });
 
   test("a real catalogue still parses and sorts", async () => {

@@ -193,6 +193,12 @@ export async function anidbFetchText(
       }
     } catch (error) {
       if (error instanceof AnidbHttpStatusError) throw error;
+      // A cancelled caller is not a fingerprint problem either. Without this
+      // an abort during the context fetch is swallowed and the fallback spends
+      // a whole curl request on work nobody is waiting for. Checked against
+      // `options.signal` rather than the error shape, so the 15s internal
+      // timeout still earns its second chance through curl.
+      if (options.signal?.aborted === true) throw error;
       // Fallback to local curl/impersonate
     }
   }
@@ -525,6 +531,13 @@ export async function fetchAnidbEpisodeCatalog(
   } catch {
     // Unparseable is not the same as absent: the id may be fine and the body
     // mangled, so this must not be reported as a miss.
+    return ANIDB_EMPTY_CATALOG;
+  }
+  // `?? []` only covers null and undefined. A body like `{"episodes":{}}`
+  // parses cleanly and then throws on `.flatMap`, turning malformed upstream
+  // data into a crash rather than an empty listing. A non-array field is
+  // empty-but-present, the same as an unparseable body: not a missing id.
+  if (parsed.episodes !== undefined && !Array.isArray(parsed.episodes)) {
     return ANIDB_EMPTY_CATALOG;
   }
   const episodes = (parsed.episodes ?? [])
