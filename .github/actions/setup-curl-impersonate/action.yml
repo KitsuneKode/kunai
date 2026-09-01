@@ -1,0 +1,128 @@
+name: Setup curl-impersonate
+description: >
+  Put TLS-fingerprint-impersonating curl wrappers on PATH for live provider runs.
+
+# Why this exists:
+#
+# anidb.app sits behind Cloudflare, which scores the TLS handshake as well as
+# the source IP. A residential IP is waved through with a plain handshake, so
+# `curl https://anidb.app/browse?q=...` returns the real page on a developer
+# machine. From a GitHub-hosted runner the same request is answered with
+# `403 Just a moment...` in under 100ms.
+#
+# The provider client already prefers an impersonate build when one is on PATH
+# (see `resolveCurlCandidate` in packages/providers/src/shared/curl-impersonate.ts)
+# and falls back to plain curl otherwise. Nothing installed it in CI, so every
+# live anime run silently parsed a challenge page as "zero results" — which the
+# release signoff then reported as provider drift rather than an environment
+# block. Measured on a runner: plain curl 403, curl_chrome150 200 with results.
+
+inputs:
+  version:
+    description: curl-impersonate release tag to install
+    required: false
+    default: v2.2.1
+
+runs:
+  using: composite
+  steps:
+    # Linux and macOS share a shell and an archive layout: extensionless
+    # wrappers beside the binary. Windows is genuinely different and is handled
+    # separately below rather than pretended into this one.
+    - name: Install curl-impersonate (Linux / macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        CURL_IMPERSONATE_VERSION: ${{ inputs.version }}
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
+      run: |
+        set -euo pipefail
+        install_root=/opt/curl-impersonate
+
+        case "${RUNNER_OS}:${RUNNER_ARCH}" in
+          Linux:X64)   asset=x86_64-linux-gnu;  digest=9c4b52e1ce89c9cc55e2dd190159bbcdc89e6a04fde80fbfb9d3cc497380677c ;;
+          Linux:ARM64) asset=aarch64-linux-gnu; digest=cd4aa85cbf228287540f92972b2fb5739b6758719ba8c43061fb8a533856342c ;;
+          macOS:X64)   asset=x86_64-macos;      digest=e3d572747a7bb9cde7de37504a6da6819f171f43af33137034e1eb776e3ec5af ;;
+          macOS:ARM64) asset=arm64-macos;       digest=4efe9a8b2b10e7c212bf78c8356522ca7cb536c87f107905d8aeb4f5c8402bf8 ;;
+          *)
+            echo "::error::no curl-impersonate build mapped for ${RUNNER_OS}/${RUNNER_ARCH}"
+            exit 1
+            ;;
+        esac
+
+        tarball="$(mktemp -d)/curl-impersonate.tar.gz"
+        curl -fsSL -o "${tarball}" \
+          "https://github.com/lexiforest/curl-impersonate/releases/download/${CURL_IMPERSONATE_VERSION}/curl-impersonate-${CURL_IMPERSONATE_VERSION}.${asset}.tar.gz"
+
+        # Pinned by digest for the same reason every action here is pinned by
+        # SHA: this puts a network-facing binary on PATH for live provider runs.
+        # Per-asset, because each platform build hashes differently.
+        #
+        # macOS ships `shasum` and no `sha256sum`; many Linux images ship
+        # `sha256sum` and no `shasum`. Pick whichever exists rather than assume
+        # one and fail the verification step on the platform that lacks it.
+        if command -v sha256sum >/dev/null 2>&1; then
+          echo "${digest}  ${tarball}" | sha256sum --check --strict -
+        elif command -v shasum >/dev/null 2>&1; then
+          echo "${digest}  ${tarball}" | shasum -a 256 --check --strict -
+        else
+          echo "::error::no sha256sum or shasum available to verify the download"
+          exit 1
+        fi
+
+        sudo mkdir -p "${install_root}"
+        sudo tar -xzf "${tarball}" -C "${install_root}"
+        echo "${install_root}" >> "${GITHUB_PATH}"
+
+        # Fail here rather than let a silent miss become "zero results" later:
+        # the resolver only recognises `curl_<family><version>` wrappers.
+        if ! ls "${install_root}" | grep -qE '^curl_chrome[0-9]+$'; then
+          echo "::error::no curl_chrome* wrappers found in ${install_root}"
+          exit 1
+        fi
+        echo "Installed $(ls "${install_root}" | grep -cE '^curl_') wrappers (${asset}, ${CURL_IMPERSONATE_VERSION})"
+
+    # The Windows archive is its own shape: `curl-impersonate.exe` with `.bat`
+    # wrappers around it, and no extensionless wrappers at all. The resolver
+    # accepts `.bat`/`.cmd` for exactly this reason, so the assertion below
+    # checks for what actually ships rather than the Unix naming.
+    - name: Install curl-impersonate (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        CURL_IMPERSONATE_VERSION: ${{ inputs.version }}
+        RUNNER_ARCH: ${{ runner.arch }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $installRoot = 'C:\curl-impersonate'
+
+        switch ($env:RUNNER_ARCH) {
+          'X64'   { $asset = 'x86_64-win32'; $digest = 'f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5' }
+          default {
+            Write-Output "::error::no curl-impersonate build mapped for Windows/$env:RUNNER_ARCH"
+            exit 1
+          }
+        }
+
+        $tarball = Join-Path $env:RUNNER_TEMP 'curl-impersonate.tar.gz'
+        $url = "https://github.com/lexiforest/curl-impersonate/releases/download/$env:CURL_IMPERSONATE_VERSION/curl-impersonate-$env:CURL_IMPERSONATE_VERSION.$asset.tar.gz"
+        Invoke-WebRequest -Uri $url -OutFile $tarball
+
+        $actual = (Get-FileHash -Path $tarball -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $digest) {
+          Write-Output "::error::curl-impersonate digest mismatch: expected $digest, got $actual"
+          exit 1
+        }
+
+        New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+        # bsdtar ships with Windows runners and reads gzip archives natively.
+        tar -xzf $tarball -C $installRoot
+        Add-Content -Path $env:GITHUB_PATH -Value $installRoot
+
+        $wrappers = @(Get-ChildItem -Path $installRoot -Filter 'curl_chrome*.bat' -Recurse)
+        if ($wrappers.Count -eq 0) {
+          Write-Output "::error::no curl_chrome*.bat wrappers found in $installRoot"
+          exit 1
+        }
+        Write-Output "Installed $($wrappers.Count) wrappers ($asset, $env:CURL_IMPERSONATE_VERSION)"
