@@ -150,6 +150,45 @@ Source checkouts are the best path for debugging provider changes, playback reco
 </Tab>
 </Tabs>
 
+## Anime search and curl-impersonate
+
+AniDB is the only provider in the automatic anime lane, and it sits behind
+Cloudflare. Cloudflare scores the TLS handshake, not just the `User-Agent`, so a
+plain `curl` is sometimes refused even though the site is up. When that happens
+anime search returns **no results** rather than an error, because the refusal
+arrives as an ordinary-looking web page.
+
+Most people never see this — a normal home connection is usually let through. It
+shows up on VPNs, corporate networks, cloud shells, and CI runners.
+
+Run `kunai doctor` to see which of the three states you are in:
+
+| `doctor` reports        | Meaning                                            |
+| ----------------------- | -------------------------------------------------- |
+| `curl=ok (chrome150)`   | An impersonating build is on `PATH`. Nothing to do |
+| `curl=plain (no CF bypass)` | Plain `curl` only — anime search may come back empty |
+| `curl=missing`          | No `curl` at all — install one first                |
+
+To move from `plain` to `ok`, install curl-impersonate:
+
+```bash
+# macOS
+brew install lexiforest/tap/curl-impersonate
+
+# Arch
+sudo pacman -S curl-impersonate
+```
+
+There is no Debian, Fedora, or Windows package. Download a prebuilt build from
+[curl-impersonate releases](https://github.com/lexiforest/curl-impersonate/releases)
+— `x86_64-macos`, `arm64-macos`, `x86_64-win32`, `arm64-win32`, and the Linux
+gnu/musl builds are all published — and put its `curl_<browser><version>`
+wrappers on your `PATH`. Kunai picks the newest desktop wrapper automatically;
+you do not configure which one.
+
+This is optional. Without it Kunai still runs and still falls back to plain
+`curl`; you may just get empty anime searches on a restricted network.
+
 ## Platform guardrails
 
 - If an opener is missing, Kunai keeps running and leaves you in the current shell context.
