@@ -154,6 +154,15 @@ accounts, usage ping, done. Implementation is
   discoveries of the condition wait for space instead of spending attempts.
   Windows (`ERROR_DISK_FULL`) and quota (`EDQUOT`) spellings classify alongside
   POSIX `ENOSPC`.
+- A deferred job resumes on the next queue pass after its `next_retry_at`
+  elapses. Queue passes are event-driven (`kickQueue`: startup, opening
+  downloads, queueing another, offline repair) — there is no periodic tick,
+  and freeing disk space triggers nothing by itself. Paused-job messages
+  therefore state the action to take rather than promising an automatic
+  resume.
+- `resumeEligiblePausedJobs` is not the resume path and is not dead code: it
+  exists solely to heal a corrupt `next_retry_at`, which SQL string-compares
+  into `listPaused` while `selectEligibleQueuedJob` skips it forever.
 - Background queue triggers enter through one supervised seam. An unexpected
   reconciliation, repository, filesystem, or worker failure records a redacted
   download diagnostic and cannot terminate playback or the CLI.

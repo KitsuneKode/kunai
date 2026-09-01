@@ -1694,10 +1694,22 @@ export class DownloadService {
   }
 
   /**
-   * Auto-resume on return: a previous quit pauses active jobs with
-   * `next_retry_at = now`, so on the next launch they are immediately eligible —
-   * re-queue them. Disk-space pauses carry a FUTURE retry time and stay paused
-   * until that elapses, so they are not prematurely resumed here.
+   * Repair for an unparseable `next_retry_at`, not the ordinary resume path.
+   *
+   * The ordinary case needs nothing from here: `selectEligibleQueuedJob` scans
+   * `listQueued`, which is unfiltered by retry time, and takes any job whose
+   * `next_retry_at` has elapsed. A shutdown pause (`next_retry_at = now`) is
+   * therefore already eligible on the next pass.
+   *
+   * What it does do is narrow and load-bearing. `listPaused` compares
+   * `next_retry_at` as a *string* in SQL, so a corrupt value like `not-a-date`
+   * sorts greater than any timestamp and is returned here, while
+   * `selectEligibleQueuedJob` requires `Number.isFinite` and skips it forever.
+   * Without this pass such a row is stranded for the life of the install.
+   *
+   * Verified against a real database rather than by reading: a future-dated
+   * pause is returned by `listPaused` and requeued by nobody; a corrupt one is
+   * requeued only here.
    */
   private resumeEligiblePausedJobs(): void {
     const now = Date.now();
@@ -1915,9 +1927,16 @@ export class DownloadService {
    * Deliberately not phrased as a reserve breach: the reserve message names a
    * figure the pre-flight check computed, and there is no such figure once the
    * volume is actually full.
+   *
+   * It also does not promise an automatic resume. Freeing space triggers
+   * nothing on its own — the deferral is time-based, and a queue pass only
+   * happens on a `kickQueue` (startup, opening downloads, queueing another,
+   * offline repair). There is no periodic tick, so an idle session can hold a
+   * due job indefinitely. Stating the action the user can actually take beats
+   * a promise the runtime does not keep.
    */
   private formatDiskExhaustedMessage(): string {
-    return "Download paused because the download volume ran out of space. It resumes automatically once space is free.";
+    return "Download paused because the download volume ran out of space. Free space, then retry it from /downloads.";
   }
 
   private formatInsufficientDiskMessage(requiredBytes: number): string {
