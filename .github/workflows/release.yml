@@ -1149,6 +1149,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ needs.confirmation.outputs.tag }}"
+          # An annotated tag records a tagger, and the runner has no git identity
+          # of its own, so `git tag -a` aborts with "empty ident name" before it
+          # writes anything. Same bot identity the metadata job already commits
+          # under, kept local to this checkout.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "${TAG}" -m "Release ${TAG}"
           git push origin "refs/tags/${TAG}"
 
