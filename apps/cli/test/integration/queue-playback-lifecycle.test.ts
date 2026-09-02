@@ -34,6 +34,7 @@ import type {
   PlayerPlaybackEvent,
   PlayerService,
 } from "@/infra/player/PlayerService";
+import { createLocalPlaybackRouter } from "@/services/playback/local-playback-backend";
 import { openKunaiDatabase, QueueRepository, runMigrations, type QueueEntry } from "@kunai/storage";
 import React from "react";
 
@@ -158,7 +159,7 @@ async function playWithFakePlayer(input: {
     stream: STREAM,
     title: input.title,
     episode: input.episode,
-    player: input.player,
+    playbackRouter: createLocalPlaybackRouter(input.player),
     playOptions: {},
     subtitleStatus: "none",
     startAt: 0,

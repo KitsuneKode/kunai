@@ -81,6 +81,12 @@ export function resolvePlaybackBindingEffect(
 ): PlaybackShellInputEffect | null {
   const { handlers } = input;
   switch (binding.id) {
+    case "player-toggle-pause":
+      return handlers.onTogglePause ? { kind: "toggle-pause" } : null;
+    case "player-seek-back":
+      return handlers.onSeekRelative ? { kind: "seek-relative", seconds: -10 } : null;
+    case "player-seek-forward":
+      return handlers.onSeekRelative ? { kind: "seek-relative", seconds: 10 } : null;
     case "player-stop":
       if (input.isPlaying && handlers.onStop) return { kind: "stop" };
       if (input.cancellable && handlers.onCancel) return { kind: "cancel" };

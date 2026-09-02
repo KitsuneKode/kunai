@@ -92,6 +92,8 @@ export interface PlayerOptions {
   subtitlePreference?: string;
   /** Provider quality preference that produced the current stream; retained for diagnostics/UI symmetry. */
   qualityPreference?: string;
+  /** Experimental split-output mode: render video locally without local audio. */
+  videoOnly?: boolean;
   displayTitle: string;
   correlation?: DiagnosticCorrelation;
   /** Automatic seek target for this launch. */

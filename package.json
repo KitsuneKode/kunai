@@ -68,7 +68,7 @@
     "lint": "turbo run lint",
     "lint:anti-slop": "oxlint --config .oxlintrc.anti-slop.json .",
     "lint:anti-slop:changed": "bun run scripts/anti-slop-changed.ts",
-    "fmt": "turbo run fmt",
+    "fmt": "turbo run fmt --concurrency=1",
     "fmt:check": "turbo run fmt:check",
     "test": "turbo run test",
     "test:coverage": "bun run --cwd apps/cli test:coverage",

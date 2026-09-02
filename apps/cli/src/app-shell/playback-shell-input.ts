@@ -6,6 +6,8 @@ import type { ShellAction } from "./types";
 export type PlaybackShellInputHandlers = {
   readonly onCancel?: () => void;
   readonly onStop?: () => void;
+  readonly onTogglePause?: () => void;
+  readonly onSeekRelative?: (seconds: number) => void;
   readonly onRecover?: () => void;
   readonly onReloadSubtitles?: () => void;
   readonly onNext?: () => void;
@@ -38,6 +40,8 @@ export type PlaybackShellInputContext = {
 export type PlaybackShellInputEffect =
   | { readonly kind: "cancel" }
   | { readonly kind: "stop" }
+  | { readonly kind: "toggle-pause" }
+  | { readonly kind: "seek-relative"; readonly seconds: number }
   | { readonly kind: "recover" }
   | { readonly kind: "fallback" }
   | { readonly kind: "pick-source" }
@@ -160,6 +164,12 @@ export function applyPlaybackShellInputEffect(
       return;
     case "stop":
       handlers.onStop?.();
+      return;
+    case "toggle-pause":
+      handlers.onTogglePause?.();
+      return;
+    case "seek-relative":
+      handlers.onSeekRelative?.(effect.seconds);
       return;
     case "recover":
       handlers.onRecover?.();

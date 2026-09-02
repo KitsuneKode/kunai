@@ -19,6 +19,11 @@ describe("SessionController shutdown", () => {
           throw new Error("discord pipe timed out");
         },
       },
+      playbackRouter: {
+        async stop() {
+          calls.push("router:stop");
+        },
+      },
       player: {
         beginShutdown() {
           calls.push("player:begin-shutdown");
@@ -56,6 +61,11 @@ describe("SessionController shutdown", () => {
           calls.push("presence");
         },
       },
+      playbackRouter: {
+        async stop() {
+          calls.push("router:stop");
+        },
+      },
       player: {
         beginShutdown() {
           calls.push("player:begin-shutdown");
@@ -83,6 +93,11 @@ describe("SessionController shutdown", () => {
           throw new Error("ipc gone");
         },
       },
+      playbackRouter: {
+        async stop() {
+          calls.push("router:stop");
+        },
+      },
       player: {
         beginShutdown() {},
         async releasePersistentSession() {
@@ -108,6 +123,11 @@ describe("SessionController shutdown", () => {
     const controller = new SessionController({
       workControl: { cancelActive() {} },
       presence: { async shutdown() {} },
+      playbackRouter: {
+        async stop() {
+          calls.push("router:stop");
+        },
+      },
       player: {
         beginShutdown() {
           calls.push("beginShutdown");
@@ -126,7 +146,7 @@ describe("SessionController shutdown", () => {
 
     // releasePersistentSession is the single release/disposal invalidation
     // authority: nothing else may reorder mpv teardown around it.
-    expect(calls).toEqual(["releasePersistentSession"]);
+    expect(calls).toEqual(["router:stop", "releasePersistentSession"]);
   });
 
   test("disposeContainer stays database/background disposal and never acquires mpv ownership", () => {

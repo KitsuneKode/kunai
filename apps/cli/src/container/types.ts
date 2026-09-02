@@ -58,6 +58,7 @@ import type { StorageMaintenanceService } from "../services/persistence/StorageM
 import type { SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import type { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
 import type { MediaTrackService } from "../services/playback/MediaTrackService";
+import type { PlaybackRouter } from "../services/playback/playback-router";
 import type { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
 import type { ProviderEndpointHealthService } from "../services/playback/ProviderEndpointHealthService";
 import type { SourceInventoryService } from "../services/playback/SourceInventoryService";
@@ -98,6 +99,7 @@ export interface Container {
   // Infrastructure
   readonly shell: ShellService;
   readonly player: PlayerService;
+  readonly playbackRouter: PlaybackRouter;
   readonly playerControl: PlayerControlService;
   readonly workControl: WorkControlService;
   readonly storage: StorageService;
@@ -222,6 +224,14 @@ export interface ContainerOptions {
   appVersion?: string;
   debugJson?: boolean;
   debugSession?: boolean;
+  /** Experimental Phase-2 direct Google Cast target selected for this run. */
+  castDevice?: string;
+  /** Register the Cast backend so an interactive target can be selected after bootstrap. */
+  enableCastPlayback?: boolean;
+  /** Register experimental local-video / remote-audio playback. */
+  enableCastAudioPlayback?: boolean;
+  /** Registered Kunai Custom Web Receiver application id for experimental audio-only Cast. */
+  castReceiverAppId?: string;
   /**
    * Test-only provider module override (compiled binary smokes).
    * Production startup never sets this; prefer `loadCompiledSmokeProviderOverride`.

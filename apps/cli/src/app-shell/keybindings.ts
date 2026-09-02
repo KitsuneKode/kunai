@@ -336,6 +336,35 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
 
   // ── In player — mpv window; mirrors kunai-bridge.lua ──
   {
+    id: "player-toggle-pause",
+    chord: { input: " " },
+    display: "Space",
+    label: "Pause or resume playback",
+    hintLabel: "pause",
+    scope: "player",
+    group: "In the player",
+    footerPriority: 6,
+    docs: { tier: "surface", order: 305 },
+  },
+  {
+    id: "player-seek-back",
+    chord: { named: "leftArrow" },
+    label: "Seek backward 10 seconds",
+    hintLabel: "−10s",
+    scope: "player",
+    group: "In the player",
+    footerPriority: 7,
+  },
+  {
+    id: "player-seek-forward",
+    chord: { named: "rightArrow" },
+    label: "Seek forward 10 seconds",
+    hintLabel: "+10s",
+    scope: "player",
+    group: "In the player",
+    footerPriority: 8,
+  },
+  {
     id: "player-stop",
     chord: { input: "q" },
     label: "Stop playback",

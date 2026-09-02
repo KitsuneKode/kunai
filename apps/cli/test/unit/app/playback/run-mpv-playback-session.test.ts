@@ -15,6 +15,7 @@ import type {
   PlayerService,
 } from "@/infra/player/PlayerService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import { createLocalPlaybackRouter } from "@/services/playback/local-playback-backend";
 
 const TITLE: TitleInfo = { id: "1396", name: "Test", type: "series" };
 const EPISODE: EpisodeInfo = { season: 1, episode: 1 };
@@ -151,7 +152,7 @@ async function runSession(
     stream: STREAM,
     title: TITLE,
     episode: EPISODE,
-    player,
+    playbackRouter: createLocalPlaybackRouter(player),
     playOptions: {},
     subtitleStatus: "none",
     startAt: 0,
@@ -214,9 +215,9 @@ describe("runMpvPlaybackSession queue acknowledgement boundary", () => {
 });
 
 describe("runMpvPlaybackSession generation activation", () => {
-  test("activation writes the generation before any player event", async () => {
+  test("router activation writes its generation before any player event", async () => {
     const harness = await runSession(() => undefined, { activation: GEN_2 });
-    expect(harness.store.writes[0]).toEqual({ status: "loading", generation: GEN_2 });
+    expect(harness.store.writes[0]).toEqual({ status: "loading", generation: GEN_1 });
   });
 });
 
@@ -397,7 +398,7 @@ describe("runMpvPlaybackSession completion", () => {
       stream: { ...STREAM, url: LOCAL_SOURCE.filePath },
       title: TITLE,
       episode: EPISODE,
-      player,
+      playbackRouter: createLocalPlaybackRouter(player),
       playOptions: {},
       subtitleStatus: "local",
       startAt: 42,

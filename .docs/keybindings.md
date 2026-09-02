@@ -82,6 +82,9 @@ These keys are available while `mpv` is active and the shell is supervising it.
 | Key         | Action                                                                               |
 | ----------- | ------------------------------------------------------------------------------------ |
 | `q`         | Stop playback and enter post-playback controls                                       |
+| `Space`     | Pause or resume local, Cast, or split-output playback                                |
+| `←` / `→`   | Seek backward or forward 10 seconds                                                   |
+| Mouse click | Seek to the clicked point on the progress bar                                        |
 | `Shift+S`   | Stop playback and return to search                                                   |
 | `n`         | Next episode, starting from the beginning with mpv resume prompt when applicable     |
 | `p`         | Previous episode, starting from the beginning with mpv resume prompt when applicable |

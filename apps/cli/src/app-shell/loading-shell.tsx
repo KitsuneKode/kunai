@@ -333,6 +333,9 @@ export const LoadingShell = React.memo(function LoadingShell({
   state,
   onCancel,
   onStop,
+  onTogglePause,
+  onSeekRelative,
+  onSeekAbsolute,
   onRecover,
   onReloadSubtitles,
   onNext,
@@ -353,6 +356,9 @@ export const LoadingShell = React.memo(function LoadingShell({
   state: LoadingShellState;
   onCancel?: () => void;
   onStop?: () => void;
+  onTogglePause?: () => void;
+  onSeekRelative?: (seconds: number) => void;
+  onSeekAbsolute?: (seconds: number) => void;
   onRecover?: () => void;
   onReloadSubtitles?: () => void;
   onNext?: () => void;
@@ -440,6 +446,8 @@ export const LoadingShell = React.memo(function LoadingShell({
     () => ({
       onCancel,
       onStop,
+      onTogglePause,
+      onSeekRelative,
       onRecover,
       onReloadSubtitles,
       onNext,
@@ -459,6 +467,8 @@ export const LoadingShell = React.memo(function LoadingShell({
     [
       onCancel,
       onStop,
+      onTogglePause,
+      onSeekRelative,
       onRecover,
       onReloadSubtitles,
       onNext,
@@ -828,6 +838,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                       value={state.currentPosition}
                       max={state.duration}
                       width={barWidth}
+                      onSelect={onSeekAbsolute}
                     />
                     <Text color={palette.dim}> {formatTimestamp(state.duration)}</Text>
                     {state.progress !== undefined ? (
@@ -844,6 +855,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                     </Text>
                   </Box>
                 )}
+                {state.duration !== undefined && state.duration > 0 ? (
+                  <Text color={palette.dim}>Click progress bar to seek · ←→ ±10s</Text>
+                ) : null}
 
                 {state.playbackSourceLine ? (
                   <Box marginTop={2}>

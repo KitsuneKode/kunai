@@ -77,6 +77,7 @@ export async function launchMpv(opts: {
   subtitle: string | null;
   subtitleUrlKind?: MpvUrlKind;
   audioPreference?: string;
+  videoOnly?: boolean;
   subtitlePreference?: string;
   subtitleTracks?: readonly SubtitleTrack[];
   displayTitle: string;
@@ -240,6 +241,18 @@ async function launchMpvInner(
         if (result.ok) return;
       }
       mpv.kill("SIGTERM");
+    },
+    async togglePause() {
+      await ipcSession?.send(["cycle", "pause"], 1_000);
+    },
+    async setPaused(paused) {
+      await ipcSession?.send(["set_property", "pause", paused], 1_000);
+    },
+    async seekRelative(seconds) {
+      await ipcSession?.send(["seek", seconds, "relative"], 2_000);
+    },
+    async seekAbsolute(seconds) {
+      await ipcSession?.send(["seek", seconds, "absolute"], 2_000);
     },
     async reloadSubtitles() {
       void ipcSession?.send(["sub-reload"]);
@@ -515,6 +528,7 @@ export function buildMpvArgs(
     subtitle: string | null;
     subtitleUrlKind?: MpvUrlKind;
     audioPreference?: string;
+    videoOnly?: boolean;
     subtitlePreference?: string;
     subtitleTracks?: readonly SubtitleTrack[];
     displayTitle: string;
@@ -542,6 +556,7 @@ export function buildMpvArgs(
   }
 
   const args: string[] = [];
+  if (opts.videoOnly) args.push("--audio=no");
 
   if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
     args.push(`--ytdl-format=${opts.ytdlFormat ?? "bv*+ba/b"}`);

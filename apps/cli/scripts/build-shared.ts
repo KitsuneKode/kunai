@@ -291,6 +291,12 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * code with no single blob. 3_048 leaves ~46 KiB of headroom, restoring real
  * slack rather than clearing one change.
  *
+ * Raised from 3_048 to 3_056 on 2026-09-01 after Google Cast playback was
+ * rebased over main. The resulting development bundle measures 3,124,396 bytes:
+ * the 3_048 KiB ratchet was exceeded by 3,244 bytes after adding the Cast V2
+ * client, LAN gateways, subtitle conversion, and split-output coordinator.
+ * 3_056 leaves 4,948 bytes of measured headroom while keeping the ratchet tight.
+ *
  * Worth restating because it is what makes this safe: this number guards
  * `dist/kunai.js`, which is published nowhere and is not the source of the
  * compiled binaries either -- `compileBinaryBuildOptions` compiles from
@@ -299,7 +305,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
  */
-export const NPM_BUNDLE_BUDGET_KB = 3_048;
+export const NPM_BUNDLE_BUDGET_KB = 3_056;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

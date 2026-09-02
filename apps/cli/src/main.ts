@@ -650,12 +650,36 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     process.stdout.write(`${await formatVersionLine(KUNAI_VERSION)}\n`);
     return;
   }
+  if (args.castList) {
+    const { discoverGoogleCastTargets } =
+      await import("./services/playback/cast/discover-google-cast-targets");
+    const targets = await discoverGoogleCastTargets();
+    if (targets.length === 0) {
+      console.log(
+        "No Google Cast devices found. Check that multicast/mDNS is allowed on this LAN.",
+      );
+      return;
+    }
+    for (const target of targets) {
+      console.log(
+        `${target.name}\t${target.modelName ?? "Google Cast"}\t${target.host}:${target.port}`,
+      );
+    }
+    return;
+  }
   // Asking for the wizard where nothing can drive it is a mistake worth naming.
   // Silently continuing would leave the user believing setup ran; mounting it
   // anyway would block on a keystroke that can never arrive.
   if (args.setup && !(process.stdin.isTTY && process.stdout.isTTY)) {
     console.error(
       "kunai --setup needs an interactive terminal. Run it directly rather than through a pipe, and unset CI if it is set.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if ((args.castPicker || args.castAudioPicker) && !(process.stdin.isTTY && process.stdout.isTTY)) {
+    console.error(
+      "A bare --cast or --cast-audio needs an interactive terminal. Provide a device name or IP in a non-interactive run.",
     );
     process.exitCode = 1;
     return;
@@ -796,6 +820,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     debug: args.debug,
     debugJson: args.debugJson,
     debugSession: args.debugSession,
+    castDevice: args.castDevice,
+    castReceiverAppId: process.env.KUNAI_CAST_RECEIVER_APP_ID,
+    enableCastPlayback: args.castPicker || Boolean(args.castDevice),
+    enableCastAudioPlayback:
+      args.castAudioPicker ||
+      Boolean(args.castAudioDevice) ||
+      Boolean(args.castPicker && process.env.KUNAI_CAST_RECEIVER_APP_ID),
     mpv: args.mpv,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
@@ -804,6 +835,36 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   });
   globalContainer = container;
   const { logger, config, stateManager } = container;
+
+  if (args.castDevice) {
+    try {
+      const { resolveGoogleCastTargetSelector } =
+        await import("./services/playback/cast/cast-target-selector");
+      container.playbackRouter.selectTarget(await resolveGoogleCastTargetSelector(args.castDevice));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      await disposeContainer(container);
+      globalContainer = null;
+      process.exitCode = 1;
+      return;
+    }
+  }
+  if (args.castAudioDevice) {
+    try {
+      const { resolveGoogleCastTargetSelector } =
+        await import("./services/playback/cast/cast-target-selector");
+      const { splitAudioTarget } = await import("./services/playback/split-audio-playback-backend");
+      container.playbackRouter.selectTarget(
+        splitAudioTarget(await resolveGoogleCastTargetSelector(args.castAudioDevice)),
+      );
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      await disposeContainer(container);
+      globalContainer = null;
+      process.exitCode = 1;
+      return;
+    }
+  }
 
   // Compiled-binary smoke runner: deterministic fake-provider / fake-mpv scenarios.
   // Opt-in only — requires KUNAI_COMPILED_SMOKE=1 + absolute fixture path (above) and a scenario id.
@@ -1067,6 +1128,21 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       ],
     }),
   });
+  // Root-content pickers require AppRoot to be mounted. Opening this before
+  // launchSessionApp creates a valid picker session with no renderer or input
+  // owner, leaving bare `--cast` apparently frozen while direct-name launches
+  // work. Keep startup selection before setup/search, but after the root mount.
+  if (args.castPicker || args.castAudioPicker) {
+    const { chooseGoogleCastTargetShell } = await import("./app-shell/cast-target-picker");
+    const target = await chooseGoogleCastTargetShell(
+      args.castAudioPicker
+        ? "audio-only"
+        : process.env.KUNAI_CAST_RECEIVER_APP_ID
+          ? "all"
+          : "cast-only",
+    );
+    if (target) container.playbackRouter.selectTarget(target);
+  }
   // Must stay after first paint: the enrich loop and the consolidator it can
   // trigger run synchronous SQLite work that would starve the awaited shell
   // import and delay the first render.

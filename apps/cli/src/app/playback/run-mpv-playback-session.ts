@@ -25,13 +25,10 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
-import type {
-  PlayerOptions,
-  PlayerPlaybackEvent,
-  PlayerService,
-} from "@/infra/player/PlayerService";
+import type { PlayerOptions, PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { DiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import type { PlaybackRouterPort } from "@/services/playback/playback-router";
 import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
 
 export type MpvPlaybackSessionHooks = {
@@ -88,7 +85,7 @@ export type RunMpvPlaybackSessionInput = {
   readonly stream: StreamInfo;
   readonly title: TitleInfo;
   readonly episode: EpisodeInfo;
-  readonly player: PlayerService;
+  readonly playbackRouter: PlaybackRouterPort;
   readonly playOptions: Omit<
     PlayerOptions,
     | "url"
@@ -117,7 +114,7 @@ export type RunMpvPlaybackSessionInput = {
 export async function runMpvPlaybackSession(
   input: RunMpvPlaybackSessionInput,
 ): Promise<PlaybackResult> {
-  const { stream, title, episode, player, hooks } = input;
+  const { stream, title, episode, playbackRouter, hooks } = input;
 
   if (shouldAbortPlaybackBeforeLaunch(input.sessionAborted, input.iterationAborted)) {
     throw new PlaybackAbortedError("playback aborted before launch");
@@ -300,7 +297,7 @@ export async function runMpvPlaybackSession(
     // prompting, the autoplay-chain mode, near-EOF prefetch, the abort signal,
     // merged timing, correlation and track preferences. Routing local playback
     // through playLocal() silently dropped every one of those.
-    const result = await player.play(stream, playerOptions);
+    const result = await playbackRouter.play(stream, playerOptions);
 
     // The startup watchdog rewrites the result before completion is applied, so
     // a watchdog failure completes as `error` rather than briefly as `finished`.

@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "9399f4e19c122a598078ee554d5ef0659a4c62985eef9ea2a9a7b0aa8ac691de",
-  "docsContentFingerprint": "dc3be99f79521b1e7ec8190302e01d5980bab2e5065f943aa602a4d12a066523",
+  "cliSourceFingerprint": "14b850717d520b9d2f8adfa66b1dc9417cf138556d14f8031cd6b23e50131ffc",
+  "docsContentFingerprint": "699ec82d64393678185b51e67456d725fcf1c1373799b584a7d577b6c475df7c",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
@@ -669,6 +669,11 @@
     },
     {
       "short": "",
+      "long": "--cast-list",
+      "description": "Experimental: discover Google Cast devices and exit"
+    },
+    {
+      "short": "",
       "long": "--discover",
       "description": "Open recommendations"
     },
@@ -1079,6 +1084,15 @@
       "label": "Open Up Next",
       "tier": "surface",
       "order": 290
+    },
+    {
+      "id": "player-toggle-pause",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "Space",
+      "label": "Pause or resume playback",
+      "tier": "surface",
+      "order": 305
     },
     {
       "id": "player-stop",
