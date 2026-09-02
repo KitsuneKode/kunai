@@ -54,8 +54,14 @@ function impossibleProcessStartId(): string {
   return "linux-proc:0";
 }
 
+/**
+ * A hang guard for real installer subprocesses, not a timing assertion. The
+ * Bash harness failed a release gate on its shorter guard while two concurrent
+ * installers were still downloading; only a genuinely stuck installer should
+ * ever reach this.
+ */
 async function waitForPaths(paths: readonly string[]): Promise<void> {
-  const deadline = Date.now() + 8_000;
+  const deadline = Date.now() + 60_000;
   while (paths.some((path) => !existsSync(path))) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${paths.join(", ")}`);
     await Bun.sleep(10);
@@ -1280,10 +1286,14 @@ describePwsh("install.ps1 lifecycle contract", () => {
         }),
       );
       await withReleaseFixture(routes, async (baseUrl) => {
+        // See the Bash harness: the first installer to finish downloading holds
+        // for the lock while its sibling downloads, and that gap must not
+        // exhaust the installer's own lock timeout on a slow runner.
         const installs = versions.map((version) =>
           runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", version], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "60000",
           }),
         );
         await waitForPaths(

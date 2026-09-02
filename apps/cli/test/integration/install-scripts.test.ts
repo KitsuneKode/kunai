@@ -125,8 +125,14 @@ function invalidTarArchive(
   });
 }
 
+/**
+ * A hang guard for real installer subprocesses, not a timing assertion: the
+ * release-gate runner took over five seconds to get two concurrent installers
+ * through download and verification, and the guard failed the release. Only a
+ * genuinely stuck installer should ever reach this.
+ */
 async function waitForPaths(paths: readonly string[]): Promise<void> {
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 60_000;
   while (paths.some((path) => !existsSync(path))) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${paths.join(", ")}`);
     await Bun.sleep(10);
@@ -1277,10 +1283,15 @@ describe("install.sh lifecycle contract", () => {
         }),
       );
       await withReleaseFixture(routes, async (baseUrl) => {
+        // The installer that finishes downloading first holds for the lock
+        // while its sibling is still downloading; on a slow runner that gap
+        // must not exhaust the installer's own lock timeout before the harness
+        // has seen both and released the lock.
         const installs = versions.map((version) =>
           runInstallShAsync(["--yes", "--skip-deps", "--version", version], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "60000",
           }),
         );
         await waitForPaths(
