@@ -2192,3 +2192,82 @@ describe("install.sh PATH conflict remediation", () => {
     expect(remedyFor("/some/unknown/place/kunai")).not.toBe("");
   });
 });
+
+/**
+ * Optional dependencies are offered, never imposed. The previous flow ran
+ * `sudo pacman -S --noconfirm` / `sudo apt-get install -y` from a prompt that
+ * defaulted to yes, so a script piped from the internet became root and
+ * installed packages without the user or the package manager confirming
+ * anything. These pin the three properties that replaced it.
+ */
+describe("install.sh optional dependency consent", () => {
+  function evalInstallSh(body: string, extraDefs = ""): string {
+    const script = [
+      "set -euo pipefail",
+      "info() { printf '> %s\\n' \"$*\"; }",
+      "warn() { printf '! %s\\n' \"$*\"; }",
+      "run() { printf '[RAN] %s\\n' \"$*\"; }",
+      `eval "$(sed -n '/^dependency_install_command() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      `eval "$(sed -n '/^missing_dependencies() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      `eval "$(sed -n '/^install_optional_deps() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      extraDefs,
+      body,
+    ].join("\n");
+    const result = spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    expect(result.stderr, result.stderr).not.toContain("syntax error");
+    return `${result.stdout}${result.stderr}`;
+  }
+
+  test("each supported package manager maps to its own install command", () => {
+    const seen: Record<string, string> = {};
+    for (const manager of ["brew", "port", "pacman", "apt-get", "dnf", "zypper", "apk"]) {
+      seen[manager] = evalInstallSh(
+        "dependency_install_command mpv yt-dlp",
+        `have() { [[ "$1" == ${JSON.stringify(manager)} ]]; }`,
+      ).trim();
+    }
+
+    expect(seen["brew"]).toBe("brew install mpv yt-dlp");
+    expect(seen["port"]).toBe("sudo port install mpv yt-dlp");
+    expect(seen["pacman"]).toBe("sudo pacman -S --needed mpv yt-dlp");
+    expect(seen["apt-get"]).toBe("sudo apt-get install mpv yt-dlp");
+    expect(seen["dnf"]).toBe("sudo dnf install mpv yt-dlp");
+    expect(seen["zypper"]).toBe("sudo zypper install mpv yt-dlp");
+    expect(seen["apk"]).toBe("sudo apk add mpv yt-dlp");
+  });
+
+  test("no command silences the package manager's own confirmation", () => {
+    // `--noconfirm` / `-y` are what turned one keystroke into an unattended
+    // root install. The accepted path must still be gated by the manager.
+    for (const manager of ["pacman", "apt-get", "dnf", "zypper"]) {
+      const command = evalInstallSh(
+        "dependency_install_command mpv",
+        `have() { [[ "$1" == ${JSON.stringify(manager)} ]]; }`,
+      );
+      expect(command).not.toContain("--noconfirm");
+      expect(command).not.toMatch(/\s-y(\s|$)/);
+    }
+  });
+
+  test("an already-installed dependency is neither offered nor reported missing", () => {
+    const output = evalInstallSh(
+      "SKIP_DEPS=0; DRY=0; YES=0; install_optional_deps",
+      'have() { case "$1" in mpv|yt-dlp|pacman) return 0;; *) return 1;; esac; }',
+    );
+    expect(output).toContain("already installed");
+    expect(output).not.toContain("This will run");
+    expect(output).not.toContain("[RAN]");
+  });
+
+  test("--yes and a run with no terminal print the command instead of escalating", () => {
+    for (const setup of ["YES=1", "YES=0"]) {
+      const output = evalInstallSh(
+        `SKIP_DEPS=0; DRY=0; ${setup}; install_optional_deps </dev/null`,
+        'have() { [[ "$1" == pacman ]]; }',
+      );
+      // Consent to install Kunai is not consent to become root.
+      expect(output).not.toContain("[RAN]");
+      expect(output).toContain("sudo pacman -S --needed mpv yt-dlp");
+    }
+  });
+});

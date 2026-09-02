@@ -154,14 +154,46 @@ what a Dockerfile or CI step usually wants.
 
 | `install.sh` | `install.ps1` | Environment | Effect |
 | --- | --- | --- | --- |
-| `--yes` | `-Yes` | `KUNAI_INSTALL_YES=1` | Accept every optional prompt. This is the **only** thing that answers on your behalf. |
-| `--skip-deps` | `-SkipDeps` | `KUNAI_SKIP_DEPS=1` | Never offer to install optional dependencies (`mpv`, `ffmpeg`). |
+| `--yes` | `-Yes` | `KUNAI_INSTALL_YES=1` | Accept Kunai's own optional prompts. It does **not** install system packages — see below. |
+| `--skip-deps` | `-SkipDeps` | `KUNAI_SKIP_DEPS=1` | Say nothing at all about optional dependencies (`mpv`, `yt-dlp`). |
 | `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone — see [PATH](#path). |
 
 Without a terminal — `curl … | bash` in CI, a container, or a sandbox — optional
 prompts are **skipped, not accepted**, and the installer says which step it
 skipped. Before 0.3.0 a missing terminal defaulted to yes and could run
 `sudo apt-get`/`pacman`/`dnf install` unattended.
+
+### Optional dependencies are never installed for you
+
+Kunai needs `mpv` to play anything, and `yt-dlp` for YouTube. The installer
+checks whether they are already present, and if they are not it prints the exact
+command for your package manager:
+
+```
+! mpv is not installed — Kunai needs it to play anything.
+
+  This will run:
+    sudo pacman -S --needed mpv yt-dlp
+
+Run it now? [y/N]
+```
+
+Three rules hold on every platform:
+
+- **The command is always shown**, before it is offered and again if you decline,
+  so nothing is hidden either way.
+- **The prompt defaults to no.** Pressing Enter never escalates.
+- **`--yes` does not answer this one.** It is consent to install Kunai, not
+  consent to become root or to accept a third party's licence agreements. A run
+  with no terminal prints the command instead of running it.
+
+Saying yes runs the command as shown, without `--noconfirm`, `-y`, or
+`--accept-package-agreements` — so your package manager still confirms too.
+`--skip-deps` silences the section entirely.
+
+Recognised managers: `pacman`, `apt`, `dnf`, `zypper`, `apk` on Linux; `brew`
+and `port` on macOS; `winget`, `scoop` and `choco` on Windows. Anything else
+gets a link to [mpv's install guide](https://mpv.io/installation/).
 
 ## Unsigned binaries (beta)
 
