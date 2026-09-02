@@ -479,6 +479,58 @@ bun run test:live:youtube
 
 Expected: `ok: true`, `streamResolved: true`, `streamHost` contains `youtube.com`. When yt-dlp is intentionally absent on the runner, `skipped: true` is acceptable.
 
+## npm Trusted Publishing Preflight
+
+Publication is OIDC-only. `release.yml` carries no `NODE_AUTH_TOKEN` — a
+contract test asserts its absence — so every package authenticates through npm
+Trusted Publishing against the workflow's `id-token: write` claim.
+
+That trust is configured **per package on npmjs.com**, not in this repository,
+so nothing in CI can prove it before a dispatch reaches the publish job. Check
+it before dispatching, because the failure lands after the protected
+environment approval, on the far side of every other gate.
+
+All **nine** packages need an identical entry: the launcher
+`@kitsunekode/kunai` plus the eight platform packages
+(`@kitsunekode/kunai-{linux,darwin,windows}-{x64,arm64}` and the two musl
+variants).
+
+| Field       | Value                |
+| ----------- | -------------------- |
+| Repository  | `KitsuneKode/kunai`  |
+| Workflow    | `release.yml`        |
+| Environment | `release-production` |
+| Permission  | `npm publish`        |
+
+**The repository field is case-sensitive.** GitHub's OIDC `repository` claim is
+the canonical `owner.login`, exactly `KitsuneKode/kunai`. A stored
+`Kitsunekode/kunai` does not match it, and npm reports the mismatch as
+`ENEEDAUTH — need auth This command requires you to be logged in`, which reads
+like a missing credential rather than a wrong one. The 0.3.0 dispatch lost a
+full release run to that single character: the launcher was correct and the
+platform packages were not, and because platform packages publish first, the
+correct entry was never reached.
+
+Verify each package, which needs a 2FA prompt per call:
+
+```sh
+npm trust list @kitsunekode/kunai
+npm trust list @kitsunekode/kunai-linux-x64
+```
+
+Repair one with the canonical casing:
+
+```sh
+npm trust github @kitsunekode/kunai-linux-x64 \
+  --file release.yml --repo KitsuneKode/kunai --env release-production -y
+```
+
+A `for` loop over the eight without `-y` silently answers `n` to every prompt
+and changes nothing while looking like it ran.
+
+Expected evidence: `npm trust list` reports the same repository, workflow, and
+environment for all nine, with `KitsuneKode` capitalised as GitHub spells it.
+
 ## Withdrawing a Released Version
 
 Every gate above exists to stop a bad release shipping. This section is for when
