@@ -1956,3 +1956,101 @@ if (!pwshAvailable()) {
     });
   });
 }
+
+/**
+ * Windows parity for the optional-dependency consent rules. install.ps1 had the
+ * same shape as the bash flow: a prompt defaulting to yes, `-Yes` treated as
+ * consent for everything, and `--accept-package-agreements
+ * --accept-source-agreements` accepting a third party's licence terms on the
+ * user's behalf.
+ */
+describePwsh("install.ps1 optional dependency consent", () => {
+  function evalInstallPs1(body: string, testCmd: string): string {
+    const script = [
+      `$src = Get-Content -Raw ${JSON.stringify(INSTALL_PS1)}`,
+      'function Write-Info { param($m) Write-Host "> $m" }',
+      'function Write-Warn { param($m) Write-Host "! $m" }',
+      'function Invoke-OptionalStep { param($d,$a) Write-Host "[RAN] $d" }',
+      testCmd,
+      "foreach ($fn in 'Get-PackageInstallCommand','Request-OptionalInstall') {",
+      '  Invoke-Expression ([regex]::Match($src, "(?ms)^function $fn \\{.*?^\\}").Value)',
+      "}",
+      body,
+    ].join("\n");
+    const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+    expect(result.stderr, result.stderr).not.toContain("ParserError");
+    return `${result.stdout}${result.stderr}`;
+  }
+
+  /**
+   * One pwsh process for the whole mapping table. Five separate spawns were
+   * flaky under a loaded suite -- pwsh start-up dominates, and a starved one
+   * returned empty output -- and the table is what is being asserted, not the
+   * process boundary.
+   */
+  test("each Windows package manager maps to its own install command", () => {
+    const probe = [
+      "foreach ($mgr in 'winget','scoop','choco') {",
+      "  Invoke-Expression \"function Test-Cmd { param(`$n) return `$n -eq '$mgr' }\"",
+      "  foreach ($pkg in 'mpv','yt-dlp','curl') {",
+      '    Write-Output "$mgr|$pkg|$(Get-PackageInstallCommand $pkg)"',
+      "  }",
+      "}",
+      "function Test-Cmd { param($n) return $false }",
+      "Write-Output \"none|mpv|$(Get-PackageInstallCommand 'mpv')\"",
+    ].join("\n");
+
+    const rows = evalInstallPs1(probe, "function Test-Cmd { param($n) return $false }")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.includes("|"));
+    const table = Object.fromEntries(
+      rows.map((row) => {
+        const [manager, pkg, ...rest] = row.split("|");
+        return [`${manager}/${pkg}`, rest.join("|")];
+      }),
+    );
+
+    // The winget ids are load-bearing: mpv.net ships mpvnet.exe, which Kunai
+    // cannot drive over mpv's IPC socket.
+    expect(table["winget/mpv"]).toBe("winget install --id mpv-player.mpv-CI.MSVC -e");
+    expect(table["winget/curl"]).toBe("winget install --id cURL.cURL -e");
+    expect(table["winget/yt-dlp"]).toBe("winget install yt-dlp");
+    expect(table["scoop/mpv"]).toBe("scoop install mpv");
+    expect(table["choco/mpv"]).toBe("choco install mpv -y");
+    // No recognised manager must yield no command, so the caller falls through
+    // to the manual guidance rather than inventing one.
+    expect(table["none/mpv"]).toBe("");
+  });
+
+  test("no command auto-accepts a package or source agreement", () => {
+    for (const pkg of ["mpv", "yt-dlp", "curl"]) {
+      const command = evalInstallPs1(
+        `Get-PackageInstallCommand ${JSON.stringify(pkg)}`,
+        "function Test-Cmd { param($n) return $n -eq 'winget' }",
+      );
+      expect(command).not.toContain("--accept-package-agreements");
+      expect(command).not.toContain("--accept-source-agreements");
+    }
+  });
+
+  test("-Yes prints the command instead of installing", () => {
+    const output = evalInstallPs1(
+      "$Yes = $true; $DryRun = $false; Request-OptionalInstall @('mpv','yt-dlp')",
+      "function Test-Cmd { param($n) return $n -eq 'winget' }",
+    );
+    // -Yes is consent to install Kunai, not to accept a third party's terms.
+    expect(output).not.toContain("[RAN]");
+    expect(output).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+  });
+
+  test("an unrecognised host still gets manual guidance", () => {
+    const output = evalInstallPs1(
+      "$Yes = $false; $DryRun = $false; Request-OptionalInstall @('mpv')",
+      "function Test-Cmd { param($n) return $false }",
+    );
+    expect(output).toContain("No supported package manager found");
+    expect(output).toContain("https://mpv.io/installation/");
+    expect(output).not.toContain("[RAN]");
+  });
+});

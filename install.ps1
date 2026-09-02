@@ -1405,17 +1405,79 @@ function Write-KunaiPathDiagnostic {
 # anyway, so `irm … | iex` in CI or a container silently acquired system
 # package installs. Decline instead, and say which step was skipped so the
 # run stays useful and the gap is visible.
-function Confirm-OptionalInstall {
-  param([Parameter(Mandatory)][string]$Question)
+# The exact command that installs one package on this machine, or '' when no
+# supported manager is present.
+#
+# Returned as a string rather than run, so the prompt can show precisely what is
+# being agreed to and the decline path can print the same text. winget resolves
+# by package id, so the mapping is per package rather than one command for the
+# set.
+function Get-PackageInstallCommand {
+  param([Parameter(Mandatory)][string]$Package)
 
-  if ($Yes) { return $true }
-  if ($DryRun) { return $true }
-  if ([Console]::IsInputRedirected) {
-    Write-Warn "No console for: $Question - skipping (pass -Yes to accept, -SkipDeps to silence)"
-    return $false
+  if (Test-Cmd 'winget') {
+    switch ($Package) {
+      # mpv.net ships mpvnet.exe, but Kunai probes for `mpv` and drives playback
+      # over mpv's IPC socket + Lua bridge. mpv-player.mpv-CI.MSVC is the winget
+      # package that provides a real mpv.exe (same upstream build CI pins).
+      'mpv' { return 'winget install --id mpv-player.mpv-CI.MSVC -e' }
+      'curl' { return 'winget install --id cURL.cURL -e' }
+      default { return "winget install $Package" }
+    }
   }
-  $reply = Read-Host "$Question [Y/n]"
-  return -not ($reply -match '^[Nn]')
+  if (Test-Cmd 'scoop') { return "scoop install $Package" }
+  if (Test-Cmd 'choco') { return "choco install $Package -y" }
+  return ''
+}
+
+# Offer a set of packages, and never install without a deliberate yes.
+#
+# This replaces a prompt that defaulted to yes and passed
+# --accept-package-agreements --accept-source-agreements, so a `irm … | iex`
+# accepted third-party licence agreements on the user's behalf. Parity with
+# install.sh: show the exact command, default to no, print instead of installing
+# when there is no console or when -Yes was passed, and let the package manager
+# confirm on the accepted path.
+function Request-OptionalInstall {
+  param([Parameter(Mandatory)][string[]]$Packages)
+
+  $commands = @()
+  foreach ($package in $Packages) {
+    $command = Get-PackageInstallCommand $package
+    if ([string]::IsNullOrWhiteSpace($command)) { continue }
+    $commands += $command
+  }
+
+  if ($commands.Count -eq 0) {
+    Write-Info "No supported package manager found (winget, scoop, choco). Install manually: $($Packages -join ', ')"
+    Write-Info 'mpv: https://mpv.io/installation/'
+    return
+  }
+
+  Write-Host ''
+  Write-Host '  This will run:'
+  foreach ($command in $commands) { Write-Host "    $command" }
+  Write-Host ''
+
+  # -Yes is consent to install Kunai, not consent to accept a third party's
+  # licence agreements. Redirected input takes the same path, so `irm … | iex`
+  # in CI reports what is missing rather than installing it.
+  if ($Yes -or $DryRun -or [Console]::IsInputRedirected) {
+    Write-Info 'Install them with:'
+    foreach ($command in $commands) { Write-Host "    $command" }
+    return
+  }
+
+  $reply = Read-Host 'Run it now? [y/N]'
+  if ($reply -notmatch '^[Yy]') {
+    Write-Info 'Skipped. Install them later with:'
+    foreach ($command in $commands) { Write-Host "    $command" }
+    return
+  }
+
+  foreach ($command in $commands) {
+    Invoke-OptionalStep $command { Invoke-Expression $command }.GetNewClosure()
+  }
 }
 
 function Install-OptionalDeps {
@@ -1423,37 +1485,21 @@ function Install-OptionalDeps {
     Write-Info 'Skipping optional dependencies (mpv, yt-dlp, curl).'
     return
   }
-  $installMpv = Confirm-OptionalInstall 'Install mpv (required for playback)?'
-  if ($installMpv) {
-    if (Test-Cmd 'winget') {
-      # mpv.net ships mpvnet.exe, but Kunai probes for `mpv` and drives playback
-      # over mpv's IPC socket + Lua bridge. mpv-player.mpv-CI.MSVC is the winget
-      # package that provides a real mpv.exe (same upstream build CI pins).
-      Invoke-OptionalStep 'winget install --id mpv-player.mpv-CI.MSVC -e' { winget install --id mpv-player.mpv-CI.MSVC -e --accept-package-agreements --accept-source-agreements }
-    }
-    elseif (Test-Cmd 'scoop') {
-      Invoke-OptionalStep 'scoop install mpv' { scoop install mpv }
-    }
-    else {
-      Write-Warn 'No winget/scoop found. Install mpv manually: https://mpv.io/installation/'
-    }
-  }
 
-  $installYtDlp = Confirm-OptionalInstall 'Install yt-dlp (YouTube playback and downloads)?'
-  if ($installYtDlp) {
-    if (Test-Cmd 'winget') {
-      Invoke-OptionalStep 'winget install yt-dlp' { winget install yt-dlp --accept-package-agreements --accept-source-agreements }
-    }
-    elseif (Test-Cmd 'scoop') {
-      Invoke-OptionalStep 'scoop install yt-dlp' { scoop install yt-dlp }
-    }
-    else {
-      Write-Warn 'No winget/scoop found. Install yt-dlp manually: https://github.com/yt-dlp/yt-dlp#installation'
-    }
+  # Checked before anything is offered: the previous flow prompted -- and with
+  # -Yes installed -- even when mpv was already on PATH.
+  $missing = @()
+  if (-not (Test-Cmd 'mpv')) {
+    Write-Warn 'mpv is not installed - Kunai needs it to play anything.'
+    $missing += 'mpv'
+  }
+  if (-not (Test-Cmd 'yt-dlp')) {
+    Write-Warn 'yt-dlp is not installed - YouTube playback and downloads need it.'
+    $missing += 'yt-dlp'
   }
 
   # Windows 10+ ships curl.exe in System32, so "is curl present" is the wrong
-  # question here — the bundled build uses Schannel with no nghttp2, so it
+  # question here - the bundled build uses Schannel with no nghttp2, so it
   # reports no HTTP2 feature. Providers that negotiate HTTP/2 fall back or fail
   # against that build, so offer the full winget/scoop curl when the one on PATH
   # cannot do HTTP/2.
@@ -1470,19 +1516,15 @@ function Install-OptionalDeps {
   }
   if ($curlNeedsUpgrade) {
     Write-Warn 'The curl on PATH has no HTTP/2 support (Windows ships a Schannel build).'
-    $installCurl = Confirm-OptionalInstall 'Install full curl with HTTP/2 (recommended for providers)?'
-    if ($installCurl) {
-      if (Test-Cmd 'winget') {
-        Invoke-OptionalStep 'winget install curl' { winget install --id cURL.cURL -e --accept-package-agreements --accept-source-agreements }
-      }
-      elseif (Test-Cmd 'scoop') {
-        Invoke-OptionalStep 'scoop install curl' { scoop install curl }
-      }
-      else {
-        Write-Warn 'No winget/scoop found. Install curl manually: https://curl.se/windows/'
-      }
-    }
+    $missing += 'curl'
   }
+
+  if ($missing.Count -eq 0) {
+    Write-Info 'mpv, yt-dlp and curl are already installed.'
+    return
+  }
+
+  Request-OptionalInstall $missing
 
   # No poster dependency to install: every renderer consumes one natively
   # prepared image, and half-block is the universal in-process floor.
