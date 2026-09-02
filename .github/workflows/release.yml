@@ -1118,9 +1118,22 @@ jobs:
 
           # The host platform package must be physically present: if npm skipped
           # it, the launcher would still install and only fail at runtime.
-          HOST_PACKAGE="${PREFIX}/lib/node_modules/@kitsunekode/kunai-linux-x64"
-          test -x "${HOST_PACKAGE}/bin/kunai" \
-            || { echo "::error::host platform package missing at ${HOST_PACKAGE}"; exit 1; }
+          # Resolve it exactly as the launcher does, with createRequire from the
+          # installed launcher module, rather than assuming a tree shape. npm
+          # nests an optional dependency under the launcher for a global install
+          # and hoists it in other layouts; both are correct as long as Node can
+          # resolve it, and only Node's own resolution answers that question.
+          LAUNCHER_MODULE="${PREFIX}/lib/node_modules/@kitsunekode/kunai/dist/npm-launcher.mjs"
+          HOST_BINARY="$(node -e '
+            const { createRequire } = require("node:module");
+            const { dirname, join } = require("node:path");
+            const req = createRequire(process.argv[1]);
+            const manifest = req.resolve("@kitsunekode/kunai-linux-x64/package.json");
+            console.log(join(dirname(manifest), "bin", "kunai"));
+          ' "${LAUNCHER_MODULE}" 2>/dev/null)" \
+            || { echo "::error::host platform package @kitsunekode/kunai-linux-x64 is not resolvable from the installed launcher"; exit 1; }
+          test -x "${HOST_BINARY}" \
+            || { echo "::error::host platform binary missing at ${HOST_BINARY}"; exit 1; }
 
           LAUNCHER="${PREFIX}/bin/kunai"
           test -x "${LAUNCHER}"
