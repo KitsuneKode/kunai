@@ -101,6 +101,17 @@
         "typescript": "catalog:web",
       },
     },
+    "apps/mobile": {
+      "name": "@kunai/mobile",
+      "dependencies": {
+        "@kunai/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "apps/relay-server": {
       "name": "@kunai/relay-server",
       "dependencies": {
@@ -532,6 +543,8 @@
     "@kunai/design": ["@kunai/design@workspace:packages/design"],
 
     "@kunai/docs": ["@kunai/docs@workspace:apps/docs"],
+
+    "@kunai/mobile": ["@kunai/mobile@workspace:apps/mobile"],
 
     "@kunai/providers": ["@kunai/providers@workspace:packages/providers"],
 

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-09-01"
 ---
 
 # Kunai — Testing Strategy
@@ -18,6 +18,8 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep opt-in live provider smoke scripts under `apps/cli/test/live/`
 - keep copyable templates for new contract tests under `apps/cli/test/templates/`
 - keep VHS tapes and captured golden outputs under `apps/cli/test/vhs/` for UI demos and visual regression review
+- keep mobile unit/integration contracts under `apps/mobile/test/{unit,integration}/`
+- keep the redacted, opt-in device-evidence validator under `apps/mobile/test/live/`; it validates supplied evidence and never controls a device
 
 The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist/kunai.js`, `dist/assets/**`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
@@ -31,7 +33,7 @@ CLI suites are separate Turbo tasks so a unit-only change does not re-run integr
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `bun run test`                     | every workspace `test` script; CLI runs `test:unit` and `test:integration` in parallel under Turbo                    |
 | `bun run test:unit`                | packages that define `test:unit` (CLI today)                                                                          |
-| `bun run test:integration`         | packages that define `test:integration` (CLI today)                                                                   |
+| `bun run test:integration`         | packages that define `test:integration` (CLI and mobile)                                                              |
 | `bun run --cwd apps/cli test`      | both CLI suites sequentially (outside Turbo); path args after `--` select files, flag-only args append to both suites |
 | `bun run ci:affected` / CI PR jobs | `--affected` — only changed packages and their dependents                                                             |
 
@@ -402,6 +404,23 @@ binary/runtime, TTY, SQLite WAL/reopen, player, and launcher evidence. A green
 launcher smoke proves only that Android accepted the intent; provider playback,
 media start, completion, app suspension, return-to-terminal, cold start,
 responsiveness, and memory remain separate device observations.
+
+The independent mobile application uses a stricter two-part gate. Its default
+unit/integration suites cross-build and scan both platform artifacts against
+fake hosts. Physical work is manual; the opt-in command only validates a
+tester-supplied, URL-free JSON row:
+
+```sh
+bun run test:live:mobile-host-proof -- --evidence /path/to/redacted-evidence.json
+```
+
+The validator rejects unknown or sensitive fields and exits non-zero unless
+terminal input, bounded HTTP, state recovery, cancellation, OS handoff, and
+human-observed VLC playback all passed. Android ARM64 Termux and physical iPhone
+a-Shell mini procedures are owned by
+[mobile-terminal-runtime.md](./mobile-terminal-runtime.md). A green cross-build,
+fake-host run, launcher exit, or intent acceptance must not become a platform
+support claim.
 
 ## Non-Flaky Test Rules
 

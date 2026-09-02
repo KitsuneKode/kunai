@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+player_url=$(cat .runtime/player-url)
+case "$player_url" in
+  vlc-x-callback://x-callback-url/stream\?url=*) ;;
+  *) exit 64 ;;
+esac
+openurl "$player_url"

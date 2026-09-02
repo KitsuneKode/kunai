@@ -38,10 +38,11 @@ user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provi
 
 ## Entrypoint
 
-`apps/cli/src/main.ts` is the only runtime entrypoint. It owns the DI container,
-config service, history store, cache store, provider registry, shared shell
-workflows, and the search/playback phases. Package scripts and the build both
-point at it.
+`apps/cli/src/main.ts` is the only desktop CLI entrypoint. It owns the DI
+container, config service, history store, cache store, provider registry, shared
+shell workflows, and the search/playback phases. Package scripts and the desktop
+build both point at it. `apps/mobile/src/entry.ts` is the separately declared
+mobile entrypoint; neither app imports the other.
 
 The old `apps/cli/index.ts` compatibility wrapper has been **removed**. Do not
 reintroduce a second entrypoint; migrate behavior into `main.ts` instead.
@@ -52,18 +53,18 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 
 ## Runtime Modules
 
-| Area                  | Files                                                                                   | Responsibility                                                                                              |
-| --------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`                                            | The only entrypoint; `app/` holds bootstrap, session, search, playback, discover, post-play, offline phases |
-| DI + provider engine  | `apps/cli/src/container/*` (`container.ts` is a re-export barrel)                       | `bootstrap-providers.ts` builds the engine; also wires SQLite repos, resolve/download/presence services     |
-| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                                              |
-| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                                       |
-| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                          |
-| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | Managed `mpv` launch/IPC or detached Android intent handoff                                                 |
-| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                   |
-| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                         |
-| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                        |
-| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                         | Structured debug logs and diagnostics events                                                                |
+| Area                  | Files                                                                                   | Responsibility                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`                                            | The only desktop CLI entrypoint; `app/` holds bootstrap, session, search, playback, discover, post-play, offline phases |
+| DI + provider engine  | `apps/cli/src/container/*` (`container.ts` is a re-export barrel)                       | `bootstrap-providers.ts` builds the engine; also wires SQLite repos, resolve/download/presence services                 |
+| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                                                          |
+| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                                                   |
+| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                                      |
+| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | Managed `mpv` launch/IPC or detached Android intent handoff                                                             |
+| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                               |
+| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                                     |
+| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                                    |
+| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                         | Structured debug logs and diagnostics events                                                                            |
 
 If your change is broad enough to blur these module boundaries, stop and check whether the work belongs in the v2 migration path instead.
 

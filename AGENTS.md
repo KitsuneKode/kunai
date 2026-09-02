@@ -47,7 +47,9 @@ Each of these is enforced by a test or is expensive to get wrong.
   imports no provider or player runtime; nothing outside the shell imports
   `ink`; no active code imports `.archive/legacy` or `.reference/experiments`.
   Map in [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md).
-- **`apps/cli/src/main.ts` is the only entrypoint.** Do not add a second one.
+- **Entrypoints are app-scoped.** `apps/cli/src/main.ts` is the only desktop CLI
+  entrypoint. `apps/mobile/src/entry.ts` is the only mobile entrypoint; neither
+  app may import the other.
 - **Production providers are the ones
   `loadProductionProviderModules()` returns** in
   `apps/cli/src/container/bootstrap-providers.ts`. A module existing under
@@ -134,6 +136,7 @@ rest of `.docs/`: [.docs/README.md](.docs/README.md).
 | Where feature X lives                                            | [feature-map.md](.docs/feature-map.md)                                                                                                               |
 | Playback flow, provider orchestration, persistence, recovery     | [architecture.md](.docs/architecture.md)                                                                                                             |
 | Which layer or package work belongs in                           | [runtime-boundary-map.md](.docs/runtime-boundary-map.md)                                                                                             |
+| Mobile terminal runtime, artifacts, device qualification         | [mobile-terminal-runtime.md](.docs/mobile-terminal-runtime.md)                                                                                       |
 | Broad refactors, service extraction, caching                     | [engineering-guide.md](.docs/engineering-guide.md)                                                                                                   |
 | Shell flow, hotkeys, overlays, setup UX                          | [ux-architecture.md](.docs/ux-architecture.md) · [keybindings.md](.docs/keybindings.md)                                                              |
 | Terminal styling and interaction patterns                        | [design-system.md](.docs/design-system.md) · [ui-redesign-playbook.md](.docs/ui-redesign-playbook.md)                                                |
