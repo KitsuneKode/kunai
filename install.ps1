@@ -1641,7 +1641,11 @@ function Get-YtdlpReleaseAsset {
 # yt-dlp's SHA2-256SUMS is GNU coreutils style (hash, spaces, optional `*`, name).
 # Kunai's own SHA256SUMS parser requires exactly two spaces and would reject a
 # perfectly valid yt-dlp manifest, so helpers get a slightly looser reader.
-function Get-HelperChecksumEntry([string]$ManifestPath, [string]$AssetName) {
+function Get-HelperChecksumEntry {
+  param(
+    [Parameter(Mandatory)][string]$ManifestPath,
+    [Parameter(Mandatory)][string]$AssetName
+  )
   $digests = @()
   foreach ($line in Get-Content -LiteralPath $ManifestPath) {
     if ($line -cmatch '^([0-9A-Fa-f]{64})\s+\*?([^\s]+)$' -and $Matches[2] -ceq $AssetName) {
@@ -1690,7 +1694,8 @@ function Test-CurlImpersonatePresent {
   return $false
 }
 
-function Find-CurlImpersonateWrapperDir([string]$Root) {
+function Find-CurlImpersonateWrapperDir {
+  param([Parameter(Mandatory)][string]$Root)
   if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return $null }
   $wrapper = Get-ChildItem -LiteralPath $Root -Filter 'curl_chrome*.bat' -Recurse -File -ErrorAction SilentlyContinue |
     Select-Object -First 1
