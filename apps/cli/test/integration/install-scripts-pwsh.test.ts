@@ -292,6 +292,9 @@ describePwsh("install.ps1 dry-run", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Kunai installer");
+    expect(result.stdout).toContain(
+      "Skipping optional dependencies (mpv, yt-dlp, curl-impersonate).",
+    );
     expect(result.stdout).toContain("Downloading kunai-windows-");
     expect(result.stdout).toContain("versions");
     expect(result.stdout).toContain("[dry-run]");
@@ -368,7 +371,17 @@ describePwsh("install.ps1 dry-run", () => {
       // in install.ps1 — this asserts the installer stays on real mpv.
       expect(result.stdout).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
       expect(result.stdout).not.toContain("mpv.net");
-      expect(result.stdout).toContain("winget install yt-dlp");
+      if (process.platform === "win32") {
+        // Windows one-click path: portable GitHub binaries, not the ambiguous
+        // `winget install yt-dlp` that matches a Microsoft Store listing.
+        expect(result.stdout).toContain("yt-dlp.exe");
+        expect(result.stdout).toContain("curl-impersonate");
+        expect(result.stdout).not.toMatch(/winget install yt-dlp(?:\s|$)/);
+      } else {
+        // Linux pwsh harness: $OnWindows is false, so the winget fallback is
+        // what the dry-run prints. The id must still be exact.
+        expect(result.stdout).toContain("winget install --id yt-dlp.yt-dlp -e");
+      }
     } finally {
       sandbox.cleanup();
     }
@@ -1966,7 +1979,7 @@ describePwsh("install.ps1 optional dependency consent", () => {
     // cannot drive over mpv's IPC socket.
     expect(table["winget/mpv"]).toBe("winget install --id mpv-player.mpv-CI.MSVC -e");
     expect(table["winget/curl"]).toBe("winget install --id cURL.cURL -e");
-    expect(table["winget/yt-dlp"]).toBe("winget install yt-dlp");
+    expect(table["winget/yt-dlp"]).toBe("winget install --id yt-dlp.yt-dlp -e");
     expect(table["scoop/mpv"]).toBe("scoop install mpv");
     expect(table["choco/mpv"]).toBe("choco install mpv");
     // No recognised manager must yield no command, so the caller falls through
@@ -2003,6 +2016,8 @@ describePwsh("install.ps1 optional dependency consent", () => {
     // -Yes is consent to install Kunai, not to accept a third party's terms.
     expect(output).not.toContain("[RAN]");
     expect(output).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+    expect(output).toContain("winget install --id yt-dlp.yt-dlp -e");
+    expect(output).not.toMatch(/winget install yt-dlp(?:\s|$)/);
   });
 
   /**
@@ -2028,6 +2043,125 @@ describePwsh("install.ps1 optional dependency consent", () => {
     expect(output).toContain("No supported package manager found");
     expect(output).toContain("https://mpv.io/installation/");
     expect(output).not.toContain("[RAN]");
+  });
+});
+
+/**
+ * Portable Windows helpers: yt-dlp.exe and curl-impersonate are fetched from
+ * GitHub into Kunai's data dir so `irm … | iex` does not depend on winget
+ * confirming a third-party licence (and so curl-impersonate, which has no
+ * Windows package, actually gets installed).
+ */
+describePwsh("install.ps1 portable Windows helpers", () => {
+  function extractFn(name: string): string {
+    return `Invoke-Expression ([regex]::Match($src, "(?ms)^function ${name} \\{.*?^\\}").Value)`;
+  }
+
+  function evalHelperFns(body: string): string {
+    const script = [
+      `$src = Get-Content -Raw ${JSON.stringify(INSTALL_PS1)}`,
+      'function Write-Info { param($m) Write-Host "> $m" }',
+      'function Write-Warn { param($m) Write-Host "! $m" }',
+      "$CurlImpersonateVersion = 'v2.2.1'",
+      "$CurlImpersonateWin64Digest = 'f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5'",
+      extractFn("Get-YtdlpReleaseAsset"),
+      extractFn("Get-HelperChecksumEntry"),
+      extractFn("Get-CurlImpersonateWindowsSpec"),
+      extractFn("Test-CurlImpersonatePresent"),
+      extractFn("Find-CurlImpersonateWrapperDir"),
+      body,
+    ].join("\n");
+    const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], {
+      encoding: "utf8",
+    });
+    expect(result.stderr, result.stderr).not.toContain("ParserError");
+    expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+    return `${result.stdout}${result.stderr}`;
+  }
+
+  test("picks the official yt-dlp asset for x64 and arm64", () => {
+    const output = evalHelperFns(
+      [
+        "Write-Output (Get-YtdlpReleaseAsset -Arch x64)",
+        "Write-Output (Get-YtdlpReleaseAsset -Arch arm64)",
+      ].join("; "),
+    );
+    const lines = output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    expect(lines).toContain("yt-dlp.exe");
+    expect(lines).toContain("yt-dlp_arm64.exe");
+  });
+
+  test("curl-impersonate Windows spec is x64-only and matches the CI pin", () => {
+    const output = evalHelperFns(`
+      $spec = Get-CurlImpersonateWindowsSpec -Arch x64
+      Write-Output $spec.Version
+      Write-Output $spec.Asset
+      Write-Output $spec.Url
+      Write-Output $spec.Sha256
+      $arm = Get-CurlImpersonateWindowsSpec -Arch arm64
+      if ($null -eq $arm) { Write-Output 'arm64-none' }
+    `);
+    expect(output).toContain("v2.2.1");
+    expect(output).toContain("curl-impersonate-v2.2.1.x86_64-win32.tar.gz");
+    expect(output).toContain(
+      "https://github.com/lexiforest/curl-impersonate/releases/download/v2.2.1/curl-impersonate-v2.2.1.x86_64-win32.tar.gz",
+    );
+    expect(output).toContain("f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5");
+    expect(output).toContain("arm64-none");
+  });
+
+  test("helper checksums accept GNU coreutils spacing and a binary-mode star", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-ytdlp-sums-"));
+    try {
+      const sums = join(dir, "SHA2-256SUMS");
+      const digest = "a".repeat(64);
+      writeFileSync(sums, `${digest}  yt-dlp.exe\n${digest} *yt-dlp_arm64.exe\n`);
+      const output = evalHelperFns(`
+        Write-Output (Get-HelperChecksumEntry ${JSON.stringify(sums)} 'yt-dlp.exe')
+        Write-Output (Get-HelperChecksumEntry ${JSON.stringify(sums)} 'yt-dlp_arm64.exe')
+      `);
+      const lines = output
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      expect(lines.filter((line) => line === digest)).toHaveLength(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("discovers the .bat wrappers the Windows curl-impersonate release ships", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-curl-impersonate-"));
+    try {
+      writeFileSync(join(dir, "curl_chrome150.bat"), "@echo off\r\n");
+      writeFileSync(join(dir, "curl-impersonate.exe"), "MZ");
+      const output = evalHelperFns(`
+        $env:Path = ${JSON.stringify(dir)}
+        if (Test-CurlImpersonatePresent) { Write-Output 'present' } else { Write-Output 'missing' }
+        Write-Output (Find-CurlImpersonateWrapperDir ${JSON.stringify(dir)})
+      `);
+      expect(output).toContain("present");
+      expect(output).toContain(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("plain curl.exe is not an impersonate build", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-plain-curl-"));
+    try {
+      writeFileSync(join(dir, "curl.exe"), "MZ");
+      const output = evalHelperFns(`
+        $env:Path = ${JSON.stringify(dir)}
+        if (Test-CurlImpersonatePresent) { Write-Output 'present' } else { Write-Output 'missing' }
+      `);
+      expect(output).toContain("missing");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

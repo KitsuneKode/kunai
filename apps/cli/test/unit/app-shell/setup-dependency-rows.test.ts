@@ -59,6 +59,7 @@ describe("resolveInstallCommand", () => {
     expect(resolveInstallCommand(CURL_IMPERSONATE_INSTALL, { platform: "win32" })).toBe(
       "https://github.com/lexiforest/curl-impersonate/releases",
     );
+    expect(YT_DLP_INSTALL.win32).toBe("winget install --id yt-dlp.yt-dlp -e");
     expect(buildRemediationLines(CURL_IMPERSONATE_INSTALL).join("\n")).not.toContain("apt install");
   });
 });

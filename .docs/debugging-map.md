@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-09-02"
 ---
 
 # Kunai Debugging Map
@@ -199,7 +199,12 @@ browse and post-play should still use sharp Sixel output.
 **Providers behave differently than on Linux.** The `curl.exe` Windows ships in
 System32 is a Schannel build with no HTTP/2 (`curl --version` lists no `HTTP2`
 feature). Provider paths that negotiate HTTP/2 degrade against it; the winget
-`cURL.cURL` build has it.
+`cURL.cURL` build has it. Cloudflare also fingerprints the TLS handshake, so
+plain curl (HTTP/2 or not) is often not enough for AniDB/Miruro. The native
+installer drops a portable curl-impersonate under
+`%LOCALAPPDATA%\kunai\deps\curl-impersonate` (x64, same archive CI pins) and
+puts that directory on the User PATH so `kunai doctor` reports `curl=ok
+(chrome…)` instead of `plain (no CF bypass)`.
 
 **Tests fail in teardown after passing.** `rmSync` on a directory holding an open
 SQLite handle raises EBUSY on Windows — POSIX unlinks open files, Windows does

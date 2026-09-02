@@ -72,7 +72,7 @@ separate zip utility is required. The same HTTP 404/410-only legacy fallback
 rule applies. On a terminal the download shows one updating progress line
 (size, rate, bar); a pipe or CI log stays on the single quiet line.
 
-Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`.
+Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`. After the binary is in place it also drops portable `yt-dlp` and (on x64) curl-impersonate into `%LOCALAPPDATA%\kunai\deps\` — see [Optional dependencies](#optional-dependencies). `mpv` remains a package-manager prompt.
 
 Open a new terminal after installation if `kunai` is not visible yet. The
 installer prints the PATH winner. If another `kunai` is still earlier — npm,
@@ -157,7 +157,7 @@ what a Dockerfile or CI step usually wants.
 | `install.sh`         | `install.ps1`     | Environment                | Effect                                                                                    |
 | -------------------- | ----------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
 | `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages — see below. |
-| `--skip-deps`        | `-SkipDeps`       | `KUNAI_SKIP_DEPS=1`        | Say nothing at all about optional dependencies (`mpv`, `yt-dlp`, and on Windows `curl`).  |
+| `--skip-deps`        | `-SkipDeps`       | `KUNAI_SKIP_DEPS=1`        | Skip optional dependencies (`mpv` via your package manager; on Windows also the portable `yt-dlp` and `curl-impersonate` helpers). |
 | `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone — see [PATH](#path).                                                     |
 
 Without a terminal — `curl … | bash` in CI, a container, or a sandbox — optional
@@ -165,11 +165,12 @@ prompts are **skipped, not accepted**, and the installer says which step it
 skipped. Before 0.3.0 a missing terminal defaulted to yes and could run
 `sudo apt-get`/`pacman`/`dnf install` unattended.
 
-### Optional dependencies are never installed for you
+### Optional dependencies
 
-Kunai needs `mpv` to play anything, and `yt-dlp` for YouTube. The installer
-checks whether they are already present, and if they are not it prints the exact
-command for your package manager:
+Kunai needs `mpv` to play anything, and `yt-dlp` for YouTube. **Package-manager
+installs are never run for you.** The installer checks whether they are already
+present, and if they are not it prints the exact command for your package
+manager:
 
 ```
 ! mpv is not installed — Kunai needs it to play anything.
@@ -180,7 +181,7 @@ command for your package manager:
 Run it now? [y/N]
 ```
 
-Three rules hold on every platform:
+Three rules hold for every package-manager prompt:
 
 - **The command is always shown**, before it is offered and again if you decline,
   so nothing is hidden either way.
@@ -191,11 +192,29 @@ Three rules hold on every platform:
 
 Saying yes runs the command as shown, without `--noconfirm`, `-y`, or
 `--accept-package-agreements` — so your package manager still confirms too.
-`--skip-deps` silences the section entirely, including Windows `curl`.
 
-Recognised managers: `pacman`, `apt`, `dnf`, `zypper`, `apk` on Linux; `brew`
-and `port` on macOS; `winget`, `scoop` and `choco` on Windows. Anything else
-gets a link to [mpv's install guide](https://mpv.io/installation/).
+On **Windows**, the native installer also drops two **portable** tools into
+Kunai's own data directory (`%LOCALAPPDATA%\kunai\deps\`) and puts those folders
+on your User PATH. These are GitHub release binaries, verified by checksum —
+not winget packages — so a one-line `irm … | iex` actually leaves YouTube and
+anime search working:
+
+- `yt-dlp` — YouTube playback and downloads. The winget query `yt-dlp` matches
+  both `yt-dlp.yt-dlp` and a Microsoft Store listing, so the installer never
+  runs that command; it fetches `yt-dlp.exe` (or `yt-dlp_arm64.exe`) instead.
+  The copy-pasteable fallback is `winget install --id yt-dlp.yt-dlp -e`.
+- `curl-impersonate` — Cloudflare TLS bypass for anime search (x64). There is
+  no winget/scoop/choco package; the installer uses the same Windows archive CI
+  pins. Windows ARM64 has no upstream build, so that host is pointed at the
+  [releases page](https://github.com/lexiforest/curl-impersonate/releases).
+
+`--skip-deps` skips the portable helpers and the package-manager prompt,
+including Windows `curl`.
+
+Recognised managers for `mpv` (and for `yt-dlp` on Linux/macOS): `pacman`,
+`apt`, `dnf`, `zypper`, `apk` on Linux; `brew` and `port` on macOS; `winget`,
+`scoop` and `choco` on Windows. Anything else gets a link to
+[mpv's install guide](https://mpv.io/installation/).
 
 ## Unsigned binaries (beta)
 

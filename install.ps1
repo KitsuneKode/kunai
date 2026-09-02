@@ -22,7 +22,9 @@ param(
   # Parity with install.sh's --skip-deps. Installs Kunai and nothing else, which
   # is what automated environments want: winget can sit for minutes on package
   # downloads or agreement prompts, and a test asserting Kunai's own install has
-  # no business waiting for it.
+  # no business waiting for it. Also skips the portable yt-dlp and
+  # curl-impersonate helpers the Windows binary path otherwise drops into
+  # Kunai's data dir.
   [switch]$SkipDeps = $([bool]($env:KUNAI_SKIP_DEPS -match '^(?i:1|true|yes|y)$')),
   # Useful for managed/test environments that own PATH themselves. Without
   # this seam an otherwise sandboxed installer still writes HKCU\Environment.
@@ -41,6 +43,25 @@ $ReleasesApi = if ($env:KUNAI_RELEASES_API) { $env:KUNAI_RELEASES_API } else { '
 $Package = '@kitsunekode/kunai'
 $BinDir = if ($env:KUNAI_BIN_DIR) { $env:KUNAI_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\bin' }
 $DataDir = if ($env:KUNAI_DATA_DIR) { $env:KUNAI_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai' }
+# Official yt-dlp Windows builds. `/latest/download` is a redirect GitHub
+# serves for the current release; tests can point this at a local fixture.
+$YtdlpReleaseBase = if ($env:KUNAI_YTDLP_RELEASE_BASE) {
+  $env:KUNAI_YTDLP_RELEASE_BASE.TrimEnd('/')
+} else {
+  'https://github.com/yt-dlp/yt-dlp/releases/latest/download'
+}
+# Pinned to the same curl-impersonate release CI installs. Bump alongside
+# `.github/actions/setup-curl-impersonate/action.yml`.
+$CurlImpersonateVersion = if ($env:KUNAI_CURL_IMPERSONATE_VERSION) {
+  $env:KUNAI_CURL_IMPERSONATE_VERSION
+} else {
+  'v2.2.1'
+}
+$CurlImpersonateWin64Digest = if ($env:KUNAI_CURL_IMPERSONATE_SHA256) {
+  $env:KUNAI_CURL_IMPERSONATE_SHA256.ToLowerInvariant()
+} else {
+  'f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5'
+}
 $ConfigDir = if ($env:KUNAI_CONFIG_DIR) { $env:KUNAI_CONFIG_DIR } else { Join-Path $env:APPDATA 'kunai' }
 $CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\cache' }
 $BinPath = Join-Path $BinDir 'kunai.exe'
@@ -1535,6 +1556,10 @@ function Get-PackageInstallCommand {
       # over mpv's IPC socket + Lua bridge. mpv-player.mpv-CI.MSVC is the winget
       # package that provides a real mpv.exe (same upstream build CI pins).
       'mpv' { return 'winget install --id mpv-player.mpv-CI.MSVC -e' }
+      # `winget install yt-dlp` matches both yt-dlp.yt-dlp and a Microsoft Store
+      # listing, so the unattended one-click path dies with "Multiple packages
+      # found". Pin the winget-source id the same way mpv and curl already do.
+      'yt-dlp' { return 'winget install --id yt-dlp.yt-dlp -e' }
       'curl' { return 'winget install --id cURL.cURL -e' }
       default { return "winget install $Package" }
     }
@@ -1594,10 +1619,264 @@ function Request-OptionalInstall {
   }
 }
 
+# Session PATH plus the persistent User PATH. SkipPathUpdate still skips the
+# registry write (managed/test environments own PATH), but the current process
+# has to see a helper we just dropped or the rest of this install cannot find it.
+function Register-HelperPath([string]$Dir) {
+  if ([string]::IsNullOrWhiteSpace($Dir)) { return }
+  $normalized = $Dir.Trim().Trim('"').TrimEnd('\')
+  $entries = @($env:Path -split ';' | ForEach-Object { $_.Trim().Trim('"').TrimEnd('\') })
+  if ($entries -notcontains $normalized) {
+    $env:Path = "$Dir;$env:Path"
+  }
+  Add-UserPath $Dir
+}
+
+function Get-YtdlpReleaseAsset {
+  param([string]$Arch = (Get-WindowsArch))
+  if ($Arch -eq 'arm64') { return 'yt-dlp_arm64.exe' }
+  return 'yt-dlp.exe'
+}
+
+# yt-dlp's SHA2-256SUMS is GNU coreutils style (hash, spaces, optional `*`, name).
+# Kunai's own SHA256SUMS parser requires exactly two spaces and would reject a
+# perfectly valid yt-dlp manifest, so helpers get a slightly looser reader.
+function Get-HelperChecksumEntry([string]$ManifestPath, [string]$AssetName) {
+  $digests = @()
+  foreach ($line in Get-Content -LiteralPath $ManifestPath) {
+    if ($line -cmatch '^([0-9A-Fa-f]{64})\s+\*?([^\s]+)$' -and $Matches[2] -ceq $AssetName) {
+      $digests += $Matches[1].ToLowerInvariant()
+    }
+  }
+  if ($digests.Count -ne 1) {
+    throw "Checksum manifest must contain exactly one valid entry for $AssetName."
+  }
+  return [string]$digests[0]
+}
+
+function Get-CurlImpersonateWindowsSpec {
+  param([string]$Arch = (Get-WindowsArch))
+  if ($Arch -ne 'x64') { return $null }
+  $ver = $CurlImpersonateVersion
+  $asset = "curl-impersonate-$ver.x86_64-win32.tar.gz"
+  $base = if ($env:KUNAI_CURL_IMPERSONATE_RELEASE_BASE) {
+    $env:KUNAI_CURL_IMPERSONATE_RELEASE_BASE.TrimEnd('/')
+  } else {
+    "https://github.com/lexiforest/curl-impersonate/releases/download/$ver"
+  }
+  return [pscustomobject]@{
+    Version = $ver
+    Asset   = $asset
+    Url     = "$base/$asset"
+    Sha256  = $CurlImpersonateWin64Digest
+  }
+}
+
+function Test-CurlImpersonatePresent {
+  $pathValue = if ($null -eq $env:Path) { '' } else { $env:Path }
+  foreach ($pathEntry in ($pathValue -split ';')) {
+    $directory = $pathEntry.Trim().Trim('"')
+    if ([string]::IsNullOrWhiteSpace($directory) -or -not (Test-Path -LiteralPath $directory -PathType Container)) {
+      continue
+    }
+    try {
+      $hits = @(Get-ChildItem -LiteralPath $directory -File -ErrorAction SilentlyContinue | Where-Object {
+          $_.Name -match '^curl_chrome\d+.*\.(bat|cmd|exe)$'
+        })
+      if ($hits.Count -gt 0) { return $true }
+    }
+    catch { }
+  }
+  return $false
+}
+
+function Find-CurlImpersonateWrapperDir([string]$Root) {
+  if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return $null }
+  $wrapper = Get-ChildItem -LiteralPath $Root -Filter 'curl_chrome*.bat' -Recurse -File -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if ($null -eq $wrapper) { return $null }
+  return $wrapper.Directory.FullName
+}
+
+# Portable yt-dlp.exe into Kunai's own data dir. This is the one-click path:
+# `irm … | iex` cannot accept winget licence agreements, and `winget install
+# yt-dlp` is ambiguous against the Microsoft Store listing. A verified GitHub
+# binary next to Kunai does not have either problem.
+#
+# Returns $true when yt-dlp is present, was installed, or would be installed
+# on a dry run — so the winget prompt is not also offered.
+function Install-PortableYtDlp {
+  if (Test-Cmd 'yt-dlp') { return $true }
+
+  $destDir = Join-Path $DataDir 'deps\yt-dlp'
+  $dest = Join-Path $destDir 'yt-dlp.exe'
+  if (Test-Path -LiteralPath $dest -PathType Leaf) {
+    Register-HelperPath $destDir
+    Write-Info "yt-dlp already present at $dest"
+    return $true
+  }
+
+  $asset = Get-YtdlpReleaseAsset
+  if ($DryRun) {
+    Write-Info "[dry-run] would download $asset into $destDir"
+    return $true
+  }
+
+  Write-Info "Installing yt-dlp ($asset) for YouTube playback and downloads..."
+  $staging = Join-Path $CacheDir ("ytdlp-staging-" + $PID)
+  $ok = $false
+  try {
+    New-Item -ItemType Directory -Force -Path $staging | Out-Null
+    $sumsPath = Join-Path $staging 'SHA2-256SUMS'
+    $binPath = Join-Path $staging $asset
+    Invoke-BoundedDownload -Url "$YtdlpReleaseBase/SHA2-256SUMS" -DestinationPath $sumsPath `
+      -MaxBytes $DownloadChecksumMaxBytes -Label 'yt-dlp SHA2-256SUMS'
+    $want = Get-HelperChecksumEntry $sumsPath $asset
+    Invoke-BoundedDownload -Url "$YtdlpReleaseBase/$asset" -DestinationPath $binPath `
+      -MaxBytes $DownloadMaxBytes -Label $asset
+    $got = (Get-FileHash -Path $binPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($want -ne $got) {
+      throw "Checksum mismatch for $asset (expected '$want', got '$got')."
+    }
+    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+    Copy-Item -Force -Path $binPath -Destination $dest
+    if ($OnWindows) { Unblock-File -Path $dest -ErrorAction SilentlyContinue }
+    Register-HelperPath $destDir
+    Write-Info "Installed yt-dlp -> $dest"
+    $ok = $true
+  }
+  catch {
+    Write-Warn "Could not install a portable yt-dlp: $($_.Exception.Message)"
+    Write-Info 'Install it later with:'
+    $command = Get-PackageInstallCommand 'yt-dlp'
+    if ([string]::IsNullOrWhiteSpace($command)) {
+      Write-Host '    https://github.com/yt-dlp/yt-dlp/releases'
+    }
+    else {
+      Write-Host "    $command"
+    }
+  }
+  finally {
+    if (Test-Path -LiteralPath $staging) {
+      Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+  return $ok
+}
+
+# Portable curl-impersonate into Kunai's own data dir. There is no winget,
+# scoop, or Chocolatey package — doctor currently dumps people on the GitHub
+# releases page, and anime search then comes back empty. Same archive CI uses.
+#
+# Returns $true when an impersonate build is present, was installed, or would
+# be installed on a dry run.
+function Install-PortableCurlImpersonate {
+  if (Test-CurlImpersonatePresent) { return $true }
+
+  $spec = Get-CurlImpersonateWindowsSpec
+  if ($null -eq $spec) {
+    Write-Warn 'curl-impersonate has no Windows ARM64 build. Anime search may still hit Cloudflare.'
+    Write-Info 'https://github.com/lexiforest/curl-impersonate/releases'
+    return $false
+  }
+
+  $destDir = Join-Path $DataDir 'deps\curl-impersonate'
+  $existing = Find-CurlImpersonateWrapperDir $destDir
+  if ($existing) {
+    Register-HelperPath $existing
+    Write-Info "curl-impersonate already present at $existing"
+    return $true
+  }
+
+  if ($DryRun) {
+    Write-Info "[dry-run] would download $($spec.Asset) into $destDir"
+    return $true
+  }
+
+  if (-not (Test-Cmd 'tar')) {
+    Write-Warn 'Windows tar.exe is required to unpack curl-impersonate (ships with Windows 10+).'
+    Write-Info 'https://github.com/lexiforest/curl-impersonate/releases'
+    return $false
+  }
+
+  Write-Info "Installing curl-impersonate $($spec.Version) so anime search can clear Cloudflare..."
+  $staging = Join-Path $CacheDir ("curl-impersonate-staging-" + $PID)
+  $ok = $false
+  try {
+    New-Item -ItemType Directory -Force -Path $staging | Out-Null
+    $archivePath = Join-Path $staging $spec.Asset
+    $extractDir = Join-Path $staging 'extract'
+    New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+    Invoke-BoundedDownload -Url $spec.Url -DestinationPath $archivePath `
+      -MaxBytes $DownloadArchiveMaxBytes -Label $spec.Asset
+    $got = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($spec.Sha256 -ne $got) {
+      throw "Checksum mismatch for $($spec.Asset) (expected '$($spec.Sha256)', got '$got')."
+    }
+    $global:LASTEXITCODE = $null
+    & tar -xzf $archivePath -C $extractDir
+    if ($null -ne $global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
+      throw "tar exited $($global:LASTEXITCODE) unpacking $($spec.Asset)."
+    }
+    $wrapperDir = Find-CurlImpersonateWrapperDir $extractDir
+    if (-not $wrapperDir) {
+      throw "Archive did not contain curl_chrome*.bat wrappers."
+    }
+    if (Test-Path -LiteralPath $destDir) {
+      Remove-Item -LiteralPath $destDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path $destDir) | Out-Null
+    Move-Item -Force -Path $extractDir -Destination $destDir
+    $wrapperDir = Find-CurlImpersonateWrapperDir $destDir
+    if (-not $wrapperDir) {
+      throw "Extracted curl-impersonate is missing curl_chrome*.bat wrappers."
+    }
+    if ($OnWindows) {
+      Get-ChildItem -LiteralPath $wrapperDir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in @('.exe', '.bat', '.cmd', '.dll') } |
+        ForEach-Object { Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue }
+    }
+    Register-HelperPath $wrapperDir
+    Write-Info "Installed curl-impersonate -> $wrapperDir"
+    $ok = $true
+  }
+  catch {
+    Write-Warn "Could not install curl-impersonate: $($_.Exception.Message)"
+    Write-Info 'Install it later from:'
+    Write-Host '    https://github.com/lexiforest/curl-impersonate/releases'
+  }
+  finally {
+    if (Test-Path -LiteralPath $staging) {
+      Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+  return $ok
+}
+
 function Install-OptionalDeps {
   if ($SkipDeps) {
-    Write-Info 'Skipping optional dependencies (mpv, yt-dlp, curl).'
+    Write-Info 'Skipping optional dependencies (mpv, yt-dlp, curl-impersonate).'
     return
+  }
+
+  # Portable helpers live under Kunai's data dir, not the system package
+  # manager. `irm … | iex` cannot confirm winget licences, and curl-impersonate
+  # has no Windows package at all, so a one-click install that only printed
+  # commands left YouTube and anime search broken. SkipDeps still skips this.
+  # Failures here must not fail the Kunai install.
+  $portableYtdlp = $false
+  $portableImpersonate = $false
+  if ($OnWindows) {
+    try { $portableYtdlp = [bool](Install-PortableYtDlp) }
+    catch {
+      Write-Warn "yt-dlp helper did not complete: $($_.Exception.Message)"
+      $portableYtdlp = $false
+    }
+    try { $portableImpersonate = [bool](Install-PortableCurlImpersonate) }
+    catch {
+      Write-Warn "curl-impersonate helper did not complete: $($_.Exception.Message)"
+      $portableImpersonate = $false
+    }
   }
 
   # Checked before anything is offered: the previous flow prompted -- and with
@@ -1607,7 +1886,7 @@ function Install-OptionalDeps {
     Write-Warn 'mpv is not installed - Kunai needs it to play anything.'
     $missing += 'mpv'
   }
-  if (-not (Test-Cmd 'yt-dlp')) {
+  if (-not (Test-Cmd 'yt-dlp') -and -not $portableYtdlp) {
     Write-Warn 'yt-dlp is not installed - YouTube playback and downloads need it.'
     $missing += 'yt-dlp'
   }
@@ -1616,17 +1895,20 @@ function Install-OptionalDeps {
   # question here - the bundled build uses Schannel with no nghttp2, so it
   # reports no HTTP2 feature. Providers that negotiate HTTP/2 fall back or fail
   # against that build, so offer the full winget/scoop curl when the one on PATH
-  # cannot do HTTP/2.
+  # cannot do HTTP/2. An impersonate build already covers that (and Cloudflare),
+  # so skip the upgrade when we just installed one or found one.
   $curlNeedsUpgrade = $false
-  if (Test-Cmd 'curl') {
-    try {
-      $curlFeatures = (& curl.exe --version 2>$null) -join "`n"
-      $curlNeedsUpgrade = -not ($curlFeatures -match 'HTTP2')
+  if (-not $portableImpersonate -and -not (Test-CurlImpersonatePresent)) {
+    if (Test-Cmd 'curl') {
+      try {
+        $curlFeatures = (& curl.exe --version 2>$null) -join "`n"
+        $curlNeedsUpgrade = -not ($curlFeatures -match 'HTTP2')
+      }
+      catch { $curlNeedsUpgrade = $true }
     }
-    catch { $curlNeedsUpgrade = $true }
-  }
-  else {
-    $curlNeedsUpgrade = $true
+    else {
+      $curlNeedsUpgrade = $true
+    }
   }
   if ($curlNeedsUpgrade) {
     Write-Warn 'The curl on PATH has no HTTP/2 support (Windows ships a Schannel build).'
@@ -1634,7 +1916,9 @@ function Install-OptionalDeps {
   }
 
   if ($missing.Count -eq 0) {
-    Write-Info 'mpv, yt-dlp and curl are already installed.'
+    if (Test-Cmd 'mpv') {
+      Write-Info 'Required player (mpv) is already installed.'
+    }
     return
   }
 
