@@ -75,7 +75,10 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres ingest lifecycle", () => {
 
   test("dimensions group and round-trip through jsonb", async () => {
     const now = Date.parse(`${DAY}T12:00:00Z`);
-    for (let n = 2; n <= 7; n += 1) await ping(store, n, "0.3.0", now);
+    // Install 1 included deliberately: this asserts a total of 8, so it seeds
+    // all 8 rather than inheriting one from the test above. Re-pinging a day an
+    // install already has is a no-op by the (day, install_hash) primary key.
+    for (let n = 1; n <= 7; n += 1) await ping(store, n, "0.3.0", now);
     // One straggler on an older version: below the floor on its own.
     await ping(store, 8, "0.2.9", now);
 
@@ -112,6 +115,17 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres ingest lifecycle", () => {
 
   test("the same install on a second day is active twice but lifetime once", async () => {
     const oldNow = Date.parse(`${OLD_DAY}T12:00:00Z`);
+    const now = Date.parse(`${DAY}T12:00:00Z`);
+
+    // Seed every install this asserts on, rather than inheriting 2..8 from the
+    // two tests above. Reading counts that earlier tests happened to leave
+    // behind made this fail on main with `Expected: 8, Received: 5` whenever
+    // the file's tests did not all land first -- a property of the run order,
+    // not of the SQL. Re-pinging an install on a day it already has is a no-op
+    // by the (day, install_hash) primary key, so this is safe to repeat.
+    for (let n = 1; n <= 8; n += 1) {
+      await ping(store, n, n === 8 ? "0.2.9" : "0.3.0", now);
+    }
     await ping(store, 1, "0.3.0", oldNow);
 
     const older = await store.rollUpDay(OLD_DAY);
