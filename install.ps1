@@ -1398,13 +1398,6 @@ function Write-KunaiPathDiagnostic {
   }
 }
 
-# Consent for one optional package install.
-#
-# An explicit -Yes is consent. Redirected input is not: with no console to
-# prompt, the three call sites below each defaulted to $true and installed
-# anyway, so `irm … | iex` in CI or a container silently acquired system
-# package installs. Decline instead, and say which step was skipped so the
-# run stays useful and the gap is visible.
 # The exact command that installs one package on this machine, or '' when no
 # supported manager is present.
 #
@@ -1426,7 +1419,7 @@ function Get-PackageInstallCommand {
     }
   }
   if (Test-Cmd 'scoop') { return "scoop install $Package" }
-  if (Test-Cmd 'choco') { return "choco install $Package -y" }
+  if (Test-Cmd 'choco') { return "choco install $Package" }
   return ''
 }
 

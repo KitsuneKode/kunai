@@ -122,13 +122,13 @@ shell that launched it, so it writes your shell startup file instead — the sam
 thing rustup, bun, and Homebrew do — and prints one `source` line if you want
 the current terminal to pick it up without reopening.
 
-| Shell | File written |
-| --- | --- |
-| zsh | `~/.zshrc` |
-| bash | `~/.bashrc`, plus **one** login file (`~/.bash_profile`, else `~/.bash_login`, else `~/.profile`) |
-| fish | `~/.config/fish/conf.d/kunai.fish` |
-| anything else | `~/.profile` |
-| Windows | the persistent **User** `Path` environment variable |
+| Shell         | File written                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------- |
+| zsh           | `~/.zshrc`                                                                                        |
+| bash          | `~/.bashrc`, plus **one** login file (`~/.bash_profile`, else `~/.bash_login`, else `~/.profile`) |
+| fish          | `~/.config/fish/conf.d/kunai.fish`                                                                |
+| anything else | `~/.profile`                                                                                      |
+| Windows       | the persistent **User** `Path` environment variable                                               |
 
 bash gets two files because `~/.bashrc` is read by interactive non-login shells
 and a login shell reads only the login file; writing exactly one of the login
@@ -152,11 +152,11 @@ to add and changes nothing.
 PowerShell form. Either can be set by environment variable instead, which is
 what a Dockerfile or CI step usually wants.
 
-| `install.sh` | `install.ps1` | Environment | Effect |
-| --- | --- | --- | --- |
-| `--yes` | `-Yes` | `KUNAI_INSTALL_YES=1` | Accept Kunai's own optional prompts. It does **not** install system packages — see below. |
-| `--skip-deps` | `-SkipDeps` | `KUNAI_SKIP_DEPS=1` | Say nothing at all about optional dependencies (`mpv`, `yt-dlp`). |
-| `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone — see [PATH](#path). |
+| `install.sh`         | `install.ps1`     | Environment                | Effect                                                                                    |
+| -------------------- | ----------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
+| `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages — see below. |
+| `--skip-deps`        | `-SkipDeps`       | `KUNAI_SKIP_DEPS=1`        | Say nothing at all about optional dependencies (`mpv`, `yt-dlp`, and on Windows `curl`).  |
+| `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone — see [PATH](#path).                                                     |
 
 Without a terminal — `curl … | bash` in CI, a container, or a sandbox — optional
 prompts are **skipped, not accepted**, and the installer says which step it
@@ -189,7 +189,7 @@ Three rules hold on every platform:
 
 Saying yes runs the command as shown, without `--noconfirm`, `-y`, or
 `--accept-package-agreements` — so your package manager still confirms too.
-`--skip-deps` silences the section entirely.
+`--skip-deps` silences the section entirely, including Windows `curl`.
 
 Recognised managers: `pacman`, `apt`, `dnf`, `zypper`, `apk` on Linux; `brew`
 and `port` on macOS; `winget`, `scoop` and `choco` on Windows. Anything else

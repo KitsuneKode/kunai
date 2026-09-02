@@ -1967,7 +1967,7 @@ describePwsh("install.ps1 optional dependency consent", () => {
     expect(table["winget/curl"]).toBe("winget install --id cURL.cURL -e");
     expect(table["winget/yt-dlp"]).toBe("winget install yt-dlp");
     expect(table["scoop/mpv"]).toBe("scoop install mpv");
-    expect(table["choco/mpv"]).toBe("choco install mpv -y");
+    expect(table["choco/mpv"]).toBe("choco install mpv");
     // No recognised manager must yield no command, so the caller falls through
     // to the manual guidance rather than inventing one.
     expect(table["none/mpv"]).toBe("");
@@ -1981,6 +1981,16 @@ describePwsh("install.ps1 optional dependency consent", () => {
       );
       expect(command).not.toContain("--accept-package-agreements");
       expect(command).not.toContain("--accept-source-agreements");
+    }
+    // Chocolatey used to ship `choco install … -y`, which is the same
+    // unattended-confirm shape the winget --accept flags had.
+    for (const pkg of ["mpv", "yt-dlp", "curl"]) {
+      const command = evalInstallPs1(
+        `Get-PackageInstallCommand ${JSON.stringify(pkg)}`,
+        "function Test-Cmd { param($n) return $n -eq 'choco' }",
+      );
+      expect(command.trim()).toBe(`choco install ${pkg}`);
+      expect(command).not.toMatch(/(^|\s)-y(\s|$)/);
     }
   });
 

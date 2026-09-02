@@ -1913,7 +1913,8 @@ describe("install.sh package activeVersion", () => {
 /**
  * `ask` gates `sudo apt-get/pacman/dnf install`, so what it does with no
  * terminal is a privilege decision, not a UX one. Exercised directly because
- * `--dry-run` returns before `install_optional_deps` ever prompts.
+ * `--dry-run` no longer skips this function — it prints the command —
+ * so the no-terminal case is still exercised by extracting `ask` itself.
  *
  * Two separate traps, both of which defaulted to yes:
  *   - `-r /dev/tty` tests permission bits. The node is crw-rw-rw-, so it passes
@@ -2259,13 +2260,14 @@ describe("install.sh optional dependency consent", () => {
     expect(output).not.toContain("[RAN]");
   });
 
-  test("--yes and a run with no terminal print the command instead of escalating", () => {
-    for (const setup of ["YES=1", "YES=0"]) {
+  test("--yes, --dry-run, and a run with no terminal print the command instead of escalating", () => {
+    for (const setup of ["YES=1; DRY=0", "YES=0; DRY=0", "YES=0; DRY=1"]) {
       const output = evalInstallSh(
-        `SKIP_DEPS=0; DRY=0; ${setup}; install_optional_deps </dev/null`,
+        `SKIP_DEPS=0; ${setup}; install_optional_deps </dev/null`,
         'have() { [[ "$1" == pacman ]]; }',
       );
-      // Consent to install Kunai is not consent to become root.
+      // Consent to install Kunai is not consent to become root, and a dry-run
+      // must still show the planned command — same branch as install.ps1.
       expect(output).not.toContain("[RAN]");
       expect(output).toContain("sudo pacman -S --needed mpv yt-dlp");
     }

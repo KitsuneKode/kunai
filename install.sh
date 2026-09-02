@@ -2107,8 +2107,8 @@ missing_dependencies() {
 	local missing=()
 	have mpv || missing+=(mpv)
 	have yt-dlp || missing+=(yt-dlp)
-	# `printf '%s\n'` with no arguments still emits one empty line, which the
-	# caller's `mapfile` would read as a single blank dependency.
+	# `printf '%s\n'` with no arguments still emits one empty line, which a
+	# line-reader would treat as a single blank dependency.
 	[[ "${#missing[@]}" -eq 0 ]] && return 0
 	printf '%s\n' "${missing[@]}"
 }
@@ -2130,10 +2130,15 @@ missing_dependencies() {
 # the package manager gets to confirm too, so there are two gates rather than
 # none.
 install_optional_deps() {
-	[[ "$SKIP_DEPS" == 1 || "$DRY" == 1 ]] && return 0
+	[[ "$SKIP_DEPS" == 1 ]] && return 0
 
-	local missing command
-	mapfile -t missing < <(missing_dependencies)
+	local command line
+	local missing
+	missing=()
+	# `mapfile` is bash 4+; macOS ships 3.2 as /bin/bash. Read line-by-line.
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		[[ -n "$line" ]] && missing+=("$line")
+	done < <(missing_dependencies)
 	if [[ "${#missing[@]}" -eq 0 ]]; then
 		info "mpv and yt-dlp are already installed."
 		return 0
@@ -2159,7 +2164,8 @@ install_optional_deps() {
 	# `--yes` is consent to install Kunai, not consent to become root. A
 	# non-interactive run takes the same path, so `curl … | bash` in a container
 	# reports what is missing instead of quietly acquiring system packages.
-	if [[ "$YES" == 1 ]] || ! : 2>/dev/null </dev/tty; then
+	# `--dry-run` prints the same way, matching install.ps1's -DryRun path.
+	if [[ "$YES" == 1 || "$DRY" == 1 ]] || ! : 2>/dev/null </dev/tty; then
 		info "Install them with:"
 		printf '    %s\n' "$command"
 		return 0
