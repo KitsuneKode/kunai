@@ -254,7 +254,9 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 4. Retries `npm view` for the launcher and all eight platform packages until
    every exact version is visible, then performs a clean registry install and
    launcher smoke
-5. Creates annotated tag `v<version>` and pushes it
+5. Creates annotated tag `v<version>` and pushes it, via
+   `.github/scripts/create-canonical-tag.sh` — idempotent for a re-dispatch of
+   the same version, and refusing to move a tag that points elsewhere
 6. Reverifies the same downloaded native directory and provenance again,
    immediately before creating a **draft** GitHub release (`make_latest: false`)
    with its 18 files
@@ -264,6 +266,11 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
    `gh release edit <tag> --draft=false --latest`
 9. Proves the release is public, then downloads and verifies its bytes and
    attestations again
+10. Installs through the published `install.sh` in a sandboxed profile and
+    asserts the activated binary reports `<version>`. This runs last because
+    `install.sh` resolves the version from `releases/latest`, which excludes
+    drafts — before promotion it would install the _previous_ release, so no
+    earlier job can cover the recommended route
 
 ### 5. Metadata after public verification
 
@@ -289,6 +296,16 @@ preserved candidate against npm in canonical order:
 Do not unpublish, overwrite, or hand-increment a partial candidate. The launcher
 stays last so users can never resolve it before its exact-version platform
 packages exist.
+
+Recovery works past the tag, too. Everything after the canonical tag — draft
+creation, draft asset verification, promotion, public verification, the
+published `install.sh` smoke — is reached only once `v<version>` exists, so a
+failure there is exactly what this path is for. `.github/scripts/create-canonical-tag.sh`
+skips a tag already on the released commit and refuses one pointing anywhere
+else; it never moves a ref, because a published tag's commit is already baked
+into checksums, attestations, and `releases/download/v<version>/…` URLs. A
+conflict there means the tag shipped from a different commit: investigate, then
+release the fix as the next version.
 
 Rerunning the failed job reuses the preserved candidate and is always safe. A
 fresh dispatch rebuilds the candidate, which is also safe **provided nothing

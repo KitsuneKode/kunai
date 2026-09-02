@@ -1151,18 +1151,20 @@ jobs:
           esac
           "${LAUNCHER}" --help >/dev/null
 
+      # Idempotent by necessity: everything below this step is reached only once
+      # the tag exists, so a failure below is exactly the case RELEASING.md's
+      # recovery path covers — re-dispatch the same version. Bare `git tag -a`
+      # exits 128 on an existing tag, which made that re-dispatch fail here
+      # every time. The script skips a tag already on the released commit and
+      # refuses one on any other commit; it never moves a ref. HEAD is the SHA
+      # to compare against because it is the commit being tagged, and the
+      # recheck step above has already proven it equals origin/main.
       - name: Create canonical tag
         run: |
           set -euo pipefail
-          TAG="${{ needs.confirmation.outputs.tag }}"
-          # An annotated tag records a tagger, and the runner has no git identity
-          # of its own, so `git tag -a` aborts with "empty ident name" before it
-          # writes anything. Same bot identity the metadata job already commits
-          # under, kept local to this checkout.
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${TAG}" -m "Release ${TAG}"
-          git push origin "refs/tags/${TAG}"
+          .github/scripts/create-canonical-tag.sh \
+            "${{ needs.confirmation.outputs.tag }}" \
+            "$(git rev-parse HEAD)"
 
       - name: Reverify exact native payload before draft upload
         run: |
@@ -1238,6 +1240,26 @@ jobs:
             --attestation-source-digest "${GITHUB_SHA}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The README's recommended route, proven against the real release.
+      #
+      # The `installer-smoke` jobs run `needs: candidate`, against artifacts that
+      # are not published yet, and the registry smoke above covers only npm.
+      # Neither can reach the step that actually breaks: install.sh resolves the
+      # version from api.github.com/…/releases/latest, and that endpoint excludes
+      # drafts — before promotion it names the *previous* release. So this runs
+      # after promotion, and lets install.sh resolve `latest` itself rather than
+      # pinning --version, which would skip the one thing only a post-promote run
+      # can prove.
+      #
+      # Placed after asset verification on purpose: that check is fast and reads
+      # metadata, so a malformed release fails there rather than after this step
+      # has spent a 38MB download reaching the same conclusion.
+      - name: Smoke the published install.sh route
+        timeout-minutes: 10
+        run: |
+          .github/scripts/smoke-published-installer.sh \
+            "${{ needs.confirmation.outputs.version }}"
 
   # ---------------------------------------------------------------------------
   # Post-release: mark .release metadata published after public verification.
