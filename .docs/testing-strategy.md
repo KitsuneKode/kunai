@@ -335,6 +335,13 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
 - Download progress helpers (`Format-ByteSize`, `Write-DownloadProgress`) are
   extracted the same way; `Invoke-BoundedDownload` is gated to wipe a failed
   transfer instead of drawing 100%
+- Portable Windows helpers (`Install-PortableYtDlp`, `Install-PortableCurlImpersonate`)
+  are extracted and run against a localhost fixture: verified `yt-dlp.exe` plus a
+  `curl_chrome*.bat` tarball land under `KUNAI_DATA_DIR/deps`, a checksum mismatch
+  leaves no dest and prints `winget install --id yt-dlp.yt-dlp -e`, and an
+  already-present dest skips the download. Isolate PATH so a host yt-dlp cannot
+  short-circuit the install. Override bases with `KUNAI_YTDLP_RELEASE_BASE` /
+  `KUNAI_CURL_IMPERSONATE_RELEASE_BASE`; never point the probe at a live profile
 - Skipped when `pwsh` is not installed (same pattern as Docker tests); CI `installer-lint` / Windows jobs cover pwsh
 
 **Bash installer fixtures** (`apps/cli/test/integration/install-scripts.test.ts`):
