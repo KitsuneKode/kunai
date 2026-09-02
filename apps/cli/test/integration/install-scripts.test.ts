@@ -2142,3 +2142,53 @@ describe("install.sh PATH persistence", () => {
     }
   });
 });
+
+/**
+ * A PATH conflict is reported by shelling out to the manager that owns the
+ * competing install. The mapping used to test only the winner against npm and
+ * bun, so a winner from any other manager — fnm shims one under
+ * /run/user/…/fnm_multishells — printed a "fix it" header with nothing under
+ * it. These pin that every recognised layout yields a runnable line and that an
+ * unrecognised one still names the path.
+ */
+describe("install.sh PATH conflict remediation", () => {
+  function remedyFor(entry: string): string {
+    const script = [
+      'KUNAI_PACKAGE="@kitsunekode/kunai"',
+      `eval "$(sed -n '/^path_conflict_remedy() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      `path_conflict_remedy ${JSON.stringify(entry)}`,
+    ].join("\n");
+    const result = spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    return result.stdout.trim();
+  }
+
+  test("a node version manager shim maps to the npm removal", () => {
+    // The exact path shape that produced an empty remediation list.
+    expect(remedyFor("/run/user/1000/fnm_multishells/697191_1788348965165/bin/kunai")).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+    expect(remedyFor("/home/u/.nvm/versions/node/v22.0.0/bin/kunai")).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+  });
+
+  test("each supported manager maps to its own removal command", () => {
+    expect(remedyFor("/home/u/.bun/bin/kunai")).toBe("bun remove --global @kitsunekode/kunai");
+    expect(remedyFor("/usr/lib/node_modules/@kitsunekode/kunai/bin/kunai")).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+    expect(remedyFor("/home/u/.local/share/pnpm/kunai")).toBe(
+      "pnpm remove --global @kitsunekode/kunai",
+    );
+    expect(remedyFor("/home/u/.yarn/bin/kunai")).toBe("yarn global remove @kitsunekode/kunai");
+    expect(remedyFor("/opt/homebrew/bin/kunai")).toBe("brew uninstall kunai");
+  });
+
+  test("an unrecognised install still yields an actionable line naming its path", () => {
+    // The fallback is what keeps the header from standing alone: every entry
+    // produces something, so the list is never empty.
+    expect(remedyFor("/usr/local/bin/kunai")).toBe("# remove or rename /usr/local/bin/kunai");
+    expect(remedyFor("/some/unknown/place/kunai")).not.toBe("");
+  });
+});
