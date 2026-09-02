@@ -2133,8 +2133,10 @@ install_optional_deps() {
 	[[ "$SKIP_DEPS" == 1 ]] && return 0
 
 	local command line
-	local missing
-	missing=()
+	# `local -a missing=()` is the bash 3.2 + `set -u` form: a bare
+	# `local -a missing` stays unbound, so `${#missing[@]}` aborts when
+	# nothing is missing — the already-installed path macOS would hit next.
+	local -a missing=()
 	# `mapfile` is bash 4+; macOS ships 3.2 as /bin/bash. Read line-by-line.
 	while IFS= read -r line || [[ -n "$line" ]]; do
 		[[ -n "$line" ]] && missing+=("$line")

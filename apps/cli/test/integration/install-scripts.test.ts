@@ -2250,6 +2250,23 @@ describe("install.sh optional dependency consent", () => {
     }
   });
 
+  test("install_optional_deps does not use bash 4+ builtins (macOS /bin/bash is 3.2)", () => {
+    // macOS CLI parity failed these consent tests with:
+    //   bash: line 10: mapfile: command not found
+    // The mapping tests above extract functions and run them under `bash -c`,
+    // which on macos-14 is /bin/bash 3.2. Linux CI cannot see that unless
+    // the source itself is gated.
+    const source = readFileSync(INSTALL_SH, "utf8");
+    const fn = /^install_optional_deps\(\) \{[\s\S]*?^\}$/m.exec(source)?.[0];
+    expect(fn, "could not extract install_optional_deps").toBeTruthy();
+    const executable = fn!
+      .split("\n")
+      .filter((line) => !/^\s*#/.test(line))
+      .join("\n");
+    expect(executable).not.toMatch(/\bmapfile\b/);
+    expect(executable).not.toMatch(/\breadarray\b/);
+  });
+
   test("an already-installed dependency is neither offered nor reported missing", () => {
     const output = evalInstallSh(
       "SKIP_DEPS=0; DRY=0; YES=0; install_optional_deps",
