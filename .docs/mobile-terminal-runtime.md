@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-01"
+lastReviewed: "2026-09-02"
 ---
 
 # Mobile terminal runtime
@@ -91,6 +91,124 @@ directory after every build. The integration suite recomputes each hash, raw
 size, gzip size, executable mode, Android ELF machine, iOS dependency scan,
 fixed-launcher contract, and fake-host workflow. Do not transfer an artifact if
 that suite fails or if the transferred file's SHA-256 differs from the metadata.
+
+## Efficient device lab and debugging
+
+Start with one physical ARM64 Android phone and one physical iPhone. They are
+the smallest useful lab because those are the two support-gating rows. Run the
+trusted-build suite once, then reuse the exact checksummed artifacts on both
+devices; add emulators or extra OS versions only after a physical failure needs
+isolation. This keeps build failures, host failures, and media failures separate.
+
+### Minimum tools
+
+| Host path | Required                                                                                                  | Optional diagnostic layer                                                                                                          |
+| --------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Android   | Physical device, current supported Termux build, VLC for Android, USB cable or another file-transfer path | Standalone Android SDK Platform-Tools for `adb push` and `adb logcat`; Android Studio only if its emulator or GUI Logcat is useful |
+| iPhone    | Physical iPhone, current App Store a-Shell mini, VLC for iOS, Files/AirDrop/Shortcuts transfer path       | A Mac and Console for connected-device system logs; Xcode only if debugging or rebuilding a host application itself                |
+
+Android Studio is not required. Google publishes
+[SDK Platform-Tools separately](https://developer.android.com/tools/releases/platform-tools)
+specifically for command-line `adb` use without Studio. Enable Developer options
+and USB debugging, approve the workstation key, then verify the target with
+`adb devices -l`; Android also supports
+[wireless debugging on Android 11 and later](https://developer.android.com/tools/adb#connect-to-a-device-over-wi-fi)
+when the phone and workstation share a trusted network. Use USB first because it
+has fewer discovery and firewall variables.
+
+Install Termux using its current
+[official installation guidance](https://github.com/termux/termux-app#installation),
+and do not mix Termux or plugin APKs signed by different distribution sources.
+Neither a Termux plugin nor an Android SDK/NDK is required for the proof. With
+Platform-Tools, transfer the artifact only through shared storage:
+
+```sh
+adb -d push apps/mobile/dist/kunai-mobile-android-arm64 \
+  /sdcard/Download/kunai-mobile-android-arm64
+```
+
+The Android `adb` contract permits
+[pushing arbitrary files](https://developer.android.com/tools/adb#copyfiles).
+Inside Termux, run `termux-setup-storage` once if necessary, copy the file from
+`~/storage/downloads` into a private Termux directory, verify its SHA-256 there,
+and execute only the private copy. Termux documents that
+[shared storage does not provide normal executable filesystem semantics](https://github.com/termux/termux-packages/wiki/Termux-file-system-layout#termux-rootfs-directory).
+`adb shell` is the Android shell, not the Termux application sandbox; use it for
+device inspection, not as a replacement for the foreground Termux session.
+VLC's public manifest currently declares generic `ACTION_VIEW` handling for
+HTTPS media with `video/*`; keep testing that
+[documented intent surface](https://github.com/videolan/vlc-android/blob/master/application/vlc-android/AndroidManifest.xml)
+instead of a private VLC activity.
+
+For iPhone, transfer the five files with Files, AirDrop, or an a-Shell Shortcut.
+Apple documents the available
+[wireless, cloud, cable, and server transfer paths](https://support.apple.com/guide/iphone/transfer-files-between-devices-iph339bafff3/ios),
+and a-Shell exposes
+[`Put File` and `Get File` Shortcut actions](https://github.com/holzschu/a-shell#shortcuts).
+Keep the interactive proof in the foreground application, not a Shortcut
+extension. Copy into a fresh a-Shell-owned directory, preserve every filename,
+mark the four helpers executable, and compare the transferred contents with the
+build metadata before running them. On a Linux workstation that already exposes
+an SSH server on the trusted local network, the
+[a-Shell mini App Store listing](https://apps.apple.com/us/app/a-shell-mini/id1543537943)
+documents `scp`, so the phone may instead pull `dist/ios` directly; do not add a
+new network service solely for one transfer. Record the host key decision and
+still verify the received files.
+
+### Emulator and simulator boundary
+
+An Android x64 emulator is optional and useful only for a quick x64 loader,
+terminal, HTTPS, and intent-routing smoke. The Android Emulator can exercise
+multiple API levels and many device capabilities, but Google still says to
+[test on real hardware before release](https://developer.android.com/studio/run/device).
+Do not spend time installing the emulator unless an x64 or Android-version
+regression needs isolation. An emulator app switch, VLC launch, or observed
+emulated playback does not qualify the required physical Android ARM64 row.
+
+a-Shell mini can run in Simulator according to the
+[a-Shell project](https://github.com/holzschu/a-shell), but the Kunai proof also
+depends on the installed VLC application and real inter-application handoff.
+Apple states that Simulator does not replicate all physical-device features or
+performance and requires physical-device verification for exact behavior; see
+[simulated versus physical devices](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices).
+Therefore Xcode Simulator is not part of the efficient qualification path. It
+becomes useful only if maintaining a locally built a-Shell/VLC host or isolating
+an iOS-version issue, neither of which qualifies the App Store host combination.
+
+### Failure-isolation ladder
+
+1. Reproduce with the same artifact and isolated state, recording the exact
+   stage: startup, prompt, HTTPS probe, handoff acceptance, app switch, or visible
+   playback. Never collapse those observations into one result.
+2. If Android cannot launch the player, check
+   `command -v termux-am am termux-open termux-open-url`, clear the system log
+   with `adb logcat -c`, reproduce once, then inspect a bounded dump such as
+   `adb logcat -d -v threadtime 'ActivityTaskManager:I' 'ActivityManager:I' 'AndroidRuntime:E' '*:S'`.
+   Command-line Logcat supports
+   [tag and priority filters](https://developer.android.com/tools/logcat#filteringOutput).
+3. If iOS does not switch applications, first use a-Shell's `help -l` command
+   list to confirm `jsc`, `curl`, and `openurl`, then inspect the fixed helper
+   filenames and exit status.
+   On a Mac, connect the iPhone by cable and reproduce while viewing it in
+   [Console](https://support.apple.com/guide/console/view-log-messages-cnsl1012/mac).
+   An App Store distribution build cannot be attached to the Xcode source
+   debugger like a locally signed development build; connected-device logs are
+   the useful boundary here.
+4. If VLC opens but playback does not begin, open the same tester-owned direct
+   media URL manually in VLC. Manual failure points to URL, TLS, codec, network,
+   or VLC behavior; manual success points back to the handoff route. In either
+   case, `handoffAccepted` may be true while `playbackBegan` remains false.
+5. Capture raw logs only for local diagnosis. Android activity logs and Apple
+   device logs can contain the full intent URL or device identifiers. Do not
+   attach them or paste them into an issue. Record only the fixed redacted
+   evidence fields below after visually checking playback, and restore Termux
+   verbose logging to normal if it was temporarily enabled; Termux warns that
+   [verbose logs may contain private data and add overhead](https://github.com/termux/termux-app#debugging).
+
+For repeat runs, keep a host-side test ledger containing artifact hash, OS,
+terminal/player versions, cold-start timing, prompt timing, handoff result, and
+visible-playback result. Keep URLs and raw logs out of it. One failing stage plus
+one local diagnostic is more useful than repeatedly running the full workflow.
 
 ## Physical Android ARM64 procedure
 
