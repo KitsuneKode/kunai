@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 
 import type { InstallManifest } from "@/services/update/install-manifest";
 import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
@@ -339,10 +339,29 @@ describePwsh("install.ps1 dry-run", () => {
     try {
       // Deliberately no -SkipDeps: this case exists to prove the dependency plan
       // is reached. -DryRun keeps it a plan, so no winget process is spawned.
-      const result = runInstallPs1(
-        ["-DryRun", "-Yes", "-Version", "9.8.7"],
-        withCommandPath(sandbox.env, sandbox.root),
+      //
+      // The PATH is the shim directory ALONE. `withCommandPath` prepends to the
+      // inherited PATH, which leaves the developer's real mpv and yt-dlp
+      // visible -- and the installer now checks before it offers, so on such a
+      // machine there is correctly nothing to plan and this test saw only the
+      // curl branch. Isolating the PATH is what makes "missing" true here.
+      // pwsh still has to be resolvable, so its own directory stays -- but
+      // nothing else does, which is what keeps a developer's real mpv out of
+      // the run.
+      const pwshDir = dirname(
+        spawnSync("pwsh", ["-NoProfile", "-Command", "(Get-Process -Id $PID).Path"], {
+          encoding: "utf8",
+        }).stdout.trim(),
       );
+      const shimOnlyEnv: NodeJS.ProcessEnv = { ...sandbox.env };
+      for (const key of Object.keys(shimOnlyEnv)) {
+        if (key.toLowerCase() === "path") delete shimOnlyEnv[key];
+      }
+      shimOnlyEnv[process.platform === "win32" ? "Path" : "PATH"] = [sandbox.root, pwshDir].join(
+        delimiter,
+      );
+
+      const result = runInstallPs1(["-DryRun", "-Yes", "-Version", "9.8.7"], shimOnlyEnv);
 
       expect(result.status).toBe(0);
       // mpv.net ships mpvnet.exe; Kunai probes for `mpv`. See the winget id note
