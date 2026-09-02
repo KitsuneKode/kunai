@@ -69,13 +69,15 @@ irm https://kunai.kitsunekode.in/install.ps1 | iex
 PowerShell downloads the platform `.zip`, verifies the archive and its single
 `kunai.exe` member independently, and extracts through bounded .NET streams; no
 separate zip utility is required. The same HTTP 404/410-only legacy fallback
-rule applies.
+rule applies. On a terminal the download shows one updating progress line
+(size, rate, bar); a pipe or CI log stays on the single quiet line.
 
 Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`.
 
 Open a new terminal after installation if `kunai` is not visible yet. The
-installer also prints the resolved PATH winner so an older npm/Bun shim cannot
-silently shadow the native binary.
+installer prints the PATH winner. If another `kunai` is still earlier — npm,
+Bun, pnpm, Yarn, Scoop, Chocolatey, or WinGet — it lists each competing path
+and the command that removes it, and does not delete those installs itself.
 
 Supported binary targets: `windows-x64`, `windows-arm64`.
 
