@@ -240,9 +240,17 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 2. Reverifies the exact native directory and all 18 attestations, before npm
    publication, against the
    expected version, release workflow, main-branch ref, and candidate commit
-3. Runs `bun run release`, whose npm publisher reconciles all eight preserved
-   platform-package tarballs first and the exact-version launcher tarball last,
-   refusing integrity or version skew and publishing with npm provenance
+3. Runs `bun run release`, whose npm publisher works in three phases: it
+   decides every preserved platform-package tarball against the registry
+   before writing any (a conflicting version anywhere halts with nothing new
+   published), writes every missing platform package back to back and waits
+   out one shared visibility window for the set, and only once all eight are
+   read back with the expected integrity writes the exact-version launcher and
+   waits for it. Every write uses npm provenance. npm applies a publish
+   asynchronously — 0.3.0 saw one package take seven minutes to become
+   visible — so the window backs off from 3s to 30s for about ten minutes, and
+   a write is reissued only after a whole window still shows nothing (npm's
+   refusal to overwrite then counts as confirmation)
 4. Retries `npm view` for the launcher and all eight platform packages until
    every exact version is visible, then performs a clean registry install and
    launcher smoke
@@ -306,6 +314,17 @@ Verify before dispatching rather than discovering it at the publish step:
 npm view @kitsunekode/kunai-linux-x64@<version> dist.integrity
 npm pack --json --dry-run --ignore-scripts apps/cli/dist/npm-platform/linux-x64
 ```
+
+Do not cancel the publish job while it is waiting on npm. "Not visible yet"
+lines are the registry applying a write it has already accepted, and the
+publisher will wait about ten minutes for the set before it gives up on its
+own. Cancelling mid-wait costs another candidate build, another
+`release-production` approval, and — because the publish job pins
+`origin/main` — is invalidated anyway by the next merge.
+
+Because the publish job pins `HEAD == origin/main`, merging anything to main
+while a Release run is waiting for approval invalidates that run. Dispatch the
+release when main is quiet, approve once, and let it finish.
 
 ## Metadata push recovery
 
