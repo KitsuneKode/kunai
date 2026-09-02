@@ -25,14 +25,28 @@ describe("release notes artifacts", () => {
     expect(latest?.summary.trim().length).toBeGreaterThan(0);
   });
 
-  test("latest public release ignores the staged candidate", () => {
-    expect(latestReleaseNotesArtifact()?.version).toBe("0.2.5");
-    expect(
-      publishedReleaseNotesArtifacts().every((release) => release.status === "published"),
-    ).toBe(true);
-    expect(publishedReleaseNotesArtifacts().some((release) => release.version === "0.3.0")).toBe(
-      false,
+  /**
+   * Naming the two versions turned this into a time bomb of the same shape as
+   * the census below: "0.2.5" stopped being latest the moment 0.3.0 shipped, so
+   * the release job that published it failed here as a direct consequence of
+   * succeeding. The rule is that `latest` is the newest *published* artifact and
+   * nothing staged is ever counted as published — both derivable from the data.
+   */
+  test("latest public release ignores any staged candidate", () => {
+    const published = publishedReleaseNotesArtifacts();
+    const stagedVersions = new Set(
+      releaseNotesArtifacts
+        .filter((release) => release.status === "staged")
+        .map((release) => release.version),
     );
+
+    expect(published.every((release) => release.status === "published")).toBe(true);
+    expect(published.some((release) => stagedVersions.has(release.version))).toBe(false);
+
+    const newestPublished = [...published]
+      .map((release) => release.version)
+      .sort((left, right) => compareVersions(right, left))[0];
+    expect(latestReleaseNotesArtifact()?.version).toBe(newestPublished);
   });
 
   /**
@@ -76,13 +90,14 @@ describe("release notes artifacts", () => {
   });
 
   test("staged releases have no GitHub URL or visible assets", () => {
-    const staged = getReleaseByTag("0.3.0");
-    expect(staged).toBeDefined();
-    if (!staged) return;
+    // Whatever is staged right now, not a version that was staged when this was
+    // written — the same pin that made shipping 0.3.0 fail its own release job.
+    const staged = releaseNotesArtifacts.filter((release) => release.status === "staged");
 
-    expect(staged.status).toBe("staged");
-    expect(githubReleaseUrl(staged)).toBeNull();
-    expect(releaseAssetsForDisplay(staged)).toEqual([]);
+    for (const candidate of staged) {
+      expect(githubReleaseUrl(candidate)).toBeNull();
+      expect(releaseAssetsForDisplay(candidate)).toEqual([]);
+    }
   });
 
   test("looks up releases by tag and builds detail paths", () => {

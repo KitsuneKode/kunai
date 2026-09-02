@@ -58,6 +58,12 @@ env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_SCM_BASE: ""
+  # Git hooks are a developer convenience; CI has already run these suites as
+  # dedicated jobs. Leaving them armed made every `git push` in this workflow —
+  # the canonical tag and the metadata commit — re-run the entire monorepo test
+  # suite from inside a release job, where a failure is discovered after npm and
+  # the GitHub release are already public.
+  HUSKY: "0"
   CANDIDATE_ARTIFACT: kunai-release-candidate
   NPM_TARBALL_NAME: kunai-npm.tgz
   RELEASE_NODE_VERSION: "22.14.0"
