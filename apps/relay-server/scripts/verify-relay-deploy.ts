@@ -83,7 +83,7 @@ if (token) {
           },
           body: JSON.stringify({ method: "GET", upstreamUrl: probe.url, headers: {} }),
         });
-        const drift = classifyRelayDriftResponse(probe, response.status, await response.text());
+        const drift = classifyRelayDriftResponse(probe, await response.text());
         if (drift) stale.push(drift);
       }
       if (stale.length > 0) {
