@@ -469,6 +469,74 @@ describe("resumable npm publication orchestration", () => {
     expect(published.at(-1)).toBe("@kitsunekode/kunai");
   });
 
+  test("waits out registry propagation instead of failing a successful publish", async () => {
+    // What actually happened to 0.3.0: `@kitsunekode/kunai-linux-x64` published
+    // fine, `npm view` answered "not found" seconds later, and the release died
+    // with one of nine packages live. The publish is not retried — only the
+    // read after it.
+    const localCandidates = candidates();
+    const laggard = localCandidates[0]!.name;
+    let publishes = 0;
+    let laggardReads = 0;
+    const waits: number[] = [];
+
+    const result = await reconcileNpmPublication({
+      candidates: localCandidates,
+      confirmed: true,
+      command: async () => {
+        publishes += 1;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      registry: {
+        queryIntegrity: async () => null,
+        queryMetadata: async (candidate) => {
+          if (candidate.name !== laggard) return metadata(candidate);
+          laggardReads += 1;
+          // Absent for the first two reads, then visible.
+          return laggardReads <= 2 ? null : metadata(candidate);
+        },
+      },
+      wait: async (ms) => {
+        waits.push(ms);
+      },
+    });
+
+    expect(result.every((decision) => decision.action === "publish")).toBe(true);
+    expect(publishes).toBe(localCandidates.length);
+    expect(laggardReads).toBe(3);
+    // Only the laggard waited, and only between its own reads.
+    expect(waits).toEqual([3_000, 3_000]);
+  });
+
+  test("a mismatched artifact fails on the first read rather than being retried", async () => {
+    // Absence is propagation; a wrong integrity is a wrong artifact. Retrying
+    // that would turn a clear failure into a timeout and delay the signal.
+    const localCandidates = candidates();
+    let reads = 0;
+    const waits: number[] = [];
+
+    await expect(
+      reconcileNpmPublication({
+        candidates: localCandidates,
+        confirmed: true,
+        command: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
+        registry: {
+          queryIntegrity: async () => null,
+          queryMetadata: async (candidate) => {
+            reads += 1;
+            return { ...metadata(candidate), integrity: "sha512-somethingElseEntirely==" };
+          },
+        },
+        wait: async (ms) => {
+          waits.push(ms);
+        },
+      }),
+    ).rejects.toThrow(/verification failed/i);
+
+    expect(reads).toBe(1);
+    expect(waits).toEqual([]);
+  });
+
   test("fails when post-reconciliation verification does not exactly match", async () => {
     const localCandidates = candidates();
     let launcherQueried = false;
