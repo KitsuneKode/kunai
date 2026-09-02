@@ -278,10 +278,34 @@ preserved candidate against npm in canonical order:
 - an existing version with different integrity halts the release;
 - all eight platform packages are reconciled before `@kitsunekode/kunai`.
 
-Do not unpublish, overwrite, hand-increment, or rebuild a partial candidate.
-The launcher stays last so users can never resolve it before its exact-version
-platform packages exist. A rerun is safe only with the preserved artifacts from
-the original candidate job.
+Do not unpublish, overwrite, or hand-increment a partial candidate. The launcher
+stays last so users can never resolve it before its exact-version platform
+packages exist.
+
+Rerunning the failed job reuses the preserved candidate and is always safe. A
+fresh dispatch rebuilds the candidate, which is also safe **provided nothing
+that lands inside a published tarball changed** — the platform packages contain
+only `package.json`, `README.md`, and `bin/kunai`, and the launcher only
+`package.json`, `LICENSE`, `README.md`, and `dist/npm-launcher.mjs`. The binary
+build is reproducible: during the 0.3.0 recovery a rebuild on a different
+machine at a different commit produced
+`sha512-WLWicFJHn7Hpt…HQS2dw==` for `kunai-linux-x64@0.3.0`, byte-identical to
+what was already published, so it reconciled as a skip.
+
+Fixing the release machinery — a workflow file, `scripts/publish-npm-release.ts`,
+a gate script — does not touch those tarballs, so a dispatch carrying only such
+a fix reconciles cleanly against whatever is already live. Changing anything the
+tarball carries does not: a new `homepage` in `apps/cli/package.json` propagates
+into all nine manifests, and a version already on npm would then halt the
+release on the integrity rule above. Land that kind of change in the next
+version instead.
+
+Verify before dispatching rather than discovering it at the publish step:
+
+```sh
+npm view @kitsunekode/kunai-linux-x64@<version> dist.integrity
+npm pack --json --dry-run --ignore-scripts apps/cli/dist/npm-platform/linux-x64
+```
 
 ## Metadata push recovery
 
