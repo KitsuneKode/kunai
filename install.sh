@@ -371,6 +371,17 @@ probe_content_length() {
 	[[ "$length" =~ ^[0-9]+$ ]] && printf '%s' "$length"
 }
 
+# Wipe the progress line without leaving a frame behind, so the error that
+# follows starts on a clean row.
+clear_download_progress() {
+	local columns
+	columns="${COLUMNS:-0}"
+	[[ "$columns" -lt 40 ]] && columns="$(tput cols 2>/dev/null || printf 80)"
+	[[ "$columns" -lt 40 ]] && columns=80
+	[[ "$columns" -gt 100 ]] && columns=100
+	printf '\r%*s\r' "$columns" ""
+}
+
 # Sleep between progress frames.
 #
 # POSIX `sleep` takes an integer, and this script already refuses to trust a
@@ -493,14 +504,24 @@ bounded_download() {
 			done
 			curl_rc=0
 			wait "$curl_pid" || curl_rc=$?
-			got=0
-			[[ -f "$dest" ]] && got="$(wc -c <"$dest" 2>/dev/null | tr -d ' ')"
-			render_download_progress "$label" "${got:-0}" "$total_bytes" \
-				"$(($(date +%s) - progress_started))"
-			printf '\n'
 			code="$(cat "$status_file" 2>/dev/null || true)"
 			rm -f "$status_file"
 			[[ -n "$code" ]] || code="000"
+			# Only a download that actually finished earns a final frame. An
+			# error response has a body and a Content-Length of its own, so
+			# drawing one anyway rendered a full bar for a failed transfer --
+			# a 503 whose four-byte body filled the width and printed 100%
+			# immediately above "Download failed". Clear the line instead and
+			# let the error speak.
+			if [[ "$curl_rc" -eq 0 && "$code" =~ ^2[0-9][0-9]$ ]]; then
+				got=0
+				[[ -f "$dest" ]] && got="$(wc -c <"$dest" 2>/dev/null | tr -d ' ')"
+				render_download_progress "$label" "${got:-0}" "$total_bytes" \
+					"$(($(date +%s) - progress_started))"
+				printf '\n'
+			else
+				clear_download_progress
+			fi
 		else
 			code="$(
 				curl -sS -L \
