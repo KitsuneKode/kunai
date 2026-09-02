@@ -79,25 +79,18 @@ export interface ReconcileNpmPublicationOptions {
 }
 
 /**
- * npm's registry is read-after-write eventually consistent: `npm view` can
- * answer "not found" for a version that was just accepted. The 0.3.0 release
- * published `@kitsunekode/kunai-linux-x64` successfully and then failed its own
- * verification a few seconds later on exactly that, leaving one of nine
- * packages live and the release half-applied.
+ * npm applies a publish asynchronously: `npm publish` returns 0 once the write
+ * is accepted, and `npm view` can answer "not found" until the registry has
+ * applied it. Measured during 0.3.0, not guessed: `kunai-linux-x64-musl` was
+ * visible after one 3s retry, while `kunai-linux-arm64` — accepted at 08:01:27Z
+ * — carries a registry `time` of 08:08:41Z, seven minutes later, with the exact
+ * expected integrity. Provenance shows the same run attempt wrote both. A 27s
+ * budget failed the release on a version npm already held.
  *
- * Bounded, and only ever for absence — an integrity *mismatch* is a wrong
- * artifact and must fail on the first read rather than be retried into a
- * timeout.
- */
-/**
- * Measured, not guessed. During 0.3.0 `kunai-linux-x64-musl` appeared after one
- * 3s retry, while `kunai-linux-arm64` — published at 08:01 — was not indexed
- * until 08:08:41Z, roughly seven minutes later. A 27s budget failed the release
- * on a version npm had already accepted with the exact expected integrity.
- *
- * Backs off from 3s to a 30s ceiling, which spends about ten minutes per
- * package before giving up. Long enough to absorb the worst lag observed;
- * bounded so a genuinely refused publish still ends the run.
+ * Backs off from 3s to a 30s ceiling, about ten minutes in total. The window
+ * is shared by every package written in the same phase, so the release pays
+ * the worst lag once, not once per package. Only absence is waited on: an
+ * integrity *mismatch* is a wrong artifact and fails on the first read.
  */
 const PUBLISH_VISIBILITY_ATTEMPTS = 26;
 const PUBLISH_VISIBILITY_MAX_DELAY_MS = 30_000;
@@ -107,10 +100,11 @@ function publishVisibilityDelayMs(attempt: number): number {
 }
 
 /**
- * The write is reissued only after that entire window still shows nothing —
- * a genuinely dropped write, as distinct from a slow one. Reissuing early is
- * what a short budget tempts you into, and it is wrong: the version usually
- * exists and npm simply has not indexed it yet.
+ * A write is reissued only after that entire window still shows nothing — a
+ * genuinely dropped write, as distinct from a slow one. No 0.3.0 write was
+ * actually dropped; this is insurance, and it is safe because npm refuses to
+ * overwrite an existing version, so a reissue that races the first write is
+ * rejected and that rejection is itself the confirmation.
  */
 const PUBLISH_WRITE_ATTEMPTS = 2;
 
@@ -487,28 +481,8 @@ function assertVerified(
   }
 }
 
-/**
- * Poll for a just-published version until the registry admits it exists.
- *
- * Returns the first non-null metadata, whatever it says: deciding whether it
- * *matches* stays with `assertVerified`, so a wrong artifact still fails on the
- * first read instead of being retried. Only absence is waited on.
- */
-async function awaitPublishedMetadata(
-  candidate: LocalPackageCandidate,
-  options: ReconcileNpmPublicationOptions,
-): Promise<RegistryPackageMetadata | null> {
-  const wait = options.wait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  let metadata = await options.registry.queryMetadata(candidate);
-  for (let attempt = 1; metadata === null && attempt < PUBLISH_VISIBILITY_ATTEMPTS; attempt += 1) {
-    const delay = publishVisibilityDelayMs(attempt);
-    options.log?.(
-      `[publish] ${candidate.name}@${candidate.version} not visible yet; retry ${attempt}/${PUBLISH_VISIBILITY_ATTEMPTS - 1} in ${Math.round(delay / 1000)}s`,
-    );
-    await wait(delay);
-    metadata = await options.registry.queryMetadata(candidate);
-  }
-  return metadata;
+function describeSpecs(candidates: readonly LocalPackageCandidate[]): string {
+  return candidates.map((candidate) => `${candidate.name}@${candidate.version}`).join(", ");
 }
 
 /** npm's refusal to overwrite a version, which here means the write did land. */
@@ -518,92 +492,164 @@ function isAlreadyPublished(result: CommandResult): boolean {
   );
 }
 
-/**
- * Publish, then confirm the registry actually holds it — reissuing the write if
- * it does not.
- *
- * `npm publish` exiting 0 is not proof. During the 0.3.0 release
- * `@kitsunekode/kunai-linux-arm64@0.3.0` exited 0 and the version was never
- * created; it was still absent long after the run ended, so this was a dropped
- * write rather than the propagation lag the read retries already handle. npm's
- * own status history records repeated "intermittent Publish Failures".
- *
- * Retrying the read alone cannot recover that. Retrying the write can, and is
- * safe because npm refuses to overwrite an existing version: if the earlier
- * attempt did land after all, the reissue is rejected and that rejection is
- * itself the confirmation.
- */
-async function publishWithRetry(
+/** Issue one `npm publish`; a refusal to overwrite counts as the write existing. */
+async function publishOnce(
   candidate: LocalPackageCandidate,
   options: ReconcileNpmPublicationOptions,
-): Promise<RegistryPackageMetadata | null> {
+): Promise<void> {
   const request: CommandRequest = {
     command: "npm",
     args: ["publish", candidate.tarballPath, "--access", "public", "--provenance"],
     cwd: ROOT,
   };
+  const result = await options.command(request);
 
-  let metadata: RegistryPackageMetadata | null = null;
-  for (let attempt = 1; attempt <= PUBLISH_WRITE_ATTEMPTS; attempt += 1) {
-    const result = await options.command(request);
-
-    // Always surfaced, not only on failure. A dropped write exits 0, so the
-    // run that hit one had npm's output captured and discarded, leaving no
-    // way to tell why the version never appeared.
-    const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
-    if (output)
-      options.log?.(`[publish] npm output for ${candidate.name}@${candidate.version}:\n${output}`);
-
-    if (result.exitCode !== 0) {
-      // A refusal to overwrite means the version exists; fall through and let
-      // verification compare integrity rather than treating it as a failure.
-      if (!isAlreadyPublished(result)) throw commandError("npm publish", request, result);
-      options.log?.(
-        `[publish] ${candidate.name}@${candidate.version} already on the registry; verifying instead`,
-      );
-    }
-
-    metadata = await awaitPublishedMetadata(candidate, options);
-    if (metadata !== null) return metadata;
-
-    if (attempt < PUBLISH_WRITE_ATTEMPTS) {
-      options.log?.(
-        `[publish] ${candidate.name}@${candidate.version} still absent after a successful publish; reissuing (${attempt}/${PUBLISH_WRITE_ATTEMPTS - 1})`,
-      );
-    }
+  // Always surfaced, not only on failure. A slow publish exits 0, so a run
+  // that hits one otherwise has npm's output captured and discarded, leaving
+  // nothing to diagnose from.
+  const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
+  if (output) {
+    options.log?.(`[publish] npm output for ${candidate.name}@${candidate.version}:\n${output}`);
   }
-  return metadata;
+
+  if (result.exitCode === 0) return;
+  if (!isAlreadyPublished(result)) throw commandError("npm publish", request, result);
+  options.log?.(
+    `[publish] ${candidate.name}@${candidate.version} already on the registry; verifying instead`,
+  );
 }
 
-/** Reconcile validated candidates sequentially, preserving launcher-last safety. */
+/**
+ * One visibility window for a set of just-written packages: poll every absent
+ * one each round, back off between rounds, and return whatever is still absent
+ * when the window closes. A package that appears is verified on that first
+ * read, so a wrong artifact fails immediately instead of being retried.
+ */
+async function pollVisibilityWindow(
+  candidates: readonly LocalPackageCandidate[],
+  options: ReconcileNpmPublicationOptions,
+): Promise<LocalPackageCandidate[]> {
+  const wait = options.wait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  let absent = [...candidates];
+  for (let attempt = 1; ; attempt += 1) {
+    const stillAbsent: LocalPackageCandidate[] = [];
+    for (const candidate of absent) {
+      const metadata = await options.registry.queryMetadata(candidate);
+      if (metadata === null) stillAbsent.push(candidate);
+      else assertVerified(candidate, metadata);
+    }
+    if (stillAbsent.length === 0 || attempt >= PUBLISH_VISIBILITY_ATTEMPTS) return stillAbsent;
+
+    const delay = publishVisibilityDelayMs(attempt);
+    options.log?.(
+      `[publish] not visible yet: ${describeSpecs(stillAbsent)}; retry ${attempt}/${PUBLISH_VISIBILITY_ATTEMPTS - 1} in ${Math.round(delay / 1000)}s`,
+    );
+    await wait(delay);
+    absent = stillAbsent;
+  }
+}
+
+/**
+ * Confirm every written package is on the registry with the expected bytes,
+ * reissuing a write only after a whole window still shows nothing for it.
+ */
+async function awaitVisible(
+  candidates: readonly LocalPackageCandidate[],
+  options: ReconcileNpmPublicationOptions,
+): Promise<void> {
+  if (candidates.length === 0) return;
+  let absent = [...candidates];
+  for (let write = 1; ; write += 1) {
+    absent = await pollVisibilityWindow(absent, options);
+    if (absent.length === 0) return;
+    if (write >= PUBLISH_WRITE_ATTEMPTS) {
+      throw new Error(
+        `[publish] verification failed for ${describeSpecs(absent)}; still not found after ` +
+          `${PUBLISH_WRITE_ATTEMPTS} writes and ${PUBLISH_VISIBILITY_ATTEMPTS} reads each.`,
+      );
+    }
+    for (const candidate of absent) {
+      options.log?.(
+        `[publish] ${candidate.name}@${candidate.version} still absent after a successful publish; reissuing (${write}/${PUBLISH_WRITE_ATTEMPTS - 1})`,
+      );
+      await publishOnce(candidate, options);
+    }
+  }
+}
+
+async function decide(
+  candidate: LocalPackageCandidate,
+  options: ReconcileNpmPublicationOptions,
+): Promise<PublicationDecision> {
+  const decision = reconcileCandidate(candidate, await options.registry.queryIntegrity(candidate));
+  options.log?.(
+    `[publish] ${decision.action} ${candidate.name}@${candidate.version} (${candidate.integrity})`,
+  );
+  return decision;
+}
+
+/**
+ * A skipped candidate was already on the registry before this run, so its
+ * metadata is visible now; only the read after our own write can lag.
+ */
+async function verifySkipped(
+  decisions: readonly PublicationDecision[],
+  options: ReconcileNpmPublicationOptions,
+): Promise<void> {
+  for (const decision of decisions) {
+    if (decision.action !== "skip") continue;
+    assertVerified(decision.candidate, await options.registry.queryMetadata(decision.candidate));
+  }
+}
+
+/**
+ * Reconcile validated candidates in three phases, preserving launcher-last
+ * safety:
+ *
+ * 1. decide every platform package before writing any, so a conflicting
+ *    version anywhere in the set halts with nothing new on the registry;
+ * 2. write every missing platform package back to back, then wait out one
+ *    shared visibility window for all of them;
+ * 3. only once all eight are read back with the expected bytes, decide and
+ *    write the launcher and wait for it.
+ *
+ * The launcher is the only package users resolve by name, so what matters is
+ * that it never exists before the exact-version platform packages it pins. A
+ * platform package that is live while its siblings are still being applied is
+ * invisible to users, which is what makes waiting once for the whole set safe.
+ */
 export async function reconcileNpmPublication(
   options: ReconcileNpmPublicationOptions,
 ): Promise<PublicationDecision[]> {
   await validateLocalCandidates(options.candidates);
-  const decisions: PublicationDecision[] = [];
-  for (const candidate of options.candidates) {
-    const registryIntegrity = await options.registry.queryIntegrity(candidate);
-    const decision = reconcileCandidate(candidate, registryIntegrity);
-    decisions.push(decision);
-    options.log?.(
-      `[publish] ${decision.action} ${candidate.name}@${candidate.version} (${candidate.integrity})`,
-    );
+  const platforms = options.candidates.filter((candidate) => candidate.role === "platform");
+  const launcher = options.candidates.find((candidate) => candidate.role === "launcher")!;
 
-    if (!options.confirmed) {
-      if (decision.action === "skip") {
-        assertVerified(candidate, await options.registry.queryMetadata(candidate));
-      }
-      continue;
+  const platformDecisions: PublicationDecision[] = [];
+  for (const candidate of platforms) platformDecisions.push(await decide(candidate, options));
+  await verifySkipped(platformDecisions, options);
+
+  if (options.confirmed) {
+    const pending = platformDecisions
+      .filter((decision) => decision.action === "publish")
+      .map((decision) => decision.candidate);
+    for (const candidate of pending) await publishOnce(candidate, options);
+    if (pending.length > 0) {
+      options.log?.(
+        `[publish] wrote ${pending.length} platform package(s); waiting for the registry to apply them`,
+      );
     }
-    if (decision.action === "publish") {
-      assertVerified(candidate, await publishWithRetry(candidate, options));
-      continue;
-    }
-    // A skipped candidate was already on the registry before this run, so its
-    // metadata is visible now; only the read after our own write can lag.
-    assertVerified(candidate, await options.registry.queryMetadata(candidate));
+    await awaitVisible(pending, options);
   }
-  return decisions;
+
+  const launcherDecision = await decide(launcher, options);
+  if (options.confirmed && launcherDecision.action === "publish") {
+    await publishOnce(launcher, options);
+    await awaitVisible([launcher], options);
+  } else {
+    await verifySkipped([launcherDecision], options);
+  }
+  return [...platformDecisions, launcherDecision];
 }
 
 export function parsePublishArgs(args: readonly string[]): { readonly confirmed: boolean } {

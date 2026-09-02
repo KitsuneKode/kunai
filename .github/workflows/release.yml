@@ -965,11 +965,14 @@ jobs:
     needs: confirmation
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # Nine packages, each of which may wait out npm indexing before the next is
-    # published. 0.3.0 saw a seven-minute lag on one package, and the publisher
-    # now allows about ten minutes each; 30 would kill the job mid-sequence and
-    # leave a half-applied release, which is the one state worth avoiding.
-    timeout-minutes: 120
+    # The publisher writes all eight platform packages back to back, waits out
+    # one shared visibility window (about ten minutes) for the set, then writes
+    # the launcher and waits once more. Setup, the registry smoke, tagging, and
+    # the draft/promote/verify tail add roughly ten minutes; 0.3.0's worst
+    # observed apply lag was seven minutes. A timeout can only land inside a
+    # wait, which leaves nothing half-written: no launcher before its platform
+    # packages, and a rerun skips whatever already matches.
+    timeout-minutes: 45
     environment: release-production
     permissions:
       contents: write

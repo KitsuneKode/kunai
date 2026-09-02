@@ -469,6 +469,92 @@ describe("resumable npm publication orchestration", () => {
     expect(published.at(-1)).toBe("@kitsunekode/kunai");
   });
 
+  test("writes every platform package before waiting on any, then the launcher after all are visible", async () => {
+    // npm's write-apply lag is per package but the lags overlap, so waiting
+    // after each write pays the worst lag up to eight times; waiting once
+    // after all eight pays it once. The launcher still goes last, and only
+    // after every platform package has been read back with the expected bytes.
+    const localCandidates = candidates();
+    const platforms = localCandidates.filter((candidate) => candidate.role === "platform");
+    const launcher = localCandidates.at(-1)!;
+    const readsUntilVisible = new Map(
+      localCandidates.map((candidate, index) => [candidate.name, (index % 3) + 1]),
+    );
+    const reads = new Map<string, number>();
+    const events: string[] = [];
+
+    const result = await reconcileNpmPublication({
+      candidates: localCandidates,
+      confirmed: true,
+      command: async (request) => {
+        const candidate = localCandidates.find((item) => item.tarballPath === request.args[1])!;
+        events.push(`publish ${candidate.name}`);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      registry: {
+        queryIntegrity: async () => null,
+        queryMetadata: async (candidate) => {
+          const count = (reads.get(candidate.name) ?? 0) + 1;
+          reads.set(candidate.name, count);
+          events.push(`read ${candidate.name}`);
+          return count >= readsUntilVisible.get(candidate.name)! ? metadata(candidate) : null;
+        },
+      },
+      wait: async (ms) => {
+        events.push(`wait ${ms}`);
+      },
+    });
+
+    expect(result.every((decision) => decision.action === "publish")).toBe(true);
+    // All eight platform writes happen before the first read-back.
+    expect(events.slice(0, platforms.length)).toEqual(
+      platforms.map((candidate) => `publish ${candidate.name}`),
+    );
+    // The launcher is written only after the last platform package was seen.
+    const launcherWrite = events.indexOf(`publish ${launcher.name}`);
+    const lastPlatformRead = Math.max(
+      ...platforms.map((candidate) => events.lastIndexOf(`read ${candidate.name}`)),
+    );
+    expect(launcherWrite).toBeGreaterThan(lastPlatformRead);
+    // The slowest platform package needs three reads; that costs two waits for
+    // the whole set, not two per laggard. The launcher then waits on its own.
+    expect(events.filter((event) => event.startsWith("wait"))).toEqual([
+      "wait 3000",
+      "wait 6000",
+      "wait 3000",
+      "wait 6000",
+    ]);
+    // A package that was visible on the first read is not read again.
+    expect(reads.get(platforms[0]!.name)).toBe(1);
+  });
+
+  test("halts before writing anything when a platform package already exists with different bytes", async () => {
+    // Every platform decision is made before the first write, so a conflict on
+    // the sixth package cannot leave the first five newly published.
+    const localCandidates = candidates();
+    const conflicting = localCandidates[5]!;
+    let publishes = 0;
+
+    await expect(
+      reconcileNpmPublication({
+        candidates: localCandidates,
+        confirmed: true,
+        command: async () => {
+          publishes += 1;
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+        registry: {
+          queryIntegrity: async (candidate) =>
+            candidate.name === conflicting.name ? "sha512-somethingElseEntirely==" : null,
+          queryMetadata: async (candidate) => metadata(candidate),
+        },
+        wait: async () => {},
+      }),
+    ).rejects.toThrow(/different integrity/i);
+
+    expect(publishes).toBe(0);
+  });
+
   test("waits out registry propagation instead of failing a successful publish", async () => {
     // What actually happened to 0.3.0: `@kitsunekode/kunai-linux-x64` published
     // fine, `npm view` answered "not found" seconds later, and the release died
@@ -541,7 +627,6 @@ describe("resumable npm publication orchestration", () => {
 
     expect(result.every((decision) => decision.action === "publish")).toBe(true);
     expect(droppedPublishes).toBe(2);
-    // The read retries were exhausted once before the write was reissued.
     // The full visibility window was exhausted before the write was reissued.
     expect(waits.length).toBe(25);
     // Backoff, not a flat delay: 3s rising to a 30s ceiling.
