@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "status": "staged",
-  "publishedAt": null,
+  "status": "published",
+  "publishedAt": "2026-09-02T11:23:27Z",
   "packageName": "@kitsunekode/kunai",
   "version": "0.3.0",
   "tag": "v0.3.0",

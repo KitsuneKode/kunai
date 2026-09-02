@@ -26,6 +26,7 @@ import {
   getReleaseByTag,
   latestReleaseNotesArtifact,
   publishedReleaseNotesArtifacts,
+  releaseNotesArtifacts,
 } from "../lib/release-notes";
 
 const ROOT = path.resolve(import.meta.dir, "../../..");
@@ -181,20 +182,23 @@ describe("0.3.0 public truth contract", () => {
   });
 
   /**
-   * A staged candidate must never read as shipped. This used to name a fixed
-   * version whose artifact has since been removed; the invariant outlived the
-   * example, so it follows the current staged candidate instead.
+   * A staged candidate must never read as shipped. Naming the version made this
+   * assert the calendar rather than the invariant: pinned to "0.3.0" it passed
+   * only while 0.3.0 was unshipped, so the release job that flipped that status
+   * to `published` — the last step of shipping it — failed this test as its
+   * direct result, after npm and the GitHub release were already public. Read
+   * whatever is staged now, and assert the rule about it.
    */
-  test("the staged candidate is not latest or published", () => {
-    const staged = getReleaseByTag("0.3.0");
-    expect(staged).toBeDefined();
-    expect(staged?.status).toBe("staged");
-    expect(staged?.publishedAt).toBeNull();
+  test("a staged candidate is never latest or published", () => {
+    const staged = releaseNotesArtifacts.filter((release) => release.status === "staged");
+    const latest = latestReleaseNotesArtifact();
+    const published = publishedReleaseNotesArtifacts();
 
-    expect(latestReleaseNotesArtifact()?.version).not.toBe("0.3.0");
-    expect(publishedReleaseNotesArtifacts().some((release) => release.version === "0.3.0")).toBe(
-      false,
-    );
+    for (const candidate of staged) {
+      expect(candidate.publishedAt).toBeNull();
+      expect(latest?.version).not.toBe(candidate.version);
+      expect(published.some((release) => release.version === candidate.version)).toBe(false);
+    }
   });
 
   test("no unpublished version is advertised anywhere public", () => {
