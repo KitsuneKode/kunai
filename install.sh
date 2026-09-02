@@ -2075,27 +2075,118 @@ install_source() {
 	[[ "$DRY" == 1 ]] || trap - EXIT
 }
 
-install_optional_deps() {
-	[[ "$SKIP_DEPS" == 1 || "$DRY" == 1 ]] && return
-	local pkgs=()
-	ask "Install mpv (required for playback)?" y && pkgs+=(mpv)
-	ask "Install yt-dlp (YouTube playback and downloads)?" y && pkgs+=(yt-dlp)
-	# No poster dependency to offer: every renderer consumes one natively
-	# prepared image, and half-block is the universal in-process floor.
-	((${#pkgs[@]} == 0)) && return
-
+# The exact command that installs the named packages on this machine.
+#
+# Returns a string rather than running anything, so the prompt can show the user
+# precisely what they are agreeing to and the decline path can print the same
+# text. Empty means no supported manager was found.
+dependency_install_command() {
+	local pkgs="$*"
 	if have brew; then
-		run brew install "${pkgs[@]}"
+		printf 'brew install %s' "$pkgs"
+	elif have port; then
+		printf 'sudo port install %s' "$pkgs"
 	elif have pacman; then
-		run sudo pacman -S --needed --noconfirm "${pkgs[@]}"
+		printf 'sudo pacman -S --needed %s' "$pkgs"
 	elif have apt-get; then
-		run sudo apt-get update
-		run sudo apt-get install -y "${pkgs[@]}"
+		printf 'sudo apt-get install %s' "$pkgs"
 	elif have dnf; then
-		run sudo dnf install -y "${pkgs[@]}"
-	else
-		warn "No supported package manager found. Install manually: ${pkgs[*]}"
+		printf 'sudo dnf install %s' "$pkgs"
+	elif have zypper; then
+		printf 'sudo zypper install %s' "$pkgs"
+	elif have apk; then
+		printf 'sudo apk add %s' "$pkgs"
 	fi
+}
+
+# Which of the optional dependencies this machine is actually missing.
+#
+# Checked before anything is offered: the previous flow prompted — and
+# sudo-installed — even when mpv was already present.
+missing_dependencies() {
+	local missing=()
+	have mpv || missing+=(mpv)
+	have yt-dlp || missing+=(yt-dlp)
+	# `printf '%s\n'` with no arguments still emits one empty line, which a
+	# line-reader would treat as a single blank dependency.
+	[[ "${#missing[@]}" -eq 0 ]] && return 0
+	printf '%s\n' "${missing[@]}"
+}
+
+# Offer the missing dependencies, and never escalate without a deliberate yes.
+#
+# This used to run `sudo pacman -S --noconfirm` / `sudo apt-get install -y` off a
+# prompt that defaulted to yes. A script piped from the internet became root and
+# installed packages without the user, or the package manager, confirming
+# anything. Three rules now hold:
+#
+#   - the exact command is shown before it is offered, and printed again if
+#     declined, so nothing is hidden either way;
+#   - the prompt defaults to no, because Enter must never escalate;
+#   - `--yes` covers this installer, not a system package manager, and a run
+#     with no terminal prints instead of installing.
+#
+# `--noconfirm` / `-y` are gone from the commands as well: on the accepted path
+# the package manager gets to confirm too, so there are two gates rather than
+# none.
+install_optional_deps() {
+	[[ "$SKIP_DEPS" == 1 ]] && return 0
+
+	local command line
+	# `local -a missing=()` is the bash 3.2 + `set -u` form: a bare
+	# `local -a missing` stays unbound, so `${#missing[@]}` aborts when
+	# nothing is missing — the already-installed path macOS would hit next.
+	local -a missing=()
+	# `mapfile` is bash 4+; macOS ships 3.2 as /bin/bash. Read line-by-line.
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		[[ -n "$line" ]] && missing+=("$line")
+	done < <(missing_dependencies)
+	if [[ "${#missing[@]}" -eq 0 ]]; then
+		info "mpv and yt-dlp are already installed."
+		return 0
+	fi
+
+	printf '\n'
+	if [[ " ${missing[*]} " == *" mpv "* ]]; then
+		warn "mpv is not installed — Kunai needs it to play anything."
+	fi
+	if [[ " ${missing[*]} " == *" yt-dlp "* ]]; then
+		warn "yt-dlp is not installed — YouTube playback and downloads need it."
+	fi
+
+	command="$(dependency_install_command "${missing[@]}")"
+	if [[ -z "$command" ]]; then
+		info "No supported package manager found. Install manually: ${missing[*]}"
+		info "mpv: https://mpv.io/installation/"
+		return 0
+	fi
+
+	printf '\n  This will run:\n    %s\n\n' "$command"
+
+	# `--yes` is consent to install Kunai, not consent to become root. A
+	# non-interactive run takes the same path, so `curl … | bash` in a container
+	# reports what is missing instead of quietly acquiring system packages.
+	# `--dry-run` prints the same way, matching install.ps1's -DryRun path.
+	if [[ "$YES" == 1 || "$DRY" == 1 ]] || ! : 2>/dev/null </dev/tty; then
+		info "Install them with:"
+		printf '    %s\n' "$command"
+		return 0
+	fi
+
+	local reply=""
+	if ! read -r -p "Run it now? [y/N] " reply </dev/tty; then
+		reply=""
+	fi
+	if [[ "$reply" =~ ^([yY]|[yY][eE][sS])$ ]]; then
+		# Word splitting is deliberate: the command is built from this script's
+		# own literals, never from anything a user or a server supplied.
+		# shellcheck disable=SC2086
+		run $command
+		return 0
+	fi
+
+	info "Skipped. Install them later with:"
+	printf '    %s\n' "$command"
 }
 
 usage() {

@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 
 import type { InstallManifest } from "@/services/update/install-manifest";
 import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
@@ -339,10 +339,29 @@ describePwsh("install.ps1 dry-run", () => {
     try {
       // Deliberately no -SkipDeps: this case exists to prove the dependency plan
       // is reached. -DryRun keeps it a plan, so no winget process is spawned.
-      const result = runInstallPs1(
-        ["-DryRun", "-Yes", "-Version", "9.8.7"],
-        withCommandPath(sandbox.env, sandbox.root),
+      //
+      // The PATH is the shim directory ALONE. `withCommandPath` prepends to the
+      // inherited PATH, which leaves the developer's real mpv and yt-dlp
+      // visible -- and the installer now checks before it offers, so on such a
+      // machine there is correctly nothing to plan and this test saw only the
+      // curl branch. Isolating the PATH is what makes "missing" true here.
+      // pwsh still has to be resolvable, so its own directory stays -- but
+      // nothing else does, which is what keeps a developer's real mpv out of
+      // the run.
+      const pwshDir = dirname(
+        spawnSync("pwsh", ["-NoProfile", "-Command", "(Get-Process -Id $PID).Path"], {
+          encoding: "utf8",
+        }).stdout.trim(),
       );
+      const shimOnlyEnv: NodeJS.ProcessEnv = { ...sandbox.env };
+      for (const key of Object.keys(shimOnlyEnv)) {
+        if (key.toLowerCase() === "path") delete shimOnlyEnv[key];
+      }
+      shimOnlyEnv[process.platform === "win32" ? "Path" : "PATH"] = [sandbox.root, pwshDir].join(
+        delimiter,
+      );
+
+      const result = runInstallPs1(["-DryRun", "-Yes", "-Version", "9.8.7"], shimOnlyEnv);
 
       expect(result.status).toBe(0);
       // mpv.net ships mpvnet.exe; Kunai probes for `mpv`. See the winget id note
@@ -1880,75 +1899,6 @@ describePwsh("install.ps1 package activeVersion", () => {
   );
 });
 
-/**
- * `Confirm-OptionalInstall` gates winget/scoop package installs, so what it
- * does with no console is a privilege decision, not a UX one — the same
- * decision `ask()` makes in install.sh, where answering "yes" for an absent
- * human is how `curl … | bash` in CI ran `sudo apt-get install` unattended.
- *
- * The bash half is pinned in install-scripts.test.ts. This is the half that
- * only CI can run, and it is the half that had no coverage at all: this
- * machine has no pwsh, so a mistake here is invisible until Windows CI.
- */
-describePwsh("install.ps1 consent without a console", () => {
-  function runConfirm(options: { readonly yes?: boolean; readonly dryRun?: boolean } = {}): {
-    status: number | null;
-    stdout: string;
-    stderr: string;
-  } {
-    const source = readFileSync(INSTALL_PS1, "utf8");
-    const fn = /^function Confirm-OptionalInstall \{[\s\S]*?^\}$/m.exec(source)?.[0];
-    if (!fn) throw new Error("could not extract Confirm-OptionalInstall from install.ps1");
-
-    const script = [
-      "$ErrorActionPreference = 'Stop'",
-      `$Yes = $${options.yes === true}`,
-      `$DryRun = $${options.dryRun === true}`,
-      'function Write-Warn($m) { Write-Host "! $m" }',
-      fn,
-      // Piping into pwsh is what makes IsInputRedirected true — the same shape
-      // as `irm … | iex` inside a CI step with no attached console.
-      "if (Confirm-OptionalInstall 'Install mpv?') { 'CONSENTED' } else { 'DECLINED' }",
-    ].join("\n");
-
-    // `-File` against a real file, never `-Command -` with piped input: reading
-    // a script from stdin puts pwsh in a mode that emits terminal escape
-    // sequences (`ESC[?1h`) and swallows the output entirely, so every
-    // assertion here saw escape codes rather than DECLINED/CONSENTED.
-    const scriptPath = join(
-      mkdtempSync(join(tmpdir(), "kunai-pwsh-consent-")),
-      "confirm-optional-install.ps1",
-    );
-    writeFileSync(scriptPath, script);
-
-    // stdin from a closed handle so `IsInputRedirected` is true with no
-    // console — the `irm … | iex` shape this function has to refuse.
-    return spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-File", scriptPath], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      env: DEFAULT_SHELL_ENV,
-    });
-  }
-
-  test("declines rather than assuming yes, and names the skipped step", () => {
-    const result = runConfirm();
-    expect(result.stdout).toContain("DECLINED");
-    expect(result.stdout).not.toContain("CONSENTED");
-    // The warning has to say which step was skipped and how to accept, or the
-    // user is left with a silently incomplete install.
-    expect(result.stdout).toContain("Install mpv?");
-    expect(result.stdout).toContain("-Yes");
-  });
-
-  test("an explicit -Yes is still consent", () => {
-    expect(runConfirm({ yes: true }).stdout).toContain("CONSENTED");
-  });
-
-  test("-DryRun reports the intended action without requiring a console", () => {
-    expect(runConfirm({ dryRun: true }).stdout).toContain("CONSENTED");
-  });
-});
-
 if (!pwshAvailable()) {
   describe("install.ps1 (pwsh unavailable locally)", () => {
     test("skips PowerShell installer coverage — CI Windows/Ubuntu pwsh job required", () => {
@@ -1956,3 +1906,126 @@ if (!pwshAvailable()) {
     });
   });
 }
+
+/**
+ * Windows parity for the optional-dependency consent rules. install.ps1 had the
+ * same shape as the bash flow: a prompt defaulting to yes, `-Yes` treated as
+ * consent for everything, and `--accept-package-agreements
+ * --accept-source-agreements` accepting a third party's licence terms on the
+ * user's behalf.
+ */
+describePwsh("install.ps1 optional dependency consent", () => {
+  function evalInstallPs1(body: string, testCmd: string): string {
+    const script = [
+      `$src = Get-Content -Raw ${JSON.stringify(INSTALL_PS1)}`,
+      'function Write-Info { param($m) Write-Host "> $m" }',
+      'function Write-Warn { param($m) Write-Host "! $m" }',
+      'function Invoke-OptionalStep { param($d,$a) Write-Host "[RAN] $d" }',
+      testCmd,
+      "foreach ($fn in 'Get-PackageInstallCommand','Request-OptionalInstall') {",
+      '  Invoke-Expression ([regex]::Match($src, "(?ms)^function $fn \\{.*?^\\}").Value)',
+      "}",
+      body,
+    ].join("\n");
+    const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+    expect(result.stderr, result.stderr).not.toContain("ParserError");
+    return `${result.stdout}${result.stderr}`;
+  }
+
+  /**
+   * One pwsh process for the whole mapping table. Five separate spawns were
+   * flaky under a loaded suite -- pwsh start-up dominates, and a starved one
+   * returned empty output -- and the table is what is being asserted, not the
+   * process boundary.
+   */
+  test("each Windows package manager maps to its own install command", () => {
+    const probe = [
+      "foreach ($mgr in 'winget','scoop','choco') {",
+      "  Invoke-Expression \"function Test-Cmd { param(`$n) return `$n -eq '$mgr' }\"",
+      "  foreach ($pkg in 'mpv','yt-dlp','curl') {",
+      '    Write-Output "$mgr|$pkg|$(Get-PackageInstallCommand $pkg)"',
+      "  }",
+      "}",
+      "function Test-Cmd { param($n) return $false }",
+      "Write-Output \"none|mpv|$(Get-PackageInstallCommand 'mpv')\"",
+    ].join("\n");
+
+    const rows = evalInstallPs1(probe, "function Test-Cmd { param($n) return $false }")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.includes("|"));
+    const table = Object.fromEntries(
+      rows.map((row) => {
+        const [manager, pkg, ...rest] = row.split("|");
+        return [`${manager}/${pkg}`, rest.join("|")];
+      }),
+    );
+
+    // The winget ids are load-bearing: mpv.net ships mpvnet.exe, which Kunai
+    // cannot drive over mpv's IPC socket.
+    expect(table["winget/mpv"]).toBe("winget install --id mpv-player.mpv-CI.MSVC -e");
+    expect(table["winget/curl"]).toBe("winget install --id cURL.cURL -e");
+    expect(table["winget/yt-dlp"]).toBe("winget install yt-dlp");
+    expect(table["scoop/mpv"]).toBe("scoop install mpv");
+    expect(table["choco/mpv"]).toBe("choco install mpv");
+    // No recognised manager must yield no command, so the caller falls through
+    // to the manual guidance rather than inventing one.
+    expect(table["none/mpv"]).toBe("");
+  });
+
+  test("no command auto-accepts a package or source agreement", () => {
+    for (const pkg of ["mpv", "yt-dlp", "curl"]) {
+      const command = evalInstallPs1(
+        `Get-PackageInstallCommand ${JSON.stringify(pkg)}`,
+        "function Test-Cmd { param($n) return $n -eq 'winget' }",
+      );
+      expect(command).not.toContain("--accept-package-agreements");
+      expect(command).not.toContain("--accept-source-agreements");
+    }
+    // Chocolatey used to ship `choco install … -y`, which is the same
+    // unattended-confirm shape the winget --accept flags had.
+    for (const pkg of ["mpv", "yt-dlp", "curl"]) {
+      const command = evalInstallPs1(
+        `Get-PackageInstallCommand ${JSON.stringify(pkg)}`,
+        "function Test-Cmd { param($n) return $n -eq 'choco' }",
+      );
+      expect(command.trim()).toBe(`choco install ${pkg}`);
+      expect(command).not.toMatch(/(^|\s)-y(\s|$)/);
+    }
+  });
+
+  test("-Yes prints the command instead of installing", () => {
+    const output = evalInstallPs1(
+      "$Yes = $true; $DryRun = $false; Request-OptionalInstall @('mpv','yt-dlp')",
+      "function Test-Cmd { param($n) return $n -eq 'winget' }",
+    );
+    // -Yes is consent to install Kunai, not to accept a third party's terms.
+    expect(output).not.toContain("[RAN]");
+    expect(output).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+  });
+
+  /**
+   * The no-console case is a privilege decision, not a UX one: answering "yes"
+   * for an absent human is how `irm … | iex` in CI used to acquire system
+   * packages unattended. Redirected input takes the same path as `-Yes` —
+   * report what is missing, never install it.
+   */
+  test("no console reports the command instead of installing", () => {
+    const output = evalInstallPs1(
+      "$Yes = $false; $DryRun = $false; Request-OptionalInstall @('mpv')",
+      "function Test-Cmd { param($n) return $n -eq 'winget' }",
+    );
+    expect(output).not.toContain("[RAN]");
+    expect(output).toContain("winget install --id mpv-player.mpv-CI.MSVC -e");
+  });
+
+  test("an unrecognised host still gets manual guidance", () => {
+    const output = evalInstallPs1(
+      "$Yes = $false; $DryRun = $false; Request-OptionalInstall @('mpv')",
+      "function Test-Cmd { param($n) return $false }",
+    );
+    expect(output).toContain("No supported package manager found");
+    expect(output).toContain("https://mpv.io/installation/");
+    expect(output).not.toContain("[RAN]");
+  });
+});
