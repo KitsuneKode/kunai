@@ -508,6 +508,107 @@ describe("resumable npm publication orchestration", () => {
     expect(waits).toEqual([3_000, 3_000]);
   });
 
+  test("reissues the write when a successful publish never reaches the registry", async () => {
+    // What 0.3.0 hit: `npm publish` exited 0 for kunai-linux-arm64 and the
+    // version was never created — still absent long after the run ended, so
+    // retrying the read could never recover it.
+    const localCandidates = candidates();
+    const dropped = localCandidates[0]!.name;
+    let droppedPublishes = 0;
+    const waits: number[] = [];
+
+    const result = await reconcileNpmPublication({
+      candidates: localCandidates,
+      confirmed: true,
+      command: async (request) => {
+        if (request.args[1] === localCandidates[0]!.tarballPath) droppedPublishes += 1;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      registry: {
+        queryIntegrity: async () => null,
+        queryMetadata: async (candidate) => {
+          if (candidate.name !== dropped) return metadata(candidate);
+          // The first write is swallowed entirely; the second one sticks.
+          return droppedPublishes >= 2 ? metadata(candidate) : null;
+        },
+      },
+      wait: async (ms) => {
+        waits.push(ms);
+      },
+    });
+
+    expect(result.every((decision) => decision.action === "publish")).toBe(true);
+    expect(droppedPublishes).toBe(2);
+    // The read retries were exhausted once before the write was reissued.
+    // Nine read retries exhausted before the write was reissued.
+    expect(waits.length).toBe(9);
+  });
+
+  test("treats npm refusing to overwrite as proof the write landed", async () => {
+    // A reissue after a drop that was not a drop must not fail the release:
+    // npm rejecting the duplicate is itself confirmation the version exists.
+    const localCandidates = candidates();
+    const target = localCandidates[0]!.name;
+    let attempts = 0;
+
+    const result = await reconcileNpmPublication({
+      candidates: localCandidates,
+      confirmed: true,
+      command: async (request) => {
+        if (request.args[1] !== localCandidates[0]!.tarballPath) {
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+        attempts += 1;
+        if (attempts === 1) return { exitCode: 0, stdout: "", stderr: "" };
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: "npm error 403 You cannot publish over the previously published versions",
+        };
+      },
+      registry: {
+        queryIntegrity: async () => null,
+        queryMetadata: async (candidate) => {
+          if (candidate.name !== target) return metadata(candidate);
+          return attempts >= 2 ? metadata(candidate) : null;
+        },
+      },
+      wait: async () => {},
+    });
+
+    expect(result.every((decision) => decision.action === "publish")).toBe(true);
+    expect(attempts).toBe(2);
+  });
+
+  test("a genuine publish failure still throws instead of being reissued", async () => {
+    // Only the overwrite refusal is benign. Anything else — auth, network,
+    // a rejected tarball — must surface immediately with npm's own output.
+    const localCandidates = candidates();
+    let attempts = 0;
+
+    await expect(
+      reconcileNpmPublication({
+        candidates: localCandidates,
+        confirmed: true,
+        command: async () => {
+          attempts += 1;
+          return {
+            exitCode: 1,
+            stdout: "",
+            stderr: "npm error code ENEEDAUTH\nnpm error need auth",
+          };
+        },
+        registry: {
+          queryIntegrity: async () => null,
+          queryMetadata: async (candidate) => metadata(candidate),
+        },
+        wait: async () => {},
+      }),
+    ).rejects.toThrow(/ENEEDAUTH/);
+
+    expect(attempts).toBe(1);
+  });
+
   test("a mismatched artifact fails on the first read rather than being retried", async () => {
     // Absence is propagation; a wrong integrity is a wrong artifact. Retrying
     // that would turn a clear failure into a timeout and delay the signal.

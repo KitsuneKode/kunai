@@ -92,6 +92,13 @@ export interface ReconcileNpmPublicationOptions {
 const PUBLISH_VISIBILITY_ATTEMPTS = 10;
 const PUBLISH_VISIBILITY_DELAY_MS = 3_000;
 
+/**
+ * How many times the write itself is reissued when the registry never shows the
+ * version. Three, because a drop is rare and a fourth attempt would more likely
+ * mean npm is refusing for a reason retrying cannot fix.
+ */
+const PUBLISH_WRITE_ATTEMPTS = 3;
+
 type JsonObject = Record<string, unknown>;
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -488,6 +495,70 @@ async function awaitPublishedMetadata(
   return metadata;
 }
 
+/** npm's refusal to overwrite a version, which here means the write did land. */
+function isAlreadyPublished(result: CommandResult): boolean {
+  return /cannot publish over|previously published version|EPUBLISHCONFLICT/i.test(
+    `${result.stdout}\n${result.stderr}`,
+  );
+}
+
+/**
+ * Publish, then confirm the registry actually holds it — reissuing the write if
+ * it does not.
+ *
+ * `npm publish` exiting 0 is not proof. During the 0.3.0 release
+ * `@kitsunekode/kunai-linux-arm64@0.3.0` exited 0 and the version was never
+ * created; it was still absent long after the run ended, so this was a dropped
+ * write rather than the propagation lag the read retries already handle. npm's
+ * own status history records repeated "intermittent Publish Failures".
+ *
+ * Retrying the read alone cannot recover that. Retrying the write can, and is
+ * safe because npm refuses to overwrite an existing version: if the earlier
+ * attempt did land after all, the reissue is rejected and that rejection is
+ * itself the confirmation.
+ */
+async function publishWithRetry(
+  candidate: LocalPackageCandidate,
+  options: ReconcileNpmPublicationOptions,
+): Promise<RegistryPackageMetadata | null> {
+  const request: CommandRequest = {
+    command: "npm",
+    args: ["publish", candidate.tarballPath, "--access", "public", "--provenance"],
+    cwd: ROOT,
+  };
+
+  let metadata: RegistryPackageMetadata | null = null;
+  for (let attempt = 1; attempt <= PUBLISH_WRITE_ATTEMPTS; attempt += 1) {
+    const result = await options.command(request);
+
+    // Always surfaced, not only on failure. A dropped write exits 0, so the
+    // run that hit one had npm's output captured and discarded, leaving no
+    // way to tell why the version never appeared.
+    const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join("\n");
+    if (output)
+      options.log?.(`[publish] npm output for ${candidate.name}@${candidate.version}:\n${output}`);
+
+    if (result.exitCode !== 0) {
+      // A refusal to overwrite means the version exists; fall through and let
+      // verification compare integrity rather than treating it as a failure.
+      if (!isAlreadyPublished(result)) throw commandError("npm publish", request, result);
+      options.log?.(
+        `[publish] ${candidate.name}@${candidate.version} already on the registry; verifying instead`,
+      );
+    }
+
+    metadata = await awaitPublishedMetadata(candidate, options);
+    if (metadata !== null) return metadata;
+
+    if (attempt < PUBLISH_WRITE_ATTEMPTS) {
+      options.log?.(
+        `[publish] ${candidate.name}@${candidate.version} still absent after a successful publish; reissuing (${attempt}/${PUBLISH_WRITE_ATTEMPTS - 1})`,
+      );
+    }
+  }
+  return metadata;
+}
+
 /** Reconcile validated candidates sequentially, preserving launcher-last safety. */
 export async function reconcileNpmPublication(
   options: ReconcileNpmPublicationOptions,
@@ -509,14 +580,7 @@ export async function reconcileNpmPublication(
       continue;
     }
     if (decision.action === "publish") {
-      const request: CommandRequest = {
-        command: "npm",
-        args: ["publish", candidate.tarballPath, "--access", "public", "--provenance"],
-        cwd: ROOT,
-      };
-      const result = await options.command(request);
-      if (result.exitCode !== 0) throw commandError("npm publish", request, result);
-      assertVerified(candidate, await awaitPublishedMetadata(candidate, options));
+      assertVerified(candidate, await publishWithRetry(candidate, options));
       continue;
     }
     // A skipped candidate was already on the registry before this run, so its
