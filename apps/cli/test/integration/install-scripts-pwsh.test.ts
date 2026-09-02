@@ -435,6 +435,15 @@ describePwsh("install.ps1 activation identity", () => {
 });
 
 describePwsh("install.ps1 release asset failures", () => {
+  /**
+   * Runs a real install.ps1 that downloads a zip, verifies two digests and
+   * expands the archive. On a Windows runner that is PowerShell start-up plus
+   * Expand-Archive plus disk, none of which this test is asserting anything
+   * about — it asserts the archive path completes and records provenance. The
+   * shared 20s integration budget was close enough to that cost to fail a green
+   * release gate at 20000.70ms, so this one gets a guard sized to catch a stuck
+   * installer instead of a slow one.
+   */
   test("installs the verified zip member and records archive provenance", async () => {
     const target = hostWindowsTarget();
     const body = "MZ-archived-kunai";
@@ -496,7 +505,7 @@ describePwsh("install.ps1 release asset failures", () => {
     } finally {
       sandbox.cleanup();
     }
-  });
+  }, 120_000);
 
   test.each([
     "absolute",
