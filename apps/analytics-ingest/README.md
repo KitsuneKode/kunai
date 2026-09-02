@@ -85,13 +85,15 @@ bun run --cwd apps/analytics-ingest test      # offline, in-memory store
 bun run --cwd apps/analytics-ingest test:pg   # real Postgres, needs Docker
 ```
 
-`test` runs everything that does not need a database. The two Postgres suites
+`test` runs everything that does not need a database. The Postgres suites
 skip, and a skip reads as a pass — which is why `test:pg` exists.
 
 `test:pg` brings up the throwaway Postgres in `docker-compose.yml`, applies the
-schema, runs `postgres-store` and `postgres-ingest-lifecycle` against it, and
-tears it down. `test:pg -- --keep` leaves the containers up for iteration;
-`db:down` cleans up afterwards.
+schema, runs the `postgres-*.test.ts` files against it with `--max-concurrency 1`,
+and tears it down. Those files share one database and `install_lifetime.first_seen`
+is write-once, so each suite mints install ids through `testInstallId(n, suite)`
+rather than reusing n=1 across files. `test:pg -- --keep` leaves the containers
+up for iteration; `db:down` cleans up afterwards.
 
 The container credentials are `kunai:kunai`. That protects nothing — loopback
 only, tmpfs-backed, destroyed when the run ends — and secret scanners flag it,
