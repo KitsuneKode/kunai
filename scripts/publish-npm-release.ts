@@ -71,7 +71,26 @@ export interface ReconcileNpmPublicationOptions {
   readonly command: CommandPort;
   readonly registry: RegistryPort;
   readonly log?: (message: string) => void;
+  /**
+   * Injected so a test can exhaust the propagation window without sleeping.
+   * Defaults to a real timer only on the publication path.
+   */
+  readonly wait?: (ms: number) => Promise<void>;
 }
+
+/**
+ * npm's registry is read-after-write eventually consistent: `npm view` can
+ * answer "not found" for a version that was just accepted. The 0.3.0 release
+ * published `@kitsunekode/kunai-linux-x64` successfully and then failed its own
+ * verification a few seconds later on exactly that, leaving one of nine
+ * packages live and the release half-applied.
+ *
+ * Bounded, and only ever for absence — an integrity *mismatch* is a wrong
+ * artifact and must fail on the first read rather than be retried into a
+ * timeout.
+ */
+const PUBLISH_VISIBILITY_ATTEMPTS = 10;
+const PUBLISH_VISIBILITY_DELAY_MS = 3_000;
 
 type JsonObject = Record<string, unknown>;
 
@@ -446,6 +465,29 @@ function assertVerified(
   }
 }
 
+/**
+ * Poll for a just-published version until the registry admits it exists.
+ *
+ * Returns the first non-null metadata, whatever it says: deciding whether it
+ * *matches* stays with `assertVerified`, so a wrong artifact still fails on the
+ * first read instead of being retried. Only absence is waited on.
+ */
+async function awaitPublishedMetadata(
+  candidate: LocalPackageCandidate,
+  options: ReconcileNpmPublicationOptions,
+): Promise<RegistryPackageMetadata | null> {
+  const wait = options.wait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  let metadata = await options.registry.queryMetadata(candidate);
+  for (let attempt = 1; metadata === null && attempt < PUBLISH_VISIBILITY_ATTEMPTS; attempt += 1) {
+    options.log?.(
+      `[publish] ${candidate.name}@${candidate.version} not visible yet; retry ${attempt}/${PUBLISH_VISIBILITY_ATTEMPTS - 1}`,
+    );
+    await wait(PUBLISH_VISIBILITY_DELAY_MS);
+    metadata = await options.registry.queryMetadata(candidate);
+  }
+  return metadata;
+}
+
 /** Reconcile validated candidates sequentially, preserving launcher-last safety. */
 export async function reconcileNpmPublication(
   options: ReconcileNpmPublicationOptions,
@@ -474,7 +516,11 @@ export async function reconcileNpmPublication(
       };
       const result = await options.command(request);
       if (result.exitCode !== 0) throw commandError("npm publish", request, result);
+      assertVerified(candidate, await awaitPublishedMetadata(candidate, options));
+      continue;
     }
+    // A skipped candidate was already on the registry before this run, so its
+    // metadata is visible now; only the read after our own write can lag.
     assertVerified(candidate, await options.registry.queryMetadata(candidate));
   }
   return decisions;
