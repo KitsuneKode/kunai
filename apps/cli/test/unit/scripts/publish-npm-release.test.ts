@@ -504,14 +504,16 @@ describe("resumable npm publication orchestration", () => {
     expect(result.every((decision) => decision.action === "publish")).toBe(true);
     expect(publishes).toBe(localCandidates.length);
     expect(laggardReads).toBe(3);
-    // Only the laggard waited, and only between its own reads.
-    expect(waits).toEqual([3_000, 3_000]);
+    // Only the laggard waited, and only between its own reads, backing off.
+    expect(waits).toEqual([3_000, 6_000]);
   });
 
   test("reissues the write when a successful publish never reaches the registry", async () => {
-    // What 0.3.0 hit: `npm publish` exited 0 for kunai-linux-arm64 and the
-    // version was never created — still absent long after the run ended, so
-    // retrying the read could never recover it.
+    // Only after the whole visibility window still shows nothing. A slow
+    // publish is not a dropped one: kunai-linux-arm64 exited 0, read absent for
+    // 27s, and was indexed roughly seven minutes later with the exact expected
+    // integrity. Reissuing early would have raced a version that already
+    // existed.
     const localCandidates = candidates();
     const dropped = localCandidates[0]!.name;
     let droppedPublishes = 0;
@@ -540,8 +542,11 @@ describe("resumable npm publication orchestration", () => {
     expect(result.every((decision) => decision.action === "publish")).toBe(true);
     expect(droppedPublishes).toBe(2);
     // The read retries were exhausted once before the write was reissued.
-    // Nine read retries exhausted before the write was reissued.
-    expect(waits.length).toBe(9);
+    // The full visibility window was exhausted before the write was reissued.
+    expect(waits.length).toBe(25);
+    // Backoff, not a flat delay: 3s rising to a 30s ceiling.
+    expect(waits.slice(0, 3)).toEqual([3_000, 6_000, 9_000]);
+    expect(waits.at(-1)).toBe(30_000);
   });
 
   test("treats npm refusing to overwrite as proof the write landed", async () => {

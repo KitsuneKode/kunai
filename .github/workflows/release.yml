@@ -965,7 +965,11 @@ jobs:
     needs: confirmation
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Nine packages, each of which may wait out npm indexing before the next is
+    # published. 0.3.0 saw a seven-minute lag on one package, and the publisher
+    # now allows about ten minutes each; 30 would kill the job mid-sequence and
+    # leave a half-applied release, which is the one state worth avoiding.
+    timeout-minutes: 120
     environment: release-production
     permissions:
       contents: write

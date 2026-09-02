@@ -89,15 +89,30 @@ export interface ReconcileNpmPublicationOptions {
  * artifact and must fail on the first read rather than be retried into a
  * timeout.
  */
-const PUBLISH_VISIBILITY_ATTEMPTS = 10;
-const PUBLISH_VISIBILITY_DELAY_MS = 3_000;
+/**
+ * Measured, not guessed. During 0.3.0 `kunai-linux-x64-musl` appeared after one
+ * 3s retry, while `kunai-linux-arm64` — published at 08:01 — was not indexed
+ * until 08:08:41Z, roughly seven minutes later. A 27s budget failed the release
+ * on a version npm had already accepted with the exact expected integrity.
+ *
+ * Backs off from 3s to a 30s ceiling, which spends about ten minutes per
+ * package before giving up. Long enough to absorb the worst lag observed;
+ * bounded so a genuinely refused publish still ends the run.
+ */
+const PUBLISH_VISIBILITY_ATTEMPTS = 26;
+const PUBLISH_VISIBILITY_MAX_DELAY_MS = 30_000;
+
+function publishVisibilityDelayMs(attempt: number): number {
+  return Math.min(PUBLISH_VISIBILITY_MAX_DELAY_MS, 3_000 * attempt);
+}
 
 /**
- * How many times the write itself is reissued when the registry never shows the
- * version. Three, because a drop is rare and a fourth attempt would more likely
- * mean npm is refusing for a reason retrying cannot fix.
+ * The write is reissued only after that entire window still shows nothing —
+ * a genuinely dropped write, as distinct from a slow one. Reissuing early is
+ * what a short budget tempts you into, and it is wrong: the version usually
+ * exists and npm simply has not indexed it yet.
  */
-const PUBLISH_WRITE_ATTEMPTS = 3;
+const PUBLISH_WRITE_ATTEMPTS = 2;
 
 type JsonObject = Record<string, unknown>;
 
@@ -486,10 +501,11 @@ async function awaitPublishedMetadata(
   const wait = options.wait ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   let metadata = await options.registry.queryMetadata(candidate);
   for (let attempt = 1; metadata === null && attempt < PUBLISH_VISIBILITY_ATTEMPTS; attempt += 1) {
+    const delay = publishVisibilityDelayMs(attempt);
     options.log?.(
-      `[publish] ${candidate.name}@${candidate.version} not visible yet; retry ${attempt}/${PUBLISH_VISIBILITY_ATTEMPTS - 1}`,
+      `[publish] ${candidate.name}@${candidate.version} not visible yet; retry ${attempt}/${PUBLISH_VISIBILITY_ATTEMPTS - 1} in ${Math.round(delay / 1000)}s`,
     );
-    await wait(PUBLISH_VISIBILITY_DELAY_MS);
+    await wait(delay);
     metadata = await options.registry.queryMetadata(candidate);
   }
   return metadata;
