@@ -34,12 +34,14 @@ describe("release notes artifacts", () => {
    */
   test("latest public release ignores any staged candidate", () => {
     const published = publishedReleaseNotesArtifacts();
-    const stagedVersions = releaseNotesArtifacts
-      .filter((release) => release.status === "staged")
-      .map((release) => release.version);
+    const stagedVersions = new Set(
+      releaseNotesArtifacts
+        .filter((release) => release.status === "staged")
+        .map((release) => release.version),
+    );
 
     expect(published.every((release) => release.status === "published")).toBe(true);
-    expect(published.some((release) => stagedVersions.includes(release.version))).toBe(false);
+    expect(published.some((release) => stagedVersions.has(release.version))).toBe(false);
 
     const newestPublished = [...published]
       .map((release) => release.version)
