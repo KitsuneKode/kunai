@@ -433,7 +433,7 @@ page or in-app `?` over duplicating chords here.
 ### Playback
 
 - Streams are resolved from direct-provider sources and handed to `mpv`.
-- **Recover** (`r`) refreshes the current stream and resumes from last position.
+- **Recover** (`Ctrl+R`) refreshes the current stream and resumes from last position.
 - **Recompute sources** (`/recompute`) bypasses cached provider memory when provider state looks stale.
 - **Fallback** (`⇧F`) tries the next compatible provider when the current one fails.
 - **Source / quality picker** switches among already-resolved stream options.
@@ -633,7 +633,7 @@ not ship as runtime behavior.
 <details>
 <summary><b>Search works but playback fails or stalls.</b></summary>
 
-Providers break when upstream sites change. In playback, press `r` to recover the
+Providers break when upstream sites change. In playback, press `Ctrl+R` to recover the
 stream, `⇧F` to fall back to the next compatible provider, `o` to pick another
 source, or `k` to pick quality. If sources look stale, `/recompute` bypasses cached provider
 memory. Persistent issues → `/diagnostics`, then `/export-diagnostics` for a

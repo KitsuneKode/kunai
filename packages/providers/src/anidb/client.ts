@@ -248,6 +248,10 @@ export async function anidbFetchText(
     maxTime,
     ...anidbCipherArgs(curl.impersonates),
     ...(options.reportStatus === true ? ANIDB_STATUS_WRITE_OUT : []),
+    // Everything after `--` is an operand, never an option. Embed and playlist
+    // URLs arrive from upstream JSON, so without this a value beginning with
+    // `-` would be read as curl flags rather than as the address to fetch.
+    "--",
     url,
   ];
   const stdout = await runAnidbCurlWithRetry(args, options.signal);
