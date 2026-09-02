@@ -308,7 +308,7 @@ bun run --cwd apps/analytics-ingest test:pg
 CI runs this same command in the `Analytics Postgres suites` job whenever
 `apps/analytics-ingest/**` changes, and fails if any case reports `skip` — a
 database that never starts otherwise produces a green run with every Postgres
-case silently skipped. Release signoff still needs a local or Neon run recorded
+case silently skipped. The harness serialises the suites and namespaces install ids per file; a leftover `install_lifetime` row from another file is how main used to fail `Expected: 8, Received: 5` on `lifetimeInstalls`. Release signoff still needs a local or Neon run recorded
 against the release commit, but a regression no longer waits for that run to
 surface.
 

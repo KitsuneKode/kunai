@@ -1736,6 +1736,7 @@ describeWindows("install.ps1 PATH diagnostics", () => {
           // the same file, so compare against the canonical on-disk spelling.
           expect(result.stdout).toContain(`PATH winner: ${realpathSync.native(npmShimPath)}`);
           expect(result.stdout).toContain(`Planned native path: ${nativePath}`);
+          expect(result.stdout).toContain("Another kunai comes earlier on your PATH");
           expect(result.stdout).toContain("npm uninstall -g @kitsunekode/kunai");
         },
       );
@@ -2027,5 +2028,158 @@ describePwsh("install.ps1 optional dependency consent", () => {
     expect(output).toContain("No supported package manager found");
     expect(output).toContain("https://mpv.io/installation/");
     expect(output).not.toContain("[RAN]");
+  });
+});
+
+/**
+ * Windows parity for the PATH-conflict remediation added to install.sh. The
+ * PowerShell version tested only the winner, and only against npm, so every
+ * other manager fell through to a generic "move $BinDir ahead" line and never
+ * learned the command that removes the competing install.
+ */
+describePwsh("install.ps1 PATH conflict remediation", () => {
+  function extractFn(name: string): string {
+    return `Invoke-Expression ([regex]::Match($src, "(?ms)^function ${name} \\{.*?^\\}").Value)`;
+  }
+
+  function evalPathFns(body: string): string {
+    const script = [
+      `$src = Get-Content -Raw ${JSON.stringify(INSTALL_PS1)}`,
+      'function Write-Info { param($m) Write-Host "> $m" }',
+      'function Write-Warn { param($m) Write-Host "! $m" }',
+      '$Package = "@kitsunekode/kunai"',
+      extractFn("Get-PathConflictRemedy"),
+      extractFn("Write-KunaiPathDiagnostic"),
+      body,
+    ].join("\n");
+    const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+    expect(result.stderr, result.stderr).not.toContain("ParserError");
+    return `${result.stdout}${result.stderr}`;
+  }
+
+  function remedyTable(): Record<string, string> {
+    const probe = [
+      "foreach ($e in @(",
+      '  "C:\\Users\\u\\.bun\\bin\\kunai.exe",',
+      '  "C:\\Users\\u\\AppData\\Roaming\\npm\\kunai.cmd",',
+      '  "C:\\Users\\u\\AppData\\Roaming\\nvm\\v22\\kunai.cmd",',
+      '  "C:\\Users\\u\\AppData\\Local\\fnm_multishells\\123_456\\kunai.cmd",',
+      '  "C:\\Users\\u\\AppData\\Local\\pnpm\\kunai.exe",',
+      '  "C:\\Users\\u\\.yarn\\bin\\kunai.cmd",',
+      '  "C:\\Users\\u\\scoop\\shims\\kunai.exe",',
+      '  "C:\\ProgramData\\chocolatey\\bin\\kunai.exe",',
+      '  "C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Packages\\kunai.exe",',
+      '  "C:\\tools\\kunai.exe")) {',
+      '  Write-Output "$e|$(Get-PathConflictRemedy $e)"',
+      "}",
+    ].join("\n");
+    return Object.fromEntries(
+      evalPathFns(probe)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.includes("|"))
+        .map((line) => {
+          const index = line.lastIndexOf("|");
+          return [line.slice(0, index), line.slice(index + 1)];
+        }),
+    );
+  }
+
+  test("each Windows package manager maps to its own removal command", () => {
+    const table = remedyTable();
+    expect(table["C:\\Users\\u\\.bun\\bin\\kunai.exe"]).toBe(
+      "bun remove --global @kitsunekode/kunai",
+    );
+    expect(table["C:\\Users\\u\\AppData\\Roaming\\npm\\kunai.cmd"]).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+    expect(table["C:\\Users\\u\\AppData\\Roaming\\nvm\\v22\\kunai.cmd"]).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+    expect(table["C:\\Users\\u\\AppData\\Local\\fnm_multishells\\123_456\\kunai.cmd"]).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+    expect(table["C:\\Users\\u\\AppData\\Local\\pnpm\\kunai.exe"]).toBe(
+      "pnpm remove --global @kitsunekode/kunai",
+    );
+    expect(table["C:\\Users\\u\\.yarn\\bin\\kunai.cmd"]).toBe(
+      "yarn global remove @kitsunekode/kunai",
+    );
+    expect(table["C:\\Users\\u\\scoop\\shims\\kunai.exe"]).toBe("scoop uninstall kunai");
+    expect(table["C:\\ProgramData\\chocolatey\\bin\\kunai.exe"]).toBe("choco uninstall kunai");
+    expect(table["C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Packages\\kunai.exe"]).toBe(
+      "winget uninstall kunai",
+    );
+  });
+
+  test("an unrecognised install still yields a line naming its path", () => {
+    expect(remedyTable()["C:\\tools\\kunai.exe"]).toBe("# remove or rename C:\\tools\\kunai.exe");
+  });
+
+  test("a conflict lists every competing install, not only the winner", () => {
+    const output = evalPathFns(
+      [
+        "$BinDir = 'C:\\Users\\u\\AppData\\Local\\kunai\\bin'",
+        "function Get-KunaiPathCandidates {",
+        "  return @(",
+        "    'C:\\Users\\u\\AppData\\Roaming\\npm\\kunai.cmd',",
+        "    'C:\\Users\\u\\.bun\\bin\\kunai.exe',",
+        "    'C:\\Users\\u\\AppData\\Local\\kunai\\bin\\kunai.exe'",
+        "  )",
+        "}",
+        "Write-KunaiPathDiagnostic 'C:\\Users\\u\\AppData\\Local\\kunai\\bin\\kunai.exe'",
+      ].join("\n"),
+    );
+    expect(output).toContain("Another kunai comes earlier on your PATH");
+    expect(output).toContain("C:\\Users\\u\\AppData\\Roaming\\npm\\kunai.cmd");
+    expect(output).toContain("C:\\Users\\u\\.bun\\bin\\kunai.exe");
+    expect(output).toContain("npm uninstall -g @kitsunekode/kunai");
+    expect(output).toContain("bun remove --global @kitsunekode/kunai");
+    expect(output).toContain("put C:\\Users\\u\\AppData\\Local\\kunai\\bin earlier in your PATH");
+    expect(output).toContain("Get-Command kunai -All");
+  });
+});
+
+/**
+ * Parity with install.sh: a payload on a console gets one \\r-updated line,
+ * and a failed transfer wipes it so the error is not printed under a 100% bar.
+ */
+describePwsh("install.ps1 download progress", () => {
+  function evalProgressFns(body: string): string {
+    const script = [
+      `$src = Get-Content -Raw ${JSON.stringify(INSTALL_PS1)}`,
+      'Invoke-Expression ([regex]::Match($src, "(?ms)^function Format-ByteSize \\{.*?^\\}").Value)',
+      'Invoke-Expression ([regex]::Match($src, "(?ms)^function Write-DownloadProgress \\{.*?^\\}").Value)',
+      'Invoke-Expression ([regex]::Match($src, "(?ms)^function Clear-DownloadProgress \\{.*?^\\}").Value)',
+      body,
+    ].join("\n");
+    const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+    expect(result.stderr, result.stderr).not.toContain("ParserError");
+    return `${result.stdout}${result.stderr}`;
+  }
+
+  test("a completed payload renders size, rate, bar and percent", () => {
+    const output = evalProgressFns(
+      "Write-DownloadProgress -Label 'kunai-windows-x64.zip' -Received 40894464 -Total 40894464 -Seconds 8; Write-Host ''",
+    );
+    expect(output).toContain("kunai-windows-x64.zip");
+    expect(output).toMatch(/MiB/);
+    expect(output).toContain("[####################]");
+    expect(output).toContain("100%");
+  });
+
+  test("byte sizes use a dot so a non-English host still matches install.sh", () => {
+    const output = evalProgressFns("Write-Output (Format-ByteSize 1048576)");
+    expect(output.trim()).toBe("1.0 MiB");
+  });
+
+  test("Invoke-BoundedDownload wipes a failed transfer instead of drawing 100%", () => {
+    const source = readFileSync(INSTALL_PS1, "utf8");
+    const fn = /^function Invoke-BoundedDownload \{[\s\S]*?^\}/m.exec(source)?.[0];
+    expect(fn, "could not extract Invoke-BoundedDownload").toBeTruthy();
+    expect(fn!).toContain("Clear-DownloadProgress");
+    expect(fn!).toContain("DownloadProgressMinBytes");
+    // Final frame only on a finished payload, matching install.sh after #322.
+    expect(fn!).toMatch(/Write-DownloadProgress[\s\S]*Write-DownloadProgress/);
   });
 });

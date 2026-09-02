@@ -86,8 +86,12 @@ async function main(): Promise<number> {
     // indefinitely with nothing reporting it. Running the directory picks up
     // every new postgres-*.test.ts automatically; the suites that need no
     // database are cheap and pass either way.
+    // One database, several files, write-once first_seen. File order is not
+    // a contract: if hardening pings n=1 on May before lifecycle pings n=1 on
+    // February, February's lifetime count drops the May rows. Disjoint ids
+    // are the isolation; serialising is so a leftover row stays deterministic.
     console.log("→ running postgres-backed suites");
-    return await run("bun", ["test", "test"], env);
+    return await run("bun", ["test", "test", "--max-concurrency", "1"], env);
   } finally {
     if (!external && !keep) {
       console.log("→ tearing down");

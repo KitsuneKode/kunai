@@ -329,6 +329,12 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
 
 - Spawns `pwsh -File install.ps1 -DryRun` (no downloads, no sandbox directories)
 - Localhost release fixtures cover empty assets and missing `SHA256SUMS` entries
+- PATH-conflict remediation is extracted from `Get-PathConflictRemedy` so Linux CI
+  covers bun/npm/pnpm/yarn/scoop/choco/winget mappings; the full installer PATH
+  diagnostic still runs on Windows
+- Download progress helpers (`Format-ByteSize`, `Write-DownloadProgress`) are
+  extracted the same way; `Invoke-BoundedDownload` is gated to wipe a failed
+  transfer instead of drawing 100%
 - Skipped when `pwsh` is not installed (same pattern as Docker tests); CI `installer-lint` / Windows jobs cover pwsh
 
 **Bash installer fixtures** (`apps/cli/test/integration/install-scripts.test.ts`):

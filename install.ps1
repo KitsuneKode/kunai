@@ -58,6 +58,10 @@ $DownloadArchiveMaxBytes = if ($env:KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES) { [long]$e
 $ExtractedBinaryMaxBytes = if ($env:KUNAI_EXTRACTED_BINARY_MAX_BYTES) { [long]$env:KUNAI_EXTRACTED_BINARY_MAX_BYTES } else { 134217728 }
 $DownloadChecksumMaxBytes = if ($env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES } else { 1048576 }
 $DownloadMaxAttempts = if ($env:KUNAI_DOWNLOAD_MAX_ATTEMPTS) { [int]$env:KUNAI_DOWNLOAD_MAX_ATTEMPTS } else { 3 }
+# Only the platform binary and its archive are worth a progress line; the two
+# checksum manifests finish before a bar could render. Mirrors
+# DOWNLOAD_PROGRESS_MIN_BYTES in install.sh.
+$DownloadProgressMinBytes = if ($env:KUNAI_DOWNLOAD_PROGRESS_MIN_BYTES) { [long]$env:KUNAI_DOWNLOAD_PROGRESS_MIN_BYTES } else { 1048576 }
 $DownloadRetryBaseMs = if ($env:KUNAI_DOWNLOAD_RETRY_BASE_MS) { [int]$env:KUNAI_DOWNLOAD_RETRY_BASE_MS } else { 1000 }
 $ActivationLockTimeoutMs = if ($env:KUNAI_ACTIVATION_LOCK_TIMEOUT_MS) { [int]$env:KUNAI_ACTIVATION_LOCK_TIMEOUT_MS } else { 10000 }
 $ActivationLockPollMs = if ($env:KUNAI_ACTIVATION_LOCK_POLL_MS) { [int]$env:KUNAI_ACTIVATION_LOCK_POLL_MS } else { 50 }
@@ -222,6 +226,63 @@ function Test-RetryableHttpStatus([int]$Status) {
   return ($Status -eq 408 -or $Status -eq 429 -or $Status -ge 500)
 }
 
+# Render a byte count the way a person reads it. Invariant culture so a German
+# host still prints 1.0 MiB rather than 1,0 MiB — the bash installer never
+# localises this line.
+function Format-ByteSize {
+  param([Parameter(Mandatory)][long]$Bytes)
+
+  $invariant = [System.Globalization.CultureInfo]::InvariantCulture
+  if ($Bytes -ge 1048576) {
+    return (([Math]::Round($Bytes / 1048576, 1)).ToString('0.0', $invariant) + ' MiB')
+  }
+  if ($Bytes -ge 1024) {
+    return (([Math]::Round($Bytes / 1024, 1)).ToString('0.0', $invariant) + ' KiB')
+  }
+  return "$Bytes B"
+}
+
+# One `r-updated line: name, size, rate, elapsed, bar, percent.
+#
+#   kunai-windows-x64.zip   38.9 MiB   10.5 MiB/s 00:08 [####################] 100%
+#
+# Parity with install.sh. Only ever drawn to a console — a redirected host keeps
+# the single quiet line the installer has always printed, rather than thousands
+# of carriage returns in a log.
+function Write-DownloadProgress {
+  param(
+    [Parameter(Mandatory)][string]$Label,
+    [Parameter(Mandatory)][long]$Received,
+    [long]$Total = 0,
+    [Parameter(Mandatory)][double]$Seconds
+  )
+
+  $rate = if ($Seconds -gt 0) { [long]($Received / $Seconds) } else { [long]0 }
+  $mins = [int][Math]::Floor($Seconds / 60)
+  $secs = [int]($Seconds % 60)
+  $name = if ($Label.Length -gt 22) { $Label.Substring(0, 22) } else { $Label.PadRight(22) }
+  $line = ' {0} {1,9} {2,9}/s {3:00}:{4:00}' -f $name, (Format-ByteSize $Received), (Format-ByteSize $rate), $mins, $secs
+
+  if ($Total -gt 0) {
+    $percent = [Math]::Min(100, [int](($Received * 100) / $Total))
+    $filled = [int](($percent * 20) / 100)
+    $bar = ('#' * $filled) + ('-' * (20 - $filled))
+    $line += (' [{0}] {1,3}%' -f $bar, $percent)
+  }
+
+  $width = 80
+  try { if ($Host.UI.RawUI.WindowSize.Width -gt 40) { $width = [Math]::Min(100, $Host.UI.RawUI.WindowSize.Width) } } catch { $width = 80 }
+  if ($line.Length -gt $width) { $line = $line.Substring(0, $width) }
+  [Console]::Write("`r" + $line.PadRight($width))
+}
+
+# Wipe the progress line so a following error starts on a clean row.
+function Clear-DownloadProgress {
+  $width = 80
+  try { if ($Host.UI.RawUI.WindowSize.Width -gt 40) { $width = [Math]::Min(100, $Host.UI.RawUI.WindowSize.Width) } } catch { $width = 80 }
+  [Console]::Write("`r" + (' ' * $width) + "`r")
+}
+
 function Invoke-BoundedDownload {
   param(
     [Parameter(Mandatory = $true)][string]$Url,
@@ -284,7 +345,18 @@ function Invoke-BoundedDownload {
       try {
         $buffer = New-Object byte[] 8192
         $total = [long]0
-        $lastProgress = [DateTime]::UtcNow
+        # The response already carries the size, so unlike the bash installer
+        # this needs no extra HEAD request to draw a bar.
+        $expected = [long]0
+        if ($null -ne $response.Content.Headers.ContentLength) {
+          $expected = [long]$response.Content.Headers.ContentLength
+        }
+        # A progress line is for a payload on a console. The two checksum
+        # manifests are a few hundred bytes and finish before a bar could
+        # render, and their cap is the natural boundary.
+        $showProgress = (-not [Console]::IsOutputRedirected) -and ($MaxBytes -gt $DownloadProgressMinBytes)
+        $progressStarted = [DateTime]::UtcNow
+        $lastDraw = [DateTime]::MinValue
         while ($true) {
           $readTask = $stream.ReadAsync($buffer, 0, $buffer.Length, $cts.Token)
           if (-not $readTask.Wait($DownloadStallMs, $cts.Token)) {
@@ -297,13 +369,22 @@ function Invoke-BoundedDownload {
             throw "Download for $Label exceeds max size ($total > $MaxBytes)."
           }
           $outStream.Write($buffer, 0, $read)
-          $lastProgress = [DateTime]::UtcNow
-          if (([DateTime]::UtcNow - $lastProgress).TotalMilliseconds -gt $DownloadStallMs) {
-            throw "Download stalled for $Label."
+          if ($showProgress -and ([DateTime]::UtcNow - $lastDraw).TotalMilliseconds -ge 200) {
+            Write-DownloadProgress -Label $Label -Received $total -Total $expected `
+              -Seconds ([DateTime]::UtcNow - $progressStarted).TotalSeconds
+            $lastDraw = [DateTime]::UtcNow
           }
         }
         if ($total -le 0) {
+          if ($showProgress) { Clear-DownloadProgress }
           throw "Downloaded asset $Label is empty; the release is incomplete."
+        }
+        if ($showProgress) {
+          # Only a transfer that finished earns a final frame; the failure
+          # paths below clear the line so the error starts on a clean row.
+          Write-DownloadProgress -Label $Label -Received $total -Total $expected `
+            -Seconds ([DateTime]::UtcNow - $progressStarted).TotalSeconds
+          [Console]::Write("`n")
         }
         return
       }
@@ -314,6 +395,7 @@ function Invoke-BoundedDownload {
       }
     }
     catch {
+      if (-not [Console]::IsOutputRedirected) { Clear-DownloadProgress }
       if (Test-Path -LiteralPath $DestinationPath) {
         Remove-Item -LiteralPath $DestinationPath -Force -ErrorAction SilentlyContinue
       }
@@ -1373,6 +1455,30 @@ function Get-KunaiPathCandidates {
   return $candidates.ToArray()
 }
 
+# Map one conflicting `kunai` on PATH to the command that removes it.
+#
+# This tested only the winner, and only against npm, so every other manager fell
+# through to the generic "move $BinDir ahead" line and never learned the one
+# command that removes the competing install. Parity with path_conflict_remedy
+# in install.sh. More-specific managers come first: a node version manager
+# shims whatever npm installed.
+function Get-PathConflictRemedy {
+  param([Parameter(Mandatory)][string]$Entry)
+
+  switch -regex ($Entry) {
+    '[\\/]\.bun[\\/]' { return "bun remove --global $Package" }
+    '[\\/]pnpm[\\/]' { return "pnpm remove --global $Package" }
+    '[\\/](\.yarn|yarn)[\\/]' { return "yarn global remove $Package" }
+    '[\\/]scoop[\\/]' { return 'scoop uninstall kunai' }
+    '[\\/]chocolatey[\\/]' { return 'choco uninstall kunai' }
+    '[\\/]WinGet[\\/]' { return 'winget uninstall kunai' }
+    'node_modules|[\\/]npm[\\/]|[\\/]nodejs[\\/]|fnm|[\\/]nvm[\\/]|[\\/]\.nvm[\\/]|volta|asdf' {
+      return "npm uninstall -g $Package"
+    }
+    default { return "# remove or rename $Entry" }
+  }
+}
+
 function Write-KunaiPathDiagnostic {
   param([string]$InstalledPath)
 
@@ -1386,14 +1492,29 @@ function Write-KunaiPathDiagnostic {
     if ($null -eq $winner) {
       Write-Warn 'No kunai executable is currently found on PATH.'
       Write-Info "Add $BinDir to PATH if you want the native install to win."
+      Write-Info 'Reopen your shell, then run: Get-Command kunai -All'
+      return
     }
-    elseif ($winner -match '[\\/]npm[\\/]kunai\.(com|exe|bat|cmd)$') {
-      Write-Warn 'A stale npm shim is earlier in PATH.'
-      Write-Info "After confirming it is unused: npm uninstall -g $Package"
+
+    # Every conflicting entry gets a line, not just the winner: removing the
+    # winner only promotes the next one, so a user told about one of three
+    # installs runs this three times.
+    $others = @($candidates | Where-Object {
+        -not [string]::Equals($_, $InstalledPath, [System.StringComparison]::OrdinalIgnoreCase)
+      })
+    Write-Warn 'Another kunai comes earlier on your PATH and will keep running instead:'
+    foreach ($entry in $others) { Write-Host "    $entry" }
+
+    $remedies = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($entry in $others) {
+      $remedy = Get-PathConflictRemedy $entry
+      if (-not $remedies.Contains($remedy)) { [void]$remedies.Add($remedy) }
     }
-    else {
-      Write-Info "Move $BinDir ahead of $winner in PATH if you want the native install to win."
-    }
+
+    Write-Host ''
+    Write-Host '  Fix it any of these ways:'
+    foreach ($remedy in $remedies) { Write-Host "    $remedy" }
+    Write-Host "    # ...or put $BinDir earlier in your PATH"
     Write-Info 'Reopen your shell, then run: Get-Command kunai -All'
   }
 }

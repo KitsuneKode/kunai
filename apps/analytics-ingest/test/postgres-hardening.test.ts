@@ -37,7 +37,7 @@ function ping(
 ) {
   return store.recordPing({
     day,
-    installHash: hashInstallId(HASH_SECRET, testInstallId(n)),
+    installHash: hashInstallId(HASH_SECRET, testInstallId(n, "hardening")),
     version: dimensions.version ?? "0.3.0",
     os: dimensions.os ?? "linux",
     arch: dimensions.arch ?? "x64",
