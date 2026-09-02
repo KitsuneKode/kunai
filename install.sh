@@ -371,6 +371,25 @@ probe_content_length() {
 	[[ "$length" =~ ^[0-9]+$ ]] && printf '%s' "$length"
 }
 
+# Sleep between progress frames.
+#
+# POSIX `sleep` takes an integer, and this script already refuses to trust a
+# fractional one — the download retry path routes it through python3 with a
+# whole-second fallback. Under `set -e` a `sleep 0.2` that errors would not just
+# spin, it would abort the installer mid-download, so the capability is probed
+# once and the fallback is a coarser frame rate rather than a failure.
+PROGRESS_TICK=""
+progress_tick() {
+	if [[ -z "$PROGRESS_TICK" ]]; then
+		if sleep 0.2 2>/dev/null; then
+			PROGRESS_TICK="0.2"
+			return 0
+		fi
+		PROGRESS_TICK="1"
+	fi
+	sleep "$PROGRESS_TICK" 2>/dev/null || sleep 1
+}
+
 # One \r-updated line: name, size, rate, elapsed, bar, percent.
 #
 #   kunai-linux-x64   85.9 MiB   10.5 MiB/s  00:08 [####################] 100%
@@ -470,7 +489,7 @@ bounded_download() {
 				[[ -f "$dest" ]] && got="$(wc -c <"$dest" 2>/dev/null | tr -d ' ')"
 				render_download_progress "$label" "${got:-0}" "$total_bytes" \
 					"$(($(date +%s) - progress_started))"
-				sleep 0.2
+				progress_tick
 			done
 			curl_rc=0
 			wait "$curl_pid" || curl_rc=$?
