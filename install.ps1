@@ -1830,6 +1830,13 @@ function Install-PortableCurlImpersonate {
     if (Test-Path -LiteralPath $destDir) {
       Remove-Item -LiteralPath $destDir -Recurse -Force -ErrorAction SilentlyContinue
     }
+    # Move-Item into an existing directory nests the extract folder inside it
+    # (`deps\curl-impersonate\extract`). Find-CurlImpersonateWrapperDir recurses,
+    # so that layout would still report success and a later run would treat the
+    # nest as `$existing`. Fail closed if a locked file kept $destDir around.
+    if (Test-Path -LiteralPath $destDir) {
+      throw "Could not replace the existing curl-impersonate directory at $destDir (a file there is in use)."
+    }
     New-Item -ItemType Directory -Force -Path (Split-Path $destDir) | Out-Null
     Move-Item -Force -Path $extractDir -Destination $destDir
     $wrapperDir = Find-CurlImpersonateWrapperDir $destDir

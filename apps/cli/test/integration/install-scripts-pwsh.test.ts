@@ -2352,6 +2352,9 @@ describePwsh("install.ps1 portable Windows helpers", () => {
           expect(
             existsSync(join(sandbox.dataDir, "deps", "curl-impersonate", "curl_chrome146.bat")),
           ).toBe(true);
+          expect(existsSync(join(sandbox.dataDir, "deps", "curl-impersonate", "extract"))).toBe(
+            false,
+          );
           expect(evidence.requests).toContain("/SHA2-256SUMS");
           expect(evidence.requests).toContain("/yt-dlp.exe");
           expect(evidence.requests).toContain(`/${archive.asset}`);
@@ -2436,6 +2439,98 @@ describePwsh("install.ps1 portable Windows helpers", () => {
       sandbox.cleanup();
     }
   });
+
+  test("replaces a leftover dest directory without nesting extract", async () => {
+    const sandbox = createInstallerSandbox("install-ps1-portable-helpers-replace");
+    const destDir = join(sandbox.dataDir, "deps", "curl-impersonate");
+    mkdirSync(destDir, { recursive: true });
+    writeFileSync(join(destDir, "leftover.txt"), "stale");
+    const ytdlpBody = "MZ-portable-yt-dlp-replace\n";
+    const ytdlpDigest = createHash("sha256").update(ytdlpBody).digest("hex");
+    const archive = createCurlImpersonateArchive(sandbox.root);
+    try {
+      await withReleaseFixture(
+        {
+          "/SHA2-256SUMS": { body: `${ytdlpDigest}  yt-dlp.exe\n` },
+          "/yt-dlp.exe": { body: ytdlpBody },
+          [`/${archive.asset}`]: { body: archive.bytes },
+        },
+        async (baseUrl) => {
+          const result = await runPortableHelperProbe(
+            {
+              ...isolatedHelperEnv(sandbox),
+              KUNAI_YTDLP_RELEASE_BASE: baseUrl,
+              KUNAI_CURL_IMPERSONATE_RELEASE_BASE: baseUrl,
+              KUNAI_CURL_IMPERSONATE_VERSION: "v2.2.1",
+              KUNAI_CURL_IMPERSONATE_SHA256: archive.sha256,
+            },
+            [
+              "$ytdlp = [bool](Install-PortableYtDlp)",
+              "$imp = [bool](Install-PortableCurlImpersonate)",
+              'Write-Output "RESULT ytdlp=$ytdlp impersonate=$imp"',
+            ].join("\n"),
+          );
+          expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+          expect(result.stdout).toContain("RESULT ytdlp=True impersonate=True");
+          expect(existsSync(join(destDir, "leftover.txt"))).toBe(false);
+          expect(existsSync(join(destDir, "extract"))).toBe(false);
+          expect(existsSync(join(destDir, "curl_chrome146.bat"))).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "does not nest extract when a locked dest directory cannot be replaced",
+    async () => {
+      const sandbox = createInstallerSandbox("install-ps1-portable-helpers-locked");
+      const destDir = join(sandbox.dataDir, "deps", "curl-impersonate");
+      mkdirSync(destDir, { recursive: true });
+      writeFileSync(join(destDir, "leftover.txt"), "locked");
+      chmodSync(destDir, 0o500);
+      const ytdlpBody = "MZ-portable-yt-dlp-locked\n";
+      const ytdlpDigest = createHash("sha256").update(ytdlpBody).digest("hex");
+      const archive = createCurlImpersonateArchive(sandbox.root);
+      try {
+        await withReleaseFixture(
+          {
+            "/SHA2-256SUMS": { body: `${ytdlpDigest}  yt-dlp.exe\n` },
+            "/yt-dlp.exe": { body: ytdlpBody },
+            [`/${archive.asset}`]: { body: archive.bytes },
+          },
+          async (baseUrl) => {
+            const result = await runPortableHelperProbe(
+              {
+                ...isolatedHelperEnv(sandbox),
+                KUNAI_YTDLP_RELEASE_BASE: baseUrl,
+                KUNAI_CURL_IMPERSONATE_RELEASE_BASE: baseUrl,
+                KUNAI_CURL_IMPERSONATE_VERSION: "v2.2.1",
+                KUNAI_CURL_IMPERSONATE_SHA256: archive.sha256,
+              },
+              [
+                "$ytdlp = [bool](Install-PortableYtDlp)",
+                "$imp = [bool](Install-PortableCurlImpersonate)",
+                'Write-Output "RESULT ytdlp=$ytdlp impersonate=$imp"',
+              ].join("\n"),
+            );
+            expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+            expect(result.stdout).toContain("RESULT ytdlp=True impersonate=False");
+            expect(result.stdout).toContain(
+              "Could not replace the existing curl-impersonate directory",
+            );
+            expect(existsSync(join(destDir, "extract"))).toBe(false);
+            expect(existsSync(join(destDir, "curl_chrome146.bat"))).toBe(false);
+            expect(existsSync(join(destDir, "leftover.txt"))).toBe(true);
+          },
+        );
+      } finally {
+        chmodSync(destDir, 0o755);
+        sandbox.cleanup();
+      }
+    },
+  );
 });
 
 /**

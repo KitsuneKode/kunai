@@ -193,11 +193,11 @@ Three rules hold for every package-manager prompt:
 Saying yes runs the command as shown, without `--noconfirm`, `-y`, or
 `--accept-package-agreements` — so your package manager still confirms too.
 
-On **Windows**, the native installer also drops two **portable** tools into
-Kunai's own data directory (`%LOCALAPPDATA%\kunai\deps\`) and puts those folders
-on your User PATH. These are GitHub release binaries, verified by checksum —
-not winget packages — so a one-line `irm … | iex` actually leaves YouTube and
-anime search working:
+On **Windows**, the native installer also drops **portable** `yt-dlp` and, on
+x64, curl-impersonate into Kunai's own data directory
+(`%LOCALAPPDATA%\kunai\deps\`) and puts those folders on your User PATH. These
+are GitHub release binaries, verified by checksum — not winget packages — so a
+one-line `irm … | iex` actually leaves YouTube and anime search working:
 
 - `yt-dlp` — YouTube playback and downloads. The winget query `yt-dlp` matches
   both `yt-dlp.yt-dlp` and a Microsoft Store listing, so the installer never
