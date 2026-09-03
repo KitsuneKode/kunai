@@ -341,7 +341,10 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
   leaves no dest and prints `winget install --id yt-dlp.yt-dlp -e`, and an
   already-present dest skips the download. Isolate PATH so a host yt-dlp cannot
   short-circuit the install. Override bases with `KUNAI_YTDLP_RELEASE_BASE` /
-  `KUNAI_CURL_IMPERSONATE_RELEASE_BASE`; never point the probe at a live profile
+  `KUNAI_CURL_IMPERSONATE_RELEASE_BASE`; never point the probe at a live profile.
+  Wrapper-dir identity is `realpath` of both sides: Windows GitHub runners
+  expand `RUNNER~1` to `runneradmin`, and macOS rewrites `/var` to `/private/var`
+  while pwsh keeps `/var`
 - Skipped when `pwsh` is not installed (same pattern as Docker tests); CI `installer-lint` / Windows jobs cover pwsh
 
 **Bash installer fixtures** (`apps/cli/test/integration/install-scripts.test.ts`):

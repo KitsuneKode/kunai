@@ -2284,10 +2284,16 @@ describePwsh("install.ps1 portable Windows helpers", () => {
         Write-Output (Find-CurlImpersonateWrapperDir ${JSON.stringify(dir)})
       `);
       expect(output).toContain("present");
-      // GitHub's Windows runner exposes the temp root as RUNNER~1 while
-      // Directory.FullName expands it to runneradmin. Both name the same
-      // folder, so compare against the canonical on-disk spelling.
-      expect(output).toContain(realpathSync.native(dir));
+      const reported = output
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0 && line !== "present");
+      expect(reported, output).toBeDefined();
+      // PowerShell's Directory.FullName and Node's mkdtemp do not share a
+      // spelling. Windows GitHub runners expand RUNNER~1 to runneradmin;
+      // macOS realpath rewrites /var to /private/var while pwsh keeps /var.
+      // Compare the resolved inode, not the string the helper printed.
+      expect(realpathSync.native(reported!)).toBe(realpathSync.native(dir));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
