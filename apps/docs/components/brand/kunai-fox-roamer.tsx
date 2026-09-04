@@ -3,10 +3,20 @@
 import { KunaiFox, type KunaiFoxPose } from "@/components/brand/kunai-fox";
 import {
   createRoamerState,
+  pointerIsOver,
   poseForPhase,
   stepRoamer,
   type RoamerPhase,
 } from "@/lib/roamer-machine";
+import {
+  browserRoamerStore,
+  readRoamerDismissed,
+  resolveRoamerUrlOverride,
+  setRoamerDismissed,
+  subscribeRoamerPreference,
+  urlWithoutRoamerParam,
+  writeRoamerDismissed,
+} from "@/lib/roamer-preference";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
@@ -24,10 +34,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *
  * ## Restraint
  *
- * She is dismissible and stays dismissed, she never covers anything (pointer
- * events pass straight through except on her), she only exists on a fine
- * pointer, and `prefers-reduced-motion` removes her entirely rather than
- * freezing her mid-page.
+ * She is dismissible and stays dismissed, she never takes a click the page
+ * wanted (events pass through the host always, and through her the moment she
+ * is standing in front of something clickable — see `updateYield`), she only
+ * exists on a fine pointer, and `prefers-reduced-motion` removes her entirely
+ * rather than freezing her mid-page.
+ *
+ * ## The way back
+ *
+ * Dismissing her is reversible three ways, because a one-click permanent
+ * decision taken by a button that sits over her ear is a decision people make
+ * by accident. An undo offers itself for {@link UNDO_MS} straight after the
+ * click, `?kanna=on` restores her from a link, and the toggle on her docs page
+ * shows the current state and flips it. All three go through
+ * `lib/roamer-preference.ts`; none of them are this component's own idea of
+ * where the flag lives.
  */
 
 /**
@@ -61,7 +82,38 @@ const CHATTER_WINDOW_MS: Partial<Record<RoamerPhase, readonly [number, number]>>
 /** How long to wait before re-checking a phase that has no line of its own. */
 const CHATTER_RECHECK_MS = 1200;
 const BUBBLE_MS = 4200;
-const STORAGE_KEY = "kunai.roamer.dismissed";
+/**
+ * How long the undo stays offered after she is dismissed.
+ *
+ * Long enough to notice a fox you did not mean to close and read one line about
+ * it, short enough that a deliberate dismissal is not nagged at. The reference
+ * is Gmail's undo-send window, which sits in the same range for the same
+ * reason. After it lapses the durable routes — `?kanna=on` and the docs-page
+ * toggle — are what is left, and both are documented.
+ */
+const UNDO_MS = 12000;
+
+/**
+ * What counts as something of the page's own that she must not stand in front of.
+ *
+ * Deliberately generous — a `[tabindex]` or a `[role]` is enough. Being wrong in
+ * this direction costs one un-poked fox; being wrong the other way costs a
+ * reader a link they clicked and did not get.
+ */
+const INTERACTIVE_SELECTOR = [
+  "a[href]",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "summary",
+  "label",
+  "[role='button']",
+  "[role='link']",
+  "[role='tab']",
+  "[role='menuitem']",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
 /**
  * What she says, by state.
@@ -128,6 +180,19 @@ function pickLine(pool: readonly string[], last: string | null): string {
   return choices[Math.floor(Math.random() * choices.length)] as string;
 }
 
+/**
+ * Is there something of the page's own under this point, behind her?
+ *
+ * `elementsFromPoint` returns the whole stack at a point, not just the top of
+ * it, so this can ask what a click would have reached had she not been standing
+ * there. Her own subtree is skipped: she is not what the reader was aiming at.
+ */
+function occludesInteractive(host: HTMLElement, x: number, y: number): boolean {
+  return document
+    .elementsFromPoint(x, y)
+    .some((element) => !host.contains(element) && element.closest(INTERACTIVE_SELECTOR) !== null);
+}
+
 export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -140,23 +205,62 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const stepMs = useRef(0);
   const lastFrame = useRef(0);
   const seeded = useRef(false);
+  /** Last value written to `data-yield`, so an unchanged frame writes nothing. */
+  const yielding = useRef(false);
 
   const [phase, setPhase] = useState<RoamerPhase>("sitting");
   const [facing, setFacing] = useState<"left" | "right">("right");
   const [line, setLine] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(false);
+  const [undoOffered, setUndoOffered] = useState(false);
 
-  // Resolved after mount so server and client agree on the first render, and so
-  // a dismissal from a previous visit is honoured before she is ever painted.
+  /**
+   * The single place that decides whether she may exist.
+   *
+   * Resolved after mount so server and client agree on the first render, and so
+   * a dismissal from a previous visit is honoured before she is ever painted.
+   *
+   * It stays subscribed rather than answering once, because every input can
+   * change while the page is open: a mouse gets plugged into a tablet, the OS
+   * reduced-motion switch is flipped, another tab restores her, or the toggle
+   * on her docs page does. The previous one-shot read meant reduced-motion
+   * turned on mid-visit left the stylesheet hiding her while this component
+   * went on running a `requestAnimationFrame` loop against an invisible fox
+   * forever.
+   */
   useEffect(() => {
-    if (!window.matchMedia("(pointer: fine)").matches) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    try {
-      if (window.localStorage.getItem(STORAGE_KEY) === "1") return;
-    } catch {
-      // A blocked or unavailable store is not a reason to refuse to render.
+    const finePointer = window.matchMedia("(pointer: fine)");
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const store = browserRoamerStore();
+
+    // A `?kanna=` link is an instruction, not a query: persist it first so it
+    // survives the navigation that follows, then let the normal gate read it
+    // back like any other stored preference. Once carried out it is spent, so
+    // it comes back out of the address bar rather than riding along into a
+    // copied link or into the URL web analytics records.
+    const override = resolveRoamerUrlOverride(window.location.search);
+    if (override) {
+      writeRoamerDismissed(store, override === "off");
+      const cleaned = urlWithoutRoamerParam(window.location.href);
+      // `replaceState` rather than a router call: this must not add a history
+      // entry that the back button walks into, and Next treats a direct
+      // `replaceState` as a shallow update it does not need to re-render for.
+      if (cleaned !== null) window.history.replaceState(null, "", cleaned);
     }
-    setEnabled(true);
+
+    const evaluate = () => {
+      setEnabled(finePointer.matches && !reducedMotion.matches && !readRoamerDismissed(store));
+    };
+
+    evaluate();
+    finePointer.addEventListener("change", evaluate);
+    reducedMotion.addEventListener("change", evaluate);
+    const unsubscribe = subscribeRoamerPreference(evaluate);
+    return () => {
+      finePointer.removeEventListener("change", evaluate);
+      reducedMotion.removeEventListener("change", evaluate);
+      unsubscribe();
+    };
   }, []);
 
   const say = useCallback((pool: readonly string[]) => {
@@ -174,6 +278,12 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   useEffect(() => {
     if (!enabled) return undefined;
 
+    // She is re-mounted whenever this effect runs, so the fresh host carries no
+    // `data-yield` yet. Without this the memo below could hold a stale `true`
+    // and skip the write that CSS is waiting for, leaving her permanently
+    // unclickable after a restore.
+    yielding.current = false;
+
     function onMove(event: PointerEvent) {
       pointer.current = { x: event.clientX, y: event.clientY };
       if (!seeded.current) {
@@ -183,6 +293,38 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         const at = { x: event.clientX - 90, y: event.clientY + 50 };
         machine.current = { ...createRoamerState(at), phase: "sitting" };
       }
+      updateYield(event.clientX, event.clientY);
+    }
+
+    /**
+     * Stand down whenever she is between the reader and the page.
+     *
+     * `SETTLE_PX` is 70 and she is 58 across, so at rest her edge is ~41px from
+     * the cursor: reaching for anything near where you stopped puts the pointer
+     * on her, and her click handler — the one that makes her talk — was eating
+     * the click. Her own doc comment claimed she never covers anything, which
+     * was true of the host and not of her body.
+     *
+     * The rule is what is *behind* her, not how the pointer got there. Dwell
+     * timing was the obvious alternative and is wrong: aiming at a link is
+     * itself a pause, so any dwell long enough to mean "I want the fox" is also
+     * long enough to be someone lining up a click on what she is covering.
+     *
+     * Both reads are guarded by the cheap geometric test, so the hit test only
+     * runs on the rare frames where the pointer is genuinely on her.
+     */
+    function updateYield(x: number, y: number) {
+      const host = hostRef.current;
+      if (!host) return;
+      const over = pointerIsOver(machine.current.pos, { x, y }, size);
+      const next = over && occludesInteractive(host, x, y);
+      // Only on a real change. This runs every frame, and an attribute write
+      // goes through the setter and dirties style whether or not the value
+      // differs — the same reason the gait clock above only touches
+      // `dataset.step` when the flag actually flips.
+      if (next === yielding.current) return;
+      yielding.current = next;
+      host.dataset.yield = next ? "true" : "false";
     }
 
     function tick(timestamp: number) {
@@ -230,6 +372,12 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         next.pos.y -
         size / 2
       ).toFixed(1)}px, 0)`;
+
+      // Also here, not only on pointer move: what is behind her changes without
+      // the pointer moving at all — the reader scrolls a link under a resting
+      // fox, or she walks over one. The geometric guard inside means this costs
+      // four comparisons on the frames where she is nowhere near the cursor.
+      if (pointer.current) updateYield(pointer.current.x, pointer.current.y);
     }
 
     window.addEventListener("pointermove", onMove, { passive: true });
@@ -274,16 +422,48 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     return () => window.clearTimeout(timer);
   }, [enabled, say]);
 
+  // Neither of these touches `enabled` directly. They move the preference and
+  // let the gate effect above re-derive from it, so there is exactly one
+  // expression in this file that decides whether she is on screen — including
+  // when the change arrives from another tab or her docs page.
   const dismiss = useCallback(() => {
-    setEnabled(false);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      // Dismissal still holds for this page view even if it cannot be stored.
-    }
+    setRoamerDismissed(true);
+    setUndoOffered(true);
   }, []);
 
-  if (!enabled) return null;
+  const restore = useCallback(() => {
+    setUndoOffered(false);
+    // Come back beside the pointer rather than resuming from wherever she was
+    // standing when she was dismissed, which by now is nowhere near it.
+    seeded.current = false;
+    lastFrame.current = 0;
+    machine.current = createRoamerState({ x: -400, y: -400 });
+    setLine(null);
+    setRoamerDismissed(false);
+  }, []);
+
+  // The undo withdraws itself. It is an offer, not a state you have to clear.
+  useEffect(() => {
+    if (!undoOffered) return undefined;
+    const timer = window.setTimeout(() => setUndoOffered(false), UNDO_MS);
+    return () => window.clearTimeout(timer);
+  }, [undoOffered]);
+
+  if (!enabled) {
+    // Not `null` any more: the moment after a dismissal is the one moment the
+    // way back is worth showing unprompted.
+    // `<output>` rather than a div with `role="status"`: same announcement,
+    // and unlike her it is not decorative — it is the only visible trace of a
+    // state change, so a screen reader should get it.
+    return undoOffered ? (
+      <output className="kunai-roamer-undo">
+        <span className="kunai-roamer-undo__text">Kanna is hidden.</span>
+        <button type="button" className="kunai-roamer-undo__action" onClick={restore}>
+          Bring her back
+        </button>
+      </output>
+    ) : null;
+  }
 
   const pose: KunaiFoxPose = poseForPhase(phase);
 
