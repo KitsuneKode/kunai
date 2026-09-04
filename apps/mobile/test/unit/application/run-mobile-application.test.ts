@@ -44,6 +44,38 @@ describe("runMobileApplication", () => {
     expect(fake.httpRequests).toEqual([]);
   });
 
+  test("names the rejected flag without echoing any value the tester typed", async () => {
+    for (const [argv, reason] of [
+      [["--host-proof", "--probe-url", PROBE_URL], "Missing --media-url"],
+      [
+        ["--host-proof", "--probe-url", "http://probe.example/status", "--media-url", MEDIA_URL],
+        "--probe-url must be an absolute credential-free HTTPS URL",
+      ],
+      [["--host-proof", "--probe-url"], "Missing value for --probe-url"],
+    ] as const) {
+      const fake = new FakeMobileEnvironment();
+
+      expect(await run(fake, argv)).toEqual({ code: 2, reason: "invalid-input" });
+      const rendered = fake.rendered.join("\n");
+      expect(rendered).toContain(reason);
+      expect(rendered).toContain("Usage: kunai-mobile");
+      for (const secret of ["probe-secret", "media-secret", "probe.example", "media.example"]) {
+        expect(rendered).not.toContain(secret);
+      }
+    }
+  });
+
+  test("offers exactly one cancel option at the choice prompt", async () => {
+    const fake = new FakeMobileEnvironment();
+    fake.choices.push({ kind: "cancelled" });
+
+    await run(fake);
+
+    expect(fake.chooseRequests).toEqual([
+      { prompt: "Continue?", choices: [{ value: "continue", label: "Run proof" }] },
+    ]);
+  });
+
   test("cancels before HTTP or player work and records one invocation", async () => {
     for (const choice of [
       { kind: "cancelled" } as const,
@@ -123,5 +155,14 @@ describe("runMobileApplication", () => {
     expect(await run(fake)).toEqual({ code: 1, reason: "failed" });
     expect(fake.committedStates).toEqual([]);
     expect(fake.rendered.join("\n")).toEqual("Mobile host proof failed.");
+  });
+
+  test("still cancels when a port answers with an explicit cancel value", async () => {
+    const fake = new FakeMobileEnvironment();
+    fake.choices.push({ kind: "selected", value: "cancel" });
+
+    expect(await run(fake)).toEqual({ code: 0, reason: "cancelled" });
+    expect(fake.httpRequests).toEqual([]);
+    expect(fake.playerRequests).toEqual([]);
   });
 });

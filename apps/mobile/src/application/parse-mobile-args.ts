@@ -39,7 +39,10 @@ export function parseMobileArgs(argv: readonly string[]): MobileCommand {
       index += 1;
       continue;
     }
-    throw new Error(`Unknown option: ${argument ?? ""}`);
+    // Never echo the rejected token. A mistyped flag name leaves the URL that
+    // followed it sitting in this position, and these messages are rendered to
+    // the host proof's terminal.
+    throw new Error("Unknown option");
   }
 
   if (!hostProof) throw new Error("Missing --host-proof");

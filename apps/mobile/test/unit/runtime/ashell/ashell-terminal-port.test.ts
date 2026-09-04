@@ -99,4 +99,59 @@ describe("a-Shell terminal port", () => {
     });
     expect(fixture.files.has(ANSWER_PATH)).toBe(true);
   });
+
+  test("clears a staged answer when the host closes", async () => {
+    const fixture = terminalFixture({ answers: [] });
+    fixture.files.set(ANSWER_PATH, "stale\n");
+
+    await fixture.port.close();
+
+    expect(fixture.files.has(ANSWER_PATH)).toBe(false);
+  });
+
+  test("writes one line per host call, with no doubled newline or padded prompt", async () => {
+    const lines: string[] = [];
+    const files = new Map<string, string>();
+    const jsc: AShellJsc = {
+      readFile: (path) => files.get(path) ?? "",
+      writeFile: (path, value) => {
+        files.set(path, value);
+        return 0;
+      },
+      isFile: (path) => files.has(path),
+      makeFolder: () => 0,
+      deleteFile: (path) => {
+        files.delete(path);
+        return 0;
+      },
+      move: () => 0,
+      system: () => 0,
+    };
+    const bridge: AShellCommandBridge = {
+      runFixedHelper: () => {
+        files.set(ANSWER_PATH, "1\n");
+        return 0;
+      },
+    };
+    // The real default writer is console.log, which appends its own newline.
+    const port = createAShellTerminalPort({
+      jsc,
+      bridge,
+      write: (value) => lines.push(`${value.replace(/\n$/u, "")}\n`),
+    });
+
+    await port.render(["Kunai mobile host proof", "No playback progress will be recorded."]);
+    await port.choose({
+      prompt: "Continue?",
+      choices: [{ value: "continue", label: "Run proof" }],
+    });
+
+    expect(lines).toEqual([
+      "Kunai mobile host proof\nNo playback progress will be recorded.\n",
+      "1. Run proof\n0. Cancel\n",
+      "Continue?\n",
+    ]);
+    expect(lines.join("")).not.toContain("\n\n");
+    expect(lines.at(-1)).not.toContain("? ");
+  });
 });

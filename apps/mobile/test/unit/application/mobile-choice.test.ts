@@ -33,6 +33,24 @@ describe("mobile choice policy", () => {
     });
   });
 
+  test("trims host padding before interpreting an answer", () => {
+    // a-Shell's `read -r` keeps whatever the soft keyboard produced.
+    for (const padded of [" 1", "1 ", "\t1", " 1 \t"]) {
+      expect(interpretMobileChoiceAnswer(request, padded)).toEqual({
+        kind: "selected",
+        value: "continue",
+      });
+    }
+    expect(interpretMobileChoiceAnswer(request, " cancel ")).toEqual({
+      kind: "selected",
+      value: "cancel",
+    });
+    for (const blank of ["   ", " 0 "]) {
+      expect(interpretMobileChoiceAnswer(request, blank)).toEqual({ kind: "cancelled" });
+    }
+    expect(interpretMobileChoiceAnswer(request, "0 1")).toEqual({ kind: "invalid" });
+  });
+
   test("classifies empty, zero, invalid, and unsafe numeric input", () => {
     expect(interpretMobileChoiceAnswer(request, undefined)).toEqual({ kind: "cancelled" });
     expect(interpretMobileChoiceAnswer(request, "")).toEqual({ kind: "cancelled" });

@@ -50,6 +50,23 @@ owns Bun, Termux, and Android intent mechanics.
 documented a-Shell JavaScriptCore host and fixed helper bridge. Neither app may
 import the other; both may depend on shared packages.
 
+The terminal port owns a host input handle, so it declares `close()` and
+[`apps/mobile/src/entry.ts`](../apps/mobile/src/entry.ts) calls it on every path
+out — success, cancellation, a rejected argument list, and composition failure
+alike. Android opens stdin on the first read rather than at construction, which
+keeps `--help` and `--version` off the handle entirely. This is not decorative:
+a reader left open holds the Bun event loop open, so the binary prints its
+output and then never exits under any terminal that keeps stdin open, which is
+every real one. `test/integration/android-entry-lifecycle.test.ts` runs the
+bundled entrypoint with stdin held open and fails if a path does not terminate.
+
+The choice formatter always appends its own `0. Cancel`, so callers list only
+the affirmative options. Answers are trimmed before interpretation, because
+a-Shell's `read -r` preserves whatever padding a soft keyboard produced. On
+a-Shell the only output primitive is `console.log`, which supplies its own
+newline; nothing can print a partial line, so the prompt is written without a
+trailing space instead of pretending input will land beside it.
+
 The build consumes only the one mobile entrypoint. It resolves the virtual
 runtime import to one composition, rejects native/desktop modules from the iOS
 graph, scans the emitted IIFE, executes it against a fake JavaScriptCore host,
@@ -226,8 +243,13 @@ without cookies or custom headers. Do not put either URL in evidence or logs.
 2. Create a new temporary directory under Termux's private temporary storage.
    Set `HOME` to that directory only for each proof command. Do not use
    `KUNAI_CONFIG_DIR` and do not point the preview at an existing Kunai profile.
-3. Run help and version from the absolute artifact path. Confirm the process is
-   interactive and the version matches the build metadata.
+3. Run help and version from the absolute artifact path. Confirm the version
+   matches the build metadata, and that each command **returns to the Termux
+   prompt on its own**. Do not pipe or redirect stdin for this step: an
+   interactive terminal keeps stdin open, which is exactly the condition a host
+   that never releases its input handle fails under. A command that prints and
+   then sits there is a failure, not a slow start; record `terminalInput` as
+   `failed`.
 4. Start the host proof in the foreground:
 
    ```sh
@@ -279,8 +301,10 @@ Alpine userland, or on-device package installation is part of this path.
    Copy the IIFE and four helpers into a new a-Shell-owned directory. Keep their
    filenames unchanged and mark the four extensionless shell helpers executable.
 2. Change into that directory and run `./kunai-mobile --help`. The launcher must
-   remain in the foreground and create state only in its local `.runtime`
-   directory.
+   remain in the foreground, return to the a-Shell prompt on its own, and create
+   state only in its local `.runtime` directory. Each rendered block must be one
+   line group with no blank line between the menu entries, and the menu must
+   offer exactly one cancel entry.
 3. Run the host proof:
 
    ```sh

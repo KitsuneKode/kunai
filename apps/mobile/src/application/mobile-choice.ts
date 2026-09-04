@@ -14,10 +14,14 @@ export function interpretMobileChoiceAnswer(
   request: MobileChoiceRequest,
   answer: string | undefined,
 ): MobileChoiceInterpretation {
-  if (answer === undefined || answer === "" || answer === "0") return { kind: "cancelled" };
+  // Soft keyboards on both hosts add stray spaces, and a-Shell's `read -r`
+  // preserves them verbatim, so an untrimmed answer rejects "1 " and leaves the
+  // tester in the retry loop with no way to tell what the host disliked.
+  const trimmed = answer?.trim();
+  if (trimmed === undefined || trimmed === "" || trimmed === "0") return { kind: "cancelled" };
 
-  const numeric = /^[1-9]\d*$/u.test(answer) ? Number(answer) : Number.NaN;
+  const numeric = /^[1-9]\d*$/u.test(trimmed) ? Number(trimmed) : Number.NaN;
   const numericChoice = Number.isSafeInteger(numeric) ? request.choices[numeric - 1] : undefined;
-  const choice = numericChoice ?? request.choices.find((candidate) => candidate.value === answer);
+  const choice = numericChoice ?? request.choices.find((candidate) => candidate.value === trimmed);
   return choice ? { kind: "selected", value: choice.value } : { kind: "invalid" };
 }
