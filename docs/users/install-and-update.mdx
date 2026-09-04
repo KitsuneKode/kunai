@@ -199,6 +199,10 @@ x64, curl-impersonate into Kunai's own data directory
 are GitHub release binaries, verified by checksum — not winget packages — so a
 one-line `irm … | iex` actually leaves YouTube and anime search working:
 
+Kunai records the verified digests beside helpers it manages. A later install
+rechecks those bytes and repairs missing, partial, or modified helper files
+instead of trusting a matching filename.
+
 - `yt-dlp` — YouTube playback and downloads. The winget query `yt-dlp` matches
   both `yt-dlp.yt-dlp` and a Microsoft Store listing, so the installer never
   runs that command; it fetches `yt-dlp.exe` (or `yt-dlp_arm64.exe`) instead.
@@ -207,6 +211,11 @@ one-line `irm … | iex` actually leaves YouTube and anime search working:
   no winget/scoop/choco package; the installer uses the same Windows archive CI
   pins. Windows ARM64 has no upstream build, so that host is pointed at the
   [releases page](https://github.com/lexiforest/curl-impersonate/releases).
+
+The Windows `curl` prompt is still offered alongside these. curl-impersonate
+clears Cloudflare for anime search; it does not give you an HTTP/2 `curl.exe`,
+which is a different binary that other playback paths spawn by name. The
+installer says so rather than skipping the prompt.
 
 `--skip-deps` skips the portable helpers and the package-manager prompt,
 including Windows `curl`.
