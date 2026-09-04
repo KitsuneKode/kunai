@@ -205,6 +205,8 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const stepMs = useRef(0);
   const lastFrame = useRef(0);
   const seeded = useRef(false);
+  /** Last value written to `data-yield`, so an unchanged frame writes nothing. */
+  const yielding = useRef(false);
 
   const [phase, setPhase] = useState<RoamerPhase>("sitting");
   const [facing, setFacing] = useState<"left" | "right">("right");
@@ -276,6 +278,12 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   useEffect(() => {
     if (!enabled) return undefined;
 
+    // She is re-mounted whenever this effect runs, so the fresh host carries no
+    // `data-yield` yet. Without this the memo below could hold a stale `true`
+    // and skip the write that CSS is waiting for, leaving her permanently
+    // unclickable after a restore.
+    yielding.current = false;
+
     function onMove(event: PointerEvent) {
       pointer.current = { x: event.clientX, y: event.clientY };
       if (!seeded.current) {
@@ -309,7 +317,14 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       const host = hostRef.current;
       if (!host) return;
       const over = pointerIsOver(machine.current.pos, { x, y }, size);
-      host.dataset.yield = over && occludesInteractive(host, x, y) ? "true" : "false";
+      const next = over && occludesInteractive(host, x, y);
+      // Only on a real change. This runs every frame, and an attribute write
+      // goes through the setter and dirties style whether or not the value
+      // differs — the same reason the gait clock above only touches
+      // `dataset.step` when the flag actually flips.
+      if (next === yielding.current) return;
+      yielding.current = next;
+      host.dataset.yield = next ? "true" : "false";
     }
 
     function tick(timestamp: number) {
