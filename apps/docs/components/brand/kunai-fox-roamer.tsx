@@ -14,6 +14,7 @@ import {
   resolveRoamerUrlOverride,
   setRoamerDismissed,
   subscribeRoamerPreference,
+  urlWithoutRoamerParam,
   writeRoamerDismissed,
 } from "@/lib/roamer-preference";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -232,9 +233,18 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
 
     // A `?kanna=` link is an instruction, not a query: persist it first so it
     // survives the navigation that follows, then let the normal gate read it
-    // back like any other stored preference.
+    // back like any other stored preference. Once carried out it is spent, so
+    // it comes back out of the address bar rather than riding along into a
+    // copied link or into the URL web analytics records.
     const override = resolveRoamerUrlOverride(window.location.search);
-    if (override) writeRoamerDismissed(store, override === "off");
+    if (override) {
+      writeRoamerDismissed(store, override === "off");
+      const cleaned = urlWithoutRoamerParam(window.location.href);
+      // `replaceState` rather than a router call: this must not add a history
+      // entry that the back button walks into, and Next treats a direct
+      // `replaceState` as a shallow update it does not need to re-render for.
+      if (cleaned !== null) window.history.replaceState(null, "", cleaned);
+    }
 
     const evaluate = () => {
       setEnabled(finePointer.matches && !reducedMotion.matches && !readRoamerDismissed(store));

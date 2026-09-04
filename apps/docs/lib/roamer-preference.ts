@@ -127,6 +127,25 @@ export function resolveRoamerUrlOverride(search: string): RoamerUrlOverride | nu
   return null;
 }
 
+/**
+ * The same URL with our parameter taken out, or `null` if it was not there.
+ *
+ * Returned rather than applied so this stays testable without a browser, and so
+ * the one caller that touches history does it in one obvious place.
+ *
+ * Worth doing because the parameter is an instruction that has already been
+ * carried out. Left in the address bar it rides along into a copied link — and
+ * a link that silently retires someone else's fox is a worse version of the bug
+ * this whole change is about — and into the page URL that web analytics
+ * records, which has no business knowing.
+ */
+export function urlWithoutRoamerParam(href: string): string | null {
+  const url = new URL(href);
+  if (!url.searchParams.has(ROAMER_URL_PARAM)) return null;
+  url.searchParams.delete(ROAMER_URL_PARAM);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 /** Write the preference and tell every listener in this tab about it. */
 export function setRoamerDismissed(dismissed: boolean): void {
   writeRoamerDismissed(browserRoamerStore(), dismissed);

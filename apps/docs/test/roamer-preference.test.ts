@@ -7,6 +7,7 @@ import {
   ROAMER_DISMISSED_KEY,
   setRoamerDismissed,
   subscribeRoamerPreference,
+  urlWithoutRoamerParam,
   writeRoamerDismissed,
   type RoamerStore,
 } from "../lib/roamer-preference";
@@ -166,5 +167,26 @@ describe("cross-surface notification", () => {
     expect(calls).toBe(2);
 
     unsubscribe();
+  });
+});
+
+describe("spending the ?kanna= parameter", () => {
+  test("takes only our parameter out, keeping the rest of the URL intact", () => {
+    expect(urlWithoutRoamerParam("https://x.dev/docs?kanna=on")).toBe("/docs");
+    expect(urlWithoutRoamerParam("https://x.dev/docs?a=1&kanna=on&b=2")).toBe("/docs?a=1&b=2");
+    expect(urlWithoutRoamerParam("https://x.dev/docs?kanna=off#poses")).toBe("/docs#poses");
+    expect(urlWithoutRoamerParam("https://x.dev/?kanna=on")).toBe("/");
+  });
+
+  test("is null when there is nothing to spend, so history is left alone", () => {
+    expect(urlWithoutRoamerParam("https://x.dev/docs")).toBeNull();
+    expect(urlWithoutRoamerParam("https://x.dev/docs?a=1")).toBeNull();
+  });
+
+  test("removes the parameter even when its value was not a legible instruction", () => {
+    // `?kanna=maybe` changes nothing, but leaving it in the bar would still let
+    // it ride into a copied link and look like it meant something.
+    expect(resolveRoamerUrlOverride("?kanna=maybe")).toBeNull();
+    expect(urlWithoutRoamerParam("https://x.dev/docs?kanna=maybe")).toBe("/docs");
   });
 });
