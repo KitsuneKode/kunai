@@ -2,27 +2,19 @@ import { join, resolve } from "node:path";
 
 const MOBILE_ROOT = resolve(import.meta.dir, "..");
 
-export type MobileTargetId = "android-arm64" | "android-x64" | "ios-ashell";
+export type MobileTargetId = "android-termux-node" | "ios-ashell";
 
 export type MobileTarget = {
   readonly id: MobileTargetId;
   readonly runtime: "android" | "ashell";
   readonly output: string;
-  readonly compileTarget?: "bun-linux-arm64-android" | "bun-linux-x64-android";
 };
 
 export const MOBILE_TARGETS: readonly MobileTarget[] = [
   {
-    id: "android-arm64",
+    id: "android-termux-node",
     runtime: "android",
-    output: "kunai-mobile-android-arm64",
-    compileTarget: "bun-linux-arm64-android",
-  },
-  {
-    id: "android-x64",
-    runtime: "android",
-    output: "kunai-mobile-android-x64",
-    compileTarget: "bun-linux-x64-android",
+    output: "android/kunai-mobile-android.mjs",
   },
   {
     id: "ios-ashell",
@@ -43,17 +35,37 @@ export type MobileArtifactMetadata = {
   readonly sha256: string;
 };
 
+export type MobileArtifactSetMetadata = {
+  readonly target: MobileTargetId;
+  readonly artifacts: readonly string[];
+  readonly sha256: string;
+};
+
 export type MobileBuildMetadata = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly version: string;
   readonly targets: readonly MobileTarget[];
   readonly artifacts: readonly MobileArtifactMetadata[];
+  readonly artifactSets: readonly MobileArtifactSetMetadata[];
 };
 
 const IOS_FORBIDDEN_INPUT_MARKERS = [
   "node:",
   "bun:",
   "/runtime/android/",
+  "/node_modules/ink/",
+  "/node_modules/react/",
+  "sqlite",
+  "/.archive/legacy/",
+  "/.reference/experiments/",
+  "/test/",
+  "/.plans/",
+] as const;
+
+const ANDROID_FORBIDDEN_INPUT_MARKERS = [
+  "bun:",
+  "/runtime/ashell/",
+  "/apps/cli/",
   "/node_modules/ink/",
   "/node_modules/react/",
   "sqlite",
@@ -86,6 +98,23 @@ export function findForbiddenIosInputs(metafile: MobileBuildMetafile): readonly 
       return IOS_FORBIDDEN_INPUT_MARKERS.some((marker) => comparable.includes(marker));
     })
     .sort();
+}
+
+export function findForbiddenAndroidInputs(metafile: MobileBuildMetafile): readonly string[] {
+  return Object.keys(metafile.inputs)
+    .map((path) => path.replaceAll("\\", "/"))
+    .filter((path) => {
+      const comparable = path.startsWith("/") ? path.toLowerCase() : `/${path.toLowerCase()}`;
+      return ANDROID_FORBIDDEN_INPUT_MARKERS.some((marker) => comparable.includes(marker));
+    })
+    .sort();
+}
+
+export function findForbiddenAndroidOutputTokens(source: string): readonly string[] {
+  const violations: string[] = [];
+  if (/\bBun\b/u.test(source)) violations.push("Bun");
+  if (source.includes("bun:")) violations.push("bun:");
+  return violations;
 }
 
 export function findForbiddenIosProcessUses(

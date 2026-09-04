@@ -44,6 +44,37 @@ describe("runMobileApplication", () => {
     expect(fake.httpRequests).toEqual([]);
   });
 
+  test("renders a fixed parser reason without echoing tester values", async () => {
+    for (const [argv, reason] of [
+      [["--host-proof", "--probe-url", PROBE_URL], "Missing --media-url"],
+      [
+        ["--host-proof", "--probe-url", "http://probe.example/status", "--media-url", MEDIA_URL],
+        "--probe-url must be an absolute credential-free HTTPS URL",
+      ],
+      [["--host-proof", "--probe-url"], "Missing value for --probe-url"],
+    ] as const) {
+      const fake = new FakeMobileEnvironment();
+
+      expect(await run(fake, argv)).toEqual({ code: 2, reason: "invalid-input" });
+      const rendered = fake.rendered.join("\n");
+      expect(rendered).toContain(reason);
+      for (const sensitive of ["probe-secret", "media-secret", "probe.example", "media.example"]) {
+        expect(rendered).not.toContain(sensitive);
+      }
+    }
+  });
+
+  test("offers exactly one cancel option", async () => {
+    const fake = new FakeMobileEnvironment();
+    fake.choices.push({ kind: "cancelled" });
+
+    await run(fake);
+
+    expect(fake.chooseRequests).toEqual([
+      { prompt: "Continue?", choices: [{ value: "continue", label: "Run proof" }] },
+    ]);
+  });
+
   test("cancels before HTTP or player work and records one invocation", async () => {
     for (const choice of [
       { kind: "cancelled" } as const,

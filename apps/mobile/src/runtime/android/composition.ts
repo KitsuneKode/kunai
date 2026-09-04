@@ -2,9 +2,9 @@ import { join } from "node:path";
 
 import type { MobileEnvironment } from "../../application/contracts";
 import { createAndroidPlayerPort } from "./android-player-port";
-import { createBunHttpPort } from "./bun-http-port";
-import { createBunStateStore } from "./bun-state-store";
-import { createBunTerminalPort } from "./bun-terminal-port";
+import { createNodeHttpPort } from "./node-http-port";
+import { createNodeStateStore } from "./node-state-store";
+import { createNodeTerminalPort } from "./node-terminal-port";
 
 declare const __KUNAI_MOBILE_VERSION__: string;
 
@@ -18,9 +18,9 @@ export function resolveAndroidStateRoot(
 
 export function createMobileEnvironment(): MobileEnvironment {
   return {
-    http: createBunHttpPort(),
-    state: createBunStateStore({ root: resolveAndroidStateRoot(process.env) }),
-    terminal: createBunTerminalPort(),
+    http: createNodeHttpPort(),
+    state: createNodeStateStore({ root: resolveAndroidStateRoot(process.env) }),
+    terminal: createNodeTerminalPort(),
     player: createAndroidPlayerPort(),
   };
 }

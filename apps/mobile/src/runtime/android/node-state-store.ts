@@ -1,4 +1,4 @@
-import { mkdir, rename, unlink } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { MobileStateStore } from "../../application/contracts";
@@ -21,13 +21,20 @@ async function removeIfPresent(path: string): Promise<void> {
 }
 
 export const defaultAndroidStateRuntime: AndroidStateRuntime = {
-  ensureDirectory: async (path) => mkdir(path, { recursive: true }).then(() => undefined),
+  ensureDirectory: async (path) => {
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    await chmod(path, 0o700);
+  },
   readText: async (path) => {
-    const file = Bun.file(path);
-    return (await file.exists()) ? file.text() : undefined;
+    try {
+      return await readFile(path, "utf8");
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+      throw error;
+    }
   },
   writeText: async (path, value) => {
-    await Bun.write(path, value);
+    await writeFile(path, value, { encoding: "utf8", mode: 0o600 });
   },
   remove: removeIfPresent,
   move: rename,
@@ -41,7 +48,7 @@ function parseStateJson(value: string): ReturnType<typeof decodeMobileState> {
   }
 }
 
-export function createBunStateStore(input: {
+export function createNodeStateStore(input: {
   readonly root: string;
   readonly runtime?: AndroidStateRuntime;
 }): MobileStateStore {

@@ -1,23 +1,57 @@
 import { describe, expect, test } from "bun:test";
 
+import type { MobileBuildMetadata } from "../../../scripts/build-contract";
 import {
   formatMobileDeviceEvidenceRow,
   mobileDeviceEvidencePassed,
   validateMobileDeviceEvidence,
+  validateMobileEvidenceMatrix,
   type MobileDeviceEvidence,
 } from "../../live/device-host-proof";
 
 const SHA256 = "a".repeat(64);
+const IOS_SHA256 = "b".repeat(64);
+
+const BUILD_METADATA: MobileBuildMetadata = {
+  schemaVersion: 2,
+  version: "0.3.0",
+  targets: [
+    {
+      id: "android-termux-node",
+      runtime: "android",
+      output: "android/kunai-mobile-android.mjs",
+    },
+    { id: "ios-ashell", runtime: "ashell", output: "ios/kunai-mobile-ios.js" },
+  ],
+  artifacts: [],
+  artifactSets: [
+    {
+      target: "android-termux-node",
+      artifacts: ["android/kunai-mobile-android.mjs"],
+      sha256: SHA256,
+    },
+    {
+      target: "ios-ashell",
+      artifacts: ["ios/kunai-mobile", "ios/kunai-mobile-ios.js"],
+      sha256: IOS_SHA256,
+    },
+  ],
+};
 
 function androidEvidence(overrides: Partial<MobileDeviceEvidence> = {}): MobileDeviceEvidence {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    kunaiVersion: "0.3.0",
     platform: "android",
     osVersion: "15",
     terminal: "termux",
+    terminalVersion: "0.119.0-beta.3",
     architecture: "arm64",
     player: "vlc",
-    artifactSha256: SHA256,
+    playerVersion: "3.7.0",
+    deviceClass: "physical",
+    artifactTarget: "android-termux-node",
+    artifactSetSha256: SHA256,
     terminalInput: "passed",
     http: "passed",
     stateRecovery: "passed",
@@ -29,6 +63,18 @@ function androidEvidence(overrides: Partial<MobileDeviceEvidence> = {}): MobileD
   };
 }
 
+function iosEvidence(overrides: Partial<MobileDeviceEvidence> = {}): MobileDeviceEvidence {
+  return androidEvidence({
+    platform: "ios",
+    osVersion: "19.6.2",
+    terminal: "a-shell-mini",
+    terminalVersion: "1.15.11",
+    artifactTarget: "ios-ashell",
+    artifactSetSha256: IOS_SHA256,
+    ...overrides,
+  });
+}
+
 describe("mobile physical-device evidence", () => {
   test("accepts the exact Android and iPhone physical-device shapes", () => {
     expect(validateMobileDeviceEvidence(androidEvidence())).toEqual(androidEvidence());
@@ -38,6 +84,7 @@ describe("mobile physical-device evidence", () => {
           platform: "ios",
           osVersion: "19.6.2",
           terminal: "a-shell-mini",
+          artifactTarget: "ios-ashell",
         }),
       ),
     ).toMatchObject({ platform: "ios", terminal: "a-shell-mini", architecture: "arm64" });
@@ -66,15 +113,15 @@ describe("mobile physical-device evidence", () => {
   });
 
   test("rejects future schemas, invalid hashes, invalid values, and unsupported host pairs", () => {
-    expect(() => validateMobileDeviceEvidence({ ...androidEvidence(), schemaVersion: 2 })).toThrow(
+    expect(() => validateMobileDeviceEvidence({ ...androidEvidence(), schemaVersion: 3 })).toThrow(
       "schemaVersion",
     );
     expect(() =>
-      validateMobileDeviceEvidence({ ...androidEvidence(), artifactSha256: "not-a-hash" }),
-    ).toThrow("artifactSha256");
+      validateMobileDeviceEvidence({ ...androidEvidence(), artifactSetSha256: "not-a-hash" }),
+    ).toThrow("artifactSetSha256");
     expect(() =>
-      validateMobileDeviceEvidence({ ...androidEvidence(), artifactSha256: "A".repeat(64) }),
-    ).toThrow("artifactSha256");
+      validateMobileDeviceEvidence({ ...androidEvidence(), artifactSetSha256: "A".repeat(64) }),
+    ).toThrow("artifactSetSha256");
     expect(() =>
       validateMobileDeviceEvidence({ ...androidEvidence(), terminalInput: "maybe" }),
     ).toThrow("terminalInput");
@@ -88,11 +135,15 @@ describe("mobile physical-device evidence", () => {
       validateMobileDeviceEvidence({ ...androidEvidence(), terminal: "a-shell-mini" }),
     ).toThrow("platform/terminal");
     expect(() =>
+      validateMobileDeviceEvidence({ ...androidEvidence(), deviceClass: "emulator" }),
+    ).toThrow("deviceClass");
+    expect(() =>
       validateMobileDeviceEvidence({
         ...androidEvidence(),
         platform: "ios",
         terminal: "a-shell-mini",
         architecture: "x64",
+        artifactTarget: "ios-ashell",
       }),
     ).toThrow("iOS physical evidence");
   });
@@ -105,11 +156,51 @@ describe("mobile physical-device evidence", () => {
     expect(mobileDeviceEvidencePassed(failed)).toBe(false);
 
     const row = formatMobileDeviceEvidenceRow(passed);
-    expect(row).toContain("android | 15 | termux | arm64 | vlc");
+    expect(row).toContain("android | 15 | termux 0.119.0-beta.3 | arm64 | vlc 3.7.0");
+    expect(row).toContain("target=android-termux-node");
     expect(row).toContain("playback=passed");
     expect(row).toContain(SHA256.slice(0, 12));
     expect(row).not.toContain(SHA256);
     expect(row).not.toContain("http://");
     expect(row).not.toContain("https://");
+  });
+
+  test("accepts exactly one passing physical ARM64 row per platform bound to metadata", () => {
+    expect(
+      validateMobileEvidenceMatrix(BUILD_METADATA, [iosEvidence(), androidEvidence()]),
+    ).toEqual([androidEvidence(), iosEvidence()]);
+  });
+
+  test("rejects incomplete, duplicate, failing, stale, and unbound qualification matrices", () => {
+    expect(() => validateMobileEvidenceMatrix(BUILD_METADATA, [androidEvidence()])).toThrow(
+      "exactly one Android and one iOS",
+    );
+    expect(() =>
+      validateMobileEvidenceMatrix(BUILD_METADATA, [androidEvidence(), androidEvidence()]),
+    ).toThrow("exactly one Android and one iOS");
+    expect(() =>
+      validateMobileEvidenceMatrix(BUILD_METADATA, [
+        androidEvidence({ playbackBegan: false }),
+        iosEvidence(),
+      ]),
+    ).toThrow("did not pass");
+    expect(() =>
+      validateMobileEvidenceMatrix(BUILD_METADATA, [
+        androidEvidence({ architecture: "x64" }),
+        iosEvidence(),
+      ]),
+    ).toThrow("physical Android ARM64");
+    expect(() =>
+      validateMobileEvidenceMatrix(BUILD_METADATA, [
+        androidEvidence({ kunaiVersion: "0.2.0" }),
+        iosEvidence(),
+      ]),
+    ).toThrow("Kunai version");
+    expect(() =>
+      validateMobileEvidenceMatrix(BUILD_METADATA, [
+        androidEvidence({ artifactSetSha256: "c".repeat(64) }),
+        iosEvidence(),
+      ]),
+    ).toThrow("artifact set");
   });
 });

@@ -39,7 +39,7 @@ export function parseMobileArgs(argv: readonly string[]): MobileCommand {
       index += 1;
       continue;
     }
-    throw new Error(`Unknown option: ${argument ?? ""}`);
+    throw new Error("Unknown option");
   }
 
   if (!hostProof) throw new Error("Missing --host-proof");

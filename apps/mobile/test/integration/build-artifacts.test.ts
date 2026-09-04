@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, statSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -23,19 +25,30 @@ function sha256(bytes: Uint8Array): string {
 
 describe("mobile build artifacts", () => {
   test("declares the exact target and artifact manifest", () => {
-    expect(BUILD_METADATA.schemaVersion).toBe(1);
+    expect(BUILD_METADATA.schemaVersion).toBe(2);
     expect(BUILD_METADATA.targets.map((target) => target.id)).toEqual(
       MOBILE_TARGETS.map((target) => target.id),
     );
     expect(BUILD_METADATA.artifacts.map((artifact) => artifact.path)).toEqual([
-      "kunai-mobile-android-arm64",
-      "kunai-mobile-android-x64",
+      "android/kunai-mobile-android.mjs",
       "ios/kunai-mobile",
       "ios/kunai-mobile-http",
       "ios/kunai-mobile-ios.js",
       "ios/kunai-mobile-open-vlc",
       "ios/kunai-mobile-read-line",
     ]);
+    expect(BUILD_METADATA.artifactSets.map((artifactSet) => artifactSet.target)).toEqual([
+      "android-termux-node",
+      "ios-ashell",
+    ]);
+    for (const artifactSet of BUILD_METADATA.artifactSets) {
+      const members = BUILD_METADATA.artifacts
+        .filter((artifact) => artifactSet.artifacts.includes(artifact.path))
+        .map((artifact) => [artifact.path, artifact.sha256] as const)
+        .sort(([left], [right]) => left.localeCompare(right));
+      expect(artifactSet.artifacts).toEqual(members.map(([path]) => path));
+      expect(artifactSet.sha256).toBe(sha256(Buffer.from(JSON.stringify(members))));
+    }
   });
 
   for (const artifact of BUILD_METADATA.artifacts) {
@@ -51,16 +64,140 @@ describe("mobile build artifacts", () => {
     });
   }
 
-  test("produces the requested little-endian 64-bit Android ELF machines", () => {
-    for (const [name, machine] of [
-      ["kunai-mobile-android-arm64", 183],
-      ["kunai-mobile-android-x64", 62],
-    ] as const) {
-      const bytes = readFileSync(join(DIST, name));
-      expect([...bytes.subarray(0, 4)]).toEqual([0x7f, 0x45, 0x4c, 0x46]);
-      expect(bytes[4]).toBe(2);
-      expect(bytes[5]).toBe(1);
-      expect(bytes.readUInt16LE(18)).toBe(machine);
+  test("produces an executable Node bundle without an embedded Bun runtime", () => {
+    const source = readFileSync(join(DIST, "android/kunai-mobile-android.mjs"), "utf8");
+    expect(source.startsWith("#!/usr/bin/env node\n")).toBe(true);
+    expect(source).not.toContain("Bun.");
+    expect(source).not.toContain("bun:");
+  });
+
+  test("runs help and version from the emitted artifact under Node", () => {
+    const artifact = join(DIST, "android/kunai-mobile-android.mjs");
+    const help = spawnSync("node", [artifact, "--help"], { encoding: "utf8" });
+    const version = spawnSync("node", [artifact, "--version"], { encoding: "utf8" });
+
+    expect(help.status).toBe(0);
+    expect(help.stderr).toBe("");
+    expect(help.stdout).toContain("Usage: kunai-mobile");
+    expect(version.status).toBe(0);
+    expect(version.stderr).toBe("");
+    expect(version.stdout.trim()).toBe(`Kunai mobile ${BUILD_METADATA.version}`);
+  });
+
+  test("rejects unsafe URLs in the emitted Node artifact before network or launcher work", () => {
+    const artifact = join(DIST, "android/kunai-mobile-android.mjs");
+    const rejectedUrl = "http://user:secret@media.example/video.m3u8#fragment";
+    const result = spawnSync(
+      "node",
+      [
+        artifact,
+        "--host-proof",
+        "--probe-url",
+        rejectedUrl,
+        "--media-url",
+        "https://media.example/video.m3u8",
+      ],
+      { encoding: "utf8" },
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Invalid mobile command.");
+    expect(`${result.stdout}${result.stderr}`).not.toContain(rejectedUrl);
+    expect(`${result.stdout}${result.stderr}`).not.toContain("secret");
+  });
+
+  test("handles SIGINT at the real Node prompt before any HTTP or player work", async () => {
+    const home = mkdtempSync(join(tmpdir(), "kunai-mobile-node-sigint-"));
+    const artifact = join(DIST, "android/kunai-mobile-android.mjs");
+    try {
+      const result = await new Promise<{
+        code: number | null;
+        signal: NodeJS.Signals | null;
+        stdout: string;
+        stderr: string;
+      }>((resolve, reject) => {
+        const child = spawn(
+          "node",
+          [
+            artifact,
+            "--host-proof",
+            "--probe-url",
+            "https://probe.example/status",
+            "--media-url",
+            "https://media.example/video.m3u8",
+          ],
+          { env: { ...process.env, HOME: home }, stdio: ["pipe", "pipe", "pipe"] },
+        );
+        let stdout = "";
+        let stderr = "";
+        let interrupted = false;
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => {
+          stdout += chunk;
+          if (!interrupted && stdout.includes("Continue? ")) {
+            interrupted = true;
+            child.kill("SIGINT");
+          }
+        });
+        child.stderr.on("data", (chunk: string) => {
+          stderr += chunk;
+        });
+        child.once("error", reject);
+        child.once("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
+      });
+
+      expect(result.code).toBe(0);
+      expect(result.signal).toBeNull();
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain("Continue? ");
+      expect(
+        JSON.parse(readFileSync(join(home, ".local/share/kunai-mobile/mobile-state.json"), "utf8")),
+      ).toEqual({ schemaVersion: 1, hostProofRuns: 1, lastResult: "cancelled" });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("exits after typed cancellation while the real Node stdin remains open", async () => {
+    const home = mkdtempSync(join(tmpdir(), "kunai-mobile-node-cancel-"));
+    const artifact = join(DIST, "android/kunai-mobile-android.mjs");
+    const child = spawn(
+      "node",
+      [
+        artifact,
+        "--host-proof",
+        "--probe-url",
+        "https://probe.invalid/status",
+        "--media-url",
+        "https://media.invalid/video.m3u8",
+      ],
+      { env: { ...process.env, HOME: home }, stdio: ["pipe", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      if (stdout.includes("Continue? ")) child.stdin.write(" 0 \n");
+    });
+
+    try {
+      await waitForMobileHostProof(
+        new Promise<void>((resolve, reject) => {
+          child.once("error", reject);
+          child.once("close", (code, signal) => {
+            if (code === 0 && signal === null) resolve();
+            else reject(new Error("Node cancellation did not exit cleanly"));
+          });
+        }),
+        "Node typed-cancellation lifecycle",
+      );
+      expect(stdout.match(/Cancel/gu)).toEqual(["Cancel"]);
+      expect(stdout).not.toContain("Invalid selection");
+    } finally {
+      child.kill("SIGKILL");
+      rmSync(home, { recursive: true, force: true });
     }
   });
 

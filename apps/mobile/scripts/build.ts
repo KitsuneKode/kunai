@@ -6,11 +6,14 @@ import { join, relative, resolve } from "node:path";
 import type { BunPlugin } from "bun";
 
 import {
+  findForbiddenAndroidInputs,
+  findForbiddenAndroidOutputTokens,
   findForbiddenIosInputs,
   findForbiddenIosOutputTokens,
   findForbiddenIosProcessUses,
   MOBILE_TARGETS,
   type MobileArtifactMetadata,
+  type MobileArtifactSetMetadata,
   type MobileBuildMetafile,
   type MobileBuildMetadata,
   type MobileTarget,
@@ -22,6 +25,7 @@ const MOBILE_ROOT = resolve(import.meta.dir, "..");
 const REPOSITORY_ROOT = resolve(MOBILE_ROOT, "../..");
 const ENTRYPOINT = join(MOBILE_ROOT, "src/entry.ts");
 const DIST = join(MOBILE_ROOT, "dist");
+const ANDROID_DIST = join(DIST, "android");
 const IOS_DIST = join(DIST, "ios");
 const ASHELL_SCRIPTS = join(MOBILE_ROOT, "scripts/ashell");
 const IOS_HELPERS = [
@@ -68,11 +72,11 @@ async function releaseVersion(): Promise<string> {
 }
 
 async function buildAndroid(target: MobileTarget, version: string): Promise<void> {
-  if (!target.compileTarget) throw new Error(`[mobile-build] ${target.id} has no compile target`);
   const outfile = join(DIST, target.output);
-  const buildOptions = {
+  const result = await Bun.build({
     entrypoints: [ENTRYPOINT],
-    target: "bun",
+    target: "node",
+    format: "esm",
     packages: "bundle",
     env: "disable",
     metafile: true,
@@ -80,16 +84,22 @@ async function buildAndroid(target: MobileTarget, version: string): Promise<void
     sourcemap: "none",
     define: { __KUNAI_MOBILE_VERSION__: JSON.stringify(version) },
     plugins: [mobileRuntimePlugin(resolveRuntimeModule(target.id))],
-    compile: {
-      target: target.compileTarget,
-      outfile,
-      autoloadBunfig: false,
-      autoloadDotenv: false,
-    },
-  } as unknown as NonNullable<Parameters<typeof Bun.build>[0]>;
-  const result = await Bun.build(buildOptions);
+    outdir: ANDROID_DIST,
+    naming: "kunai-mobile-android.mjs",
+    banner: "#!/usr/bin/env node",
+  });
   requireSuccessfulBuild(result, target.id);
-  requireMetafile(result, target.id);
+  const metafile = requireMetafile(result, target.id);
+  const forbiddenInputs = findForbiddenAndroidInputs(metafile);
+  if (forbiddenInputs.length > 0) {
+    throw new Error(`[mobile-build] forbidden Android inputs:\n${forbiddenInputs.join("\n")}`);
+  }
+  const forbiddenTokens = findForbiddenAndroidOutputTokens(await Bun.file(outfile).text());
+  if (forbiddenTokens.length > 0) {
+    throw new Error(
+      `[mobile-build] forbidden Android output tokens: ${forbiddenTokens.join(", ")}`,
+    );
+  }
   await chmod(outfile, 0o755);
 }
 
@@ -216,6 +226,26 @@ async function artifactMetadata(path: string): Promise<MobileArtifactMetadata> {
   };
 }
 
+function artifactSetMetadata(
+  target: MobileTarget,
+  artifacts: readonly MobileArtifactMetadata[],
+): MobileArtifactSetMetadata {
+  const members = artifacts
+    .filter((artifact) =>
+      target.runtime === "android"
+        ? artifact.path === target.output
+        : artifact.path.startsWith("ios/"),
+    )
+    .map((artifact) => [artifact.path, artifact.sha256] as const)
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (members.length === 0) throw new Error(`[mobile-build] ${target.id} has no artifacts`);
+  return {
+    target: target.id,
+    artifacts: members.map(([path]) => path),
+    sha256: new Bun.CryptoHasher("sha256").update(JSON.stringify(members)).digest("hex"),
+  };
+}
+
 async function writeMetadata(version: string): Promise<void> {
   const artifactPaths = [
     ...MOBILE_TARGETS.filter((target) => target.runtime === "android").map((target) =>
@@ -226,11 +256,13 @@ async function writeMetadata(version: string): Promise<void> {
       join(IOS_DIST, "kunai-mobile-ios.js"),
     ].sort(),
   ];
+  const artifacts = await Promise.all(artifactPaths.map(artifactMetadata));
   const metadata: MobileBuildMetadata = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     version,
     targets: MOBILE_TARGETS,
-    artifacts: await Promise.all(artifactPaths.map(artifactMetadata)),
+    artifacts,
+    artifactSets: MOBILE_TARGETS.map((target) => artifactSetMetadata(target, artifacts)),
   };
   await Bun.write(join(DIST, "mobile-build-meta.json"), `${JSON.stringify(metadata, null, 2)}\n`);
 }
@@ -238,6 +270,7 @@ async function writeMetadata(version: string): Promise<void> {
 async function main(): Promise<void> {
   const version = await releaseVersion();
   await rm(DIST, { recursive: true, force: true });
+  await mkdir(ANDROID_DIST, { recursive: true });
   await mkdir(IOS_DIST, { recursive: true });
   for (const target of MOBILE_TARGETS) {
     if (target.runtime === "android") await buildAndroid(target, version);

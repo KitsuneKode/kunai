@@ -14,10 +14,13 @@ export function interpretMobileChoiceAnswer(
   request: MobileChoiceRequest,
   answer: string | undefined,
 ): MobileChoiceInterpretation {
-  if (answer === undefined || answer === "" || answer === "0") return { kind: "cancelled" };
+  const trimmed = answer?.trim();
+  if (trimmed === undefined || trimmed === "" || trimmed === "0") {
+    return { kind: "cancelled" };
+  }
 
-  const numeric = /^[1-9]\d*$/u.test(answer) ? Number(answer) : Number.NaN;
+  const numeric = /^[1-9]\d*$/u.test(trimmed) ? Number(trimmed) : Number.NaN;
   const numericChoice = Number.isSafeInteger(numeric) ? request.choices[numeric - 1] : undefined;
-  const choice = numericChoice ?? request.choices.find((candidate) => candidate.value === answer);
+  const choice = numericChoice ?? request.choices.find((candidate) => candidate.value === trimmed);
   return choice ? { kind: "selected", value: choice.value } : { kind: "invalid" };
 }

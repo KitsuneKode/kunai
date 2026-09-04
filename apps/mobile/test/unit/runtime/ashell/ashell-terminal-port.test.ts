@@ -99,4 +99,34 @@ describe("a-Shell terminal port", () => {
     });
     expect(fixture.files.has(ANSWER_PATH)).toBe(true);
   });
+
+  test("clears a staged answer when the host closes", async () => {
+    const fixture = terminalFixture({});
+    fixture.files.set(ANSWER_PATH, "stale\n");
+
+    await fixture.port.close();
+
+    expect(fixture.files.has(ANSWER_PATH)).toBe(false);
+  });
+
+  test("writes no doubled newline or blank-padded prompt", async () => {
+    const fixture = terminalFixture({ answers: ["1"] });
+
+    await fixture.port.render([
+      "Kunai mobile host proof",
+      "No playback progress will be recorded.",
+    ]);
+    await fixture.port.choose({
+      prompt: "Continue?",
+      choices: [{ value: "continue", label: "Run proof" }],
+    });
+
+    expect(fixture.output).toEqual([
+      "Kunai mobile host proof\nNo playback progress will be recorded.\n",
+      "1. Run proof\n0. Cancel\n",
+      "Continue?",
+    ]);
+    expect(fixture.output.join("")).not.toContain("\n\n");
+    expect(fixture.output.at(-1)).not.toContain("? ");
+  });
 });

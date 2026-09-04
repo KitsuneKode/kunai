@@ -1,3 +1,7 @@
+import { spawn } from "node:child_process";
+import { accessSync, constants } from "node:fs";
+import { delimiter, join } from "node:path";
+
 import { resolveAndroidIntentPlan } from "@kunai/core";
 
 import type { MobilePlayerPort } from "../../application/contracts";
@@ -7,16 +11,40 @@ export interface AndroidPlayerRuntime {
   readonly spawn: (argv: readonly string[]) => Promise<{ readonly exitCode: number }>;
 }
 
+function findExecutable(command: string): string | undefined {
+  const candidates = (process.env.PATH ?? "")
+    .split(delimiter)
+    .filter(Boolean)
+    .map((directory) => join(directory, command));
+  if (command === "am") candidates.push("/system/bin/am");
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // Try the next fixed executable candidate.
+    }
+  }
+  return undefined;
+}
+
 export const defaultAndroidPlayerRuntime: AndroidPlayerRuntime = {
-  which: (command) => Bun.which(command) ?? undefined,
-  spawn: async (argv) => {
-    const child = Bun.spawn([...argv], {
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    return { exitCode: await child.exited };
-  },
+  which: findExecutable,
+  spawn: async (argv) =>
+    await new Promise((resolve, reject) => {
+      const [command, ...args] = argv;
+      if (!command) {
+        reject(new Error("missing Android launcher"));
+        return;
+      }
+      const child = spawn(command, args, {
+        shell: false,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      child.once("error", reject);
+      child.once("close", (code) => resolve({ exitCode: code ?? 1 }));
+    }),
 };
 
 export function createAndroidPlayerPort(

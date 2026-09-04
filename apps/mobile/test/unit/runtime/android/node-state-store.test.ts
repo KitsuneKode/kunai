@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
-  createBunStateStore,
+  createNodeStateStore,
   type AndroidStateRuntime,
-} from "../../../../src/runtime/android/bun-state-store";
+} from "../../../../src/runtime/android/node-state-store";
 
 function fakeRuntime(initial: Readonly<Record<string, string>> = {}): {
   readonly files: Map<string, string>;
@@ -38,10 +41,24 @@ function fakeRuntime(initial: Readonly<Record<string, string>> = {}): {
   return result;
 }
 
-describe("Bun Android state store", () => {
+describe("Node Android state store", () => {
+  test("creates private state directories and files with the concrete Node runtime", async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), "kunai-mobile-node-state-"));
+    const root = join(sandbox, "state");
+    try {
+      const store = createNodeStateStore({ root });
+      await store.commit({ schemaVersion: 1, hostProofRuns: 1, lastResult: "cancelled" });
+
+      expect((await stat(root)).mode & 0o777).toBe(0o700);
+      expect((await stat(join(root, "mobile-state.json"))).mode & 0o777).toBe(0o600);
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
   test("loads a default only when the state file is missing", async () => {
     const fake = fakeRuntime();
-    const store = createBunStateStore({ root: "/sandbox", runtime: fake.runtime });
+    const store = createNodeStateStore({ root: "/sandbox", runtime: fake.runtime });
 
     await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 0 });
     fake.files.set("/sandbox/mobile-state.json", "not json");
@@ -50,7 +67,7 @@ describe("Bun Android state store", () => {
 
   test("writes and validates a temporary file before atomic activation", async () => {
     const fake = fakeRuntime();
-    const store = createBunStateStore({ root: "/sandbox", runtime: fake.runtime });
+    const store = createNodeStateStore({ root: "/sandbox", runtime: fake.runtime });
 
     await store.commit({ schemaVersion: 1, hostProofRuns: 1, lastResult: "http-ok" });
 
@@ -71,7 +88,7 @@ describe("Bun Android state store", () => {
     const previous = JSON.stringify({ schemaVersion: 1, hostProofRuns: 4 });
     const fake = fakeRuntime({ [currentPath]: previous });
     fake.failMoveFrom = temporaryPath;
-    const store = createBunStateStore({ root: "/sandbox", runtime: fake.runtime });
+    const store = createNodeStateStore({ root: "/sandbox", runtime: fake.runtime });
 
     await expect(
       store.commit({ schemaVersion: 1, hostProofRuns: 5, lastResult: "failed" }),
@@ -87,7 +104,7 @@ describe("Bun Android state store", () => {
     const previous = JSON.stringify({ schemaVersion: 1, hostProofRuns: 7 });
     const staged = JSON.stringify({ schemaVersion: 1, hostProofRuns: 8 });
     const fake = fakeRuntime({ [previousPath]: previous, [temporaryPath]: staged });
-    const store = createBunStateStore({ root: "/sandbox", runtime: fake.runtime });
+    const store = createNodeStateStore({ root: "/sandbox", runtime: fake.runtime });
 
     await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 7 });
     expect(fake.files.get(currentPath)).toBe(previous);
@@ -100,7 +117,7 @@ describe("Bun Android state store", () => {
     const temporaryPath = `${currentPath}.tmp`;
     const staged = JSON.stringify({ schemaVersion: 1, hostProofRuns: 1 });
     const fake = fakeRuntime({ [temporaryPath]: staged });
-    const store = createBunStateStore({ root: "/sandbox", runtime: fake.runtime });
+    const store = createNodeStateStore({ root: "/sandbox", runtime: fake.runtime });
 
     await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 1 });
     expect(fake.files.get(currentPath)).toBe(staged);

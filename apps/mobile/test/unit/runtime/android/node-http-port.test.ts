@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { createBunHttpPort } from "../../../../src/runtime/android/bun-http-port";
+import { createNodeHttpPort } from "../../../../src/runtime/android/node-http-port";
 
-describe("Bun Android HTTP port", () => {
+describe("Node Android HTTP port", () => {
   test("uses the requested deadline and reports bounded response bytes", async () => {
     const deadlines: number[] = [];
     let cancelled = false;
-    const port = createBunHttpPort({
+    const port = createNodeHttpPort({
       fetch: async () => new Response("hello", { status: 200 }),
       scheduleTimeout: (_callback, milliseconds) => {
         deadlines.push(milliseconds);
@@ -30,7 +30,7 @@ describe("Bun Android HTTP port", () => {
   });
 
   test("fails before returning an oversized response", async () => {
-    const port = createBunHttpPort({
+    const port = createNodeHttpPort({
       fetch: async () => new Response("x".repeat(65_537), { status: 200 }),
     });
 
@@ -44,10 +44,35 @@ describe("Bun Android HTTP port", () => {
     ).rejects.toThrow("response too large");
   });
 
+  test("cancels a declared-oversized response body before rejecting", async () => {
+    let bodyCancelled = false;
+    const port = createNodeHttpPort({
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            cancel() {
+              bodyCancelled = true;
+            },
+          }),
+          { status: 200, headers: { "content-length": "65537" } },
+        ),
+    });
+
+    await expect(
+      port.request({
+        method: "GET",
+        url: "https://probe.example/status",
+        timeoutMs: 8_000,
+        maxBytes: 65_536,
+      }),
+    ).rejects.toThrow("response too large");
+    expect(bodyCancelled).toBe(true);
+  });
+
   test("follows at most three HTTPS redirects manually", async () => {
     const requested: string[] = [];
     let cancelledBodies = 0;
-    const port = createBunHttpPort({
+    const port = createNodeHttpPort({
       fetch: async (url, init) => {
         requested.push(String(url));
         expect(init?.redirect).toBe("manual");
@@ -79,7 +104,7 @@ describe("Bun Android HTTP port", () => {
 
   test("cancels a redirect body before rejecting a missing location", async () => {
     let redirectBodyCancelled = false;
-    const port = createBunHttpPort({
+    const port = createNodeHttpPort({
       fetch: async () =>
         new Response(
           new ReadableStream({
@@ -103,7 +128,7 @@ describe("Bun Android HTTP port", () => {
   });
 
   test("rejects plaintext initial URLs and HTTPS downgrade redirects", async () => {
-    const port = createBunHttpPort({
+    const port = createNodeHttpPort({
       fetch: async () =>
         new Response(null, {
           status: 302,
@@ -125,7 +150,7 @@ describe("Bun Android HTTP port", () => {
       "https://redirect.example/a\tb",
     ]) {
       let requests = 0;
-      const port = createBunHttpPort({
+      const port = createNodeHttpPort({
         fetch: async () => {
           requests += 1;
           return new Response(null, { status: 302, headers: { location } });
@@ -147,7 +172,7 @@ describe("Bun Android HTTP port", () => {
   test("cancels a redirect response body before following the next hop", async () => {
     let redirectBodyCancelled = false;
     let requests = 0;
-    const port = createBunHttpPort({
+    const port = createNodeHttpPort({
       fetch: async () => {
         requests += 1;
         if (requests === 2) return new Response(null, { status: 204 });
