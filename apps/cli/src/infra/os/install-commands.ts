@@ -100,7 +100,9 @@ export const YT_DLP_INSTALL: PlatformInstall = {
   fedora: "sudo dnf install yt-dlp",
   suse: "sudo zypper install yt-dlp",
   darwin: "brew install yt-dlp",
-  win32: "winget install yt-dlp",
+  // `winget install yt-dlp` matches both yt-dlp.yt-dlp and a Microsoft Store
+  // listing, so the command doctor used to print cannot actually be run.
+  win32: "winget install --id yt-dlp.yt-dlp -e",
   fallback: "pip install yt-dlp",
 };
 

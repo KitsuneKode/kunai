@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { isHlsPlaylistUrl, resolveHlsSegmentUrl } from "@kunai/core";
 import type { Server } from "bun";
 
+import { curlSupportsHttp2 } from "../os/curl-features";
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
 
 /**
@@ -171,11 +172,19 @@ export async function fetchHlsRelayUpstream(
   throw new Error("upstream redirected too many times");
 }
 
+/**
+ * `http2` is passed in rather than assumed because the Windows Schannel
+ * `curl.exe` rejects `--http2` instead of ignoring it (see
+ * `infra/os/curl-features`). This used to hardcode the flag, which made the
+ * relay fail outright on a stock Windows host — the one platform where the
+ * relay's CDNs are most likely to need it.
+ */
 export function buildHlsRelayCurlArgs(
   url: string,
   referer: string,
   origin: string,
   budget: HlsRelayCurlBudget,
+  http2: boolean,
 ): string[] {
   return [
     // curl only honors --disable/-q as a config-file guard when it is the first
@@ -184,7 +193,7 @@ export function buildHlsRelayCurlArgs(
     "-q",
     "-sS",
     "--no-location",
-    "--http2",
+    ...(http2 ? ["--http2"] : []),
     "-A",
     AGENT,
     "-H",
@@ -210,7 +219,10 @@ function curlFetchOnce(
 ): Promise<HlsRelayCurlResponse> {
   assertRelayUpstreamUrl(url);
   return new Promise((resolve, reject) => {
-    const proc = spawn("curl", buildHlsRelayCurlArgs(url, referer, origin, budget));
+    const proc = spawn(
+      "curl",
+      buildHlsRelayCurlArgs(url, referer, origin, budget, curlSupportsHttp2()),
+    );
     let chunks: Buffer[] = [];
     let totalBytes = 0;
     let stderr = "";

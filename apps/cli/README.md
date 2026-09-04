@@ -35,7 +35,10 @@ brew install mpv yt-dlp
 
 Windows: `winget install --id mpv-player.mpv-CI.MSVC -e` installs the real
 `mpv.exe` Kunai probes and controls; `mpv.net` provides `mpvnet.exe` and is not a
-substitute. Install YouTube support with `winget install yt-dlp`. Add `ffprobe`
+substitute. The native installer drops a portable `yt-dlp` and (on x64)
+curl-impersonate into `%LOCALAPPDATA%\kunai\deps\`. If you are installing those
+yourself, use `winget install --id yt-dlp.yt-dlp -e` — the un-qualified
+query matches a Microsoft Store listing as well and fails. Add `ffprobe`
 (from FFmpeg) only if you want post-download validation.
 
 ## Install

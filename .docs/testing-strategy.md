@@ -335,6 +335,25 @@ Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
 - Download progress helpers (`Format-ByteSize`, `Write-DownloadProgress`) are
   extracted the same way; `Invoke-BoundedDownload` is gated to wipe a failed
   transfer instead of drawing 100%
+- Portable Windows helpers (`Install-PortableYtDlp`, `Install-PortableCurlImpersonate`)
+  are extracted and run against a localhost fixture: verified `yt-dlp.exe` plus a
+  `curl_chrome*.bat` tarball land under `KUNAI_DATA_DIR/deps`, a checksum mismatch
+  leaves no dest and prints `winget install --id yt-dlp.yt-dlp -e`, and an
+  already-present dest skips the download. Isolate PATH so a host yt-dlp cannot
+  short-circuit the install. Override bases with `KUNAI_YTDLP_RELEASE_BASE` /
+  `KUNAI_CURL_IMPERSONATE_RELEASE_BASE`; never point the probe at a live profile.
+  Wrapper-dir identity is `realpath` of both sides: Windows GitHub runners
+  expand `RUNNER~1` to `runneradmin`, and macOS rewrites `/var` to `/private/var`
+  while pwsh keeps `/var`
+- Helper functions and the script-scope constants they close over are both
+  extracted from `install.ps1`, never restated in the probe — a re-implemented
+  copy tests itself and lets the shipped one drift
+- The HTTP/2 curl prompt has its own case driving `Install-OptionalDeps` with
+  curl-impersonate reporting installed: an impersonate build must not suppress
+  it, because the HLS relay spawns the literal `curl`
+- The locked-dest case skips as uid 0 as well as on Windows. `chmod 0o500` is
+  not a lock for root, so the fail-closed branch would never be reached and the
+  test would pass without asserting anything
 - Skipped when `pwsh` is not installed (same pattern as Docker tests); CI `installer-lint` / Windows jobs cover pwsh
 
 **Bash installer fixtures** (`apps/cli/test/integration/install-scripts.test.ts`):

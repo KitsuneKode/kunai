@@ -227,11 +227,17 @@ brew install yt-dlp curl ffmpeg
 ```bash
 # Required
 winget install --id mpv-player.mpv-CI.MSVC -e
-# Optional: downloads and post-download integrity checks
-winget install yt-dlp Gyan.FFmpeg
+# Optional if you skipped the installer helpers: YouTube + post-download checks
+winget install --id yt-dlp.yt-dlp -e
+winget install --id Gyan.FFmpeg -e
 ```
 
-> `ffprobe` ships inside the FFmpeg package on every platform.
+> The native Windows installer (`irm … | iex`) already drops a portable
+> `yt-dlp` into `%LOCALAPPDATA%\kunai\deps\yt-dlp`. `winget install yt-dlp`
+> without `--id` matches both the real package and a Microsoft Store listing
+> and will refuse to run. `ffprobe` ships inside the FFmpeg package on every
+> platform. Anime search on Windows needs curl-impersonate, which has no
+> winget package — the installer places that too.
 
 </details>
 

@@ -22,6 +22,9 @@ inputs:
     description: curl-impersonate release tag to install
     required: false
     default: v2.2.1
+    # Keep the Windows x64 digest in install.ps1 ($CurlImpersonateWin64Digest)
+    # in lockstep when bumping this pin — the native installer drops the same
+    # archive into %LOCALAPPDATA%\kunai\deps\curl-impersonate.
 
 runs:
   using: composite
