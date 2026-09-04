@@ -38,14 +38,29 @@ const hostileStore: RoamerStore = {
 };
 
 /** Bun has no `window`; these tests install one only for the cases that need it. */
-function installWindow(localStorage: RoamerStore | (() => never)): void {
+function installWindow(descriptor: PropertyDescriptor): void {
   const target = new EventTarget();
-  if (typeof localStorage === "function") {
-    Object.defineProperty(target, "localStorage", { get: localStorage });
-  } else {
-    Object.defineProperty(target, "localStorage", { value: localStorage });
-  }
+  Object.defineProperty(target, "localStorage", descriptor);
   Object.defineProperty(globalThis, "window", { value: target, configurable: true });
+}
+
+/** A window whose `localStorage` is readable and holds `store`. */
+function withStorage(store: RoamerStore): void {
+  installWindow({ value: store });
+}
+
+/**
+ * A window whose `localStorage` throws on the property *access*, not the read.
+ *
+ * That is the real Firefox shape with cookies blocked for the origin, and it is
+ * why `browserRoamerStore` cannot be a plain expression at the call site.
+ */
+function withBlockedStorage(): void {
+  installWindow({
+    get: () => {
+      throw new Error("blocked");
+    },
+  });
 }
 
 // `window` is process-global, so leaving one installed would leak into every
@@ -105,9 +120,7 @@ describe("browserRoamerStore", () => {
   });
 
   test("falls back to memory when the browser refuses storage, so a click still holds", () => {
-    installWindow(() => {
-      throw new Error("blocked");
-    });
+    withBlockedStorage();
 
     const store = browserRoamerStore();
     expect(store).not.toBeNull();
@@ -120,7 +133,7 @@ describe("browserRoamerStore", () => {
 
   test("uses the real store when there is one", () => {
     const real = fakeStore();
-    installWindow(real);
+    withStorage(real);
 
     writeRoamerDismissed(browserRoamerStore(), true);
     expect(real.cells.get(ROAMER_DISMISSED_KEY)).toBe("1");
@@ -129,7 +142,7 @@ describe("browserRoamerStore", () => {
 
 describe("cross-surface notification", () => {
   test("setting the preference tells listeners in this tab", () => {
-    installWindow(fakeStore());
+    withStorage(fakeStore());
     let calls = 0;
     const unsubscribe = subscribeRoamerPreference(() => (calls += 1));
 
@@ -147,10 +160,14 @@ describe("cross-surface notification", () => {
   });
 
   test("another tab's write counts, and only for our key", () => {
-    installWindow(fakeStore());
+    withStorage(fakeStore());
     let calls = 0;
     const unsubscribe = subscribeRoamerPreference(() => (calls += 1));
     const emit = (key: string | null) => {
+      // SAFETY: Bun has no `StorageEvent` constructor, so the one field the
+      // subscriber reads is attached to a plain `Event`. The assertion widens
+      // the local type to match what is actually being dispatched; the
+      // listener under test only ever touches `.key`.
       const event = new Event("storage") as Event & { key: string | null };
       event.key = key;
       globalThis.window.dispatchEvent(event);
