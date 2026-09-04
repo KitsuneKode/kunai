@@ -1,5 +1,44 @@
 # @kitsunekode/kunai
 
+## 0.3.1
+
+### Patch Changes
+
+- [#320](https://github.com/KitsuneKode/kunai/pull/320) [`46c1e8d`](https://github.com/KitsuneKode/kunai/commit/46c1e8dd189f23b0f33c84edd56a865908cb8dac) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Point the published `homepage` at the docs site rather than the README anchor.
+
+  npm renders `homepage` as the "Homepage" link on the package page, and it is the
+  first thing someone evaluating the CLI clicks. `github.com/KitsuneKode/kunai#readme`
+  sends them to a raw README anchor; `kunai.kitsunekode.in` is the site that actually
+  documents installing and using Kunai. The field propagates from the CLI manifest into
+  all eight platform packages, so every published package now points at the same place.
+
+- [#335](https://github.com/KitsuneKode/kunai/pull/335) [`6bb5944`](https://github.com/KitsuneKode/kunai/commit/6bb5944a3f1d3da8b084c418c9f03e796eef5b7c) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Stop the HLS relay from failing on Windows when curl has no HTTP/2.
+
+  The relay spawns the literal `curl` from PATH and always passed `--http2`.
+  Windows' System32 build is Schannel with no nghttp2, and it rejects that flag
+  outright (`the installed libcurl version doesn't support this`, exit 4) rather
+  than negotiating down — so every stream routed through the relay failed on a
+  stock Windows host. The relay now probes the binary's feature list and drops
+  the flag instead of the request.
+
+  The installer also stopped hiding the `cURL.cURL` upgrade prompt when
+  curl-impersonate is installed. They are different binaries solving different
+  problems: curl-impersonate clears Cloudflare for the provider clients, and
+  carries no `curl.exe` of its own.
+
+- [#333](https://github.com/KitsuneKode/kunai/pull/333) [`23b67a4`](https://github.com/KitsuneKode/kunai/commit/23b67a4da2c0abb3aab595dec466e255e96fb49d) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Install yt-dlp and curl-impersonate on Windows one-click installs.
+
+  `irm … | iex` left YouTube and anime search broken: `winget install yt-dlp`
+  matches both the real package and a Microsoft Store listing, so it refuses to
+  run, and curl-impersonate has no Windows package at all. The native installer
+  now drops verified GitHub binaries into `%LOCALAPPDATA%\kunai\deps\` and puts
+  those folders on the User PATH. `mpv` is still a package-manager prompt.
+  `-SkipDeps` skips the helpers. Doctor's copy-paste fallback is
+  `winget install --id yt-dlp.yt-dlp -e`.
+
+  Managed helper digests are retained and rechecked on later installs, so an
+  interrupted or modified helper is repaired instead of accepted by filename.
+
 ## 0.3.0
 
 ### Minor Changes
@@ -452,6 +491,7 @@
 - [#58](https://github.com/KitsuneKode/kunai/pull/58) [`4186bf2`](https://github.com/KitsuneKode/kunai/commit/4186bf2d85a6b3e70cba03ad404b62a9b588af2f) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Make anonymous usage analytics explicit opt-in. Setup now defaults to off, Settings can enable or disable collection, and disabling removes the local install identifier.
 
   ### Privacy
+
   - Do not send analytics before consent, without an interactive terminal, or when DNT or CI blocks it.
   - Send only to the Kunai-owned HTTPS endpoint after explicit consent; reject insecure overrides
     without falling back to the default.
