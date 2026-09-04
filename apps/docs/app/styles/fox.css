@@ -256,8 +256,8 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 /* ── Roamer ─────────────────────────────────────────────────────────────────
    Kanna loose on the page. Fixed and transformed every frame from a ref, so
    moving her never queues a React render. Pointer events pass straight through
-   the host — only she and her dismiss button are clickable, because a companion
-   that eats clicks is a companion people close. */
+   the host — only she, and her dismiss button while it is actually visible, are
+   clickable, because a companion that eats clicks is a companion people close. */
 
 .kunai-roamer {
   position: fixed;
@@ -272,7 +272,6 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 
 .kunai-roamer__fox,
 .kunai-roamer__close {
-  pointer-events: auto;
   border: none;
   background: none;
   padding: 0;
@@ -282,6 +281,7 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 }
 
 .kunai-roamer__fox {
+  pointer-events: auto;
   display: block;
   transform-origin: 50% 90%;
   transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -369,11 +369,81 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   font-size: 0.72rem;
   line-height: 1;
   opacity: 0;
+  /* Invisible has to mean unclickable. `opacity: 0` on its own left a live
+     18px target parked over her ear — on the very silhouette you are invited
+     to click to talk to her — so a slightly high click retired her for good,
+     having shown nothing that could be aimed at or avoided. */
+  pointer-events: none;
   transition: opacity 160ms ease-out;
 }
 
 .kunai-roamer:hover .kunai-roamer__close {
   opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── Undo ───────────────────────────────────────────────────────────────────
+   The way back, offered for twelve seconds after she is dismissed. Bottom
+   *left* on purpose: the right-hand corners are where this site's own chrome
+   and Vercel's preview toolbar sit, and an undo that is covered is not one. */
+
+.kunai-roamer-undo {
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+  /* Her band — above the page, below the sticky nav (40) and search (50). */
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.55rem 0.5rem 0.85rem;
+  border: 1px solid var(--kunai-line);
+  border-radius: 999px;
+  background: var(--kunai-surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+  font-size: 0.8rem;
+  line-height: 1;
+  /* Its own keyframes rather than the bubble's: `kunai-roamer-say` carries the
+     `translateX(-50%)` that centres a bubble over her head, and `both` would
+     leave that offset applied to a corner-anchored pill. */
+  animation: kunai-roamer-undo-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes kunai-roamer-undo-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.kunai-roamer-undo__text {
+  color: var(--color-fd-muted-foreground);
+}
+
+.kunai-roamer-undo__action {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  background: color-mix(in oklab, var(--kunai-accent) 14%, transparent);
+  color: var(--kunai-accent);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease-out,
+    border-color 160ms ease-out;
+}
+
+.kunai-roamer-undo__action:hover {
+  background: color-mix(in oklab, var(--kunai-accent) 24%, transparent);
+}
+
+.kunai-roamer-undo__action:focus-visible {
+  outline: none;
+  border-color: var(--kunai-accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -381,5 +451,12 @@ a:focus-visible .kunai-nav-title .kunai-fox {
      is only a floor in case the query flips after mount. */
   .kunai-roamer {
     display: none;
+  }
+
+  /* The undo is a control, not decoration, so it stays — only its entrance
+     goes. Hiding it here would be the same one-way door in a new place: the
+     query can flip on between the dismissing click and this rule. */
+  .kunai-roamer-undo {
+    animation: none;
   }
 }

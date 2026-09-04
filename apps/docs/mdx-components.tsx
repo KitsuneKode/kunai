@@ -1,3 +1,4 @@
+import { KannaRoamerToggle } from "@/components/brand/kanna-roamer-toggle";
 import { KunaiFoxBanner } from "@/components/brand/kunai-fox-banner";
 import { DocSectionCards } from "@/components/docs/doc-section-cards";
 import { DocsHubIntro } from "@/components/docs/docs-hub-intro";
@@ -39,6 +40,7 @@ const kunaiMdxComponents = {
   ScopeCallout,
   ProviderDocSection,
   KunaiFoxBanner,
+  KannaRoamerToggle,
 } satisfies MDXComponents;
 
 export function useMDXComponents(components?: MDXComponents): MDXComponents {

@@ -7,6 +7,14 @@ import {
   stepRoamer,
   type RoamerPhase,
 } from "@/lib/roamer-machine";
+import {
+  browserRoamerStore,
+  readRoamerDismissed,
+  resolveRoamerUrlOverride,
+  setRoamerDismissed,
+  subscribeRoamerPreference,
+  writeRoamerDismissed,
+} from "@/lib/roamer-preference";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
@@ -28,6 +36,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * events pass straight through except on her), she only exists on a fine
  * pointer, and `prefers-reduced-motion` removes her entirely rather than
  * freezing her mid-page.
+ *
+ * ## The way back
+ *
+ * Dismissing her is reversible three ways, because a one-click permanent
+ * decision taken by a button that sits over her ear is a decision people make
+ * by accident. An undo offers itself for {@link UNDO_MS} straight after the
+ * click, `?kanna=on` restores her from a link, and the toggle on her docs page
+ * shows the current state and flips it. All three go through
+ * `lib/roamer-preference.ts`; none of them are this component's own idea of
+ * where the flag lives.
  */
 
 /**
@@ -61,7 +79,16 @@ const CHATTER_WINDOW_MS: Partial<Record<RoamerPhase, readonly [number, number]>>
 /** How long to wait before re-checking a phase that has no line of its own. */
 const CHATTER_RECHECK_MS = 1200;
 const BUBBLE_MS = 4200;
-const STORAGE_KEY = "kunai.roamer.dismissed";
+/**
+ * How long the undo stays offered after she is dismissed.
+ *
+ * Long enough to notice a fox you did not mean to close and read one line about
+ * it, short enough that a deliberate dismissal is not nagged at. The reference
+ * is Gmail's undo-send window, which sits in the same range for the same
+ * reason. After it lapses the durable routes — `?kanna=on` and the docs-page
+ * toggle — are what is left, and both are documented.
+ */
+const UNDO_MS = 12000;
 
 /**
  * What she says, by state.
@@ -145,18 +172,46 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const [facing, setFacing] = useState<"left" | "right">("right");
   const [line, setLine] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(false);
+  const [undoOffered, setUndoOffered] = useState(false);
 
-  // Resolved after mount so server and client agree on the first render, and so
-  // a dismissal from a previous visit is honoured before she is ever painted.
+  /**
+   * The single place that decides whether she may exist.
+   *
+   * Resolved after mount so server and client agree on the first render, and so
+   * a dismissal from a previous visit is honoured before she is ever painted.
+   *
+   * It stays subscribed rather than answering once, because every input can
+   * change while the page is open: a mouse gets plugged into a tablet, the OS
+   * reduced-motion switch is flipped, another tab restores her, or the toggle
+   * on her docs page does. The previous one-shot read meant reduced-motion
+   * turned on mid-visit left the stylesheet hiding her while this component
+   * went on running a `requestAnimationFrame` loop against an invisible fox
+   * forever.
+   */
   useEffect(() => {
-    if (!window.matchMedia("(pointer: fine)").matches) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    try {
-      if (window.localStorage.getItem(STORAGE_KEY) === "1") return;
-    } catch {
-      // A blocked or unavailable store is not a reason to refuse to render.
-    }
-    setEnabled(true);
+    const finePointer = window.matchMedia("(pointer: fine)");
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const store = browserRoamerStore();
+
+    // A `?kanna=` link is an instruction, not a query: persist it first so it
+    // survives the navigation that follows, then let the normal gate read it
+    // back like any other stored preference.
+    const override = resolveRoamerUrlOverride(window.location.search);
+    if (override) writeRoamerDismissed(store, override === "off");
+
+    const evaluate = () => {
+      setEnabled(finePointer.matches && !reducedMotion.matches && !readRoamerDismissed(store));
+    };
+
+    evaluate();
+    finePointer.addEventListener("change", evaluate);
+    reducedMotion.addEventListener("change", evaluate);
+    const unsubscribe = subscribeRoamerPreference(evaluate);
+    return () => {
+      finePointer.removeEventListener("change", evaluate);
+      reducedMotion.removeEventListener("change", evaluate);
+      unsubscribe();
+    };
   }, []);
 
   const say = useCallback((pool: readonly string[]) => {
@@ -274,16 +329,48 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     return () => window.clearTimeout(timer);
   }, [enabled, say]);
 
+  // Neither of these touches `enabled` directly. They move the preference and
+  // let the gate effect above re-derive from it, so there is exactly one
+  // expression in this file that decides whether she is on screen — including
+  // when the change arrives from another tab or her docs page.
   const dismiss = useCallback(() => {
-    setEnabled(false);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      // Dismissal still holds for this page view even if it cannot be stored.
-    }
+    setRoamerDismissed(true);
+    setUndoOffered(true);
   }, []);
 
-  if (!enabled) return null;
+  const restore = useCallback(() => {
+    setUndoOffered(false);
+    // Come back beside the pointer rather than resuming from wherever she was
+    // standing when she was dismissed, which by now is nowhere near it.
+    seeded.current = false;
+    lastFrame.current = 0;
+    machine.current = createRoamerState({ x: -400, y: -400 });
+    setLine(null);
+    setRoamerDismissed(false);
+  }, []);
+
+  // The undo withdraws itself. It is an offer, not a state you have to clear.
+  useEffect(() => {
+    if (!undoOffered) return undefined;
+    const timer = window.setTimeout(() => setUndoOffered(false), UNDO_MS);
+    return () => window.clearTimeout(timer);
+  }, [undoOffered]);
+
+  if (!enabled) {
+    // Not `null` any more: the moment after a dismissal is the one moment the
+    // way back is worth showing unprompted.
+    // `<output>` rather than a div with `role="status"`: same announcement,
+    // and unlike her it is not decorative — it is the only visible trace of a
+    // state change, so a screen reader should get it.
+    return undoOffered ? (
+      <output className="kunai-roamer-undo">
+        <span className="kunai-roamer-undo__text">Kanna is hidden.</span>
+        <button type="button" className="kunai-roamer-undo__action" onClick={restore}>
+          Bring her back
+        </button>
+      </output>
+    ) : null;
+  }
 
   const pose: KunaiFoxPose = poseForPhase(phase);
 
