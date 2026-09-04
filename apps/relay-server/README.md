@@ -46,6 +46,15 @@ builder crashes ("Cannot read properties of undefined (reading 'readFile')")
 on the repo-wide TypeScript 7 catalog entry. Keep the pin; `packages/relay`
 code is kept TS 5.9-compatible for the same reason (no `Headers.entries()`).
 
+**A stale relay is worse than no relay.** A deployment that predates a provider
+answers its RPC route `unknown-provider` (HTTP 404). Until 2026-09 the client
+read that 404 as the _upstream's_ verdict, so a relay deployed before `anidb`
+existed made AniDB report "no such anime", cache the miss, and take the whole
+anime lane down — while the same id resolved fine over curl. The client now
+marks every relayed response with `X-Kunai-Relay-Hop` and refuses to treat a
+status that arrived over a hop as the upstream's own answer, but the relay still
+has to be redeployed to actually serve the provider.
+
 **Redeploy after provider manifest host changes.** The RPC registry is built
 from `@kunai/providers` manifests at deploy time. If a provider's
 `relayProfile.upstreamHosts` changes upstream, an already-deployed relay keeps

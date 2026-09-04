@@ -590,6 +590,18 @@ export interface RelayRpcRequest {
   readonly body?: string;
 }
 
+/**
+ * Set by the client-side relay fetch port on any response that came back
+ * through a relay hop, overwriting whatever the upstream sent under this name.
+ *
+ * A relay answers some requests itself (`unknown-provider` from a deployment
+ * that predates a provider, `unauthorized`, `host-not-allowed`) and proxies the
+ * rest. The client cannot tell those apart from the wire, so an adapter must
+ * not read an HTTP status that arrived over a relay hop as the upstream's own
+ * verdict.
+ */
+export const RELAY_HOP_HEADER = "X-Kunai-Relay-Hop";
+
 export interface RelayRpcErrorBody {
   readonly error: {
     readonly code: RelayErrorCode;
