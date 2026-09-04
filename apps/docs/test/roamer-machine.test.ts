@@ -6,6 +6,7 @@ import {
   isResting,
   NOTICE_MS,
   NOTICE_PX,
+  pointerIsOver,
   poseForPhase,
   SETTLE_PX,
   SIT_TO_IDLE_MS,
@@ -157,5 +158,45 @@ describe("rest", () => {
     expect(isResting("asleep")).toBe(true);
     expect(isResting("walking")).toBe(false);
     expect(isResting("noticing")).toBe(false);
+  });
+});
+
+describe("standing in the way", () => {
+  const size = 58;
+  const half = size / 2;
+  const at = { x: 400, y: 300 };
+
+  test("the pointer is over her inside her box and not outside it", () => {
+    expect(pointerIsOver(at, at, size)).toBe(true);
+    expect(pointerIsOver(at, { x: at.x + half - 1, y: at.y }, size)).toBe(true);
+    expect(pointerIsOver(at, { x: at.x + half + 1, y: at.y }, size)).toBe(false);
+    expect(pointerIsOver(at, { x: at.x, y: at.y - half - 1 }, size)).toBe(false);
+  });
+
+  test("her corners count, because the browser hit-tests a box", () => {
+    // Treating her as a circle would call this "not over her" while the browser
+    // was already handing her the click.
+    const corner = { x: at.x + half - 1, y: at.y + half - 1 };
+    expect(Math.hypot(corner.x - at.x, corner.y - at.y)).toBeGreaterThan(half);
+    expect(pointerIsOver(at, corner, size)).toBe(true);
+  });
+
+  test("no pointer is not over her", () => {
+    expect(pointerIsOver(at, null, size)).toBe(false);
+  });
+
+  test("where she settles is close enough to reach back onto her", () => {
+    // This is the arithmetic that made the bug real rather than theoretical:
+    // she stops SETTLE_PX away, so her near edge is well inside the distance a
+    // reader moves to click something near where they stopped.
+    const edgeGap = SETTLE_PX - half;
+    expect(edgeGap).toBeGreaterThan(0);
+    expect(edgeGap).toBeLessThan(NOTICE_PX);
+
+    // A pointer that has drifted onto her has not moved far enough for her to
+    // notice and walk away, so she stays there — she cannot solve this by moving.
+    const settled = { ...createRoamerState(at), phase: "sitting" as const };
+    expect(pointerIsOver(at, at, size)).toBe(true);
+    expect(run(settled, 500, at).phase).toBe("sitting");
   });
 });

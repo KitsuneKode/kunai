@@ -257,7 +257,8 @@ a:focus-visible .kunai-nav-title .kunai-fox {
    Kanna loose on the page. Fixed and transformed every frame from a ref, so
    moving her never queues a React render. Pointer events pass straight through
    the host — only she, and her dismiss button while it is actually visible, are
-   clickable, because a companion that eats clicks is a companion people close. */
+   clickable, and both stand down while she is in front of something the page
+   wanted clicked, because a companion that eats clicks is one people close. */
 
 .kunai-roamer {
   position: fixed;
@@ -380,6 +381,19 @@ a:focus-visible .kunai-nav-title .kunai-fox {
 .kunai-roamer:hover .kunai-roamer__close {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* She stands down while she is between the reader and something clickable —
+   see `updateYield` in the component. Both controls go at once: a dismiss
+   button still reachable through a fox that is pretending not to be there
+   would be the invisible target again, wearing a different hat.
+
+   Last on purpose. It ties on specificity with the `:hover` rule above, so
+   order is what decides, and the rule that gives a click back to the page has
+   to be the one that wins. */
+.kunai-roamer[data-yield="true"] .kunai-roamer__fox,
+.kunai-roamer[data-yield="true"] .kunai-roamer__close {
+  pointer-events: none;
 }
 
 /* ── Undo ───────────────────────────────────────────────────────────────────

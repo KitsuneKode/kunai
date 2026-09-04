@@ -110,6 +110,26 @@ describe("roamer dismiss affordance", () => {
     expect(declares(reveal?.body ?? "", "pointer-events", "auto")).toBe(true);
   });
 
+  test("yielding stands both controls down, and wins over the hover reveal", () => {
+    const rules = flattenRules(css);
+    const yielding = rules.filter(
+      (rule) =>
+        rule.selector.includes('[data-yield="true"]') &&
+        declares(rule.body, "pointer-events", "none"),
+    );
+    const covered = yielding.flatMap((rule) => rule.selector.split(",").map((part) => part.trim()));
+    expect(covered).toContain('.kunai-roamer[data-yield="true"] .kunai-roamer__fox');
+    expect(covered).toContain('.kunai-roamer[data-yield="true"] .kunai-roamer__close');
+
+    // Both selectors carry the same specificity, so source order is what
+    // decides. The rule that hands a click back to the page has to be last.
+    const yieldAt = rules.findIndex((rule) => rule.selector.includes('[data-yield="true"]'));
+    const hoverAt = rules.findIndex(
+      (rule) => rule.selector === ".kunai-roamer:hover .kunai-roamer__close",
+    );
+    expect(yieldAt).toBeGreaterThan(hoverAt);
+  });
+
   test("the undo is not swept up by the reduced-motion floor that hides her", () => {
     // She is motion and is removed under reduced motion; the undo is a control
     // and must survive, or the query flipping between the dismissing click and

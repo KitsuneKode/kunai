@@ -64,6 +64,24 @@ export const IDLE_TO_SLEEP_MS = 20000;
 /** Only commit to a direction on real horizontal travel, so she does not flip about. */
 const FACING_DEADBAND_PX = 10;
 
+/**
+ * Is the pointer inside the square she occupies on screen?
+ *
+ * Square rather than round because that is the box the browser hit-tests: her
+ * button is `size` across, and treating her as a circle would call a corner
+ * "not over her" while the browser was already handing her the click.
+ *
+ * Derived from her state rather than read back off the DOM on purpose. The
+ * caller writes her transform every frame, so a `getBoundingClientRect` here
+ * would force a synchronous layout on a hot path to recover a number the caller
+ * already knows.
+ */
+export function pointerIsOver(pos: Point, pointer: Point | null, size: number): boolean {
+  if (!pointer) return false;
+  const half = size / 2;
+  return Math.abs(pointer.x - pos.x) <= half && Math.abs(pointer.y - pos.y) <= half;
+}
+
 export function createRoamerState(at: Point): RoamerState {
   return {
     pos: at,

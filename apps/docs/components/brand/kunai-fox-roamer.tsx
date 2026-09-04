@@ -3,6 +3,7 @@
 import { KunaiFox, type KunaiFoxPose } from "@/components/brand/kunai-fox";
 import {
   createRoamerState,
+  pointerIsOver,
   poseForPhase,
   stepRoamer,
   type RoamerPhase,
@@ -32,10 +33,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *
  * ## Restraint
  *
- * She is dismissible and stays dismissed, she never covers anything (pointer
- * events pass straight through except on her), she only exists on a fine
- * pointer, and `prefers-reduced-motion` removes her entirely rather than
- * freezing her mid-page.
+ * She is dismissible and stays dismissed, she never takes a click the page
+ * wanted (events pass through the host always, and through her the moment she
+ * is standing in front of something clickable — see `updateYield`), she only
+ * exists on a fine pointer, and `prefers-reduced-motion` removes her entirely
+ * rather than freezing her mid-page.
  *
  * ## The way back
  *
@@ -89,6 +91,28 @@ const BUBBLE_MS = 4200;
  * toggle — are what is left, and both are documented.
  */
 const UNDO_MS = 12000;
+
+/**
+ * What counts as something of the page's own that she must not stand in front of.
+ *
+ * Deliberately generous — a `[tabindex]` or a `[role]` is enough. Being wrong in
+ * this direction costs one un-poked fox; being wrong the other way costs a
+ * reader a link they clicked and did not get.
+ */
+const INTERACTIVE_SELECTOR = [
+  "a[href]",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "summary",
+  "label",
+  "[role='button']",
+  "[role='link']",
+  "[role='tab']",
+  "[role='menuitem']",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
 /**
  * What she says, by state.
@@ -153,6 +177,19 @@ function pickLine(pool: readonly string[], last: string | null): string {
   const fresh = pool.filter((candidate) => candidate !== last);
   const choices = fresh.length > 0 ? fresh : pool;
   return choices[Math.floor(Math.random() * choices.length)] as string;
+}
+
+/**
+ * Is there something of the page's own under this point, behind her?
+ *
+ * `elementsFromPoint` returns the whole stack at a point, not just the top of
+ * it, so this can ask what a click would have reached had she not been standing
+ * there. Her own subtree is skipped: she is not what the reader was aiming at.
+ */
+function occludesInteractive(host: HTMLElement, x: number, y: number): boolean {
+  return document
+    .elementsFromPoint(x, y)
+    .some((element) => !host.contains(element) && element.closest(INTERACTIVE_SELECTOR) !== null);
 }
 
 export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
@@ -238,6 +275,31 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         const at = { x: event.clientX - 90, y: event.clientY + 50 };
         machine.current = { ...createRoamerState(at), phase: "sitting" };
       }
+      updateYield(event.clientX, event.clientY);
+    }
+
+    /**
+     * Stand down whenever she is between the reader and the page.
+     *
+     * `SETTLE_PX` is 70 and she is 58 across, so at rest her edge is ~41px from
+     * the cursor: reaching for anything near where you stopped puts the pointer
+     * on her, and her click handler — the one that makes her talk — was eating
+     * the click. Her own doc comment claimed she never covers anything, which
+     * was true of the host and not of her body.
+     *
+     * The rule is what is *behind* her, not how the pointer got there. Dwell
+     * timing was the obvious alternative and is wrong: aiming at a link is
+     * itself a pause, so any dwell long enough to mean "I want the fox" is also
+     * long enough to be someone lining up a click on what she is covering.
+     *
+     * Both reads are guarded by the cheap geometric test, so the hit test only
+     * runs on the rare frames where the pointer is genuinely on her.
+     */
+    function updateYield(x: number, y: number) {
+      const host = hostRef.current;
+      if (!host) return;
+      const over = pointerIsOver(machine.current.pos, { x, y }, size);
+      host.dataset.yield = over && occludesInteractive(host, x, y) ? "true" : "false";
     }
 
     function tick(timestamp: number) {
@@ -285,6 +347,12 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
         next.pos.y -
         size / 2
       ).toFixed(1)}px, 0)`;
+
+      // Also here, not only on pointer move: what is behind her changes without
+      // the pointer moving at all — the reader scrolls a link under a resting
+      // fox, or she walks over one. The geometric guard inside means this costs
+      // four comparisons on the frames where she is nowhere near the cursor.
+      if (pointer.current) updateYield(pointer.current.x, pointer.current.y);
     }
 
     window.addEventListener("pointermove", onMove, { passive: true });
