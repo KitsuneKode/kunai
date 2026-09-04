@@ -189,6 +189,15 @@ function anidbBlockedMessage(impersonates: boolean): string {
     : "anidb blocked by Cloudflare (try curl-impersonate)";
 }
 
+/**
+ * AniDB answers a maintenance window with a real 200 and an "Under
+ * Maintenance" page, so a body check is the only way not to scrape the outage
+ * as an empty catalogue.
+ */
+export function isAnidbMaintenanceText(text: string): boolean {
+  return /<title>Under Maintenance<\/title>/i.test(text) || /under maintenance/i.test(text);
+}
+
 /** curl reports the final status after redirects; the body keeps the rest. */
 const ANIDB_STATUS_WRITE_OUT = ["-w", "\n%{http_code}"] as const;
 
@@ -234,6 +243,9 @@ export async function anidbFetchText(
       });
       if (response.ok) {
         const text = await response.text();
+        if (isAnidbMaintenanceText(text)) {
+          throw new AnidbHttpStatusError(503);
+        }
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
@@ -290,6 +302,9 @@ export async function anidbFetchText(
     if (isCloudflareChallengeText(text)) {
       throw new AnidbBlockedError("anidb blocked by Cloudflare (install curl)");
     }
+    if (isAnidbMaintenanceText(text)) {
+      throw new AnidbHttpStatusError(503);
+    }
     return text;
   }
 
@@ -320,6 +335,9 @@ export async function anidbFetchText(
   if (status >= 400) throw new AnidbHttpStatusError(status);
   if (isCloudflareChallengeText(body)) {
     throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
+  }
+  if (isAnidbMaintenanceText(body)) {
+    throw new AnidbHttpStatusError(503);
   }
   return body;
 }

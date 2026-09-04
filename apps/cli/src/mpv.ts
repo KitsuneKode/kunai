@@ -33,8 +33,6 @@ import {
   LIVE_DEMUXER_LAVF_OPTIONS,
   LIVE_DEMUXER_OPTIONS,
   LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
-} from "@/infra/player/mpv-stream-http-headers";
-import {
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
   toMpvLanguageToken,

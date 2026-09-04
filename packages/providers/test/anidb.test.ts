@@ -10,6 +10,7 @@ import {
   clearAnidbCachesForTest,
   fetchAnidbExternalIds,
   fetchAnidbMalId,
+  isAnidbMaintenanceText,
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
   parseAnidbSeasonEvidence,
@@ -612,6 +613,61 @@ describe("anidb search delegation", () => {
       );
       expect(movie?.type).toBe("movie");
       expect(movie?.rating).toBe(8.2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("isAnidbMaintenanceText identifies maintenance titles and notices", () => {
+    expect(
+      isAnidbMaintenanceText(
+        "<!DOCTYPE html><html><head><title>Under Maintenance</title></head><body></body></html>",
+      ),
+    ).toBe(true);
+    expect(isAnidbMaintenanceText("anidb.app is currently under maintenance")).toBe(true);
+    expect(
+      isAnidbMaintenanceText(
+        "<html><head><title>Search Results</title></head><body></body></html>",
+      ),
+    ).toBe(false);
+  });
+
+  test("searchAnidb throws when upstream returns maintenance page", async () => {
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      // SAFETY: stub lacks the real which() overloads; returning null for every cmd is all this test needs.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: stub only ever returns one canned Response; the full fetch surface is unused.
+      globalThis.fetch = (async () =>
+        new Response("<!DOCTYPE html><title>Under Maintenance</title>", {
+          status: 503,
+        })) as never;
+
+      await expect(searchAnidb("Frieren")).rejects.toThrow();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("anidbProviderModule.search returns null on maintenance instead of empty results", async () => {
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      // SAFETY: stub lacks the real which() overloads; returning null for every cmd is all this test needs.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: stub only ever returns one canned Response; the full fetch surface is unused.
+      globalThis.fetch = (async () =>
+        new Response("<!DOCTYPE html><title>Under Maintenance</title>", {
+          status: 503,
+        })) as never;
+
+      const search = anidbProviderModule.search;
+      if (!search) throw new Error("AniDB search is not configured");
+      const result = await search({ query: "Frieren" }, { now: () => new Date().toISOString() });
+      expect(result).toBeNull();
     } finally {
       globalThis.fetch = originalFetch;
       Bun.which = originalWhich;
