@@ -37,6 +37,12 @@ export type MobileChoiceResult =
 export interface MobileTerminalPort {
   render(lines: readonly string[]): Promise<void>;
   choose(input: MobileChoiceRequest): Promise<MobileChoiceResult>;
+  /**
+   * Releases whatever host input handle the port holds. A terminal port that
+   * keeps a live handle keeps the host alive with it, so every exit path has to
+   * come back through here — not only the interrupted one.
+   */
+  close(): Promise<void>;
 }
 
 export interface MobilePlayerPort {

@@ -10,6 +10,7 @@ export type AndroidReadLineResult = string | null | { readonly kind: "cancelled"
 export type BunTerminalRuntime = {
   readonly write: (value: string) => Promise<void>;
   readonly readLine: () => Promise<AndroidReadLineResult>;
+  readonly close: () => Promise<void>;
 };
 
 export type AndroidLineInputRuntime = {
@@ -62,31 +63,66 @@ export function createBufferedAndroidReadLine(
   };
 }
 
-function createDefaultReadLine(): () => Promise<AndroidReadLineResult> {
-  const reader = Bun.stdin.stream().getReader();
-  return createBufferedAndroidReadLine({
-    read: async () => await reader.read(),
-    cancel: async () => await reader.cancel(),
-    onInterrupt(handler) {
-      process.once("SIGINT", handler);
-      return () => process.off("SIGINT", handler);
+/**
+ * Opens stdin on first use and never before. `--help`, `--version` and a
+ * rejected argument list never read a line, and an stdin reader opened for them
+ * is a handle nothing ever closes.
+ */
+function createLazyStdinReadLine(): Pick<BunTerminalRuntime, "readLine" | "close"> {
+  let opened:
+    | {
+        readonly readLine: () => Promise<AndroidReadLineResult>;
+        readonly reader: ReadableStreamDefaultReader<Uint8Array>;
+      }
+    | undefined;
+
+  function open(): NonNullable<typeof opened> {
+    if (opened) return opened;
+    const reader = Bun.stdin.stream().getReader();
+    opened = {
+      reader,
+      readLine: createBufferedAndroidReadLine({
+        read: async () => await reader.read(),
+        cancel: async () => await reader.cancel(),
+        onInterrupt(handler) {
+          process.once("SIGINT", handler);
+          return () => process.off("SIGINT", handler);
+        },
+      }),
+    };
+    return opened;
+  }
+
+  return {
+    readLine: () => open().readLine(),
+    close: async () => {
+      if (!opened) return;
+      try {
+        await opened.reader.cancel();
+      } catch {
+        // An already-cancelled reader is the state close() wants; the host is
+        // free to exit either way.
+      }
     },
-  });
+  };
 }
 
 export function createBunTerminalPort(
   overrides: Partial<BunTerminalRuntime> = {},
 ): MobileTerminalPort {
+  const stdin = createLazyStdinReadLine();
   const runtime: BunTerminalRuntime = {
     write:
       overrides.write ??
       (async (value) => {
         await Bun.write(Bun.stdout, value);
       }),
-    readLine: overrides.readLine ?? createDefaultReadLine(),
+    readLine: overrides.readLine ?? stdin.readLine,
+    close: overrides.close ?? stdin.close,
   };
 
   return {
+    close: runtime.close,
     async render(lines) {
       await runtime.write(`${lines.join("\n")}\n`);
     },

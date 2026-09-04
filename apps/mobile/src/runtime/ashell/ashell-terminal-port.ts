@@ -14,7 +14,11 @@ export function createAShellTerminalPort(input: {
   readonly bridge: AShellCommandBridge;
   readonly write?: (value: string) => void;
 }): MobileTerminalPort {
-  const write = input.write ?? ((value: string) => console.log(value));
+  // `console.log` is the only output primitive the jsc host exposes and it adds
+  // its own newline, so a value that already ends in one prints a blank line
+  // after every render. Nothing here can print a partial line, which is why the
+  // prompt below is written without a trailing space.
+  const write = input.write ?? ((value: string) => console.log(value.replace(/\n$/u, "")));
 
   function removeAnswer(): boolean {
     if (!input.jsc.isFile(ANSWER_PATH)) return true;
@@ -33,13 +37,18 @@ export function createAShellTerminalPort(input: {
   }
 
   return {
+    async close() {
+      // No host handle stays open here, but a staged answer left by an
+      // interrupted helper is this port's to clear.
+      removeAnswer();
+    },
     async render(lines) {
       write(`${lines.join("\n")}\n`);
     },
     async choose(selection) {
       write(formatMobileChoiceOptions(selection));
       while (true) {
-        write(`${selection.prompt} `);
+        write(selection.prompt);
         if (!removeAnswer()) return { kind: "cancelled" };
         if (input.bridge.runFixedHelper("read-line") !== 0) {
           removeAnswer();

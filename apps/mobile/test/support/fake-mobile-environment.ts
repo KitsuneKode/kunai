@@ -1,4 +1,5 @@
 import type {
+  MobileChoiceRequest,
   MobileEnvironment,
   MobileHttpRequest,
   MobileHttpResponse,
@@ -15,6 +16,8 @@ export class FakeMobileEnvironment {
   readonly playerRequests: { readonly player: "vlc"; readonly url: string }[] = [];
   readonly committedStates: MobileState[] = [];
   readonly choices: ChoiceResult[] = [];
+  readonly chooseRequests: MobileChoiceRequest[] = [];
+  closeCount = 0;
 
   initialState: MobileState = { schemaVersion: 1, hostProofRuns: 0 };
   httpResponse: MobileHttpResponse = { status: 204, bytes: 0 };
@@ -49,7 +52,13 @@ export class FakeMobileEnvironment {
       render: async (lines) => {
         this.rendered.push(...lines);
       },
-      choose: async () => this.choices.shift() ?? { kind: "cancelled" },
+      choose: async (request) => {
+        this.chooseRequests.push(request);
+        return this.choices.shift() ?? { kind: "cancelled" };
+      },
+      close: async () => {
+        this.closeCount += 1;
+      },
     },
     player: {
       handoff: async (request) => {

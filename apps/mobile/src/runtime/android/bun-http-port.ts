@@ -20,6 +20,9 @@ function requireHttpUrl(rawUrl: string, base?: URL): URL {
 async function countBodyBytes(response: Response, maxBytes: number): Promise<number> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    // The streaming branch below cancels before it throws; this one has to as
+    // well, or a rejected oversized response leaks its socket until collection.
+    await response.body?.cancel();
     throw new Error("response too large");
   }
   if (!response.body) return 0;

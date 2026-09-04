@@ -86,6 +86,26 @@ describe("Bun Android terminal port", () => {
     await expect(readLine()).resolves.toBeNull();
   });
 
+  test("closes the host handle it opened, on every exit path", async () => {
+    let closed = 0;
+    const port = createBunTerminalPort({
+      write: async () => {},
+      readLine: async () => "1",
+      close: async () => {
+        closed += 1;
+      },
+    });
+
+    // Rendering alone must still be closeable: --help and --version never read.
+    await port.render(["Usage"]);
+    await port.close();
+    expect(closed).toBe(1);
+
+    await port.choose({ prompt: "Continue?", choices: [{ value: "continue", label: "Run" }] });
+    await port.close();
+    expect(closed).toBe(2);
+  });
+
   test("accepts either a choice number or exact value", async () => {
     for (const answer of ["1", "continue"]) {
       const output: string[] = [];
@@ -94,6 +114,7 @@ describe("Bun Android terminal port", () => {
           output.push(value);
         },
         readLine: async () => answer,
+        close: async () => {},
       });
 
       await expect(
@@ -114,6 +135,7 @@ describe("Bun Android terminal port", () => {
     const port = createBunTerminalPort({
       write: async () => {},
       readLine: async () => answers.shift() ?? null,
+      close: async () => {},
     });
     await expect(
       port.choose({ prompt: "Continue?", choices: [{ value: "continue", label: "Run" }] }),
@@ -123,6 +145,7 @@ describe("Bun Android terminal port", () => {
       const cancelled = createBunTerminalPort({
         write: async () => {},
         readLine: async () => answer,
+        close: async () => {},
       });
       await expect(
         cancelled.choose({

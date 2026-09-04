@@ -41,8 +41,16 @@ export async function runMobileApplication(input: {
   let command;
   try {
     command = parseMobileArgs(input.argv);
-  } catch {
-    await input.environment.terminal.render(["Invalid mobile command.", ...HELP_LINES]);
+  } catch (error) {
+    // Every message the parser raises is a fixed string that names a flag, never
+    // a value the tester typed, so the reason is safe to show. Withholding it
+    // left a mistyped scheme indistinguishable from a missing flag on a phone.
+    const reason = error instanceof Error ? error.message : undefined;
+    await input.environment.terminal.render([
+      "Invalid mobile command.",
+      ...(reason === undefined ? [] : [reason]),
+      ...HELP_LINES,
+    ]);
     return { code: 2, reason: "invalid-input" };
   }
 
@@ -69,12 +77,12 @@ export async function runMobileApplication(input: {
       "Kunai mobile host proof",
       "No playback progress will be recorded.",
     ]);
+    // The choice formatter always appends its own "0. Cancel", so an explicit
+    // cancel choice here renders the option twice. The result is still handled
+    // below because a port may return any value the contract allows.
     const decision = await input.environment.terminal.choose({
       prompt: "Continue?",
-      choices: [
-        { value: "continue", label: "Run proof" },
-        { value: "cancel", label: "Cancel" },
-      ],
+      choices: [{ value: "continue", label: "Run proof" }],
     });
     if (decision.kind === "cancelled" || decision.value === "cancel") {
       await input.environment.state.commit({
