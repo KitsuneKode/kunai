@@ -11,12 +11,12 @@ test("no quality / best / auto → undefined (keep yt-dlp default = highest)", (
 
 test("a configured quality becomes a height ceiling with DASH merge first", () => {
   expect(ytDlpFormatSelectorForQuality("720p")).toBe(
-    "bv*[height<=?720]+ba/bv*[height<=?720]/bv*+ba/b",
+    "bv*[height<=?720]+ba/bv*[height<=?720]/bv*+ba/b/ba",
   );
   expect(ytDlpFormatSelectorForQuality("1080p")).toBe(
-    "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b",
+    "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b/ba",
   );
   expect(ytDlpFormatSelectorForQuality("HD 480 p")).toBe(
-    "bv*[height<=?480]+ba/bv*[height<=?480]/bv*+ba/b",
+    "bv*[height<=?480]+ba/bv*[height<=?480]/bv*+ba/b/ba",
   );
 });

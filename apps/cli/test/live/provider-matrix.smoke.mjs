@@ -135,7 +135,7 @@ if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")
 
 async function runMatrixEntry(entry) {
   const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(entry.command);
-  const parsed = parseJsonPayload(stdout);
+  const parsed = parseJsonPayload(stdout) ?? parseJsonPayload(stderr);
   if (!parsed) {
     const result = {
       provider: entry.provider,
@@ -283,6 +283,25 @@ function parseJsonPayload(stdout) {
     const value = JSON.parse(stdout);
     return value && typeof value === "object" ? value : null;
   } catch {
+    for (const line of stdout.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) continue;
+      try {
+        const value = JSON.parse(trimmed);
+        if (
+          value &&
+          typeof value === "object" &&
+          ("provider" in value ||
+            "streamResolved" in value ||
+            "searchedProvider" in value ||
+            "stage" in value)
+        ) {
+          return value;
+        }
+      } catch {
+        // continue
+      }
+    }
     const start = stdout.indexOf("{");
     const end = stdout.lastIndexOf("}");
     if (start < 0 || end <= start) return null;

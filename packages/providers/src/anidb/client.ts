@@ -149,6 +149,10 @@ export class AnidbHttpStatusError extends Error {
   }
 }
 
+export function isAnidbMaintenanceText(text: string): boolean {
+  return /<title>Under Maintenance<\/title>/i.test(text) || /under maintenance/i.test(text);
+}
+
 /** curl reports the final status after redirects; the body keeps the rest. */
 const ANIDB_STATUS_WRITE_OUT = ["-w", "\n%{http_code}"] as const;
 
@@ -167,8 +171,7 @@ export async function anidbFetchText(
     readonly maxTimeSec?: number;
     /**
      * Turn an HTTP error status into an {@link AnidbHttpStatusError} instead of
-     * an opaque failure. Only the JSON API reads need it; HTML scrapes are
-     * happier with the existing best-effort behaviour.
+     * an opaque failure.
      */
     readonly reportStatus?: boolean;
   } = {},
@@ -181,15 +184,21 @@ export async function anidbFetchText(
       });
       if (response.ok) {
         const text = await response.text();
+        if (isAnidbMaintenanceText(text)) {
+          throw new AnidbHttpStatusError(503);
+        }
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
-      } else if (options.reportStatus === true && response.status === 404) {
+      } else if (
+        options.reportStatus === true &&
+        (response.status === 404 || response.status >= 500)
+      ) {
         // Falling through to curl exists so a Cloudflare challenge gets a
-        // second chance with a better TLS fingerprint. A 404 is not a
+        // second chance with a better TLS fingerprint. A 404 or 5xx is not a
         // fingerprint problem — curl would spend a request to be told the same
         // thing — so it is answered here.
-        throw new AnidbHttpStatusError(404);
+        throw new AnidbHttpStatusError(response.status);
       }
     } catch (error) {
       if (error instanceof AnidbHttpStatusError) throw error;
@@ -213,6 +222,9 @@ export async function anidbFetchText(
       throw new AnidbHttpStatusError(response.status);
     }
     const text = await response.text();
+    if (isAnidbMaintenanceText(text)) {
+      throw new AnidbHttpStatusError(503);
+    }
     if (isCloudflareChallengeText(text)) {
       throw new Error("anidb blocked by Cloudflare (install curl)");
     }
@@ -244,10 +256,16 @@ export async function anidbFetchText(
     if (isCloudflareChallengeText(body)) {
       throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
     }
+    if (isAnidbMaintenanceText(body)) {
+      throw new AnidbHttpStatusError(503);
+    }
     return body;
   }
   if (isCloudflareChallengeText(stdout)) {
     throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
+  }
+  if (isAnidbMaintenanceText(stdout)) {
+    throw new AnidbHttpStatusError(503);
   }
   return stdout;
 }
@@ -305,6 +323,7 @@ export async function searchAnidb(
   const page = await anidbFetchText(`${ANIDB_BASE}/browse?q=${encodeURIComponent(trimmed)}`, {
     signal,
     context,
+    reportStatus: true,
   });
   return parseAnidbBrowseHtml(page);
 }
