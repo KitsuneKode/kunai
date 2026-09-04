@@ -57,4 +57,15 @@ describe("mobile application boundary", () => {
 
     expect(entrypoints).toEqual(["apps/mobile/src/entry.ts"]);
   });
+
+  test("keeps the Android runtime free of Bun APIs and Bun imports", () => {
+    const violations = sourceFiles("apps/mobile/src/runtime/android").flatMap((file) => {
+      const source = readFileSync(file, "utf8");
+      return /\bBun\.|(?:from\s+|import\s*\()["']bun:/u.test(source)
+        ? [relative(REPO_ROOT, file).replaceAll("\\", "/")]
+        : [];
+    });
+
+    expect(violations).toEqual([]);
+  });
 });

@@ -414,19 +414,22 @@ and provider contract tests for repeated runs, then perform one focused live smo
 deterministic seam is already green.
 
 The independent mobile application uses a stricter two-part gate. Its default
-unit/integration suites cross-build and scan both platform artifacts against
-fake hosts. Physical work is manual; the opt-in command only validates a
-tester-supplied, URL-free JSON row:
+unit/integration suites build and scan both platform artifacts, execute the
+Android bundle under real Node, and exercise the iOS fake host. Physical work
+is manual; the opt-in command validates exactly one Android and one iOS
+URL-free evidence row against generated artifact-set metadata:
 
 ```sh
-bun run test:live:mobile-host-proof -- --evidence /path/to/redacted-evidence.json
+bun run test:live:mobile-host-proof -- \
+  --metadata apps/mobile/dist/mobile-build-meta.json \
+  --evidence /path/to/android.json \
+  --evidence /path/to/ios.json
 ```
 
-The validator rejects unknown or sensitive fields and exits non-zero unless
-terminal input, bounded HTTP, state recovery, cancellation, OS handoff, and
-human-observed VLC playback all passed. Android ARM64 Termux and physical iPhone
-a-Shell mini procedures are owned by
-[mobile-terminal-runtime.md](./mobile-terminal-runtime.md). A green cross-build,
+The validator rejects unknown or sensitive fields, wrong versions/targets/set
+digests, non-physical or duplicate/missing rows, and every failed observation.
+Android ARM64 Termux and physical iPhone a-Shell mini procedures are owned by
+[mobile-device-lab.md](./mobile-device-lab.md). A green cross-build,
 fake-host run, launcher exit, or intent acceptance must not become a platform
 support claim.
 

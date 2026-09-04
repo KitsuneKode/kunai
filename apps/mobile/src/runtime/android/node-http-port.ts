@@ -4,7 +4,7 @@ import { parsePortableHttpUrl } from "../../application/portable-url";
 type TimeoutToken = unknown;
 type AndroidFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-export type BunHttpRuntime = {
+export type NodeHttpRuntime = {
   readonly fetch: AndroidFetch;
   readonly scheduleTimeout: (callback: () => void, milliseconds: number) => TimeoutToken;
   readonly cancelTimeout: (token: TimeoutToken) => void;
@@ -20,6 +20,7 @@ function requireHttpUrl(rawUrl: string, base?: URL): URL {
 async function countBodyBytes(response: Response, maxBytes: number): Promise<number> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel();
     throw new Error("response too large");
   }
   if (!response.body) return 0;
@@ -41,8 +42,8 @@ async function countBodyBytes(response: Response, maxBytes: number): Promise<num
   }
 }
 
-export function createBunHttpPort(overrides: Partial<BunHttpRuntime> = {}): MobileHttpPort {
-  const runtime: BunHttpRuntime = {
+export function createNodeHttpPort(overrides: Partial<NodeHttpRuntime> = {}): MobileHttpPort {
+  const runtime: NodeHttpRuntime = {
     fetch: (input, init) => fetch(input, init),
     scheduleTimeout: (callback, milliseconds) => setTimeout(callback, milliseconds),
     cancelTimeout: (token) => clearTimeout(token as ReturnType<typeof setTimeout>),

@@ -1,7 +1,7 @@
 ---
 status: review
 owner: mobile-runtime
-lastReviewed: "2026-08-31"
+lastReviewed: "2026-09-03"
 dependsOn: feat/mobile-terminal-handoff
 ---
 
@@ -20,7 +20,7 @@ artifacts chosen for the runtime each platform can support honestly:
               +---------------+---------------+
               |                               |
         Android artifact                  iOS artifact
-     Bun/Bionic executable            conservative JS bundle
+        Node ESM bundle               conservative JS bundle
               |                               |
            Termux                    a-Shell mini JavaScriptCore
               |                               |
@@ -28,9 +28,10 @@ artifacts chosen for the runtime each platform can support honestly:
       VLC or mpv-android
 ```
 
-Android does not install Node, Bun, QuickJS, or Python. iOS does not pretend a
-macOS executable is an iOS binary. QuickJS is a possible Android fallback for
-an architecture without a published executable, not the primary runtime.
+Android installs the maintained Termux `nodejs` package once; Kunai itself is a
+small architecture-neutral ESM artifact. It does not ship Bun's experimental
+Android native runtime. iOS does not pretend a macOS executable is an iOS
+binary and installs no language runtime.
 
 The app keeps stream resolution local. It adds no native Kunai application,
 public resolver, media proxy, shared relay URL, or media relay route. VLC and
@@ -69,8 +70,8 @@ Mobile support is real only when all of these are true:
 
 - The same application behavior is covered through a runtime-neutral test
   surface.
-- Android ARM64 and x64 artifacts cross-build and install in isolated Termux
-  state.
+- The architecture-neutral Android artifact executes under current Termux Node
+  and installs in isolated Termux state.
 - The iOS artifact runs in the current App Store a-Shell mini without Node,
   Python, an Alpine userland, or an on-device package install.
 - A physical Android device and physical iPhone each complete search through
@@ -88,7 +89,7 @@ Cross-build success alone must never change public platform support claims.
 ### Mobile v1
 
 - One `apps/mobile` source tree and one application interface.
-- Android ARM64 and x64 Bun/Bionic executables.
+- One architecture-neutral Node ESM artifact for Termux.
 - One conservative JavaScript bundle for a-Shell mini JavaScriptCore.
 - A small POSIX launcher/installer per platform; application logic stays in
   TypeScript.
@@ -124,22 +125,23 @@ Cross-build success alone must never change public platform support claims.
 ### Chosen: shared TypeScript application, platform-specific artifacts
 
 The application shares behavior and tests while each platform gets the
-strongest available host. Android uses a compiled Bun executable. iOS uses a
-plain JavaScript bundle under a-Shell mini's built-in `jsc` command.
+strongest supportable host. Android uses a Node-target bundle under Termux's
+maintained `nodejs` package. iOS uses a plain JavaScript bundle under a-Shell
+mini's built-in `jsc` command.
 
 This avoids making runtime identity the product abstraction. The stable
 abstraction is the mobile application's behavior and its small host seams.
 
-### Follow-up candidate, not primary: QuickJS-ng on Android
+### Rejected after host proof: Bun or QuickJS-ng Android runtime
 
-QuickJS-ng is available in Termux and could run a portable bundle, but it adds
-an Android package, gives up Bun's qualified Android implementation, and still
-requires different OS adapters. The host proof measured Bun/Bionic artifacts
-at roughly 90–92 MB raw and 36–38 MB gzip, while stripping recovered only about
-0.07 percent on x64. That makes a QuickJS-ng composition worth a bounded
-Android-lite spike after the Bun host is physically qualified. It remains an
-opt-in fallback experiment—not a v1 dependency or support promise—until the
-same physical matrix proves both the smaller payload and the extra install step.
+Bun's Android standalone targets produced roughly 90–92 MB artifacts and
+inherited an upstream runtime without RELRO, stack-canary evidence, or documented
+production target support. Those properties cannot be safely repaired after
+linking. QuickJS-ng would add another less common runtime and require additional
+HTTP and filesystem compatibility work. Current Termux Node provides the
+smallest reuse of the existing TypeScript surface with the least custom native
+toolchain ownership; either rejected runtime may be reconsidered only from new
+security and physical evidence.
 
 ### Rejected: POSIX shell owns the application
 
@@ -337,24 +339,22 @@ script files are not runtime entrypoints.
 
 ## Runtime adapters
 
-### Android Bun adapter
+### Android Node adapter
 
-The Android artifact uses Bun's Bionic build targets already modeled by the
-dependent branch. It may use Bun APIs only behind Android adapters:
+The Android artifact is bundled by Bun at build time for execution by Termux
+Node. Android adapters may use stable Node APIs only behind application ports:
 
 - `fetch` for provider requests;
-- `Bun.file`/`Bun.write` or the established atomic-write semantics for mobile
-  JSON state;
+- `node:fs` with atomic-replacement semantics for private mobile JSON state;
 - fixed argument arrays for `am`/`termux-am` player launch;
 - cancellation and deadlines mapped to `AbortSignal`.
 
-The application and provider domain code must not depend on those Bun APIs.
+The application and provider domain code must not depend on Node APIs.
 
 Primary artifacts:
 
 ```text
-kunai-mobile-android-arm64
-kunai-mobile-android-x64
+android/kunai-mobile-android.mjs
 ```
 
 ### iOS a-Shell adapter
@@ -405,7 +405,7 @@ behavior is not implied by the artifact compiling.
 
 ### Android
 
-The Android HTTP adapter uses Bun `fetch` with explicit deadlines, redirect
+The Android HTTP adapter uses Node's stable global `fetch` with explicit deadlines, redirect
 limits, response-size limits, and redacted diagnostics.
 
 ### iOS
@@ -583,8 +583,7 @@ The mobile app has its own release asset set while sharing the repository's
 release version:
 
 ```text
-kunai-mobile-android-arm64.tar.gz
-kunai-mobile-android-x64.tar.gz
+kunai-mobile-android.mjs
 kunai-mobile-ios.tar.gz
 SHA256SUMS
 ```
@@ -629,8 +628,9 @@ profile.
 - execute the portable bundle under a local JavaScriptCore-compatible harness
   where available;
 - execute the Android app as a normal host bundle with fake adapters;
-- scan the iOS bundle for `Bun`, `Buffer`, `node:`, dynamic import, native addon
-  edges, and any `process` use;
+- scan the Android graph/output for Bun, a-Shell, desktop, test, and planning
+  edges; scan the iOS bundle for `Bun`, `Buffer`, `node:`, dynamic import,
+  native addon edges, and any `process` use;
 - preserve fixture parity between desktop and mobile for each shared provider.
 
 A simulator or compatibility engine is supporting evidence, not a substitute
@@ -696,7 +696,7 @@ security model to make the experiment appear successful.
   silently substitutes for the other.
 - **Every provider:** each production provider receives a recorded supported,
   deferred, or rejected mobile decision.
-- **Every platform:** Android ARM64/x64 and iOS a-Shell are explicit; desktop
+- **Every platform:** Android Termux Node and iOS a-Shell are explicit; desktop
   behavior is unchanged and protected by regression tests.
 - **Docs:** this plan owns unfinished intent; runtime and user docs change only
   with verified behavior.
@@ -712,7 +712,7 @@ These decisions must be accepted before implementation planning:
 3. The existing documented public TMDB application key and proxy/direct
    fallback may move to `@kunai/catalog`; no account or private credential is
    embedded, and query values remain redacted.
-4. QuickJS-ng is an Android-lite follow-up candidate, not a required runtime.
+4. Termux Node is the Android runtime; Bun and QuickJS-ng are not fallbacks.
 5. iOS v1 is foreground a-Shell mini only.
 6. The feature branch is stacked on `feat/mobile-terminal-handoff` until the
    Android prerequisite lands or is rebased.

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  findForbiddenAndroidInputs,
+  findForbiddenAndroidOutputTokens,
   findForbiddenIosInputs,
   findForbiddenIosOutputTokens,
   findForbiddenIosProcessUses,
@@ -16,17 +18,19 @@ function metafile(inputs: readonly string[]) {
 }
 
 describe("mobile artifact build contract", () => {
-  test("declares only the two Bionic binaries and the a-Shell bundle", () => {
+  test("declares one architecture-neutral Termux bundle and the a-Shell bundle", () => {
     expect(MOBILE_TARGETS.map((target) => target.id)).toEqual([
-      "android-arm64",
-      "android-x64",
+      "android-termux-node",
       "ios-ashell",
     ]);
-    expect(MOBILE_TARGETS.slice(0, 2).map((target) => target.compileTarget)).toEqual([
-      "bun-linux-arm64-android",
-      "bun-linux-x64-android",
-    ]);
-    expect(resolveRuntimeModule("android-arm64")).toEndWith("src/runtime/android/composition.ts");
+    expect(MOBILE_TARGETS[0]).toMatchObject({
+      output: "android/kunai-mobile-android.mjs",
+      runtime: "android",
+    });
+    expect(MOBILE_TARGETS[0]).not.toHaveProperty("compileTarget");
+    expect(resolveRuntimeModule("android-termux-node")).toEndWith(
+      "src/runtime/android/composition.ts",
+    );
     expect(resolveRuntimeModule("ios-ashell")).toEndWith("src/runtime/ashell/composition.ts");
   });
 
@@ -57,6 +61,44 @@ describe("mobile artifact build contract", () => {
       "src/runtime/android/composition.ts",
       "test/unit/fake.ts",
     ]);
+  });
+
+  test("rejects Bun, a-Shell, desktop, test, and planning files from the Android graph", () => {
+    expect(
+      findForbiddenAndroidInputs(
+        metafile([
+          "src/entry.ts",
+          "src/application/run-mobile-application.ts",
+          "src/runtime/android/composition.ts",
+        ]),
+      ),
+    ).toEqual([]);
+    expect(
+      findForbiddenAndroidInputs(
+        metafile([
+          "bun:sqlite",
+          "src/runtime/ashell/composition.ts",
+          "apps/cli/src/main.ts",
+          "test/unit/fake.ts",
+          ".plans/mobile.md",
+        ]),
+      ),
+    ).toEqual([
+      ".plans/mobile.md",
+      "apps/cli/src/main.ts",
+      "bun:sqlite",
+      "src/runtime/ashell/composition.ts",
+      "test/unit/fake.ts",
+    ]);
+  });
+
+  test("finds Bun runtime tokens in emitted Android JavaScript", () => {
+    expect(findForbiddenAndroidOutputTokens("process.stdout.write('ok')")).toEqual([]);
+    expect(findForbiddenAndroidOutputTokens("Bun.file('x'); import 'bun:sqlite';")).toEqual([
+      "Bun",
+      "bun:",
+    ]);
+    expect(findForbiddenAndroidOutputTokens("globalThis.Bun?.file('x')")).toEqual(["Bun"]);
   });
 
   test("rejects every process API from the iOS graph", () => {

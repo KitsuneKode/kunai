@@ -2,10 +2,27 @@ import { describe, expect, test } from "bun:test";
 
 import {
   createBufferedAndroidReadLine,
-  createBunTerminalPort,
-} from "../../../../src/runtime/android/bun-terminal-port";
+  createNodeTerminalPort,
+} from "../../../../src/runtime/android/node-terminal-port";
 
-describe("Bun Android terminal port", () => {
+describe("Node Android terminal port", () => {
+  test("releases the host input handle on close", async () => {
+    let closed = 0;
+    const port = createNodeTerminalPort({
+      write: async () => {},
+      readLine: async () => "1",
+      close: async () => {
+        closed += 1;
+      },
+    });
+
+    await port.render(["Usage"]);
+    await port.close();
+    await port.choose({ prompt: "Continue?", choices: [{ value: "continue", label: "Run" }] });
+    await port.close();
+    expect(closed).toBe(2);
+  });
+
   test("cancels the pending stdin read when SIGINT interrupts a prompt", async () => {
     let interrupt: (() => void) | undefined;
     let cancelled = false;
@@ -89,7 +106,7 @@ describe("Bun Android terminal port", () => {
   test("accepts either a choice number or exact value", async () => {
     for (const answer of ["1", "continue"]) {
       const output: string[] = [];
-      const port = createBunTerminalPort({
+      const port = createNodeTerminalPort({
         write: async (value) => {
           output.push(value);
         },
@@ -111,7 +128,7 @@ describe("Bun Android terminal port", () => {
 
   test("retries invalid input and treats zero, EOF, or cancellation as cancelled", async () => {
     const answers: (string | null)[] = ["invalid", "0"];
-    const port = createBunTerminalPort({
+    const port = createNodeTerminalPort({
       write: async () => {},
       readLine: async () => answers.shift() ?? null,
     });
@@ -120,7 +137,7 @@ describe("Bun Android terminal port", () => {
     ).resolves.toEqual({ kind: "cancelled" });
 
     for (const answer of [null, { kind: "cancelled" } as const]) {
-      const cancelled = createBunTerminalPort({
+      const cancelled = createNodeTerminalPort({
         write: async () => {},
         readLine: async () => answer,
       });

@@ -134,15 +134,17 @@ mechanism.
 
 `apps/mobile` is a separate deep application module with one entrypoint and no
 cross-app imports. Its application directory owns runtime-neutral policy. Its
-runtime directory owns two build-selected compositions: Node ESM for Termux
-and conservative JavaScript plus fixed helpers for a-Shell mini. The iOS graph
+runtime directory owns two build-selected compositions: Node ESM for Termux and
+conservative JavaScript plus fixed helpers for a-Shell mini. The iOS graph
 must not contain Node, Bun, native, SQLite, Ink, or React runtime dependencies.
 
 The current slice is a host proof, not desktop feature parity: it exercises
 terminal input, bounded HTTP, atomic state, and detached VLC handoff using
 tester-owned URLs. Search, catalog, provider resolution, progress, analytics,
 installers, and release support are not implied. Qualification and physical
-procedures live in [mobile-terminal-runtime.md](./mobile-terminal-runtime.md).
+procedures live in [mobile-device-lab.md](./mobile-device-lab.md); architecture
+and support boundaries live in
+[mobile-terminal-runtime.md](./mobile-terminal-runtime.md).
 
 ## Command Ownership
 

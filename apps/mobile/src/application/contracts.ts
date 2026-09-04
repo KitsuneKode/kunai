@@ -37,6 +37,7 @@ export type MobileChoiceResult =
 export interface MobileTerminalPort {
   render(lines: readonly string[]): Promise<void>;
   choose(input: MobileChoiceRequest): Promise<MobileChoiceResult>;
+  close(): Promise<void>;
 }
 
 export interface MobilePlayerPort {

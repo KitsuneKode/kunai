@@ -62,4 +62,18 @@ describe("parseMobileArgs", () => {
       ).toThrow("absolute credential-free HTTPS");
     }
   });
+
+  test("never echoes a rejected token in an unknown-option error", () => {
+    const sensitive = "https://user:pass@probe.example/status?token=leak";
+
+    try {
+      parseMobileArgs(["--host-proof", sensitive]);
+      throw new Error("unreachable");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toBe("Unknown option");
+      expect(message).not.toContain("probe.example");
+      expect(message).not.toContain("leak");
+    }
+  });
 });
