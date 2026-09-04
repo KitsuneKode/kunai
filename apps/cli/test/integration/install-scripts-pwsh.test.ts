@@ -2026,6 +2026,51 @@ describePwsh("install.ps1 optional dependency consent", () => {
    * packages unattended. Redirected input takes the same path as `-Yes` —
    * report what is missing, never install it.
    */
+  /**
+   * curl-impersonate is not a substitute for an HTTP/2 `curl.exe`, and the
+   * installer must not treat it as one.
+   *
+   * They are different binaries: the release archive ships
+   * `curl-impersonate.exe` plus `curl_*.bat` wrappers and no `curl.exe` at all,
+   * and only the provider clients resolve those, through `resolveCurlCandidate`.
+   * The HLS relay (`apps/cli/src/infra/player/hls-relay.ts`) spawns the literal
+   * `curl` from PATH. Skipping this prompt whenever an impersonate build was
+   * found hid the one remedy for that, on precisely the hosts that need it —
+   * every stock Windows box, since the System32 build is Schannel with no
+   * nghttp2.
+   */
+  test("still offers the HTTP/2 curl upgrade after curl-impersonate installs", () => {
+    const script = [
+      `$src = Get-Content -Raw ${JSON.stringify(INSTALL_PS1)}`,
+      'function Write-Info { param($m) Write-Host "> $m" }',
+      'function Write-Warn { param($m) Write-Host "! $m" }',
+      "$OnWindows = $true",
+      "$SkipDeps = $false",
+      // Everything the impersonate path can report as success, at once: it was
+      // just installed *and* it is discoverable on PATH.
+      "function Install-PortableYtDlp { return $true }",
+      "function Install-PortableCurlImpersonate { return $true }",
+      "function Test-CurlImpersonatePresent { return $true }",
+      // mpv and yt-dlp present; curl present but not answering --version, which
+      // is the same branch the Schannel build reaches by reporting no HTTP2.
+      "function Test-Cmd { param($n) return $true }",
+      "function Request-OptionalInstall { param($m) Write-Host \"[ASKED] $($m -join ',')\" }",
+      'Invoke-Expression ([regex]::Match($src, "(?ms)^function Install-OptionalDeps \\{.*?^\\}").Value)',
+      "Install-OptionalDeps",
+    ].join("\n");
+    const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+    expect(result.stderr, result.stderr).not.toContain("ParserError");
+    const output = `${result.stdout}${result.stderr}`;
+
+    expect(output).toContain("The curl on PATH has no HTTP/2 support");
+    expect(output).toContain("[ASKED] curl");
+    // And it says why, so the prompt does not read as the installer forgetting
+    // the curl-impersonate it dropped two lines earlier.
+    expect(output).toContain("curl-impersonate covers Cloudflare, not HTTP/2");
+    // yt-dlp was handled by the portable helper, so it must not also be asked for.
+    expect(output).not.toContain("yt-dlp is not installed");
+  });
+
   test("no console reports the command instead of installing", () => {
     const output = evalInstallPs1(
       "$Yes = $false; $DryRun = $false; Request-OptionalInstall @('mpv')",
@@ -2046,9 +2091,24 @@ describePwsh("install.ps1 optional dependency consent", () => {
   });
 });
 
+/**
+ * Both PowerShell parameter spellings: a `param()` block inside the body, and
+ * the inline `function Name([string]$Dir) {` form the smaller helpers use.
+ */
 function extractPs1Function(source: string, name: string): string {
-  const match = new RegExp(`^function ${name} \\{[\\s\\S]*?^\\}`, "m").exec(source);
+  const match = new RegExp(`^function ${name}(?:\\([^)]*\\))? \\{[\\s\\S]*?^\\}`, "m").exec(source);
   if (!match) throw new Error(`could not extract function ${name} from install.ps1`);
+  return match[0];
+}
+
+/**
+ * Script-scope constants the extracted functions close over. Lifted from
+ * install.ps1 for the same reason the functions are: a probe that restates the
+ * value tests its own copy, and the shipped one is free to drift.
+ */
+function extractPs1Assignment(source: string, name: string): string {
+  const match = new RegExp(`^\\$${name} = .*$`, "m").exec(source);
+  if (!match) throw new Error(`could not extract $${name} from install.ps1`);
   return match[0];
 }
 
@@ -2123,6 +2183,7 @@ async function runPortableHelperProbe(
     "Test-CurlImpersonatePresent",
     "Find-CurlImpersonateWrapperDir",
     "Get-PackageInstallCommand",
+    "Register-HelperPath",
     "Install-PortableYtDlp",
     "Install-PortableCurlImpersonate",
   ].map((name) => extractPs1Function(source, name));
@@ -2160,14 +2221,11 @@ async function runPortableHelperProbe(
       "function Test-Cmd($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }",
       "function Test-RetryableHttpStatus([int]$Status) { return ($Status -eq 408 -or $Status -eq 429 -or $Status -ge 500) }",
       "function Get-WindowsArch { return 'x64' }",
+      // Stands in for the -SkipPathUpdate branch of the real Add-UserPath: it
+      // announces and returns without touching PATH, so the extracted
+      // Register-HelperPath is the only thing writing $env:Path here.
       'function Add-UserPath([string]$Dir) { Write-Info "Skipping persistent User PATH update for $Dir." }',
-      "function Register-HelperPath([string]$Dir) {",
-      "  if ([string]::IsNullOrWhiteSpace($Dir)) { return }",
-      "  $normalized = $Dir.Trim().Trim('\"').TrimEnd('\\')",
-      "  $entries = @($env:Path -split ';' | ForEach-Object { $_.Trim().Trim('\"').TrimEnd('\\') })",
-      '  if ($entries -notcontains $normalized) { $env:Path = "$Dir;$env:Path" }',
-      "  Add-UserPath $Dir",
-      "}",
+      extractPs1Assignment(source, "CurlImpersonateWrapperPattern"),
       ...functions,
       body,
     ].join("\n"),
@@ -2204,6 +2262,9 @@ describePwsh("install.ps1 portable Windows helpers", () => {
       'function Write-Warn { param($m) Write-Host "! $m" }',
       "$CurlImpersonateVersion = 'v2.2.1'",
       "$CurlImpersonateWin64Digest = 'f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5'",
+      // Read out of install.ps1, not restated: this is the rule under test in
+      // the wrapper-family cases below.
+      `Invoke-Expression ([regex]::Match($src, '(?m)^\\$CurlImpersonateWrapperPattern = .*$').Value)`,
       extractFn("Get-YtdlpReleaseAsset"),
       extractFn("Get-HelperChecksumEntry"),
       extractFn("Get-CurlImpersonateWindowsSpec"),
@@ -2296,6 +2357,42 @@ describePwsh("install.ps1 portable Windows helpers", () => {
       expect(realpathSync.native(reported!)).toBe(realpathSync.native(dir));
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * The installer's notion of "an impersonate build is already here" has to be
+   * the resolver's, or the two disagree in both directions: a mobile-only
+   * directory reads as done while `resolveCurlCandidate` falls back to plain
+   * curl, and a firefox-only directory reads as empty and gets a redundant
+   * download over a working install. `curl_chrome131_android.bat`,
+   * `curl_safari260_ios.bat` and `curl_tor145.bat` all ship in the real v2.2.1
+   * archive, and `parseWrapper` rejects every one of them.
+   */
+  test("counts only the desktop wrappers the provider resolver would select", () => {
+    const cases = [
+      { file: "curl_chrome146.bat", expected: "present" },
+      { file: "curl_firefox147.bat", expected: "present" },
+      { file: "curl_safari260.bat", expected: "present" },
+      { file: "curl_edge101.bat", expected: "present" },
+      { file: "curl_chrome133a.bat", expected: "present" },
+      { file: "curl_chrome131_android.bat", expected: "missing" },
+      { file: "curl_safari260_ios.bat", expected: "missing" },
+      { file: "curl_tor145.bat", expected: "missing" },
+    ] as const;
+
+    for (const { file, expected } of cases) {
+      const dir = mkdtempSync(join(tmpdir(), "kunai-wrapper-family-"));
+      try {
+        writeFileSync(join(dir, file), "@echo off\r\n");
+        const output = evalHelperFns(`
+          $env:Path = ${JSON.stringify(dir)}
+          if (Test-CurlImpersonatePresent) { Write-Output 'present' } else { Write-Output 'missing' }
+        `);
+        expect(output, `${file} should read as ${expected}`).toContain(expected);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
   });
 
@@ -2482,7 +2579,14 @@ describePwsh("install.ps1 portable Windows helpers", () => {
     }
   });
 
-  test.skipIf(process.platform === "win32")(
+  /**
+   * `chmod 0o500` is only a lock for a user the mode bits apply to. Windows
+   * ACLs are not chmod at all, and root ignores the bits outright — under
+   * either, `Remove-Item -Recurse` succeeds, the fail-closed branch is never
+   * reached, and the assertions below quietly test nothing. Skip rather than
+   * pass vacuously: a container suite running as uid 0 is the common case.
+   */
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "does not nest extract when a locked dest directory cannot be replaced",
     async () => {
       const sandbox = createInstallerSandbox("install-ps1-portable-helpers-locked");

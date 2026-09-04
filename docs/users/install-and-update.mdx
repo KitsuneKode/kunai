@@ -208,6 +208,11 @@ one-line `irm … | iex` actually leaves YouTube and anime search working:
   pins. Windows ARM64 has no upstream build, so that host is pointed at the
   [releases page](https://github.com/lexiforest/curl-impersonate/releases).
 
+The Windows `curl` prompt is still offered alongside these. curl-impersonate
+clears Cloudflare for anime search; it does not give you an HTTP/2 `curl.exe`,
+which is a different binary that other playback paths spawn by name. The
+installer says so rather than skipping the prompt.
+
 `--skip-deps` skips the portable helpers and the package-manager prompt,
 including Windows `curl`.
 

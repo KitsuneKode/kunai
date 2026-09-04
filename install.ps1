@@ -1624,12 +1624,16 @@ function Request-OptionalInstall {
 # has to see a helper we just dropped or the rest of this install cannot find it.
 function Register-HelperPath([string]$Dir) {
   if ([string]::IsNullOrWhiteSpace($Dir)) { return }
+  # Add-UserPath writes the session PATH itself when it persists the entry, so
+  # doing it unconditionally here left a duplicate on every first install. Do it
+  # only for the paths Add-UserPath will not take: SkipPathUpdate, off-Windows,
+  # and an entry already persisted from an earlier run.
+  Add-UserPath $Dir
   $normalized = $Dir.Trim().Trim('"').TrimEnd('\')
   $entries = @($env:Path -split ';' | ForEach-Object { $_.Trim().Trim('"').TrimEnd('\') })
   if ($entries -notcontains $normalized) {
     $env:Path = "$Dir;$env:Path"
   }
-  Add-UserPath $Dir
 }
 
 function Get-YtdlpReleaseAsset {
@@ -1676,6 +1680,20 @@ function Get-CurlImpersonateWindowsSpec {
   }
 }
 
+# The wrappers Kunai's resolver will actually select, and only those. This is
+# the PowerShell twin of WRAPPER_PATTERN + FAMILY_RANK in
+# packages/providers/src/shared/curl-impersonate.ts; keep the two in step.
+#
+# Both exclusions are load-bearing. The v2.2.1 Windows archive ships
+# curl_chrome131_android.bat and curl_safari260_ios.bat, which the resolver
+# rejects as mobile - a desktop CLI presenting a phone's handshake is a
+# mismatch a fingerprinter can see - and curl_tor145.bat, rejected for the same
+# reason more so. A directory holding only those is not an install this
+# installer may call done. Restricting to chrome the other way was equally
+# wrong: a host carrying only curl_firefox147.bat reads as "nothing here" and
+# gets a redundant download over a working install.
+$CurlImpersonateWrapperPattern = '^curl_(chrome|firefox|ff|safari|edge)\d+[a-z]*\.(bat|cmd|exe)$'
+
 function Test-CurlImpersonatePresent {
   $pathValue = if ($null -eq $env:Path) { '' } else { $env:Path }
   foreach ($pathEntry in ($pathValue -split ';')) {
@@ -1685,7 +1703,7 @@ function Test-CurlImpersonatePresent {
     }
     try {
       $hits = @(Get-ChildItem -LiteralPath $directory -File -ErrorAction SilentlyContinue | Where-Object {
-          $_.Name -match '^curl_chrome\d+.*\.(bat|cmd|exe)$'
+          $_.Name -match $CurlImpersonateWrapperPattern
         })
       if ($hits.Count -gt 0) { return $true }
     }
@@ -1697,7 +1715,11 @@ function Test-CurlImpersonatePresent {
 function Find-CurlImpersonateWrapperDir {
   param([Parameter(Mandatory)][string]$Root)
   if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return $null }
-  $wrapper = Get-ChildItem -LiteralPath $Root -Filter 'curl_chrome*.bat' -Recurse -File -ErrorAction SilentlyContinue |
+  # -Filter is a wildcard, not a regex, so the family/mobile rules are applied
+  # after it. The cheap prefix filter still keeps the recursive walk from
+  # stat-ing every DLL in the archive.
+  $wrapper = Get-ChildItem -LiteralPath $Root -Filter 'curl_*' -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match $CurlImpersonateWrapperPattern } |
     Select-Object -First 1
   if ($null -eq $wrapper) { return $null }
   return $wrapper.Directory.FullName
@@ -1805,7 +1827,14 @@ function Install-PortableCurlImpersonate {
   }
 
   Write-Info "Installing curl-impersonate $($spec.Version) so anime search can clear Cloudflare..."
-  $staging = Join-Path $CacheDir ("curl-impersonate-staging-" + $PID)
+  # Staged beside $destDir rather than under $CacheDir: the install finishes
+  # with Move-Item on a *directory*, and .NET cannot move a directory across
+  # volumes. That is the default layout's own business (both live under
+  # %LOCALAPPDATA%), but KUNAI_CACHE_DIR is a documented override and pointing
+  # it at another drive would otherwise turn a good download into a warning.
+  # yt-dlp stages under $CacheDir still - it lands with Copy-Item, which does
+  # cross volumes.
+  $staging = Join-Path $DataDir ("deps\.curl-impersonate-staging-" + $PID)
   $ok = $false
   try {
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
@@ -1825,7 +1854,7 @@ function Install-PortableCurlImpersonate {
     }
     $wrapperDir = Find-CurlImpersonateWrapperDir $extractDir
     if (-not $wrapperDir) {
-      throw "Archive did not contain curl_chrome*.bat wrappers."
+      throw "Archive did not contain any desktop curl_<browser><version> wrappers."
     }
     if (Test-Path -LiteralPath $destDir) {
       Remove-Item -LiteralPath $destDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -1841,7 +1870,7 @@ function Install-PortableCurlImpersonate {
     Move-Item -Force -Path $extractDir -Destination $destDir
     $wrapperDir = Find-CurlImpersonateWrapperDir $destDir
     if (-not $wrapperDir) {
-      throw "Extracted curl-impersonate is missing curl_chrome*.bat wrappers."
+      throw "Extracted curl-impersonate is missing its desktop curl_<browser><version> wrappers."
     }
     if ($OnWindows) {
       Get-ChildItem -LiteralPath $wrapperDir -File -ErrorAction SilentlyContinue |
@@ -1905,32 +1934,39 @@ function Install-OptionalDeps {
 
   # Windows 10+ ships curl.exe in System32, so "is curl present" is the wrong
   # question here - the bundled build uses Schannel with no nghttp2, so it
-  # reports no HTTP2 feature. Providers that negotiate HTTP/2 fall back or fail
-  # against that build, so offer the full winget/scoop curl when the one on PATH
-  # cannot do HTTP/2. An impersonate build already covers that (and Cloudflare),
-  # so skip the upgrade when we just installed one or found one.
+  # reports no HTTP2 feature.
+  #
+  # This is deliberately NOT skipped when curl-impersonate is installed. The two
+  # are orthogonal: the impersonate build is a separately-named binary
+  # (curl-impersonate.exe plus curl_*.bat wrappers - the release archive carries
+  # no curl.exe at all) that only the provider clients resolve, via
+  # resolveCurlCandidate. The HLS relay in apps/cli/src/infra/player/hls-relay.ts
+  # spawns the literal `curl` from PATH, and Kunai's own capability probe reads
+  # that binary's feature list. Treating "impersonate present" as "HTTP/2
+  # covered" hid this prompt on exactly the hosts that still need it.
   $curlNeedsUpgrade = $false
-  if (-not $portableImpersonate -and -not (Test-CurlImpersonatePresent)) {
-    if (Test-Cmd 'curl') {
-      try {
-        $curlFeatures = (& curl.exe --version 2>$null) -join "`n"
-        $curlNeedsUpgrade = -not ($curlFeatures -match 'HTTP2')
-      }
-      catch { $curlNeedsUpgrade = $true }
+  if (Test-Cmd 'curl') {
+    try {
+      $curlFeatures = (& curl.exe --version 2>$null) -join "`n"
+      $curlNeedsUpgrade = -not ($curlFeatures -match 'HTTP2')
     }
-    else {
-      $curlNeedsUpgrade = $true
-    }
+    catch { $curlNeedsUpgrade = $true }
+  }
+  else {
+    $curlNeedsUpgrade = $true
   }
   if ($curlNeedsUpgrade) {
     Write-Warn 'The curl on PATH has no HTTP/2 support (Windows ships a Schannel build).'
+    if ($portableImpersonate) {
+      # Say why this is still offered right after curl-impersonate landed, or it
+      # reads as the installer forgetting what it just did.
+      Write-Info 'curl-impersonate covers Cloudflare, not HTTP/2 - they are different binaries.'
+    }
     $missing += 'curl'
   }
 
   if ($missing.Count -eq 0) {
-    if (Test-Cmd 'mpv') {
-      Write-Info 'Required player (mpv) is already installed.'
-    }
+    Write-Info 'mpv, yt-dlp and curl are all present.'
     return
   }
 
