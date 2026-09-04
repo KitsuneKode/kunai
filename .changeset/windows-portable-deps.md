@@ -11,3 +11,6 @@ now drops verified GitHub binaries into `%LOCALAPPDATA%\kunai\deps\` and puts
 those folders on the User PATH. `mpv` is still a package-manager prompt.
 `-SkipDeps` skips the helpers. Doctor's copy-paste fallback is
 `winget install --id yt-dlp.yt-dlp -e`.
+
+Managed helper digests are retained and rechecked on later installs, so an
+interrupted or modified helper is repaired instead of accepted by filename.

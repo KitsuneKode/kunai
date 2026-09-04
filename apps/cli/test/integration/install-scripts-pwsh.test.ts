@@ -32,6 +32,7 @@ import {
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_PS1 = join(REPO_ROOT, "install.ps1");
+const PWSH_PATH = Bun.which("pwsh") ?? "pwsh";
 
 function readInstallerManifest(configDir: string): InstallManifest {
   return JSON.parse(readFileSync(join(configDir, "install.json"), "utf8"));
@@ -2177,8 +2178,11 @@ async function runPortableHelperProbe(
     "Write-DownloadProgress",
     "Clear-DownloadProgress",
     "Invoke-BoundedDownload",
+    "Write-Utf8File",
     "Get-YtdlpReleaseAsset",
     "Get-HelperChecksumEntry",
+    "Test-ManagedFileDigest",
+    "Test-ManagedSourceDigest",
     "Get-CurlImpersonateWindowsSpec",
     "Test-CurlImpersonatePresent",
     "Find-CurlImpersonateWrapperDir",
@@ -2218,7 +2222,9 @@ async function runPortableHelperProbe(
       "$script:LastDownloadHttpStatus = $null",
       'function Write-Info($m) { Write-Host "-> $m" }',
       'function Write-Warn($m) { Write-Host "! $m" }',
-      "function Test-Cmd($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }",
+      // The fixture owns yt-dlp state. Never let a host installation turn a
+      // download/repair assertion into an accidental already-present branch.
+      "function Test-Cmd($name) { if ($name -eq 'yt-dlp') { return $false }; [bool](Get-Command $name -ErrorAction SilentlyContinue) }",
       "function Test-RetryableHttpStatus([int]$Status) { return ($Status -eq 408 -or $Status -eq 429 -or $Status -ge 500) }",
       "function Get-WindowsArch { return 'x64' }",
       // Stands in for the -SkipPathUpdate branch of the real Add-UserPath: it
@@ -2231,7 +2237,7 @@ async function runPortableHelperProbe(
     ].join("\n"),
   );
 
-  const proc = Bun.spawn(["pwsh", "-NoProfile", "-File", probePath], {
+  const proc = Bun.spawn([PWSH_PATH, "-NoProfile", "-File", probePath], {
     env: { ...BOUNDED_DOWNLOAD_ENV, ...env },
     stdout: "pipe",
     stderr: "pipe",
@@ -2385,6 +2391,7 @@ describePwsh("install.ps1 portable Windows helpers", () => {
       const dir = mkdtempSync(join(tmpdir(), "kunai-wrapper-family-"));
       try {
         writeFileSync(join(dir, file), "@echo off\r\n");
+        writeFileSync(join(dir, "curl-impersonate.exe"), "MZ\n");
         const output = evalHelperFns(`
           $env:Path = ${JSON.stringify(dir)}
           if (Test-CurlImpersonatePresent) { Write-Output 'present' } else { Write-Output 'missing' }
@@ -2503,14 +2510,31 @@ describePwsh("install.ps1 portable Windows helpers", () => {
     }
   });
 
-  test("already-present dest files skip the GitHub download", async () => {
+  test("verified already-present dest files skip the GitHub download", async () => {
     const sandbox = createInstallerSandbox("install-ps1-portable-helpers-present");
     mkdirSync(join(sandbox.dataDir, "deps", "yt-dlp"), { recursive: true });
     mkdirSync(join(sandbox.dataDir, "deps", "curl-impersonate"), { recursive: true });
-    writeFileSync(join(sandbox.dataDir, "deps", "yt-dlp", "yt-dlp.exe"), "MZ-already-present\n");
+    const ytdlpBody = "MZ-already-present\n";
+    const ytdlpDigest = createHash("sha256").update(ytdlpBody).digest("hex");
+    writeFileSync(join(sandbox.dataDir, "deps", "yt-dlp", "yt-dlp.exe"), ytdlpBody);
+    writeFileSync(join(sandbox.dataDir, "deps", "yt-dlp", "yt-dlp.exe.sha256"), `${ytdlpDigest}\n`);
     writeFileSync(
       join(sandbox.dataDir, "deps", "curl-impersonate", "curl_chrome146.bat"),
       "@echo off\r\n",
+    );
+    const backendBody = "MZ-curl-impersonate\n";
+    const backendDigest = createHash("sha256").update(backendBody).digest("hex");
+    writeFileSync(
+      join(sandbox.dataDir, "deps", "curl-impersonate", "curl-impersonate.exe"),
+      backendBody,
+    );
+    writeFileSync(
+      join(sandbox.dataDir, "deps", "curl-impersonate", ".kunai-source.sha256"),
+      `${"f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5"}\n`,
+    );
+    writeFileSync(
+      join(sandbox.dataDir, "deps", "curl-impersonate", ".kunai-backend.sha256"),
+      `${backendDigest}\n`,
     );
     try {
       await withReleaseFixture({}, async (_baseUrl, evidence) => {
@@ -2532,6 +2556,54 @@ describePwsh("install.ps1 portable Windows helpers", () => {
         expect(result.stdout).toContain("curl-impersonate already present");
         expect(evidence.requests).toEqual([]);
       });
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("repairs unverified managed helpers instead of trusting their filenames", async () => {
+    const sandbox = createInstallerSandbox("install-ps1-portable-helpers-repair");
+    const ytdlpDir = join(sandbox.dataDir, "deps", "yt-dlp");
+    const impersonateDir = join(sandbox.dataDir, "deps", "curl-impersonate");
+    mkdirSync(ytdlpDir, { recursive: true });
+    mkdirSync(impersonateDir, { recursive: true });
+    writeFileSync(join(ytdlpDir, "yt-dlp.exe"), "");
+    writeFileSync(join(impersonateDir, "curl_chrome146.bat"), "@echo off\r\n");
+
+    const ytdlpBody = "MZ-repaired-yt-dlp\n";
+    const ytdlpDigest = createHash("sha256").update(ytdlpBody).digest("hex");
+    const archive = createCurlImpersonateArchive(sandbox.root);
+    try {
+      await withReleaseFixture(
+        {
+          "/SHA2-256SUMS": { body: `${ytdlpDigest}  yt-dlp.exe\n` },
+          "/yt-dlp.exe": { body: ytdlpBody },
+          [`/${archive.asset}`]: { body: archive.bytes },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runPortableHelperProbe(
+            {
+              ...isolatedHelperEnv(sandbox),
+              KUNAI_YTDLP_RELEASE_BASE: baseUrl,
+              KUNAI_CURL_IMPERSONATE_RELEASE_BASE: baseUrl,
+              KUNAI_CURL_IMPERSONATE_SHA256: archive.sha256,
+            },
+            [
+              "$ytdlp = [bool](Install-PortableYtDlp)",
+              "$imp = [bool](Install-PortableCurlImpersonate)",
+              'Write-Output "RESULT ytdlp=$ytdlp impersonate=$imp"',
+            ].join("\n"),
+          );
+
+          expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+          expect(result.stdout).toContain("RESULT ytdlp=True impersonate=True");
+          expect(readFileSync(join(ytdlpDir, "yt-dlp.exe"), "utf8")).toBe(ytdlpBody);
+          expect(existsSync(join(impersonateDir, "curl-impersonate.exe"))).toBe(true);
+          expect(evidence.requests).toContain("/SHA2-256SUMS");
+          expect(evidence.requests).toContain("/yt-dlp.exe");
+          expect(evidence.requests).toContain(`/${archive.asset}`);
+        },
+      );
     } finally {
       sandbox.cleanup();
     }

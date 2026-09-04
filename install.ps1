@@ -1662,6 +1662,43 @@ function Get-HelperChecksumEntry {
   return [string]$digests[0]
 }
 
+# A managed helper is reusable only while its recorded verified digest still
+# matches its bytes. A filename alone can be crash residue from an interrupted
+# copy, and must not suppress repair or remediation.
+function Test-ManagedFileDigest {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$DigestPath,
+    [string]$ExpectedDigest = ''
+  )
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $DigestPath -PathType Leaf)) { return $false }
+  try {
+    $recorded = ([System.IO.File]::ReadAllText($DigestPath)).Trim().ToLowerInvariant()
+    if ($recorded -notmatch '^[0-9a-f]{64}$') { return $false }
+    if ($ExpectedDigest -and $recorded -ne $ExpectedDigest.ToLowerInvariant()) { return $false }
+    $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    return $actual -eq $recorded
+  }
+  catch { return $false }
+}
+
+function Test-ManagedSourceDigest {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$DigestPath,
+    [Parameter(Mandatory)][string]$ExpectedDigest
+  )
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $DigestPath -PathType Leaf)) { return $false }
+  try {
+    $recorded = ([System.IO.File]::ReadAllText($DigestPath)).Trim().ToLowerInvariant()
+    return $recorded -match '^[0-9a-f]{64}$' -and
+      $recorded -eq $ExpectedDigest.ToLowerInvariant()
+  }
+  catch { return $false }
+}
+
 function Get-CurlImpersonateWindowsSpec {
   param([string]$Arch = (Get-WindowsArch))
   if ($Arch -ne 'x64') { return $null }
@@ -1695,17 +1732,26 @@ function Get-CurlImpersonateWindowsSpec {
 $CurlImpersonateWrapperPattern = '^curl_(chrome|firefox|ff|safari|edge)\d+[a-z]*\.(bat|cmd|exe)$'
 
 function Test-CurlImpersonatePresent {
+  param([string]$ExcludeDirectory = '')
   $pathValue = if ($null -eq $env:Path) { '' } else { $env:Path }
   foreach ($pathEntry in ($pathValue -split ';')) {
     $directory = $pathEntry.Trim().Trim('"')
     if ([string]::IsNullOrWhiteSpace($directory) -or -not (Test-Path -LiteralPath $directory -PathType Container)) {
       continue
     }
+    if ($ExcludeDirectory -and [string]::Equals(
+        [System.IO.Path]::GetFullPath($directory).TrimEnd('\'),
+        [System.IO.Path]::GetFullPath($ExcludeDirectory).TrimEnd('\'),
+        [StringComparison]::OrdinalIgnoreCase
+      )) { continue }
     try {
       $hits = @(Get-ChildItem -LiteralPath $directory -File -ErrorAction SilentlyContinue | Where-Object {
           $_.Name -match $CurlImpersonateWrapperPattern
         })
-      if ($hits.Count -gt 0) { return $true }
+      if ($hits.Count -gt 0 -and
+        (Test-Path -LiteralPath (Join-Path $directory 'curl-impersonate.exe') -PathType Leaf)) {
+        return $true
+      }
     }
     catch { }
   }
@@ -1737,7 +1783,8 @@ function Install-PortableYtDlp {
 
   $destDir = Join-Path $DataDir 'deps\yt-dlp'
   $dest = Join-Path $destDir 'yt-dlp.exe'
-  if (Test-Path -LiteralPath $dest -PathType Leaf) {
+  $digestPath = "$dest.sha256"
+  if (Test-ManagedFileDigest -Path $dest -DigestPath $digestPath) {
     Register-HelperPath $destDir
     Write-Info "yt-dlp already present at $dest"
     return $true
@@ -1766,7 +1813,13 @@ function Install-PortableYtDlp {
       throw "Checksum mismatch for $asset (expected '$want', got '$got')."
     }
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-    Copy-Item -Force -Path $binPath -Destination $dest
+    $publishId = [Guid]::NewGuid().ToString('N')
+    $destTmp = "$dest.tmp-$PID-$publishId"
+    $digestTmp = "$digestPath.tmp-$PID-$publishId"
+    Copy-Item -Force -Path $binPath -Destination $destTmp
+    Write-Utf8File $digestTmp ($got + "`n")
+    Move-Item -Force -Path $destTmp -Destination $dest
+    Move-Item -Force -Path $digestTmp -Destination $digestPath
     if ($OnWindows) { Unblock-File -Path $dest -ErrorAction SilentlyContinue }
     Register-HelperPath $destDir
     Write-Info "Installed yt-dlp -> $dest"
@@ -1798,8 +1851,6 @@ function Install-PortableYtDlp {
 # Returns $true when an impersonate build is present, was installed, or would
 # be installed on a dry run.
 function Install-PortableCurlImpersonate {
-  if (Test-CurlImpersonatePresent) { return $true }
-
   $spec = Get-CurlImpersonateWindowsSpec
   if ($null -eq $spec) {
     Write-Warn 'curl-impersonate has no Windows ARM64 build. Anime search may still hit Cloudflare.'
@@ -1809,11 +1860,17 @@ function Install-PortableCurlImpersonate {
 
   $destDir = Join-Path $DataDir 'deps\curl-impersonate'
   $existing = Find-CurlImpersonateWrapperDir $destDir
-  if ($existing) {
+  $sourceDigestPath = Join-Path $destDir '.kunai-source.sha256'
+  $existingBackend = if ($existing) { Join-Path $existing 'curl-impersonate.exe' } else { '' }
+  $backendDigestPath = Join-Path $destDir '.kunai-backend.sha256'
+  if ($existing -and (Test-ManagedSourceDigest -Path $existingBackend -DigestPath $sourceDigestPath `
+        -ExpectedDigest $spec.Sha256) -and
+    (Test-ManagedFileDigest -Path $existingBackend -DigestPath $backendDigestPath)) {
     Register-HelperPath $existing
     Write-Info "curl-impersonate already present at $existing"
     return $true
   }
+  if (Test-CurlImpersonatePresent -ExcludeDirectory $destDir) { return $true }
 
   if ($DryRun) {
     Write-Info "[dry-run] would download $($spec.Asset) into $destDir"
@@ -1872,6 +1929,13 @@ function Install-PortableCurlImpersonate {
     if (-not $wrapperDir) {
       throw "Extracted curl-impersonate is missing its desktop curl_<browser><version> wrappers."
     }
+    $backend = Join-Path $wrapperDir 'curl-impersonate.exe'
+    if (-not (Test-Path -LiteralPath $backend -PathType Leaf)) {
+      throw 'Extracted curl-impersonate is missing curl-impersonate.exe.'
+    }
+    Write-Utf8File $sourceDigestPath ($spec.Sha256.ToLowerInvariant() + "`n")
+    $backendDigest = (Get-FileHash -LiteralPath $backend -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Utf8File $backendDigestPath ($backendDigest + "`n")
     if ($OnWindows) {
       Get-ChildItem -LiteralPath $wrapperDir -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Extension -in @('.exe', '.bat', '.cmd', '.dll') } |
