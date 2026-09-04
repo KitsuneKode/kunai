@@ -2,7 +2,6 @@ import { isSubtitlePreferenceDisabled } from "@/domain/media/media-preferences";
 import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { langMatches, selectAutomaticSubtitle } from "@/subtitle";
-import type { SubtitleEntry } from "@/subtitle";
 
 export type SubtitleDecision = {
   subtitle: string | null;
@@ -111,8 +110,7 @@ export async function choosePlaybackSubtitle({
   }
 
   if (stream.subtitleList?.length) {
-    const tracks = stream.subtitleList as unknown as SubtitleEntry[];
-    const pick = selectAutomaticSubtitle(tracks, subLang);
+    const pick = selectAutomaticSubtitle(stream.subtitleList, subLang);
     return {
       subtitle: pick?.url ?? null,
       reason:
