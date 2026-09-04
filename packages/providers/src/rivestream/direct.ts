@@ -45,6 +45,7 @@ import {
   streamPresentationFields,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
+import { probeStreamReachability } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
@@ -418,7 +419,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
           }
 
           try {
-            return await resolveRivestreamProviderCandidate({
+            const resolved = await resolveRivestreamProviderCandidate({
               candidate,
               provider,
               input,
@@ -426,7 +427,35 @@ export const rivestreamProviderModule: CoreProviderModule = {
               cachePolicy,
               sourceDataPromise,
             });
+
+            const selected = resolved.streams[0];
+            if (selected?.url) {
+              const probe = await probeStreamReachability({
+                url: selected.url,
+                headers: selected.headers,
+                timeoutMs: 3_000,
+                signal: context.signal,
+              });
+              if (probe.status === "unreachable" && probe.definitive) {
+                throw createProviderCycleFailureError(candidate, {
+                  failureClass: "candidate-network",
+                  message: `Rivestream ${provider} stream unreachable: ${probe.reason}`,
+                  retryable: true,
+                  at: context.now(),
+                });
+              }
+            }
+
+            return resolved;
           } catch (error) {
+            if (
+              error &&
+              typeof error === "object" &&
+              "name" in error &&
+              error.name === "ProviderCycleFailureError"
+            ) {
+              throw error;
+            }
             const providerError =
               error instanceof ProviderHttpError
                 ? error
@@ -866,7 +895,14 @@ async function resolveRivestreamProviderCandidate({
     const qualityRank = qualityRankFromLabel(qualityStr) ?? 0;
     const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [source.url]);
     const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, source.url]);
-    const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
+    const lowerUrl = source.url.toLowerCase();
+    const protocol: StreamCandidate["protocol"] = lowerUrl.includes(".m3u8")
+      ? "hls"
+      : lowerUrl.includes(".mpd")
+        ? "dash"
+        : "mp4";
+    const container: StreamCandidate["container"] =
+      protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4";
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
       normalizeIsoLanguageCode(input.preferredAudioLanguage);
@@ -903,13 +939,17 @@ async function resolveRivestreamProviderCandidate({
       variantId,
       url: source.url,
       protocol,
-      container: protocol === "hls" ? "m3u8" : "mp4",
+      container,
       audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
       qualityLabel,
       qualityRank,
       languageEvidence,
       sourceEvidence,
-      headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+      headers: {
+        referer: RIVESTREAM_REFERER,
+        origin: "https://www.rivestream.app",
+        "user-agent": USER_AGENT,
+      },
       confidence: 0.95,
       cachePolicy,
       ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
