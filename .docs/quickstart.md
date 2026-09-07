@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-02"
+lastReviewed: "2026-09-07"
 ---
 
 # Kunai — Quickstart
@@ -130,9 +130,10 @@ Do not use `bun test` directly.
 Use these when you want an intuitive visual walkthrough of the shell flows:
 
 ```sh
-bun run --cwd apps/cli test:vhs:browse
-bun run --cwd apps/cli test:vhs:help
-bun run --cwd apps/cli test:vhs:launch
+bun run --cwd apps/cli test:vhs:setup
+bun run --cwd apps/cli test:vhs:offline
+bun run --cwd apps/cli test:vhs:palette
+bun run --cwd apps/cli test:vhs:playback
 ```
 
 ## CLI flags

@@ -36,6 +36,7 @@ So these tests are safe to keep in-repo without shipping them to npm.
 - `bun run test:live:providers`
 - `bun run test:live:rivestream`
 - `bun run test:live:vidking`
-- `bun run test:vhs:browse`
-- `bun run test:vhs:help`
-- `bun run test:vhs:launch`
+- `bun run test:vhs:setup`
+- `bun run test:vhs:offline`
+- `bun run test:vhs:palette`
+- `bun run test:vhs:playback`
