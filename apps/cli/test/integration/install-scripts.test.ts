@@ -1493,13 +1493,15 @@ describe("install.sh lifecycle contract", () => {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
-            KUNAI_ACTIVATION_LOCK_POLL_MS: "500",
+            // Keep the mutation signal far above ordinary macOS CI scheduling
+            // noise: an unbounded poll would sleep for ten seconds.
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "10000",
           });
           await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
           const activationStartedAt = performance.now();
           const result = await install;
           expect(result.status).not.toBe(0);
-          expect(performance.now() - activationStartedAt).toBeLessThan(300);
+          expect(performance.now() - activationStartedAt).toBeLessThan(5_000);
         },
       );
     } finally {
