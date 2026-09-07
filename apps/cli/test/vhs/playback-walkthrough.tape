@@ -59,12 +59,15 @@ Sleep 900ms
 Down
 Sleep 800ms
 
-# Palette: switch catalog lane the same way a session does
+# Back to search, then the palette — same gestures as the command-palette tape
+Type "s"
+Wait+Screen /Search for a title/
+Sleep 700ms
 Type "/"
 Sleep 1100ms
-Type "anime"
+Type "anime-mode"
 Sleep 400ms
-Wait+Screen /Anime Mode/
+Wait+Screen /Switch into anime mode/
 Enter
 Wait+Screen /Search for an anime/
 Sleep 900ms
