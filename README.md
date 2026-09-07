@@ -108,9 +108,9 @@ help, diagnostics, and watch history without leaving the session:
 Every surface is reachable this way — search, details, the release calendar,
 downloads, and Up Next — without leaving the session or touching a mouse.
 
-A second tape walks both catalog lanes at 1.5× — series (Andor) then anime
-(Frieren), from search through episode pick, resolve, mpv supervision, and
-post-play:
+A second tape walks both catalog lanes as a typed session — series (Andor)
+then `/anime` into Frieren — from search through episode pick, resolve, mpv
+supervision, and post-play:
 
 <div align="center">
 

@@ -1,61 +1,23 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  PLAYBACK_WALKTHROUGH_RATE,
-  PLAYBACK_WALKTHROUGH_SCENES,
+  RESOLVE_DURATION_MS,
   browseQueryFor,
   browseResultsFor,
+  clampPostPlayActionIndex,
+  episodeRowsFor,
+  laneAfterShellAction,
   playingPositionSeconds,
   playingState,
   postPlayProps,
   providerFor,
   resolveStageAt,
   resolvingState,
-  titleCardCopy,
-  walkthroughAt,
-  walkthroughTotalDurationMs,
+  searchResultsFor,
+  selectedEpisodeIndex,
 } from "../../harness/playback-walkthrough-scenes";
 
 describe("playback walkthrough scenes", () => {
-  test("covers series then anime with a way into and out of playback", () => {
-    const phasesByLane = {
-      series: PLAYBACK_WALKTHROUGH_SCENES.filter((scene) => scene.lane === "series").map(
-        (scene) => scene.phase,
-      ),
-      anime: PLAYBACK_WALKTHROUGH_SCENES.filter((scene) => scene.lane === "anime").map(
-        (scene) => scene.phase,
-      ),
-    };
-
-    expect(phasesByLane.series).toEqual([
-      "title",
-      "browse",
-      "episodes",
-      "resolving",
-      "playing",
-      "post-play",
-    ]);
-    expect(phasesByLane.anime.slice(0, 6)).toEqual([
-      "title",
-      "browse",
-      "episodes",
-      "resolving",
-      "playing",
-      "post-play",
-    ]);
-    expect(phasesByLane.anime.at(-1)).toBe("done");
-  });
-
-  test("clock lands on the named scene and reports scene-local elapsed time", () => {
-    const seriesBrowse = walkthroughAt(1400);
-    expect(seriesBrowse?.scene.id).toBe("series-browse");
-    expect(seriesBrowse?.sceneElapsedMs).toBe(0);
-
-    const beforeEnd = walkthroughTotalDurationMs() - 1;
-    expect(walkthroughAt(beforeEnd)?.scene.phase).toBe("done");
-    expect(walkthroughAt(walkthroughTotalDurationMs())).toBeNull();
-  });
-
   test("series and anime lanes keep distinct catalog identity", () => {
     expect(browseQueryFor("series")).toBe("Andor");
     expect(browseQueryFor("anime")).toBe("Frieren");
@@ -63,24 +25,41 @@ describe("playback walkthrough scenes", () => {
     expect(providerFor("anime")).toBe("allmanga");
     expect(browseResultsFor("series")[0]?.label).toContain("Andor");
     expect(browseResultsFor("anime")[0]?.label).toContain("Frieren");
-    expect(titleCardCopy("series").title).toBe("Series playback");
-    expect(titleCardCopy("anime").title).toBe("Anime playback");
+  });
+
+  test("typed search ranks the matching title first and keeps the rest of the lane", () => {
+    const series = searchResultsFor("series", "Andor");
+    expect(series[0]?.label).toContain("Andor");
+    expect(series.map((row) => row.label).join(" ")).toContain("Mandalorian");
+    expect(series).toHaveLength(3);
+
+    const anime = searchResultsFor("anime", "Frieren");
+    expect(anime[0]?.label).toContain("Frieren");
+    expect(anime).toHaveLength(3);
+  });
+
+  test("episode picker starts above the tape target so arrows are visible", () => {
+    expect(selectedEpisodeIndex("series")).toBe(2);
+    expect(episodeRowsFor("series")[0]?.label).toContain("Kassa");
+    expect(episodeRowsFor("series")[2]?.label).toContain("Reckoning");
+    expect(selectedEpisodeIndex("anime")).toBe(3);
+    expect(episodeRowsFor("anime")[0]?.label).toContain("Journey");
+    expect(episodeRowsFor("anime")[3]?.label).toContain("Sword Village");
   });
 
   test("resolve stages walk the four bootstrap steps", () => {
-    expect(resolveStageAt(0, 2800)).toBe("finding-stream");
-    expect(resolveStageAt(700, 2800)).toBe("preparing-provider");
-    expect(resolveStageAt(1400, 2800)).toBe("preparing-player");
-    expect(resolveStageAt(2100, 2800)).toBe("starting-playback");
+    expect(resolveStageAt(0, RESOLVE_DURATION_MS)).toBe("finding-stream");
+    expect(resolveStageAt(800, RESOLVE_DURATION_MS)).toBe("preparing-provider");
+    expect(resolveStageAt(1600, RESOLVE_DURATION_MS)).toBe("preparing-player");
+    expect(resolveStageAt(2400, RESOLVE_DURATION_MS)).toBe("starting-playback");
     expect(resolvingState("series", 0).operation).toBe("resolving");
     expect(resolvingState("anime", 2000).providerId).toBe("allmanga");
   });
 
-  test("playing progress advances at 1.5x and post-play is reversible", () => {
-    expect(PLAYBACK_WALKTHROUGH_RATE).toBe(1.5);
+  test("playing progress advances at 1x and post-play is reversible", () => {
     const start = playingPositionSeconds("series", 0);
     const later = playingPositionSeconds("series", 2000);
-    expect(later - start).toBeCloseTo(3, 5);
+    expect(later - start).toBeCloseTo(2, 5);
 
     const playing = playingState("anime", 1000);
     expect(playing.operation).toBe("playing");
@@ -90,5 +69,15 @@ describe("playback walkthrough scenes", () => {
     expect(postPlay.postPlayState.kind).toBe("mid-series");
     expect(postPlay.nextEpisodeLabel).toContain("Aldhani");
     expect(postPlayProps("anime").contentKind).toBe("anime");
+    expect(clampPostPlayActionIndex(-1)).toBe(0);
+    expect(clampPostPlayActionIndex(9)).toBe(4);
+  });
+
+  test("palette lane switches wrap series and anime without dropping into youtube", () => {
+    expect(laneAfterShellAction("series", "anime-mode")).toBe("anime");
+    expect(laneAfterShellAction("anime", "series-mode")).toBe("series");
+    expect(laneAfterShellAction("series", "toggle-mode")).toBe("anime");
+    expect(laneAfterShellAction("anime", "toggle-mode")).toBe("series");
+    expect(laneAfterShellAction("series", "search")).toBeNull();
   });
 });

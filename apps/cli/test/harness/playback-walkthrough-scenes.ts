@@ -1,12 +1,10 @@
 /**
- * Network-free series + anime playback walkthrough.
+ * Network-free series + anime playback walkthrough fixtures.
  *
- * Scene timing and view-models for the VHS demo. The Ink app is a thin clock
- * over this file — changing copy or order here is what the tape records.
- *
- * Playback progress advances at {@link PLAYBACK_WALKTHROUGH_RATE} so the
- * playing surface shows 1.5× media time. The tape additionally sets
- * `Set PlaybackSpeed 1.5` so the generated gif/mp4 is a 1.5× demo.
+ * The Ink app is an interactive state machine over these view-models. VHS types
+ * into the real browse / episode / loading / post-play shells. Playback progress
+ * advances at 1× media time. If the typed session is long, the tape may set
+ * `Set PlaybackSpeed` on the encode only — the app never advertises a demo rate.
  */
 
 import type { PostPlayShellProps } from "@/app-shell/post-play-shell";
@@ -15,34 +13,31 @@ import type {
   LoadingShellStage,
   LoadingShellState,
   PlaybackRecommendationRailItem,
+  ShellAction,
 } from "@/app-shell/types";
 import { toBrowseResultOption } from "@/app/search/browse-option-mappers";
 import type { SearchResult } from "@/domain/types";
 
-export const PLAYBACK_WALKTHROUGH_RATE = 1.5;
+/** Visible search spinner before fixture rows land. Not a test sleep. */
+export const SEARCH_DELAY_MS = 400;
+
+/** Time on the resolving surface before auto-advance to playing. */
+export const RESOLVE_DURATION_MS = 3200;
+
+/**
+ * Safety cap for the launcher. The tape drives the session; this only kills a
+ * hung Ink process. Sized for a typed two-lane walkthrough plus encode slack.
+ */
+export const PLAYBACK_WALKTHROUGH_WATCHDOG_MS = 180_000;
 
 export type WalkthroughLane = "series" | "anime";
 
-export type WalkthroughPhase =
-  | "title"
-  | "browse"
-  | "episodes"
-  | "resolving"
-  | "playing"
-  | "post-play"
-  | "done";
+export type WalkthroughPhase = "browse" | "episodes" | "resolving" | "playing" | "post-play";
 
 export type WalkthroughEpisodeRow = {
   readonly id: string;
   readonly label: string;
   readonly detail: string;
-};
-
-export type WalkthroughScene = {
-  readonly id: string;
-  readonly lane: WalkthroughLane;
-  readonly phase: WalkthroughPhase;
-  readonly durationMs: number;
 };
 
 const SERIES_RESULTS: readonly SearchResult[] = [
@@ -129,59 +124,29 @@ const ANIME_RECS: readonly PlaybackRecommendationRailItem[] = [
   { id: "anilist:113415", title: "Jujutsu Kaisen", type: "series", year: "2020" },
 ];
 
-export const PLAYBACK_WALKTHROUGH_SCENES: readonly WalkthroughScene[] = [
-  { id: "series-title", lane: "series", phase: "title", durationMs: 1400 },
-  { id: "series-browse", lane: "series", phase: "browse", durationMs: 3200 },
-  { id: "series-episodes", lane: "series", phase: "episodes", durationMs: 2400 },
-  { id: "series-resolving", lane: "series", phase: "resolving", durationMs: 2800 },
-  { id: "series-playing", lane: "series", phase: "playing", durationMs: 5200 },
-  { id: "series-post-play", lane: "series", phase: "post-play", durationMs: 2800 },
-  { id: "anime-title", lane: "anime", phase: "title", durationMs: 1400 },
-  { id: "anime-browse", lane: "anime", phase: "browse", durationMs: 3200 },
-  { id: "anime-episodes", lane: "anime", phase: "episodes", durationMs: 2400 },
-  { id: "anime-resolving", lane: "anime", phase: "resolving", durationMs: 2800 },
-  { id: "anime-playing", lane: "anime", phase: "playing", durationMs: 5200 },
-  { id: "anime-post-play", lane: "anime", phase: "post-play", durationMs: 2800 },
-  { id: "walkthrough-done", lane: "anime", phase: "done", durationMs: 1600 },
-];
-
-export type WalkthroughClock = {
-  readonly scene: WalkthroughScene;
-  readonly sceneElapsedMs: number;
-  readonly totalElapsedMs: number;
-};
-
-export function walkthroughTotalDurationMs(
-  scenes: readonly WalkthroughScene[] = PLAYBACK_WALKTHROUGH_SCENES,
-): number {
-  return scenes.reduce((sum, scene) => sum + scene.durationMs, 0);
-}
-
-export function walkthroughAt(
-  elapsedMs: number,
-  scenes: readonly WalkthroughScene[] = PLAYBACK_WALKTHROUGH_SCENES,
-): WalkthroughClock | null {
-  if (elapsedMs < 0) return null;
-  let cursor = 0;
-  for (const scene of scenes) {
-    const end = cursor + scene.durationMs;
-    if (elapsedMs < end) {
-      return {
-        scene,
-        sceneElapsedMs: elapsedMs - cursor,
-        totalElapsedMs: elapsedMs,
-      };
-    }
-    cursor = end;
-  }
-  return null;
-}
-
 export function browseResultsFor(
   lane: WalkthroughLane,
 ): readonly BrowseShellOption<SearchResult>[] {
   const results = lane === "series" ? SERIES_RESULTS : ANIME_RESULTS;
   return results.map((result) => toBrowseResultOption(result));
+}
+
+/**
+ * Rank fixture rows so the typed query sits first, then the rest of the lane
+ * catalog — enough list to arrow through without calling a provider.
+ */
+export function searchResultsFor(
+  lane: WalkthroughLane,
+  query: string,
+): readonly BrowseShellOption<SearchResult>[] {
+  const all = browseResultsFor(lane);
+  const needle = query.trim().toLowerCase();
+  if (!needle) return all;
+  return [...all].sort((left, right) => {
+    const leftHit = left.label.toLowerCase().includes(needle) ? 0 : 1;
+    const rightHit = right.label.toLowerCase().includes(needle) ? 0 : 1;
+    return leftHit - rightHit;
+  });
 }
 
 export function browseQueryFor(lane: WalkthroughLane): string {
@@ -221,6 +186,7 @@ export function episodeRowsFor(lane: WalkthroughLane): readonly WalkthroughEpiso
   ];
 }
 
+/** Episode the tape arrows to before Enter. Picker itself starts at 0. */
 export function selectedEpisodeIndex(lane: WalkthroughLane): number {
   return lane === "series" ? 2 : 3;
 }
@@ -262,7 +228,7 @@ function playingMeta(lane: WalkthroughLane) {
 
 export function playingPositionSeconds(lane: WalkthroughLane, sceneElapsedMs: number): number {
   const meta = playingMeta(lane);
-  const advanced = (sceneElapsedMs / 1000) * PLAYBACK_WALKTHROUGH_RATE;
+  const advanced = sceneElapsedMs / 1000;
   return Math.min(meta.durationSeconds, meta.startPositionSeconds + advanced);
 }
 
@@ -293,10 +259,7 @@ function loadingBase(lane: WalkthroughLane): Omit<LoadingShellState, "operation"
 }
 
 export function resolvingState(lane: WalkthroughLane, sceneElapsedMs: number): LoadingShellState {
-  const durationMs =
-    PLAYBACK_WALKTHROUGH_SCENES.find((scene) => scene.lane === lane && scene.phase === "resolving")
-      ?.durationMs ?? 2800;
-  const stage = resolveStageAt(sceneElapsedMs, durationMs);
+  const stage = resolveStageAt(sceneElapsedMs, RESOLVE_DURATION_MS);
   const stageDetail =
     stage === "finding-stream"
       ? "Matching title…"
@@ -310,7 +273,7 @@ export function resolvingState(lane: WalkthroughLane, sceneElapsedMs: number): L
     operation: "resolving",
     stage,
     stageDetail,
-    progress: Math.min(95, Math.round((sceneElapsedMs / durationMs) * 100)),
+    progress: Math.min(95, Math.round((sceneElapsedMs / RESOLVE_DURATION_MS) * 100)),
   };
 }
 
@@ -353,21 +316,25 @@ export function postPlayProps(lane: WalkthroughLane): PostPlayShellProps {
   };
 }
 
-export function titleCardCopy(lane: WalkthroughLane): {
-  readonly eyebrow: string;
-  readonly title: string;
-  readonly subtitle: string;
-} {
-  if (lane === "series") {
-    return {
-      eyebrow: "Kunai walkthrough",
-      title: "Series playback",
-      subtitle: "Search → episode → play at 1.5× → post-play",
-    };
-  }
-  return {
-    eyebrow: "Kunai walkthrough",
-    title: "Anime playback",
-    subtitle: "Anime mode → episode → play at 1.5× → post-play",
-  };
+const POST_PLAY_ACTION_COUNT = 5;
+
+export function clampPostPlayActionIndex(index: number): number {
+  if (index < 0) return 0;
+  if (index >= POST_PLAY_ACTION_COUNT) return POST_PLAY_ACTION_COUNT - 1;
+  return index;
+}
+
+/**
+ * Catalog-lane switches the tape can reach from browse or post-play. YouTube is
+ * out of scope for this harness, so toggle wraps series ↔ anime only.
+ */
+export function laneAfterShellAction(
+  lane: WalkthroughLane,
+  action: ShellAction,
+): WalkthroughLane | null {
+  if (action === "anime-mode") return "anime";
+  if (action === "series-mode") return "series";
+  if (action === "toggle-mode") return lane === "series" ? "anime" : "series";
+  if (action === "toggle-mode-reverse") return lane === "anime" ? "series" : "anime";
+  return null;
 }
