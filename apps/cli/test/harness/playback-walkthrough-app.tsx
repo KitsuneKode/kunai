@@ -1,8 +1,9 @@
 /**
  * Ink surface for the series + anime playback walkthrough.
  *
- * Driven by an injected clock over `playback-walkthrough-scenes.ts`. VHS records
- * this process; it never boots providers, mpv, or analytics.
+ * Interactive: VHS types into BrowseShell, arrows the episode list, waits out
+ * resolve, supervises playing at 1×, then `q` to post-play and `/anime` to
+ * switch lanes. Fixtures only — no providers, mpv, or analytics.
  */
 
 import { BrowseShell } from "@/app-shell/browse-shell";
@@ -13,79 +14,59 @@ import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids
 import { fallbackCommandState } from "@/app-shell/shell-command-model";
 import { ShellFrame } from "@/app-shell/shell-frame";
 import { APP_LABEL, palette } from "@/app-shell/shell-theme";
+import type { ShellAction } from "@/app-shell/types";
 import type { SearchResult } from "@/domain/types";
 import { Box, Text } from "ink";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  browseQueryFor,
-  browseResultsFor,
+  SEARCH_DELAY_MS,
+  RESOLVE_DURATION_MS,
+  clampPostPlayActionIndex,
   episodeRowsFor,
+  laneAfterShellAction,
   playingState,
   postPlayProps,
   providerFor,
   resolvingState,
-  selectedEpisodeIndex,
-  titleCardCopy,
+  searchResultsFor,
   titleFor,
-  walkthroughAt,
-  walkthroughTotalDurationMs,
   type WalkthroughLane,
+  type WalkthroughPhase,
 } from "./playback-walkthrough-scenes";
 
 const TICK_MS = 100;
 const BROWSE_COMMANDS = fallbackCommandState(SEARCH_BROWSE_COMMAND_IDS);
 const PICKER_COMMANDS = fallbackCommandState(COMMAND_CONTEXTS.modalPicker);
 const PLAYBACK_COMMANDS = fallbackCommandState(COMMAND_CONTEXTS.activePlayback);
-
-function defaultNowMs(): number {
-  return Date.now();
-}
+const POST_PLAY_COMMANDS = fallbackCommandState([
+  "next",
+  "replay",
+  "search",
+  "anime-mode",
+  "series-mode",
+  "toggle-mode",
+  "help",
+  "quit",
+]);
 
 function noop(): void {}
 
-async function searchLane(lane: WalkthroughLane) {
-  return {
-    options: browseResultsFor(lane),
-    subtitle: `${browseResultsFor(lane).length} titles`,
-  };
-}
-
-function TitleCard({ lane }: { readonly lane: WalkthroughLane }) {
-  const copy = titleCardCopy(lane);
-  return (
-    <ShellFrame
-      eyebrow={APP_LABEL}
-      title={copy.title}
-      subtitle={copy.subtitle}
-      status={{ label: copy.eyebrow, tone: "info" }}
-      footerTask="Walkthrough"
-      footerMode="minimal"
-      footerActions={[{ key: "ctrl+c", label: "stop" }]}
-      commands={PICKER_COMMANDS}
-      inputLocked
-      onResolve={noop}
-    >
-      <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <Text color={palette.text} bold>
-          {copy.title}
-        </Text>
-        <Text color={palette.muted}>{copy.subtitle}</Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text color={palette.dim}>1 Search and pick a title</Text>
-          <Text color={palette.dim}>2 Confirm the episode</Text>
-          <Text color={palette.dim}>3 Resolve a direct stream</Text>
-          <Text color={palette.dim}>4 Supervise mpv at 1.5×</Text>
-          <Text color={palette.dim}>5 Post-play — next, replay, or search</Text>
-        </Box>
-      </Box>
-    </ShellFrame>
-  );
-}
-
-function EpisodePicker({ lane }: { readonly lane: WalkthroughLane }) {
+function EpisodePicker({
+  lane,
+  onPlay,
+  onBack,
+  onShellAction,
+}: {
+  readonly lane: WalkthroughLane;
+  readonly onPlay: () => void;
+  readonly onBack: () => void;
+  readonly onShellAction: (action: ShellAction) => void;
+}) {
   const rows = episodeRowsFor(lane);
-  const selected = selectedEpisodeIndex(lane);
+  const [selected, setSelected] = useState(0);
+  const lastIndex = Math.max(0, rows.length - 1);
+
   return (
     <ShellFrame
       eyebrow={APP_LABEL}
@@ -99,8 +80,25 @@ function EpisodePicker({ lane }: { readonly lane: WalkthroughLane }) {
         { key: "esc", label: "back" },
       ]}
       commands={PICKER_COMMANDS}
-      inputLocked
-      onResolve={noop}
+      escapeAction="back-to-results"
+      onUnhandledInput={(_input, key) => {
+        if (key.upArrow) {
+          setSelected((index) => Math.max(0, index - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setSelected((index) => Math.min(lastIndex, index + 1));
+          return;
+        }
+        if (key.return) onPlay();
+      }}
+      onResolve={(action) => {
+        if (action === "back-to-results") {
+          onBack();
+          return;
+        }
+        onShellAction(action);
+      }}
     >
       <Box flexDirection="column" paddingX={1}>
         {rows.map((row, index) => {
@@ -118,42 +116,58 @@ function EpisodePicker({ lane }: { readonly lane: WalkthroughLane }) {
   );
 }
 
-function DoneCard() {
+function PostPlayView({
+  lane,
+  onShellAction,
+}: {
+  readonly lane: WalkthroughLane;
+  readonly onShellAction: (action: ShellAction) => void;
+}) {
+  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
+  const props = postPlayProps(lane);
+
   return (
     <ShellFrame
       eyebrow={APP_LABEL}
-      title="Walkthrough complete"
-      subtitle="Series and anime — search, play, post-play"
-      status={{ label: "1.5× demo", tone: "success" }}
-      footerTask="Done"
+      title={titleFor(lane)}
+      subtitle={props.episodeLabel}
+      contentOnlyChrome
+      status={{ label: providerFor(lane), tone: "info" }}
+      footerTask="Post-play"
       footerMode="minimal"
-      footerActions={[{ key: "ctrl+c", label: "exit" }]}
-      commands={PICKER_COMMANDS}
-      inputLocked
-      onResolve={noop}
+      footerActions={[
+        { key: "/", label: "commands" },
+        { key: "esc", label: "search" },
+      ]}
+      commands={POST_PLAY_COMMANDS}
+      escapeAction="search"
+      onUnhandledInput={(_input, key) => {
+        if (key.upArrow) {
+          setSelectedActionIndex((index) => clampPostPlayActionIndex(index - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setSelectedActionIndex((index) => clampPostPlayActionIndex(index + 1));
+        }
+      }}
+      onResolve={onShellAction}
     >
-      <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <Text color={palette.ok} bold>
-          Walkthrough complete
-        </Text>
-        <Text color={palette.muted}>Series lane · Andor S01E03</Text>
-        <Text color={palette.muted}>Anime lane · Frieren E04</Text>
-        <Text color={palette.dim}>Playback shown at 1.5×. Press Ctrl+C to leave.</Text>
-      </Box>
+      <PostPlayShell {...props} selectedActionIndex={selectedActionIndex} />
     </ShellFrame>
   );
 }
 
-export function PlaybackWalkthroughApp({
-  nowMs = defaultNowMs,
-  onDone,
-}: {
-  readonly nowMs?: () => number;
-  readonly onDone: () => void;
-}) {
-  const startedAt = useRef(nowMs());
-  const finished = useRef(false);
+export function PlaybackWalkthroughApp() {
+  const [lane, setLane] = useState<WalkthroughLane>("series");
+  const [phase, setPhase] = useState<WalkthroughPhase>("browse");
+  const [browseEpoch, setBrowseEpoch] = useState(0);
   const [, setTick] = useState(0);
+  const phaseStartedAt = useRef(Date.now());
+
+  const goPhase = useCallback((next: WalkthroughPhase) => {
+    phaseStartedAt.current = Date.now();
+    setPhase(next);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -162,72 +176,106 @@ export function PlaybackWalkthroughApp({
     return () => clearInterval(timer);
   }, []);
 
-  const clock = walkthroughAt(nowMs() - startedAt.current);
   useEffect(() => {
-    if (clock || finished.current) return;
-    finished.current = true;
-    onDone();
-  }, [clock, onDone]);
+    if (phase !== "resolving") return;
+    const timer = setTimeout(() => {
+      goPhase("playing");
+    }, RESOLVE_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [goPhase, phase]);
 
-  const browseSeries = useMemo(() => browseResultsFor("series"), []);
-  const browseAnime = useMemo(() => browseResultsFor("anime"), []);
+  const sceneElapsedMs = Date.now() - phaseStartedAt.current;
 
-  if (!clock) {
-    return <DoneCard />;
-  }
+  const openBrowse = useCallback(
+    (nextLane: WalkthroughLane) => {
+      phaseStartedAt.current = Date.now();
+      setLane(nextLane);
+      goPhase("browse");
+      setBrowseEpoch((value) => value + 1);
+    },
+    [goPhase],
+  );
 
-  const { scene, sceneElapsedMs } = clock;
-  if (scene.phase === "title") return <TitleCard lane={scene.lane} />;
-  if (scene.phase === "episodes") return <EpisodePicker lane={scene.lane} />;
-  if (scene.phase === "resolving") {
+  const handleShellAction = useCallback(
+    (action: ShellAction) => {
+      const nextLane = laneAfterShellAction(lane, action);
+      if (nextLane) {
+        openBrowse(nextLane);
+        return;
+      }
+      if (action === "search" || action === "back-to-results") {
+        openBrowse(lane);
+      }
+    },
+    [lane, openBrowse],
+  );
+
+  const runSearch = useCallback(
+    async (query: string) => {
+      await Bun.sleep(SEARCH_DELAY_MS);
+      const options = searchResultsFor(lane, query);
+      return {
+        options,
+        subtitle: `${options.length} titles`,
+      };
+    },
+    [lane],
+  );
+
+  if (phase === "episodes") {
     return (
-      <LoadingShell
-        state={{ ...resolvingState(scene.lane, sceneElapsedMs), commands: PLAYBACK_COMMANDS }}
-        onCancel={noop}
-        onStop={noop}
+      <EpisodePicker
+        lane={lane}
+        onPlay={() => goPhase("resolving")}
+        onBack={() => goPhase("browse")}
+        onShellAction={handleShellAction}
       />
     );
   }
-  if (scene.phase === "playing") {
+
+  if (phase === "resolving") {
     return (
       <LoadingShell
-        state={{ ...playingState(scene.lane, sceneElapsedMs), commands: PLAYBACK_COMMANDS }}
-        onStop={noop}
+        state={{ ...resolvingState(lane, sceneElapsedMs), commands: PLAYBACK_COMMANDS }}
+        onCancel={() => goPhase("browse")}
+        onStop={() => goPhase("post-play")}
+      />
+    );
+  }
+
+  if (phase === "playing") {
+    return (
+      <LoadingShell
+        state={{ ...playingState(lane, sceneElapsedMs), commands: PLAYBACK_COMMANDS }}
+        onStop={() => goPhase("post-play")}
+        onCancel={() => goPhase("post-play")}
         onNext={noop}
         onPrevious={noop}
-        onPickEpisode={noop}
+        onPickEpisode={() => goPhase("episodes")}
         onPickSource={noop}
         onPickQuality={noop}
         onToggleAutoplay={noop}
         onToggleAutoskip={noop}
+        onReturnToSearch={() => openBrowse(lane)}
       />
     );
   }
-  if (scene.phase === "post-play") {
-    return <PostPlayShell {...postPlayProps(scene.lane)} />;
-  }
-  if (scene.phase === "done") return <DoneCard />;
 
-  const lane = scene.lane;
-  const results = lane === "series" ? browseSeries : browseAnime;
+  if (phase === "post-play") {
+    return <PostPlayView lane={lane} onShellAction={handleShellAction} />;
+  }
+
   return (
     <BrowseShell<SearchResult>
+      key={`${lane}-${browseEpoch}`}
       mode={lane}
       provider={providerFor(lane)}
-      initialQuery={browseQueryFor(lane)}
-      initialResults={results}
-      initialResultSubtitle={`${results.length} titles`}
-      initialSelectedIndex={0}
       placeholder={lane === "series" ? "Search series" : "Search anime"}
       commands={BROWSE_COMMANDS}
-      onSearch={() => searchLane(lane)}
-      onResolve={noop}
-      onSubmit={noop}
+      onSearch={runSearch}
+      onResolve={handleShellAction}
+      onSubmit={() => goPhase("episodes")}
       onCancel={noop}
     />
   );
-}
-
-export function walkthroughRuntimeMs(): number {
-  return walkthroughTotalDurationMs();
 }
