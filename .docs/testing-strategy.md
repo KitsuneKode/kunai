@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-09-07"
 ---
 
 # Kunai — Testing Strategy
@@ -378,6 +378,9 @@ Best target for:
 - browse shell snapshots
 - help and diagnostics overlays
 - command palette discoverability
+- series and anime playback walkthroughs (`test:vhs:playback`) — typed
+  fixture session, not a live provider run — typed
+  fixture session, not a live provider run
 - before and after UX comparison for major shell redesign passes
 
 Use VHS for terminal UX capture and review, not as the only proof that behavior works.
