@@ -136,8 +136,9 @@ function PostPlayView({
       footerTask="Post-play"
       footerMode="minimal"
       footerActions={[
-        { key: "/", label: "commands" },
-        { key: "esc", label: "search" },
+        { key: "s", label: "search", action: "search" },
+        { key: "/", label: "commands", action: "command-mode" },
+        { key: "esc", label: "search", action: "search" },
       ]}
       commands={POST_PLAY_COMMANDS}
       escapeAction="search"
