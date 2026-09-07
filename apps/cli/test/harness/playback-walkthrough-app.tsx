@@ -236,7 +236,12 @@ export function PlaybackWalkthroughApp() {
   if (phase === "resolving") {
     return (
       <LoadingShell
-        state={{ ...resolvingState(lane, sceneElapsedMs), commands: PLAYBACK_COMMANDS }}
+        key="resolving"
+        state={{
+          ...resolvingState(lane, sceneElapsedMs),
+          commands: PLAYBACK_COMMANDS,
+          onCommandAction: handleShellAction,
+        }}
         onCancel={() => goPhase("browse")}
         onStop={() => goPhase("post-play")}
       />
@@ -246,7 +251,18 @@ export function PlaybackWalkthroughApp() {
   if (phase === "playing") {
     return (
       <LoadingShell
-        state={{ ...playingState(lane, sceneElapsedMs), commands: PLAYBACK_COMMANDS }}
+        key="playing"
+        state={{
+          ...playingState(lane, sceneElapsedMs),
+          commands: PLAYBACK_COMMANDS,
+          onCommandAction: (action) => {
+            if (action === "quit") {
+              goPhase("post-play");
+              return;
+            }
+            handleShellAction(action);
+          },
+        }}
         onStop={() => goPhase("post-play")}
         onCancel={() => goPhase("post-play")}
         onNext={noop}
