@@ -50,12 +50,46 @@ const DRIFTED_ROUTE =
  */
 function extractJsonObjects(text: string): SmokePayload[] {
   const objects: SmokePayload[] = [];
+  let index = 0;
+
+  while (index < text.length) {
+    const start = text.indexOf("{", index);
+    if (start < 0) break;
+
+    const end = findBalancedObjectEnd(text, start);
+    if (end < 0) {
+      // A lone `{` — a stack trace, or a log line truncated mid-object. Skipping
+      // only this brace matters: treating it as an open object would swallow
+      // every well-formed payload printed after it.
+      index = start + 1;
+      continue;
+    }
+
+    try {
+      const value: unknown = JSON.parse(text.slice(start, end + 1));
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        objects.push(value as SmokePayload);
+      }
+    } catch {
+      // A fragment that only looked like an object — keep scanning.
+    }
+    index = end + 1;
+  }
+
+  return objects;
+}
+
+/**
+ * Index of the `}` closing the object that opens at `start`, or -1 when the
+ * text never closes it. String- and escape-aware so a brace inside a URL or a
+ * message cannot desynchronise the scan.
+ */
+function findBalancedObjectEnd(text: string, start: number): number {
   let depth = 0;
-  let start = -1;
   let inString = false;
   let escaped = false;
 
-  for (let index = 0; index < text.length; index++) {
+  for (let index = start; index < text.length; index++) {
     const char = text[index];
 
     if (inString) {
@@ -65,29 +99,15 @@ function extractJsonObjects(text: string): SmokePayload[] {
       continue;
     }
 
-    if (char === '"') {
-      inString = true;
-    } else if (char === "{") {
-      if (depth === 0) start = index;
-      depth++;
-    } else if (char === "}") {
-      if (depth === 0) continue;
+    if (char === '"') inString = true;
+    else if (char === "{") depth++;
+    else if (char === "}") {
       depth--;
-      if (depth === 0 && start >= 0) {
-        try {
-          const value: unknown = JSON.parse(text.slice(start, index + 1));
-          if (value && typeof value === "object" && !Array.isArray(value)) {
-            objects.push(value as SmokePayload);
-          }
-        } catch {
-          // A fragment that only looked like an object — keep scanning.
-        }
-        start = -1;
-      }
+      if (depth === 0) return index;
     }
   }
 
-  return objects;
+  return -1;
 }
 
 /**

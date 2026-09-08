@@ -136,7 +136,9 @@ if (argv.some((arg) => arg.toLowerCase() === "release-signoff")) {
     const report = {
       ok: failed.length === 0,
       generatedAt: new Date().toISOString(),
-      evidence: PLAYBACK_MODE ? "playback" : "reachability",
+      // What the run was asked for. Rows carry what each one actually proved,
+      // because providers without a decode fixture fall back to reachability.
+      requestedEvidence: PLAYBACK_MODE ? "playback" : "reachability",
       selectedProviders: selected.map((entry) => entry.provider),
       summary: {
         total: results.length,
@@ -174,7 +176,12 @@ type MatrixResult = Record<string, unknown> & {
 };
 
 async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
-  const command = PLAYBACK_MODE && entry.playbackCommand ? entry.playbackCommand : entry.command;
+  // Not every provider has a decode fixture, so a playback run is a mix. The row
+  // records which command actually ran: claiming playback evidence for a
+  // provider that only answered the reachability smoke is the overclaim this
+  // field exists to prevent.
+  const playback = PLAYBACK_MODE && entry.playbackCommand !== undefined;
+  const command = playback ? (entry.playbackCommand ?? entry.command) : entry.command;
   const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(command);
   const parsed = parseSmokePayload(stdout, stderr);
 
@@ -192,6 +199,7 @@ async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
       cacheHit: null,
       isolatedProfile: null,
       failureCodes: [] as string[],
+      evidence: playback ? "playback" : "reachability",
       error: timedOut
         ? "provider smoke exceeded the 45 second deadline"
         : "provider smoke did not emit parseable JSON",
@@ -227,6 +235,7 @@ async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
     selectedSourceLabel: stringOrNull(parsed.selectedSourceLabel),
     probeOrderLabels: stringArray(parsed.probeOrderLabels),
     score: parseScore(parsed.score),
+    evidence: playback ? "playback" : "reachability",
     ...(parsed.mpv === undefined ? {} : { mpv: parsed.mpv }),
     ...(stringOrNull(parsed.stage) === null ? {} : { stage: parsed.stage }),
     ...(error === null ? {} : { error }),

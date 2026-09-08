@@ -5,6 +5,7 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -28,7 +29,7 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
-import { selectVerifiedStream } from "../shared/resolve-gate";
+import { resolveGateBudgetMs, selectVerifiedStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -102,6 +103,20 @@ let providerServicesCache:
       readonly expiresAtMs: number;
     }
   | undefined;
+
+/**
+ * Reset the module-level caches between tests.
+ *
+ * `providerServicesCache` and `secretKeyCache` outlive a single test file —
+ * module state is per process, not per file — so a test that resolves through
+ * this provider leaves discovery already cached for whatever runs next. Tests
+ * asserting on discovery call counts then see zero, and only in whatever order
+ * the runner happens to pick.
+ */
+export function clearRivestreamCachesForTest(): void {
+  providerServicesCache = undefined;
+  secretKeyCache.clear();
+}
 
 type RivestreamProviderServicesResponse = {
   readonly data?: unknown;
@@ -398,6 +413,16 @@ export const rivestreamProviderModule: CoreProviderModule = {
         secretKey,
       });
 
+      // The attempt budget caps this, so the gate has to be sized against what
+      // the candidate actually gets rather than the number chosen here.
+      const candidateTimeoutMs = providerCycleCandidateTimeoutMs(
+        input.startupPriority ?? "balanced",
+        RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+      );
+      const gateTimeoutMs = resolveGateBudgetMs(
+        candidateTimeoutMs,
+        RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+      );
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
         candidates: cycleCandidates,
@@ -405,7 +430,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         now: context.now,
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
-        candidateTimeoutMs: RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+        candidateTimeoutMs,
         // Without these the cycle can neither skip a quarantined mirror nor
         // record what it learned, so every resolve re-walked all eleven
         // services and paid the full gate cost each time.
@@ -431,8 +456,16 @@ export const rivestreamProviderModule: CoreProviderModule = {
               context,
               cachePolicy,
               sourceDataPromise,
+              gateTimeoutMs,
             });
           } catch (error) {
+            // The resolve gate already decided, and its verdict carries the
+            // parts that matter downstream: `candidate-blocked` and
+            // `endpointScoped`. Rebuilding it from a generic `ProviderHttpError`
+            // relabels it `candidate-empty` and drops the flag, so endpoint
+            // health records nothing and the dead mirror is re-walked on every
+            // play — and a refused stream reads in the trace exactly like a
+            // server that returned no sources at all.
             if (
               error &&
               typeof error === "object" &&
@@ -884,6 +917,7 @@ async function resolveRivestreamProviderCandidate({
   context,
   cachePolicy,
   sourceDataPromise,
+  gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly provider: string;
@@ -891,6 +925,8 @@ async function resolveRivestreamProviderCandidate({
   readonly context: ProviderRuntimeContext;
   readonly cachePolicy: CachePolicy;
   readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
+  /** Sized against the clamped candidate timeout, never the raw constant. */
+  readonly gateTimeoutMs: number;
 }): Promise<RivestreamResolvedCandidate> {
   const displayLabel = displayRivestreamSourceLabel(provider);
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
@@ -907,8 +943,8 @@ async function resolveRivestreamProviderCandidate({
     });
   }
 
-  const streams: StreamCandidate[] = [];
-  const variants: ProviderVariantCandidate[] = [];
+  let streams: StreamCandidate[] = [];
+  let variants: ProviderVariantCandidate[] = [];
   const subtitles: SubtitleCandidate[] = [];
 
   rawSources.forEach((source) => {
@@ -1018,7 +1054,7 @@ async function resolveRivestreamProviderCandidate({
   const selection = await selectVerifiedStream({
     streams,
     context,
-    timeoutMs: RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+    timeoutMs: gateTimeoutMs,
   });
   if (!selection.accepted) {
     throw createProviderCycleFailureError(candidate, {
@@ -1030,6 +1066,17 @@ async function resolveRivestreamProviderCandidate({
       // it is durable evidence about this endpoint rather than a regional block.
       endpointScoped: true,
     });
+  }
+  if (selection.refusedHosts.size > 0) {
+    // Keep the alternatives, drop the proven-dead ones. Leaving a refused rung
+    // in the inventory lets startup selection ship the exact stream the gate
+    // rejected — usually the highest quality, which is what it prefers.
+    streams = streams.filter(
+      (candidateStream) => !selection.refusedHosts.has(rivestreamStreamHost(candidateStream.url)),
+    );
+    variants = variants.filter((variant) =>
+      streams.some((candidateStream) => candidateStream.variantId === variant.id),
+    );
   }
 
   return { provider, sourceId, streams, variants, subtitles };
@@ -1052,6 +1099,15 @@ export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
  * eat the budget its own candidate needs.
  */
 export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 6_000;
+
+/** Host of a candidate stream, for matching against proven-dead hosts. */
+function rivestreamStreamHost(url: string | undefined): string {
+  try {
+    return new URL(url ?? "").host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
 
 function extractRivestreamCaptions(
   data: RivestreamSourceResponse["data"],

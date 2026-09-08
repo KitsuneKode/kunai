@@ -3,8 +3,8 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
-  runProviderCycle,
   providerCycleCandidateTimeoutMs,
+  runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
 import type {
@@ -32,7 +32,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
-import { verifyCandidateStream } from "../shared/resolve-gate";
+import { resolveGateBudgetMs, verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   normalizeProviderDisplayLabel,
@@ -646,7 +646,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           emit: context.emit,
           maxAttemptsPerCandidate: 1,
           candidateTimeoutMs: providerCycleCandidateTimeoutMs(
-            input.startupPriority ?? "balanced",
+            startupPriority,
             ALLMANGA_CANDIDATE_TIMEOUT_MS,
           ),
           resolveCandidate: async (candidate, cycleContext) => {
@@ -682,7 +682,13 @@ export const allmangaProviderModule: CoreProviderModule = {
               const verdict = await verifyCandidateStream({
                 stream,
                 context,
+                // The candidate's signal, not the attempt's: when this candidate
+                // times out its probe has to be abandoned with it, or the
+                // request outlives the thing that asked for it.
                 signal: cycleContext.signal,
+                timeoutMs: resolveGateBudgetMs(
+                  providerCycleCandidateTimeoutMs(startupPriority, ALLMANGA_CANDIDATE_TIMEOUT_MS),
+                ),
               });
               if (!verdict.accepted) {
                 throw createProviderCycleFailureError(candidate, {

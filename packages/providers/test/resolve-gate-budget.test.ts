@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
+import { providerCycleCandidateTimeoutMs } from "@kunai/core";
+
 import { ALLMANGA_CANDIDATE_TIMEOUT_MS } from "../src/allmanga/direct";
 import {
   RIVESTREAM_CANDIDATE_TIMEOUT_MS,
   RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
 } from "../src/rivestream/direct";
+import { resolveGateBudgetMs } from "../src/shared/resolve-gate";
 import { STREAM_HEALTH_DEFAULTS } from "../src/shared/stream-health";
 
 /**
@@ -54,5 +57,44 @@ describe("resolve gate budgets", () => {
     // permissive; it is not a cycling decision, so it does not need the
     // headroom a resolve gate does.
     expect(STREAM_HEALTH_DEFAULTS.preflightTimeoutMs).toBeGreaterThan(0);
+  });
+
+  test.each(["fast", "balanced", "quality-first"] as const)(
+    "the gate still fits after the attempt budget clamps the candidate on %s",
+    (startupPriority) => {
+      // `providerCycleCandidateTimeoutMs` caps a provider's chosen candidate
+      // timeout at 80% of the attempt budget, and on `fast` that is 4.8s — below
+      // the 6s gate. A gate sized against the provider's *unclamped* number is
+      // cut short by its own candidate on the fastest profile, which is the
+      // regime most likely to be in use.
+      for (const preferred of [RIVESTREAM_CANDIDATE_TIMEOUT_MS, ALLMANGA_CANDIDATE_TIMEOUT_MS]) {
+        const candidateMs = providerCycleCandidateTimeoutMs(startupPriority, preferred);
+        expect(resolveGateBudgetMs(candidateMs)).toBeLessThan(candidateMs);
+      }
+    },
+  );
+
+  test("the gate never grows past the shared budget, however long the candidate is", () => {
+    expect(resolveGateBudgetMs(60_000)).toBe(STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs);
+  });
+
+  test.each(["fast", "balanced", "quality-first"] as const)(
+    "a candidate can afford two gate probes on %s",
+    (startupPriority) => {
+      // `runStreamHealthCheck` probes again when the first attempt reached no
+      // verdict. Sizing the budget for a single probe lets the retry run past
+      // the candidate timeout, which aborts the candidate while the gate is
+      // still deciding — the candidate is then reported dead on a verdict
+      // nobody ever reached.
+      for (const preferred of [RIVESTREAM_CANDIDATE_TIMEOUT_MS, ALLMANGA_CANDIDATE_TIMEOUT_MS]) {
+        const candidateMs = providerCycleCandidateTimeoutMs(startupPriority, preferred);
+        expect(resolveGateBudgetMs(candidateMs) * 2).toBeLessThan(candidateMs);
+      }
+    },
+  );
+
+  test("a candidate too small for any probe still yields a positive budget", () => {
+    // Better a short probe than a negative timeout that throws or never fires.
+    expect(resolveGateBudgetMs(200)).toBeGreaterThan(0);
   });
 });
