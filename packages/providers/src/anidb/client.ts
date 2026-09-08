@@ -53,7 +53,8 @@ const languageCache = new TTLCache<string, readonly AnidbLanguageEntry[]>(300_00
 const malCache = new TTLCache<string, number | null>(3_600_000);
 const externalIdsCache = new TTLCache<
   string,
-  {\n    readonly malId: number | null;
+  {
+    readonly malId: number | null;
     readonly anilistId: string | null;
     readonly officialAid: number | null;
     readonly posterUrl: string | null;

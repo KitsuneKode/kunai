@@ -4,6 +4,7 @@ import {
   createResolveTrace,
   createTraceStep,
   runProviderCycle,
+  providerCycleCandidateTimeoutMs,
   type CoreProviderModule,
 } from "@kunai/core";
 import type {
@@ -644,7 +645,10 @@ export const allmangaProviderModule: CoreProviderModule = {
           now: context.now,
           emit: context.emit,
           maxAttemptsPerCandidate: 1,
-          candidateTimeoutMs: ALLMANGA_CANDIDATE_TIMEOUT_MS,
+          candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+            input.startupPriority ?? "balanced",
+            ALLMANGA_CANDIDATE_TIMEOUT_MS,
+          ),
           resolveCandidate: async (candidate, cycleContext) => {
             const stream = streams.find((item) => item.id === candidate.streamId);
             if (!stream?.url && !stream?.deferredLocator) {
@@ -678,7 +682,7 @@ export const allmangaProviderModule: CoreProviderModule = {
               const verdict = await verifyCandidateStream({
                 stream,
                 context,
-                signal: context.signal,
+                signal: cycleContext.signal,
               });
               if (!verdict.accepted) {
                 throw createProviderCycleFailureError(candidate, {

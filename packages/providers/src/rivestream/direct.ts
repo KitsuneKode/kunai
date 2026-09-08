@@ -433,6 +433,14 @@ export const rivestreamProviderModule: CoreProviderModule = {
               sourceDataPromise,
             });
           } catch (error) {
+            if (
+              error &&
+              typeof error === "object" &&
+              "name" in error &&
+              error.name === "ProviderCycleFailureError"
+            ) {
+              throw error;
+            }
             const providerError =
               error instanceof ProviderHttpError
                 ? error
@@ -831,6 +839,44 @@ function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
+export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
+  let params: URLSearchParams;
+  try {
+    params = new URL(sourceUrl).searchParams;
+  } catch {
+    return null;
+  }
+  const raw = params.get("headers");
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== "string") continue;
+    const cleaned = value.replace(/[\r\n]/g, "").trim();
+    if (!name.trim() || !cleaned) continue;
+    headers[name.trim()] = cleaned;
+  }
+  return Object.keys(headers).length > 0 ? headers : null;
+}
+
+export function resolveRivestreamStreamHeaders(sourceUrl: string): Record<string, string> {
+  const proxyHeaders = parseRivestreamProxyHeaders(sourceUrl);
+  if (!proxyHeaders) {
+    return { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT };
+  }
+  const headers: Record<string, string> = { ...proxyHeaders };
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")) {
+    headers["user-agent"] = USER_AGENT;
+  }
+  return headers;
+}
+
 async function resolveRivestreamProviderCandidate({
   candidate,
   provider,
@@ -872,7 +918,11 @@ async function resolveRivestreamProviderCandidate({
     const qualityRank = qualityRankFromLabel(qualityStr) ?? 0;
     const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [source.url]);
     const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, source.url]);
-    const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
+    const protocol = source.url.includes(".m3u8")
+      ? "hls"
+      : source.url.includes(".mpd")
+        ? "dash"
+        : "mp4";
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
       normalizeIsoLanguageCode(input.preferredAudioLanguage);
@@ -909,13 +959,13 @@ async function resolveRivestreamProviderCandidate({
       variantId,
       url: source.url,
       protocol,
-      container: protocol === "hls" ? "m3u8" : "mp4",
+      container: protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4",
       audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
       qualityLabel,
       qualityRank,
       languageEvidence,
       sourceEvidence,
-      headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+      headers: resolveRivestreamStreamHeaders(source.url),
       confidence: 0.95,
       cachePolicy,
       ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
@@ -956,23 +1006,30 @@ async function resolveRivestreamProviderCandidate({
   // answer 200 on the master playlist and refuse every segment, so without this
   // the cycle stops at the first server that merely *responds* and never
   // reaches one that plays.
-  if (streams.length > 0) {
-    const selection = await selectVerifiedStream({
-      streams,
-      context,
-      timeoutMs: RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+  if (streams.length === 0) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-empty",
+      message: `${displayLabel}: no stream URLs returned`,
+      retryable: false,
+      at: context.now(),
     });
-    if (!selection.accepted) {
-      throw createProviderCycleFailureError(candidate, {
-        failureClass: "candidate-blocked",
-        message: `${displayLabel}: ${selection.reason}`,
-        retryable: false,
-        at: context.now(),
-        // Every rung of this service was refused by probing its own streams, so
-        // it is durable evidence about this endpoint rather than a regional block.
-        endpointScoped: true,
-      });
-    }
+  }
+
+  const selection = await selectVerifiedStream({
+    streams,
+    context,
+    timeoutMs: RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+  });
+  if (!selection.accepted) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-blocked",
+      message: `${displayLabel}: ${selection.reason}`,
+      retryable: false,
+      at: context.now(),
+      // Every rung of this service was refused by probing its own streams, so
+      // it is durable evidence about this endpoint rather than a regional block.
+      endpointScoped: true,
+    });
   }
 
   return { provider, sourceId, streams, variants, subtitles };
