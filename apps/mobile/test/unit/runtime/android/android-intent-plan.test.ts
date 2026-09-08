@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveAndroidIntentPlan } from "../src/android-intent-plan";
+import { resolveAndroidIntentPlan } from "../../../../src/runtime/android/android-intent-plan";
 
 const URL = "https://media.example/episode.m3u8?token=a&title=$(touch%20nope)";
 

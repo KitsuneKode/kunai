@@ -58,11 +58,9 @@ cancellation from leaving Node alive, and prevents an immediate Ctrl+C from
 racing the signal handler. The emitted-artifact integration suite exercises
 both cancellation paths with stdin deliberately left open.
 
-The shared package seam is intentionally small: `@kunai/core` owns the pure
-Android intent plan because the desktop handoff preview and mobile app both
-consume it. Node, a-Shell, filesystem, terminal, and evidence mechanics remain
-inside `apps/mobile`; extracting them to a package would weaken ownership
-without creating reuse.
+The Android intent plan stays inside `apps/mobile` because it has one consumer.
+Node, a-Shell, filesystem, terminal, and evidence mechanics remain there too;
+extracting them to a package would weaken ownership without creating reuse.
 
 The Android output is built with Bun as a build-time bundler but executes under
 Termux's packaged Node. It contains no Bun runtime or native Kunai executable.

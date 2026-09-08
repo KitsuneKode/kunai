@@ -17,4 +17,3 @@ export * from "./resolver";
 export * from "./trace";
 export * from "./trace-summary";
 export * from "./hls-url";
-export * from "./android-intent-plan";
