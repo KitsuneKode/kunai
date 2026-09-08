@@ -77,6 +77,24 @@ import { videasyManifest, VIDEOSY_PROVIDER_ID, VIDKING_PROVIDER_ID } from "./man
 export { VIDEOSY_PROVIDER_ID, VIDKING_PROVIDER_ID };
 export const VIDKING_REFERER = "https://www.vidking.net/";
 export const VIDKING_ORIGIN = "https://www.vidking.net";
+
+/**
+ * Origin the media CDN expects on the stream request.
+ *
+ * This is **not** `clientProfile.origin`. That one says which front-end we
+ * impersonate when *calling* the Videasy API (`cineby.at` for `bc-frontend`);
+ * this one is what the CDN's hotlink rule accepts on the media request. Reusing
+ * the API origin for the stream shipped a URL that answers 403, while the
+ * resolve gate probed the default and passed — a gate attesting a request shape
+ * production never makes.
+ *
+ * Measured against `moon.peakstorm.top` on 2026-09-08 with the cineby watch page
+ * as Referer: `vidking.net` -> 200, `cineby.at` -> 403, absent -> 403.
+ *
+ * Deliberately not a parameter. The probed shape and the shipped shape must not
+ * be able to diverge.
+ */
+export const VIDEASY_MEDIA_ORIGIN = VIDKING_ORIGIN;
 /** Default bc-frontend stream/API client profile (matches cineby.at seed + playback). */
 export const CINEBY_REFERER = "https://www.cineby.at/";
 export const CINEBY_ORIGIN = "https://www.cineby.at";
@@ -946,7 +964,6 @@ export function createVidkingResultFromPayload({
   startedAt,
   failures = [],
   streamReferer,
-  streamOrigin,
   sourceQualityFilter,
   sourceDisplayLabel,
   flavorArchetype,
@@ -966,7 +983,6 @@ export function createVidkingResultFromPayload({
   readonly startedAt?: string;
   readonly failures?: readonly ProviderFailure[];
   readonly streamReferer?: string;
-  readonly streamOrigin?: string;
   readonly sourceQualityFilter?: string;
   readonly sourceDisplayLabel?: string;
   readonly flavorArchetype?: string;
@@ -1017,7 +1033,6 @@ export function createVidkingResultFromPayload({
     sourceId: resolvedSourceId,
     server: resolvedServer,
     streamReferer,
-    streamOrigin,
     sourceQualityFilter,
     flavorLabel: themedLabel,
     serverName: themedLabel,
@@ -1767,7 +1782,6 @@ async function tryVidkingServer(opts: {
             startedAt,
             failures,
             streamReferer,
-            streamOrigin: clientProfile.origin,
             sourceQualityFilter: engineOptions.filterQuality,
             engineOptions,
             streamReachabilityVerified: streamProbe.verified,
@@ -2091,7 +2105,6 @@ function normalizeStreamCandidates({
   sourceId,
   server,
   streamReferer = VIDKING_REFERER,
-  streamOrigin = VIDKING_ORIGIN,
   sourceQualityFilter,
   flavorLabel,
   serverName,
@@ -2103,7 +2116,6 @@ function normalizeStreamCandidates({
   readonly sourceId: string;
   readonly server?: string;
   readonly streamReferer?: string;
-  readonly streamOrigin?: string;
   readonly sourceQualityFilter?: string;
   readonly flavorLabel?: string;
   readonly serverName?: string;
@@ -2186,7 +2198,7 @@ function normalizeStreamCandidates({
       sourceEvidence,
       headers: {
         referer: streamReferer,
-        origin: streamOrigin,
+        origin: VIDEASY_MEDIA_ORIGIN,
         "user-agent": USER_AGENT,
       },
       confidence: qualityRank > 0 ? 0.92 : 0.82,
