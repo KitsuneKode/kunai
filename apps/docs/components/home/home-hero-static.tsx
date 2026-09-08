@@ -1,4 +1,5 @@
 import { KunaiFoxLive } from "@/components/brand/kunai-fox-live";
+import { HeroKindsRow } from "@/components/home/hero-kinds-row";
 import { HeroProofRow } from "@/components/home/hero-proof-row";
 import { HomeStarCta } from "@/components/home/home-star-cta";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -20,11 +21,16 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
       <div className="kunai-hero-fox">
         <KunaiFoxLive pose="idle" alertPose="watch" size={120} />
       </div>
-      <p className="kunai-eyebrow">{homeHero.eyebrow}</p>
-      <h1 className="kunai-display-title mt-3 max-w-3xl text-balance">{homeHero.title}</h1>
+
+      {/* The heading carries its own weight. The eyebrow that used to sit here
+          read "Terminal-first playback" — a label restating the h1 in smaller
+          type, above a page that never once said what Kunai actually plays. */}
+      <h1 className="kunai-display-title text-balance">{homeHero.title}</h1>
       <p className="kunai-type-body text-fd-muted-foreground mt-4 max-w-2xl text-pretty">
         {homeHero.description}
       </p>
+
+      <HeroKindsRow />
 
       {/* Both platforms sit together: one install decision, made once. The
           Windows row used to sit below the CTAs, orphaned from its peer. */}
@@ -41,12 +47,15 @@ export function HomeHeroStatic({ cliVersion, providerCount }: HomeHeroStaticProp
         </code>
       </div>
 
+      {/* Three levels, not three peers: one primary action, one quiet link out,
+          and the star link — which is here for the count it carries, not as a
+          third thing to decide between. */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <Link className="kunai-button kunai-button-primary" href={homeHero.primaryCta.href}>
           <span>{homeHero.primaryCta.label}</span>
           <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
         </Link>
-        <Link className="kunai-button border-fd-border" href={homeHero.secondaryCta.href}>
+        <Link className="kunai-button kunai-button-quiet" href={homeHero.secondaryCta.href}>
           {homeHero.secondaryCta.label}
         </Link>
         <HomeStarCta />

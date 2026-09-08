@@ -15,6 +15,45 @@ export function websiteJsonLd() {
   };
 }
 
+/**
+ * The home page describes an installable application, not just a website.
+ *
+ * `WebSite` alone made Kunai ineligible for the software result Google renders
+ * for a free app — the one that shows the platforms and the price. Every field
+ * here is a fact the repo already asserts elsewhere; nothing is invented, and
+ * there is deliberately no `aggregateRating`, because there are no ratings.
+ */
+export function softwareApplicationJsonLd(input: {
+  readonly version: string;
+  readonly description: string;
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Kunai",
+    url: docsSiteUrl,
+    description: input.description,
+    applicationCategory: "MultimediaApplication",
+    applicationSubCategory: "Command Line Media Player",
+    operatingSystem: "Linux, macOS, Windows",
+    softwareVersion: input.version,
+    softwareRequirements: "mpv",
+    downloadUrl: "https://www.npmjs.com/package/@kitsunekode/kunai",
+    license: "https://github.com/KitsuneKode/kunai/blob/main/LICENSE",
+    isAccessibleForFree: true,
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "USD",
+    },
+    author: {
+      "@type": "Organization",
+      name: "Kunai",
+      url: "https://github.com/KitsuneKode/kunai",
+    },
+  };
+}
+
 export function techArticleJsonLd(input: {
   readonly title: string;
   readonly description: string;

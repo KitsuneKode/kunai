@@ -2,7 +2,7 @@ import HomePageShell from "@/app/(home)/home-page-shell";
 import { UsageLine } from "@/components/home/usage-line";
 import { codeMetadata } from "@/lib/code-metadata";
 import { featuredCommands, summarizeProviders } from "@/lib/home-presenters";
-import { websiteJsonLd } from "@/lib/json-ld";
+import { softwareApplicationJsonLd, websiteJsonLd } from "@/lib/json-ld";
 import { buildPageMetadata } from "@/lib/page-metadata";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -10,18 +10,34 @@ import type { ReactNode } from "react";
 /** Allow hourly refresh of the quiet usage metrics line without a full rebuild. */
 export const revalidate = 3600;
 
+/**
+ * The one string most people read before deciding whether to keep reading.
+ *
+ * It used to say "terminal client for third-party streams", which describes the
+ * architecture to someone who already knows what Kunai is. What it plays —
+ * anime, series, movies, YouTube — is both the thing a visitor wants to know
+ * and the thing anyone searching for this would actually type.
+ */
+const HOME_DESCRIPTION =
+  "Kunai is a terminal client that searches anime, series, movies, and YouTube, resolves a stream a direct provider already serves, and plays it in mpv.";
+
 export const metadata: Metadata = buildPageMetadata({
-  title: "Kunai — terminal client for third-party streams & mpv",
+  title: "Kunai — watch anime, series and movies in your terminal",
   absoluteTitle: true,
-  description:
-    "A terminal client that searches a title, resolves a stream a third-party provider already serves, hands playback to mpv, and recovers without a restart.",
+  description: HOME_DESCRIPTION,
   socialDescription:
-    "Search a title, resolve a third-party stream, hand playback to mpv, and recover without restarting.",
+    "Search anime, series, movies, and YouTube from your terminal — resolved by direct providers, played in mpv.",
   path: "/",
 });
 
 export default function HomePage() {
-  const jsonLd = websiteJsonLd();
+  const jsonLd = [
+    websiteJsonLd(),
+    softwareApplicationJsonLd({
+      version: codeMetadata.cliVersion,
+      description: HOME_DESCRIPTION,
+    }),
+  ];
   const paletteCommands = featuredCommands(codeMetadata.commands);
   const providerSummary = summarizeProviders(codeMetadata.providers);
   const usageLine: ReactNode = <UsageLine />;
