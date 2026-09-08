@@ -2,7 +2,6 @@
 status: review
 owner: mobile-runtime
 lastReviewed: "2026-09-03"
-dependsOn: feat/mobile-terminal-handoff
 ---
 
 # Mobile App Runtime
@@ -37,10 +36,9 @@ The app keeps stream resolution local. It adds no native Kunai application,
 public resolver, media proxy, shared relay URL, or media relay route. VLC and
 mpv receive direct provider URLs only.
 
-This design supersedes the iOS runtime direction in
-[`mobile-terminal-handoff.md`](./mobile-terminal-handoff.md). It depends on
-that work's Android target and detached-playback evidence, but does not turn
-the draft Android PR into a device-qualified release.
+This design replaces the earlier stacked mobile handoff direction. It is
+independent of the desktop CLI and does not turn any host proof into a
+device-qualified release.
 
 ## Product contract
 
@@ -714,5 +712,4 @@ These decisions must be accepted before implementation planning:
    embedded, and query values remain redacted.
 4. Termux Node is the Android runtime; Bun and QuickJS-ng are not fallbacks.
 5. iOS v1 is foreground a-Shell mini only.
-6. The feature branch is stacked on `feat/mobile-terminal-handoff` until the
-   Android prerequisite lands or is rebased.
+6. The mobile application lands independently of desktop CLI playback changes.

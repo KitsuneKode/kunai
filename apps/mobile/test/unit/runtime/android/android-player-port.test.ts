@@ -22,7 +22,7 @@ function runtime(input: {
 }
 
 describe("Android mobile player port", () => {
-  test("hands VLC one opaque URL argument through the shared plan", async () => {
+  test("hands VLC one opaque URL argument through the local intent plan", async () => {
     const spawned: string[][] = [];
     const player = createAndroidPlayerPort({
       runtime: runtime({

@@ -2,9 +2,8 @@ import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
 
-import { resolveAndroidIntentPlan } from "@kunai/core";
-
 import type { MobilePlayerPort } from "../../application/contracts";
+import { resolveAndroidIntentPlan } from "./android-intent-plan";
 
 export interface AndroidPlayerRuntime {
   readonly which: (command: string) => string | undefined;

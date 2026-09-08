@@ -13,9 +13,6 @@
     "test:integration": "bun test test/integration",
     "test:live:mobile-host-proof": "bun test/live/device-host-proof.ts"
   },
-  "dependencies": {
-    "@kunai/core": "workspace:*"
-  },
   "devDependencies": {
     "@types/bun": "catalog:",
     "@types/node": "catalog:",

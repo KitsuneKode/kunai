@@ -101,9 +101,6 @@
     },
     "apps/mobile": {
       "name": "@kunai/mobile",
-      "dependencies": {
-        "@kunai/core": "workspace:*",
-      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
