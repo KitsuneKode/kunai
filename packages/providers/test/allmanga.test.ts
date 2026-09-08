@@ -325,7 +325,7 @@ describe("buildAllMangaAaReq", () => {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = "532fbba462deed2b68657d7c758b7bcd6978e4ebeac46cd4e3f6d4c24ab863c7";
+  const EXPECTED_KEY_HEX = "92bd9687f091aabd760228c5983cc2d03b278f0e1a12bfbea02fcaff5899bd5b";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -416,10 +416,10 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(material?.epoch).toBe(6900);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
-    expect(material?.buildId).toBe("140");
-    expect(site.bootstrapHeaders?.get("x-build-id")).toBe("140");
+    expect(material?.buildId).toBe("166");
+    expect(site.bootstrapHeaders?.get("x-build-id")).toBe("166");
     expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
-      "9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35",
+      "0046b60be8f98c4901a15d7ae5a37199c36131972fe815df2ccc7e7f07d63e88",
     );
     expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
     expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
@@ -429,23 +429,23 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("matches independent build-140 derivation and boot-token vectors", () => {
-    expect(hashBuildId("140").toString("hex")).toBe(
-      "07041a152a2823383631cec4dfdcd2ede2e0fbf08e89869c9794aaa5bab8b348",
+  test("matches independent build-166 derivation and boot-token vectors", () => {
+    expect(hashBuildId("166").toString("hex")).toBe(
+      "422e8b53319a60c0ad71d3bc1ee24f2ff55e3c8461cd9770daa603eb4912f858",
     );
-    expect(deriveMaskKey("140").toString("hex")).toBe(
-      "522db8a067d8ea23616f7670788574dd786af7ffffd27bccfaeccfde57a67ce7",
+    expect(deriveMaskKey("166").toString("hex")).toBe(
+      "93bf9583f597adb57f0823c99532cdc02a359c1a0f04a8a6b935d1e34587a27b",
     );
-    expect(deriveKeyFromPartB(PART_B, "140").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(deriveKeyFromPartB(PART_B, "166").toString("hex")).toBe(EXPECTED_KEY_HEX);
     expect(
       buildAllMangaBootToken({
-        buildId: "140",
+        buildId: "166",
         epoch: 6900,
         keyGroup: "mkissa",
         refererHost: "mkissa.to",
         contentLane: "k7",
       }),
-    ).toBe("9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35");
+    ).toBe("0046b60be8f98c4901a15d7ae5a37199c36131972fe815df2ccc7e7f07d63e88");
   });
 
   test("falls back to bundled material when bootstrap fails", async () => {
@@ -1660,6 +1660,36 @@ function mockAllMangaBridgeFetch(
   };
 }
 
+/**
+ * AllManga segment-probes a source before accepting it, so a fixture CDN has to
+ * answer like one. Returning 404 for these reads as a dead mirror — which is
+ * exactly what the gate is there to reject — and every resolve fixture would
+ * fail for the wrong reason.
+ */
+function allMangaFixtureCdnResponse(url: string, method: string): Response | null {
+  if (url.includes("segment-0.ts")) {
+    return new Response(new Uint8Array(2048), {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-2047/2048" },
+    });
+  }
+  if (url.includes(".m3u8")) {
+    return new Response("#EXTM3U\n#EXTINF:4.0,\nsegment-0.ts\n", {
+      status: 200,
+      headers: { "Content-Type": "application/vnd.apple.mpegurl" },
+    });
+  }
+  if (url.includes(".mp4")) {
+    return method === "HEAD"
+      ? new Response(null, { status: 200 })
+      : new Response(new Uint8Array(2048), {
+          status: 206,
+          headers: { "Content-Range": "bytes 0-2047/2048" },
+        });
+  }
+  return null;
+}
+
 async function mockAllMangaFetch(
   options: {
     readonly subSourceFixture?:
@@ -1856,6 +1886,8 @@ async function mockAllMangaFetch(
       const body = JSON.parse(bodyText) as { variables?: { translationType?: string } };
       return jsonResponse(body.variables?.translationType === "dub" ? fixtures.dub : fixtures.sub);
     }
+    const cdn = allMangaFixtureCdnResponse(url, String(init?.method ?? "GET"));
+    if (cdn) return cdn;
     return new Response("{}", { status: 404 });
   }) as typeof fetch;
 

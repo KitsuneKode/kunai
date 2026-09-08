@@ -88,6 +88,10 @@ export function createProviderCycleFailureError(
     message: input.message,
     retryable: input.retryable,
     at: input.at,
+    // Forwarded explicitly: this builder copies named fields, so anything added
+    // to the failure contract and not listed here is silently dropped on the
+    // way to endpoint health.
+    ...(input.endpointScoped === undefined ? {} : { endpointScoped: input.endpointScoped }),
   });
 }
 
@@ -696,13 +700,19 @@ export function classifyEndpointFailureFromCycleFailure(
       // still applies its distinct-title guard before escalating it.
       return "server-error";
     case "candidate-blocked":
-      // "Blocked" is not endpoint-scoped evidence. It currently includes
+      // "Blocked" is not endpoint-scoped evidence on its own. It includes
       // provider-wide session guards, regional WAF/Cloudflare responses, and
       // endpoint-local 403s. Persisting all of those as a server error can
       // quarantine a healthy mirror after two titles merely because the user
-      // has no valid provider session. Keep it out of endpoint health until the
-      // failure contract carries an explicit endpoint-scoped reason.
-      return null;
+      // has no valid provider session.
+      //
+      // `endpointScoped` is the explicit reason this waited for: a resolve-gate
+      // rejection is a segment probe against this endpoint's own stream, so a
+      // definitive refusal there is durable evidence about that server alone.
+      // `server-error` rather than `route-dead` because the shorter quarantine
+      // still carries ProviderEndpointHealthService's distinct-title guard, and
+      // a CDN that rotates hosts should not be written off for a day.
+      return failure.endpointScoped === true ? "server-error" : null;
     default:
       return null;
   }

@@ -12,7 +12,7 @@ lastReviewed: "2026-08-17"
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status (2026-07-18):** Episode resolve requires ani-cli `aaReq` AES-GCM attestation + rotated hex decrypt key (`origin/fix`). Without it the API returns `AA_CRYPTO_MISSING`. Search/episode catalog POST paths still work without `aaReq`.
+- **Current status (2026-09-09):** Episode resolve requires the `aaReq` AES-GCM attestation plus the build-166 derived key. Without it the API returns `AA_CRYPTO_MISSING`; with a stale build id it returns `PersistedQueryNotFound` or an `unknown_build_id` bootstrap. Search/episode catalog POST paths still work without `aaReq`.
 
 ## Current Evidence
 
@@ -29,7 +29,7 @@ The source flow matches ani-cli:
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 119, 7-day epochs)
+  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 166, 7-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS / DASH-shaped candidates
@@ -94,10 +94,60 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Known
 
 - GraphQL search/catalog is working with `youtu-chan.com` referer.
-- The AES-256-GCM `tobeparsed` decode path and build id 119 crypto bootstrap are verified working (re-derived 2026-08-17 after the 81→119 build rotation; episodes resolve through a user relay); AES-CTR must not be restored (see `.docs/providers.md`).
+- The AES-256-GCM `tobeparsed` decode path and the build-166 crypto bootstrap are verified working (re-derived 2026-09-09 after the 140→166 rotation; bootstrap answers 200 and the episode query returns `tobeparsed`); AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.
+
+## Recovering a build rotation
+
+Upstream rotates the client crypto roughly monthly (`81` → `119` → `140` → `166`).
+Every pinned constant moves at once, and a partial update fails exactly like a
+total one, so recover them together. Done 2026-09-08 for `140` → `166`.
+
+**Read the failure first — the endpoint says which half is stale.**
+
+| Bootstrap answer                  | Meaning                                               |
+| --------------------------------- | ----------------------------------------------------- |
+| `404 unknown_build_id`            | `ALLMANGA_BUILD_ID` rotated out                       |
+| `403 invalid_boot_token`          | build id is current, the derivation constants rotated |
+| `400 missing_build_id` / `..lane` | a dropped query param, not upstream drift             |
+| Cloudflare HTML instead of JSON   | missing `Referer`/`Origin: https://mkissa.to`         |
+
+Scanning build ids until the answer flips from `unknown_build_id` to
+`invalid_boot_token` brackets the live build without reading any JS.
+
+**Then re-extract from the crypto chunk.** It is the chunk under
+`cdn.mkissa.net/all/mk/_app/immutable/chunks/` containing both `buildId` and
+`client-crypto` (`BVxTyUEI.js` on 2026-09-08); reach it by crawling
+`_app/immutable/entry/app.*.js`. Strings are 3-character fragments in a rotated
+table, so nothing greps out as a literal. Evaluate `function Xc()` (the table),
+`function Vr` (the accessor) and the rotation IIFE that ends `})(Xc, …)`
+together, then read:
+
+- `cd = fr(296)` — the build id.
+- `mm` — the four base64 8-byte mask fragments.
+- `Rf` — **an ordinary object literal with the derivation constants in plain
+  sight**: `saltMul`, `saltAdd`, `fragMul`, `fragAdd`, `bootPrefix`, `join`, and
+  `parts`. `parts` is the boot payload field order and rotates independently of
+  the separator; build 140 signed `group.host.lane.buildId.epoch`, build 166
+  signs `group:lane:epoch:host:buildId`.
+
+**The persisted query hash rotates too**, and separately. It is a true persisted
+query — the document is never sent — so a stale hash returns
+`PersistedQueryNotFound` and every resolve yields zero streams. Rebuild it by
+expanding the episode query template (`iK`, with its `Mi` / `Kt` / `en()`
+fragments) and taking `sha256` of the result.
+
+Confirm the whole chain live before landing: bootstrap must answer `200` with a
+`partB`, the episode GET must return `"tobeparsed"` rather than an
+`AA_CRYPTO_*` or `PersistedQueryNotFound` error, and the resolved URL must
+decode — `mpv --no-config --vo=null --ao=null --frames=2`. On 2026-09-08 that
+chain produced h264 1920x1080 with `alang=jpn` audio from `video.wixstatic.com`.
+
+`NEED_CAPTCHA` after a few rapid resolves is upstream rate limiting, not a
+crypto fault; it surfaces as `AllMangaCaptchaError` and must not be worked
+around.
 
 ## Unknown
 

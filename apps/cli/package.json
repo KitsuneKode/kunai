@@ -65,7 +65,7 @@
     "test:live:tracker-sync": "bun -e \"await import('./test/live/tracker-sync-oauth.smoke.ts')\"",
     "test:live:discord": "bun -e \"await import('./test/live/discord-presence.smoke.ts')\"",
     "test:live:miruro": "bun test/live/miruro-demonslayer.smoke.ts",
-    "test:live:matrix": "node test/live/provider-matrix.smoke.mjs",
+    "test:live:matrix": "bun test/live/provider-matrix.smoke.ts",
     "test:live:release-signoff": "bun -e \"await import('./test/live/release-provider-signoff.smoke.ts')\"",
     "test:live:youtube": "bun -e \"await import('./test/live/youtube.smoke.ts')\"",
     "test:live:providers": "bun run test:live:videasy && bun run test:live:vidlink && bun run test:live:rivestream && bun run test:live:anidb && bun run test:live:allanime && bun run test:live:miruro && bun run test:live:youtube",
@@ -102,7 +102,9 @@
     "relink:global": "bun run unlink:global && bun run link:global",
     "prepack": "bun run build",
     "build:npm-platform": "bun run scripts/build-npm-platform-packages.ts",
-    "test:live:analytics": "bun -e \"await import('./test/live/analytics-endpoint.smoke.ts')\""
+    "test:live:analytics": "bun -e \"await import('./test/live/analytics-endpoint.smoke.ts')\"",
+    "test:live:mpv": "bun test/live/mpv-playback.smoke.ts",
+    "test:live:allmanga-crypto": "bun test/live/allmanga-crypto-freshness.smoke.ts"
   },
   "dependencies": {
     "commander": "catalog:cli",
