@@ -12,7 +12,7 @@ import { shouldApplyStartAtSeek } from "./mpv-start-seek";
  * provider's `defaultYtdlPlaybackFormat()` — importing it here would pull the whole
  * provider barrel into the launcher bundle, so a test asserts the two agree instead.
  */
-export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b";
+export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b/ba";
 
 export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
   "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
