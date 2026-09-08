@@ -1064,6 +1064,91 @@ describe("searchTitles", () => {
   });
 });
 
+/**
+ * AniList answered 403 "temporarily disabled" for a sustained outage. Miruro
+ * carries no native search of its own, so this registry service was its only
+ * catalog route and the anime search box went dead — while AniDB and AllManga
+ * could still answer from their own catalogs the whole time.
+ */
+describe("anime search when the catalog service is down", () => {
+  function downAniListRegistry() {
+    return {
+      getForProvider: () => ({
+        metadata: { id: "anilist", name: "AniList", description: "" },
+        compatibleProviders: ["anidb", "allanime"],
+        search: async () => {
+          throw new Error("AniList search failed: 403");
+        },
+        getTitleDetails: async () => null,
+      }),
+      getDefault: () => ({
+        metadata: { id: "default", name: "Default", description: "" },
+        compatibleProviders: [],
+        search: async () => [],
+        getTitleDetails: async () => null,
+      }),
+    };
+  }
+
+  const siblingWithSearch: any = {
+    metadata: {
+      id: "anidb",
+      name: "AniDB",
+      description: "",
+      recommended: true,
+      isAnimeProvider: true,
+      domain: "anidb.app",
+    } as ProviderMetadata,
+    search: async () => [{ id: "onigiri-3942", title: "Onigiri", type: "series", epCount: 11 }],
+  };
+
+  // No `search`, exactly like the real Miruro manifest.
+  const laneProvider: any = {
+    metadata: {
+      id: "miruro",
+      name: "Miruro",
+      description: "",
+      recommended: true,
+      isAnimeProvider: true,
+      domain: "miruro.bz",
+    } as ProviderMetadata,
+  };
+
+  test("borrows native search from a sibling anime provider", async () => {
+    const result = await searchTitles("onigiri", {
+      mode: "anime",
+      providerId: "miruro",
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      searchRegistry: downAniListRegistry() as any,
+      providerRegistry: {
+        get: (id: string) => (id === "miruro" ? laneProvider : undefined),
+        getAll: () => [laneProvider, siblingWithSearch],
+      } as any,
+      enrichAnimeMetadata: false,
+    });
+
+    expect(result.strategy).toBe("provider-native");
+    expect(result.sourceId).toBe("anidb");
+    expect(result.results.map((entry) => entry.title)).toEqual(["Onigiri"]);
+  });
+
+  test("rethrows when no sibling can answer either", async () => {
+    await expect(
+      searchTitles("onigiri", {
+        mode: "anime",
+        providerId: "miruro",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: downAniListRegistry() as any,
+        providerRegistry: {
+          get: (id: string) => (id === "miruro" ? laneProvider : undefined),
+          getAll: () => [laneProvider],
+        } as any,
+        enrichAnimeMetadata: false,
+      }),
+    ).rejects.toThrow("AniList search failed: 403");
+  });
+});
+
 function createSearchRegistry({
   providerResults = [],
   defaultResults = [],

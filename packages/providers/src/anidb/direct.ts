@@ -32,6 +32,7 @@ import {
   formatAnimeSourceArchetype,
   formatAnimeSourceDetail,
 } from "../shared/anime-source-presentation";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
@@ -518,6 +519,27 @@ export const anidbProviderModule: CoreProviderModule = {
         preferredStreamId: input.preferredStreamId,
         favoriteSourceNames: input.favoriteSourceNames,
       });
+      // Prove the selected stream plays before reporting success. AniDB has no
+      // source cycle — every candidate is a rung of the same CDN ladder — so a
+      // refusal here means the ladder is gone and provider fallback should take
+      // over, rather than mpv being handed a stream that cannot open.
+      const gate = await verifyCandidateStream({
+        stream: selection.selected,
+        context,
+        signal: context.signal,
+      });
+      if (!gate.accepted && !context.signal?.aborted) {
+        const failure: ProviderFailure = {
+          providerId: ANIDB_PROVIDER_ID,
+          code: "not-found",
+          message: `AniDB selected stream is unreachable (${gate.reason})`,
+          retryable: true,
+          at: context.now(),
+        };
+        failures.push(failure);
+        return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, failure);
+      }
+
       const sources = finalizeCycleSourceInventory({
         sources: buildAnidbSourceInventory(resolvedModes, audioMode, cachePolicy),
         attempts: [],

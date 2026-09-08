@@ -1612,6 +1612,10 @@ async function fetchMiruroPipeBody(
     String(MIRURO_CURL_STALL_SECONDS),
     "--max-time",
     String(MIRURO_CURL_MAX_SECONDS),
+    // Everything after `--` is an operand, never an option. The URL comes from
+    // an upstream JSON payload, so without this a value beginning with `-`
+    // would be read as curl flags rather than as the address to fetch.
+    "--",
     url,
   ];
 

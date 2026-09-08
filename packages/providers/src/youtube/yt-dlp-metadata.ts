@@ -71,7 +71,7 @@ export function defaultYtdlPlaybackFormat(): string {
   // yt-dlp's own documented default. `bv*` means "best format that contains
   // video" — `bv`/`bestvideo` is video-*only* (`best*[acodec=none]`), which drops
   // the pre-merged renditions YouTube serves for live HLS and for older uploads.
-  return "bv*+ba/b";
+  return "bv*+ba/b/ba";
 }
 
 export function buildYtdlFormatSelector(qualityLabel?: string): string {
