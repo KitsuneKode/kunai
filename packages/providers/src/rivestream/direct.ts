@@ -406,6 +406,11 @@ export const rivestreamProviderModule: CoreProviderModule = {
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs: RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+        // Without these the cycle can neither skip a quarantined mirror nor
+        // record what it learned, so every resolve re-walked all eleven
+        // services and paid the full gate cost each time.
+        endpointHealth: context.endpointHealth,
+        titleId: tmdbId,
         resolveCandidate: async (candidate) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           const sourceDataPromise = prefetchedSources.get(provider);
@@ -964,6 +969,9 @@ async function resolveRivestreamProviderCandidate({
         message: `${displayLabel}: ${verdict.reason}`,
         retryable: false,
         at: context.now(),
+        // Observed by probing this server's own stream, so it is durable
+        // evidence about this endpoint rather than a regional block.
+        endpointScoped: true,
       });
     }
   }
