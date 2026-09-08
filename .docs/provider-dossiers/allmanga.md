@@ -99,6 +99,56 @@ The experiment generated a temporary MPD from one selected video representation 
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.
 
+## Recovering a build rotation
+
+Upstream rotates the client crypto roughly monthly (`81` → `119` → `140` → `166`).
+Every pinned constant moves at once, and a partial update fails exactly like a
+total one, so recover them together. Done 2026-09-08 for `140` → `166`.
+
+**Read the failure first — the endpoint says which half is stale.**
+
+| Bootstrap answer                  | Meaning                                               |
+| --------------------------------- | ----------------------------------------------------- |
+| `404 unknown_build_id`            | `ALLMANGA_BUILD_ID` rotated out                       |
+| `403 invalid_boot_token`          | build id is current, the derivation constants rotated |
+| `400 missing_build_id` / `..lane` | a dropped query param, not upstream drift             |
+| Cloudflare HTML instead of JSON   | missing `Referer`/`Origin: https://mkissa.to`         |
+
+Scanning build ids until the answer flips from `unknown_build_id` to
+`invalid_boot_token` brackets the live build without reading any JS.
+
+**Then re-extract from the crypto chunk.** It is the chunk under
+`cdn.mkissa.net/all/mk/_app/immutable/chunks/` containing both `buildId` and
+`client-crypto` (`BVxTyUEI.js` on 2026-09-08); reach it by crawling
+`_app/immutable/entry/app.*.js`. Strings are 3-character fragments in a rotated
+table, so nothing greps out as a literal. Evaluate `function Xc()` (the table),
+`function Vr` (the accessor) and the rotation IIFE that ends `})(Xc, …)`
+together, then read:
+
+- `cd = fr(296)` — the build id.
+- `mm` — the four base64 8-byte mask fragments.
+- `Rf` — **an ordinary object literal with the derivation constants in plain
+  sight**: `saltMul`, `saltAdd`, `fragMul`, `fragAdd`, `bootPrefix`, `join`, and
+  `parts`. `parts` is the boot payload field order and rotates independently of
+  the separator; build 140 signed `group.host.lane.buildId.epoch`, build 166
+  signs `group:lane:epoch:host:buildId`.
+
+**The persisted query hash rotates too**, and separately. It is a true persisted
+query — the document is never sent — so a stale hash returns
+`PersistedQueryNotFound` and every resolve yields zero streams. Rebuild it by
+expanding the episode query template (`iK`, with its `Mi` / `Kt` / `en()`
+fragments) and taking `sha256` of the result.
+
+Confirm the whole chain live before landing: bootstrap must answer `200` with a
+`partB`, the episode GET must return `"tobeparsed"` rather than an
+`AA_CRYPTO_*` or `PersistedQueryNotFound` error, and the resolved URL must
+decode — `mpv --no-config --vo=null --ao=null --frames=2`. On 2026-09-08 that
+chain produced h264 1920x1080 with `alang=jpn` audio from `video.wixstatic.com`.
+
+`NEED_CAPTCHA` after a few rapid resolves is upstream rate limiting, not a
+crypto fault; it surfaces as `AllMangaCaptchaError` and must not be worked
+around.
+
 ## Unknown
 
 - Whether mpv can play generated `Ak` MPDs reliably across titles beyond the Solo Leveling proof.
