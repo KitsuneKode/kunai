@@ -54,10 +54,19 @@ Each of these is enforced by a test or is expensive to get wrong.
   `packages/providers/src/` does not make it live.
 - **Episode numbers are 1-based in the UI.** Providers adapt internally.
 - **`isAnimeProvider: true` is what puts a provider in anime mode.**
-- **`packages/providers/src/allmanga/api-client.ts` carries ani-cli parity
-  logic.** Check parity against the reference implementation before changing
-  crypto or decoder constants, and document deliberate divergence in
-  [.docs/providers.md](.docs/providers.md).
+- **AllManga crypto has no reference implementation left.** ani-cli `a6ac602`
+  (v5) moved to anidb and deleted every AllAnime path, so
+  `packages/providers/src/allmanga/api-client.ts` and `crypto.ts` are checked
+  against the **live mkissa chunk**, not against ani-cli. Upstream rotates every
+  constant at once, roughly monthly; `bun run test:live:allmanga-crypto` says
+  whether the pinned set still works and which half is stale, and
+  [.docs/provider-dossiers/allmanga.md](.docs/provider-dossiers/allmanga.md)
+  carries the recovery procedure.
+- **A provider must never report success for a stream it has not probed.**
+  `verifyCandidateStream` is the only resolve gate; it takes the candidate so
+  the probed request and the shipped request cannot diverge. Coverage is
+  enforced by `packages/providers/test/provider-resolve-gate-coverage.test.ts`,
+  and an exemption needs a runtime reason recorded there.
 - **Relay is metadata-only** — no media route, no video fallback; stream URLs
   stay direct. `packages/relay` is the single implementation and
   `apps/relay-server` stays a thin adapter.

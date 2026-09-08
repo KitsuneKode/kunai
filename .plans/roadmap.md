@@ -46,14 +46,14 @@ archive and put only the residue here.
 
 ### Playback and providers
 
-| Track                        | Remaining                                                                              | Plan                                                                               |
-| ---------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Provider playback resilience | Videasy ships a dead URL past its own gate; gate budgets, gate coverage, playback lane | [provider-playback-resilience.md](./provider-playback-resilience.md)               |
-| Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration                | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)   |
-| Provider hardening           | Research and scraper capability roadmap                                                | [provider-hardening.md](./provider-hardening.md)                                   |
-| Provider result contract     | Contract work before broad `@kunai/core` extraction                                    | [provider-result-contract.md](./provider-result-contract.md)                       |
-| Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                             | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)   |
-| Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                                     | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md) |
+| Track                        | Remaining                                                                  | Plan                                                                               |
+| ---------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Provider playback resilience | Miruro gate budget, matrix playback lane, scheduled crypto freshness check | [provider-playback-resilience.md](./provider-playback-resilience.md)               |
+| Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration    | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)   |
+| Provider hardening           | Research and scraper capability roadmap                                    | [provider-hardening.md](./provider-hardening.md)                                   |
+| Provider result contract     | Contract work before broad `@kunai/core` extraction                        | [provider-result-contract.md](./provider-result-contract.md)                       |
+| Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                 | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)   |
+| Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                         | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md) |
 
 ### Offline and release stability
 

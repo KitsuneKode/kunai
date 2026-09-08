@@ -19,6 +19,8 @@ bun run test:live:youtube
 bun run test:live:matrix
 bun run test:live:matrix anime
 bun run test:live:matrix videasy
+bun run test:live:mpv videasy          # proves decode, not probe-200
+bun run test:live:allmanga-crypto      # are the pinned mkissa constants still live?
 KUNAI_LIVE_RELEASE_SIGNOFF=1 bun run test:live:release-signoff
 KUNAI_LIVE_DISCORD_PRESENCE=1 bun run test:live:discord
 ```
@@ -110,6 +112,25 @@ Each matrix row includes a `healthClass`:
 | `provider-drift`      | Upstream route/contract failure (404, exhausted, no playable source)          |
 | `environment-network` | Unreachable upstream: timeout, connect/DNS/TLS, WAF block, or 5xx/maintenance |
 | `harness-failure`     | No provider evidence at all — no payload parsed, or a deadline with none      |
+
+### Resolve gate and playback
+
+A green matrix row means _resolved and reachable_, which is not the same as
+playable — Rivestream passed for weeks on a stream mpv could not open. Two
+checks exist for the difference:
+
+- `bun run test:live:mpv <provider>` decodes real frames with the production
+  header split (referer/user-agent as dedicated options, everything else through
+  `http-header-fields`). Supports videasy, rivestream, vidlink, youtube.
+- `bun run test:live:allmanga-crypto` answers whether AllManga's pinned crypto
+  is still the crypto upstream runs, and reads the bootstrap's own error
+  taxonomy to say which half is stale (`unknown_build_id` = bump the id,
+  `invalid_boot_token` = re-extract the constants).
+
+Providers verify streams through `verifyCandidateStream`, which takes the
+candidate rather than a URL plus separately-built headers, so the probed request
+and the shipped request are the same object. Coverage is enforced by
+`packages/providers/test/provider-resolve-gate-coverage.test.ts`.
 
 `harness-failure` means the matrix learned nothing, so it must never absorb a
 diagnosed provider failure. Row shaping lives in
