@@ -3,6 +3,7 @@ import { KunaiFoxBanner } from "@/components/brand/kunai-fox-banner";
 import { HomeHeroStatic } from "@/components/home/home-hero-static";
 import { HomeStarCta } from "@/components/home/home-star-cta";
 import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
+import { HomeTerminalStatic } from "@/components/home/home-terminal-static";
 import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
 import { StartHereCards } from "@/components/home/start-here-cards";
 import type { HomeCommandMetadata, HomeProviderMetadata } from "@/components/home/types";
@@ -29,6 +30,16 @@ type HomePageShellProps = {
   readonly usageLine?: ReactNode;
 };
 
+/**
+ * Section order is the argument the page makes.
+ *
+ * The install block used to sit directly under the hero, asking for a shell
+ * command before the page had said what Kunai plays or shown a provider. It now
+ * follows the three-step flow, the daily-use band, and the provider table — so
+ * the ask arrives after the reasons. The hero still carries both install
+ * commands for anyone who arrived already convinced, and `#install` still
+ * resolves for every link that points at it.
+ */
 export default function HomePageShell({
   providers,
   paletteCommands,
@@ -49,24 +60,26 @@ export default function HomePageShell({
             allCommands={allCommands}
             cliVersion={cliVersion}
             runtimeBaseline={runtimeBaseline}
+            fallback={
+              <HomeTerminalStatic cliVersion={cliVersion} runtimeBaseline={runtimeBaseline} />
+            }
           />
         </div>
       </section>
 
       <noscript>
         <p className="text-fd-muted-foreground mb-8 text-sm leading-relaxed">
-          JavaScript is disabled. Browse <Link href="/docs">documentation</Link>,{" "}
+          The terminal above is a preview, not a live shell. Browse{" "}
+          <Link href="/docs">documentation</Link>,{" "}
           <Link href="/docs/users/getting-started">getting started</Link>, or{" "}
           <Link href="/docs/users/troubleshooting">troubleshooting</Link> directly.
         </p>
       </noscript>
 
-      <HomePageInteractive />
-
       <section className="kunai-home-steps kunai-flow-section">
         <SectionHeading
           title="From search to mpv in three steps."
-          description="Kunai keeps the shell readable while providers, history, and recovery stay one command away."
+          description="One keyboard-driven session covers anime, series, movies, and YouTube — with providers, history, and recovery each one command away."
         />
         <div className="kunai-flow">
           {homeFlow.map((step, index) => (
@@ -88,11 +101,11 @@ export default function HomePageShell({
         <KunaiFoxBanner
           pose="wait"
           eyebrow="Daily client"
-          title="Built for people who actually watch from a shell."
+          title="Anime, series, movies, and YouTube — in one session."
         >
-          History, recovery, and providers stay one command away.
+          Tab cycles the catalog modes. History, recovery, and providers stay one command away.
         </KunaiFoxBanner>
-        <h2 className="kunai-display-title mt-8">Built for daily client use, not demos.</h2>
+        <h2 className="kunai-display-title mt-8">Everything stays one keystroke away.</h2>
         <ul className="kunai-highlight-list mt-6">
           {homeHighlights.map((item) => (
             <li className="kunai-highlight-row" key={item.label}>
@@ -111,6 +124,8 @@ export default function HomePageShell({
         />
         <ProviderSummaryCard summary={providerSummary} />
       </section>
+
+      <HomePageInteractive />
 
       <section className="kunai-home-start kunai-docs-section">
         <SectionHeading title="Pick the guide that matches your next step." />
