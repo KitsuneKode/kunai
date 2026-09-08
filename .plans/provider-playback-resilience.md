@@ -24,6 +24,8 @@ that keeps the probed request and the shipped request identical.
   inside its candidate timeout once `providerCycleCandidateTimeoutMs` clamps it.
 - **`streamReachabilityVerified` set by a timed-out probe**, which promoted an
   unproven stream to "provider-attested" and switched off playback preflight.
+- **Pinned-constant rot is now detectable**: `bun run test:live:allmanga-crypto`
+  says whether the pinned AllManga set still works and which half is stale.
 - **Rivestream can learn.** It now hands `runProviderCycle` the endpoint-health
   port, and a resolve-gate rejection is marked `endpointScoped` so the
   classifier can treat it as evidence about that one server. Measured caveat:
@@ -42,13 +44,27 @@ report `timeout`, and pass everything — coverage in name only. Re-sizing
 `MIRURO_CANDIDATE_TIMEOUT_MS` needs a live provider to measure against, and
 every Miruro mirror is currently challenged; do not raise the number blind.
 
+## P2 — Schedule the crypto freshness check
+
+`test:live:allmanga-crypto` exists but nothing runs it. It is one request and it
+fails with the exact remedy attached, so it belongs on the provider-matrix
+workflow's schedule — the point is to learn about a rotation before users do.
+
 ## Notes carried forward
 
 - **AniDB** is a site-wide upstream `503`; ani-cli v5 uses the same host and is
   equally down. Its gate is committed but has not been exercised against a live
   ladder — verify when the site returns.
-- **AllManga's gate is unconfirmed against a live source.** The provider is
-  network-gated (`NEED_CAPTCHA`) from this network, so its gate has only been
-  exercised against fixtures. It is shared with four verified providers, so the
-  risk is low, but it is unproven — re-run `bun run test:live:allanime` from an
-  ungated network or through a relay.
+- **AllManga is network-captcha'd, not just rate-limited.** The crypto recovery
+  is confirmed working — the episode query now _executes_
+  (`PersistedQueryNotFound` is gone and `aaReq` is accepted) — and it resolved
+  end to end once, 4 candidates from `video.wixstatic.com` with mpv decoding
+  h264 1080p `alang=jpn`. Every attempt since answers `NEED_CAPTCHA`, hours
+  later too, so this is a network-level gate of the same shape as Miruro's
+  rather than the transient throttle first assumed. The consequence: the resolve
+  gate added for AllManga has never met a live source. It is unit-tested and
+  shared with four verified providers, so the risk is low, but it is unproven —
+  re-run `bun run test:live:allanime` from an ungated network or through a relay.
+- **AllManga has no parity reference.** ani-cli `a6ac602` deleted every AllAnime
+  path, so the live mkissa chunk is the only source of truth. `AGENTS.md` and
+  the dossier now say so.
