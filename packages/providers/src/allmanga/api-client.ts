@@ -709,6 +709,31 @@ export function isAllMangaCaptchaResponse(rawText: string): boolean {
   return rawText.includes("NEED_CAPTCHA");
 }
 
+/**
+ * The persisted-query hash no longer matches upstream's schema.
+ *
+ * It rotates on its own schedule, independently of the derivation constants, so
+ * this can fire while the pinned build id is perfectly current. Without its own
+ * error it fell through to "no sources", which reads as a missing episode
+ * rather than as drift — and drift is the one failure that says *which half* to
+ * re-pin.
+ */
+export class AllMangaQueryDriftError extends Error {
+  readonly code = "allmanga-query-drift" as const;
+
+  constructor() {
+    super(
+      "AllAnime rejected the persisted query hash (PersistedQueryNotFound). " +
+        "Upstream rotated its GraphQL schema or query hash.",
+    );
+    this.name = "AllMangaQueryDriftError";
+  }
+}
+
+export function isAllMangaPersistedQueryNotFound(rawText: string): boolean {
+  return rawText.includes("PersistedQueryNotFound");
+}
+
 export async function resolveEpisodeSources(opts: {
   readonly context: ProviderRuntimeContext;
   readonly apiUrl: string;
@@ -784,6 +809,10 @@ export async function resolveEpisodeSources(opts: {
     // and retrying or re-bootstrapping against it only wastes the budget.
     if (isAllMangaCaptchaResponse(rawText)) {
       throw new AllMangaCaptchaError();
+    }
+
+    if (isAllMangaPersistedQueryNotFound(rawText)) {
+      throw new AllMangaQueryDriftError();
     }
 
     if (rawText.includes("Too many requests")) {

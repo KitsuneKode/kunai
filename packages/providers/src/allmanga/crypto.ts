@@ -8,31 +8,37 @@ import { providerFetch } from "../runtime/fetch";
  * AllManga / mkissa client-crypto (post-2026-08 buildId scheme).
  *
  * Upstream left the ani-cli `72d7f72` "no buildId / scrape epoch+partB from HTML"
- * path. Live mkissa now:
- * - ships a rotating `buildId` (`81` → `119` → `140`) plus four base64 mask
- *   fragments in the app chunk
+ * path — and as of ani-cli `a6ac602` (v5) there is no upstream AllAnime path at
+ * all to check parity against. Live mkissa:
+ * - ships a rotating `buildId` (`81` → `119` → `140` → `166`) plus four base64
+ *   mask fragments in the app chunk
  * - boots keys via `GET /client-crypto/v1/bootstrap?buildId=&k=` with
  *   `x-build-id` + HMAC `x-aa-boot`
  * - signs `aaReq` as AES-GCM over `{v,ts,epoch,buildId,qh,k}` with IV
  *   `SHA-256(epoch:buildId:qh:ts:k)[0:12]`
  * - rotates the epoch scale: 7-day epochs (604800000 ms), 1-day grace
  *
- * 2026-08-24 rotation (119 → 140) also changed the derivation constants and the
- * boot-token layout, all shipped as literals in the obfuscated crypto chunk
- * (`cdn.mkissa.net/all/mk/_app/immutable/chunks/*.js`, currently `Ct8spCYv.js`):
- * - `hashBuildId` mixes `(index * saltMul + saltAdd)` — was `*17 + 31`
- * - `deriveMaskKey` mixes `(fragmentIndex * fragMul + byteIndex * fragAdd)`
- *   — was `*41 + *7`
- * - first HMAC message is `bootPrefix + buildId` (`4X2PsZc2r:` prefix), and the
- *   second covers `group.host.lane.buildId.epoch` joined by `.` — the old
- *   scheme hashed `buildId:keyGroup:host:epoch:lane` joined by `:`
+ * **A rotation moves every constant here at once**, so update them together and
+ * assume none carried over. The 2026-09-08 rotation (140 → 166) changed the
+ * build id, all four mask fragments, every derivation constant, the boot
+ * prefix, the join character, the boot payload *field order*, and the episode
+ * persisted-query hash. A partial update fails exactly like no update.
  *
- * The episode persisted-query hash is unchanged by this rotation.
+ * The recovery procedure — which failure means which half is stale, and how to
+ * read the constants back out of the obfuscated chunk — is in
+ * [the AllManga dossier](../../../../.docs/provider-dossiers/allmanga.md).
  */
 
-export const ALLMANGA_BUILD_ID = "140";
+export const ALLMANGA_BUILD_ID = "166";
+/**
+ * sha256 of the episode persisted-query document, which rotates with the app
+ * build. It is a true persisted query: the text is never sent, so a stale hash
+ * comes back as `PersistedQueryNotFound` and every resolve returns no streams.
+ * Recover it by re-hashing the document in the crypto chunk (`iK`, with its
+ * `Mi` / `Kt` / `en()` fragments expanded) — see the AllManga dossier.
+ */
 export const ALLMANGA_QUERY_HASH =
-  "ca735f1436927eaf7abb05d1589bb93c43cf606d87eecc2030357c1aad8fb455";
+  "1c836a5028e04275c6bc618aa4d1f0ea2290a73bc056ba6a8b93fe72ef42fd04";
 /** Episode GraphQL lane (`Lf` → `k7`). */
 export const ALLMANGA_CONTENT_LANE_EPISODE = "k7";
 export const ALLMANGA_KEY_GROUP = "mkissa";
@@ -46,26 +52,41 @@ export const ALLMANGA_EPOCH_GRACE_MS = 86_400_000;
 export const ALLMANGA_AA_REQ_BUCKET_MS = 300_000;
 
 /**
- * Derivation constants from the live chunk config object (`Fd`). Upstream
+ * Derivation constants from the live chunk config object (`Rf`). Upstream
  * rotates these alongside the buildId; if bootstrap starts failing with
  * AA_CRYPTO errors after a known-good buildId, re-extract them.
+ *
+ * How to read them back out is in
+ * [.docs/provider-dossiers/allmanga.md](../../../../.docs/provider-dossiers/allmanga.md).
  */
-const ALLMANGA_SALT_MUL = 250;
-const ALLMANGA_SALT_ADD = 54;
-const ALLMANGA_FRAG_MUL = 16;
-const ALLMANGA_FRAG_ADD = 217;
-const ALLMANGA_BOOT_PREFIX = "4X2PsZc2r:";
-const ALLMANGA_BOOT_JOIN = ".";
+const ALLMANGA_SALT_MUL = 165;
+const ALLMANGA_SALT_ADD = 115;
+const ALLMANGA_FRAG_MUL = 197;
+const ALLMANGA_FRAG_ADD = 200;
+const ALLMANGA_BOOT_PREFIX = "ld1faaOf3G:";
+const ALLMANGA_BOOT_JOIN = ":";
 
 /**
- * Base64 8-byte mask fragments (`ud`) from the mkissa crypto chunk after
+ * Field order of the second HMAC message (`Rf.parts`).
+ *
+ * Build 140 signed `group.host.lane.buildId.epoch`; build 166 signs
+ * `group:lane:epoch:host:buildId`. The order is data rather than a literal
+ * array expression because it rotates independently of the separator, and
+ * getting either wrong fails identically with `invalid_boot_token`.
+ */
+export const ALLMANGA_BOOT_PAYLOAD_FIELDS = ["group", "lane", "epoch", "host", "buildId"] as const;
+
+export type AllMangaBootPayloadField = (typeof ALLMANGA_BOOT_PAYLOAD_FIELDS)[number];
+
+/**
+ * Base64 8-byte mask fragments (`mm`) from the mkissa crypto chunk after
  * string-table rotation. Combined with `hashBuildId(buildId)` in `deriveMaskKey`.
  */
 export const ALLMANGA_MASK_FRAGMENTS = [
-  "VfAQPinN3/Q=",
-  "R7d6L9MUgM8=",
-  "unPepPUGy18=",
-  "XXGHwHlzibA=",
+  "0VmOiOTlfQ0=",
+  "F/SlaG5999I=",
+  "VTm6fMS7BdQ=",
+  "LIQNr2OipeQ=",
 ] as const;
 
 /** How long derived crypto material stays trusted before a lazy refetch. */
@@ -79,9 +100,16 @@ export type AllMangaCryptoMaterial = {
   readonly contentLane: string;
 };
 
-/** Last-known-good material when bootstrap fails (epoch 2955, build 140). */
-export const ALLMANGA_KEY_HEX = "deeb2732190ceee0d84c7668d79b64ddcd5f27b9f858f2327fe29a7841b7b5da";
-export const ALLMANGA_EPOCH = 2955;
+/**
+ * Last-known-good material when bootstrap fails (epoch 2957, build 166).
+ *
+ * The epoch is a 7-day bucket, so this fallback goes stale on its own. It
+ * exists to survive a brief bootstrap outage, not to replace one — a resolve
+ * that quietly runs on a fallback two epochs old looks exactly like a dead
+ * provider.
+ */
+export const ALLMANGA_KEY_HEX = "43724f7d46135c6cdb2824f00c4ee272a0fff52f89681213140c6c2b80af8d21";
+export const ALLMANGA_EPOCH = 2957;
 
 export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   keyHex: ALLMANGA_KEY_HEX,
@@ -147,8 +175,10 @@ function hmacSha256Hex(key: Buffer, message: string): string {
 
 /**
  * Port of mkissa `tw` → `x-aa-boot`.
- * First HMAC message is `{bootPrefix}{buildId}`; second covers
- * `{keyGroup}.{host}.{lane}.{buildId}.{epoch}` joined by `.`.
+ *
+ * First HMAC message is `{bootPrefix}{buildId}`; the second covers the fields
+ * named by {@link ALLMANGA_BOOT_PAYLOAD_FIELDS}, joined by the rotation's
+ * separator.
  */
 export function buildAllMangaBootToken(options: {
   readonly buildId?: string;
@@ -158,14 +188,21 @@ export function buildAllMangaBootToken(options: {
   readonly contentLane?: string;
 }): string {
   const buildId = options.buildId ?? ALLMANGA_BUILD_ID;
-  const keyGroup = options.keyGroup ?? ALLMANGA_KEY_GROUP;
-  const host = String(options.refererHost ?? "mkissa.to")
-    .toLowerCase()
-    .replace(/^www\./, "");
-  const lane = options.contentLane?.trim() ?? "";
+  const fields: Record<AllMangaBootPayloadField, string> = {
+    group: options.keyGroup ?? ALLMANGA_KEY_GROUP,
+    // Signed without the `www.` prefix; the site sends the bare host.
+    host: String(options.refererHost ?? "mkissa.to")
+      .toLowerCase()
+      .replace(/^www\./, ""),
+    lane: options.contentLane?.trim() ?? "",
+    buildId,
+    epoch: String(options.epoch),
+  };
   const mask = deriveMaskKey(buildId);
   const inner = Buffer.from(hmacSha256Hex(mask, `${ALLMANGA_BOOT_PREFIX}${buildId}`), "hex");
-  const payload = [keyGroup, host, lane, buildId, String(options.epoch)].join(ALLMANGA_BOOT_JOIN);
+  const payload = ALLMANGA_BOOT_PAYLOAD_FIELDS.map((field) => fields[field]).join(
+    ALLMANGA_BOOT_JOIN,
+  );
   return hmacSha256Hex(inner, payload);
 }
 

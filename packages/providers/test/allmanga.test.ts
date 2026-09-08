@@ -25,6 +25,7 @@ import {
   BUNDLED_ALLMANGA_CRYPTO,
   buildStreamHeaders,
   AllMangaCaptchaError,
+  AllMangaQueryDriftError,
   clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
   decryptTobeparsedPlaintext,
@@ -325,7 +326,7 @@ describe("buildAllMangaAaReq", () => {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = "532fbba462deed2b68657d7c758b7bcd6978e4ebeac46cd4e3f6d4c24ab863c7";
+  const EXPECTED_KEY_HEX = "92bd9687f091aabd760228c5983cc2d03b278f0e1a12bfbea02fcaff5899bd5b";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -416,10 +417,10 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(material?.epoch).toBe(6900);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
-    expect(material?.buildId).toBe("140");
-    expect(site.bootstrapHeaders?.get("x-build-id")).toBe("140");
+    expect(material?.buildId).toBe("166");
+    expect(site.bootstrapHeaders?.get("x-build-id")).toBe("166");
     expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
-      "9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35",
+      "0046b60be8f98c4901a15d7ae5a37199c36131972fe815df2ccc7e7f07d63e88",
     );
     expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
     expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
@@ -429,23 +430,23 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("matches independent build-140 derivation and boot-token vectors", () => {
-    expect(hashBuildId("140").toString("hex")).toBe(
-      "07041a152a2823383631cec4dfdcd2ede2e0fbf08e89869c9794aaa5bab8b348",
+  test("matches independent build-166 derivation and boot-token vectors", () => {
+    expect(hashBuildId("166").toString("hex")).toBe(
+      "422e8b53319a60c0ad71d3bc1ee24f2ff55e3c8461cd9770daa603eb4912f858",
     );
-    expect(deriveMaskKey("140").toString("hex")).toBe(
-      "522db8a067d8ea23616f7670788574dd786af7ffffd27bccfaeccfde57a67ce7",
+    expect(deriveMaskKey("166").toString("hex")).toBe(
+      "93bf9583f597adb57f0823c99532cdc02a359c1a0f04a8a6b935d1e34587a27b",
     );
-    expect(deriveKeyFromPartB(PART_B, "140").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(deriveKeyFromPartB(PART_B, "166").toString("hex")).toBe(EXPECTED_KEY_HEX);
     expect(
       buildAllMangaBootToken({
-        buildId: "140",
+        buildId: "166",
         epoch: 6900,
         keyGroup: "mkissa",
         refererHost: "mkissa.to",
         contentLane: "k7",
       }),
-    ).toBe("9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35");
+    ).toBe("0046b60be8f98c4901a15d7ae5a37199c36131972fe815df2ccc7e7f07d63e88");
   });
 
   test("falls back to bundled material when bootstrap fails", async () => {
@@ -507,6 +508,34 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect((thrown as Error).message).toContain("captcha");
     // A captcha is not a crypto problem: it must not trigger re-bootstrapping,
     // and it must not burn the retry budget on identical requests.
+    expect(site.apiCallCount).toBe(1);
+    expect(site.bootstrapFetchCount).toBe(1);
+  });
+
+  /**
+   * The persisted-query hash rotates on its own schedule, so this fires while
+   * the pinned build id is still current. It used to fall through the retry
+   * loop and return an empty list — indistinguishable from an episode that has
+   * no sources, and therefore no signal about which half to re-pin.
+   */
+  test("surfaces a rotated persisted-query hash as drift, not as an empty episode", async () => {
+    using site = mockCryptoSiteFetch({
+      apiResponses: [
+        '{"errors":[{"message":"PersistedQueryNotFound","extensions":{"code":"PERSISTED_QUERY_NOT_FOUND"}}]}',
+      ],
+    });
+
+    let thrown: unknown;
+    try {
+      await resolveWithSiteSources();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AllMangaQueryDriftError);
+    expect((thrown as Error).message).toContain("query hash");
+    // Drift is not a crypto-material problem and not transient: no
+    // re-bootstrap, and no retry budget spent on an identical request.
     expect(site.apiCallCount).toBe(1);
     expect(site.bootstrapFetchCount).toBe(1);
   });
