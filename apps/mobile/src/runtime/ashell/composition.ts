@@ -34,7 +34,7 @@ function removeStagedMobileArgv(
     ...Array.from({ length: argumentCount }, (_, index) => `${MOBILE_ARGV_PREFIX}${index}`),
   ]) {
     try {
-      if (jsc.isFile(path) && (jsc.deleteFile(path) !== 0 || jsc.isFile(path))) removed = false;
+      if (jsc.isFile(path) && (jsc.delete(path) !== 0 || jsc.isFile(path))) removed = false;
     } catch {
       removed = false;
     }
@@ -77,7 +77,7 @@ export function exitMobile(code: number): void {
   const currentPath = ".runtime/exit-code";
   const temporaryPath = `${currentPath}.tmp`;
   if (jsc.makeFolder(".runtime") !== 0) throw new Error("Mobile host proof failed");
-  if (jsc.isFile(temporaryPath) && jsc.deleteFile(temporaryPath) !== 0) {
+  if (jsc.isFile(temporaryPath) && jsc.delete(temporaryPath) !== 0) {
     throw new Error("Mobile host proof failed");
   }
   if (
@@ -87,7 +87,7 @@ export function exitMobile(code: number): void {
     jsc.readFile(temporaryPath) !== String(exitCode) ||
     jsc.move(temporaryPath, currentPath) !== 0
   ) {
-    if (jsc.isFile(temporaryPath)) jsc.deleteFile(temporaryPath);
+    if (jsc.isFile(temporaryPath)) jsc.delete(temporaryPath);
     throw new Error("Mobile host proof failed");
   }
 }
