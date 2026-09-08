@@ -3,6 +3,16 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import {
+  booleanOrNull,
+  classifyProviderHealth,
+  numberOrNull,
+  parseScore,
+  parseSmokeOutput,
+  stringArray,
+  stringOrNull,
+} from "./matrix-harness.mjs";
+
 const MATRIX = [
   {
     provider: "videasy",
@@ -135,7 +145,10 @@ if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")
 
 async function runMatrixEntry(entry) {
   const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(entry.command);
-  const parsed = parseJsonPayload(stdout);
+  // youtube.smoke.ts emits NDJSON (primary payload + check lines); anidb
+  // search-stage failures go to stderr. Parse stdout first, then stderr.
+  const found = parseSmokeOutput(stdout, stderr);
+  const parsed = found?.payload ?? null;
   if (!parsed) {
     const result = {
       provider: entry.provider,
@@ -159,6 +172,8 @@ async function runMatrixEntry(entry) {
     return { ...result, healthClass: classifyProviderHealth(result, { timedOut, harness: true }) };
   }
 
+  const streamProbe =
+    parsed.streamProbe && typeof parsed.streamProbe === "object" ? parsed.streamProbe : null;
   const result = {
     provider: entry.provider,
     media: entry.media,
@@ -172,56 +187,26 @@ async function runMatrixEntry(entry) {
     cacheHit: booleanOrNull(parsed.cacheHit),
     isolatedProfile: booleanOrNull(parsed.isolatedProfile),
     failureCodes: stringArray(parsed.failureCodes),
+    failureMessages: stringArray(parsed.failureMessages),
     resolveDurationMs: numberOrNull(parsed.resolveDurationMs),
     streamReachable: booleanOrNull(parsed.streamReachable),
+    streamProbeStatus: stringOrNull(parsed.streamProbeStatus ?? streamProbe?.status),
+    streamProbeReason: stringOrNull(
+      (typeof streamProbe?.reason === "string" ? streamProbe.reason : null) ??
+        (typeof parsed.streamProbe === "string" ? parsed.streamProbe : null),
+    ),
     selectedSourceLabel: stringOrNull(parsed.selectedSourceLabel),
     probeOrderLabels: stringArray(parsed.probeOrderLabels),
     score: parseScore(parsed.score),
     ...(typeof parsed.error === "string" ? { error: parsed.error } : {}),
+    ...(typeof parsed.reason === "string" ? { reason: parsed.reason } : {}),
+    ...(typeof parsed.stage === "string" ? { stage: parsed.stage } : {}),
+    ...(found?.source === "stderr" ? { parsedFrom: "stderr" } : {}),
   };
   return {
     ...result,
     healthClass: classifyProviderHealth(result, { timedOut, harness: false }),
   };
-}
-
-/**
- * Release-evidence taxonomy for matrix rows. Default CI must not depend on these.
- * - healthy: stream resolved
- * - provider-drift: upstream contract/route failure while the harness ran
- * - environment-network: timeout, connect, DNS/TLS, or WAF-shaped blocks
- * - harness-failure: unparseable smoke output or matrix deadline without provider JSON
- *
- * ReleaseProviderSignoff.failureClass reuses provider-drift / environment-network /
- * harness-failure (null when the default route is resolved and reachable).
- */
-function classifyProviderHealth(result, { timedOut, harness }) {
-  if (result.ok) return "healthy";
-  if (harness) return "harness-failure";
-
-  const haystack = [
-    result.error ?? "",
-    ...(Array.isArray(result.failureCodes) ? result.failureCodes : []),
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  if (
-    timedOut ||
-    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket/.test(
-      haystack,
-    )
-  ) {
-    return "environment-network";
-  }
-
-  if (
-    /404|not-found|did not find|no playable|exhausted|route-dead|unsupported-title/.test(haystack)
-  ) {
-    return "provider-drift";
-  }
-
-  return "provider-drift";
 }
 
 function redactMatrixReport(report) {
@@ -276,46 +261,4 @@ async function runLiveSmoke(command) {
     child.once("error", (error) => finish(1, error));
     child.once("close", (code) => finish(code));
   });
-}
-
-function parseJsonPayload(stdout) {
-  try {
-    const value = JSON.parse(stdout);
-    return value && typeof value === "object" ? value : null;
-  } catch {
-    const start = stdout.indexOf("{");
-    const end = stdout.lastIndexOf("}");
-    if (start < 0 || end <= start) return null;
-    try {
-      const value = JSON.parse(stdout.slice(start, end + 1));
-      return value && typeof value === "object" ? value : null;
-    } catch {
-      return null;
-    }
-  }
-}
-
-function booleanOrNull(value) {
-  return typeof value === "boolean" ? value : null;
-}
-
-function numberOrNull(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function stringOrNull(value) {
-  return typeof value === "string" ? value : null;
-}
-
-function stringArray(value) {
-  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
-}
-
-function parseScore(value) {
-  if (!value || typeof value !== "object") return null;
-  return {
-    functional: booleanOrNull(value.functional),
-    performative: booleanOrNull(value.performative),
-    ordered: booleanOrNull(value.ordered),
-  };
 }
