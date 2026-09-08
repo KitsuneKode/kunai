@@ -48,8 +48,12 @@ const EXEMPT: Partial<Record<(typeof PRODUCTION_PROVIDERS)[number], string>> = {
   miruro: "per-candidate budget cannot contain a probe; needs a budget rework measured live",
 };
 
-/** Either the gate itself, or the shared direct-stream engine that calls it. */
-const GATE_MARKERS = ["verifyCandidateStream", "resolveDirectStreamSource"];
+/**
+ * The gate itself, the walk that applies it across a candidate's rungs, or the
+ * shared direct-stream engine that calls it. All three funnel into
+ * `verifyCandidateStream`.
+ */
+const GATE_MARKERS = ["verifyCandidateStream", "selectVerifiedStream", "resolveDirectStreamSource"];
 
 function providerSources(provider: string): string {
   const dir = join(PROVIDER_SRC, provider);

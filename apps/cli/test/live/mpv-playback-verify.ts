@@ -81,11 +81,76 @@ function safeHostname(url: string): string {
   }
 }
 
-/** Redacted argv shape for logs: cookie/signature values never leave the spawn. */
+/** How long mpv gets to honour SIGTERM before it is killed outright. */
+const MPV_SIGTERM_GRACE_MS = 2_000;
+
+/** Header names whose value is a credential and never belongs in a report. */
+const CREDENTIAL_HEADER =
+  /^(cookie|set-cookie|authorization|proxy-authorization|x-api-key|x-auth[\w-]*|x-access-token|x-token)$/i;
+
+/** Query parameters that carry a signature or token rather than an identity. */
+const SIGNED_QUERY_PARAM =
+  /^(token|sig|signature|auth|auth_key|key|expire|expires|md5|hash|st|policy)$/i;
+
+/**
+ * Strip credentials from a URL while keeping the part a reviewer reads: the
+ * host and path stay, signed query parameters are masked. `Referer` is evidence
+ * about which page we claimed to be, so removing it wholesale would remove the
+ * reason the report exists.
+ */
+function redactUrlish(value: string): string {
+  try {
+    const url = new URL(value);
+    // Collect first, then write: mutating `searchParams` while iterating it is
+    // undefined-ish territory, and a signed URL often repeats a parameter.
+    const signed: string[] = [];
+    for (const name of url.searchParams.keys()) {
+      if (SIGNED_QUERY_PARAM.test(name)) signed.push(name);
+    }
+    for (const name of signed) url.searchParams.set(name, "REDACTED");
+    const redacted = signed.length > 0;
+    // Return the original when nothing was masked. `URL.toString()` normalises
+    // (an empty path becomes `/`), and the report is read as a record of what
+    // was actually sent — a value that differs from the wire is a wrong answer,
+    // even cosmetically.
+    return redacted ? url.toString() : value;
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Redacted argv shape for logs.
+ *
+ * Credential *values* never leave the spawn, but non-credential ones stay
+ * readable on purpose: `Origin: …` in this report is what proved the Videasy
+ * wings-CDN fix, and a blanket redaction would delete the evidence the report
+ * is written to carry.
+ */
 export function redactMpvArgsForLog(args: readonly string[]): string[] {
-  return args.map((arg) =>
-    /^--http-header-fields=/i.test(arg) ? arg.replace(/(cookie[^,]*)/gi, "Cookie: REDACTED") : arg,
-  );
+  return args.map((arg) => {
+    if (/^--http-header-fields=/i.test(arg)) {
+      const [flag, ...rest] = arg.split("=");
+      const fields = rest.join("=");
+      const redacted = fields
+        .split(",")
+        .map((field) => {
+          const separator = field.indexOf(":");
+          if (separator < 0) return field;
+          const name = field.slice(0, separator).trim();
+          const value = field.slice(separator + 1).trim();
+          if (CREDENTIAL_HEADER.test(name)) return `${name}: REDACTED`;
+          return `${name}: ${redactUrlish(value)}`;
+        })
+        .join(",");
+      return `${flag}=${redacted}`;
+    }
+    if (/^--referrer=/i.test(arg)) {
+      const [flag, ...rest] = arg.split("=");
+      return `${flag}=${redactUrlish(rest.join("="))}`;
+    }
+    return arg;
+  });
 }
 
 function redactReason(reason: string): string {
@@ -135,11 +200,28 @@ export async function verifyStreamPlaysInMpv(input: {
   const timeoutPromise = Bun.sleep(timeoutMs).then(() => ({ type: "timeout" as const }));
   const outcome = await Promise.race([exitPromise, timeoutPromise]);
   if (outcome.type === "timeout") {
+    // SIGTERM alone is a request, not a guarantee. An mpv wedged on a stalled
+    // socket can ignore it, and because stderr stays open while the process
+    // lives, `await readStderr` would then never settle — the verifier would
+    // hang past its own timeout. Escalate, then wait for the process before
+    // waiting on its output.
     try {
       proc.kill("SIGTERM");
     } catch {
       // Already exited between the race and the kill.
     }
+    const exitedInGrace = await Promise.race([
+      proc.exited.then(() => true),
+      Bun.sleep(MPV_SIGTERM_GRACE_MS).then(() => false),
+    ]);
+    if (!exitedInGrace) {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Exited during the grace period.
+      }
+    }
+    await proc.exited;
     await readStderr;
     return { ok: false, exitCode: null, reason: "mpv verify timed out without decoding" };
   }

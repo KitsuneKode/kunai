@@ -102,12 +102,35 @@ function extractJsonObjects(text: string): SmokePayload[] {
  * no verdict, which is where an early-exit failure reports its reason.
  */
 export function parseSmokePayload(stdout: string, stderr = ""): SmokePayload | null {
-  for (const stream of [stdout, stderr]) {
-    const verdicts = extractJsonObjects(stream).filter((object) => typeof object.ok === "boolean");
-    if (verdicts.length === 0) continue;
-    return verdicts.find((object) => typeof object.provider === "string") ?? verdicts[0] ?? null;
+  const streams = [stdout, stderr].map((stream) =>
+    extractJsonObjects(stream).filter((object) => typeof object.ok === "boolean"),
+  );
+
+  // A provider verdict first, from either stream. A smoke can exit early after
+  // printing supplementary `{ check: … }` lines and leave its real failure on
+  // stderr; both carry `ok`, so preferring document order would return the
+  // check line and lose the diagnosis.
+  for (const verdicts of streams) {
+    const verdict = verdicts.find(isProviderVerdict);
+    if (verdict) return verdict;
+  }
+
+  // Nothing named a provider or a stage. Return whatever was said rather than
+  // nothing, because `harness-failure` is reserved for learning nothing at all.
+  for (const verdicts of streams) {
+    if (verdicts[0]) return verdicts[0];
   }
   return null;
+}
+
+/**
+ * Distinguishes the report a smoke makes about the provider from the check
+ * lines it prints alongside it. An early-exit failure names a `stage` rather
+ * than a provider, and is just as much provider evidence.
+ */
+function isProviderVerdict(object: SmokePayload): boolean {
+  if (typeof object.check === "string") return false;
+  return typeof object.provider === "string" || typeof object.stage === "string";
 }
 
 /**

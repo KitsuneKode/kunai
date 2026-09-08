@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { ProviderRuntimeContext } from "@kunai/types";
 
-import { verifyCandidateStream } from "../src/shared/resolve-gate";
+import { selectVerifiedStream, verifyCandidateStream } from "../src/shared/resolve-gate";
 
 /**
  * The gate exists to make "verified" and "shipped" the same request.
@@ -116,5 +116,83 @@ describe("verifyCandidateStream", () => {
     const verdict = await verifyCandidateStream({ stream: { url: "  ", headers: {} }, context });
 
     expect(verdict).toMatchObject({ accepted: false });
+  });
+});
+
+/**
+ * A source can offer several qualities, and they do not always share a host. A
+ * refused stream is evidence about that stream, so discarding the whole source
+ * on the first refusal throws away rungs that might play — the difference
+ * between falling back to another server and falling back to another quality on
+ * the server that works.
+ */
+describe("selectVerifiedStream", () => {
+  const stream = (id: string, url: string) => ({ id, url, headers: {} });
+
+  test("returns the first stream that verifies", async () => {
+    const { context } = contextRecording((url) =>
+      url.includes("dead")
+        ? new Response("forbidden", { status: 403 })
+        : new Response(null, { status: 200 }),
+    );
+
+    const result = await selectVerifiedStream({
+      streams: [
+        stream("a", "https://dead.example/a.mp4"),
+        stream("b", "https://live.example/b.mp4"),
+      ],
+      context,
+    });
+
+    expect(result.accepted).toBe(true);
+    expect(result.accepted === true && result.stream.id).toBe("b");
+  });
+
+  test("rejects only when every stream is refused", async () => {
+    const { context } = contextRecording(() => new Response("forbidden", { status: 403 }));
+
+    const result = await selectVerifiedStream({
+      streams: [stream("a", "https://a.example/a.mp4"), stream("b", "https://b.example/b.mp4")],
+      context,
+    });
+
+    expect(result.accepted).toBe(false);
+    expect(result.accepted === false && result.reason).toContain("403");
+  });
+
+  test("probes each host once, because a host answers the same for every rung", async () => {
+    // Counted by distinct URL, not by fetch: one probe of a direct stream is
+    // itself a HEAD plus a ranged GET, so raw request count measures the
+    // probe's internals rather than this walk.
+    const probed: string[] = [];
+    const context = {
+      fetch: {
+        runtime: "direct-http" as const,
+        fetch: async (url: string) => {
+          probed.push(String(url));
+          return new Response("forbidden", { status: 403 });
+        },
+      },
+    } as unknown as ProviderRuntimeContext;
+
+    await selectVerifiedStream({
+      streams: [
+        stream("a", "https://same.example/1080.mp4"),
+        stream("b", "https://same.example/720.mp4"),
+        stream("c", "https://same.example/480.mp4"),
+      ],
+      context,
+    });
+
+    expect(new Set(probed).size).toBe(1);
+    expect(probed.every((url) => url.includes("1080"))).toBe(true);
+  });
+
+  test("rejects an empty candidate rather than reporting success", async () => {
+    const { context } = contextRecording(() => new Response(null, { status: 200 }));
+
+    const result = await selectVerifiedStream({ streams: [], context });
+
+    expect(result.accepted).toBe(false);
   });
 });

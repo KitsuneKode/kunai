@@ -95,15 +95,17 @@ workflow's schedule — the point is to learn about a rotation before users do.
 - **AniDB** is a site-wide upstream `503`; ani-cli v5 uses the same host and is
   equally down. Its gate is committed but has not been exercised against a live
   ladder — verify when the site returns.
-- **AllManga's gate is not yet verified live.** The crypto recovery was proven
-  end to end (4 candidates from `video.wixstatic.com`, mpv decoding h264 1080p
-  with `alang=jpn`), but that was _before_ the resolve gate was added. Repeated
-  verification runs then tripped upstream anti-abuse, and every attempt since
-  returns `NEED_CAPTCHA` — which is surfaced honestly as `AllMangaCaptchaError`
-  but blocks confirmation. Re-run `bun run test:live:allanime` after the rate
-  limit clears and confirm the gate does not reject a working wixstatic source.
-  The gate itself is unit-tested and shared with three verified providers, so
-  the risk is low, but it is unconfirmed.
+- **AllManga is network-captcha'd, not just rate-limited.** Corrected 2026-09-09.
+  The crypto recovery is confirmed working — the episode query now _executes_
+  (`PersistedQueryNotFound` is gone and `aaReq` is accepted) — and it resolved
+  end to end once, 4 candidates from `video.wixstatic.com` with mpv decoding
+  h264 1080p `alang=jpn`. Every attempt since answers `NEED_CAPTCHA`, and it is
+  still doing so hours later, so this is a network-level gate of the same shape
+  as Miruro's rather than the transient anti-abuse throttle first assumed. The
+  consequence: the resolve gate added for AllManga has never met a live source.
+  It is unit-tested and shared with four verified providers, so the risk is low,
+  but it is unconfirmed — re-run `bun run test:live:allanime` from an ungated
+  network or through a relay.
 - **AllManga has no parity reference.** ani-cli `a6ac602` deleted every AllAnime
   path, so the live mkissa chunk is the only source of truth. `AGENTS.md` and
   the dossier now say so.

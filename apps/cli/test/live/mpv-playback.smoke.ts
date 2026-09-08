@@ -1,10 +1,13 @@
 /**
  * Opt-in mpv decode check: resolve one matrix fixture, then prove mpv decodes it.
  *
- * Usage:
- *   bun test/live/mpv-playback.smoke.ts vidlink
- *   bun test/live/mpv-playback.smoke.ts youtube
- *   bun test/live/mpv-playback.smoke.ts videasy|rivestream|anidb|allanime|miruro
+ * Usage — one provider per run, and only the four with fixtures here. The
+ * anime providers keep their own search-based smokes, so naming them prints the
+ * supported list instead:
+ *   bun run test:live:mpv videasy
+ *   bun run test:live:mpv rivestream
+ *   bun run test:live:mpv vidlink
+ *   bun run test:live:mpv youtube
  *
  * Isolated temporary XDG profile (never touches live config/data/cache),
  * headless mpv (`--vo=null --ao=null --frames=30`), 20s deadline. Prints one

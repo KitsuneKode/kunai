@@ -28,7 +28,7 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
-import { verifyCandidateStream } from "../shared/resolve-gate";
+import { selectVerifiedStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -956,21 +956,20 @@ async function resolveRivestreamProviderCandidate({
   // answer 200 on the master playlist and refuse every segment, so without this
   // the cycle stops at the first server that merely *responds* and never
   // reaches one that plays.
-  const gateCandidate = streams[0];
-  if (gateCandidate) {
-    const verdict = await verifyCandidateStream({
-      stream: gateCandidate,
+  if (streams.length > 0) {
+    const selection = await selectVerifiedStream({
+      streams,
       context,
       timeoutMs: RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
     });
-    if (!verdict.accepted) {
+    if (!selection.accepted) {
       throw createProviderCycleFailureError(candidate, {
         failureClass: "candidate-blocked",
-        message: `${displayLabel}: ${verdict.reason}`,
+        message: `${displayLabel}: ${selection.reason}`,
         retryable: false,
         at: context.now(),
-        // Observed by probing this server's own stream, so it is durable
-        // evidence about this endpoint rather than a regional block.
+        // Every rung of this service was refused by probing its own streams, so
+        // it is durable evidence about this endpoint rather than a regional block.
         endpointScoped: true,
       });
     }

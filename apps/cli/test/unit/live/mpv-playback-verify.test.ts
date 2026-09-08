@@ -58,4 +58,57 @@ describe("mpv playback verify args", () => {
     expect(redacted.some((arg) => arg.includes("secret"))).toBe(false);
     expect(redacted.some((arg) => arg.includes("Cookie: REDACTED"))).toBe(true);
   });
+
+  test("redacts every credential-bearing header, not just Cookie", () => {
+    // Cookie was the only name handled, so an Authorization or API-key header
+    // rode into the report in the clear.
+    const args = buildMpvPlaybackVerifyArgs({
+      url: "https://cdn.example/master.m3u8",
+      headers: {
+        Origin: "https://player.example",
+        Authorization: "Bearer super-secret-token",
+        "X-Api-Key": "k-9f3c2211",
+      },
+    });
+
+    const joined = redactMpvArgsForLog(args).join(" ");
+
+    expect(joined).not.toContain("super-secret-token");
+    expect(joined).not.toContain("k-9f3c2211");
+  });
+
+  test("leaves an unsigned value byte-identical to what was sent", () => {
+    // The report is read as a record of the actual request; URL normalisation
+    // (an empty path becoming "/") would make it disagree with the wire.
+    const args = buildMpvPlaybackVerifyArgs({
+      url: "https://cdn.example/master.m3u8",
+      headers: { Origin: "https://www.vidking.net" },
+    });
+
+    expect(redactMpvArgsForLog(args).join(" ")).toContain("Origin: https://www.vidking.net");
+    expect(redactMpvArgsForLog(args).join(" ")).not.toContain("vidking.net/");
+  });
+
+  test("keeps non-credential header values readable", () => {
+    // The report is a review artifact: `Origin: …` is what proved the Videasy
+    // CDN fix, so blanket redaction would remove the evidence it exists for.
+    const args = buildMpvPlaybackVerifyArgs({
+      url: "https://cdn.example/master.m3u8",
+      headers: { Origin: "https://player.example" },
+    });
+
+    expect(redactMpvArgsForLog(args).join(" ")).toContain("Origin: https://player.example");
+  });
+
+  test("redacts a signed referer without losing which site it names", () => {
+    const args = buildMpvPlaybackVerifyArgs({
+      url: "https://cdn.example/master.m3u8",
+      headers: { referer: "https://site.example/watch?token=abcdef123456&sig=zzz" },
+    });
+
+    const joined = redactMpvArgsForLog(args).join(" ");
+
+    expect(joined).not.toContain("abcdef123456");
+    expect(joined).toContain("site.example");
+  });
 });

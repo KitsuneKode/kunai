@@ -68,6 +68,29 @@ describe("parseSmokePayload", () => {
   test("returns null when neither stream carries JSON", () => {
     expect(parseSmokePayload("boom", "stack trace")).toBeNull();
   });
+
+  test("an auxiliary check line is not mistaken for the provider verdict", () => {
+    // A smoke can exit early after printing supplementary check lines, leaving
+    // its real failure on stderr. Both carry `ok`, so keying on that alone
+    // returns the check line and the diagnosis is lost — the same way the
+    // matrix used to swallow AniDB's outage.
+    const stdout = '{"ok":true,"check":"quality-ladder","maxLadderHeight":2160}';
+    const stderr = '{"ok":false,"stage":"search","reason":"anidb fetch HTTP 503"}';
+
+    expect(parseSmokePayload(stdout, stderr)).toMatchObject({
+      ok: false,
+      stage: "search",
+      reason: "anidb fetch HTTP 503",
+    });
+  });
+
+  test("a check line is still returned when nothing better exists anywhere", () => {
+    // Never turn "some evidence" into "no evidence": a harness-failure row is
+    // reserved for learning nothing at all.
+    const stdout = '{"ok":true,"check":"quality-ladder"}';
+
+    expect(parseSmokePayload(stdout, "")).toMatchObject({ ok: true, check: "quality-ladder" });
+  });
 });
 
 describe("classifyProviderHealth", () => {
