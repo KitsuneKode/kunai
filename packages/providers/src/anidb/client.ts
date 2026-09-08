@@ -1,4 +1,9 @@
-import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "@kunai/types";
+import {
+  RELAY_HOP_HEADER,
+  type ProviderRuntimeContext,
+  type ResolveErrorCode,
+  type StartupPriority,
+} from "@kunai/types";
 
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import {
@@ -48,8 +53,7 @@ const languageCache = new TTLCache<string, readonly AnidbLanguageEntry[]>(300_00
 const malCache = new TTLCache<string, number | null>(3_600_000);
 const externalIdsCache = new TTLCache<
   string,
-  {
-    readonly malId: number | null;
+  {\n    readonly malId: number | null;
     readonly anilistId: string | null;
     readonly officialAid: number | null;
     readonly posterUrl: string | null;
@@ -197,10 +201,21 @@ export async function anidbFetchText(
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
-      } else if (!isFingerprintRetryableStatus(response.status)) {
+      } else if (
+        !isFingerprintRetryableStatus(response.status) &&
+        !(response.status === 404 && response.headers.get(RELAY_HOP_HEADER) !== null)
+      ) {
         // Falling through to curl exists so a Cloudflare challenge gets a
-        // second chance with a better TLS fingerprint. A missing id or an
-        // upstream outage is not a fingerprint problem, so it is answered here.
+        // second chance with a better TLS fingerprint. An upstream outage or
+        // a genuine 404 is not a fingerprint problem, so it is answered here.
+        //
+        // A 404 that arrived over a relay hop is a different fact. A relay
+        // deployed before this provider existed answers `unknown-provider`
+        // with a 404 of its own, and reading that as anidb.app's verdict marks
+        // the catalogue permanently missing and caches the miss — which took
+        // the whole anime lane down behind a stale relay while the same id
+        // resolved fine over curl. Let curl settle it: a genuine 404 still
+        // throws below, one request later.
         throw new AnidbHttpStatusError(response.status);
       }
     } catch (error) {
@@ -243,6 +258,10 @@ export async function anidbFetchText(
     maxTime,
     ...anidbCipherArgs(curl.impersonates),
     ...ANIDB_STATUS_WRITE_OUT,
+    // Everything after `--` is an operand, never an option. Embed and playlist
+    // URLs arrive from upstream JSON, so without this a value beginning with
+    // `-` would be read as curl flags rather than as the address to fetch.
+    "--",
     url,
   ];
   const stdout = await runAnidbCurlWithRetry(args, options.signal);
@@ -259,6 +278,10 @@ export async function anidbFetchText(
 }
 
 const ANIDB_CURL_TIMEOUT_EXIT_CODE = 28;
+
+/** curl killed by SIGINT / SIGTERM — 128 + signal number. */
+const ANIDB_CURL_SIGINT_EXIT_CODE = 130;
+const ANIDB_CURL_SIGTERM_EXIT_CODE = 143;
 
 /**
  * AniDB TTFB from constrained networks sits close to the curl budget, so a lone
@@ -280,6 +303,18 @@ export async function runAnidbCurlWithRetry(
     result = await spawnOnce(args, signal);
   }
   if (result.exitCode !== 0) {
+    // Quitting kunai mid-resolve kills curl, and "curl exit 130" matches
+    // neither "abort" nor "cancel", so the failure classifier read a plain
+    // Ctrl-C as an unknown network fault: retryable, worth a fallback provider,
+    // and logged at ERROR. Say cancelled in the one place that knows the
+    // process was signalled, so the existing cancellation handling applies.
+    if (signal?.aborted === true) throw signal.reason ?? new Error("anidb curl cancelled");
+    if (
+      result.exitCode === ANIDB_CURL_SIGINT_EXIT_CODE ||
+      result.exitCode === ANIDB_CURL_SIGTERM_EXIT_CODE
+    ) {
+      throw new Error(`anidb curl cancelled (exit ${result.exitCode})`);
+    }
     throw new Error(result.stderr.trim() || `curl exit ${result.exitCode}`);
   }
   return result.stdout;
