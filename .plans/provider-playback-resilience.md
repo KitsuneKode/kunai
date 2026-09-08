@@ -50,24 +50,46 @@ ungated region makes measurement possible; do not raise the number blind.
 fails with the exact remedy attached, so it belongs on the provider-matrix
 workflow's schedule — the point is to learn about a rotation before users do.
 
-## P2 — Rivestream quarantine amortisation is unverified
+## P1 — Rivestream never learns: gate rejections do not reach endpoint health
 
-The gate makes Rivestream correct but front-loads cost: it walks dead candidates
-before reaching `citadel` (measured 5-20s across runs). Endpoint quarantine
-(`provider_endpoint_health`) should amortise that after the first resolve, but
-every measurement here used an isolated profile, so the learning path has never
-been observed. Confirm a second resolve in the same profile skips the
-quarantined mirrors, and that gate rejections feed `healthDelta` at all — if
-they do not, the quarantine never learns and every play pays full price.
+Measured, not suspected. Two resolves sharing one pinned profile root
+(2026-09-09, Breaking Bad S01E01):
+
+    run 1: 4336ms, 9 candidates attempted, 0 skipped
+    run 2: 3756ms, 9 candidates attempted, 0 skipped
+
+The second run re-walks every dead mirror. Nothing is skipped as `quarantined`,
+and `healthDelta` carries only a provider-level `{outcome: "success"}` — no
+per-endpoint verdict. The cause is simple: **`rivestream/direct.ts` never
+touches `endpointHealth` at all**, unlike videasy which calls
+`endpointHealth.recordFailure(server, …)` on its failure paths. So
+`provider_endpoint_health` has nothing to quarantine and the cycle pays the full
+walk on every play.
+
+The fix is to record per-server outcomes from the cycle: a gate rejection is a
+`route-dead`-shaped failure for that server, a success clears it. It needs a
+decision on what identifies a Rivestream endpoint (the service name — `apex`,
+`primevids`, `citadel`) and care that a definitive gate rejection is recorded
+while a timeout is not, so a slow link cannot quarantine a working mirror.
+
+Cost today is ~4s of dead-mirror walking per resolve, so this is feel rather
+than correctness — but it is the difference between a provider that learns and
+one that does not.
 
 ## Notes carried forward
 
 - **AniDB** is a site-wide upstream `503`; ani-cli v5 uses the same host and is
   equally down. Its gate is committed but has not been exercised against a live
   ladder — verify when the site returns.
-- **AllManga rate limiting**: `NEED_CAPTCHA` after several rapid resolves is
-  upstream anti-abuse, surfaced as `AllMangaCaptchaError`. Not to be worked
-  around; it also makes repeated live verification slow, so space the runs.
+- **AllManga's gate is not yet verified live.** The crypto recovery was proven
+  end to end (4 candidates from `video.wixstatic.com`, mpv decoding h264 1080p
+  with `alang=jpn`), but that was _before_ the resolve gate was added. Repeated
+  verification runs then tripped upstream anti-abuse, and every attempt since
+  returns `NEED_CAPTCHA` — which is surfaced honestly as `AllMangaCaptchaError`
+  but blocks confirmation. Re-run `bun run test:live:allanime` after the rate
+  limit clears and confirm the gate does not reject a working wixstatic source.
+  The gate itself is unit-tested and shared with three verified providers, so
+  the risk is low, but it is unconfirmed.
 - **AllManga has no parity reference.** ani-cli `a6ac602` deleted every AllAnime
   path, so the live mkissa chunk is the only source of truth. `AGENTS.md` and
   the dossier now say so.
