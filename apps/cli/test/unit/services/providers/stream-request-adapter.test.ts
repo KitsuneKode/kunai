@@ -319,3 +319,64 @@ test("preserves absoluteEpisode for anime provider resolution", () => {
   expect(input.title.id).toBe("151807");
   expect(input.title.anilistId).toBe("151807");
 });
+
+/**
+ * A provider-native catalog answers search with its own id and nothing else.
+ * AniDB returns `gintama-1816` and only learns the AniList id later, when
+ * `listEpisodes` reads the show page — and `EpisodeIdentity` has nowhere to
+ * carry it, so it died on the episode rows. Falling back from AniDB to Miruro
+ * then handed over a title with no AniList id and was rejected
+ * `unsupported-title`, which with AllAnime gated upstream left the default
+ * anime provider with no reachable fallback at all.
+ */
+test("lifts an episode-discovered AniList id onto the title so fallbacks can use it", () => {
+  const input = streamRequestToResolveInput(
+    {
+      title: {
+        id: "gintama-1816",
+        type: "series",
+        name: "Gintama",
+        externalIds: { providerNativeIds: { anidb: "gintama-1816" } },
+      },
+      episode: {
+        season: 1,
+        episode: 9,
+        externalIds: { anilistId: "918", malId: "918" },
+      },
+      audioPreference: "sub",
+      subtitlePreference: "en",
+    },
+    "anime",
+  );
+
+  // What Miruro's resolveMiruroAnilistId() reads.
+  expect(input.title.anilistId).toBe("918");
+  expect(input.title.malId).toBe("918");
+  // The native id must survive: it is how AniDB itself addresses the show.
+  expect(input.title.externalIds?.providerNativeIds?.anidb).toBe("gintama-1816");
+  expect(input.title.id).toBe("gintama-1816");
+});
+
+test("an episode never overrides an identity the title already holds", () => {
+  const input = streamRequestToResolveInput(
+    {
+      title: {
+        id: "anilist:21",
+        type: "series",
+        name: "One Piece",
+        externalIds: { anilistId: "21" },
+      },
+      episode: {
+        season: 1,
+        episode: 1,
+        // Stale row from a mismatched catalog must not rewrite the title.
+        externalIds: { anilistId: "999999" },
+      },
+      audioPreference: "sub",
+      subtitlePreference: "en",
+    },
+    "anime",
+  );
+
+  expect(input.title.anilistId).toBe("21");
+});
