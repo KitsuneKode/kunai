@@ -122,6 +122,11 @@ checks exist for the difference:
 - `bun run test:live:mpv <provider>` decodes real frames with the production
   header split (referer/user-agent as dedicated options, everything else through
   `http-header-fields`). Supports videasy, rivestream, vidlink, youtube.
+- `KUNAI_MATRIX_PLAYBACK=1 bun run test:live:matrix` runs the same matrix but
+  swaps in that decode check wherever a provider supports it, so a `healthy` row
+  means mpv opened the stream. The report says which kind of evidence it carries
+  (`evidence: "playback"` vs `"reachability"`) and each row keeps its `mpv`
+  verdict. It needs mpv on PATH and is slower, so it stays opt-in.
 - `bun run test:live:allmanga-crypto` answers whether AllManga's pinned crypto
   is still the crypto upstream runs, and reads the bootstrap's own error
   taxonomy to say which half is stale (`unknown_build_id` = bump the id,

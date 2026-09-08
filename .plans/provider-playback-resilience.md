@@ -27,6 +27,9 @@ probed request and the shipped request identical.
 - **`streamReachabilityVerified` set by a timed-out probe**, which promoted an
   unproven stream to "provider-attested" and switched off playback preflight.
 - **Pinned-constant rot is now detectable**: `bun run test:live:allmanga-crypto`.
+- **The matrix can prove decode**: `KUNAI_MATRIX_PLAYBACK=1 bun run test:live:matrix`
+  swaps in the mpv check wherever a provider supports it, and the report says
+  which kind of evidence it carries.
 
 ## P1 — Miruro cannot host a gate at its current budget
 
@@ -40,13 +43,6 @@ Fixing it means re-sizing `MIRURO_CANDIDATE_TIMEOUT_MS` against a live provider,
 and Miruro is currently WAF-blocked from this network (403 to plain curl _and_
 to full Chrome TLS impersonation, both mirrors). Do it when a relay or an
 ungated region makes measurement possible; do not raise the number blind.
-
-## P2 — Give the matrix a playback lane
-
-`bun run test:live:matrix` proves resolve + reachability, not decode. With
-`test:live:mpv` in place it should carry an opt-in playback column for the
-providers that support it (videasy, rivestream, vidlink, youtube), so a
-`healthy` row means something mpv has actually opened.
 
 ## P2 — Schedule the crypto freshness check
 

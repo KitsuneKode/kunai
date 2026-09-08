@@ -19,24 +19,32 @@ type MatrixEntry = {
   readonly command: readonly string[];
   readonly media: string;
   readonly fixture: string;
+  /**
+   * Command that also decodes frames in mpv. Its payload is a superset of the
+   * normal smoke's, so playback mode simply swaps the command.
+   */
+  readonly playbackCommand?: readonly string[];
 };
 
 const MATRIX: readonly MatrixEntry[] = [
   {
     provider: "videasy",
     command: ["bun", "test/live/videasy-bloodhounds.smoke.ts"],
+    playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "videasy"],
     media: "series",
     fixture: "Dutton Ranch S01E01 (Neon Phase A)",
   },
   {
     provider: "rivestream",
     command: ["bun", "-e", "await import('./test/live/rivestream-breakingbad.smoke.ts')"],
+    playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "rivestream"],
     media: "series",
     fixture: "Breaking Bad S01E01",
   },
   {
     provider: "vidlink",
     command: ["bun", "test/live/vidlink-inception.smoke.ts"],
+    playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "vidlink"],
     media: "movie",
     fixture: "Inception (DASH + playlist cookie)",
   },
@@ -61,12 +69,20 @@ const MATRIX: readonly MatrixEntry[] = [
   {
     provider: "youtube",
     command: ["bun", "-e", "await import('./test/live/youtube.smoke.ts')"],
+    playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "youtube"],
     media: "youtube",
     fixture: "Me at the zoo (jNQXAC9IVRw)",
   },
 ];
 
 const SMOKE_DEADLINE_MS = 45_000;
+/**
+ * `healthy` normally means resolved and reachable, which is not the same as
+ * playable — Rivestream passed for weeks on a stream mpv could not open. With
+ * this set, providers that support it decode real frames instead, and the row
+ * carries the mpv verdict.
+ */
+const PLAYBACK_MODE = process.env.KUNAI_MATRIX_PLAYBACK === "1";
 const appRoot = join(import.meta.dir, "../..");
 
 // Default movie/series/anime release evidence uses ReleaseProviderSignoff
@@ -120,6 +136,7 @@ if (argv.some((arg) => arg.toLowerCase() === "release-signoff")) {
     const report = {
       ok: failed.length === 0,
       generatedAt: new Date().toISOString(),
+      evidence: PLAYBACK_MODE ? "playback" : "reachability",
       selectedProviders: selected.map((entry) => entry.provider),
       summary: {
         total: results.length,
@@ -157,7 +174,8 @@ type MatrixResult = Record<string, unknown> & {
 };
 
 async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
-  const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(entry.command);
+  const command = PLAYBACK_MODE && entry.playbackCommand ? entry.playbackCommand : entry.command;
+  const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(command);
   const parsed = parseSmokePayload(stdout, stderr);
 
   if (!parsed) {
@@ -209,6 +227,7 @@ async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
     selectedSourceLabel: stringOrNull(parsed.selectedSourceLabel),
     probeOrderLabels: stringArray(parsed.probeOrderLabels),
     score: parseScore(parsed.score),
+    ...(parsed.mpv === undefined ? {} : { mpv: parsed.mpv }),
     ...(stringOrNull(parsed.stage) === null ? {} : { stage: parsed.stage }),
     ...(error === null ? {} : { error }),
   };
