@@ -26,7 +26,7 @@ function httpFixture(input: { readonly status?: number | string; readonly metada
     },
     isFile: (path) => files.has(path),
     makeFolder: () => 0,
-    deleteFile(path) {
+    delete(path) {
       files.delete(path);
       return 0;
     },

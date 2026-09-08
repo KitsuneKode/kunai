@@ -23,7 +23,7 @@ describe("a-Shell mobile composition", () => {
         writeFile: () => 0,
         isFile: (path) => files.has(path),
         makeFolder: () => 0,
-        deleteFile(path) {
+        delete(path) {
           files.delete(path);
           return 0;
         },
@@ -45,7 +45,7 @@ describe("a-Shell mobile composition", () => {
         writeFile: () => 0,
         isFile: (path) => files.has(path),
         makeFolder: () => 0,
-        deleteFile(path) {
+        delete(path) {
           files.delete(path);
           return 0;
         },
@@ -67,7 +67,7 @@ describe("a-Shell mobile composition", () => {
         writeFile: () => 0,
         isFile: (path) => files.has(path),
         makeFolder: () => 0,
-        deleteFile: () => 0,
+        delete: () => 0,
         move: () => 0,
         system: () => 0,
       } satisfies AShellJsc),
@@ -88,7 +88,7 @@ describe("a-Shell mobile composition", () => {
       },
       isFile: (path) => files.has(path),
       makeFolder: () => 0,
-      deleteFile(path) {
+      delete(path) {
         files.delete(path);
         return 0;
       },

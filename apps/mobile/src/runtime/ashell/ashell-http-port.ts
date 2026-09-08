@@ -11,7 +11,7 @@ const HTTP_ARTIFACTS = [CURL_CONFIG_PATH, HTTP_BODY_PATH, HTTP_META_PATH] as con
 
 function removeArtifacts(jsc: AShellJsc): void {
   for (const path of HTTP_ARTIFACTS) {
-    if (jsc.isFile(path) && (jsc.deleteFile(path) !== 0 || jsc.isFile(path))) {
+    if (jsc.isFile(path) && (jsc.delete(path) !== 0 || jsc.isFile(path))) {
       throw new Error("HTTP cleanup failed");
     }
   }

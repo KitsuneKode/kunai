@@ -158,7 +158,7 @@ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
     },
     isFile: (path: string) => files.has(path),
     makeFolder: () => 0,
-    deleteFile: (path: string) => {
+    delete: (path: string) => {
       files.delete(path);
       return 0;
     },

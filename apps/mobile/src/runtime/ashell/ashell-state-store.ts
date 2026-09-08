@@ -17,7 +17,7 @@ function parseStateJson(value: string): ReturnType<typeof decodeMobileState> {
 
 function removeIfPresent(jsc: AShellJsc, path: string): void {
   if (!jsc.isFile(path)) return;
-  if (jsc.deleteFile(path) !== 0 || jsc.isFile(path)) {
+  if (jsc.delete(path) !== 0 || jsc.isFile(path)) {
     throw new Error("state cleanup failed");
   }
 }

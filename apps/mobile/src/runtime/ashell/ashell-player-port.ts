@@ -8,7 +8,7 @@ const PLAYER_URL_PATH = `${RUNTIME_DIRECTORY}/player-url`;
 
 function removePlayerUrl(jsc: AShellJsc): boolean {
   if (!jsc.isFile(PLAYER_URL_PATH)) return true;
-  return jsc.deleteFile(PLAYER_URL_PATH) === 0 && !jsc.isFile(PLAYER_URL_PATH);
+  return jsc.delete(PLAYER_URL_PATH) === 0 && !jsc.isFile(PLAYER_URL_PATH);
 }
 
 export function createAShellPlayerPort(input: {

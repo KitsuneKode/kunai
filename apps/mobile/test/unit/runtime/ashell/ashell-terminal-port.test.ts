@@ -30,7 +30,7 @@ function terminalFixture(input: {
     },
     isFile: (path) => files.has(path),
     makeFolder: () => 0,
-    deleteFile: (path) => {
+    delete: (path) => {
       if (!input.retainDeletedFiles) files.delete(path);
       return 0;
     },

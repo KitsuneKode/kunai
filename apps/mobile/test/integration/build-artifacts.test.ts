@@ -13,6 +13,10 @@ import {
 
 const MOBILE_ROOT = join(import.meta.dir, "../..");
 const DIST = join(MOBILE_ROOT, "dist");
+// Bun can intentionally masquerade as `node` inside a nested package script.
+// Pin the real Node executable that Bun exposes to lifecycle scripts so this
+// suite qualifies the runtime shipped to Termux rather than Bun compatibility.
+const NODE_RUNTIME = process.env.NODE ?? "node";
 // SAFETY: The build script writes this generated manifest from a MobileBuildMetadata value,
 // and the tests below independently verify its complete target and artifact fields.
 const BUILD_METADATA = JSON.parse(
@@ -73,8 +77,8 @@ describe("mobile build artifacts", () => {
 
   test("runs help and version from the emitted artifact under Node", () => {
     const artifact = join(DIST, "android/kunai-mobile-android.mjs");
-    const help = spawnSync("node", [artifact, "--help"], { encoding: "utf8" });
-    const version = spawnSync("node", [artifact, "--version"], { encoding: "utf8" });
+    const help = spawnSync(NODE_RUNTIME, [artifact, "--help"], { encoding: "utf8" });
+    const version = spawnSync(NODE_RUNTIME, [artifact, "--version"], { encoding: "utf8" });
 
     expect(help.status).toBe(0);
     expect(help.stderr).toBe("");
@@ -88,7 +92,7 @@ describe("mobile build artifacts", () => {
     const artifact = join(DIST, "android/kunai-mobile-android.mjs");
     const rejectedUrl = "http://user:secret@media.example/video.m3u8#fragment";
     const result = spawnSync(
-      "node",
+      NODE_RUNTIME,
       [
         artifact,
         "--host-proof",
@@ -118,7 +122,7 @@ describe("mobile build artifacts", () => {
         stderr: string;
       }>((resolve, reject) => {
         const child = spawn(
-          "node",
+          NODE_RUNTIME,
           [
             artifact,
             "--host-proof",
@@ -164,7 +168,7 @@ describe("mobile build artifacts", () => {
     const home = mkdtempSync(join(tmpdir(), "kunai-mobile-node-cancel-"));
     const artifact = join(DIST, "android/kunai-mobile-android.mjs");
     const child = spawn(
-      "node",
+      NODE_RUNTIME,
       [
         artifact,
         "--host-proof",
@@ -248,7 +252,7 @@ describe("mobile build artifacts", () => {
       },
       isFile: (path) => files.has(path),
       makeFolder: () => 0,
-      deleteFile(path) {
+      delete(path) {
         files.delete(path);
         return 0;
       },

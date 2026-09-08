@@ -18,7 +18,7 @@ export function createAShellTerminalPort(input: {
 
   function removeAnswer(): boolean {
     if (!input.jsc.isFile(ANSWER_PATH)) return true;
-    return input.jsc.deleteFile(ANSWER_PATH) === 0 && !input.jsc.isFile(ANSWER_PATH);
+    return input.jsc.delete(ANSWER_PATH) === 0 && !input.jsc.isFile(ANSWER_PATH);
   }
 
   function readAnswer(): string | undefined {

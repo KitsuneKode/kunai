@@ -3,7 +3,7 @@ export interface AShellJsc {
   writeFile(path: string, content: string): number;
   isFile(path: string): boolean;
   makeFolder(path: string): number;
-  deleteFile(path: string): number;
+  delete(path: string): number;
   move(from: string, to: string): number;
   system(command: string): number | string;
 }
@@ -17,7 +17,7 @@ const REQUIRED_METHODS = [
   "writeFile",
   "isFile",
   "makeFolder",
-  "deleteFile",
+  "delete",
   "move",
   "system",
 ] as const;

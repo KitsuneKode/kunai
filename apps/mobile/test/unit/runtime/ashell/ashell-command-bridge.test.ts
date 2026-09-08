@@ -9,7 +9,7 @@ function fakeJsc(systemCommands: string[]): AShellJsc {
     writeFile: () => 0,
     isFile: () => false,
     makeFolder: () => 0,
-    deleteFile: () => 0,
+    delete: () => 0,
     move: () => 0,
     system(command) {
       systemCommands.push(command);
