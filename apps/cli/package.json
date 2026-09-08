@@ -102,7 +102,8 @@
     "relink:global": "bun run unlink:global && bun run link:global",
     "prepack": "bun run build",
     "build:npm-platform": "bun run scripts/build-npm-platform-packages.ts",
-    "test:live:analytics": "bun -e \"await import('./test/live/analytics-endpoint.smoke.ts')\""
+    "test:live:analytics": "bun -e \"await import('./test/live/analytics-endpoint.smoke.ts')\"",
+    "test:live:mpv": "bun test/live/mpv-playback.smoke.ts"
   },
   "dependencies": {
     "commander": "catalog:cli",
