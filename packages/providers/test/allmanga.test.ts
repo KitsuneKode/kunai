@@ -1660,6 +1660,36 @@ function mockAllMangaBridgeFetch(
   };
 }
 
+/**
+ * AllManga segment-probes a source before accepting it, so a fixture CDN has to
+ * answer like one. Returning 404 for these reads as a dead mirror — which is
+ * exactly what the gate is there to reject — and every resolve fixture would
+ * fail for the wrong reason.
+ */
+function allMangaFixtureCdnResponse(url: string, method: string): Response | null {
+  if (url.includes("segment-0.ts")) {
+    return new Response(new Uint8Array(2048), {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-2047/2048" },
+    });
+  }
+  if (url.includes(".m3u8")) {
+    return new Response("#EXTM3U\n#EXTINF:4.0,\nsegment-0.ts\n", {
+      status: 200,
+      headers: { "Content-Type": "application/vnd.apple.mpegurl" },
+    });
+  }
+  if (url.includes(".mp4")) {
+    return method === "HEAD"
+      ? new Response(null, { status: 200 })
+      : new Response(new Uint8Array(2048), {
+          status: 206,
+          headers: { "Content-Range": "bytes 0-2047/2048" },
+        });
+  }
+  return null;
+}
+
 async function mockAllMangaFetch(
   options: {
     readonly subSourceFixture?:
@@ -1856,6 +1886,8 @@ async function mockAllMangaFetch(
       const body = JSON.parse(bodyText) as { variables?: { translationType?: string } };
       return jsonResponse(body.variables?.translationType === "dub" ? fixtures.dub : fixtures.sub);
     }
+    const cdn = allMangaFixtureCdnResponse(url, String(init?.method ?? "GET"));
+    if (cdn) return cdn;
     return new Response("{}", { status: 404 });
   }) as typeof fetch;
 

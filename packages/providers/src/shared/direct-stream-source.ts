@@ -13,6 +13,7 @@ import type {
 } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "./catalog-id";
+import { verifyCandidateStream } from "./resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "./resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "./series-coordinates";
 import {
@@ -21,7 +22,6 @@ import {
   normalizeQualityLabel,
   qualityRankFromLabel,
 } from "./source-inventory";
-import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "./stream-health";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 import { createTimeoutSignal } from "./timeout-signal";
 
@@ -196,13 +196,12 @@ export async function resolveDirectStreamSource(
         }
         if (!candidate.url) continue;
 
-        const health = await runStreamHealthCheck({
-          phase: "resolve-gate",
-          url: candidate.url,
-          headers: candidate.headers,
-          fetchImpl: context.fetch?.fetch.bind(context.fetch),
-          timeoutMs: options.resolveGateTimeoutMs ?? STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
-          signal: context.signal,
+        const verdict = await verifyCandidateStream({
+          stream: candidate,
+          context,
+          ...(options.resolveGateTimeoutMs === undefined
+            ? {}
+            : { timeoutMs: options.resolveGateTimeoutMs }),
         });
 
         // The abort may have landed while this probe was in flight. Its result
@@ -213,20 +212,19 @@ export async function resolveDirectStreamSource(
           break;
         }
 
-        if (health.healthy) {
+        if (verdict.accepted) {
           selectedStream = candidate;
-          streamReachabilityVerified = true;
+          // Only a probe that actually reached the stream counts as verified.
+          // This flag makes later phases skip probing as "provider-attested",
+          // so letting a timeout set it would switch off the playback preflight
+          // for a stream nothing ever reached.
+          streamReachabilityVerified = verdict.verified;
           gateFailure = undefined;
           break;
         }
 
-        const probe = health.probe;
-        const reason =
-          probe?.status === "timeout"
-            ? "stream probe timed out"
-            : probe?.status === "unreachable"
-              ? probe.reason
-              : "stream probe failed";
+        const probe = verdict.probe;
+        const reason = verdict.reason;
         // Keep the first rejection: it is the highest-ranked candidate, so it
         // describes the failure the user would otherwise have seen.
         gateFailure ??= {

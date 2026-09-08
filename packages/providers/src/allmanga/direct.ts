@@ -3,6 +3,7 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -31,6 +32,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { resolveGateBudgetMs, verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   normalizeProviderDisplayLabel,
@@ -66,6 +68,15 @@ export function safeAllMangaHostname(url: string): string | null {
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
 const ALLANIME_API_URL = "https://api.mkissa.net/api";
+
+/**
+ * How long one source candidate may take before the cycle abandons it.
+ *
+ * Sized to contain the resolve gate: a gate that cannot finish inside its
+ * candidate's budget is cut short, reports `timeout`, and is let through — so
+ * an under-sized budget silently stops the gate rejecting dead sources.
+ */
+export const ALLMANGA_CANDIDATE_TIMEOUT_MS = 9_000;
 const ALLANIME_REFERER = "https://mkissa.to";
 export const ALLMANGA_QUALITY_FIRST_WAIT_BUDGET_MS = 4_000;
 // The Ak endpoint (separate CDN, slowest single step) normally answers in
@@ -634,7 +645,10 @@ export const allmangaProviderModule: CoreProviderModule = {
           now: context.now,
           emit: context.emit,
           maxAttemptsPerCandidate: 1,
-          candidateTimeoutMs: 2_500,
+          candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+            startupPriority,
+            ALLMANGA_CANDIDATE_TIMEOUT_MS,
+          ),
           resolveCandidate: async (candidate, cycleContext) => {
             const stream = streams.find((item) => item.id === candidate.streamId);
             if (!stream?.url && !stream?.deferredLocator) {
@@ -660,6 +674,32 @@ export const allmangaProviderModule: CoreProviderModule = {
                 qualityRank: stream.qualityRank ?? null,
               },
             });
+            // Prove the source plays before accepting it, so a dead mirror
+            // cycles to the next candidate instead of being reported as a
+            // success. A deferred Ak handle has no URL to probe yet and is
+            // materialised later, so it passes through untouched.
+            if (stream.url && !stream.deferredLocator) {
+              const verdict = await verifyCandidateStream({
+                stream,
+                context,
+                // The candidate's signal, not the attempt's: when this candidate
+                // times out its probe has to be abandoned with it, or the
+                // request outlives the thing that asked for it.
+                signal: cycleContext.signal,
+                timeoutMs: resolveGateBudgetMs(
+                  providerCycleCandidateTimeoutMs(startupPriority, ALLMANGA_CANDIDATE_TIMEOUT_MS),
+                ),
+              });
+              if (!verdict.accepted) {
+                throw createProviderCycleFailureError(candidate, {
+                  failureClass: "candidate-blocked",
+                  message: `AllManga source is unreachable (${verdict.reason})`,
+                  retryable: false,
+                  at: context.now(),
+                });
+              }
+            }
+
             return stream;
           },
         });

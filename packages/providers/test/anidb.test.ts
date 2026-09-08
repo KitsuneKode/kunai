@@ -24,6 +24,25 @@ import { isOfficialAnidbApi, urlHasHostname } from "./helpers/anidb-urls";
 const fixture = (name: string) =>
   Bun.file(new URL(`./fixtures/anidb/${name}`, import.meta.url)).text();
 
+/**
+ * AniDB segment-probes the selected stream before reporting success, so the
+ * fixtures have to answer the hops that probe walks: the variant playlist a
+ * master points at, and the first segment. Leaving these to the 404 fallback
+ * reads as a dead ladder — which is what the gate exists to reject.
+ */
+function anidbFixtureCdnResponse(url: string): Response | null {
+  if (url.includes("segment-0.ts")) {
+    return new Response(new Uint8Array(2048), {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-2047/2048" },
+    });
+  }
+  if (/\d+p\.m3u8/.test(url)) {
+    return new Response("#EXTM3U\n#EXTINF:4.0,\nsegment-0.ts\n", { status: 200 });
+  }
+  return null;
+}
+
 describe("anidb fetch stub URL match", () => {
   test("official API match is host and port, not a substring spoof", () => {
     expect(isOfficialAnidbApi("http://api.anidb.net:9001/httpapi")).toBe(true);
@@ -867,7 +886,7 @@ describe("anidb direct resolve season routing", () => {
             status: 200,
           });
         }
-        return new Response("", { status: 404 });
+        return anidbFixtureCdnResponse(url) ?? new Response("", { status: 404 });
       }) as unknown as typeof fetch,
     );
 
@@ -998,7 +1017,7 @@ describe("anidb direct resolve season routing", () => {
             { status: 200 },
           );
         }
-        return new Response("", { status: 404 });
+        return anidbFixtureCdnResponse(url) ?? new Response("", { status: 404 });
       }) as unknown as typeof fetch,
     );
 

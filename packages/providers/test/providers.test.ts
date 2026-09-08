@@ -886,7 +886,7 @@ test("rivestream falls back to static provider services when service discovery i
           const url = String(input);
           requests.push(url);
           if (url.includes("VideoProviderServices")) return new Response("", { status: 503 });
-          return jsonResponse(sourceFixture);
+          return rivestreamFixtureCdnResponse(url) ?? jsonResponse(sourceFixture);
         },
       },
     },
@@ -929,7 +929,10 @@ test("rivestream evidence fixture preserves provider server label and normalized
         fetch: async (input) => {
           const url = String(input);
           requests.push(url);
-          return jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture);
+          return (
+            rivestreamFixtureCdnResponse(url) ??
+            jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture)
+          );
         },
       },
     },
@@ -994,6 +997,7 @@ test("rivestream fixture fast startup keeps the first ready stream", async () =>
       fetch: {
         runtime: "direct-http",
         fetch: async (input) =>
+          rivestreamFixtureCdnResponse(String(input)) ??
           jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
       },
     },
@@ -1047,6 +1051,7 @@ test("rivestream fast startup selects provider ready-order before returned quali
         fetch: {
           runtime: "direct-http",
           fetch: async (input) =>
+            rivestreamFixtureCdnResponse(String(input)) ??
             jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
         },
       },
@@ -1103,7 +1108,10 @@ test("rivestream caches provider services across cold resolves", async () => {
           fetch: async (input) => {
             const url = String(input);
             requests.push(url);
-            return jsonResponse(url.includes("VideoProviderServices") ? services : source);
+            return (
+              rivestreamFixtureCdnResponse(url) ??
+              jsonResponse(url.includes("VideoProviderServices") ? services : source)
+            );
           },
         },
       },
@@ -1771,6 +1779,29 @@ async function readFixture<T>(path: string): Promise<T> {
 
 async function readTextFixture(path: string): Promise<string> {
   return Bun.file(new URL(path, FIXTURE_BASE)).text();
+}
+
+/**
+ * Rivestream segment-probes a stream before accepting the candidate, so a
+ * fixture CDN has to answer like one: a media playlist that names a segment,
+ * and a segment with enough bytes to satisfy the range probe. Returning the
+ * source JSON for these too reads as a playlist with no segments — which is
+ * exactly what a dead mirror looks like, and the gate would reject it.
+ */
+function rivestreamFixtureCdnResponse(url: string): Response | null {
+  if (url.endsWith(".m3u8")) {
+    return new Response("#EXTM3U\n#EXTINF:4.0,\nsegment-0.ts\n", {
+      status: 200,
+      headers: { "Content-Type": "application/vnd.apple.mpegurl" },
+    });
+  }
+  if (url.includes("segment-0.ts")) {
+    return new Response("0".repeat(2048), {
+      status: 206,
+      headers: { "Content-Range": "bytes 0-2047/2048" },
+    });
+  }
+  return null;
 }
 
 function jsonResponse(value: unknown, status = 200): Response {
