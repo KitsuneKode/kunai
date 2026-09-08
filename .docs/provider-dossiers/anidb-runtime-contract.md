@@ -64,11 +64,20 @@ instead of pretending those fields came from `anidb.app`.
   evidence (`chooseAnidbSearchMatch(..., { requireTitleEvidence: true })`) — the ordinary
   "best guess is the top card" fallback is disabled there, since substituting a search result for a
   _persisted_ id would silently swap the show the user chose.
-- The 404 has to be asked for. `anidb.app` is fetched with `curl -sL`, which has no `--fail`, so a
-  missing id returns the error page with exit 0 and is otherwise indistinguishable from a body that
-  failed to parse. Reads that branch on the status pass `reportStatus: true`, which appends
-  `-w '\n%{http_code}'` and raises `AnidbHttpStatusError`. A caller that reads the status out of a
+- The status has to be asked for, so **every** read asks. `anidb.app` is fetched with `curl -sL`,
+  which has no `--fail`, so an error page returns with exit 0 and is otherwise indistinguishable
+  from a body that failed to parse. `anidbFetchText` always appends `-w '\n%{http_code}'` and
+  raises `AnidbHttpStatusError` for any status ≥ 400. A caller that reads the status out of a
   message string is reading prose, not a status.
+- There is no best-effort mode, because it hid a site-wide outage. `anidb.app` answers maintenance
+  with `503` on every route; scraping that page for result rows found none, so search reported zero
+  results for every query alike — an outage wearing the costume of "no such anime", with nothing
+  thrown and no health signal for fallback. Callers that treat a missing id as a real answer catch
+  the 404 explicitly (`fetchAnidbEpisodeCatalog`, `fetchAnidbExternalIds`); everything else lets the
+  status propagate so the search phase can surface it and `server-error` quarantine can see it.
+- Only `403`/`429` earn the curl retry. The fallback exists so a Cloudflare challenge gets a second
+  chance with a better TLS fingerprint; a 404 or a 5xx is the upstream's real answer, and retrying
+  it only doubles the latency before the same result.
 - Only exact `jpn` (sub/original) and `eng` (dub) catalog evidence is accepted.
   The requested mode resolves first; the alternate starts concurrently but is
   skipped for `fast`, bounded to 1 second for `balanced`, and bounded to 4

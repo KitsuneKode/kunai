@@ -199,18 +199,31 @@ function splitAnidbStatus(stdout: string): { readonly body: string; readonly sta
   return { body: stdout.slice(0, cut), status: Number.isFinite(status) ? status : 0 };
 }
 
+/**
+ * Statuses where a better TLS fingerprint can still change the answer, so the
+ * curl fallback is worth a request. Everything else — a missing id, a 5xx
+ * outage — is the upstream's real answer, and retrying only doubles the
+ * latency before the same result.
+ */
+function isFingerprintRetryableStatus(status: number): boolean {
+  return status === 403 || status === 429;
+}
+
+/**
+ * Fetches an AniDB page as text, or throws {@link AnidbHttpStatusError}.
+ *
+ * Every read reports its status. A best-effort mode used to hand the caller
+ * whatever body an error carried, so a `503 Under Maintenance` page was scraped
+ * for result rows, found none, and reported an outage as "no such anime" —
+ * silently, with no health signal for provider fallback. Callers that treat a
+ * missing id as a real answer catch the 404 explicitly.
+ */
 export async function anidbFetchText(
   url: string,
   options: {
     readonly context?: ProviderRuntimeContext;
     readonly signal?: AbortSignal;
     readonly maxTimeSec?: number;
-    /**
-     * Turn an HTTP error status into an {@link AnidbHttpStatusError} instead of
-     * an opaque failure. Only the JSON API reads need it; HTML scrapes are
-     * happier with the existing best-effort behaviour.
-     */
-    readonly reportStatus?: boolean;
   } = {},
 ): Promise<string> {
   if (options.context?.fetch) {
@@ -225,14 +238,12 @@ export async function anidbFetchText(
           return text;
         }
       } else if (
-        options.reportStatus === true &&
-        response.status === 404 &&
-        response.headers.get(RELAY_HOP_HEADER) === null
+        !isFingerprintRetryableStatus(response.status) &&
+        !(response.status === 404 && response.headers.get(RELAY_HOP_HEADER) !== null)
       ) {
         // Falling through to curl exists so a Cloudflare challenge gets a
-        // second chance with a better TLS fingerprint. A 404 straight from
-        // anidb.app is not a fingerprint problem — curl would spend a request
-        // to be told the same thing — so it is answered here.
+        // second chance with a better TLS fingerprint. An upstream outage or
+        // a genuine 404 is not a fingerprint problem, so it is answered here.
         //
         // A 404 that arrived over a relay hop is a different fact. A relay
         // deployed before this provider existed answers `unknown-provider`
@@ -241,7 +252,7 @@ export async function anidbFetchText(
         // the whole anime lane down behind a stale relay while the same id
         // resolved fine over curl. Let curl settle it: a genuine 404 still
         // throws below, one request later.
-        throw new AnidbHttpStatusError(404);
+        throw new AnidbHttpStatusError(response.status);
       }
     } catch (error) {
       if (error instanceof AnidbHttpStatusError) throw error;
@@ -293,7 +304,11 @@ export async function anidbFetchText(
     "--max-time",
     maxTime,
     ...anidbCipherArgs(curl.impersonates),
-    ...(options.reportStatus === true ? ANIDB_STATUS_WRITE_OUT : []),
+    ...ANIDB_STATUS_WRITE_OUT,
+    // Everything after `--` is an operand, never an option. Embed and playlist
+    // URLs arrive from upstream JSON, so without this a value beginning with
+    // `-` would be read as curl flags rather than as the address to fetch.
+    "--",
     url,
   ];
   const stdout = await runAnidbCurlWithRetry(args, options.signal);
@@ -301,18 +316,12 @@ export async function anidbFetchText(
   // 404. Without asking for the status explicitly the miss is indistinguishable
   // from a body that merely failed to parse, which is how a reindexed id used
   // to look exactly like an empty catalogue.
-  if (options.reportStatus === true) {
-    const { body, status } = splitAnidbStatus(stdout);
-    if (status >= 400) throw new AnidbHttpStatusError(status);
-    if (isCloudflareChallengeText(body)) {
-      throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
-    }
-    return body;
-  }
-  if (isCloudflareChallengeText(stdout)) {
+  const { body, status } = splitAnidbStatus(stdout);
+  if (status >= 400) throw new AnidbHttpStatusError(status);
+  if (isCloudflareChallengeText(body)) {
     throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
   }
-  return stdout;
+  return body;
 }
 
 const ANIDB_CURL_TIMEOUT_EXIT_CODE = 28;
@@ -634,7 +643,7 @@ export async function fetchAnidbEpisodeCatalog(
   const url = `${ANIDB_BASE}/api/frontend/anime/${numericId}/episodes`;
   let text: string;
   try {
-    text = await anidbFetchText(url, { signal, context, reportStatus: true });
+    text = await anidbFetchText(url, { signal, context });
   } catch (error) {
     // A reindexed slug (Solo Leveling 19413 → 4883) 404s permanently. Record
     // it as a miss so the caller can re-search, and cache it briefly so a dead
@@ -700,7 +709,7 @@ export async function fetchAnidbLanguages(
   const url = `${ANIDB_BASE}/api/frontend/episode/${episodeId}/languages`;
   let text: string;
   try {
-    text = await anidbFetchText(url, { signal, context, reportStatus: true });
+    text = await anidbFetchText(url, { signal, context });
   } catch (error) {
     // No languages row for this episode is a real answer, not a failure.
     if (error instanceof AnidbHttpStatusError && error.status === 404) return [];
@@ -790,9 +799,6 @@ export async function resolveAnidbLanguageStreams(options: {
         const text = await anidbFetchText(url, {
           signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
           context: options.context,
-          // Surface the HTTP status so a dead master host reads as `http-error`
-          // instead of a generic network failure.
-          reportStatus: true,
         });
         return new Response(text, {
           status: 200,

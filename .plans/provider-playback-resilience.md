@@ -35,6 +35,39 @@ that keeps the probed request and the shipped request identical.
   server that simply lacks one title must not be blacklisted. The mechanism
   is proven by `provider-cycle-endpoint-health.test.ts` instead.
 
+## P1 — Miruro: the block is a JS challenge, and the relay is the only way through
+
+Investigated 2026-09-09. What is actually wrong, in order of what was ruled out:
+
+- **Every mirror is Cloudflare-challenged.** `www.miruro.bz`, `.ru`, `.to` and
+  `.tv` all answer `403 Just a moment...` — a managed challenge page, not a hard
+  block.
+- **It is not a TLS fingerprint problem.** Twelve impersonation profiles were
+  tried (chrome116/131/136/142/145/146/150, firefox135/144/147, safari153,
+  chrome131_android). All twelve get the same challenge, so no newer
+  curl-impersonate build will fix it and installing one is not the answer.
+- **`miruro.com` is a hub, not the app.** It answers 200, but every path returns
+  the SPA shell and it has no `/api/secure/pipe`; its homepage just links to the
+  mirrors and a status page.
+- **There is no unchallenged API host.** `api.`/`backend.`/`pipe.`/`cdn.`
+  subdomains do not resolve on any mirror domain.
+
+So the challenge has to be solved by something that runs JS, or the request has
+to come from a network Cloudflare is not challenging.
+
+**The relay path is verified working.** Pointing `KUNAI_RELAY_BASE_URL` at a
+local recording stand-in showed the CLI sending four `POST /rpc/miruro` calls
+carrying the correct upstream URLs for both mirrors — so the remedy the failure
+message names is real, wired end to end, and only needs a relay host outside the
+blocked network. (A local relay cannot help: same IP, same challenge.)
+
+One methodological warning for whoever picks this up: `fallbackToDirect`
+defaults to **true**, so pointing the relay at a dead port produces the _same_
+Cloudflare error as no relay at all. That silently fakes a negative result — use
+a recording stand-in, not an unreachable port.
+
+The gate exemption stands for the separate reason below.
+
 ## P1 — Miruro cannot host a resolve gate at its current budget
 
 Once `providerCycleCandidateTimeoutMs` clamps it against the attempt budget,
