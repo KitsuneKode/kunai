@@ -36,6 +36,7 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -49,7 +50,6 @@ import {
   normalizeQualityLabel,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
-import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "../shared/stream-health";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { combineAbortSignals, createTimeoutSignal } from "../shared/timeout-signal";
 // Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
@@ -1338,36 +1338,25 @@ async function probeSelectedVidkingPayloadStream({
     favoriteSourceNames: input.favoriteSourceNames,
   });
   const selected = selection.selected;
-  const streamUrl = selected.url?.trim();
-  if (!streamUrl) {
+  if (!selected.url?.trim()) {
     return { ok: false, verified: false };
   }
 
-  // Always segment-probe HLS/direct before accepting a candidate. Balanced/fast used to
-  // skip this for website-parity latency; that attested dead CDN masters as healthy.
+  // Always segment-probe before accepting a candidate. Balanced/fast used to
+  // skip this for website-parity latency; that attested dead CDN masters as
+  // healthy. The candidate goes in whole, so the probed request shape is the
+  // shipped one — verifying a differently-assembled header set is what let a
+  // 403 stream through while the gate reported success.
   const probeStartedAt = Date.now();
-  const health = await runStreamHealthCheck({
-    phase: "resolve-gate",
-    url: streamUrl,
-    headers: selected.headers,
-    fetchImpl: context.fetch?.fetch.bind(context.fetch),
-    timeoutMs: STREAM_HEALTH_DEFAULTS.vidkingResolveGateTimeoutMs,
-    signal: signal ?? context.signal,
-  });
+  const verdict = await verifyCandidateStream({ stream: selected, context, signal });
   const probeDurationMs = Date.now() - probeStartedAt;
 
-  if (health.healthy) {
-    const verified = health.probed === true && health.probe?.status === "reachable";
-    return { ok: true, verified };
+  if (verdict.accepted) {
+    return { ok: true, verified: verdict.verified };
   }
 
-  const probe = health.probe;
-  const reason =
-    probe?.status === "timeout"
-      ? "stream probe timed out"
-      : probe?.status === "unreachable"
-        ? probe.reason
-        : "stream probe failed";
+  const probe = verdict.probe;
+  const reason = verdict.reason;
 
   emitTraceEvent(events, context, {
     type: "source:failed",

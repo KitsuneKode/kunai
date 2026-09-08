@@ -28,6 +28,7 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
+import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -45,11 +46,6 @@ import {
   streamPresentationFields,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
-import { runStreamHealthCheck } from "../shared/stream-health";
-import {
-  isStreamReachableForResolve,
-  type StreamReachabilityProbeResult,
-} from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
@@ -955,21 +951,17 @@ async function resolveRivestreamProviderCandidate({
   // answer 200 on the master playlist and refuse every segment, so without this
   // the cycle stops at the first server that merely *responds* and never
   // reaches one that plays.
-  const gateUrl = streams[0]?.url;
-  if (gateUrl) {
-    const health = await runStreamHealthCheck({
-      phase: "resolve-gate",
-      url: gateUrl,
-      headers: streams[0]?.headers,
-      fetchImpl: context.fetch?.fetch.bind(context.fetch),
+  const gateCandidate = streams[0];
+  if (gateCandidate) {
+    const verdict = await verifyCandidateStream({
+      stream: gateCandidate,
+      context,
       timeoutMs: RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
-      signal: context.signal,
     });
-    const rejection = rivestreamStreamGateRejection(health);
-    if (rejection) {
+    if (!verdict.accepted) {
       throw createProviderCycleFailureError(candidate, {
-        failureClass: rejection.failureClass,
-        message: `${displayLabel}: ${rejection.message}`,
+        failureClass: "candidate-blocked",
+        message: `${displayLabel}: ${verdict.reason}`,
         retryable: false,
         at: context.now(),
       });
@@ -996,35 +988,6 @@ export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
  * eat the budget its own candidate needs.
  */
 export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 6_000;
-
-/**
- * Whether a probed candidate must be rejected so cycling continues.
- *
- * Rivestream can hand back a playlist whose segments live on a CDN that refuses
- * the referer — `master.m3u8` answers 200 while every segment answers
- * `domain forbidden`. Accepting that reported success for a stream mpv cannot
- * play, and stopped the cycle before a server that works.
- *
- * Only a *definitive* refusal rejects. A timeout, a non-definitive error, or no
- * probe at all is not evidence of a dead stream, and dropping candidates on it
- * would trade a working server for a slow link. Playback preflight still runs
- * before mpv receives the handoff.
- */
-export function rivestreamStreamGateRejection(health: {
-  readonly healthy: boolean;
-  readonly probe?: StreamReachabilityProbeResult;
-}): { readonly failureClass: "candidate-blocked"; readonly message: string } | null {
-  const probe = health.probe;
-  // `isStreamReachableForResolve` already owns "only definitive failures block
-  // a resolve gate"; this adds the provider's wording, not a second policy.
-  if (!probe || isStreamReachableForResolve(probe)) return null;
-  return {
-    failureClass: "candidate-blocked",
-    message: `Rivestream stream is unreachable (${
-      probe.status === "unreachable" ? probe.reason : probe.status
-    })`,
-  };
-}
 
 function extractRivestreamCaptions(
   data: RivestreamSourceResponse["data"],

@@ -27,8 +27,17 @@ export type StreamHealthPolicyReason =
 export const STREAM_HEALTH_DEFAULTS = {
   staleAfterMs: 60_000,
   playbackTrustMs: 5 * 60 * 1000,
-  resolveGateTimeoutMs: 3_000,
-  vidkingResolveGateTimeoutMs: 2_500,
+  /**
+   * One budget for every provider resolve gate.
+   *
+   * An HLS gate is three sequential round trips (master, variant, segment),
+   * measured at 2.1-2.9s against a live dead mirror. A cut-short probe reports
+   * `timeout`, which `isStreamReachableForResolve` treats as "not proven dead"
+   * — so a budget that cannot reach a verdict does not fail loudly, it passes
+   * dead streams intermittently. Videasy used to carry its own tighter 2.5s
+   * copy; per-provider budgets are how that drifts back.
+   */
+  resolveGateTimeoutMs: 6_000,
   preflightTimeoutMs: 3_000,
 } as const;
 
