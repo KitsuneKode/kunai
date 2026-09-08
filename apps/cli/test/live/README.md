@@ -104,12 +104,19 @@ a 45-second deadline so a provider outage returns a diagnostic report instead of
 
 Each matrix row includes a `healthClass`:
 
-| Class                 | Meaning                                                              |
-| --------------------- | -------------------------------------------------------------------- |
-| `healthy`             | Stream resolved through `container.engine.resolve`                   |
-| `provider-drift`      | Upstream route/contract failure (404, exhausted, no playable source) |
-| `environment-network` | Timeout, connect/DNS/TLS, or WAF-shaped block                        |
-| `harness-failure`     | Unparseable smoke JSON or matrix deadline without provider evidence  |
+| Class                 | Meaning                                                                       |
+| --------------------- | ----------------------------------------------------------------------------- |
+| `healthy`             | Stream resolved through `container.engine.resolve`                            |
+| `provider-drift`      | Upstream route/contract failure (404, exhausted, no playable source)          |
+| `environment-network` | Unreachable upstream: timeout, connect/DNS/TLS, WAF block, or 5xx/maintenance |
+| `harness-failure`     | No provider evidence at all — no payload parsed, or a deadline with none      |
+
+`harness-failure` means the matrix learned nothing, so it must never absorb a
+diagnosed provider failure. Row shaping lives in
+[provider-matrix-report.ts](./provider-matrix-report.ts) and is unit-tested in
+`apps/cli/test/unit/live/provider-matrix-report.test.ts`; a smoke announces its
+verdict with the required `ok` field, on stdout or — for early-exit failures
+reported through `console.error` — on stderr.
 
 ### Cloudflare-fronted providers need an impersonating curl
 

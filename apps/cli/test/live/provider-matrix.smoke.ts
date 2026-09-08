@@ -1,9 +1,27 @@
-/* oxlint-disable promise/no-multiple-resolved -- child error and close can both fire; finish is idempotent. */
+/**
+ * Serial provider matrix: run every production provider's focused smoke once
+ * and emit a single JSON report.
+ *
+ * Report shaping (payload parsing, health classification) lives in
+ * ./provider-matrix-report.ts so it can be unit-tested without the network.
+ */
+import { join, resolve } from "node:path";
 
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import {
+  classifyProviderHealth,
+  parseSmokePayload,
+  type ProviderHealthClass,
+  type SmokePayload,
+} from "./provider-matrix-report";
 
-const MATRIX = [
+type MatrixEntry = {
+  readonly provider: string;
+  readonly command: readonly string[];
+  readonly media: string;
+  readonly fixture: string;
+};
+
+const MATRIX: readonly MatrixEntry[] = [
   {
     provider: "videasy",
     command: ["bun", "test/live/videasy-bloodhounds.smoke.ts"],
@@ -48,13 +66,16 @@ const MATRIX = [
   },
 ];
 
-const appRoot = fileURLToPath(new URL("../..", import.meta.url));
+const SMOKE_DEADLINE_MS = 45_000;
+const appRoot = join(import.meta.dir, "../..");
 
 // Default movie/series/anime release evidence uses ReleaseProviderSignoff
 // (apps/cli/test/live/release-provider-signoff.smoke.ts), not this full matrix.
 // Opt-in: KUNAI_LIVE_RELEASE_SIGNOFF=1 bun run test:live:release-signoff
 // Workflow: provider-matrix.yml mode=release-signoff → release-provider-signoff-<run_id>
-if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")) {
+const argv = process.argv.slice(2);
+
+if (argv.some((arg) => arg.toLowerCase() === "release-signoff")) {
   console.error(
     JSON.stringify(
       {
@@ -69,7 +90,7 @@ if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")
   );
   process.exitCode = 1;
 } else {
-  const requested = new Set(process.argv.slice(2).map((arg) => arg.toLowerCase()));
+  const requested = new Set(argv.map((arg) => arg.toLowerCase()));
   const selected =
     requested.size > 0
       ? MATRIX.filter((entry) => requested.has(entry.provider) || requested.has(entry.media))
@@ -90,19 +111,12 @@ if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")
     );
     process.exitCode = 1;
   } else {
-    const results = [];
+    const results: MatrixResult[] = [];
     for (const entry of selected) results.push(await runMatrixEntry(entry));
 
     const failed = results.filter((result) => !result.ok);
-    const byClass = {
-      healthy: results.filter((result) => result.healthClass === "healthy").length,
-      "provider-drift": results.filter((result) => result.healthClass === "provider-drift").length,
-      "environment-network": results.filter(
-        (result) => result.healthClass === "environment-network",
-      ).length,
-      "harness-failure": results.filter((result) => result.healthClass === "harness-failure")
-        .length,
-    };
+    const countOf = (healthClass: ProviderHealthClass) =>
+      results.filter((result) => result.healthClass === healthClass).length;
     const report = {
       ok: failed.length === 0,
       generatedAt: new Date().toISOString(),
@@ -111,7 +125,12 @@ if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")
         total: results.length,
         passed: results.length - failed.length,
         failed: failed.length,
-        byClass,
+        byClass: {
+          healthy: countOf("healthy"),
+          "provider-drift": countOf("provider-drift"),
+          "environment-network": countOf("environment-network"),
+          "harness-failure": countOf("harness-failure"),
+        },
       },
       results,
     };
@@ -119,12 +138,10 @@ if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")
 
     const artifactPath = process.env.KUNAI_MATRIX_ARTIFACT?.trim();
     if (artifactPath) {
-      const { mkdir, writeFile } = await import("node:fs/promises");
-      const { dirname, resolve } = await import("node:path");
-      const absoluteArtifactPath = resolve(artifactPath);
-      await mkdir(dirname(absoluteArtifactPath), { recursive: true });
-      await writeFile(
-        absoluteArtifactPath,
+      // Bun.write creates missing parent directories, so the artifact path can
+      // point anywhere the workflow chooses.
+      await Bun.write(
+        resolve(artifactPath),
         `${JSON.stringify(redactMatrixReport(report), null, 2)}\n`,
       );
     }
@@ -133,9 +150,16 @@ if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")
   }
 }
 
-async function runMatrixEntry(entry) {
+type MatrixResult = Record<string, unknown> & {
+  readonly provider: string;
+  readonly ok: boolean;
+  readonly healthClass: ProviderHealthClass;
+};
+
+async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
   const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(entry.command);
-  const parsed = parseJsonPayload(stdout);
+  const parsed = parseSmokePayload(stdout, stderr);
+
   if (!parsed) {
     const result = {
       provider: entry.provider,
@@ -149,15 +173,23 @@ async function runMatrixEntry(entry) {
       runtime: null,
       cacheHit: null,
       isolatedProfile: null,
-      failureCodes: [],
+      failureCodes: [] as string[],
       error: timedOut
         ? "provider smoke exceeded the 45 second deadline"
         : "provider smoke did not emit parseable JSON",
       rawStdout: stdout.trim().slice(0, 2_000),
       rawStderr: stderr.trim().slice(0, 2_000),
     };
-    return { ...result, healthClass: classifyProviderHealth(result, { timedOut, harness: true }) };
+    return {
+      ...result,
+      healthClass: classifyProviderHealth(result, { timedOut, harness: true }),
+    };
   }
+
+  // An early-exit smoke reports through `reason`; the resolve path uses
+  // `error`. Both are provider evidence, so the row carries whichever exists.
+  const reason = stringOrNull(parsed.reason);
+  const error = stringOrNull(parsed.error) ?? reason;
 
   const result = {
     provider: entry.provider,
@@ -177,54 +209,17 @@ async function runMatrixEntry(entry) {
     selectedSourceLabel: stringOrNull(parsed.selectedSourceLabel),
     probeOrderLabels: stringArray(parsed.probeOrderLabels),
     score: parseScore(parsed.score),
-    ...(typeof parsed.error === "string" ? { error: parsed.error } : {}),
+    ...(stringOrNull(parsed.stage) === null ? {} : { stage: parsed.stage }),
+    ...(error === null ? {} : { error }),
   };
+
   return {
     ...result,
-    healthClass: classifyProviderHealth(result, { timedOut, harness: false }),
+    healthClass: classifyProviderHealth(result, { timedOut }),
   };
 }
 
-/**
- * Release-evidence taxonomy for matrix rows. Default CI must not depend on these.
- * - healthy: stream resolved
- * - provider-drift: upstream contract/route failure while the harness ran
- * - environment-network: timeout, connect, DNS/TLS, or WAF-shaped blocks
- * - harness-failure: unparseable smoke output or matrix deadline without provider JSON
- *
- * ReleaseProviderSignoff.failureClass reuses provider-drift / environment-network /
- * harness-failure (null when the default route is resolved and reachable).
- */
-function classifyProviderHealth(result, { timedOut, harness }) {
-  if (result.ok) return "healthy";
-  if (harness) return "harness-failure";
-
-  const haystack = [
-    result.error ?? "",
-    ...(Array.isArray(result.failureCodes) ? result.failureCodes : []),
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  if (
-    timedOut ||
-    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket/.test(
-      haystack,
-    )
-  ) {
-    return "environment-network";
-  }
-
-  if (
-    /404|not-found|did not find|no playable|exhausted|route-dead|unsupported-title/.test(haystack)
-  ) {
-    return "provider-drift";
-  }
-
-  return "provider-drift";
-}
-
-function redactMatrixReport(report) {
+function redactMatrixReport<T extends { readonly results: readonly MatrixResult[] }>(report: T) {
   return {
     ...report,
     results: report.results.map((result) => {
@@ -237,85 +232,70 @@ function redactMatrixReport(report) {
   };
 }
 
-function redactVolatileText(value) {
+function redactVolatileText(value: string): string {
   return value
     .replace(/https?:\/\/[^\s"']+/gi, "https://REDACTED")
     .replace(/\/tmp\/[^\s"']+/gi, "/tmp/REDACTED");
 }
 
-async function runLiveSmoke(command) {
-  // `error` can be followed by `close`; `finish` deliberately makes that race idempotent.
-  return new Promise((resolve) => {
-    const child = spawn(command[0], command.slice(1), {
-      cwd: appRoot,
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let settled = false;
-    const deadline = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-    }, 45_000);
-    const finish = (exitCode, error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(deadline);
-      if (error) stderr += error instanceof Error ? error.message : String(error);
-      resolve({ stdout, stderr, exitCode: exitCode ?? 1, timedOut });
-    };
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.once("error", (error) => finish(1, error));
-    child.once("close", (code) => finish(code));
+async function runLiveSmoke(command: readonly string[]): Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut: boolean;
+}> {
+  const child = Bun.spawn([...command], {
+    cwd: appRoot,
+    env: process.env,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
   });
-}
 
-function parseJsonPayload(stdout) {
+  let timedOut = false;
+  // setTimeout, not Bun.sleep: the deadline has to be cancellable when the
+  // smoke finishes first, or the matrix waits 45s on every healthy provider.
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    child.kill();
+  }, SMOKE_DEADLINE_MS);
+
   try {
-    const value = JSON.parse(stdout);
-    return value && typeof value === "object" ? value : null;
-  } catch {
-    const start = stdout.indexOf("{");
-    const end = stdout.lastIndexOf("}");
-    if (start < 0 || end <= start) return null;
-    try {
-      const value = JSON.parse(stdout.slice(start, end + 1));
-      return value && typeof value === "object" ? value : null;
-    } catch {
-      return null;
-    }
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { stdout, stderr, exitCode: exitCode ?? 1, timedOut };
+  } finally {
+    clearTimeout(deadline);
   }
 }
 
-function booleanOrNull(value) {
+function booleanOrNull(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
-function numberOrNull(value) {
+function numberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function stringOrNull(value) {
+function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function stringArray(value) {
-  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
-function parseScore(value) {
+function parseScore(value: unknown): Record<string, boolean | null> | null {
   if (!value || typeof value !== "object") return null;
+  const score = value as SmokePayload;
   return {
-    functional: booleanOrNull(value.functional),
-    performative: booleanOrNull(value.performative),
-    ordered: booleanOrNull(value.ordered),
+    functional: booleanOrNull(score.functional),
+    performative: booleanOrNull(score.performative),
+    ordered: booleanOrNull(score.ordered),
   };
 }
