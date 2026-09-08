@@ -52,7 +52,7 @@ export default function HomePageInteractive() {
     <section id="install" className="kunai-home-install kunai-flow-section">
       <SectionHeading
         eyebrow="Install"
-        title="Get started in three steps."
+        title="Install in three steps."
         description="The preferred path is a self-contained binary — no Bun or Node required. Pick your OS for the exact bootstrap and mpv commands."
       />
 
