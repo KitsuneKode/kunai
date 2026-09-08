@@ -105,6 +105,20 @@ let providerServicesCache:
     }
   | undefined;
 
+/**
+ * Reset the module-level caches between tests.
+ *
+ * `providerServicesCache` and `secretKeyCache` outlive a single test file —
+ * module state is per process, not per file — so a test that resolves through
+ * this provider leaves discovery already cached for whatever runs next. Tests
+ * asserting on discovery call counts then see zero, and only in whatever order
+ * the runner happens to pick.
+ */
+export function clearRivestreamCachesForTest(): void {
+  providerServicesCache = undefined;
+  secretKeyCache.clear();
+}
+
 type RivestreamProviderServicesResponse = {
   readonly data?: unknown;
 };

@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { EndpointHealthPort, ProviderRuntimeContext } from "@kunai/types";
 
-import { rivestreamProviderModule } from "../src/rivestream/direct";
+import { clearRivestreamCachesForTest, rivestreamProviderModule } from "../src/rivestream/direct";
 
 /**
  * A resolve-gate rejection has to survive the candidate's own error handling.
@@ -61,6 +61,16 @@ function contextWithDeadCdn(
 }
 
 describe("rivestream resolve-gate failure class", () => {
+  // Resolving through the provider caches service discovery in module state,
+  // which outlives this file. Other suites assert on discovery call counts, so
+  // leaving it populated makes them fail in whichever order the runner picks.
+  beforeEach(() => {
+    clearRivestreamCachesForTest();
+  });
+  afterEach(() => {
+    clearRivestreamCachesForTest();
+  });
+
   test("a refused stream is reported as blocked, not as an empty candidate", async () => {
     const recorded: { endpoint: string; class: string }[] = [];
     const result = await rivestreamProviderModule.resolve(
