@@ -15,7 +15,10 @@ export type AllMangaCryptoDiagnosis =
   | "unreachable";
 
 export function diagnoseAllMangaBootstrap(status: number, body: string): AllMangaCryptoDiagnosis {
-  if (status === 200) return "current";
+  // A 200 alone proves nothing: an interstitial or maintenance page answers 200
+  // with HTML, and calling that "current" hides a blocked bootstrap as healthy.
+  // The bootstrap payload is the evidence, so require it.
+  if (status === 200) return isBootstrapPayload(body) ? "current" : "blocked";
   if (body.includes("unknown_build_id")) return "build-id-rotated";
   if (body.includes("invalid_boot_token")) return "derivation-constants-rotated";
   if (body.includes("missing_build_id") || body.includes("missing_or_invalid_lane")) {
@@ -24,6 +27,18 @@ export function diagnoseAllMangaBootstrap(status: number, body: string): AllMang
   // Cloudflare answers with an HTML challenge page rather than the API's JSON.
   if (body.trimStart().startsWith("<")) return "blocked";
   return "unreachable";
+}
+
+/** A real bootstrap answer carries the epoch and the key half it exists to hand back. */
+function isBootstrapPayload(body: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!parsed || typeof parsed !== "object") return false;
+    const record = parsed as Record<string, unknown>;
+    return typeof record.partB === "string" && typeof record.epoch === "number";
+  } catch {
+    return false;
+  }
 }
 
 export function allMangaCryptoRemedy(

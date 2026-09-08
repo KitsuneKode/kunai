@@ -6,6 +6,46 @@ import {
   type StreamReachabilityProbeResult,
 } from "./stream-reachability";
 
+/** Room left for the candidate's own work after its gate probes. */
+const RESOLVE_GATE_CANDIDATE_HEADROOM_MS = 500;
+
+/**
+ * `runStreamHealthCheck` probes a second time when the first attempt reached no
+ * verdict, so a candidate has to be able to afford two of them.
+ */
+const RESOLVE_GATE_MAX_PROBES = 2;
+
+/**
+ * The gate budget a candidate can actually afford.
+ *
+ * A provider's chosen candidate timeout is not what it gets:
+ * `providerCycleCandidateTimeoutMs` caps it at a fraction of the attempt
+ * budget, and on `fast` that lands at 4.8s — below the shared 6s gate. Sizing a
+ * gate against the provider's *unclamped* number means the candidate aborts the
+ * probe on the fastest profile, the probe reports `timeout`, and the gate is let
+ * through: coverage that quietly stops working exactly where latency matters
+ * most.
+ *
+ * Always pass the clamped value.
+ */
+export function resolveGateBudgetMs(
+  candidateTimeoutMs: number,
+  preferredMs: number = STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
+): number {
+  const affordable = Math.floor(
+    (candidateTimeoutMs - RESOLVE_GATE_CANDIDATE_HEADROOM_MS) / RESOLVE_GATE_MAX_PROBES,
+  );
+  return Math.max(1, Math.min(preferredMs, affordable));
+}
+
+export type CandidateStreamVerdict =
+  | { readonly accepted: true; readonly verified: boolean }
+  | {
+      readonly accepted: false;
+      readonly reason: string;
+      readonly probe?: StreamReachabilityProbeResult;
+    };
+
 /**
  * The one way a provider proves a candidate is playable before reporting success.
  *
@@ -21,14 +61,6 @@ import {
  * working source for a slow link, and playback preflight still runs before mpv
  * receives the handoff.
  */
-export type CandidateStreamVerdict =
-  | { readonly accepted: true; readonly verified: boolean }
-  | {
-      readonly accepted: false;
-      readonly reason: string;
-      readonly probe?: StreamReachabilityProbeResult;
-    };
-
 export async function verifyCandidateStream({
   stream,
   context,
@@ -66,7 +98,17 @@ export async function verifyCandidateStream({
 }
 
 export type VerifiedStreamSelection<TStream> =
-  | { readonly accepted: true; readonly stream: TStream; readonly verified: boolean }
+  | {
+      readonly accepted: true;
+      readonly stream: TStream;
+      readonly verified: boolean;
+      /**
+       * Hosts proven dead during the walk. The caller must drop their streams:
+       * leaving a refused rung in the inventory lets selection ship the very
+       * stream the gate rejected.
+       */
+      readonly refusedHosts: ReadonlySet<string>;
+    }
   | { readonly accepted: false; readonly reason: string };
 
 /**
@@ -108,7 +150,9 @@ export async function selectVerifiedStream<
       ...(signal === undefined ? {} : { signal }),
       ...(timeoutMs === undefined ? {} : { timeoutMs }),
     });
-    if (verdict.accepted) return { accepted: true, stream, verified: verdict.verified };
+    if (verdict.accepted) {
+      return { accepted: true, stream, verified: verdict.verified, refusedHosts };
+    }
 
     firstReason ??= verdict.reason;
     if (host) refusedHosts.add(host);

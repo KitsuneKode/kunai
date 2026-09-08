@@ -537,7 +537,15 @@ export const anidbProviderModule: CoreProviderModule = {
           at: context.now(),
         };
         failures.push(failure);
-        return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, failure);
+        // Carry the evidence, like every other exhausted return here: without it
+        // the trace loses the events already collected and the row explains
+        // nothing about how the resolve got this far.
+        return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, failure, {
+          cachePolicy,
+          events,
+          failures,
+          startedAt,
+        });
       }
 
       const sources = finalizeCycleSourceInventory({

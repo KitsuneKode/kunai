@@ -5,6 +5,8 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  ProviderCycleFailureError,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -28,7 +30,7 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
-import { selectVerifiedStream } from "../shared/resolve-gate";
+import { resolveGateBudgetMs, selectVerifiedStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -398,6 +400,16 @@ export const rivestreamProviderModule: CoreProviderModule = {
         secretKey,
       });
 
+      // The attempt budget caps this, so the gate has to be sized against what
+      // the candidate actually gets rather than the number chosen here.
+      const candidateTimeoutMs = providerCycleCandidateTimeoutMs(
+        input.startupPriority ?? "balanced",
+        RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+      );
+      const gateTimeoutMs = resolveGateBudgetMs(
+        candidateTimeoutMs,
+        RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+      );
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
         candidates: cycleCandidates,
@@ -405,7 +417,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         now: context.now,
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
-        candidateTimeoutMs: RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+        candidateTimeoutMs,
         // Without these the cycle can neither skip a quarantined mirror nor
         // record what it learned, so every resolve re-walked all eleven
         // services and paid the full gate cost each time.
@@ -431,8 +443,18 @@ export const rivestreamProviderModule: CoreProviderModule = {
               context,
               cachePolicy,
               sourceDataPromise,
+              gateTimeoutMs,
             });
           } catch (error) {
+            // The resolve gate already decided, and its verdict carries the
+            // parts that matter downstream: `candidate-blocked` and
+            // `endpointScoped`. Rebuilding it from a generic `ProviderHttpError`
+            // relabelled it `candidate-empty` and dropped the flag, so endpoint
+            // health recorded nothing and the dead mirror was re-walked on every
+            // play — and a refused stream became indistinguishable in the trace
+            // from a server that returned no sources at all.
+            if (error instanceof ProviderCycleFailureError) throw error;
+
             const providerError =
               error instanceof ProviderHttpError
                 ? error
@@ -838,6 +860,7 @@ async function resolveRivestreamProviderCandidate({
   context,
   cachePolicy,
   sourceDataPromise,
+  gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly provider: string;
@@ -845,6 +868,8 @@ async function resolveRivestreamProviderCandidate({
   readonly context: ProviderRuntimeContext;
   readonly cachePolicy: CachePolicy;
   readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
+  /** Sized against the clamped candidate timeout, never the raw constant. */
+  readonly gateTimeoutMs: number;
 }): Promise<RivestreamResolvedCandidate> {
   const displayLabel = displayRivestreamSourceLabel(provider);
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
@@ -861,8 +886,8 @@ async function resolveRivestreamProviderCandidate({
     });
   }
 
-  const streams: StreamCandidate[] = [];
-  const variants: ProviderVariantCandidate[] = [];
+  let streams: StreamCandidate[] = [];
+  let variants: ProviderVariantCandidate[] = [];
   const subtitles: SubtitleCandidate[] = [];
 
   rawSources.forEach((source) => {
@@ -956,12 +981,35 @@ async function resolveRivestreamProviderCandidate({
   // answer 200 on the master playlist and refuse every segment, so without this
   // the cycle stops at the first server that merely *responds* and never
   // reaches one that plays.
-  if (streams.length > 0) {
+  // An envelope can carry sources that all lack a URL, leaving nothing mapped.
+  // Returning that as a resolved candidate makes the cycle hand an empty list to
+  // `selectReadyStream`, which throws where nothing is catching.
+  if (streams.length === 0) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-empty",
+      message: `Rivestream ${provider} returned no playable stream`,
+      retryable: true,
+      at: context.now(),
+    });
+  }
+
+  {
     const selection = await selectVerifiedStream({
       streams,
       context,
-      timeoutMs: RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+      timeoutMs: gateTimeoutMs,
     });
+    if (selection.accepted && selection.refusedHosts.size > 0) {
+      // Keep the alternatives, drop the proven-dead ones. Leaving a refused rung
+      // in the inventory lets startup selection ship the exact stream the gate
+      // rejected — usually the highest quality, which is what it prefers.
+      const playable = (candidateStream: { readonly url?: string }) =>
+        !selection.refusedHosts.has(rivestreamStreamHost(candidateStream.url));
+      streams = streams.filter(playable);
+      variants = variants.filter((variant) =>
+        streams.some((candidateStream) => candidateStream.variantId === variant.id),
+      );
+    }
     if (!selection.accepted) {
       throw createProviderCycleFailureError(candidate, {
         failureClass: "candidate-blocked",
@@ -995,6 +1043,15 @@ export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
  * eat the budget its own candidate needs.
  */
 export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 6_000;
+
+/** Host of a candidate stream, for matching against proven-dead hosts. */
+function rivestreamStreamHost(url: string | undefined): string {
+  try {
+    return new URL(url ?? "").host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
 
 function extractRivestreamCaptions(
   data: RivestreamSourceResponse["data"],

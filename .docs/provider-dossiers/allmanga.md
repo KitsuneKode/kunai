@@ -12,7 +12,7 @@ lastReviewed: "2026-08-17"
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status (2026-07-18):** Episode resolve requires ani-cli `aaReq` AES-GCM attestation + rotated hex decrypt key (`origin/fix`). Without it the API returns `AA_CRYPTO_MISSING`. Search/episode catalog POST paths still work without `aaReq`.
+- **Current status (2026-09-09):** Episode resolve requires the `aaReq` AES-GCM attestation plus the build-166 derived key. Without it the API returns `AA_CRYPTO_MISSING`; with a stale build id it returns `PersistedQueryNotFound` or an `unknown_build_id` bootstrap. Search/episode catalog POST paths still work without `aaReq`.
 
 ## Current Evidence
 
@@ -29,7 +29,7 @@ The source flow matches ani-cli:
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 119, 7-day epochs)
+  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 166, 7-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS / DASH-shaped candidates
@@ -94,7 +94,7 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Known
 
 - GraphQL search/catalog is working with `youtu-chan.com` referer.
-- The AES-256-GCM `tobeparsed` decode path and build id 119 crypto bootstrap are verified working (re-derived 2026-08-17 after the 81→119 build rotation; episodes resolve through a user relay); AES-CTR must not be restored (see `.docs/providers.md`).
+- The AES-256-GCM `tobeparsed` decode path and the build-166 crypto bootstrap are verified working (re-derived 2026-09-09 after the 140→166 rotation; bootstrap answers 200 and the episode query returns `tobeparsed`); AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.

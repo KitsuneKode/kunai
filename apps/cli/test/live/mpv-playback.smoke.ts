@@ -155,6 +155,10 @@ const ok = base.ok && mpv.ok;
 console.log(
   JSON.stringify({
     ...base,
+    // `buildProviderSmokePayload` sets `ok` from "did a URL resolve", which is
+    // the weaker claim this smoke exists to replace. Spreading it unchanged
+    // would report `ok: true` for a stream mpv could not decode.
+    ok,
     mpv,
     mpvArgs: redactedMpvArgs.slice(0, -2),
     mpvUrlHost: base.streamHost,

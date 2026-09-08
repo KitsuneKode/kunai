@@ -35,7 +35,11 @@ import { allMangaCryptoRemedy, diagnoseAllMangaBootstrap } from "./allmanga-cryp
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-const epoch = currentAllMangaEpochCandidates(Date.now())[0] ?? ALLMANGA_EPOCH;
+// Near an epoch boundary this returns `[previous, current]`, so the last entry
+// is the live one. Taking `[0]` there compares the pinned material against the
+// epoch that just ended and inverts the verdict.
+const epochCandidates = currentAllMangaEpochCandidates(Date.now());
+const epoch = epochCandidates.at(-1) ?? ALLMANGA_EPOCH;
 const boot = buildAllMangaBootToken({
   epoch,
   keyGroup: ALLMANGA_KEY_GROUP,

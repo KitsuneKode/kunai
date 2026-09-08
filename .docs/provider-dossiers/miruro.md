@@ -356,7 +356,11 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
     relay at a dead port yields the _same_ Cloudflare error as no relay at all.
     That fakes a negative result — use a recording stand-in, never an
     unreachable port, when testing whether relay routing engages.
-- **The pipe itself is fingerprint-gated, not dead.** From a real browser the
+- **The pipe itself is fingerprint-gated, not dead** — as observed in 2026-08.
+  Superseded for the current block: the 2026-09-09 sweep above found every
+  installed impersonation profile challenged, so on this network the gate is no
+  longer one a fingerprint can clear. Keep the mechanics below, which still
+  describe how the request is built. From a real browser the
   envelope (`?e=base64url({path,method,query,body,version})`, e.g.
   `{"path":"episodes","query":{"anilistId":"21"},"version":"0.2.0"}`) answers
   200 with `x-obfuscated: 2` while plain curl gets CF HTML — intermittent by

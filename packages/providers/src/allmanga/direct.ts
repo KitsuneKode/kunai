@@ -3,6 +3,7 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -31,7 +32,7 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
-import { verifyCandidateStream } from "../shared/resolve-gate";
+import { resolveGateBudgetMs, verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   normalizeProviderDisplayLabel,
@@ -644,7 +645,10 @@ export const allmangaProviderModule: CoreProviderModule = {
           now: context.now,
           emit: context.emit,
           maxAttemptsPerCandidate: 1,
-          candidateTimeoutMs: ALLMANGA_CANDIDATE_TIMEOUT_MS,
+          candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+            startupPriority,
+            ALLMANGA_CANDIDATE_TIMEOUT_MS,
+          ),
           resolveCandidate: async (candidate, cycleContext) => {
             const stream = streams.find((item) => item.id === candidate.streamId);
             if (!stream?.url && !stream?.deferredLocator) {
@@ -678,7 +682,13 @@ export const allmangaProviderModule: CoreProviderModule = {
               const verdict = await verifyCandidateStream({
                 stream,
                 context,
-                signal: context.signal,
+                // The candidate's signal, not the attempt's: when this candidate
+                // times out its probe has to be abandoned with it, or the
+                // request outlives the thing that asked for it.
+                signal: cycleContext.signal,
+                timeoutMs: resolveGateBudgetMs(
+                  providerCycleCandidateTimeoutMs(startupPriority, ALLMANGA_CANDIDATE_TIMEOUT_MS),
+                ),
               });
               if (!verdict.accepted) {
                 throw createProviderCycleFailureError(candidate, {
