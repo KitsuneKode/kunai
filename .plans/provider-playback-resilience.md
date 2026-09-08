@@ -24,6 +24,11 @@ that keeps the probed request and the shipped request identical.
   inside its candidate timeout once `providerCycleCandidateTimeoutMs` clamps it.
 - **`streamReachabilityVerified` set by a timed-out probe**, which promoted an
   unproven stream to "provider-attested" and switched off playback preflight.
+- **The harness can prove decode.** `bun run test:live:mpv` runs mpv headless
+  and asserts frames decoded, and `KUNAI_MATRIX_PLAYBACK=1 bun run
+test:live:matrix` swaps that check in wherever a provider supports it. Every
+  matrix row says which evidence it carries, so a reachability-only row cannot
+  be read as a decoded one.
 - **Pinned-constant rot is now detectable**: `bun run test:live:allmanga-crypto`
   says whether the pinned AllManga set still works and which half is stale.
 - **Rivestream can learn.** It now hands `runProviderCycle` the endpoint-health
