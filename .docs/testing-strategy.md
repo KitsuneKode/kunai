@@ -419,6 +419,11 @@ Android bundle under real Node, and exercise the iOS fake host. Physical work
 is manual; the opt-in command validates exactly one Android and one iOS
 URL-free evidence row against generated artifact-set metadata:
 
+Portable bundle, metadata, and Node assertions run on every contributor host.
+Windows visibly skips only the POSIX executable-mode and a-Shell launcher
+checks; Linux/macOS and the physical iPhone procedure own those shell-specific
+claims.
+
 ```sh
 bun run test:live:mobile-host-proof -- \
   --metadata apps/mobile/dist/mobile-build-meta.json \
