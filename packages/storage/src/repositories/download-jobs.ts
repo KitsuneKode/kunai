@@ -144,6 +144,20 @@ export class DownloadJobAdmissionConflictError extends Error {
 const DOWNLOAD_INTENT_UNIQUE_INDEX = "idx_download_jobs_blocking_intent";
 
 export class DownloadJobsRepository {
+  /** A legacy shared destination is ambiguous even when the other job failed. */
+  hasConflictingOutputOwner(jobId: string, outputPath: string): boolean {
+    return (
+      this.db
+        .query<{ conflict: number }, [string, string, string, string]>(
+          `SELECT EXISTS (
+        SELECT 1 FROM download_jobs WHERE output_path = ? AND id <> ?
+        UNION ALL
+        SELECT 1 FROM offline_assets WHERE file_path = ? AND (origin_job_id IS NULL OR origin_job_id <> ?)
+      ) AS conflict`,
+        )
+        .get(outputPath, jobId, outputPath, jobId)?.conflict === 1
+    );
+  }
   constructor(private readonly db: KunaiDatabase) {}
 
   enqueue(

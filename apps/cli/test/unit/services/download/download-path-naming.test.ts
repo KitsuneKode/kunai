@@ -131,6 +131,53 @@ describe("clampComponent", () => {
 });
 
 describe("resolveDownloadOutputPath", () => {
+  for (const platform of ["linux", "darwin", "win32"] as const) {
+    for (const titleName of ["A".repeat(300), "錬".repeat(300), "🎬".repeat(300)]) {
+      for (const seasonIsMeaningful of [true, false]) {
+        test(`keeps adjacent episode identity for ${platform}, ${titleName[0]}, season=${seasonIsMeaningful}`, () => {
+          const input = {
+            baseDir: platform === "win32" ? "C:\\Downloads" : "/downloads",
+            titleName,
+            extension: ".mp4",
+            platform,
+          };
+          const paths = [1, 2].map((episode) =>
+            resolveDownloadOutputPath({
+              ...input,
+              position: { kind: "episode", season: 1, episode, seasonIsMeaningful },
+            }),
+          );
+          expect(paths[0]).not.toBe(paths[1]);
+          for (const [index, path] of paths.entries()) {
+            expect(path.endsWith(`${seasonIsMeaningful ? "S01" : ""}E0${index + 1}.mp4`)).toBe(
+              true,
+            );
+            for (const part of path.split(/[/\\]/)) expect(bytes(part)).toBeLessThanOrEqual(255);
+            expect(new TextDecoder().decode(utf8.encode(path))).toBe(path);
+            if (platform === "win32") expect(path.length).toBeLessThanOrEqual(248);
+            expect(
+              resolveDownloadOutputPath({
+                ...input,
+                position: { kind: "episode", season: 1, episode: index + 1, seasonIsMeaningful },
+              }),
+            ).toBe(path);
+          }
+        });
+      }
+    }
+  }
+
+  test("rejects a Windows base directory that leaves no room for identity", () => {
+    expect(() =>
+      resolveDownloadOutputPath({
+        baseDir: `C:\\${"a".repeat(235)}`,
+        titleName: "Long title",
+        extension: ".mp4",
+        position: { kind: "episode", season: 1, episode: 2, seasonIsMeaningful: true },
+        platform: "win32",
+      }),
+    ).toThrow("too long");
+  });
   test("builds the documented episode layout on POSIX", () => {
     expect(
       resolveDownloadOutputPath({
