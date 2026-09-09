@@ -183,10 +183,13 @@ describe("mobile build artifacts", () => {
       { env: { ...process.env, HOME: home }, stdio: ["pipe", "pipe", "pipe"] },
     );
     let stdout = "";
+    let answered = false;
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
       stdout += chunk;
-      if (stdout.includes("Continue? ")) child.stdin.write(" 0 \n");
+      if (answered || !stdout.includes("Continue? ")) return;
+      answered = true;
+      child.stdin.write(" 0 \n");
     });
 
     try {

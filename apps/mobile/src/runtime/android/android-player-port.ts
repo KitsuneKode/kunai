@@ -60,8 +60,6 @@ export function createAndroidPlayerPort(
         launchers: {
           termuxAm: runtime.which("termux-am"),
           am: runtime.which("am"),
-          termuxOpen: runtime.which("termux-open"),
-          termuxOpenUrl: runtime.which("termux-open-url"),
         },
       });
       if (!plan.ok) return { kind: "rejected", reason: plan.reason };

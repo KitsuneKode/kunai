@@ -70,7 +70,7 @@ Required:
 - a physical ARM64 device;
 - a current supported Termux installation from one official source;
 - VLC for Android;
-- `apps/mobile/dist/android/kunai-mobile-android.mjs`;
+- the generated `apps/mobile/dist/android/kunai-mobile-android.mjs`, which is not built on a clean checkout;
 - one credential-free tester-owned HTTPS probe below 64 KiB;
 - one credential-free direct HTTPS media URL that VLC can play without custom
   headers or cookies.
@@ -166,7 +166,11 @@ The artifact exits `0` for help, version, cancellation, and an accepted handoff;
 `2` for invalid commands or URLs; and `1` for state, HTTP, or handoff failure.
 An accepted handoff still requires visible-playback observation.
 
-### Android state recovery
+### Android missing-current-state recovery
+
+This checks recovery from a valid `.previous` file when the current file is
+absent. It does not simulate a failed final activation or claim to qualify that
+separate rollback path.
 
 After one run:
 
@@ -240,7 +244,7 @@ Required:
 - a physical iPhone;
 - current App Store a-Shell mini;
 - VLC for iOS;
-- all five generated `apps/mobile/dist/ios` files;
+- all five generated `apps/mobile/dist/ios` files, which are not built on a clean checkout;
 - the same kind of tester-owned probe and media URLs used on Android.
 
 No Node, Bun, Python, iSH, Alpine environment, or on-device package installation

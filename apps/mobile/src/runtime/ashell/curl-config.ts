@@ -11,10 +11,9 @@ function quoteCurlConfig(value: string): string {
 }
 
 export function encodeCurlConfig(request: MobileHttpRequest): string {
-  const rawUrl = requirePortableHttpUrl(request.url, "Probe URL");
+  const normalizedUrl = requirePortableHttpUrl(request.url, "Probe URL");
   const timeoutMs = requirePositiveInteger(request.timeoutMs, "timeout");
   const maxBytes = requirePositiveInteger(request.maxBytes, "response cap");
-  const normalizedUrl = new URL(rawUrl).href;
   return [
     `url = ${quoteCurlConfig(normalizedUrl)}`,
     `request = ${quoteCurlConfig(request.method)}`,
