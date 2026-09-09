@@ -2,6 +2,8 @@ import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { isSqliteCorruptionError } from "./sqlite-errors";
+
 export type KunaiDatabase = Database;
 
 /**
@@ -93,7 +95,7 @@ export type OpenDatabaseWithRecoveryResult = {
 };
 
 /**
- * Open a database, quarantining an unreadable file instead of bricking startup.
+ * Open a database, quarantining a confirmed corrupt file instead of bricking startup.
  *
  * A corrupt `kunai-data.sqlite` (power loss, disk fault) used to throw out of
  * bootstrap on every launch with no way back in. Mirroring the JSON config
@@ -122,6 +124,7 @@ export function openKunaiDatabaseWithCorruptionRecovery(
     } catch {
       // The handle may itself be unusable; quarantine only needs the files.
     }
+    if (!isSqliteCorruptionError(error)) throw error;
     const moved = quarantineCorruptDatabaseFiles(path);
     if (moved.length === 0) {
       // Nothing could be moved aside (locked file, unwritable dir) — surface
