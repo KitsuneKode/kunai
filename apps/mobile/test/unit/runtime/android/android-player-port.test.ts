@@ -10,10 +10,14 @@ const MEDIA_URL = "https://media.example/video.m3u8?token=a&title=$(touch%20nope
 function runtime(input: {
   readonly commands?: Readonly<Record<string, string>>;
   readonly exitCode?: number;
+  readonly onWhich?: (command: string) => void;
   readonly onSpawn?: (argv: readonly string[]) => void;
 }): AndroidPlayerRuntime {
   return {
-    which: (command) => input.commands?.[command],
+    which: (command) => {
+      input.onWhich?.(command);
+      return input.commands?.[command];
+    },
     spawn: async (argv) => {
       input.onSpawn?.(argv);
       return { exitCode: input.exitCode ?? 0 };
@@ -51,5 +55,15 @@ describe("Android mobile player port", () => {
         runtime: runtime({ commands: { am: "/system/bin/am" }, exitCode: 1 }),
       }).handoff({ player: "vlc", url: MEDIA_URL }),
     ).resolves.toEqual({ kind: "rejected", reason: "launch-rejected" });
+  });
+
+  test("probes only launchers that can produce an explicit VLC intent", async () => {
+    const probes: string[] = [];
+
+    await createAndroidPlayerPort({
+      runtime: runtime({ onWhich: (command) => probes.push(command) }),
+    }).handoff({ player: "vlc", url: MEDIA_URL });
+
+    expect(probes).toEqual(["termux-am", "am"]);
   });
 });

@@ -25,6 +25,22 @@ describe("parseMobileArgs", () => {
     });
   });
 
+  test("returns one canonical URL form to every runtime adapter", () => {
+    expect(
+      parseMobileArgs([
+        "--host-proof",
+        "--probe-url",
+        "HTTPS://PROBE.EXAMPLE:443/a/../status",
+        "--media-url",
+        "https://MEDIA.EXAMPLE:443/video.m3u8",
+      ]),
+    ).toEqual({
+      kind: "host-proof",
+      probeUrl: "https://probe.example/status",
+      mediaUrl: "https://media.example/video.m3u8",
+    });
+  });
+
   test("rejects incomplete, duplicate, and unknown flags", () => {
     expect(() => parseMobileArgs(["--host-proof"])).toThrow("--probe-url");
     expect(() =>

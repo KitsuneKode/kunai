@@ -28,4 +28,17 @@ async function main(): Promise<number> {
   }
 }
 
-void main().then(exitMobile, () => exitMobile(1));
+function finalizeMobileExit(code: number): void {
+  try {
+    exitMobile(code);
+  } catch {
+    if (code === 1) return;
+    try {
+      exitMobile(1);
+    } catch {
+      // A missing host status is the launcher's fail-closed signal.
+    }
+  }
+}
+
+void main().then(finalizeMobileExit, () => finalizeMobileExit(1));

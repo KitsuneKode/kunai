@@ -91,7 +91,7 @@ bun run --cwd apps/mobile test:unit
 bun run --cwd apps/mobile test:integration
 ```
 
-The ignored `apps/mobile/dist` directory contains:
+The ignored `apps/mobile/dist` directory, which is not built on a clean checkout, contains:
 
 ```text
 android/kunai-mobile-android.mjs

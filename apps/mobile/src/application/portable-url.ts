@@ -28,6 +28,5 @@ export function parsePortableHttpUrl(value: string, label: string, base?: string
 }
 
 export function requirePortableHttpUrl(value: string, label: string): string {
-  parsePortableHttpUrl(value, label);
-  return value;
+  return parsePortableHttpUrl(value, label).href;
 }
