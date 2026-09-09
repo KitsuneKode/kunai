@@ -1,12 +1,17 @@
-import type { BeforeSendEvent } from "@vercel/analytics/next";
-
-/** Share paths contain the title/ref itself, so they never enter web analytics. */
-export function filterPrivateShareAnalytics(event: BeforeSendEvent): BeforeSendEvent | null {
+/** Both telemetry SDKs carry a URL. Never forward a private or unparseable URL. */
+export function filterPrivateShareAnalytics<T extends { readonly url: string }>(
+  event: T,
+): T | null {
   try {
-    if (new URL(event.url).pathname.startsWith("/w/")) return null;
+    // Root-relative SDK events are supported without relying on the current
+    // browser location: delayed events keep the privacy of their source page.
+    const parsed = event.url.startsWith("/")
+      ? new URL(event.url, "https://telemetry.invalid")
+      : new URL(event.url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (parsed.pathname === "/w" || parsed.pathname.startsWith("/w/")) return null;
   } catch {
-    // An unexpected analytics URL shape is not a share path; preserve the
-    // existing site behavior instead of silently dropping unrelated metrics.
+    return null;
   }
   return event;
 }

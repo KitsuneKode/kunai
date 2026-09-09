@@ -6,10 +6,11 @@ status: shipped
 
 Kunai shares browser-safe `https://kunai.kitsunekode.in/w/<code>` links. The web page shows what was shared, offers an **Open in Kunai** handoff, and gives native install commands to someone who does not have Kunai yet. Links remain anchored to catalog metadata (TMDB, AniList, MAL, IMDb), so the receiver resolves through their own providers instead of repeating a title search.
 
-The URL contains the playback ref itself. There is no shortener database, and share-page visits are excluded from site analytics. Anyone holding the URL can read the title and episode it contains.
+The URL contains the playback ref itself. There is no shortener database. Share-page events are excluded from both site analytics and performance telemetry, including samples delivered after you navigate away. Anyone holding the URL can read the title and episode it contains.
 
 <ScopeCallout variant="beta" title="Protocol handler is Linux-only">
-  `kunai --open` works on every platform without OS registration. `kunai --install-protocol-handler` registers the `kunai://` OS handler on **Linux only** in 0.3.0.
+  `kunai --open` works on every platform without OS registration. `kunai --install-protocol-handler`
+  registers the `kunai://` OS handler on **Linux only** in 0.3.0.
 </ScopeCallout>
 
 ## Copy a link from the shell
@@ -76,15 +77,15 @@ kunai://download?...   # same query params; queues a download instead of playbac
 kunai://play?q=<query>&kind=...   # search fallback when no catalog id is known
 ```
 
-| Parameter | Meaning |
-| --- | --- |
-| `cat` | Catalog anchor: `tmdb:`, `anilist:`, `mal:`, or `imdb:` namespace + id |
-| `q` | Search query fallback (use instead of `cat` when no stable id) |
-| `kind` | `movie`, `series`, or `anime` |
-| `s` / `e` | Season and episode (1-based) |
-| `t` | Start offset in seconds, `1m23s`, or `1:23` |
-| `src` | Optional provider hint |
-| `sq` | Optional quality hint |
+| Parameter | Meaning                                                                |
+| --------- | ---------------------------------------------------------------------- |
+| `cat`     | Catalog anchor: `tmdb:`, `anilist:`, `mal:`, or `imdb:` namespace + id |
+| `q`       | Search query fallback (use instead of `cat` when no stable id)         |
+| `kind`    | `movie`, `series`, or `anime`                                          |
+| `s` / `e` | Season and episode (1-based)                                           |
+| `t`       | Start offset in seconds, `1m23s`, or `1:23`                            |
+| `src`     | Optional provider hint                                                 |
+| `sq`      | Optional quality hint                                                  |
 
 ## Examples
 
