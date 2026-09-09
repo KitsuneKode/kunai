@@ -1,4 +1,4 @@
-import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
+import { link, mkdir, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
@@ -398,7 +398,9 @@ export class DownloadService {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
     const outputPath = this.resolveOutputPath(input);
-    const tempPath = `${outputPath}.tmp.${id}`;
+    // A full-length output component cannot also fit an appended UUID.
+    // Keep staging in the same directory for atomic, exclusive publication.
+    const tempPath = join(dirname(outputPath), `.tmp.${id}${DOWNLOAD_FILE_EXT}`);
     await mkdir(dirname(outputPath), { recursive: true });
 
     const storage = await this.evaluateStorageForPath(
@@ -1041,7 +1043,10 @@ export class DownloadService {
       await this.abort(jobId);
     }
     await rm(job.tempPath, { force: true }).catch(() => {});
-    if (opts.deleteArtifact) {
+    const ownsArtifact =
+      ["completed", "completed-with-notes", "repairable"].includes(job.status) &&
+      !this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath);
+    if (opts.deleteArtifact && ownsArtifact) {
       await rm(job.outputPath, { force: true }).catch(() => {});
       if (job.subtitlePath) await rm(job.subtitlePath, { force: true }).catch(() => {});
       if (job.thumbnailPath) await rm(job.thumbnailPath, { force: true }).catch(() => {});
@@ -1234,7 +1239,37 @@ export class DownloadService {
     // publication so an empty/invalid result can never replace a playable
     // last-known-good output at the stable path.
     const validation = await this.validateCompletedArtifact(job.tempPath, job.id);
-    await rename(job.tempPath, job.outputPath);
+    if (this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath)) {
+      throw new Error(
+        "Download destination is shared with another job; choose a different directory",
+      );
+    }
+    // Hard-link publication is atomic and fails if ANY destination exists.
+    // Never fall back to overwriting rename on filesystems without hard links.
+    try {
+      await link(job.tempPath, job.outputPath);
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+      if (code === "EEXIST") {
+        throw new Error(
+          "Download destination already exists; existing file preserved. Choose a different download directory.",
+          { cause: error },
+        );
+      }
+      if (code === "EPERM" || code === "ENOTSUP" || code === "EOPNOTSUPP" || code === "EXDEV") {
+        throw new Error(
+          "Download directory does not support safe publication. Choose a writable directory on a filesystem with hard-link support.",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+    await rm(job.tempPath).catch(() => {
+      // Publication succeeded. A locked staging name must not turn a valid
+      // artifact into a retry that collides with its own published output.
+      this.deps.logger.warn("Published download retained a temporary name", { jobId: job.id });
+    });
     this.persistValidatedArtifactMetadata(job.id, validation);
     return this.deps.repo.get(job.id) ?? job;
   }
@@ -1744,6 +1779,13 @@ export class DownloadService {
 
       const publishedOutput = await stat(runningJob.outputPath).catch(() => null);
       if (publishedOutput) {
+        if (this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)) {
+          const message =
+            "Download destination ownership is ambiguous; existing artifact preserved";
+          this.deps.repo.fail(runningJob.id, message, false, now, "artifact-invalid");
+          this.emit({ type: "failed", jobId: runningJob.id, error: message });
+          continue;
+        }
         let validation: ArtifactValidationResult;
         try {
           validation = await this.validateCompletedArtifact(runningJob.outputPath, runningJob.id);
