@@ -10,6 +10,7 @@ import {
   type MobileBuildMetadata,
   waitForMobileHostProof,
 } from "../../scripts/build-contract";
+import { isPosixHost } from "../support/platform-gates";
 
 const MOBILE_ROOT = join(import.meta.dir, "../..");
 const DIST = join(MOBILE_ROOT, "dist");
@@ -62,7 +63,9 @@ describe("mobile build artifacts", () => {
       expect(artifact.bytes).toBe(bytes.byteLength);
       expect(artifact.gzipBytes).toBe(Bun.gzipSync(bytes).byteLength);
       expect(artifact.sha256).toBe(sha256(bytes));
-      if (artifact.path !== "ios/kunai-mobile-ios.js") {
+      // Windows does not preserve POSIX executable bits. The a-Shell launcher
+      // suite verifies those files on POSIX hosts.
+      if (isPosixHost(process.platform) && artifact.path !== "ios/kunai-mobile-ios.js") {
         expect(statSync(path).mode & 0o777).toBe(0o755);
       }
     });

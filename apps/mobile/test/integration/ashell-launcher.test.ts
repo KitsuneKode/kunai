@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { describePosixOnly } from "../support/platform-gates";
 
 const DIST_IOS = join(import.meta.dir, "../../dist/ios");
 const temporaryDirectories: string[] = [];
@@ -26,7 +28,9 @@ async function launcherFixture(fakeJsc: string) {
   return { directory, launcher, binaryDirectory };
 }
 
-describe("a-Shell launcher", () => {
+// These tests execute the shipped POSIX launchers. The portable bundle and
+// metadata assertions remain active on Windows in build-artifacts.test.ts.
+describePosixOnly("a-Shell launcher", () => {
   test("returns the validated status written by JavaScript", async () => {
     for (const expected of [0, 1, 2]) {
       const fixture = await launcherFixture(
