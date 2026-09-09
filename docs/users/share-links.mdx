@@ -6,7 +6,7 @@ status: shipped
 
 Kunai shares browser-safe `https://kunai.kitsunekode.in/w/<code>` links. The web page shows what was shared, offers an **Open in Kunai** handoff, and gives native install commands to someone who does not have Kunai yet. Links remain anchored to catalog metadata (TMDB, AniList, MAL, IMDb), so the receiver resolves through their own providers instead of repeating a title search.
 
-The URL contains the playback ref itself. There is no shortener database, and share-page visits are excluded from site analytics. Anyone holding the URL can read the title and episode it contains.
+The URL contains the playback ref itself. There is no shortener database. Share-page events are excluded from both site analytics and performance telemetry, including samples delivered after you navigate away. Anyone holding the URL can read the title and episode it contains.
 
 <ScopeCallout variant="beta" title="Protocol handler is Linux-only">
   `kunai --open` works on every platform without OS registration. `kunai --install-protocol-handler`
