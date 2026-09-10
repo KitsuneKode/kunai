@@ -58,6 +58,11 @@ Each of these is enforced by a test or is expensive to get wrong.
   logic.** Check parity against the reference implementation before changing
   crypto or decoder constants, and document deliberate divergence in
   [.docs/providers.md](.docs/providers.md).
+- **A provider must never report success for a stream it has not probed.**
+  `verifyCandidateStream` is the only resolve gate; it takes the candidate so
+  the probed request and the shipped request cannot diverge. Coverage is
+  enforced by `packages/providers/test/provider-resolve-gate-coverage.test.ts`,
+  and an exemption needs a runtime reason recorded there.
 - **Relay is metadata-only** — no media route, no video fallback; stream URLs
   stay direct. `packages/relay` is the single implementation and
   `apps/relay-server` stays a thin adapter.
