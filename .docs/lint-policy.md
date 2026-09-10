@@ -27,10 +27,18 @@ Four rules are clean in `src/` and are therefore **blocking** in
 - `anti-slop/no-reflect-apply`
 - `anti-slop/no-reflect-get`
 
-They are turned **off** for test paths (`**/*.test.*`, `**/test/**`,
+They are turned **off** for test paths (`**/*.test.ts`, `**/*.test.tsx`,
+`**/*.spec.ts`, `**/*.spec.tsx`, `**/test/**`,
 `**/__mocks__/**`), which still carry a legacy baseline — roughly 300 chained
 assertions in tests alone. Production code holds the line; tests are not held to
 it yet.
+
+The default config registers the vendored plugin directly. The separate advisory
+explicitly re-enables these four rules for the exempt test paths, retaining all
+fifteen advisory checks. `apps/cli/test/unit/scripts/anti-slop-config.test.ts` runs
+the installed linter against production violations, clean examples, and test/spec/mock
+fixtures from both root and workspace working directories, so a missing plugin or
+an overbroad exemption fails the test gate.
 
 **Ratcheting a fifth rule means driving its `src/` count to zero first**, then
 moving it into `.oxlintrc.json` alongside these. Do not add a rule to the
