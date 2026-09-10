@@ -29,6 +29,41 @@ export function diagnoseAllMangaBootstrap(status: number, body: string): AllMang
   return "unreachable";
 }
 
+export type AllMangaBootstrapAttempt = {
+  readonly epoch: number;
+  readonly status: number;
+  readonly body: string;
+};
+
+/**
+ * Pick the bootstrap attempt that actually worked.
+ *
+ * Near an epoch boundary the client signs both the epoch that just ended and
+ * the one that just began (`currentAllMangaEpochCandidates`). The server keeps
+ * honouring the previous epoch for the grace window, so asking *only* the
+ * calendar epoch returns `invalid_boot_token` while production — which walks
+ * the same candidate list — is still healthy. The first `current` diagnosis
+ * wins; if none of them worked, the live (last) epoch's diagnosis stands.
+ */
+export function selectAllMangaBootstrapVerdict(
+  attempts: readonly AllMangaBootstrapAttempt[],
+): AllMangaBootstrapAttempt & { readonly diagnosis: AllMangaCryptoDiagnosis } {
+  const diagnosed = attempts.map((attempt) => ({
+    ...attempt,
+    diagnosis: diagnoseAllMangaBootstrap(attempt.status, attempt.body),
+  }));
+  const current = diagnosed.find((attempt) => attempt.diagnosis === "current");
+  if (current) return current;
+  return (
+    diagnosed.at(-1) ?? {
+      epoch: 0,
+      status: 0,
+      body: "",
+      diagnosis: "unreachable" as const,
+    }
+  );
+}
+
 /** A real bootstrap answer carries the epoch and the key half it exists to hand back. */
 function isBootstrapPayload(body: string): boolean {
   try {
