@@ -334,6 +334,33 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
   "Just a moment" challenge on the pipe too, so that region does **not** count
   as ungated for Miruro — only a relay on an egress Miruro's WAF tolerates
   (unproven region, likely non-US cloud IPs) would clear the gate.
+- **2026-09-09 sweep — no local fix exists, and the relay wiring is proven.**
+  Re-checked because "Miruro used to work here":
+  - Every mirror is challenged, not just the two on the resolve list:
+    `www.miruro.bz`, `.ru`, `.to` and `.tv` all answer `403 Just a moment...`.
+  - **Twelve** impersonation profiles were tried against the pipe with the exact
+    `buildMiruroPipeHeaders` shape — chrome116/131/136/142/145/146/150,
+    firefox135/144/147, safari153, chrome131_android. All twelve are challenged.
+    So this is a JS/managed challenge, not a fingerprint gap: installing a newer
+    curl-impersonate build cannot clear it, and the "newest build wins" discovery
+    below buys nothing while the challenge is on.
+  - `www.miruro.com` answers 200 but is a hub page — every path returns the SPA
+    shell, there is no `/api/secure/pipe`, and it only links to the mirrors and a
+    status page. No `api.` / `backend.` / `pipe.` / `cdn.` subdomain resolves on
+    any mirror domain.
+  - **The relay path itself works.** Pointing `KUNAI_RELAY_BASE_URL` at a local
+    recording stand-in showed four `POST /rpc/miruro` calls carrying the correct
+    upstream URLs for both mirrors, so the failure message's remedy is wired end
+    to end and only wants a tolerated egress.
+  - Methodology warning: `fallbackToDirect` defaults to **true**, so aiming the
+    relay at a dead port yields the _same_ Cloudflare error as no relay at all.
+    That fakes a negative result — use a recording stand-in, never an
+    unreachable port, when testing whether relay routing engages.
+- **Superseded by the 2026-09-09 sweep above, and kept because it is still the
+  right diagnosis whenever the managed challenge is _not_ on.** As of
+  2026-09-09 every mirror answers the challenge from this network and no
+  impersonate build clears it, so do not install one expecting it to help. What
+  follows describes the pipe's behaviour when the challenge is absent.
 - **The pipe itself is fingerprint-gated, not dead.** From a real browser the
   envelope (`?e=base64url({path,method,query,body,version})`, e.g.
   `{"path":"episodes","query":{"anilistId":"21"},"version":"0.2.0"}`) answers

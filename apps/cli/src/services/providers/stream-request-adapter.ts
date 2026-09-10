@@ -41,10 +41,14 @@ export function streamRequestToResolveInput(
   options?: StreamRequestAdapterOptions,
 ): ProviderResolveInput {
   assertTitleMatchesShellMode(request.title, mode);
+  // Enriched once, before lane adaptation: `adaptResolveLane` gates the
+  // anime lane on holding an anime catalog id, so a title that only learns its
+  // AniList id from the episode rows has to carry it by this point too.
+  const title = withEpisodeCatalogIdentity(request.title, request.episode);
   const naturalKind: MediaKind =
-    mode === "youtube" ? "video" : mode === "anime" ? "anime" : request.title.type;
+    mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
   const adapted = adaptResolveLane({
-    title: request.title,
+    title,
     naturalKind,
     episode: episodeToCoreIdentity(request.episode),
     catalogIdentity,
@@ -54,7 +58,7 @@ export function streamRequestToResolveInput(
   const animeAudioIntent =
     adapted.mediaKind === "anime" ? resolveAnimeAudioIntent(request.audioPreference) : null;
   return {
-    title: titleToCoreIdentity(request.title, mode, catalogIdentity, providerId, adapted.mediaKind),
+    title: titleToCoreIdentity(title, mode, catalogIdentity, providerId, adapted.mediaKind),
     episode: adapted.episode,
     mediaKind: adapted.mediaKind,
     preferredSourceId: normalizeOptionalId(request.selectedSourceId),
@@ -131,6 +135,42 @@ function normalizeQualityPreference(value: string | undefined): string | undefin
   const normalized = value?.trim().toLowerCase();
   if (!normalized || normalized === "best" || normalized === "auto") return undefined;
   return normalized;
+}
+
+/**
+ * Lift cross-catalog ids discovered while listing episodes onto the title.
+ *
+ * A provider-native catalog answers search with its own id and nothing else —
+ * AniDB returns `gintama-1816`, and only learns the AniList/MAL ids later, when
+ * `listEpisodes` reads the show page. Those ids reached the episode rows and
+ * stopped there, because `EpisodeIdentity` has no place to carry them. So a
+ * fallback from AniDB to Miruro handed over a title with no AniList id and was
+ * rejected `unsupported-title` — with AllAnime gated upstream that left the
+ * default anime provider with no reachable fallback at all. AllManga never hit
+ * this: AllAnime's search response includes `aniListId`, so its titles carried
+ * a shared identity from the first result.
+ *
+ * Gap-filling only. A title that already knows its own id keeps it; an episode
+ * cannot rewrite the identity of the title it belongs to.
+ */
+function withEpisodeCatalogIdentity(title: TitleInfo, episode: EpisodeInfo | undefined): TitleInfo {
+  const discovered = episode?.externalIds;
+  if (!discovered) return title;
+
+  const anilistId = title.externalIds?.anilistId ?? discovered.anilistId;
+  const malId = title.externalIds?.malId ?? discovered.malId;
+  if (anilistId === title.externalIds?.anilistId && malId === title.externalIds?.malId) {
+    return title;
+  }
+
+  return {
+    ...title,
+    externalIds: {
+      ...title.externalIds,
+      ...(anilistId !== undefined ? { anilistId } : {}),
+      ...(malId !== undefined ? { malId } : {}),
+    },
+  };
 }
 
 export function titleToCoreIdentity(

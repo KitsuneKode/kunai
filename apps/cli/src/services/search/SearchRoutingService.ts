@@ -225,11 +225,39 @@ export async function searchTitles(
     context.searchRegistry.getDefault();
 
   const evidence = classifySearchEvidence(intent, searchService.metadata.id, context.mode);
-  const results = applyLocalSearchFilters(
-    await searchService.search(query, context.signal, intent),
-    intent,
-    evidence,
-  );
+  let upstream: SearchResult[];
+  try {
+    upstream = [...(await searchService.search(query, context.signal, intent))];
+  } catch (error) {
+    // An anime provider without its own search (Miruro) reaches the catalog
+    // only through this registry service, so an AniList outage — it answers
+    // 403 "temporarily disabled" outright — left that lane with no search at
+    // all. A sibling anime provider that does carry native search (AniDB,
+    // AllManga) can still answer, and a degraded result set beats a dead
+    // search box. Cancellation is the caller leaving, not an outage.
+    if (context.signal?.aborted === true || routing.mode !== "anime") throw error;
+    const borrowed = await searchAnimeViaSiblingProvider(query, routing.providerId, context);
+    if (!borrowed) throw error;
+    return {
+      results: withResolvedSearchLane(
+        applyLocalSearchFilters(borrowed.results, intent, evidence),
+        resolvedLane,
+      ),
+      resolvedLane,
+      sourceId: borrowed.providerId,
+      sourceName: borrowed.providerName,
+      strategy: "provider-native",
+      evidence,
+      diagnosis: {
+        code: "provider-native-fallback",
+        providerId: borrowed.providerId,
+        // Stayed inside the anime lane; the default catalog was never used.
+        attemptedDefaultFallback: false,
+      },
+    };
+  }
+
+  const results = applyLocalSearchFilters(upstream, intent, evidence);
 
   return {
     results: withResolvedSearchLane(results, resolvedLane),
@@ -239,6 +267,55 @@ export async function searchTitles(
     strategy: "registry",
     evidence,
   };
+}
+
+/**
+ * Borrow native search from another anime provider when the lane's own catalog
+ * route is unavailable. Registry order is priority order, so the first provider
+ * that both advertises search and answers wins.
+ */
+async function searchAnimeViaSiblingProvider(
+  query: string,
+  excludeProviderId: string,
+  context: SearchRoutingContext,
+): Promise<{
+  readonly results: SearchResult[];
+  readonly providerId: string;
+  readonly providerName: string;
+} | null> {
+  const siblings = context.providerRegistry
+    .getAll()
+    .filter(
+      (candidate) =>
+        candidate.metadata.id !== excludeProviderId &&
+        candidate.metadata.isAnimeProvider === true &&
+        typeof candidate.search === "function",
+    );
+
+  for (const sibling of siblings) {
+    if (context.signal?.aborted === true) return null;
+    try {
+      const results = await sibling.search?.(
+        query,
+        {
+          audioPreference: context.animeLanguageProfile.audio,
+          subtitlePreference: context.animeLanguageProfile.subtitle,
+        },
+        context.signal,
+      );
+      const normalized = (results ?? []).map(normalizeProviderSearchResult);
+      if (normalized.length > 0) {
+        return {
+          results: normalized,
+          providerId: sibling.metadata.id,
+          providerName: sibling.metadata.name,
+        };
+      }
+    } catch {
+      // Try the next sibling; the original failure is rethrown if none answer.
+    }
+  }
+  return null;
 }
 
 function withResolvedSearchLane(
