@@ -43,6 +43,7 @@ import { normalizeIsoLanguageCode, subtitleLanguageDisplayName } from "../shared
 import {
   type StreamLink,
   AllMangaCaptchaError,
+  AllMangaQueryDriftError,
   loadAvailableEpisodesDetail,
   resolveAnimeEpisodeString,
   resolveEpisodeSources,
@@ -842,11 +843,12 @@ export const allmangaProviderModule: CoreProviderModule = {
       // reporting it as retryable network noise is what made this look like an
       // empty episode rather than a blocked request.
       const captchaBlocked = error instanceof AllMangaCaptchaError;
+      const queryDrift = error instanceof AllMangaQueryDriftError;
       const failure: ProviderFailure = {
         providerId: ALLANIME_PROVIDER_ID,
-        code: captchaBlocked ? "blocked" : "network-error",
+        code: captchaBlocked ? "blocked" : queryDrift ? "parse-failed" : "network-error",
         message: error instanceof Error ? error.message : "AllManga API failed",
-        retryable: !captchaBlocked,
+        retryable: !captchaBlocked && !queryDrift,
         at: context.now(),
       };
       failures.push(failure);
