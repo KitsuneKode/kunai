@@ -46,6 +46,7 @@ import {
 import {
   curlCipherArgs,
   type CurlCandidate,
+  isCloudflareBlockBody,
   resolveCurlCandidate,
 } from "../shared/curl-impersonate";
 import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
@@ -1437,47 +1438,6 @@ function isMiruroObfuscatedPipeBody(body: string, xObfuscated: string | null): b
 function isHtmlBody(body: string): boolean {
   const head = body.slice(0, 200).toLowerCase();
   return head.includes("<!doctype html") || head.includes("<html");
-}
-
-/**
- * Markers that appear on Cloudflare's own block and challenge interstitials and
- * on nothing the origin serves.
- *
- * The word "cloudflare" and the `/cdn-cgi/` path are deliberately absent. The
- * mirror sits behind Cloudflare, so its *own* error pages carry the
- * `cloudflareinsights.com` beacon and `/cdn-cgi/` asset links — matching on
- * either reads an origin failure as a WAF block. Verified 2026-09-11 against a
- * live WAF 403 and a live `502 upstream unreachable` page from the same host:
- * these six hit the former and none of them hit the latter.
- */
-const CLOUDFLARE_BLOCK_MARKERS = [
-  "attention required",
-  "cf-error-details",
-  "cf-wrapper",
-  "just a moment",
-  "checking your browser",
-  "__cf_chl",
-] as const;
-
-/**
- * A Cloudflare block, as opposed to "a body that happens to be HTML".
- *
- * The predicate this replaced matched any body opening with `<!doctype html` or
- * `<html>`, which is true of Cloudflare's block page and equally true of the
- * mirror's `502 upstream unreachable` page. One dead upstream server therefore
- * read as a region-wide WAF block: it tripped the fail-fast threshold, which
- * suppressed the curl fallback on the remaining mirror and stopped the whole
- * provider cycle — so healthy servers ordered behind the dead one were never
- * tried, and the user was told to configure a relay for something no relay can
- * fix.
- */
-export function isCloudflareBlockBody(body: string): boolean {
-  if (!isHtmlBody(body)) return false;
-  // Cloudflare puts these in <head> and in the error wrapper. The origin's whole
-  // error page is ~4.5 KB, so this window covers both without scanning a
-  // multi-megabyte success body on every call.
-  const head = body.slice(0, 4_000).toLowerCase();
-  return CLOUDFLARE_BLOCK_MARKERS.some((marker) => head.includes(marker));
 }
 
 /**

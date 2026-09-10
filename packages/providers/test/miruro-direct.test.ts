@@ -10,7 +10,6 @@ import {
   decodeMiruroPipePayload,
   describeMiruroPipeFailure,
   interpretMiruroCurlResult,
-  isCloudflareBlockBody,
   miruroWafBlockMessage,
   isMiruroAudioFallback,
   MiruroPipeDecodeError,
@@ -19,6 +18,7 @@ import {
   resolveMiruroAnilistId,
   type MiruroServerProfile,
 } from "../src/miruro/direct";
+import { isCloudflareBlockBody, isCloudflareChallengeText } from "../src/shared/curl-impersonate";
 import { inferSubtitleFormat } from "../src/shared/subtitle-helpers";
 
 const TEST_CONTEXT: ProviderRuntimeContext = {
@@ -599,6 +599,23 @@ describe("Cloudflare block detection separates a WAF block from a dead upstream"
     expect(isCloudflareBlockBody("<html><head><title>Just a moment...</title></head></html>")).toBe(
       true,
     );
+  });
+
+  test("the challenge predicate is the narrower of the two, and stays that way", () => {
+    const challenge = "<html><head><title>Just a moment...</title></head></html>";
+    // A challenge is both a challenge and a block.
+    expect(isCloudflareChallengeText(challenge)).toBe(true);
+    expect(isCloudflareBlockBody(challenge)).toBe(true);
+
+    // A hard 1020-style block is a block but NOT a challenge: no better TLS
+    // fingerprint clears it, so callers that retry on a challenge must not
+    // retry on this. AniDB depends on that distinction.
+    expect(isCloudflareChallengeText(CLOUDFLARE_BLOCK_PAGE)).toBe(false);
+    expect(isCloudflareBlockBody(CLOUDFLARE_BLOCK_PAGE)).toBe(true);
+
+    // And neither fires on the origin's own error page.
+    expect(isCloudflareChallengeText(UPSTREAM_502_PAGE)).toBe(false);
+    expect(isCloudflareBlockBody(UPSTREAM_502_PAGE)).toBe(false);
   });
 });
 
