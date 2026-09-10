@@ -59,12 +59,11 @@ export const templateManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
-  // Keep "experimental" until the adapter is proven on real traffic; peers
-  // promote to "candidate" before "production" (miruro/hianime/rivestream).
-  // Display-only — what keeps a new module out of the runtime is not being in
+  // Display-only — `candidate` appends a badge in the picker; it gates nothing.
+  // What keeps a new module out of the runtime is not being in
   // `loadProductionProviderModules()`; research standing lives in
   // `packages/providers/src/research.ts`.
-  status: "experimental",
+  status: "candidate",
   // List every host the resolver can hit — the relay refuses anything else,
   // and this list is what the deployed relay bakes in.
   relayProfile: {

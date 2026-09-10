@@ -1,11 +1,11 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "970f2b0ea4a34e8034a0210a63fca94ffc6e1924b36f64a03abe50b0cd33ce29",
-  "docsContentFingerprint": "6cf519d315982a3c8c0617891325b79a3179587b3761e6097f012d298ee5dfc7",
+  "cliSourceFingerprint": "703d52476fb22d28cdc9d9d13e6e0bb42964bd69f8dd865651c934afd0d58fa1",
+  "docsContentFingerprint": "8fd5e8e8661a04c54b0ec04fdf4193d6f241582ca020ccd89d23bd89cb2a61d7",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
-  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
+  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "hianime", "miruro", "youtube"],
   "providers": [
     {
       "id": "videasy",
@@ -85,6 +85,31 @@
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
         "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
         "2026-08: mkissa crypto rotates buildId + derivation constants (81 → 119 → 140; 140 added bootPrefix HMAC and group.host.lane.buildId.epoch payload) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. ani-cli v5 moved primary to anidb.app."
+      ]
+    },
+    {
+      "id": "hianime",
+      "displayName": "HiAnime",
+      "description": "Anime episodes in sub and dub via HiAnime (ani-cli parity lane)",
+      "domain": "hianime.at",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": [
+        "search",
+        "episode-list",
+        "source-resolve",
+        "subtitle-resolve",
+        "multi-source",
+        "quality-ranked"
+      ],
+      "status": "candidate",
+      "notes": [
+        "Parity with ani-cli v5.1.2 (2026-09): /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902.",
+        "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
+        "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
+        "Each season is a separate provider-native slug; there is no in-provider season routing.",
+        "Bun/fetch may meet Cloudflare where curl passes; the client falls back to curl/curl-impersonate like AniDB/Miruro.",
+        "Relay-safe for metadata RPC (/rpc/hianime). Video always stays direct; the relay has no media route."
       ]
     },
     {
@@ -631,7 +656,7 @@
     {
       "short": "-i",
       "long": "--id",
-      "description": "Open a specific title id"
+      "description": "Open a specific title id or namespaced catalog id"
     },
     {
       "short": "-t",
