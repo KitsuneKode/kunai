@@ -258,7 +258,8 @@ export interface ProviderMetadata {
   readonly isYoutubeProvider: boolean;
   readonly providerLane: ProviderLane;
   readonly catalogIdentity?: "provider-native" | "anilist" | "tmdb";
-  readonly status?: "production" | "candidate" | "experimental" | "research";
+  /** Display-only; mirrors `ProviderManifestStatus` in `@kunai/core`. */
+  readonly status?: "production" | "candidate";
   readonly domain?: string;
 }
 

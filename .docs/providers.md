@@ -518,7 +518,7 @@ modes.
 | `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
 | `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
 | `anidb`      | anime         | direct-http | `packages/providers/src/anidb/direct.ts`      |
-| `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
+| `allanime`   | anime         | direct-http | `packages/providers/src/allmanga/direct.ts`   |
 | `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
 | `youtube`    | video         | direct-http | `packages/providers/src/youtube/direct.ts`    |
 

@@ -179,8 +179,58 @@ export function resolveCurlCandidate(
   return plain ? { path: plain, impersonates: false, profile: null } : null;
 }
 
+/**
+ * Markers that appear on Cloudflare's own interstitials and on nothing an
+ * origin serves.
+ *
+ * The word "cloudflare" and the `/cdn-cgi/` path are deliberately absent. A site
+ * behind Cloudflare serves its *own* error pages through it, so those pages
+ * carry the `cloudflareinsights.com` beacon and `/cdn-cgi/challenge-platform/`
+ * scripts. Matching on either turns "one of this host's upstreams is down" into
+ * "Cloudflare blocked us" — which is exactly the bug this table replaced in the
+ * Miruro pipe. Verified 2026-09-11 against a live WAF 403 and a live
+ * `502 upstream unreachable` page from the same host.
+ */
+const CLOUDFLARE_CHALLENGE_MARKERS = [
+  "just a moment",
+  "checking your browser",
+  "__cf_chl",
+] as const;
+
+const CLOUDFLARE_BLOCK_MARKERS = [
+  ...CLOUDFLARE_CHALLENGE_MARKERS,
+  "attention required",
+  "cf-error-details",
+  "cf-wrapper",
+] as const;
+
+/**
+ * Cloudflare's *interactive challenge* only — the "Just a moment…" interstitial
+ * a browser can pass and a CLI cannot.
+ *
+ * Narrower than {@link isCloudflareBlockBody} on purpose: callers that retry or
+ * re-search on a challenge should not also do so for a hard 1020-style block,
+ * which no retry clears.
+ */
 export function isCloudflareChallengeText(text: string): boolean {
-  return /just a moment/i.test(text);
+  const head = text.slice(0, 4_000).toLowerCase();
+  return CLOUDFLARE_CHALLENGE_MARKERS.some((marker) => head.includes(marker));
+}
+
+/**
+ * Any Cloudflare interstitial — a hard block or a challenge — as opposed to "a
+ * body that happens to be HTML".
+ *
+ * Reach for this when the question is "did Cloudflare stop us", and for
+ * {@link isCloudflareChallengeText} when it is specifically "can a better TLS
+ * fingerprint get through". A non-Cloudflare HTML body here is a normal origin
+ * failure and must be classified by its HTTP status instead.
+ */
+export function isCloudflareBlockBody(body: string): boolean {
+  const head = body.slice(0, 200).toLowerCase();
+  if (!head.includes("<!doctype html") && !head.includes("<html")) return false;
+  const window = body.slice(0, 4_000).toLowerCase();
+  return CLOUDFLARE_BLOCK_MARKERS.some((marker) => window.includes(marker));
 }
 
 /** Test-only: drop the memoized PATH scan. */
