@@ -69,6 +69,19 @@ describe("parseSmokePayload", () => {
     expect(parseSmokePayload("boom", "stack trace")).toBeNull();
   });
 
+  test("an unclosed brace does not hide the payload that follows", () => {
+    // A truncated log line that prints `{` plus a later `}` from a real
+    // payload makes findBalancedObjectEnd close on the payload's brace.
+    // JSON.parse fails on the mixed slice; resuming at end+1 used to skip
+    // the payload completely.
+    const stdout = 'log { truncated\n{"ok":true,"provider":"youtube"}';
+
+    expect(parseSmokePayload(stdout, "")).toMatchObject({
+      ok: true,
+      provider: "youtube",
+    });
+  });
+
   test("an auxiliary check line is not mistaken for the provider verdict", () => {
     // A smoke can exit early after printing supplementary check lines, leaving
     // its real failure on stderr. Both carry `ok`, so keying on that alone
