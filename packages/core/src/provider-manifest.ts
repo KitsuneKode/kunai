@@ -34,7 +34,21 @@ export interface CoreProviderManifest {
   readonly notes?: readonly string[];
 }
 
-export type ProviderManifestStatus = "production" | "candidate" | "experimental" | "research";
+/**
+ * How a registered provider presents itself in the UI — and *only* that.
+ *
+ * `candidate` appends a `· candidate` suffix to the provider's display name in
+ * the Tracks panel and the provider picker. It does not gate registration,
+ * ordering, fallback eligibility, or health: registration is
+ * `loadProductionProviderModules()` and ordering is `providerPriority`.
+ *
+ * `experimental` and `research` used to sit in this union. No manifest ever set
+ * either and no code ever branched on them, so both rendered identically to
+ * `production` while reading like they meant something. Research-only modules
+ * are tracked in `packages/providers/src/research.ts` and are kept out of the
+ * runtime by not being in the bootstrap list — which is the real mechanism.
+ */
+export type ProviderManifestStatus = "production" | "candidate";
 
 export function resolveProviderCatalogIdentity(
   manifest: Pick<CoreProviderManifest, "catalogIdentity" | "mediaKinds">,

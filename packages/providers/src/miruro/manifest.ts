@@ -80,6 +80,7 @@ export const miruroManifest = defineProviderManifest({
     "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
     "The default anime priority names AniDB first; that list is ordering, not an allowlist, so Miruro remains a registered fallback and manually selectable when the curl/http2 path works.",
     "May hit Cloudflare rate limits if called too frequently.",
-    "2026-08-17: curl --http2 with browser headers also receives CF 403 HTML from some networks; the WAF block message now carries a relay hint.",
+    "2026-09-11: the pipe is reachable — Bun fetch is always CF-403'd (its TLS fingerprint), and curl clears the edge on both mirrors. The superseded 2026-08-17 note claiming curl also received CF 403 was measured through a predicate that read any HTML body as a Cloudflare block, including the mirror's own `502 upstream unreachable` page.",
+    "A 444/502 from the pipe is one of Miruro's backing servers being down (pewe follows AniDB, ally follows AllManga), not a WAF block, and must not stop the cycle — the remaining servers are usually healthy.",
   ],
 });

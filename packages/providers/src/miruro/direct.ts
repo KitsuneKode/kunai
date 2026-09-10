@@ -43,7 +43,11 @@ import {
   formatAnimeSourceDetail,
   miruroSubtitleDeliveryToMode,
 } from "../shared/anime-source-presentation";
-import { curlCipherArgs, resolveCurlCandidate } from "../shared/curl-impersonate";
+import {
+  curlCipherArgs,
+  type CurlCandidate,
+  resolveCurlCandidate,
+} from "../shared/curl-impersonate";
 import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
@@ -1430,11 +1434,65 @@ function isMiruroObfuscatedPipeBody(body: string, xObfuscated: string | null): b
   return body.startsWith("bh4YNPj7") || xObfuscated === "2";
 }
 
-function isCloudflareHtmlBody(body: string): boolean {
+function isHtmlBody(body: string): boolean {
   const head = body.slice(0, 200).toLowerCase();
-  return (
-    head.includes("<!doctype html") || head.includes("<html") || head.includes("just a moment")
-  );
+  return head.includes("<!doctype html") || head.includes("<html");
+}
+
+/**
+ * Markers that appear on Cloudflare's own block and challenge interstitials and
+ * on nothing the origin serves.
+ *
+ * The word "cloudflare" and the `/cdn-cgi/` path are deliberately absent. The
+ * mirror sits behind Cloudflare, so its *own* error pages carry the
+ * `cloudflareinsights.com` beacon and `/cdn-cgi/` asset links — matching on
+ * either reads an origin failure as a WAF block. Verified 2026-09-11 against a
+ * live WAF 403 and a live `502 upstream unreachable` page from the same host:
+ * these six hit the former and none of them hit the latter.
+ */
+const CLOUDFLARE_BLOCK_MARKERS = [
+  "attention required",
+  "cf-error-details",
+  "cf-wrapper",
+  "just a moment",
+  "checking your browser",
+  "__cf_chl",
+] as const;
+
+/**
+ * A Cloudflare block, as opposed to "a body that happens to be HTML".
+ *
+ * The predicate this replaced matched any body opening with `<!doctype html` or
+ * `<html>`, which is true of Cloudflare's block page and equally true of the
+ * mirror's `502 upstream unreachable` page. One dead upstream server therefore
+ * read as a region-wide WAF block: it tripped the fail-fast threshold, which
+ * suppressed the curl fallback on the remaining mirror and stopped the whole
+ * provider cycle — so healthy servers ordered behind the dead one were never
+ * tried, and the user was told to configure a relay for something no relay can
+ * fix.
+ */
+export function isCloudflareBlockBody(body: string): boolean {
+  if (!isHtmlBody(body)) return false;
+  // Cloudflare puts these in <head> and in the error wrapper. The origin's whole
+  // error page is ~4.5 KB, so this window covers both without scanning a
+  // multi-megabyte success body on every call.
+  const head = body.slice(0, 4_000).toLowerCase();
+  return CLOUDFLARE_BLOCK_MARKERS.some((marker) => head.includes(marker));
+}
+
+/**
+ * Upstream-unavailable statuses the mirror returns when one of its own backing
+ * servers is down. These are per-server facts, never evidence about the mirror's
+ * reachability, so they must not count toward the WAF fail-fast.
+ */
+const MIRURO_UPSTREAM_UNAVAILABLE_STATUSES = new Set([444, 502, 503, 504]);
+
+export function describeMiruroPipeFailure(status: number, body: string): string {
+  if (isCloudflareBlockBody(body)) return `HTTP ${status} (cloudflare html)`;
+  if (MIRURO_UPSTREAM_UNAVAILABLE_STATUSES.has(status)) {
+    return `HTTP ${status} (upstream server unavailable)`;
+  }
+  return `HTTP ${status}`;
 }
 
 function buildMiruroPipeHeaders(baseUrl: string, referer?: string): Record<string, string> {
@@ -1540,7 +1598,7 @@ async function fetchMiruroPipeBody(
   // failures. Request exceptions propagate to pipeCall's next-mirror loop.
   if (
     response.ok &&
-    !isCloudflareHtmlBody(responseText) &&
+    !isHtmlBody(responseText) &&
     !isMiruroObfuscatedPipeBody(responseText, response.headers.get("x-obfuscated"))
   ) {
     return {
@@ -1551,9 +1609,7 @@ async function fetchMiruroPipeBody(
     };
   }
 
-  const fetchWasCloudflare =
-    isCloudflareHtmlBody(responseText) ||
-    (response.status === 403 && isCloudflareHtmlBody(responseText));
+  const fetchWasCloudflare = isCloudflareBlockBody(responseText);
 
   // Region-wide WAF: do not spend 20s of curl on every remaining mirror.
   if (options.wafLikely && fetchWasCloudflare) {
@@ -1571,7 +1627,7 @@ async function fetchMiruroPipeBody(
       status: response.status || 403,
       text: responseText,
       xObfuscated: null,
-      cloudflareHtml: fetchWasCloudflare || isCloudflareHtmlBody(responseText),
+      cloudflareHtml: fetchWasCloudflare,
     };
   }
 
@@ -1645,7 +1701,7 @@ async function fetchMiruroPipeBody(
       status,
       text,
       xObfuscated: isMiruroObfuscatedPipeBody(text, null) ? "2" : null,
-      cloudflareHtml: isCloudflareHtmlBody(text),
+      cloudflareHtml: isCloudflareBlockBody(text),
     };
   } finally {
     signal?.removeEventListener("abort", onAbort);
@@ -1711,20 +1767,15 @@ async function pipeCall(
           keyHex: PIPE_KEY,
         });
       }
-      if (
-        candidate.cloudflareHtml ||
-        (candidate.status === 403 && isCloudflareHtmlBody(candidate.text))
-      ) {
+      if (candidate.cloudflareHtml) {
         wafHits += 1;
-        lastError = new Error("HTTP 403 (cloudflare html)");
+        lastError = new Error(`HTTP ${candidate.status || 403} (cloudflare html)`);
         if (wafHits >= MIRURO_WAF_FAIL_FAST_THRESHOLD) {
-          throw new Error(MIRURO_WAF_BLOCK_MESSAGE, { cause: lastError });
+          throw new Error(miruroWafBlockMessage(), { cause: lastError });
         }
         continue;
       }
-      lastError = new Error(
-        `HTTP ${candidate.status}${isCloudflareHtmlBody(candidate.text) ? " (cloudflare html)" : ""}`,
-      );
+      lastError = new Error(describeMiruroPipeFailure(candidate.status, candidate.text));
       // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
     } catch (error) {
       if (error instanceof MiruroPipeDecodeError) throw error;
@@ -1741,10 +1792,27 @@ async function pipeCall(
 
 /**
  * One owner for the WAF-block signal. `runProviderCycle` stops the whole cycle on
- * it, so the message shape and this predicate must not drift apart.
+ * it, so this prefix and `isMiruroWafBlockError` must not drift apart.
  */
-const MIRURO_WAF_BLOCK_MESSAGE =
-  "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML). A user-owned relay (providerRelay.baseUrl) in an ungated region can bypass this.";
+const MIRURO_WAF_BLOCK_PREFIX =
+  "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML).";
+
+/**
+ * The remedy depends on what curl we actually used, so ask before advising.
+ *
+ * A plain-curl TLS handshake is fingerprinted by Cloudflare long before any
+ * header is read, and an impersonate build clears it locally — so telling a user
+ * on plain curl to stand up a relay sends them to the most expensive fix first.
+ * ani-cli reaches the same conclusion from the other direction: it dies with
+ * "Blocked by cloudflare. Try installing curl-impersonate" only when
+ * `$curl_exe` is still plain `curl` (ani-cli:171, v5.0.4).
+ */
+export function miruroWafBlockMessage(curl: CurlCandidate | null = resolveCurlCandidate()): string {
+  if (!curl?.impersonates) {
+    return `${MIRURO_WAF_BLOCK_PREFIX} Install curl-impersonate (a curl_chrome*/curl_firefox* build on PATH) so the TLS handshake is not fingerprinted; a user-owned relay (providerRelay.baseUrl) in an ungated region also bypasses this.`;
+  }
+  return `${MIRURO_WAF_BLOCK_PREFIX} curl-impersonate (${curl.profile}) was already used and still blocked, so the block is region-wide: a user-owned relay (providerRelay.baseUrl) in an ungated region can bypass it.`;
+}
 
 function isMiruroWafBlockError(error: Error): boolean {
   return error.message.includes("Cloudflare WAF on multiple mirrors");

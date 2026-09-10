@@ -55,7 +55,10 @@ export const templateManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
-  status: "experimental",
+  // Display-only. What actually keeps a new module out of the runtime is not
+  // being in `loadProductionProviderModules()`; research standing is tracked in
+  // `packages/providers/src/research.ts`.
+  status: "candidate",
   notes: ["This is a community template. Copy and paste this file to start building."],
 });
 

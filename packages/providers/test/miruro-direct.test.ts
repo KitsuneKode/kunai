@@ -8,7 +8,10 @@ import {
   computeMiruroEpisodesPersistTtlMs,
   createMiruroResultFromPayload,
   decodeMiruroPipePayload,
+  describeMiruroPipeFailure,
   interpretMiruroCurlResult,
+  isCloudflareBlockBody,
+  miruroWafBlockMessage,
   isMiruroAudioFallback,
   MiruroPipeDecodeError,
   type MiruroPipeDecodeFailureCode,
@@ -534,5 +537,122 @@ describe("computeMiruroEpisodesPersistTtlMs", () => {
   test("uses the newest air date across mixed entries", () => {
     const entries = [ep("2020-01-01T00:00:00.000Z"), ep(new Date(NOW - 6 * DAY).toISOString())];
     expect(computeMiruroEpisodesPersistTtlMs(entries, NOW)).toBe(DAY);
+  });
+});
+
+/**
+ * Both fixtures are trimmed from live 2026-09-11 captures of
+ * `www.miruro.bz/api/secure/pipe`. The origin sits behind Cloudflare, so its own
+ * error page carries the `cloudflareinsights.com` beacon and a
+ * `/cdn-cgi/challenge-platform/` script — that is exactly what made the previous
+ * "body starts with <html>" predicate read one dead upstream server as a
+ * region-wide WAF block.
+ */
+const CLOUDFLARE_BLOCK_PAGE = `<!DOCTYPE html>
+<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en-US"> <!--<![endif]-->
+<head>
+<title>Attention Required! | Cloudflare</title>
+</head>
+<body>
+  <div id="cf-wrapper">
+    <div id="cf-error-details" class="cf-error-details-wrap">blocked</div>
+  </div>
+</body>
+</html>`;
+
+const UPSTREAM_502_PAGE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="robots" content="noindex" />
+<title>502 upstream unreachable</title>
+</head>
+<body>
+  <h1>502</h1>
+  <script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script>
+  <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df"></script>
+</body>
+</html>`;
+
+describe("Cloudflare block detection separates a WAF block from a dead upstream", () => {
+  test("classifies Cloudflare's own block interstitial as a block", () => {
+    expect(isCloudflareBlockBody(CLOUDFLARE_BLOCK_PAGE)).toBe(true);
+  });
+
+  test("does not classify the origin's 502 page as a Cloudflare block", () => {
+    // The regression: this page is HTML, is served through Cloudflare, and
+    // mentions both `cdn-cgi` and `cloudflareinsights.com` — and is still just
+    // one of the mirror's backing servers being down.
+    expect(isCloudflareBlockBody(UPSTREAM_502_PAGE)).toBe(false);
+  });
+
+  test("does not classify an obfuscated success body as a Cloudflare block", () => {
+    expect(isCloudflareBlockBody("bh4YNPj7abcdef")).toBe(false);
+  });
+
+  test("does not classify a JSON error body as a Cloudflare block", () => {
+    expect(isCloudflareBlockBody('{"error":"Invalid envelope format"}')).toBe(false);
+  });
+
+  test("still catches a managed challenge, which is a block by another name", () => {
+    expect(isCloudflareBlockBody("<html><head><title>Just a moment...</title></head></html>")).toBe(
+      true,
+    );
+  });
+});
+
+describe("describeMiruroPipeFailure names the failure the mirror actually had", () => {
+  test("reports an upstream-unavailable status as an upstream failure", () => {
+    // 444 is what the mirror returns when a backing server (pewe/ally/hop) is
+    // down. Calling it Cloudflare sent users to configure a relay that cannot
+    // help.
+    expect(describeMiruroPipeFailure(444, UPSTREAM_502_PAGE)).toBe(
+      "HTTP 444 (upstream server unavailable)",
+    );
+    expect(describeMiruroPipeFailure(502, UPSTREAM_502_PAGE)).toBe(
+      "HTTP 502 (upstream server unavailable)",
+    );
+  });
+
+  test("still reports a real Cloudflare block as cloudflare html", () => {
+    expect(describeMiruroPipeFailure(403, CLOUDFLARE_BLOCK_PAGE)).toBe(
+      "HTTP 403 (cloudflare html)",
+    );
+  });
+
+  test("leaves an unremarkable status unqualified", () => {
+    expect(describeMiruroPipeFailure(418, "{}")).toBe("HTTP 418");
+  });
+});
+
+describe("the WAF block message advises the cheapest fix that can still work", () => {
+  test("tells a plain-curl user to install curl-impersonate before suggesting a relay", () => {
+    const message = miruroWafBlockMessage({
+      path: "/usr/bin/curl",
+      impersonates: false,
+      profile: null,
+    });
+    expect(message).toContain("curl-impersonate");
+    expect(message.indexOf("curl-impersonate")).toBeLessThan(message.indexOf("providerRelay"));
+  });
+
+  test("tells a user who already impersonated that the block is region-wide", () => {
+    const message = miruroWafBlockMessage({
+      path: "/usr/bin/curl_chrome150",
+      impersonates: true,
+      profile: "chrome150",
+    });
+    expect(message).toContain("chrome150");
+    expect(message).toContain("providerRelay");
+  });
+
+  test("keeps the prefix runProviderCycle keys on", () => {
+    for (const curl of [
+      null,
+      { path: "/usr/bin/curl_chrome150", impersonates: true, profile: "chrome150" },
+    ]) {
+      expect(miruroWafBlockMessage(curl)).toContain("Cloudflare WAF on multiple mirrors");
+    }
   });
 });
