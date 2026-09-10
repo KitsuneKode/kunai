@@ -103,6 +103,18 @@ small-cell suppression, not a claim of joint k-anonymity across the separately
 published version, OS, and architecture tables. `daily_rollup.computed_at` is
 the public `updatedAt`, so a stale value signals cron failure.
 
+That signal is only readable if a failed run means the rollup failed. The rollup
+and the two retention sweeps run as separate statements in separate
+transactions, so a prune that throws leaves an already-committed rollup behind
+it. The cron therefore reports them apart: a rollup failure answers `503` with
+the same opaque `upstream_unavailable` every endpoint returns, while a retention
+failure keeps the `200` the committed rollup earned and names the skipped sweep
+in the operator-only `deferred` array. Both write the failing stage to the
+function log, with any connection string reduced to its scheme. So
+`computed_at` stays the rollup signal and `deferred` is the retention one;
+neither masks the other, and retention that could not run today is retried on
+the next run rather than being lost.
+
 ### The day-by-day series
 
 `/metrics/series.json` publishes the same aggregates over a window (90 days by
