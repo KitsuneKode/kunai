@@ -11,6 +11,19 @@ import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 const MPV_BIN = Bun.which("mpv");
 const mpvTest = MPV_BIN ? test : test.skip;
 
+function parseTlsObservations(output: string): string[] {
+  // Lua's text-mode file writes use CRLF on Windows and LF on POSIX.
+  return output.trim().split(/\r?\n/);
+}
+
+test.each(["\n", "\r\n"])("TLS observations accept native line ending %j", (lineEnding) => {
+  expect(parseTlsObservations(["no", "no", "yes", ""].join(lineEnding))).toEqual([
+    "no",
+    "no",
+    "yes",
+  ]);
+});
+
 let tempDir: string | null = null;
 
 afterEach(async () => {
@@ -252,7 +265,7 @@ for (const [startsExceptional, baseline] of [
             ).endReason,
           ).toBe("eof");
         expect(children).toHaveLength(1);
-        expect((await Bun.file(observationsPath).text()).trim().split("\n")).toEqual(
+        expect(parseTlsObservations(await Bun.file(observationsPath).text())).toEqual(
           startsExceptional ? ["no", "no", baseline] : [baseline, "no", baseline],
         );
       } finally {
