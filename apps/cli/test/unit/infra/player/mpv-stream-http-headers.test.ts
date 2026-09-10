@@ -160,7 +160,7 @@ describe("buildPersistentLoadfileOptions", () => {
     });
 
     expect(options.ytdl).toBe("yes");
-    expect(options["ytdl-format"]).toBe("bv*+ba/b");
+    expect(options["ytdl-format"]).toBe("bv*+ba/b/ba");
   });
 
   test("still disables ytdl outright for remote HLS manifests", () => {
@@ -336,7 +336,7 @@ describe("buildPersistentLoadfileCommand", () => {
       undefined,
     );
     expect(options.ytdl).toBe("yes");
-    expect(options["ytdl-format"]).toBe("bv*+ba/b");
+    expect(options["ytdl-format"]).toBe("bv*+ba/b/ba");
   });
 
   test("a remote HLS manifest still turns ytdl off and sets no format", () => {

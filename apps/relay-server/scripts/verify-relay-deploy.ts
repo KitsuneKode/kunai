@@ -1,3 +1,6 @@
+import { relayRegistry } from "../src/provider-registry";
+import { buildRelayDriftProbes, classifyRelayDriftResponse } from "../src/registry-drift";
+
 const baseUrl = (process.env.KUNAI_RELAY_BASE_URL ?? process.env.RELAY_URL ?? "").replace(
   /\/$/,
   "",
@@ -67,13 +70,10 @@ if (token) {
   checks.push({
     name: "registry-matches-current-manifests",
     async run() {
-      const probes = [
-        { providerId: "allanime", url: "https://api.mkissa.net/" },
-        { providerId: "miruro", url: "https://www.miruro.bz/" },
-        { providerId: "rivestream", url: "https://www.rivestream.app/api" },
-        { providerId: "videasy", url: "https://api.speedracelight.com/seed" },
-        { providerId: "vidlink", url: "https://enc-dec.app/api" },
-      ] as const;
+      const probes = buildRelayDriftProbes(relayRegistry);
+      if (probes.length === 0) throw new Error("relay registry is empty");
+
+      const stale: string[] = [];
       for (const probe of probes) {
         const response = await fetch(`${baseUrl}/rpc/${probe.providerId}`, {
           method: "POST",
@@ -83,12 +83,13 @@ if (token) {
           },
           body: JSON.stringify({ method: "GET", upstreamUrl: probe.url, headers: {} }),
         });
-        const text = await response.text();
-        if (text.includes("host-not-allowed")) {
-          throw new Error(
-            `${probe.providerId} rejects ${new URL(probe.url).host} — deployed registry is stale; redeploy from current manifests`,
-          );
-        }
+        const drift = classifyRelayDriftResponse(probe, await response.text());
+        if (drift) stale.push(drift);
+      }
+      if (stale.length > 0) {
+        throw new Error(
+          `deployed registry is stale; redeploy from current manifests — ${stale.join(", ")}`,
+        );
       }
     },
   });

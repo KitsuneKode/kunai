@@ -28,6 +28,7 @@ import {
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import {
+  DEFAULT_MPV_YTDL_FORMAT,
   composeDemuxerLavfOptions,
   LIVE_DEMUXER_LAVF_OPTIONS,
   LIVE_DEMUXER_OPTIONS,
@@ -544,7 +545,8 @@ export function buildMpvArgs(
   const args: string[] = [];
 
   if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
-    args.push(`--ytdl-format=${opts.ytdlFormat ?? "bv*+ba/b"}`);
+    args.push("--ytdl=yes");
+    args.push(`--ytdl-format=${opts.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT}`);
     if (opts.ytdlRawOptions?.trim()) {
       args.push(`--ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
     }
