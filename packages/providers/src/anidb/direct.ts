@@ -528,7 +528,29 @@ export const anidbProviderModule: CoreProviderModule = {
         context,
         signal: context.signal,
       });
-      if (!gate.accepted && !context.signal?.aborted) {
+      // Abort is not a stream verdict. The gate treats a cut-short probe as
+      // inconclusive and *accepts* it (timeout is not proof the CDN is dead),
+      // so checking only `!gate.accepted` lets a cancelled resolve report
+      // success with an unproven stream. Cancelled takes precedence.
+      if (context.signal?.aborted) {
+        return createExhaustedResult(
+          input,
+          context,
+          ANIDB_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "AniDB resolution was cancelled",
+            retryable: false,
+          },
+          {
+            cachePolicy,
+            events,
+            failures,
+            startedAt,
+          },
+        );
+      }
+      if (!gate.accepted) {
         const failure: ProviderFailure = {
           providerId: ANIDB_PROVIDER_ID,
           code: "not-found",
