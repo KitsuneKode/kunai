@@ -24,6 +24,35 @@ describe("normalizeStreamHttpHeaders", () => {
     });
   });
 
+  test("recognizes any casing of the headers mpv has a dedicated option for", () => {
+    // HTTP header names are case-insensitive. These spellings used to be lost
+    // twice over — missed by the dedicated lookup, then excluded from
+    // extraFields by the lowercase check — so the header reached neither mpv
+    // option nor the header list.
+    expect(
+      normalizeStreamHttpHeaders({
+        REFERER: "https://example.test/watch",
+        "USER-AGENT": "kunai-test",
+        ORIGIN: "https://example.test",
+      }),
+    ).toEqual({
+      referer: "https://example.test/watch",
+      userAgent: "kunai-test",
+      origin: "https://example.test",
+      extraFields: [],
+    });
+  });
+
+  test("prefers the exact lowercase spelling when a provider sends both", () => {
+    // Object key order must not decide which value wins.
+    const normalized = normalizeStreamHttpHeaders({
+      Referer: "https://uppercase.test/",
+      referer: "https://lowercase.test/",
+    });
+    expect(normalized.referer).toBe("https://lowercase.test/");
+    expect(normalized.extraFields).toEqual([]);
+  });
+
   test("forwards provider headers mpv has no dedicated option for", () => {
     // VidLink's DASH manifests are CloudFront signed and 403 without their
     // Cookie, so a resolve that carried it still failed at the player.
