@@ -10,6 +10,16 @@ export type AnalyticsRuntimeConfig = {
   readonly store: AnalyticsStore;
 };
 
+/**
+ * The injection seam every metrics handler shares: a test pins the clock and
+ * the store, production takes the defaults. Declared once here rather than in
+ * each endpoint, so the three cannot drift apart.
+ */
+export type MetricsHandlerDependencies = {
+  readonly loadConfig?: () => AnalyticsRuntimeConfig | null;
+  readonly now?: () => number;
+};
+
 export type AnalyticsEnv = {
   readonly DATABASE_URL?: string;
   readonly ANALYTICS_HASH_SECRET?: string;
