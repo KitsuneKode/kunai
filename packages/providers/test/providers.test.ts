@@ -1390,13 +1390,22 @@ test("miruro stream selection prefers active CDN HLS over direct kwik candidates
   expect(result?.streams).toHaveLength(3);
 });
 
-test("miruro pipe requests use only TLS-reachable official mirrors", () => {
+test("miruro pipe requests cover every official mirror", () => {
   // `www.` only: that is what the browser hits for /api/secure/pipe, and the
-  // bare hosts just redirect. TLS-dead hosts (miruro.tv) stay out so they
-  // cannot burn the engine's attempt budget.
+  // bare hosts just redirect. All four served the pipe on 2026-09-11; the
+  // earlier "miruro.tv/.to are TLS-dead" reading came from a network whose
+  // reachability to them flaps.
   expect(createMiruroPipeRequestUrls("payload")).toEqual([
     "https://www.miruro.bz/api/secure/pipe?e=payload",
     "https://www.miruro.ru/api/secure/pipe?e=payload",
+    "https://www.miruro.to/api/secure/pipe?e=payload",
+    "https://www.miruro.tv/api/secure/pipe?e=payload",
+  ]);
+});
+
+test("miruro pipe requests follow a supplied mirror order", () => {
+  expect(createMiruroPipeRequestUrls("payload", ["https://www.miruro.to"])).toEqual([
+    "https://www.miruro.to/api/secure/pipe?e=payload",
   ]);
 });
 
