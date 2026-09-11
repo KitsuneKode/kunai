@@ -10,6 +10,7 @@
     "./research": "./src/research.ts",
     "./allmanga": "./src/allmanga/direct.ts",
     "./anidb": "./src/anidb/direct.ts",
+    "./animegg": "./src/animegg/direct.ts",
     "./miruro": "./src/miruro/direct.ts",
     "./rivestream": "./src/rivestream/direct.ts",
     "./videasy": "./src/videasy/index.ts",

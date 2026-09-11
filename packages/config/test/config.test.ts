@@ -72,7 +72,12 @@ describe("@kunai/config parse boundary", () => {
 
   test("anime lane leads with Miruro and keeps AniDB and AllAnime behind it", () => {
     expect(DEFAULT_CONFIG.animeProvider).toBe("miruro");
-    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["miruro", "anidb", "allanime"]);
+    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
+      "miruro",
+      "animegg",
+      "anidb",
+      "allanime",
+    ]);
   });
 
   test("a lane-default change ships with a bumped defaults revision", () => {

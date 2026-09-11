@@ -526,8 +526,14 @@ AniDB's maintenance). 401/403/429 and network errors never reject: some Miruro
 CDNs refuse Bun's fetch while mpv plays them, and offline must not read as
 every server dead. The check never attests reachability.
 
-Miruro's own single point of failure is `miruro.bz`/`.ru`, which is why AniDB and
-AllAnime stay registered behind it.
+Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
+backends is reached through it. `animegg` is second in the default order for
+exactly that reason: Miruro already reaches AnimeGG as its `moo` server, but only
+through Miruro, whereas the adapter reaches it directly with its own
+provider-native catalog, needing neither AniList nor AniDB. AniDB and AllAnime
+stay behind it, AniDB for when it returns and AllAnime for the ani-cli parity
+path. See [the AnimeGG dossier](./provider-dossiers/animegg.md), including why a
+reachability probe cannot judge its streams.
 
 The priority list is ordering, not an allowlist. `planProviderCandidates` falls
 back through every registered anime module that health allows; the list only
@@ -550,6 +556,7 @@ default.
 | `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
 | `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
 | `anidb`      | anime         | direct-http | `packages/providers/src/anidb/direct.ts`      |
+| `animegg`    | anime         | direct-http | `packages/providers/src/animegg/direct.ts`    |
 | `allanime`   | anime         | direct-http | `packages/providers/src/allmanga/direct.ts`   |
 | `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
 | `youtube`    | video         | direct-http | `packages/providers/src/youtube/direct.ts`    |

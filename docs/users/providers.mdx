@@ -19,7 +19,7 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 Mode defaults at a glance:
 
 - **Movies / series** — Videasy first, then Rivestream, then VidLink (from `providerPriority`)
-- **Anime** — AniDB only in the automatic lane. AllManga (`allanime`) and Miruro stay registered and are manually selectable
+- **Anime** — Miruro first, then AnimeGG, then AniDB, then AllManga (from `animeProviderPriority`). Every registered provider is tried automatically; the list sets the order, not who is included
 - **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
@@ -51,6 +51,27 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 **Config id:** `rivestream`.
 
 **Caveats:** treat failures as normal for a candidate; fallback is expected.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="animegg" title="AnimeGG">
+
+**Adapter role:** the anime backup, second in the default order. AnimeGG has its own catalogue, its
+own site and its own video servers, so it keeps working when Miruro does not — which is the whole
+reason it is there. Sub and dub both come from AnimeGG's own episode tabs.
+
+**Config id:** `animegg`.
+
+```json
+{
+  "animeProvider": "miruro",
+  "animeProviderPriority": ["miruro", "animegg", "anidb", "allanime"]
+}
+```
+
+**Caveats:** anime mode must be active. Subtitles are burned into the picture on subbed episodes, so
+there is no separate subtitle track to switch. Not every show has a dub, and Kunai says so in the
+playback trace when it falls back to the subbed version. Its catalogue is smaller than Miruro's.
 
 </ProviderDocSection>
 
@@ -98,7 +119,7 @@ AniList is down; if Miruro's search finds nothing, Kunai asks AniList.
 ```json
 {
   "animeProvider": "miruro",
-  "animeProviderPriority": ["miruro", "anidb", "allanime"]
+  "animeProviderPriority": ["miruro", "animegg", "anidb", "allanime"]
 }
 ```
 
@@ -207,7 +228,7 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
   "provider": "videasy",
   "providerPriority": ["rivestream", "vidlink"],
   "animeProvider": "miruro",
-  "animeProviderPriority": ["miruro", "anidb", "allanime"]
+  "animeProviderPriority": ["miruro", "animegg", "anidb", "allanime"]
 }
 ```
 
