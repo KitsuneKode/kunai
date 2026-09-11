@@ -70,7 +70,7 @@ archive and put only the residue here.
 | Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
-| Analytics day boundary   | Move the day from midnight UTC to midnight IST at a fixed cutover, then move the cron to hour 19 UTC; local update time on the docs site             | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Analytics day boundary   | Task 8 only, after the cutover: prove the IST clock is live, then move the snapshot cron to `0 19 * * *`                                             | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
 
 ### Docs
 

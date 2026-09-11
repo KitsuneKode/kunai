@@ -176,8 +176,29 @@ production and verified there at least 24 hours before
 `2026-09-14T18:30:00Z`** — merging is not the gate, because the constant is
 evaluated per request and a rollout still in progress at the boundary would let
 two versions label the same instant differently, producing the two irregular
-days the fixed constant exists to prevent. If the deploy lands inside that
-window, move the constant to a later IST midnight, never to a past one.
+days the fixed constant exists to prevent. "Verified" means the production
+deployment's git commit contains `apps/analytics-ingest/src/analytics-day.ts` —
+before the cutover the old and new clocks behave identically by design, so the
+commit is the only thing that can prove it. If the deploy lands inside that
+window, follow _Moving the cutover_ below.
+
+**Moving the cutover.** Pick a later instant ending in `T18:30:00.000Z` — an
+exact IST midnight — at least 24 hours after a deploy you can verify. Never an
+earlier one. Then change every reference to the date in the same commit:
+
+| Reference                                        | What names the date                                      | Enforced by                                                       |
+| ------------------------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------- |
+| `apps/analytics-ingest/src/analytics-day.ts`     | `IST_DAY_BOUNDARY_FROM` — the source of truth            | —                                                                 |
+| `apps/docs/components/analytics/usage-panel.tsx` | the caption: first IST day and changeover day            | `apps/docs/test/usage-panel.test.tsx`                             |
+| `.docs/analytics-privacy-contract.md`            | the ISO instant, the first IST day, the changeover label | `apps/cli/test/unit/architecture/analytics-payload-drift.test.ts` |
+| `docs/users/reliability-and-privacy.mdx`         | the first IST day and the changeover day                 | the same drift test                                               |
+| `apps/docs/lib/generated-metadata.json`          | a fingerprint of the user doc                            | CI's codegen-freshness check                                      |
+| This spec's seam table and worked examples       | illustrative dates                                       | nobody — update by hand                                           |
+
+`apps/analytics-ingest/test/analytics-day.test.ts` needs no edit: every clock and
+expected label there is derived from the constant. The caption and document
+tests derive their expected dates from the constant too, so moving it without
+moving them fails loudly instead of shipping a page that names the wrong day.
 
 **Step 2 — follow-up.** `apps/analytics-ingest/vercel.json`: `5 0 * * *` →
 `0 19 * * *`. **Merge any time after the cutover.** From then on the newest day
@@ -270,9 +291,9 @@ Branch `feat/analytics-ist-day-boundary`, stacked on `fix/analytics-cron-diagnos
 (PR #362). Tasks 1–7 are step 1 of the rollout. Task 8 is step 2 and is a
 **separate PR merged after the cutover**.
 
-**Status: tasks 1–7 are implemented on this branch.** Only task 8 remains, and it
-cannot be done until the cutover instant has passed. `bun run test -- --force`
-reports 7,000 passing and 0 failures with them in.
+**Status: tasks 1–7 are implemented on this branch and checked below.** Only
+task 8 remains, and it cannot start until the cutover has passed and the IST
+clock is proven live in production.
 
 Note for anyone re-running the verify steps: only `apps/cli` defines a
 `test:file` script. `apps/analytics-ingest` and `apps/docs` run their whole
@@ -316,7 +337,7 @@ suite with `bun run test`, which is what the steps below use.
 **Produces:** `IST_DAY_BOUNDARY_FROM: number`, `analyticsDayKey(now?: number): string`,
 `previousAnalyticsDayKey(now?: number): string`, `shiftDayKey(day: string, days: number): string`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // apps/analytics-ingest/test/analytics-day.test.ts
@@ -406,12 +427,12 @@ describe("shiftDayKey", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `cd apps/analytics-ingest && bun run test`
 Expected: FAIL — cannot resolve `../src/analytics-day`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 ```ts
 // apps/analytics-ingest/src/analytics-day.ts
@@ -464,12 +485,12 @@ export function shiftDayKey(day: string, days: number): string {
 }
 ```
 
-- [ ] **Step 4: Run it and confirm it passes**
+- [x] **Step 4: Run it and confirm it passes**
 
 Run: `cd apps/analytics-ingest && bun run test`
 Expected: PASS, 10 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/analytics-ingest/src/analytics-day.ts apps/analytics-ingest/test/analytics-day.test.ts
@@ -488,7 +509,7 @@ git commit -m "feat(analytics): add the single day-label clock"
 
 **Consumes:** `analyticsDayKey` from Task 1.
 
-- [ ] **Step 1: Add the failing test to `apps/analytics-ingest/test/analytics-day.test.ts`**
+- [x] **Step 1: Add the failing test to `apps/analytics-ingest/test/analytics-day.test.ts`**
 
 ```ts
 import { ingestAnalyticsPing } from "../src/ingest";
@@ -525,7 +546,7 @@ describe("ingest labels through the shared clock", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm the second case fails**
+- [x] **Step 2: Run it and confirm the second case fails**
 
 Run: `cd apps/analytics-ingest && bun run test`
 Expected: FAIL — the cutover ping still reports `2026-09-14`, because ingest
@@ -533,7 +554,7 @@ still uses `utcDayKey`. If the import of `createMemoryAnalyticsStore` fails,
 check its exported name in `src/memory-store.ts` and use that instead; do not
 change the store.
 
-- [ ] **Step 3: Route ingest through the clock**
+- [x] **Step 3: Route ingest through the clock**
 
 In `apps/analytics-ingest/src/ingest.ts`, delete this function entirely:
 
@@ -555,7 +576,7 @@ And change the one call site (line 132):
 const day = analyticsDayKey(now);
 ```
 
-- [ ] **Step 4: Update the two tests that imported the removed function**
+- [x] **Step 4: Update the two tests that imported the removed function**
 
 In `apps/analytics-ingest/test/ingest.test.ts` and
 `apps/cli/test/integration/analytics-wire-contract.test.ts`, replace the
@@ -566,7 +587,7 @@ Both files pin `NOW = Date.UTC(2026, 7, 14, 12, 0, 0)` — 14 August, before the
 cutover — so `analyticsDayKey(NOW)` returns exactly what `utcDayKey(NOW)` did
 and no expected value changes.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 ```bash
 cd apps/analytics-ingest && bun run test
@@ -576,7 +597,7 @@ grep -rn "utcDayKey" apps packages --include='*.ts' | grep -v node_modules
 
 Expected: both suites PASS; the grep prints nothing.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/analytics-ingest/src/ingest.ts apps/analytics-ingest/test apps/cli/test/integration/analytics-wire-contract.test.ts
@@ -598,7 +619,7 @@ git commit -m "refactor(analytics): label ingest through the shared day clock"
 and `daily.ts`, `series.ts` and `admin.ts` import it by name — so re-exporting
 under the same name moves all three with no edit.
 
-- [ ] **Step 1: Add the failing test to `apps/analytics-ingest/test/analytics-day.test.ts`**
+- [x] **Step 1: Add the failing test to `apps/analytics-ingest/test/analytics-day.test.ts`**
 
 ```ts
 import { snapshotDayKey } from "../src/public-metrics";
@@ -611,13 +632,13 @@ describe("snapshotDayKey follows the shared clock", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `cd apps/analytics-ingest && bun run test`
 Expected: FAIL — the old `now - 24h` implementation returns `2026-09-14` for the
 first case.
 
-- [ ] **Step 3: Re-export in `public-metrics.ts`**
+- [x] **Step 3: Re-export in `public-metrics.ts`**
 
 Replace the function at the end of the file:
 
@@ -638,7 +659,7 @@ with a re-export, so there is one implementation:
 export { previousAnalyticsDayKey as snapshotDayKey } from "./analytics-day.js";
 ```
 
-- [ ] **Step 4: Route the cron's own clock and drop its local arithmetic**
+- [x] **Step 4: Route the cron's own clock and drop its local arithmetic**
 
 In `apps/analytics-ingest/api/cron/snapshot.ts`, delete the local helper:
 
@@ -674,7 +695,7 @@ pruned = await runtime.store.pruneRawBefore(shiftDayKey(today, -RAW_RETENTION_DA
 retired = (await runtime.store.pruneLifetimeBefore(shiftDayKey(today, -retention))).retired;
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 ```bash
 cd apps/analytics-ingest && bun run test
@@ -683,7 +704,7 @@ cd ../.. && bun run typecheck --force
 
 Expected: all PASS; typecheck exits 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/analytics-ingest/src/public-metrics.ts apps/analytics-ingest/api/cron/snapshot.ts apps/analytics-ingest/test/analytics-day.test.ts
@@ -707,7 +728,7 @@ the invariant gets a guard.
 
 **Consumes:** `shiftDayKey` from Task 1.
 
-- [ ] **Step 1: Fold `seriesStartDay` onto the shared helper**
+- [x] **Step 1: Fold `seriesStartDay` onto the shared helper**
 
 In `apps/analytics-ingest/src/public-series.ts`, replace the body — it is the
 same whole-day shift, written a second time:
@@ -721,7 +742,7 @@ export function seriesStartDay(endDay: string, days: number): string {
 
 with `import { shiftDayKey } from "./analytics-day.js";` at the top.
 
-- [ ] **Step 2: Fold the admin window onto it too**
+- [x] **Step 2: Fold the admin window onto it too**
 
 In `apps/analytics-ingest/api/metrics/admin.ts`, replace:
 
@@ -739,67 +760,32 @@ const from = shiftDayKey(to, -(ADMIN_WINDOW_DAYS - 1));
 
 and import `shiftDayKey` from `../../src/analytics-day.js`.
 
-- [ ] **Step 3: Verify nothing moved**
+- [x] **Step 3: Verify nothing moved**
 
 Run: `cd apps/analytics-ingest && bun run test`
 Expected: PASS. These already pin `seriesStartDay`; if a boundary shifts by a
 day the replacement is not equivalent — stop and report rather than editing
 the expectations.
 
-- [ ] **Step 4: Write the guard**
+- [x] **Step 4: Write the guard**
 
-```ts
-// apps/analytics-ingest/test/no-second-day-clock.test.ts
-/**
- * Ingest, the cron and the read endpoints must agree on what day it is. When
- * they answered separately, a disagreement meant the cron rolled up a day that
- * held no rows. `analytics-day.ts` is the only place allowed to turn an instant
- * or a label into a `YYYY-MM-DD` label.
- */
-import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+The guard lives in `apps/analytics-ingest/test/no-second-day-clock.test.ts`; the
+file is the authority, so its code is not repeated here. It scans `src/` and
+`api/` for every common way to derive a calendar day from a `Date` — cutting an
+ISO string, reading or setting calendar fields, locale date formatting — on
+whitespace-stripped source, and table-tests its own matcher against each form
+and against what must stay allowed. The first version matched only
+`toISOString().slice(0, 10)`, which `.split("T")[0]` or `getUTCDate()` would
+have walked past. It is still a list, not a proof: a date library or a regex
+over an ISO string would get past it, and belongs in `analytics-day.ts`.
 
-const ALLOWED = "analytics-day.ts";
-
-function sourceFiles(dir: string, found: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) sourceFiles(path, found);
-    else if (path.endsWith(".ts")) found.push(path);
-  }
-  return found;
-}
-
-describe("day labels have one source", () => {
-  test("no file but analytics-day.ts derives a day label", () => {
-    const root = join(import.meta.dir, "..");
-    const offenders: string[] = [];
-
-    for (const directory of ["src", "api"]) {
-      for (const file of sourceFiles(join(root, directory))) {
-        if (file.endsWith(ALLOWED)) continue;
-        // Whitespace-normalised: admin.ts once split this chain across three
-        // lines, which a literal match would have missed entirely.
-        const body = readFileSync(file, "utf8").replace(/\s+/g, "");
-        if (body.includes("toISOString().slice(0,10)")) {
-          offenders.push(file.slice(root.length + 1));
-        }
-      }
-    }
-
-    expect(offenders).toEqual([]);
-  });
-});
-```
-
-- [ ] **Step 5: Run it**
+- [x] **Step 5: Run it**
 
 Run: `cd apps/analytics-ingest && bun run test`
 Expected: PASS. A FAIL names the file that still derives its own label — route
 it through `analyticsDayKey` or `shiftDayKey`. Do not add an exception.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/analytics-ingest/src/public-series.ts apps/analytics-ingest/api/metrics/admin.ts apps/analytics-ingest/test/no-second-day-clock.test.ts
@@ -820,7 +806,7 @@ rather than in the component that renders it.
 - Modify: `apps/docs/lib/analytics-metrics.ts:96,105`
 - Modify: `apps/docs/test/analytics-metrics.test.ts`
 
-- [ ] **Step 1: Write the failing test in `apps/docs/test/analytics-metrics.test.ts`**
+- [x] **Step 1: Write the failing test in `apps/docs/test/analytics-metrics.test.ts`**
 
 ```ts
 describe("updatedAt normalisation", () => {
@@ -858,12 +844,12 @@ describe("updatedAt normalisation", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm the first case fails**
+- [x] **Step 2: Run it and confirm the first case fails**
 
 Run: `cd apps/docs && bun run test`
 Expected: FAIL — `updatedAt` comes back as the raw Postgres string.
 
-- [ ] **Step 3: Normalise in the parser**
+- [x] **Step 3: Normalise in the parser**
 
 In `apps/docs/lib/analytics-metrics.ts`, add above `parseDocsAnalyticsMetrics`:
 
@@ -887,12 +873,12 @@ and change the returned field (line 105) from `updatedAt: record.updatedAt,` to:
     updatedAt: toIsoTimestamp(record.updatedAt),
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `cd apps/docs && bun run test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/docs/lib/analytics-metrics.ts apps/docs/test/analytics-metrics.test.ts
@@ -909,7 +895,7 @@ git commit -m "fix(docs): normalise the analytics timestamp at the parse boundar
 - Modify: `apps/docs/components/analytics/usage-panel.tsx:276-281`
 - Modify: `apps/docs/test/usage-panel.test.tsx`
 
-- [ ] **Step 1: Write the failing test in `apps/docs/test/usage-panel.test.tsx`**
+- [x] **Step 1: Write the failing test in `apps/docs/test/usage-panel.test.tsx`**
 
 The file already renders with `renderToStaticMarkup` over a `sample` fixture
 and a `series` fixture. Reuse both:
@@ -933,12 +919,12 @@ describe("day boundary and update time", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `cd apps/docs && bun run test`
 Expected: FAIL on the caption assertion.
 
-- [ ] **Step 3: Write the client component**
+- [x] **Step 3: Write the client component**
 
 ```tsx
 // apps/docs/components/analytics/local-time.tsx
@@ -973,7 +959,7 @@ export function LocalTime({ iso, utcLabel }: { readonly iso: string; readonly ut
 }
 ```
 
-- [ ] **Step 4: Use it, and add the caption**
+- [x] **Step 4: Use it, and add the caption**
 
 In `apps/docs/components/analytics/usage-panel.tsx`, import the component:
 
@@ -998,7 +984,7 @@ and add the caption directly below that `<p>`:
 The caption sits once on `/analytics` and covers every day label on the page —
 the snapshot day, the section cards, and the trend chart, table and span.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 ```bash
 cd apps/docs && bun run test
@@ -1006,7 +992,7 @@ cd apps/docs && bun run test
 
 Expected: PASS, 0 lint problems, typecheck exits 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/docs/components/analytics/local-time.tsx apps/docs/components/analytics/usage-panel.tsx apps/docs/test/usage-panel.test.tsx
@@ -1024,7 +1010,7 @@ Both change together, as the contract's own last line requires.
 - Modify: `.docs/analytics-privacy-contract.md`
 - Modify: `docs/users/reliability-and-privacy.mdx`
 
-- [ ] **Step 1: Amend the contract**
+- [x] **Step 1: Amend the contract**
 
 Under _Public metrics and operations_, after the `computed_at` paragraph, state:
 the boundary is midnight IST (18:30 UTC) from `2026-09-14T18:30:00.000Z`;
@@ -1035,14 +1021,14 @@ crossing pings were never stored; retention cutoffs are computed from the same
 labels they compare against, so a row may be held at most one extra day around
 the seam — the safe direction, storage only.
 
-- [ ] **Step 2: Amend the user doc**
+- [x] **Step 2: Amend the user doc**
 
 In `docs/users/reliability-and-privacy.mdx`, state in user language: days end at
 midnight IST from 15 September 2026 and earlier days end at midnight UTC; the
 "updated" time is shown in your own clock; day totals are not re-cut to your
 local midnight, because only daily totals are kept.
 
-- [ ] **Step 3: Verify the pinned phrases survive**
+- [x] **Step 3: Verify the pinned phrases survive**
 
 ```bash
 bun run --cwd apps/cli test:file -- test/unit/architecture/analytics-payload-drift.test.ts
@@ -1054,7 +1040,7 @@ Expected: PASS. That drift test pins the consent, small-cell and
 `install_lifetime` wording in both documents — if it fails, wording it protects
 was removed; restore it rather than editing the test.
 
-- [ ] **Step 4: Full gate and commit**
+- [x] **Step 4: Full gate and commit**
 
 ```bash
 bun run typecheck --force && bun run lint --force && bun run test -- --force
@@ -1076,14 +1062,31 @@ can only roll up UTC-yesterday while the labels are still UTC.
 
 - Modify: `apps/analytics-ingest/vercel.json:15`
 
-- [ ] **Step 1: Confirm the cutover has passed**
+- [ ] **Step 1: Prove the IST clock is live in production**
 
-```bash
-curl -s https://analytics.kunai.kitsunekode.in/metrics/daily.json
-```
+The published `day` cannot prove it. On the `5 0 * * *` schedule the old UTC
+clock and the new IST clock publish the same day on every run, so a check like
+"`day` is on or after the cutover" passes under both. Both of these are
+required:
 
-Expected: `day` is `2026-09-15` or later. If it is `2026-09-14` or earlier, stop
-— step 1 has not taken effect yet.
+1. **The deployed commit.** In the Vercel dashboard for the analytics-ingest
+   project, or with `vercel inspect` on its production URL, confirm the current
+   production deployment's commit contains
+   `apps/analytics-ingest/src/analytics-day.ts`. GitHub's deployment records
+   cover the docs site only and cannot answer this.
+2. **The clock's own answer, read between 18:30 and 24:00 UTC** on any day from
+   the cutover on:
+
+   ```bash
+   curl -s -H "Authorization: Bearer $ANALYTICS_ADMIN_TOKEN" \
+     https://analytics.kunai.kitsunekode.in/api/metrics/admin | jq -r .to
+   ```
+
+   `to` is the day the read side resolves at that moment. It must equal
+   **today's UTC date**; the old clock returns the day before. Read before
+   18:30 UTC the two clocks agree, so that read proves nothing.
+
+If either check fails, stop.
 
 - [ ] **Step 2: Change the schedule**
 
