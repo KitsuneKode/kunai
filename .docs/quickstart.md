@@ -19,8 +19,9 @@ Use this doc for setup, local execution, and common environment issues. Architec
   floor. `chafa` and ImageMagick are no longer used.
 - `yt-dlp` for YouTube playback and downloads/offline queue (must be on `PATH` for YouTube resolve/play and when downloads are enabled)
 - `ffprobe` optional—used only for quick validation of finished files, not downloading
-- `curl` for anime mode: AniDB is the default anime provider and sits behind
-  Cloudflare, which frequently blocks Bun's own fetch. Without a `curl` on
+- `curl` for anime mode: Miruro (the default anime provider) and AniDB both sit
+  behind Cloudflare, which refuses Bun's own fetch at Miruro's API and
+  frequently at AniDB's. Without a `curl` on
   `PATH`, anime search can come back empty — and **plain curl is often not
   enough**, because Cloudflare fingerprints the TLS handshake, not just the
   User-Agent. Kunai discovers curl-impersonate wrappers from `PATH`

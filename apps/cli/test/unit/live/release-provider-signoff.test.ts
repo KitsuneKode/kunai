@@ -243,11 +243,16 @@ describe("release provider signoff", () => {
 
 describe("release provider route derivation", () => {
   test("derives signoff providers from production defaults", () => {
-    const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, ["videasy", "anidb", "youtube"]);
+    const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, [
+      "videasy",
+      "miruro",
+      "anidb",
+      "youtube",
+    ]);
     expect(cases.map((route) => [route.lane, route.configuredProvider])).toEqual([
       ["movie", "videasy"],
       ["series", "videasy"],
-      ["anime", "anidb"],
+      ["anime", "miruro"],
     ]);
   });
 
@@ -308,6 +313,65 @@ describe("release provider route derivation", () => {
 
     expect(title.id).toBe("onigiri-3942");
     expect(title.externalIds?.providerNativeIds?.anidb).toBe("onigiri-3942");
+  });
+
+  // A provider id with no search of its own, keyed on the AniList catalog.
+  const CATALOG_ONLY_ROUTE = {
+    lane: "anime",
+    configuredProvider: "catalog-only",
+    mode: "anime",
+    searchQuery: "Onigiri",
+    expectedTitle: "Onigiri",
+    season: 1,
+    episode: 1,
+  } as const;
+
+  test("a default with no search of its own finds the title through its compatible catalog", async () => {
+    // The app routes such a provider to its compatible catalog; requiring
+    // provider.search would fail signoff on a route that works in production.
+    const title = await resolveReleaseAnimeSearchTitle(
+      CATALOG_ONLY_ROUTE,
+      {},
+      { audio: "original", subtitle: "en" },
+      {
+        // SAFETY: resolveReleaseAnimeSearchTitle reads only id, type and title
+        // from catalog rows, and each row below sets all three.
+        catalog: {
+          search: async () => [
+            { id: "anilist:1", type: "series", title: "Onigiri Tabetai" },
+            { id: "anilist:21828", type: "series", title: "Onigiri" },
+          ],
+        } as never,
+      },
+    );
+
+    expect(title.id).toBe("anilist:21828");
+  });
+
+  test("a catalog route that finds nothing is still provider drift", async () => {
+    await expect(
+      resolveReleaseAnimeSearchTitle(
+        CATALOG_ONLY_ROUTE,
+        {},
+        { audio: "original", subtitle: "en" },
+        { catalog: { search: async () => [] } },
+      ),
+    ).rejects.toThrow(
+      'Default anime provider "catalog-only" search returned zero results for "Onigiri"',
+    );
+  });
+
+  test("a default with neither its own search nor a catalog fails before any network work", async () => {
+    await expect(
+      resolveReleaseAnimeSearchTitle(
+        CATALOG_ONLY_ROUTE,
+        {},
+        {
+          audio: "original",
+          subtitle: "en",
+        },
+      ),
+    ).rejects.toThrow("has no search capability and no compatible catalog");
   });
 
   test("release evidence is unacceptable when a different provider succeeds", () => {

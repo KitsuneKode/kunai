@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-09-11"
 ---
 
 # Provider: Miruro
@@ -11,7 +11,9 @@ lastReviewed: "2026-08-13"
 
 - **Runtime class:** Direct HTTP pipe API by AniList ID, with browser harvest as research tooling.
 - **Production module:** `packages/providers/src/miruro/*`.
-- **Current status (2026-07-11):** **demote from default.** Live `container.engine.resolve(..., "miruro")` (One Piece AniList `21` / matrix E1159 fixture) fails before stream candidates. Anime default path remains AllAnime.
+- **Current status (2026-09-11):** **default anime provider.** Searches and resolves
+  through its own pipe, with no dependency on AniList's API or on AniDB; see the
+  2026-09-11 section. The older sections below are history and say otherwise.
 
 ## Production status (2026-08-13) — truth and resilience pass
 
@@ -52,14 +54,49 @@ and `videasy` / `allmanga` / `direct-stream-source` each keep a near-duplicate f
 helper. Consolidating those onto the shared `inferSubtitleFormat()` was left out of
 this change to keep the release-hardening branches independently mergeable.
 
+## Production status (2026-09-11) — default anime provider
+
+- **Promoted to default** (`animeProvider: "miruro"`, ahead of AniDB and AllAnime;
+  provider-defaults revision 1). This supersedes the "keep demoted" disposition
+  below.
+- **Why the 2026-07/08 WAF verdicts were wrong:** the pipe classifier read _any_
+  HTML body as a Cloudflare block, including the mirror's own
+  `502 upstream unreachable` page. One dead backend therefore tripped the WAF
+  fail-fast, suppressed curl on the second mirror, and stopped the cycle. Fixed in
+  the `isCloudflareBlockBody` change (shared `curl-impersonate.ts`).
+- **Transport, measured:** Bun `fetch` is always CF-403'd at the pipe (TLS
+  fingerprint). curl — plain or impersonate — clears it with the `sec-fetch-*`
+  triplet the client already sends.
+- **Per-server `sources`, One Piece ep 1159:** `moo` (AnimeGG) 200/4 streams,
+  `bee` (Anikoto) 200/2, `bonk` 200/7, `kiwi` (owocdn/kwik) 200/4; `pewe` (AniDB),
+  `ally` (AllManga) and `hop` 444 — the first two because their upstreams are down.
+- **Playback proven by frame, not exit code:** `mpv --vo=image` sampled at 300s
+  wrote a One Piece frame with burned-in English subtitles. `moo` opens on a short
+  AnimeGG cartoon-cat bumper, so an early sample looks like the wrong video.
+- **Search:** the pipe's `search` path, read from the site's public bundle
+  (`yo.request("search", {query})`). The text parameter is `q`; `search` and
+  `query` are ignored and return the popular list. Send `type: "ANIME"` or manga and
+  novels come back. Rows are AniList Media (id, idMal, titles, cover, format,
+  status, isAdult); `dubLanguages` is voice-actor data, not availability. It
+  answered throughout AniList's API shutdown on 2026-09-10/11. `search/browse`
+  serves trending/filtered lists and is not wired yet.
+- **Dead backends:** the pipe returns a backend's URL whether or not the backend
+  is up. For Onigiri (AniList 21612) `pewe` returned `hls.anidb.app` URLs answering
+  503, and won the cycle. Each accepted candidate now gets one ranged GET and is
+  rejected on 404/410/5xx only; with that, Onigiri resolved through `moo` and mpv
+  wrote a frame of the episode.
+- **Open:** `MIRURO_SERVER_TRY_ORDER` still leads with `pewe` and demotes `kiwi`,
+  which this data contradicts. Left alone because `pewe`/`ally` recover when AniDB
+  and AllManga do; the backend check now skips them quickly while they are down,
+  so re-rank from health data over time, not one sample.
+
 ## Production status (2026-07-18)
 
 - **Labels:** Hybrid — primary Tracks label is Gintama character (`Gintoki`, `Kagura`, …); detail is `Sub · hard sub` / `Dub · …` via `metadata.sourceDetail`. Emits `inventory:audio-modes` when the episode payload exposes sub and/or dub.
 - **HLS quality:** Lone Pipe `master.m3u8` rows expand through shared `expandHlsMasterPlaylist` ([`packages/providers/src/shared/hls-ladder.ts`](../../packages/providers/src/shared/hls-ladder.ts)) into multiple quality candidates for `/quality`.
 - **Live pipe (this environment):** `/api/secure/pipe` on `miruro.bz` / `miruro.ru` may return **HTTP 403 Cloudflare HTML**; fail-fast after 2 consecutive CF HTML mirrors.
-- **Recommended disposition:** keep **demoted from default**. (The default is now
-  `animeProvider: "anidb"` with `animeProviderPriority: ["anidb", "allanime"]`; this
-  line previously claimed `["allanime"]`.) Re-promote after opt-in live matrix passes.
+- **Recommended disposition (superseded 2026-09-11):** keep demoted from default.
+  Re-promote after the opt-in live matrix passes — which it now does; see above.
 
 ## Production status (2026-07-11)
 

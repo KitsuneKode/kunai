@@ -504,13 +504,45 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
-`anidb` is the **default** provider-native anime catalog and the first configured
-anime priority (`animeProvider: "anidb"`, `animeProviderPriority: ["anidb"]`).
-The priority list is ordering, not an allowlist: registered `allanime` and
-`miruro` modules remain available after AniDB and are manually selectable. See
+`miruro` is the **default** anime provider (`animeProvider: "miruro"`,
+`animeProviderPriority: ["miruro", "anidb", "allanime"]`, provider-defaults
+revision 1, 2026-09-11). The case is structural: Miruro fronts roughly a dozen
+backends behind one AniList-keyed pipe, so an upstream outage costs a server
+rather than the lane.
+
+Its search goes through Miruro's own pipe (`search`, `q` + `type: "ANIME"`),
+which relays AniList's catalog: results carry AniList and MAL ids exactly as the
+AniList search service emits them, so history sees one title whichever path
+found it, and AniSkip gets its MAL id without calling AniList. This matters
+because AniList's API was disabled outright on 2026-09-10 while the pipe kept
+answering. A null or empty pipe search falls through to the AniList catalog in
+`searchTitles`, so either catalog alone is enough. Advanced (filtered) anime
+searches and `/discover` still go to AniList directly.
+
+Before accepting a candidate, the resolve issues one ranged GET of the selected
+URL and rejects the server on 404/410/5xx — the pipe hands out a backend's URL
+whether or not that backend is up (`pewe` served `hls.anidb.app` URLs through
+AniDB's maintenance). 401/403/429 and network errors never reject: some Miruro
+CDNs refuse Bun's fetch while mpv plays them, and offline must not read as
+every server dead. The check never attests reachability.
+
+Miruro's own single point of failure is `miruro.bz`/`.ru`, which is why AniDB and
+AllAnime stay registered behind it.
+
+The priority list is ordering, not an allowlist. `planProviderCandidates` falls
+back through every registered anime module that health allows; the list only
+decides the order. See
 [the AllAnime parity history](./provider-dossiers/allanime-parity-history.md) and
 [the Miruro dossier](./provider-dossiers/miruro.md) for their network failure
 modes.
+
+Configs saved before revision 1 hold the old AniDB default as though it were a
+choice, because the whole merged config is written on every save.
+`ConfigServiceImpl.load` migrates the exact old pair (`"anidb"` with `["anidb"]`
+or no list) once and stamps `providerDefaultsRevision`; any other anime setup is
+left alone, and choosing AniDB afterwards sticks. A future lane-default change
+must bump the revision, or it strands every existing user on the previous
+default.
 
 | ID           | Content Types | Runtime     | Module Location                               |
 | ------------ | ------------- | ----------- | --------------------------------------------- |
@@ -526,7 +558,7 @@ modes.
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
 
-- **AniDB (`anidb`)** — `provider-native`, and the default anime route. Native ids must satisfy
+- **AniDB (`anidb`)** — `provider-native`; second in the default anime order since revision 1. Native ids must satisfy
   `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
   AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
   `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.

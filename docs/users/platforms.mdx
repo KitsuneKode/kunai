@@ -55,7 +55,7 @@ Recommended optional tools:
 - `yt-dlp` — offline download jobs and YouTube playback
 - `ffprobe` — optional validation of completed artifacts
 - `xdg-open` — `/docs`, `/report-issue`, folder reveal, and account auth handoffs
-- `curl` — required for the default anime provider (AniDB) on many networks
+- `curl` — used by the default anime provider (Miruro) and by AniDB, both behind Cloudflare
 
 </Tab>
 <Tab value="Alpine / musl">
@@ -150,13 +150,17 @@ Source checkouts are the best path for debugging provider changes, playback reco
 </Tab>
 </Tabs>
 
-## Anime search and curl-impersonate
+## Anime streams and curl-impersonate
 
-AniDB is the only provider in the automatic anime lane, and it sits behind
-Cloudflare. Cloudflare scores the TLS handshake, not just the `User-Agent`, so a
-plain `curl` is sometimes refused even though the site is up. When that happens
-anime search returns **no results** rather than an error, because the refusal
-arrives as an ordinary-looking web page.
+Miruro (the default anime provider) and AniDB both sit behind Cloudflare. Kunai
+tries its own HTTP client first and falls back to `curl` when Cloudflare refuses
+it — which, at Miruro's API, is every time, and at AniDB's, often. A provider
+relay, if you run one, answers on Kunai's behalf and needs no `curl`. Cloudflare
+scores the TLS handshake, not just the `User-Agent`, so a plain `curl` is
+sometimes refused too even though the site is up. Either way anime search can come back with **no results** rather than an
+error, because the refusal arrives as an ordinary-looking web page; with Miruro,
+Kunai then falls back to searching AniList, so episodes are more likely to be the
+part that fails.
 
 Most people never see this — a normal home connection is usually let through. It
 shows up on VPNs, corporate networks, cloud shells, and CI runners.

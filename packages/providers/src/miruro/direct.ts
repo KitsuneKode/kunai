@@ -15,6 +15,7 @@ import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
+  ProviderSearchResult,
   ProviderSourceCandidate,
   ProviderTraceEvent,
   ResolveErrorCode,
@@ -1088,7 +1089,39 @@ function xorDecrypt(encrypted: Uint8Array, key: Uint8Array): Uint8Array {
 }
 
 /** Which endpoint contract a pipe body is expected to satisfy. */
-export type MiruroPipeExpectedKind = "episodes" | "sources";
+export type MiruroPipeExpectedKind = "episodes" | "sources" | "search";
+
+/**
+ * One row of the pipe's `search` endpoint. Miruro relays AniList's catalog, so
+ * this is AniList's Media shape — which is what lets the search keep working
+ * when AniList's own API is down, while still yielding AniList ids.
+ */
+export type MiruroSearchMedia = {
+  readonly id?: number;
+  readonly idMal?: number | null;
+  readonly type?: string | null;
+  readonly format?: string | null;
+  readonly status?: string | null;
+  readonly isAdult?: boolean | null;
+  readonly episodes?: number | null;
+  readonly duration?: number | null;
+  readonly averageScore?: number | null;
+  readonly popularity?: number | null;
+  readonly seasonYear?: number | null;
+  readonly startDate?: { readonly year?: number | null } | null;
+  readonly description?: string | null;
+  readonly title?: {
+    readonly english?: string | null;
+    readonly romaji?: string | null;
+    readonly native?: string | null;
+    readonly userPreferred?: string | null;
+  } | null;
+  readonly coverImage?: {
+    readonly extraLarge?: string | null;
+    readonly large?: string | null;
+  } | null;
+  readonly bannerImage?: string | null;
+};
 
 /**
  * One code per decode stage. A rotated key, a bumped obfuscation version, and a
@@ -1155,6 +1188,11 @@ function isMiruroEpisodesResponse(value: unknown): value is MiruroEpisodesRespon
   return true;
 }
 
+function isMiruroSearchResponse(value: unknown): value is readonly MiruroSearchMedia[] {
+  // An empty list is a legitimate "no matches", not a shape failure.
+  return Array.isArray(value) && value.every((row) => isRecord(row) && typeof row.id === "number");
+}
+
 function isMiruroSourcesResponse(value: unknown): value is MiruroSourcesResponse {
   if (!isRecord(value)) return false;
   if (MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
@@ -1174,7 +1212,7 @@ export function decodeMiruroPipePayload(input: {
   readonly obfuscationVersion: string | null;
   readonly expectedKind: MiruroPipeExpectedKind;
   readonly keyHex?: string;
-}): MiruroEpisodesResponse | MiruroSourcesResponse {
+}): MiruroEpisodesResponse | MiruroSourcesResponse | readonly MiruroSearchMedia[] {
   const key = parsePipeKey(input.keyHex);
   if (!key) throw new MiruroPipeDecodeError("pipe-key-missing");
 
@@ -1210,6 +1248,13 @@ export function decodeMiruroPipePayload(input: {
 
   if (input.expectedKind === "episodes") {
     if (!isMiruroEpisodesResponse(parsed)) {
+      throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
+    }
+    return parsed;
+  }
+
+  if (input.expectedKind === "search") {
+    if (!isMiruroSearchResponse(parsed)) {
       throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
     }
     return parsed;
@@ -1682,10 +1727,16 @@ async function pipeCall(
 ): Promise<MiruroSourcesResponse>;
 async function pipeCall(
   context: ProviderRuntimeContext,
+  path: "search",
+  query: Record<string, string | number>,
+  signal?: AbortSignal,
+): Promise<readonly MiruroSearchMedia[]>;
+async function pipeCall(
+  context: ProviderRuntimeContext,
   path: MiruroPipeExpectedKind,
   query: Record<string, string | number>,
   signal?: AbortSignal,
-): Promise<MiruroEpisodesResponse | MiruroSourcesResponse> {
+): Promise<MiruroEpisodesResponse | MiruroSourcesResponse | readonly MiruroSearchMedia[]> {
   const q: Record<string, string> = {};
   for (const [k, v] of Object.entries(query)) q[k] = String(v);
 
@@ -1804,9 +1855,218 @@ function classifyMiruroPipeError(error: unknown): {
   };
 }
 
+/**
+ * One request, short on purpose: it runs on every accepted candidate, and its
+ * only job is to catch a backend host that is down before mpv is handed it.
+ */
+const MIRURO_BACKEND_PROBE_TIMEOUT_MS = 2_000;
+
+/**
+ * HTTP statuses that mean the backend behind a Miruro server is down, as opposed
+ * to refusing this particular request.
+ *
+ * Deliberately narrow, because every status a CDN can return to a non-player is
+ * a working server this would otherwise skip:
+ *
+ * - 401/403/429 — owocdn behind kwik (`kiwi`) answers Bun's fetch with 403 while
+ *   mpv plays the same URL.
+ * - plain 500 — AnimeGG (`moo`, the most reliable backend) redirects to a
+ *   vidcache host that answers `{"error":"Invalid request (bad hand off)"}` with
+ *   500 to anything that is not its player, including a bare ranged GET. mpv
+ *   plays those URLs.
+ *
+ * What is left is a host saying it is gone or cannot serve at all.
+ */
+export function isMiruroBackendDownStatus(status: number): boolean {
+  return status === 404 || status === 410 || status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * Whether a response came back from the host that was asked. An empty or
+ * unparseable `response.url` (some fetch implementations and every mocked
+ * Response) counts as same-host, so a missing field can never turn into a
+ * rejection.
+ */
+function isSameHost(requestedUrl: string, responseUrl: string | undefined): boolean {
+  if (!responseUrl) return true;
+  try {
+    return new URL(requestedUrl).host === new URL(responseUrl).host;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The status that proves a backend down, or `null` when there is no such proof.
+ *
+ * This only ever rejects; it never attests a stream as verified. A fetch that
+ * succeeds says little about whether mpv will — Videasy's resolve gate got 200
+ * from URLs mpv could not open (issue #361) — so a pass here is not evidence of
+ * playability, only the absence of evidence of death.
+ */
+export async function probeMiruroBackendDown(
+  url: string,
+  headers: Readonly<Record<string, string>> | undefined,
+  context: Pick<ProviderRuntimeContext, "fetch">,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  if (!/^https?:\/\//i.test(url)) return null;
+  const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
+  const timeout = AbortSignal.timeout(MIRURO_BACKEND_PROBE_TIMEOUT_MS);
+  try {
+    const response = await requester(url, {
+      method: "GET",
+      headers: { ...headers, Range: "bytes=0-0" },
+      signal: signal ? anySignal(signal, timeout) : timeout,
+    });
+    void response.body?.cancel().catch(() => {});
+    // A redirect to another host means the backend answered and handed us on;
+    // what the CDN then says about one odd request is not evidence about the
+    // backend. AnimeGG hands off to vidcache, which 500s anything but its player.
+    if (!isSameHost(url, response.url)) return null;
+    return isMiruroBackendDownStatus(response.status) ? response.status : null;
+  } catch {
+    // A timeout or connection error is as likely to be this client's network as
+    // the backend's, and being offline must not read as "every server is dead".
+    return null;
+  }
+}
+
+/**
+ * Mirrors `contentTypeFromAniListFormat` in the CLI's domain layer, which this
+ * package cannot import. A one-shot OVA/SPECIAL/TV_SHORT/MUSIC is a film; TV and
+ * ONA stay series even with one episode aired; unknown stays series.
+ */
+const ANILIST_ONE_SHOT_FORMATS = new Set(["OVA", "SPECIAL", "TV_SHORT", "MUSIC"]);
+
+function miruroSearchContentType(
+  format: string | null | undefined,
+  episodes: number | null | undefined,
+): "movie" | "series" {
+  const normalized = format?.trim().toUpperCase();
+  if (normalized === "MOVIE") return "movie";
+  if (normalized && ANILIST_ONE_SHOT_FORMATS.has(normalized) && episodes === 1) return "movie";
+  return "series";
+}
+
+function stripSearchDescription(value: string | null | undefined): string {
+  return (value ?? "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+}
+
+/**
+ * Map one pipe search row onto a provider search result with exactly the
+ * identity the AniList search service produces — `id` is the bare AniList id and
+ * `externalIds.anilistId` carries it — so a show found here and the same show
+ * found through AniList are one title in history, not two.
+ *
+ * Filters match that service's query (`type:ANIME`, `isAdult:false`,
+ * `status_not:NOT_YET_RELEASED`). The server honours `type`, but a missing or
+ * ignored filter would leak manga and novels into an anime picker, so it is
+ * enforced here as well.
+ *
+ * `dubLanguages` on these rows is deliberately unused: it is voice-actor
+ * language data, not availability — the One Piece manga lists eleven dubs.
+ */
+export function mapMiruroSearchMedia(media: MiruroSearchMedia): ProviderSearchResult | null {
+  if (typeof media.id !== "number" || !Number.isInteger(media.id) || media.id <= 0) return null;
+  if (media.type && media.type !== "ANIME") return null;
+  if (media.isAdult === true) return null;
+  if (media.status === "NOT_YET_RELEASED") return null;
+
+  const english = media.title?.english?.trim() || undefined;
+  const romaji = media.title?.romaji?.trim() || undefined;
+  const native = media.title?.native?.trim() || undefined;
+  const title = english ?? romaji ?? native ?? media.title?.userPreferred?.trim();
+  if (!title) return null;
+
+  const anilistId = String(media.id);
+  const malId =
+    typeof media.idMal === "number" && Number.isInteger(media.idMal) && media.idMal > 0
+      ? String(media.idMal)
+      : undefined;
+  const posterUrl = media.coverImage?.extraLarge ?? media.coverImage?.large ?? undefined;
+  const year = media.startDate?.year ?? media.seasonYear ?? undefined;
+  const episodeCount =
+    typeof media.episodes === "number" && media.episodes > 0 ? media.episodes : undefined;
+  const altNames = romaji && romaji !== title ? [romaji] : [];
+
+  return {
+    id: anilistId,
+    type: miruroSearchContentType(media.format, media.episodes),
+    title,
+    ...(year ? { year: String(year) } : {}),
+    overview: stripSearchDescription(media.description),
+    posterPath: posterUrl ?? null,
+    // The catalog data is AniList's, relayed by Miruro. Declaring it lets search
+    // routing skip a redundant AniList enrichment pass — which is the call that
+    // fails when AniList's API is down, the case this search exists for.
+    metadataSource: "AniList",
+    rating: typeof media.averageScore === "number" ? media.averageScore / 10 : null,
+    popularity: typeof media.popularity === "number" ? media.popularity : null,
+    ...(episodeCount ? { episodeCount } : {}),
+    ...(typeof media.duration === "number" && media.duration > 0
+      ? { durationSeconds: media.duration * 60 }
+      : {}),
+    ...(english && english !== title ? { englishTitle: english } : {}),
+    ...(native ? { nativeTitle: native } : {}),
+    ...(altNames.length > 0 ? { altNames } : {}),
+    externalIds: { anilistId, ...(malId ? { malId } : {}) },
+    ...(posterUrl || media.bannerImage
+      ? {
+          artwork: {
+            ...(posterUrl ? { posterUrl, thumbnailUrl: posterUrl } : {}),
+            ...(media.bannerImage ? { backdropUrl: media.bannerImage } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 export const miruroProviderModule: CoreProviderModule = {
   providerId: MIRURO_PROVIDER_ID,
   manifest: miruroManifest,
+  /**
+   * Search through Miruro's own pipe, so the anime lane can find titles when
+   * AniList's API is unavailable (disabled outright on 2026-09-10).
+   *
+   * Every failure returns `null` rather than throwing, and that is the contract
+   * that matters: `searchTitles` treats a null or empty provider search as "fall
+   * through to the compatible catalog", which is AniList. Throwing would abort
+   * the search and lose that fallback, turning one dead dependency into two.
+   */
+  async search(input, context) {
+    const query = input.query.trim();
+    if (!query) return null;
+    try {
+      const media = await pipeCall(context, "search", { q: query, type: "ANIME" }, context.signal);
+      const results = media
+        .map(mapMiruroSearchMedia)
+        .filter((result): result is ProviderSearchResult => result !== null);
+      return results.length > 0 ? results : null;
+    } catch (error) {
+      // Still null — that is the fallback contract — but not silent. Without
+      // this the search router records the AniList fallback as a plain success,
+      // and a Miruro search that is broken for everyone looks like it never ran.
+      context.emit?.({
+        type: "source:failed",
+        at: context.now(),
+        providerId: MIRURO_PROVIDER_ID,
+        sourceId: "source:miruro:search",
+        message: `Miruro search failed; falling back to the compatible catalog: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+      return null;
+    }
+  },
   async listEpisodes(input, context) {
     const anilistId = resolveMiruroAnilistId(input.title);
     if (!anilistId) return null;
@@ -1999,6 +2259,35 @@ export const miruroProviderModule: CoreProviderModule = {
               message:
                 `${serverProfile.label} ` +
                 `(${metadata.serverId}/${metadata.audioCategory}) did not produce a selectable stream`,
+              retryable: true,
+              at: context.now(),
+            });
+          }
+
+          // The pipe hands out a backend's URL whether or not that backend is up:
+          // `pewe` kept returning hls.anidb.app URLs through AniDB's maintenance.
+          // Without this check the first such server wins the cycle and mpv is
+          // handed a dead host while healthy servers go untried.
+          const selected =
+            result.streams.find((stream) => stream.id === result.selectedStreamId) ??
+            result.streams[0];
+          const downStatus = selected?.url
+            ? await probeMiruroBackendDown(
+                selected.url,
+                selected.headers,
+                context,
+                cycleContext.signal,
+              )
+            : null;
+          if (downStatus !== null) {
+            throw createProviderCycleFailureError(candidate, {
+              // Not `candidate-network`: retryable schedules a retry of a host
+              // that is still down, and non-retryable stops the whole cycle as
+              // offline. This server simply has nothing playable right now.
+              failureClass: "candidate-empty",
+              message:
+                `${serverProfile.label} ` +
+                `(${metadata.serverId}/${metadata.audioCategory}) backend unavailable: HTTP ${downStatus}`,
               retryable: true,
               at: context.now(),
             });

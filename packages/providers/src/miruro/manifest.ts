@@ -28,12 +28,14 @@ export const MIRURO_SERVER_TRY_ORDER = [
 export const miruroManifest = defineProviderManifest({
   id: MIRURO_PROVIDER_ID,
   displayName: "Miruro",
-  description: "Alternate anime source — useful when a title is missing elsewhere",
+  description:
+    "Primary anime source — sub and dub from many backends behind one AniList-keyed pipe",
   domain: "www.miruro.bz",
-  recommended: false,
+  recommended: true,
   mediaKinds: ["anime"],
   catalogIdentity: "anilist",
   capabilities: [
+    "search",
     "episode-list",
     "source-resolve",
     "subtitle-resolve",
@@ -43,7 +45,7 @@ export const miruroManifest = defineProviderManifest({
   runtimePorts: [
     {
       runtime: "direct-http",
-      operations: ["resolve-stream", "health-check"],
+      operations: ["search", "resolve-stream", "health-check"],
       browserSafe: false,
       relaySafe: true,
       localOnly: false,
@@ -72,13 +74,15 @@ export const miruroManifest = defineProviderManifest({
   relayProfile: {
     upstreamHosts: ["www.miruro.bz", "www.miruro.ru"],
   },
-  status: "candidate",
   notes: [
     "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
     "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
     "Primary hosts: www.miruro.bz, www.miruro.ru. Bare miruro.bz/.ru are 301 redirects to www. and still CF-block at the pipe path; miruro.com serves a different app shell with no /api/secure/pipe; miruro.tv/.to are TLS-dead — all stay off the resolve list.",
     "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
-    "The default anime priority names AniDB first; that list is ordering, not an allowlist, so Miruro remains a registered fallback and manually selectable when the curl/http2 path works.",
+    "2026-09-11: default anime provider (config providerDefaultsRevision 1), ahead of AniDB and AllAnime. The case for it is structural, not a speed claim: it fronts ~a dozen backends, so an upstream outage costs one server — on 2026-09-11 anidb.app and api.mkissa.net were both refusing us while moo/bee/bonk/kiwi served streams.",
+    "2026-09-11: searches through its own pipe (path `search`, query `q` plus `type: ANIME`; `search`/`query` are ignored and return the popular list). It relays AniList's catalog, so it kept answering while AniList's API was disabled. `dubLanguages` on those rows is voice-actor data, not availability.",
+    "2026-09-11: the pipe returns a backend's URL whether or not that backend is up — `pewe` served hls.anidb.app URLs (503) through AniDB's maintenance, and won the cycle. Candidates are now rejected on 404/410/502/503/504 from one ranged GET, and only when that status came from the host asked. Never on 401/403/429 (owocdn answers Bun's fetch 403 while mpv plays), never on a plain 500 (AnimeGG hands off to vidcache, which 500s anything but its player), and never on a cross-host redirect.",
+    "Structural dependency: every backend is reached through miruro.bz/.ru. If Miruro itself goes dark, all of them go with it — which is why AniDB and AllAnime stay registered behind it.",
     "May hit Cloudflare rate limits if called too frequently.",
     "2026-09-11: the pipe is reachable — Bun fetch is always CF-403'd (its TLS fingerprint), and curl clears the edge on both mirrors. The superseded 2026-08-17 note claiming curl also received CF 403 was measured through a predicate that read any HTML body as a Cloudflare block, including the mirror's own `502 upstream unreachable` page.",
     "A 444/502 from the pipe is one of Miruro's backing servers being down (pewe follows AniDB, ally follows AllManga), not a WAF block, and must not stop the cycle — the remaining servers are usually healthy.",

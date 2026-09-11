@@ -19,7 +19,7 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 Mode defaults at a glance:
 
 - **Movies / series** — Videasy first, then Rivestream, then VidLink (from `providerPriority`)
-- **Anime** — AniDB only in the automatic lane. AllManga (`allanime`) and Miruro stay registered and are manually selectable
+- **Anime** — Miruro first, then AniDB, then AllManga (from `animeProviderPriority`). Every registered provider is tried automatically; the list sets the order, not who is included
 - **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
@@ -56,15 +56,17 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="anidb" title="AniDB">
 
-**Adapter role:** the only adapter in the automatic anime lane. Kunai searches AniDB, routes each
-season to its own AniDB title, and resolves streams from that title.
+**Adapter role:** second in the default anime order, behind Miruro. Selected directly, Kunai
+searches AniDB, routes each season to its own AniDB title, and resolves streams from that title.
+It is the source ani-cli v5 uses; anidb.app has been in maintenance since September 2026, which is
+why it is no longer first.
 
-**Config id:** `anidb` for `animeProvider` / `animeProviderPriority`.
+**Config id:** `anidb` for `animeProvider` / `animeProviderPriority`. To make it first again:
 
 ```json
 {
   "animeProvider": "anidb",
-  "animeProviderPriority": ["anidb"]
+  "animeProviderPriority": ["anidb", "miruro", "allanime"]
 }
 ```
 
@@ -76,26 +78,36 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 <ProviderDocSection id="allanime" title="AllManga">
 
-**Adapter role:** registered anime adapter, **not** in the automatic fallback lane. Display name is AllManga; the runtime id is `allanime`. Re-add it to `animeProviderPriority` only if you want Kunai to try it after AniDB.
+**Adapter role:** third in the default anime order, behind Miruro and AniDB. Display name is AllManga; the runtime id is `allanime`. It carries the ani-cli parity path, which is why it stays registered even when its stream API is gated.
 
-```json
-{
-  "animeProvider": "anidb",
-  "animeProviderPriority": ["anidb", "allanime"]
-}
-```
+**Config id:** `allanime` — the display name is not the config id.
 
-**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Automatic fallback was demoted because some networks hit a captcha/geo gate after the episode catalog still loads. Do not confuse the display name with the config id.
+**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks hit a captcha/Cloudflare gate on stream sources while the episode catalog still loads, so the episode list can look healthy and still not play. Its decryption keys rotate often; a key change shows up as resolve failures until Kunai is updated.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="miruro" title="Miruro">
 
-**Adapter role:** registered anime adapter, not in the automatic lane (Cloudflare WAF on some networks).
+**Adapter role:** the default anime provider. Miruro fronts roughly a dozen streaming backends
+behind one AniList-keyed service, so when one of them goes down Kunai moves to the next server
+instead of failing the episode. Anime search goes through Miruro too, so it keeps working when
+AniList is down; if Miruro's search finds nothing, Kunai asks AniList.
 
-**Config id:** `miruro`. Candidate status.
+**Config id:** `miruro`.
 
-**Caveats:** quality and catalog coverage vary. Select it manually when you want to try it.
+```json
+{
+  "animeProvider": "miruro",
+  "animeProviderPriority": ["miruro", "anidb", "allanime"]
+}
+```
+
+**Caveats:** anime mode must be active. Kunai tries its own HTTP client first, but Cloudflare
+refuses it at Miruro's API, so in practice `curl` is what gets through — unless you run a provider
+relay, which answers on Kunai's behalf. Some servers burn subtitles into the video
+rather than shipping a separate track, and one opens on a short site bumper before the episode.
+If `miruro.bz` itself is unreachable, every one of its backends is too, and Kunai falls back to
+AniDB and AllManga.
 
 </ProviderDocSection>
 
@@ -195,12 +207,19 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
 {
   "provider": "videasy",
   "providerPriority": ["rivestream", "vidlink"],
-  "animeProvider": "anidb",
-  "animeProviderPriority": ["anidb"]
+  "animeProvider": "miruro",
+  "animeProviderPriority": ["miruro", "anidb", "allanime"]
 }
 ```
 
-The anime client shows as **AllManga** in the UI; the config id remains `allanime`. AllManga and Miruro are registered but omitted from the automatic anime lane. Add their ids to `animeProviderPriority` only if you want them tried automatically.
+The anime client shows as **AllManga** in the UI; the config id remains `allanime`. Every
+registered anime provider is tried automatically when the selected one fails — the priority list
+sets the order, it does not decide who is included.
+
+If you saved settings while AniDB was the default, Kunai moves that inherited default to the order
+above once, on the first launch after updating. It only does this when your anime settings are
+still exactly the old default; if you had changed them, they are left alone, and if you pick AniDB
+again afterwards, it stays picked.
 
 Rules:
 
