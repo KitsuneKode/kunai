@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 
+import { analyticsDayKey } from "../src/analytics-day";
 import {
   ANALYTICS_PAYLOAD_KEYS,
   hashInstallId,
@@ -8,7 +9,6 @@ import {
   isTimestampSkewed,
   parseAnalyticsPayload,
   TS_SKEW_MS,
-  utcDayKey,
 } from "../src/ingest";
 import { createMemoryAnalyticsStore } from "../src/memory-store";
 
@@ -66,7 +66,7 @@ describe("ingestAnalyticsPing", () => {
       store,
       now: NOW,
     });
-    expect(result).toEqual({ ok: true, day: utcDayKey(NOW), stored: true });
+    expect(result).toEqual({ ok: true, day: analyticsDayKey(NOW), stored: true });
     expect(store.rawCount()).toBe(1);
   });
 
@@ -82,7 +82,7 @@ describe("ingestAnalyticsPing", () => {
       });
     }
     expect(store.rawCount()).toBe(1);
-    const rollup = await store.rollUpDay(utcDayKey(NOW));
+    const rollup = await store.rollUpDay(analyticsDayKey(NOW));
     expect(rollup.activeInstalls).toBe(1);
   });
 
@@ -97,7 +97,7 @@ describe("ingestAnalyticsPing", () => {
     for (const body of bodies) {
       await ingestAnalyticsPing({ method: "POST", body, hashSecret: HASH_SECRET, store, now: NOW });
     }
-    const rollup = await store.rollUpDay(utcDayKey(NOW));
+    const rollup = await store.rollUpDay(analyticsDayKey(NOW));
     expect(rollup.activeInstalls).toBe(3);
     expect(rollup.byVersion).toEqual({ "0.3.0": 2, "0.2.5": 1 });
     expect(rollup.byOs).toEqual({ linux: 2, darwin: 1 });

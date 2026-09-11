@@ -4,11 +4,8 @@ import { UsageAnalyticsService } from "@/services/analytics/usage-analytics-serv
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
-import {
-  ingestAnalyticsPing,
-  utcDayKey,
-  type IngestResult,
-} from "../../../analytics-ingest/src/ingest";
+import { analyticsDayKey } from "../../../analytics-ingest/src/analytics-day";
+import { ingestAnalyticsPing, type IngestResult } from "../../../analytics-ingest/src/ingest";
 import { createMemoryAnalyticsStore } from "../../../analytics-ingest/src/memory-store";
 import {
   buildPublicMetrics,
@@ -93,7 +90,7 @@ describe("CLI → ingest → docs wire contract", () => {
     expect(results).toHaveLength(1);
     // `stored` reports whether the day's global write budget admitted the ping,
     // so an accepted-but-dropped ping is distinguishable from a stored one.
-    expect(results[0]).toEqual({ ok: true, day: utcDayKey(NOW), stored: true });
+    expect(results[0]).toEqual({ ok: true, day: analyticsDayKey(NOW), stored: true });
     expect(store.rawCount()).toBe(1);
   });
 
@@ -112,7 +109,7 @@ describe("CLI → ingest → docs wire contract", () => {
       await service.maybePing();
     }
 
-    const rollup = await store.rollUpDay(utcDayKey(NOW));
+    const rollup = await store.rollUpDay(analyticsDayKey(NOW));
     expect(rollup.activeInstalls).toBe(3);
     expect(rollup.byVersion).toEqual({ "0.3.0": 2, "0.2.5": 1 });
     expect(rollup.byOs).toEqual({ linux: 2, darwin: 1 });
@@ -125,7 +122,7 @@ describe("CLI → ingest → docs wire contract", () => {
     const { service } = wireCliToIngest({ store, config });
     await service.maybePing();
 
-    const rollup = await store.rollUpDay(utcDayKey(NOW));
+    const rollup = await store.rollUpDay(analyticsDayKey(NOW));
     const published = buildPublicMetrics({ ...rollup, computedAt: new Date(NOW).toISOString() });
 
     // Round-trip through JSON: consumers receive text over HTTP, not the
@@ -145,7 +142,7 @@ describe("CLI → ingest → docs wire contract", () => {
     const { service } = wireCliToIngest({ store, config, os: "win32", arch: "arm64" });
     await service.maybePing();
 
-    const published = buildPublicMetrics(await store.rollUpDay(utcDayKey(NOW)));
+    const published = buildPublicMetrics(await store.rollUpDay(analyticsDayKey(NOW)));
 
     expect(published.byOs).toEqual({ other: 1 });
     expect(published.byOs.win32).toBeUndefined();
