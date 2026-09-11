@@ -129,6 +129,9 @@ export function validateMobileDeviceEvidence(value: unknown): MobileDeviceEviden
   assertEnum(value.terminal, "terminal", ["termux", "a-shell-mini"]);
   assertVersionString(value.terminalVersion, "terminalVersion");
   assertVersionString(value.runtimeVersion, "runtimeVersion");
+  if (value.platform === "ios" && value.runtimeVersion !== `iOS ${value.osVersion}`) {
+    throw new Error("iOS runtimeVersion must match osVersion");
+  }
   assertEnum(value.architecture, "architecture", ["arm64", "x64"]);
   assertEnum(value.player, "player", ["vlc"]);
   assertVersionString(value.playerVersion, "playerVersion");
