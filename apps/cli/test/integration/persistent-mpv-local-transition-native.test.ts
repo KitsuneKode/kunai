@@ -7,6 +7,7 @@ import { bundledKunaiMpvBridgePath } from "@/infra/player/kunai-mpv-bridge";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
+import { DEFAULT_CONFIG } from "@/services/persistence/ConfigService";
 
 const MPV_BIN = Bun.which("mpv");
 const mpvTest = MPV_BIN ? test : test.skip;
@@ -132,10 +133,11 @@ mpvTest("real mpv reuses one process across two local loadfile transitions", asy
       },
       mpv: { clean: true },
       kitsuneConfig: {
+        ...DEFAULT_CONFIG,
         mpvKunaiScriptPath: bundledKunaiMpvBridgePath(),
         mpvInProcessStreamReconnect: false,
         mpvInProcessStreamReconnectMaxAttempts: 0,
-      } as never,
+      },
       onControlReady: () => {},
       runtime,
     });
@@ -242,10 +244,11 @@ for (const [startsExceptional, baseline] of [
           options: { displayTitle: "TLS scope", primarySubtitle: null },
           mpv: { clean: true },
           kitsuneConfig: {
+            ...DEFAULT_CONFIG,
             mpvKunaiScriptPath: bundledKunaiMpvBridgePath(),
             mpvInProcessStreamReconnect: false,
             mpvInProcessStreamReconnectMaxAttempts: 0,
-          } as never,
+          },
           onControlReady() {},
           runtime,
         });
