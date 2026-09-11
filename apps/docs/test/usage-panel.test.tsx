@@ -196,3 +196,23 @@ describe("empty states", () => {
     expect(html).toContain("2026-08-13");
   });
 });
+
+describe("day boundary and update time", () => {
+  test("the server render keeps the UTC text as the no-JavaScript fallback", () => {
+    // renderToStaticMarkup never runs effects, so this is exactly what a viewer
+    // without JavaScript sees.
+    const frame = renderToStaticMarkup(<UsagePanel metrics={sample} series={series} />);
+    expect(frame).toContain("2026-08-14 00:05:00 UTC");
+    // The machine-readable instant rides a <time> element so the client can
+    // reformat it. Matched case-insensitively: the attribute casing React emits
+    // is its business, not this feature's.
+    expect(frame).toMatch(new RegExp(`<time[^>]*datetime=["']${sample.updatedAt}["']`, "i"));
+  });
+
+  test("the day boundary is stated on the page", () => {
+    // Nothing else pins this sentence; the payload-drift gate does not cover it.
+    const frame = renderToStaticMarkup(<UsagePanel metrics={sample} series={series} />);
+    expect(frame).toContain("midnight IST");
+    expect(frame).toContain("15 September 2026");
+  });
+});
