@@ -270,6 +270,14 @@ Branch `feat/analytics-ist-day-boundary`, stacked on `fix/analytics-cron-diagnos
 (PR #362). Tasks 1–7 are step 1 of the rollout. Task 8 is step 2 and is a
 **separate PR merged after the cutover**.
 
+**Status: tasks 1–7 are implemented on this branch.** Only task 8 remains, and it
+cannot be done until the cutover instant has passed. `bun run test -- --force`
+reports 7,000 passing and 0 failures with them in.
+
+Note for anyone re-running the verify steps: only `apps/cli` defines a
+`test:file` script. `apps/analytics-ingest` and `apps/docs` run their whole
+suite with `bun run test`, which is what the steps below use.
+
 ## Global constraints
 
 - The public JSON keeps exactly its eight keys at `schemaVersion: 2`, and `day`
@@ -400,7 +408,7 @@ describe("shiftDayKey", () => {
 
 - [ ] **Step 2: Run it and confirm it fails**
 
-Run: `cd apps/analytics-ingest && bun run test:file test/analytics-day.test.ts`
+Run: `cd apps/analytics-ingest && bun run test`
 Expected: FAIL — cannot resolve `../src/analytics-day`.
 
 - [ ] **Step 3: Write the module**
@@ -458,7 +466,7 @@ export function shiftDayKey(day: string, days: number): string {
 
 - [ ] **Step 4: Run it and confirm it passes**
 
-Run: `cd apps/analytics-ingest && bun run test:file test/analytics-day.test.ts`
+Run: `cd apps/analytics-ingest && bun run test`
 Expected: PASS, 10 tests.
 
 - [ ] **Step 5: Commit**
@@ -519,7 +527,7 @@ describe("ingest labels through the shared clock", () => {
 
 - [ ] **Step 2: Run it and confirm the second case fails**
 
-Run: `cd apps/analytics-ingest && bun run test:file test/analytics-day.test.ts`
+Run: `cd apps/analytics-ingest && bun run test`
 Expected: FAIL — the cutover ping still reports `2026-09-14`, because ingest
 still uses `utcDayKey`. If the import of `createMemoryAnalyticsStore` fails,
 check its exported name in `src/memory-store.ts` and use that instead; do not
@@ -561,7 +569,7 @@ and no expected value changes.
 - [ ] **Step 5: Verify**
 
 ```bash
-cd apps/analytics-ingest && bun run test:file test/analytics-day.test.ts test/ingest.test.ts
+cd apps/analytics-ingest && bun run test
 cd ../.. && bun run --cwd apps/cli test:file -- test/integration/analytics-wire-contract.test.ts
 grep -rn "utcDayKey" apps packages --include='*.ts' | grep -v node_modules
 ```
@@ -605,7 +613,7 @@ describe("snapshotDayKey follows the shared clock", () => {
 
 - [ ] **Step 2: Run it and confirm it fails**
 
-Run: `cd apps/analytics-ingest && bun run test:file test/analytics-day.test.ts`
+Run: `cd apps/analytics-ingest && bun run test`
 Expected: FAIL — the old `now - 24h` implementation returns `2026-09-14` for the
 first case.
 
@@ -669,7 +677,7 @@ retired = (await runtime.store.pruneLifetimeBefore(shiftDayKey(today, -retention
 - [ ] **Step 5: Verify**
 
 ```bash
-cd apps/analytics-ingest && bun run test:file test/analytics-day.test.ts test/cron-snapshot.test.ts test/public-metrics.test.ts
+cd apps/analytics-ingest && bun run test
 cd ../.. && bun run typecheck --force
 ```
 
@@ -733,7 +741,7 @@ and import `shiftDayKey` from `../../src/analytics-day.js`.
 
 - [ ] **Step 3: Verify nothing moved**
 
-Run: `cd apps/analytics-ingest && bun run test:file test/public-series.test.ts test/series-store-integration.test.ts`
+Run: `cd apps/analytics-ingest && bun run test`
 Expected: PASS. These already pin `seriesStartDay`; if a boundary shifts by a
 day the replacement is not equivalent — stop and report rather than editing
 the expectations.
@@ -787,7 +795,7 @@ describe("day labels have one source", () => {
 
 - [ ] **Step 5: Run it**
 
-Run: `cd apps/analytics-ingest && bun run test:file test/no-second-day-clock.test.ts`
+Run: `cd apps/analytics-ingest && bun run test`
 Expected: PASS. A FAIL names the file that still derives its own label — route
 it through `analyticsDayKey` or `shiftDayKey`. Do not add an exception.
 
@@ -852,7 +860,7 @@ describe("updatedAt normalisation", () => {
 
 - [ ] **Step 2: Run it and confirm the first case fails**
 
-Run: `cd apps/docs && bun run test:file test/analytics-metrics.test.ts`
+Run: `cd apps/docs && bun run test`
 Expected: FAIL — `updatedAt` comes back as the raw Postgres string.
 
 - [ ] **Step 3: Normalise in the parser**
@@ -881,7 +889,7 @@ and change the returned field (line 105) from `updatedAt: record.updatedAt,` to:
 
 - [ ] **Step 4: Verify**
 
-Run: `cd apps/docs && bun run test:file test/analytics-metrics.test.ts`
+Run: `cd apps/docs && bun run test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -927,7 +935,7 @@ describe("day boundary and update time", () => {
 
 - [ ] **Step 2: Run it and confirm it fails**
 
-Run: `cd apps/docs && bun run test:file test/usage-panel.test.tsx`
+Run: `cd apps/docs && bun run test`
 Expected: FAIL on the caption assertion.
 
 - [ ] **Step 3: Write the client component**
@@ -993,7 +1001,7 @@ the snapshot day, the section cards, and the trend chart, table and span.
 - [ ] **Step 5: Verify**
 
 ```bash
-cd apps/docs && bun run test:file test/usage-panel.test.tsx && bun run lint && bun run typecheck:app
+cd apps/docs && bun run test
 ```
 
 Expected: PASS, 0 lint problems, typecheck exits 0.
