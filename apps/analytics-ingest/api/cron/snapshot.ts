@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { analyticsDayKey, shiftDayKey } from "../../src/analytics-day.js";
 import { authorizeBearer } from "../../src/bearer-auth.js";
 import { RAW_RETENTION_DAYS } from "../../src/ingest.js";
 import { buildPublicMetrics, snapshotDayKey } from "../../src/public-metrics.js";
@@ -9,8 +10,6 @@ import {
 } from "../../src/runtime-config.js";
 import type { AnalyticsStore } from "../../src/store.js";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /**
  * Ceiling on how many missed days one run back-fills, so a long outage cannot
  * push the function past its `maxDuration` and fail every subsequent run too.
@@ -18,10 +17,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * the raw retention window.
  */
 const MAX_BACKFILL_DAYS = 10;
-
-function dayKeyBefore(day: string, days: number): string {
-  return new Date(Date.parse(`${day}T00:00:00Z`) - days * DAY_MS).toISOString().slice(0, 10);
-}
 
 function sendJson(res: ServerResponse, status: number, payload: Record<string, unknown>): void {
   res.setHeader("Cache-Control", "no-store");
@@ -73,7 +68,7 @@ async function daysToRollUp(
   today: string,
   target: string,
 ): Promise<readonly string[]> {
-  const missed = await store.findDaysNeedingRollup(dayKeyBefore(today, RAW_RETENTION_DAYS), target);
+  const missed = await store.findDaysNeedingRollup(shiftDayKey(today, -RAW_RETENTION_DAYS), target);
   const ordered = [...new Set([...missed, target])].sort();
   // Newest days matter most to the public snapshot, so a truncated run keeps
   // the tail rather than the head.
@@ -111,7 +106,7 @@ export function createSnapshotHandler(dependencies: SnapshotHandlerDependencies 
     }
 
     const now = Date.now();
-    const today = new Date(now).toISOString().slice(0, 10);
+    const today = analyticsDayKey(now);
     const day = snapshotDayKey(now);
 
     // The rollup is the permanent record and the only part the public JSON
@@ -141,7 +136,7 @@ export function createSnapshotHandler(dependencies: SnapshotHandlerDependencies 
 
     let pruned = 0;
     try {
-      pruned = await runtime.store.pruneRawBefore(dayKeyBefore(today, RAW_RETENTION_DAYS));
+      pruned = await runtime.store.pruneRawBefore(shiftDayKey(today, -RAW_RETENTION_DAYS));
     } catch (error) {
       logFailure("pruneRaw", error);
       deferred.push("pruneRaw");
@@ -155,7 +150,7 @@ export function createSnapshotHandler(dependencies: SnapshotHandlerDependencies 
     const retention = runtime.limits.lifetimeRetentionDays;
     if (retention > 0) {
       try {
-        retired = (await runtime.store.pruneLifetimeBefore(dayKeyBefore(today, retention))).retired;
+        retired = (await runtime.store.pruneLifetimeBefore(shiftDayKey(today, -retention))).retired;
       } catch (error) {
         logFailure("pruneLifetime", error);
         deferred.push("pruneLifetime");

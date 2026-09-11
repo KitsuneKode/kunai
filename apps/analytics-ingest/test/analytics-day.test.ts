@@ -16,6 +16,7 @@ import {
 } from "../src/analytics-day";
 import { ingestAnalyticsPing } from "../src/ingest";
 import { createMemoryAnalyticsStore } from "../src/memory-store";
+import { snapshotDayKey } from "../src/public-metrics";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -124,5 +125,12 @@ describe("ingest labels through the shared clock", () => {
       ok: true,
       day: "2026-09-15",
     });
+  });
+});
+
+describe("snapshotDayKey follows the shared clock", () => {
+  test("it resolves the same day the cron and the endpoints will roll up", () => {
+    expect(snapshotDayKey(Date.parse("2026-09-15T19:00:00Z"))).toBe("2026-09-15");
+    expect(snapshotDayKey(IST_DAY_BOUNDARY_FROM - 1)).toBe("2026-09-13");
   });
 });
