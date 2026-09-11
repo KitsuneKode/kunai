@@ -9,7 +9,7 @@ lastReviewed: "2026-08-24"
 
 Kunai copies browser-safe `https://kunai.kitsunekode.in/w/<code>` links while preserving the portable `kunai://` application handoff. Both decode to the same catalog-anchored playback target.
 
-The web code is a checksummed, base64url-encoded ref. The landing page is a pure decoder: it uses no share database and drops `/w/` page views before analytics sends. Compact `k1…` catalog codes are accepted directly and inside `/w/<code>`; search anchors deliberately have no compact form.
+The web code is a checksummed, base64url-encoded ref. The landing page is a pure decoder: it uses no share database. Both Vercel Web Analytics and Speed Insights suppress `/w/` events through their `beforeSend` hooks. The filter checks the event URL, including relative URLs and delayed samples after navigation; malformed URLs fail closed. Ordinary non-share events retain their existing behavior. Compact `k1…` catalog codes are accepted directly and inside `/w/<code>`; search anchors deliberately have no compact form.
 
 ## URL grammar
 

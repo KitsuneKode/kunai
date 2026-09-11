@@ -564,7 +564,8 @@ export function buildMpvArgs(
   const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
   if (headerFields.length > 0) args.push(`--http-header-fields=${headerFields.join(",")}`);
   // ani-cli plays mp4upload with --tls-verify=no; without it mpv rejects some hosts.
-  if (shouldDisableMpvTlsVerify(opts.url, opts.headers)) {
+  const disableTlsVerify = shouldDisableMpvTlsVerify(opts.url, opts.headers);
+  if (disableTlsVerify && !config?.persistent) {
     args.push("--tls-verify=no");
   }
 
@@ -683,7 +684,14 @@ export function buildMpvArgs(
     if (scriptOpts) args.push(`--script-opts=${scriptOpts}`);
   }
 
-  args.push("--", opts.url);
+  if (disableTlsVerify && config?.persistent) {
+    // mpv restores the user's baseline after this file, just as loadfile's
+    // per-file options do for replacements and reconnects. The validated
+    // exception URL is HTTPS and cannot be parsed as a command-line option.
+    args.push("--{", "--tls-verify=no", opts.url, "--}");
+  } else {
+    args.push("--", opts.url);
+  }
 
   return args;
 }

@@ -201,6 +201,13 @@ A session upgrades its own working `TitleInfo` the moment the catalog answers, t
 
 The SQLite storage model is described in [.plans/storage-hardening.md](../.archive/plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
 
+Database opening quarantines a file only for recognized SQLite corruption codes
+(`SQLITE_CORRUPT`, its known extended forms, or `SQLITE_NOTADB`). Lock contention,
+permissions, I/O failures, and unknown errors surface the original failure without
+moving the database or its siblings. Reopening after the cause is resolved retains
+the original durable data. Confirmed corruption preserves the main file in a
+timestamped backup before creating a replacement; siblings never move first.
+
 Automatic storage maintenance is conservative:
 
 - it may prune expired `stream_cache`, `source_inventory`, `recommendation_cache`, and `schedule_cache` rows

@@ -126,8 +126,20 @@ accounts, usage ping, done. Implementation is
   but do not schedule offline runway work unless `Keep watching offline` was selected and do not
   revoke an existing title enrollment.
 - HLS size is reported honestly as unknown when content length cannot be known.
-- Temporary files use a `.tmp.*` suffix, validate after a clean exit, and are renamed only
-  after that validation. An invalid candidate never replaces an existing playable output.
+- New temporary files use a short `.tmp.<job-id>.mp4` sibling name so a long final filename
+  does not overflow the filesystem component limit. Existing jobs retain their recorded paths.
+  Candidates validate after a clean exit, then publish using an exclusive hard link before the
+  temporary name is removed. An existing destination is never overwritten; filesystems without
+  hard-link support fail safely. Choose another directory or resolve the existing file explicitly.
+  Legacy destinations claimed by another job or offline asset are refused during publication
+  and recovery. Artifact deletion requires a completed/repairable job with no conflicting owner;
+  deleting a failed job preserves an unknown existing file.
+  On Windows, ownership comparisons conservatively normalize separators and uppercase
+  Unicode across jobs and offline assets without rewriting stored paths. This safety check
+  may refuse distinct paths; it does not model every filesystem's case rules. Once this worker
+  publishes successfully, metadata/completion write failures surface and leave the running
+  lease recoverable. After that lease expires, recovery validates and adopts the artifact
+  without downloading again; persistent database failures remain visible, not successful completion.
 - Queue ownership is a SQLite compare-and-set from `queued` to `running`. Heartbeats form a
   bounded lease across Kunai processes; recovery never touches a freshly heartbeating owner.
 - Blocking download intent is unique in SQLite by canonical title and exact nullable
@@ -197,6 +209,10 @@ confirmation, and filesystem naming all consume it instead of re-deriving "is th
   re-labelled on read. There is no destructive migration.
 - `download-path-naming.ts` consumes `CanonicalMediaPosition` **before** sanitization: it adds
   path-safe encoding only and never reinterprets content kind.
+- Filename budgets reserve the episode suffix and extension before shortening the display
+  title, including every Windows path-budget adjustment. Ordinary names remain unchanged;
+  existing completed files are not renamed. A Windows directory too deep to retain identity
+  is rejected with guidance to choose a shorter path.
 
 ## Download And Library Layout Ownership
 

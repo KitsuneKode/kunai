@@ -167,6 +167,7 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
 
   const components: string[] = [titleWithYear];
   let fileStem = titleWithYear;
+  let identitySuffix = "";
 
   if (input.position.kind === "episode") {
     // Clamp defensively. The seam already rejects non-positive values, but a
@@ -177,11 +178,22 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
     if (input.position.seasonIsMeaningful && input.position.season !== undefined) {
       const seasonLabel = String(Math.max(1, Math.trunc(input.position.season))).padStart(2, "0");
       components.push(`Season ${seasonLabel}`);
-      fileStem = `${title} - S${seasonLabel}E${episodeLabel}`;
+      identitySuffix = ` - S${seasonLabel}E${episodeLabel}`;
     } else {
-      fileStem = `${title} - E${episodeLabel}`;
+      identitySuffix = ` - E${episodeLabel}`;
     }
+    fileStem = `${title}${identitySuffix}`;
   }
+
+  const buildFile = (limits: ComponentLimits): string => {
+    if (!identitySuffix) return clampComponent(`${fileStem}${input.extension}`, limits);
+    const tail = `${identitySuffix}${input.extension}`;
+    const display = stripTrailingDotsAndSpaces(
+      truncateToLimits(title, limits.maxBytes - utf8Length(tail), limits.maxUtf16 - tail.length),
+    );
+    if (!display) throw new Error("Download path is too long to preserve episode identity");
+    return `${display}${tail}`;
+  };
 
   const budget = componentBudget({
     platform,
@@ -194,7 +206,7 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
 
   let limits = budget;
   let safeComponents = components.map((part) => clampComponent(part, limits));
-  let safeFile = clampComponent(`${fileStem}${input.extension}`, limits);
+  let safeFile = buildFile(limits);
 
   if (platform === "win32") {
     // `componentBudget` is an estimate: it shares the overrun across every
@@ -209,11 +221,14 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
       const next = Math.max(16, limits.maxUtf16 - Math.max(1, Math.ceil(overrun / variableCount)));
       // Floor reached: the base directory alone is too deep. Truncating the
       // title further destroys it without making the path legal, so stop and
-      // let the write surface the real error rather than silently mangling.
+      // reject below rather than silently dropping episode identity.
       if (next === limits.maxUtf16) break;
       limits = { ...limits, maxUtf16: next };
       safeComponents = components.map((part) => clampComponent(part, limits));
-      safeFile = clampComponent(`${fileStem}${input.extension}`, limits);
+      safeFile = buildFile(limits);
+    }
+    if (join(input.baseDir, ...safeComponents, safeFile).length > cap) {
+      throw new Error("Download path is too long; choose a shorter download directory");
     }
   }
 

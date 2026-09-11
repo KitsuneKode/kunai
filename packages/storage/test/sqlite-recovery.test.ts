@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import {
   chmodSync,
@@ -13,6 +14,40 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { openKunaiDatabaseWithCorruptionRecovery } from "../src/sqlite";
+
+test("a healthy exclusive lock never quarantines durable data", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kunai-sqlite-contention-"));
+  let owner: Database | undefined;
+  let attempted: Database | undefined;
+  let reopened: Database | undefined;
+  try {
+    const path = join(dir, "data.sqlite");
+    owner = new Database(path, { create: true });
+    owner.exec(
+      "PRAGMA journal_mode = DELETE; CREATE TABLE durable (id INTEGER); INSERT INTO durable VALUES (42); BEGIN EXCLUSIVE",
+    );
+    let failure: unknown;
+    try {
+      attempted = openKunaiDatabaseWithCorruptionRecovery(path, { busyTimeoutMs: 0 }).db;
+    } catch (error) {
+      failure = error;
+    }
+    attempted?.close();
+    attempted = undefined;
+    expect(readdirSync(dir).filter((name) => name.includes(".corrupt."))).toEqual([]);
+    expect(failure).toBeDefined();
+    owner.exec("ROLLBACK");
+    owner.close();
+    owner = undefined;
+    reopened = openKunaiDatabaseWithCorruptionRecovery(path).db;
+    expect(reopened.query("SELECT id FROM durable").get()).toEqual({ id: 42 });
+  } finally {
+    attempted?.close();
+    reopened?.close();
+    owner?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("quarantines a corrupt database file and opens a fresh one", () => {
   const dir = mkdtempSync(join(tmpdir(), "kunai-sqlite-recovery-"));

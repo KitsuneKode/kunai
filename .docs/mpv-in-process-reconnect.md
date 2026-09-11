@@ -18,6 +18,12 @@ When playback hits certain failure signals, Kunai **reloads the same stream URL*
 
 After a successful reload, **external subtitles are re-attached** from the current cycle options (same as a fresh file load path).
 
+Provider TLS compatibility options are file-local on startup and replay. The
+mp4upload exception follows the current URL; replacing it with another host restores
+the user's prior mpv TLS setting. Native transition coverage includes exceptional
+startup, same-URL replay, normal replacement, and both enabled/disabled baselines in
+`apps/cli/test/integration/persistent-mpv-local-transition-native.test.ts`.
+
 ## When it runs
 
 1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0` while paused-for-cache, sustained for ~8s. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.

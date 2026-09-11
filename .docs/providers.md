@@ -480,6 +480,14 @@ rotations — lives in
 
 ## Capability Flags
 
+The mp4upload TLS compatibility exception is scoped to the current file. Persistent
+startup uses mpv's per-file command-line group; subsequent loads and same-stream
+replays use file-local loadfile options. Leaving that file restores mpv's prior
+configuration, including a user-selected TLS policy. Kunai does not force verification
+on for other hosts or change the existing one-shot exception. A native mpv 0.41 Linux
+test observes effective options at `file-loaded` with local transport substituted:
+it proves option lifetime, not a live certificate attack or other platform behavior.
+
 | Field                   | Meaning                                                      |
 | ----------------------- | ------------------------------------------------------------ |
 | `isAnimeProvider: true` | Include provider in anime mode                               |

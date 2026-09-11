@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { DownloadEnqueueRejectedError, DownloadService } from "@/services/download/DownloadService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
-import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
+import {
+  DownloadJobsRepository,
+  OfflineAssetsRepository,
+  openKunaiDatabase,
+  runMigrations,
+} from "@kunai/storage";
 
 import { waitUntil as sharedWaitUntil } from "../../../support/wait-until";
 
@@ -46,6 +52,223 @@ describe("DownloadService", () => {
    * second guess about what "movie" means.
    */
   describe("output naming derives from canonical media position", () => {
+    test.each(["updateFileSize", "complete"] as const)(
+      "recovers publication after %s persistence failure without downloading again",
+      async (method) => {
+        const service = buildService({
+          repo,
+          downloadsEnabled: true,
+          ytDlpAvailable: true,
+          downloadPath: tempDir,
+        });
+        const job = await service.enqueue({
+          title: { id: "tmdb:9999", type: "movie", name: "Persistence" },
+          providerId: "vidking",
+          stream: { url: "https://example.com/fixture.mp4", headers: {}, timestamp: 0 },
+        });
+        spawnSpy.mockImplementation((command: string[]) => {
+          writeFileSync(command[command.indexOf("-o") + 1]!, "published bytes");
+          // SAFETY: the download worker consumes only these subprocess streams,
+          // exit promise, and kill method; no native process is created here.
+          return {
+            stdout: streamOf(""),
+            stderr: streamOf(""),
+            exited: Promise.resolve(0),
+            kill() {},
+          } as never;
+        });
+        const failure = spyOn(repo, method).mockImplementation(() => {
+          throw new Error("database write unavailable");
+        });
+        await expect(service.processQueue()).rejects.toThrow("database write unavailable");
+        expect(repo.get(job.id)?.status).toBe("running");
+        expect(repo.get(job.id)?.retryCount).toBe(0);
+        expect(await Bun.file(job.outputPath).text()).toBe("published bytes");
+        const expireLease = () =>
+          db
+            .query("UPDATE download_jobs SET last_heartbeat_at = ? WHERE id = ?")
+            .run(new Date(Date.now() - 120_000).toISOString(), job.id);
+        expireLease();
+        await expect(service.processQueue()).rejects.toThrow("database write unavailable");
+        expect(repo.get(job.id)?.status).toBe("running");
+        failure.mockRestore();
+        expireLease();
+        await service.processQueue();
+        expect(repo.get(job.id)?.status).toBe("completed");
+        expect(await Bun.file(job.outputPath).text()).toBe("published bytes");
+        expect(spawnSpy).toHaveBeenCalledTimes(1);
+      },
+    );
+    test("staging cleanup failure does not undo a published download", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const job = await service.enqueue({
+        title: { id: "tmdb:9999", type: "movie", name: "Cleanup" },
+        providerId: "vidking",
+        stream: { url: "https://example.com/fixture.mp4", headers: {}, timestamp: 0 },
+      });
+      spawnSpy.mockImplementation((command: string[]) => {
+        writeFileSync(command[command.indexOf("-o") + 1]!, "published bytes");
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+          kill() {},
+        } as never;
+      });
+      const originalRm = fsPromises.rm;
+      const remove = spyOn(fsPromises, "rm").mockImplementation(async (path, options) => {
+        if (path === job.tempPath && existsSync(job.outputPath))
+          throw new Error("staging name locked");
+        return originalRm(path, options);
+      });
+      try {
+        await service.processQueue();
+        expect(repo.get(job.id)?.status).toBe("completed");
+        expect(await Bun.file(job.outputPath).text()).toBe("published bytes");
+      } finally {
+        remove.mockRestore();
+      }
+    });
+
+    test.each(["native", "win32-case-variant"] as const)(
+      "an offline asset blocks recovery and completed-job deletion (%s)",
+      async (pathKind) => {
+        if (pathKind === "win32-case-variant") repo = new DownloadJobsRepository(db, "win32");
+        const service = buildService({
+          repo,
+          downloadsEnabled: true,
+          ytDlpAvailable: true,
+          downloadPath: tempDir,
+        });
+        const job = await service.enqueue({
+          title: { id: "tmdb:1111", type: "movie", name: "Offline owner" },
+          providerId: "vidking",
+        });
+        writeFileSync(job.outputPath, "unowned offline bytes");
+        new OfflineAssetsRepository(db).upsertPlayable({
+          titleId: "tmdb:2222",
+          titleName: "Other",
+          mediaKind: "movie",
+          profileKey: "default",
+          filePath:
+            pathKind === "win32-case-variant"
+              ? job.outputPath.toUpperCase().replaceAll("/", "\\")
+              : job.outputPath,
+          state: "ready",
+          updatedAt: new Date().toISOString(),
+        });
+        repo.markRunning(job.id, new Date(Date.now() - 120_000).toISOString());
+        await buildService({
+          repo,
+          downloadsEnabled: false,
+          ytDlpAvailable: false,
+          downloadPath: tempDir,
+        }).processQueue();
+        expect(repo.get(job.id)?.status).toBe("failed");
+        repo.complete(job.id, new Date().toISOString());
+        await service.deleteJob(job.id, { deleteArtifact: true });
+        expect(await Bun.file(job.outputPath).text()).toBe("unowned offline bytes");
+      },
+    );
+    test("publishes distinct long-title episodes through real temporary files", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      spawnSpy.mockImplementation((command: string[]) => {
+        const path = command[command.indexOf("-o") + 1]!;
+        writeFileSync(path, command.at(-1)!);
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+          kill() {},
+        } as never;
+      });
+      const jobs = [];
+      for (const episode of [1, 2])
+        jobs.push(
+          await service.enqueue({
+            title: { id: "tmdb:999", type: "series", name: "A".repeat(300) },
+            episode: { season: 1, episode },
+            providerId: "vidking",
+            stream: { url: `https://example.com/${episode}.mp4`, headers: {}, timestamp: 0 },
+          }),
+        );
+      await service.processQueue();
+      for (const [index, job] of jobs.entries()) {
+        expect(repo.get(job.id)?.status).toBe("completed");
+        expect(await Bun.file(job.outputPath).text()).toBe(`https://example.com/${index + 1}.mp4`);
+      }
+    });
+
+    test("refuses publication over an unknown existing destination", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const job = await service.enqueue({
+        title: { id: "tmdb:888", type: "movie", name: "Existing" },
+        providerId: "vidking",
+        stream: { url: "https://example.com/new.mp4", headers: {}, timestamp: 0 },
+      });
+      writeFileSync(job.outputPath, "user-owned bytes");
+      spawnSpy.mockImplementation((command: string[]) => {
+        writeFileSync(command[command.indexOf("-o") + 1]!, "new bytes");
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+          kill() {},
+        } as never;
+      });
+      await service.processQueue();
+      expect(await Bun.file(job.outputPath).text()).toBe("user-owned bytes");
+      expect(repo.get(job.id)?.status).not.toBe("completed");
+      await service.deleteJob(job.id, { deleteArtifact: true });
+      expect(await Bun.file(job.outputPath).text()).toBe("user-owned bytes");
+    });
+
+    test("legacy conflicting jobs cannot adopt or delete one another's output", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const jobs = [];
+      for (const id of [111, 222])
+        jobs.push(
+          await service.enqueue({
+            title: { id: `tmdb:${id}`, type: "movie", name: "Collision" },
+            providerId: "vidking",
+          }),
+        );
+      const [first, second] = jobs;
+      writeFileSync(first!.outputPath, "first owner's bytes");
+      repo.complete(first!.id, new Date().toISOString());
+      repo.markRunning(second!.id, new Date(Date.now() - 120_000).toISOString());
+      const recovery = buildService({
+        repo,
+        downloadsEnabled: false,
+        ytDlpAvailable: false,
+        downloadPath: tempDir,
+      });
+      await recovery.processQueue();
+      expect(repo.get(second!.id)?.status).toBe("failed");
+      await service.deleteJob(second!.id, { deleteArtifact: true });
+      expect(await Bun.file(first!.outputPath).text()).toBe("first owner's bytes");
+      expect(repo.get(first!.id)?.status).toBe("completed");
+    });
     test("an anime job is named episode-only, with no season folder", async () => {
       const service = buildService({
         repo,
