@@ -49,8 +49,16 @@ describe("Node Android state store", () => {
       const store = createNodeStateStore({ root });
       await store.commit({ schemaVersion: 1, hostProofRuns: 1, lastResult: "cancelled" });
 
-      expect((await stat(root)).mode & 0o777).toBe(0o700);
-      expect((await stat(join(root, "mobile-state.json"))).mode & 0o777).toBe(0o600);
+      await expect(store.load()).resolves.toEqual({
+        schemaVersion: 1,
+        hostProofRuns: 1,
+        lastResult: "cancelled",
+      });
+      // Windows does not implement POSIX permission bits.
+      if (process.platform !== "win32") {
+        expect((await stat(root)).mode & 0o777).toBe(0o700);
+        expect((await stat(join(root, "mobile-state.json"))).mode & 0o777).toBe(0o600);
+      }
     } finally {
       await rm(sandbox, { recursive: true, force: true });
     }
@@ -61,7 +69,7 @@ describe("Node Android state store", () => {
     const store = createNodeStateStore({ root: "/sandbox", runtime: fake.runtime });
 
     await expect(store.load()).resolves.toEqual({ schemaVersion: 1, hostProofRuns: 0 });
-    fake.files.set("/sandbox/mobile-state.json", "not json");
+    fake.files.set(join("/sandbox", "mobile-state.json"), "not json");
     await expect(store.load()).rejects.toThrow("Invalid mobile state");
   });
 
@@ -72,8 +80,8 @@ describe("Node Android state store", () => {
     await store.commit({ schemaVersion: 1, hostProofRuns: 1, lastResult: "http-ok" });
 
     expect(fake.moves).toContainEqual([
-      "/sandbox/mobile-state.json.tmp",
-      "/sandbox/mobile-state.json",
+      join("/sandbox", "mobile-state.json.tmp"),
+      join("/sandbox", "mobile-state.json"),
     ]);
     await expect(store.load()).resolves.toEqual({
       schemaVersion: 1,
@@ -83,7 +91,7 @@ describe("Node Android state store", () => {
   });
 
   test("restores the prior valid state when final activation fails", async () => {
-    const currentPath = "/sandbox/mobile-state.json";
+    const currentPath = join("/sandbox", "mobile-state.json");
     const temporaryPath = `${currentPath}.tmp`;
     const previous = JSON.stringify({ schemaVersion: 1, hostProofRuns: 4 });
     const fake = fakeRuntime({ [currentPath]: previous });
@@ -98,7 +106,7 @@ describe("Node Android state store", () => {
   });
 
   test("recovers the prior state after interruption between backup and activation", async () => {
-    const currentPath = "/sandbox/mobile-state.json";
+    const currentPath = join("/sandbox", "mobile-state.json");
     const previousPath = `${currentPath}.previous`;
     const temporaryPath = `${currentPath}.tmp`;
     const previous = JSON.stringify({ schemaVersion: 1, hostProofRuns: 7 });
@@ -113,7 +121,7 @@ describe("Node Android state store", () => {
   });
 
   test("recovers a staged first write when no prior state exists", async () => {
-    const currentPath = "/sandbox/mobile-state.json";
+    const currentPath = join("/sandbox", "mobile-state.json");
     const temporaryPath = `${currentPath}.tmp`;
     const staged = JSON.stringify({ schemaVersion: 1, hostProofRuns: 1 });
     const fake = fakeRuntime({ [temporaryPath]: staged });

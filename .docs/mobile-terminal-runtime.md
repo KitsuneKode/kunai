@@ -119,6 +119,12 @@ decision for the Node package actually used on-device.
 
 ## Security invariants
 
+One session owns the state transaction from load through final commit. Android
+acquires an exclusive `session.lock` directory lazily; help/version do not lock.
+The iOS launcher locks before staging arguments or cleaning transport files.
+Normal exit releases ownership. An uncatchable termination can leave a lock;
+recovery is explicit rather than guessing whether another session is alive.
+
 - Accept only absolute credential-free HTTPS URLs without fragments or control
   characters.
 - Bound HTTP to 8 seconds, three HTTPS-only redirects, and 64 KiB.
@@ -127,6 +133,8 @@ decision for the Node package actually used on-device.
 - Android uses `spawn` with `shell: false`; explicit VLC handoff can use only
   `termux-am` or `/system/bin/am`.
 - iOS uses a literal helper allowlist and fixed private files.
+- The iOS HTTP helper disables implicit curl configuration with `-q` before
+  loading its private request configuration.
 - Android state directories are forced to `0700` and state files to `0600`.
 - Logs, state, metadata, and review evidence contain no URLs, headers, cookies,
   tokens, install identifiers, or raw device logs.

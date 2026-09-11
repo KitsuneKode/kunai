@@ -2,7 +2,7 @@
 set -eu
 umask 077
 trap 'rm -f .runtime/http-body.tmp .runtime/http-meta.tmp' EXIT HUP INT TERM
-curl --config .runtime/curl.conf \
+curl -q --config .runtime/curl.conf \
   --proto '=https' --proto-redir '=https' \
   --location --max-redirs 3 --silent --show-error \
   --output .runtime/http-body.tmp \

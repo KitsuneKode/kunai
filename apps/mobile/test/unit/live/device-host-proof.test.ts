@@ -46,6 +46,7 @@ function androidEvidence(overrides: Partial<MobileDeviceEvidence> = {}): MobileD
     osVersion: "15",
     terminal: "termux",
     terminalVersion: "0.119.0-beta.3",
+    runtimeVersion: "v22.18.0",
     architecture: "arm64",
     player: "vlc",
     playerVersion: "3.7.0",
@@ -69,6 +70,7 @@ function iosEvidence(overrides: Partial<MobileDeviceEvidence> = {}): MobileDevic
     osVersion: "19.6.2",
     terminal: "a-shell-mini",
     terminalVersion: "1.15.11",
+    runtimeVersion: "iOS 19.6.2",
     artifactTarget: "ios-ashell",
     artifactSetSha256: IOS_SHA256,
     ...overrides,
@@ -76,6 +78,23 @@ function iosEvidence(overrides: Partial<MobileDeviceEvidence> = {}): MobileDevic
 }
 
 describe("mobile physical-device evidence", () => {
+  test("requires a redacted runtime version and includes it in review output", () => {
+    const evidence = androidEvidence();
+    expect(validateMobileDeviceEvidence(evidence)).toEqual(evidence);
+    expect(formatMobileDeviceEvidenceRow(evidence)).toContain("runtime=v22.18.0");
+    const missing: Record<string, unknown> = { ...evidence };
+    delete missing.runtimeVersion;
+    expect(() => validateMobileDeviceEvidence(missing)).toThrow("exact fields");
+    for (const runtimeVersion of ["", " ", 22, "x".repeat(65)]) {
+      expect(() => validateMobileDeviceEvidence({ ...evidence, runtimeVersion })).toThrow(
+        "runtimeVersion",
+      );
+    }
+    expect(() =>
+      validateMobileDeviceEvidence({ ...evidence, runtimeVersion: "https://private.invalid" }),
+    ).toThrow("redacted strings");
+  });
+
   test("accepts the exact Android and iPhone physical-device shapes", () => {
     expect(validateMobileDeviceEvidence(androidEvidence())).toEqual(androidEvidence());
     expect(
@@ -156,7 +175,9 @@ describe("mobile physical-device evidence", () => {
     expect(mobileDeviceEvidencePassed(failed)).toBe(false);
 
     const row = formatMobileDeviceEvidenceRow(passed);
-    expect(row).toContain("android | 15 | termux 0.119.0-beta.3 | arm64 | vlc 3.7.0");
+    expect(row).toContain(
+      "android | 15 | termux 0.119.0-beta.3 | runtime=v22.18.0 | arm64 | vlc 3.7.0",
+    );
     expect(row).toContain("target=android-termux-node");
     expect(row).toContain("playback=passed");
     expect(row).toContain(SHA256.slice(0, 12));

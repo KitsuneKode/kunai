@@ -22,23 +22,34 @@ function removeIfPresent(jsc: AShellJsc, path: string): void {
   }
 }
 
+function requireFileOperation(operation: () => number, message: string): void {
+  try {
+    if (operation() === 0) return;
+  } catch {
+    // JavaScriptCore reports native filesystem failures as exceptions as well as statuses.
+  }
+  throw new Error(message);
+}
+
 export function createAShellStateStore(jsc: AShellJsc): MobileStateStore {
   return {
     async load() {
       if (jsc.isFile(CURRENT_PATH)) return parseStateJson(jsc.readFile(CURRENT_PATH));
       if (jsc.isFile(PREVIOUS_PATH)) {
         const recovered = parseStateJson(jsc.readFile(PREVIOUS_PATH));
-        if (jsc.move(PREVIOUS_PATH, CURRENT_PATH) !== 0) {
-          throw new Error("state restoration failed");
-        }
+        requireFileOperation(
+          () => jsc.move(PREVIOUS_PATH, CURRENT_PATH),
+          "state restoration failed",
+        );
         removeIfPresent(jsc, TEMPORARY_PATH);
         return recovered;
       }
       if (jsc.isFile(TEMPORARY_PATH)) {
         const recovered = parseStateJson(jsc.readFile(TEMPORARY_PATH));
-        if (jsc.move(TEMPORARY_PATH, CURRENT_PATH) !== 0) {
-          throw new Error("state restoration failed");
-        }
+        requireFileOperation(
+          () => jsc.move(TEMPORARY_PATH, CURRENT_PATH),
+          "state restoration failed",
+        );
         return recovered;
       }
       return decodeMobileState(undefined);
@@ -47,9 +58,20 @@ export function createAShellStateStore(jsc: AShellJsc): MobileStateStore {
       if (jsc.makeFolder(RUNTIME_DIRECTORY) !== 0) {
         throw new Error("state directory failed");
       }
+      // A failed restoration may leave the only committed state in the backup.
+      // Recover it before a retry can discard either transaction artifact.
+      if (!jsc.isFile(CURRENT_PATH) && jsc.isFile(PREVIOUS_PATH)) {
+        parseStateJson(jsc.readFile(PREVIOUS_PATH));
+        requireFileOperation(
+          () => jsc.move(PREVIOUS_PATH, CURRENT_PATH),
+          "state restoration failed",
+        );
+      }
       removeIfPresent(jsc, TEMPORARY_PATH);
       const serialized = JSON.stringify(next);
-      if (jsc.writeFile(TEMPORARY_PATH, serialized) !== 0) {
+      try {
+        requireFileOperation(() => jsc.writeFile(TEMPORARY_PATH, serialized), "state write failed");
+      } catch {
         removeIfPresent(jsc, TEMPORARY_PATH);
         throw new Error("state write failed");
       }
@@ -59,18 +81,28 @@ export function createAShellStateStore(jsc: AShellJsc): MobileStateStore {
       const hasCurrent = jsc.isFile(CURRENT_PATH);
       if (hasCurrent) parseStateJson(jsc.readFile(CURRENT_PATH));
       removeIfPresent(jsc, PREVIOUS_PATH);
-      if (hasCurrent && jsc.move(CURRENT_PATH, PREVIOUS_PATH) !== 0) {
+      try {
+        if (hasCurrent)
+          requireFileOperation(() => jsc.move(CURRENT_PATH, PREVIOUS_PATH), "state backup failed");
+      } catch {
         removeIfPresent(jsc, TEMPORARY_PATH);
         throw new Error("state backup failed");
       }
 
-      if (jsc.move(TEMPORARY_PATH, CURRENT_PATH) !== 0) {
-        removeIfPresent(jsc, TEMPORARY_PATH);
+      try {
+        requireFileOperation(
+          () => jsc.move(TEMPORARY_PATH, CURRENT_PATH),
+          "state activation failed",
+        );
+      } catch {
+        // Restore before cleanup: failed temporary deletion must not strand the backup.
         if (hasCurrent && jsc.isFile(PREVIOUS_PATH)) {
-          if (jsc.move(PREVIOUS_PATH, CURRENT_PATH) !== 0) {
-            throw new Error("state restoration failed");
-          }
+          requireFileOperation(
+            () => jsc.move(PREVIOUS_PATH, CURRENT_PATH),
+            "state restoration failed",
+          );
         }
+        removeIfPresent(jsc, TEMPORARY_PATH);
         throw new Error("state activation failed");
       }
       removeIfPresent(jsc, PREVIOUS_PATH);

@@ -5,6 +5,10 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 cd "$script_dir"
 mkdir -p .runtime
 chmod 700 .runtime
+if ! mkdir .runtime/session.lock 2>/dev/null; then
+  printf '%s\n' 'Mobile session is active or requires lock recovery.' >&2
+  exit 1
+fi
 mobile_status_file=".runtime/exit-code"
 mobile_argc_file=".runtime/argv-count"
 mobile_argc_limit=32
@@ -20,7 +24,11 @@ cleanup_mobile_runtime() {
     .runtime/player-url
 }
 
-trap cleanup_mobile_runtime EXIT
+finish_mobile_session() {
+  cleanup_mobile_runtime
+  rmdir .runtime/session.lock
+}
+trap finish_mobile_session EXIT
 trap 'exit 130' HUP INT TERM
 cleanup_mobile_runtime
 

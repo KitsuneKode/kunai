@@ -5,6 +5,7 @@ export type MobileDeviceEvidence = {
   readonly osVersion: string;
   readonly terminal: "termux" | "a-shell-mini";
   readonly terminalVersion: string;
+  readonly runtimeVersion: string;
   readonly architecture: "arm64" | "x64";
   readonly player: "vlc";
   readonly playerVersion: string;
@@ -27,6 +28,7 @@ const EVIDENCE_FIELDS = [
   "osVersion",
   "terminal",
   "terminalVersion",
+  "runtimeVersion",
   "architecture",
   "player",
   "playerVersion",
@@ -126,6 +128,7 @@ export function validateMobileDeviceEvidence(value: unknown): MobileDeviceEviden
   }
   assertEnum(value.terminal, "terminal", ["termux", "a-shell-mini"]);
   assertVersionString(value.terminalVersion, "terminalVersion");
+  assertVersionString(value.runtimeVersion, "runtimeVersion");
   assertEnum(value.architecture, "architecture", ["arm64", "x64"]);
   assertEnum(value.player, "player", ["vlc"]);
   assertVersionString(value.playerVersion, "playerVersion");
@@ -228,6 +231,7 @@ export function formatMobileDeviceEvidenceRow(evidence: MobileDeviceEvidence): s
     evidence.platform,
     evidence.osVersion,
     `${evidence.terminal} ${evidence.terminalVersion}`,
+    `runtime=${evidence.runtimeVersion}`,
     evidence.architecture,
     `${evidence.player} ${evidence.playerVersion}`,
     `kunai=${evidence.kunaiVersion}`,

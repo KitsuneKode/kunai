@@ -31,6 +31,21 @@ async function launcherFixture(fakeJsc: string) {
 // These tests execute the shipped POSIX launchers. The portable bundle and
 // metadata assertions remain active on Windows in build-artifacts.test.ts.
 describePosixOnly("a-Shell launcher", () => {
+  test("rejects a competing launcher without cleaning the owner's transport", async () => {
+    const fixture = await launcherFixture("#!/bin/sh\nexit 0\n");
+    await mkdir(join(fixture.directory, ".runtime"));
+    await mkdir(join(fixture.directory, ".runtime/session.lock"));
+    const transport = join(fixture.directory, ".runtime/argv-0");
+    await Bun.write(transport, "owner argument");
+    const child = Bun.spawn([fixture.launcher, "--help"], {
+      cwd: fixture.directory,
+      env: { ...process.env, PATH: `${fixture.binaryDirectory}:${process.env.PATH ?? ""}` },
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    expect(await child.exited).toBe(1);
+    expect(await Bun.file(transport).text()).toBe("owner argument");
+  });
   test("returns the validated status written by JavaScript", async () => {
     for (const expected of [0, 1, 2]) {
       const fixture = await launcherFixture(
