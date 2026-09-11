@@ -3,6 +3,7 @@ import { afterEach, expect, test } from "bun:test";
 import {
   dataMigrations,
   DownloadJobsRepository,
+  OfflineAssetsRepository,
   openKunaiDatabase,
   runMigrations,
   type KunaiDatabase,
@@ -10,6 +11,31 @@ import {
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
 const stores = createTempStoreRegistry();
+
+test.each(["win32", "linux"] as const)(
+  "output ownership respects %s path identity in both tables",
+  (platform) => {
+    const db = stores.store(`download-owner-${platform}`, "data");
+    const repo = new DownloadJobsRepository(db, platform);
+    const original = "C:\\Downloads\\Épisode-Σ.mp4";
+    const alternate = "c:/downloads/épisode-ς.mp4";
+    repo.enqueue(enqueueInput("owner", { outputPath: original }));
+    expect(repo.hasConflictingOutputOwner("other", alternate)).toBe(platform === "win32");
+    expect(repo.hasConflictingOutputOwner("owner", alternate)).toBe(false);
+    expect(repo.get("owner")?.outputPath).toBe(original);
+    repo.delete("owner");
+    new OfflineAssetsRepository(db).upsertPlayable({
+      titleId: "tmdb:other",
+      titleName: "Other",
+      mediaKind: "movie",
+      profileKey: "default",
+      filePath: original,
+      state: "ready",
+      updatedAt: new Date().toISOString(),
+    });
+    expect(repo.hasConflictingOutputOwner("other", alternate)).toBe(platform === "win32");
+  },
+);
 
 afterEach(() => {
   stores.cleanup();

@@ -134,6 +134,12 @@ accounts, usage ping, done. Implementation is
   Legacy destinations claimed by another job or offline asset are refused during publication
   and recovery. Artifact deletion requires a completed/repairable job with no conflicting owner;
   deleting a failed job preserves an unknown existing file.
+  On Windows, ownership comparisons conservatively normalize separators and uppercase
+  Unicode across jobs and offline assets without rewriting stored paths. This safety check
+  may refuse distinct paths; it does not model every filesystem's case rules. Once this worker
+  publishes successfully, metadata/completion write failures surface and leave the running
+  lease recoverable. After that lease expires, recovery validates and adopts the artifact
+  without downloading again; persistent database failures remain visible, not successful completion.
 - Queue ownership is a SQLite compare-and-set from `queued` to `running`. Heartbeats form a
   bounded lease across Kunai processes; recovery never touches a freshly heartbeating owner.
 - Blocking download intent is unique in SQLite by canonical title and exact nullable

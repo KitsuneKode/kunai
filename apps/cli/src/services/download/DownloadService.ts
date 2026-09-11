@@ -267,6 +267,7 @@ export class DownloadService {
     { readonly mode: "abort" | "pause"; readonly reason: string }
   >();
   private readonly activeProcesses = new Map<string, ActiveDownloadProcess>();
+  private readonly publishedJobIds = new Set<string>();
   // Jobs picked by a worker but not yet markRunning in the DB. Lets multiple
   // concurrent workers run without two of them claiming the same queued job in
   // the window between `selectEligibleQueuedJob` and `markRunning` (an await).
@@ -733,6 +734,11 @@ export class DownloadService {
       }
       return completed;
     } catch (error) {
+      // Only successful no-clobber publication proves this worker owns the
+      // output. Keep its running lease recoverable if metadata/completion
+      // persistence fails; queueing a download retry would collide with itself.
+      // Surface the error, including persistent database failures on recovery.
+      if (this.publishedJobIds.has(next.id)) throw error;
       const active = this.activeProcesses.get(next.id);
       const cancellation = this.cancellationRequests.get(next.id);
       const cancelled = active?.cancelRequested === true || cancellation !== undefined;
@@ -790,6 +796,7 @@ export class DownloadService {
       return this.deps.repo.get(next.id) ?? null;
     } finally {
       stopHeartbeat();
+      this.publishedJobIds.delete(next.id);
       this.activeProcesses.delete(next.id);
       this.cancellationRequests.delete(next.id);
       this.claimedJobIds.delete(next.id);
@@ -1248,6 +1255,7 @@ export class DownloadService {
     // Never fall back to overwriting rename on filesystems without hard links.
     try {
       await link(job.tempPath, job.outputPath);
+      this.publishedJobIds.add(job.id);
     } catch (error) {
       const code =
         typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
