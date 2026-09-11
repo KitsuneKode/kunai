@@ -296,6 +296,71 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).videasyAppId).toBe("bc-frontend");
   });
 
+  test("moves an inherited AniDB anime default to Miruro, keeping AniDB and AllAnime behind it", async () => {
+    // ConfigStore saves the whole merged config, so this pair sits on disk for
+    // every user who saved any setting while AniDB was the shipped default.
+    const store = new MemoryConfigStore({
+      animeProvider: "anidb",
+      animeProviderPriority: ["anidb"],
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.animeProvider).toBe("miruro");
+    expect(service.animeProviderPriority).toEqual(["miruro", "anidb", "allanime"]);
+    const persisted = await store.load();
+    expect(persisted.animeProvider).toBe("miruro");
+    expect(persisted.animeProviderPriority).toEqual(["miruro", "anidb", "allanime"]);
+    expect(persisted.providerDefaultsRevision).toBe(1);
+  });
+
+  test("moves an AniDB default that predates the priority list", async () => {
+    const store = new MemoryConfigStore({ animeProvider: "anidb" });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.animeProvider).toBe("miruro");
+    expect(service.animeProviderPriority).toEqual(["miruro", "anidb", "allanime"]);
+  });
+
+  test("leaves an anime lane the user customised alone, and does not write", async () => {
+    for (const loaded of [
+      { animeProvider: "allanime", animeProviderPriority: ["allanime", "anidb"] },
+      // AniDB first is still a choice once the priority list was edited.
+      { animeProvider: "anidb", animeProviderPriority: ["anidb", "allanime"] },
+    ]) {
+      const store = new MemoryConfigStore(loaded);
+      const before = await store.load();
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.animeProvider).toBe(loaded.animeProvider);
+      expect(service.animeProviderPriority).toEqual(loaded.animeProviderPriority);
+      expect(await store.load()).toBe(before);
+    }
+  });
+
+  test("a user can choose AniDB again after the migration without it being undone", async () => {
+    const store = new MemoryConfigStore({
+      animeProvider: "anidb",
+      animeProviderPriority: ["anidb"],
+    });
+    const service = await ConfigServiceImpl.load(store);
+    expect(service.animeProvider).toBe("miruro");
+
+    await service.update({ animeProvider: "anidb", animeProviderPriority: ["anidb"] });
+    await service.save();
+
+    const reloaded = await ConfigServiceImpl.load(store);
+    expect(reloaded.animeProvider).toBe("anidb");
+    expect(reloaded.animeProviderPriority).toEqual(["anidb"]);
+  });
+
+  test("a fresh install starts on Miruro without writing a config file", async () => {
+    const store = new MemoryConfigStore({});
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.animeProvider).toBe("miruro");
+    expect(await store.load()).toEqual({});
+  });
+
   test("keeps videasy app id vidking when a session token is paired", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({

@@ -186,6 +186,7 @@ export class ConfigServiceImpl implements ConfigService {
         : "";
     const repairedAnalyticsIdentity =
       loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
+    const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
     service.config = {
       ...DEFAULT_CONFIG,
       ...loaded,
@@ -194,9 +195,20 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.providerPriority,
         DEFAULT_CONFIG.providerPriority,
       ),
-      animeProviderPriority: normalizeProviderIdList(
-        loaded.animeProviderPriority,
-        DEFAULT_CONFIG.animeProviderPriority,
+      ...(migratedAnimeDefaults
+        ? {
+            animeProvider: DEFAULT_CONFIG.animeProvider,
+            animeProviderPriority: [...DEFAULT_CONFIG.animeProviderPriority],
+          }
+        : {
+            animeProviderPriority: normalizeProviderIdList(
+              loaded.animeProviderPriority,
+              DEFAULT_CONFIG.animeProviderPriority,
+            ),
+          }),
+      providerDefaultsRevision: Math.max(
+        readProviderDefaultsRevision(loaded),
+        CURRENT_PROVIDER_DEFAULTS_REVISION,
       ),
       youtubeProvider:
         normalizeSeriesProvider(loaded.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
@@ -287,7 +299,8 @@ export class ConfigServiceImpl implements ConfigService {
       requiresExplicitAnalyticsConsent ||
       repairedAnalyticsIdentity ||
       migratedVideasyAppId ||
-      videasyVaultResave
+      videasyVaultResave ||
+      migratedAnimeDefaults
     ) {
       await service.persistConfig(service.config);
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
@@ -900,6 +913,32 @@ function normalizeVideasySessionExpiresAt(value: unknown, token?: unknown): numb
 
 function isExpiredVideasySession(expiresAt: number): boolean {
   return expiresAt > 0 && expiresAt <= Date.now();
+}
+
+const CURRENT_PROVIDER_DEFAULTS_REVISION = DEFAULT_CONFIG.providerDefaultsRevision ?? 0;
+
+function readProviderDefaultsRevision(loaded: Partial<KitsuneConfig>): number {
+  const value = loaded.providerDefaultsRevision;
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * AniDB was the shipped anime default until provider-defaults revision 1.
+ *
+ * `ConfigStore.save` writes the whole merged config, so that default sits on disk
+ * for every user who ever saved any setting — and the file cannot tell it apart
+ * from a deliberate choice. The exact pre-revision pair is the closest honest
+ * signal: anyone who touched the anime lane has something else there, and is left
+ * alone. The revision stamp is what keeps this one-shot: once it is written, a
+ * user who picks AniDB back gets to keep it.
+ */
+function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
+  if (readProviderDefaultsRevision(loaded) >= 1) return false;
+  if (loaded.animeProvider !== "anidb") return false;
+  const priority = loaded.animeProviderPriority;
+  // A config older than the priority list inherited the default by definition.
+  if (priority === undefined) return true;
+  return Array.isArray(priority) && priority.length === 1 && priority[0] === "anidb";
 }
 
 function shouldPersistVideasyAppIdMigration(

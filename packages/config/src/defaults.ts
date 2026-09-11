@@ -24,14 +24,20 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
   // Series automatic lane (2026-07-16): Videasy first (fast seed+neon path), then Rivestream, VidLink.
   provider: "videasy",
-  // AniDB is ani-cli v5's primary source and remains first in anime ordering.
-  // Known providers omitted from the priority array remain available behind it.
-  animeProvider: "anidb",
+  // Miruro leads the anime lane (2026-09-11). It aggregates roughly a dozen
+  // backends behind one AniList-keyed pipe, so one upstream going dark costs a
+  // server rather than the lane — whereas anidb.app, which ani-cli v5 depends on
+  // alone, has been in maintenance since 2026-09-03. It searches through its own
+  // pipe, which kept answering when AniList's API was disabled on 2026-09-10.
+  animeProvider: "miruro",
   youtubeProvider: "youtube",
   providerPriority: ["rivestream", "vidlink"],
-  // This is an ordering preference, not an allowlist: registered AllAnime and
-  // Miruro modules are appended after AniDB by the provider engine.
-  animeProviderPriority: ["anidb"],
+  // Ordering, not an allowlist: every registered anime module stays reachable.
+  // AniDB and AllAnime are kept behind Miruro — AniDB for when it returns, and
+  // AllAnime because it carries the ani-cli parity path.
+  animeProviderPriority: ["miruro", "anidb", "allanime"],
+  // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
+  providerDefaultsRevision: 1,
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

@@ -107,6 +107,7 @@ async function resolveRoute(
             routeCase,
             requireProvider(container, routeCase.configuredProvider),
             language,
+            { catalog: container.searchRegistry.getForProvider(routeCase.configuredProvider) },
           )
         : routeCase.title;
 
