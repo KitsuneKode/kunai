@@ -14,6 +14,8 @@ import {
   previousAnalyticsDayKey,
   shiftDayKey,
 } from "../src/analytics-day";
+import { ingestAnalyticsPing } from "../src/ingest";
+import { createMemoryAnalyticsStore } from "../src/memory-store";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -88,5 +90,39 @@ describe("shiftDayKey", () => {
   test("moves whole days without reading a clock", () => {
     expect(shiftDayKey("2026-09-15", -35)).toBe("2026-08-11");
     expect(shiftDayKey("2026-03-01", -1)).toBe("2026-02-28");
+  });
+});
+
+describe("ingest labels through the shared clock", () => {
+  async function ingestAt(now: number) {
+    return await ingestAnalyticsPing({
+      method: "POST",
+      hashSecret: "test-secret",
+      store: createMemoryAnalyticsStore(),
+      now,
+      body: {
+        installId: "11111111-2222-4333-8444-555555555555",
+        version: "0.3.0",
+        os: "linux",
+        arch: "x64",
+        // Matching `now` keeps the skew guard out of the way; the day label is
+        // taken from the server clock, never from this field.
+        ts: now,
+      },
+    });
+  }
+
+  test("a ping just before the cutover lands on the UTC label", async () => {
+    expect(await ingestAt(IST_DAY_BOUNDARY_FROM - 1)).toMatchObject({
+      ok: true,
+      day: "2026-09-14",
+    });
+  });
+
+  test("a ping at the cutover lands on the first IST label", async () => {
+    expect(await ingestAt(IST_DAY_BOUNDARY_FROM)).toMatchObject({
+      ok: true,
+      day: "2026-09-15",
+    });
   });
 });
