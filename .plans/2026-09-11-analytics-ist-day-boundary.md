@@ -32,7 +32,10 @@ Each of these was read from source, not inferred.
 - **Label arithmetic is already boundary-agnostic.** `dayKeyBefore` and
   `seriesStartDay` shift `YYYY-MM-DD` strings by whole days and never read a
   clock. They stay as they are.
-- **History cannot be rebuilt in IST.** `ping_day.first_seen` records only the
+- **History cannot be rebuilt in IST.** The `(day, install_hash)` primary key
+  keeps the first row of a UTC day and discards the retry, so `first_seen`
+  stamps only that first ping per install per _UTC_ day — the later one's time
+  was never written. It records only the
   first ping per install per _UTC_ day — the `(day, install_hash)` primary key
   discarded the rest. An install active at 23:00 IST and again at 01:00 IST
   shares one UTC day, so its 01:00 ping was never stored. An IST rebuild of the
@@ -130,22 +133,34 @@ component replaces that one span:
 - after mount, it swaps the text to the viewer's clock with
   `Intl.DateTimeFormat`, so server and client HTML match at hydration.
 
-`updatedAt` arrives as Postgres text (`2026-09-10 00:27:00.766999+00`). That
+`updatedAt` arrives as Postgres text (`2026-09-11 00:27:00.82757+00`). That
 parses in JavaScriptCore and V8 but is not ISO 8601, and parsing non-ISO strings
-is implementation-defined. The server normalises it with `toISOString()` before
-it reaches the client, so no engine is ever asked to parse the Postgres form.
+is implementation-defined, so the client must never see that form.
+
+Normalisation belongs in `parseDocsAnalyticsMetrics`
+(`apps/docs/lib/analytics-metrics.ts`), which already validates `updatedAt` and
+is the I/O boundary every consumer passes through. It must not go in the client
+component, which would reintroduce the engine-dependent parse it exists to
+remove. `toISOString()` throws `RangeError` on an unparseable value, so the
+normaliser returns the original string unchanged rather than throwing — a
+malformed timestamp must not blank the analytics panel.
+
+Worth knowing: every docs test fixture already uses strict ISO
+(`2026-08-14T00:05:00.000Z`) while production sends the Postgres form. That gap
+is why the difference went unnoticed, and the normaliser's tests close it.
 
 A static caption, true on both sides of the seam:
 _"Days end at midnight IST (18:30 UTC) from 15 September 2026; earlier days end
 at midnight UTC."_
 
-The day label renders on three surfaces, each decided:
+The day label renders in four families, each decided:
 
-| Surface                                                          | Shows            | Change                                                         |
-| ---------------------------------------------------------------- | ---------------- | -------------------------------------------------------------- |
-| `usage-panel.tsx` — "Snapshot day", and the zero-day empty state | day, `updatedAt` | Caption here, once for the page; `updatedAt` becomes local     |
-| `section-cards.tsx` — "Distinct installs on …"                   | day              | None; it sits on the same `/analytics` page the caption covers |
-| `home/usage-line.tsx` — home teaser                              | day              | None; a one-line teaser that links to `/analytics`             |
+| Surface                                                                                | Shows            | Change                                                         |
+| -------------------------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------- |
+| `usage-panel.tsx` — "Snapshot day", and the zero-day empty state                       | day, `updatedAt` | Caption here, once for the page; `updatedAt` becomes local     |
+| `section-cards.tsx` — "Distinct installs on …"                                         | day              | None; it sits on the same `/analytics` page the caption covers |
+| `home/usage-line.tsx` — home teaser                                                    | day              | None; a one-line teaser that links to `/analytics`             |
+| `trend-section.tsx` / `chart-installs.tsx` — per-point rows, x-axis ticks, `from → to` | day              | None; same `/analytics` page, covered by the caption           |
 
 `updatedAt` renders only in `usage-panel.tsx`, so the local-time component
 is needed there alone.
@@ -156,9 +171,13 @@ is needed there alone.
 docs. The cron schedule is **not** touched. It is inert until the cutover
 instant, then relabels new pings as IST on its own. The existing `5 0 * * *` run
 keeps publishing at about 05:35 IST, exactly as it does today, and after the
-cutover it publishes the just-closed IST day. **Merge any time before
-`2026-09-14T18:30:00Z`.** If that date is missed, move the constant to a later
-IST midnight before merging, never to a past one.
+cutover it publishes the just-closed IST day. **It must be deployed to
+production and verified there at least 24 hours before
+`2026-09-14T18:30:00Z`** — merging is not the gate, because the constant is
+evaluated per request and a rollout still in progress at the boundary would let
+two versions label the same instant differently, producing the two irregular
+days the fixed constant exists to prevent. If the deploy lands inside that
+window, move the constant to a later IST midnight, never to a past one.
 
 **Step 2 — follow-up.** `apps/analytics-ingest/vercel.json`: `5 0 * * *` →
 `0 19 * * *`. **Merge any time after the cutover.** From then on the newest day
@@ -196,15 +215,25 @@ written date.
   matching today's behaviour.
 - Ingest: a ping at each side of the cutover lands on the expected label.
 - Cron: the snapshot day at `19:00Z` post-cutover is the just-closed IST day.
-- Docs: the local-time component renders the UTC fallback on the server, and
-  the normaliser turns the Postgres form into strict ISO.
+- Docs: the local-time component renders the UTC fallback on the server; the
+  normaliser turns the Postgres form into strict ISO and returns an
+  unparseable value untouched instead of throwing.
+- The three read endpoints under a pinned clock: `daily.ts`, `series.ts` and
+  `admin.ts` call `snapshotDayKey()` with no argument, so their day is
+  currently untestable. Give them an injectable clock (or a test-only export)
+  and assert each resolves the expected day on both sides of the cutover.
+- A caption assertion, so the boundary sentence cannot be deleted silently —
+  the payload-drift gate does not pin it.
 
 ## Documentation
 
 Updated together, as the contract's last line requires:
 
 - `.docs/analytics-privacy-contract.md` — the boundary, the cutover instant, the
-  seam day, why history is not rebuilt, and the two-step rollout.
+  seam day, why history is not rebuilt, and the two-step rollout. Also that
+  retention cutoffs are computed from the same day labels they compare
+  against, so around the seam a row can be held at most one extra day —
+  the safe direction, and storage only.
 - `docs/users/reliability-and-privacy.mdx` — days end at midnight IST from
   15 September 2026; "updated" is shown in your own time; days are not
   re-cut to your local midnight.
@@ -221,9 +250,9 @@ stay intact.
 
 ## Risks
 
-| Risk                                              | Effect                                                                                                                                                                                             | Mitigation                                                                                               |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Step 1 merged after the cutover instant           | The switch happens at deploy time and can leave two irregular days                                                                                                                                 | Move the constant to a future IST midnight before merging                                                |
-| Step 2 merged before the cutover                  | Pre-cutover days publish ~19 hours staler until the cutover passes                                                                                                                                 | Merge order stated here and in the step 2 PR; nothing is lost, only delayed                              |
-| Step 1 reverted after the cutover                 | Labels move backwards: a ping at 20:00 UTC on 15 September would be labelled `2026-09-15`, a day that already exists as a closed IST day, and the next cron run recomputes it with the extra hours | Fix forward once the cutover has passed. Revert only before it, or keep `analytics-day.ts` in any revert |
-| A consumer outside the docs site assumed UTC days | Their reading shifts by 5.5 hours from the cutover                                                                                                                                                 | The wire cannot announce it; both docs state the boundary and the date                                   |
+| Risk                                              | Effect                                                                                                                                                                                             | Mitigation                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Step 1 merged after the cutover instant           | The switch happens at deploy time and can leave two irregular days                                                                                                                                 | Move the constant to a future IST midnight before merging                                                                                                                                                                                                                             |
+| Step 2 merged before the cutover                  | Pre-cutover days publish ~19 hours staler until the cutover passes                                                                                                                                 | Merge order stated here and in the step 2 PR; publication is delayed, not lost                                                                                                                                                                                                        |
+| Step 1 reverted after the cutover                 | Labels move backwards: a ping at 20:00 UTC on 15 September would be labelled `2026-09-15`, a day that already exists as a closed IST day, and the next cron run recomputes it with the extra hours | Fix forward once the cutover has passed. Revert only before it. Any revert must move ingest and cron together — reverting one side leaves the cron rolling up a day that holds no rows, and a full revert overwrites the closed IST rollup through the `on conflict do update` upsert |
+| A consumer outside the docs site assumed UTC days | Their reading shifts by 5.5 hours from the cutover                                                                                                                                                 | The wire cannot announce it; both docs state the boundary and the date                                                                                                                                                                                                                |
