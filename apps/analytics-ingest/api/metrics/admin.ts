@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { shiftDayKey } from "../../src/analytics-day.js";
 import { authorizeBearer } from "../../src/bearer-auth.js";
 import { snapshotDayKey } from "../../src/public-metrics.js";
 import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config.js";
@@ -37,9 +38,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   try {
     const to = snapshotDayKey();
-    const from = new Date(Date.parse(`${to}T00:00:00Z`) - (ADMIN_WINDOW_DAYS - 1) * 86_400_000)
-      .toISOString()
-      .slice(0, 10);
+    const from = shiftDayKey(to, -(ADMIN_WINDOW_DAYS - 1));
     const rollups = await runtime.store.readRollups(from, to);
     res.statusCode = 200;
     res.end(JSON.stringify({ ok: true, from, to, rollups }));
