@@ -306,10 +306,10 @@ describe("ConfigServiceImpl", () => {
     const service = await ConfigServiceImpl.load(store);
 
     expect(service.animeProvider).toBe("miruro");
-    expect(service.animeProviderPriority).toEqual(["miruro", "anidb", "allanime"]);
+    expect(service.animeProviderPriority).toEqual(["miruro", "animegg", "anidb", "allanime"]);
     const persisted = await store.load();
     expect(persisted.animeProvider).toBe("miruro");
-    expect(persisted.animeProviderPriority).toEqual(["miruro", "anidb", "allanime"]);
+    expect(persisted.animeProviderPriority).toEqual(["miruro", "animegg", "anidb", "allanime"]);
     expect(persisted.providerDefaultsRevision).toBe(1);
   });
 
@@ -318,7 +318,7 @@ describe("ConfigServiceImpl", () => {
     const service = await ConfigServiceImpl.load(store);
 
     expect(service.animeProvider).toBe("miruro");
-    expect(service.animeProviderPriority).toEqual(["miruro", "anidb", "allanime"]);
+    expect(service.animeProviderPriority).toEqual(["miruro", "animegg", "anidb", "allanime"]);
   });
 
   test("leaves an anime lane the user customised alone, and does not write", async () => {
