@@ -1883,14 +1883,37 @@ const MIRURO_BACKEND_PROBE_TIMEOUT_MS = 2_000;
 
 /**
  * HTTP statuses that mean the backend behind a Miruro server is down, as opposed
- * to refusing this particular client.
+ * to refusing this particular request.
  *
- * 401/403/429 are deliberately absent. owocdn behind kwik (the `kiwi` server)
- * answers Bun's fetch with 403 while mpv plays the same URL, so treating those as
- * fatal would skip working servers. 404/410/5xx carry no such ambiguity.
+ * Deliberately narrow, because every status a CDN can return to a non-player is
+ * a working server this would otherwise skip:
+ *
+ * - 401/403/429 — owocdn behind kwik (`kiwi`) answers Bun's fetch with 403 while
+ *   mpv plays the same URL.
+ * - plain 500 — AnimeGG (`moo`, the most reliable backend) redirects to a
+ *   vidcache host that answers `{"error":"Invalid request (bad hand off)"}` with
+ *   500 to anything that is not its player, including a bare ranged GET. mpv
+ *   plays those URLs.
+ *
+ * What is left is a host saying it is gone or cannot serve at all.
  */
 export function isMiruroBackendDownStatus(status: number): boolean {
-  return status === 404 || status === 410 || status >= 500;
+  return status === 404 || status === 410 || status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * Whether a response came back from the host that was asked. An empty or
+ * unparseable `response.url` (some fetch implementations and every mocked
+ * Response) counts as same-host, so a missing field can never turn into a
+ * rejection.
+ */
+function isSameHost(requestedUrl: string, responseUrl: string | undefined): boolean {
+  if (!responseUrl) return true;
+  try {
+    return new URL(requestedUrl).host === new URL(responseUrl).host;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -1917,6 +1940,10 @@ export async function probeMiruroBackendDown(
       signal: signal ? anySignal(signal, timeout) : timeout,
     });
     void response.body?.cancel().catch(() => {});
+    // A redirect to another host means the backend answered and handed us on;
+    // what the CDN then says about one odd request is not evidence about the
+    // backend. AnimeGG hands off to vidcache, which 500s anything but its player.
+    if (!isSameHost(url, response.url)) return null;
     return isMiruroBackendDownStatus(response.status) ? response.status : null;
   } catch {
     // A timeout or connection error is as likely to be this client's network as
