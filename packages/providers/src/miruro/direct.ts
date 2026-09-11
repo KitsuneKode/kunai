@@ -67,28 +67,32 @@ import {
 } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "./manifest";
+import {
+  MIRURO_KNOWN_PIPE_BASE_URLS,
+  miruroPipeBaseUrls,
+  recordMiruroMirrorSuccess,
+} from "./mirrors";
 
 export { MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER };
 /** Canonical site origin (browser uses www; bare host redirects). */
 export const MIRURO_REFERER = "https://www.miruro.bz/";
 /**
- * Pipe hosts that work in-browser (see user network capture on miruro.bz watch pages).
- * Prefer `www.` first — that is what Chrome hits for `/api/secure/pipe`.
- * Bun/fetch often gets Cloudflare 403 HTML; curl --http2 sometimes succeeds on the same URL.
- * Omit TLS-dead hosts (`miruro.tv`) so they do not burn the engine attempt budget.
+ * The statically known pipe hosts. `mirrors.ts` owns the live order and can add
+ * mirrors Miruro's status page lists; this stays as the cold-start fallback.
+ *
+ * `www.` only: that is what Chrome hits for `/api/secure/pipe`, and the bare
+ * origins are 301 redirects to it. `miruro.com` is excluded because it serves a
+ * landing page with no pipe at all.
  */
-export const MIRURO_PIPE_BASE_URLS = ["https://www.miruro.bz", "https://www.miruro.ru"] as const;
+export const MIRURO_PIPE_BASE_URLS = MIRURO_KNOWN_PIPE_BASE_URLS;
 
 /**
- * Miruro pipe API only answers from the `www.` hosts. The bare `miruro.bz` /
- * `miruro.ru` origins are 301 redirects to `www.` and still return Cloudflare
- * 403 HTML at the pipe path when blocked, so they add only latency and burn the
- * fail-fast budget without ever resolving. `miruro.com` serves a different
- * static app shell (no `/api/secure/pipe`), and `.tv` / `.to` are TLS-dead.
+ * Consecutive Cloudflare HTML 403s before abandoning the remaining mirrors.
  *
- * Consecutive Cloudflare HTML 403s before aborting remaining mirrors. Matches
- * the real mirror count (www.miruro.bz + www.miruro.ru): when both return CF
- * HTML the block is region-wide and further candidates fail the same way.
+ * Two different mirror domains refusing in a row is already evidence the block
+ * follows the client rather than the host, and every further mirror would cost a
+ * full request to learn the same thing. Deliberately not raised alongside the
+ * mirror list: more mirrors makes fail-fast worth more, not less.
  */
 const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
 
@@ -268,8 +272,11 @@ function bytesToBase64url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function createMiruroPipeRequestUrls(encodedPayload: string): string[] {
-  return MIRURO_PIPE_BASE_URLS.map((baseUrl) => `${baseUrl}/api/secure/pipe?e=${encodedPayload}`);
+export function createMiruroPipeRequestUrls(
+  encodedPayload: string,
+  baseUrls: readonly string[] = MIRURO_PIPE_BASE_URLS,
+): string[] {
+  return baseUrls.map((baseUrl) => `${baseUrl}/api/secure/pipe?e=${encodedPayload}`);
 }
 
 export async function createMiruroResultFromPayload({
@@ -1524,6 +1531,7 @@ const MIRURO_CURL_MIN_BYTES_PER_SECOND = 1024;
 const MIRURO_CURL_STALL_SECONDS = 5;
 /** Backstop only; the engine's attempt timeout is the real bound. */
 const MIRURO_CURL_MAX_SECONDS = 25;
+const MIRURO_CURL_CONNECT_SECONDS = 5;
 
 /**
  * Read one curl invocation's outcome.
@@ -1671,6 +1679,12 @@ async function fetchMiruroPipeBody(
     String(MIRURO_CURL_MIN_BYTES_PER_SECOND),
     "--speed-time",
     String(MIRURO_CURL_STALL_SECONDS),
+    // The stall bound above starts counting only once bytes flow, so a mirror
+    // whose TCP connect hangs would otherwise hold the whole `--max-time`. With
+    // several mirrors to get through, that is the difference between trying the
+    // next one and losing the attempt budget to one unreachable host.
+    "--connect-timeout",
+    String(MIRURO_CURL_CONNECT_SECONDS),
     "--max-time",
     String(MIRURO_CURL_MAX_SECONDS),
     url,
@@ -1750,7 +1764,10 @@ async function pipeCall(
       ? String(query.anilistId)
       : null;
 
-  for (const url of createMiruroPipeRequestUrls(encoded)) {
+  const baseUrls = miruroPipeBaseUrls({
+    fetchImpl: context.fetch?.fetch.bind(context.fetch),
+  });
+  for (const url of createMiruroPipeRequestUrls(encoded, baseUrls)) {
     const baseUrl = new URL(url).origin;
     // Match browser watch-page referer when we have an AniList id (user capture pattern).
     const referer = anilistId ? `${baseUrl}/watch/${anilistId}` : `${baseUrl}/`;
@@ -1768,6 +1785,9 @@ async function pipeCall(
         candidate.status < 300 &&
         isMiruroObfuscatedPipeBody(candidate.text, candidate.xObfuscated)
       ) {
+        // Reachability to individual mirrors flaps, so the one that just worked
+        // leads the next call rather than paying to rediscover it.
+        recordMiruroMirrorSuccess(baseUrl);
         // Decode failures are a key/version/schema problem, not a mirror problem —
         // every remaining mirror would fail identically, so surface it immediately
         // instead of burning the budget and reporting it as a network error.
