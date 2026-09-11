@@ -52,11 +52,14 @@ function redactConnectionStrings(message: string): string {
  * anywhere that said *why* it failed, so the signal was undiagnosable.
  */
 function logFailure(stage: string, error: unknown): void {
+  // Redact the whole description, not just the message: `name` is a writable
+  // string too, and the contract promises *any* connection string is reduced
+  // to its scheme.
   const described =
-    error instanceof Error
-      ? `${error.name}: ${redactConnectionStrings(error.message)}`
-      : `non-error: ${typeof error}`;
-  console.error(`[analytics:cron:snapshot] ${stage} failed — ${described}`);
+    error instanceof Error ? `${error.name}: ${error.message}` : `non-error: ${typeof error}`;
+  console.error(
+    `[analytics:cron:snapshot] ${stage} failed — ${redactConnectionStrings(described)}`,
+  );
 }
 
 /**

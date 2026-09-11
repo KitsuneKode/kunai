@@ -166,6 +166,26 @@ describe("cron snapshot failure reporting", () => {
     expect(line).not.toContain("db.example.com");
   });
 
+  test("credentials in an error's name never reach the log either", async () => {
+    // `name` is a writable string, not only a class name. The contract says any
+    // connection string is reduced to its scheme, so the whole description is
+    // redacted — not just the message half of it.
+    const { logs } = await run(
+      createStore({
+        rollUpDay: async () => {
+          const error = new Error("connection refused");
+          error.name = "postgres://admin:hunter2@db.example.com:5432/analytics";
+          throw error;
+        },
+      }),
+    );
+
+    const line = logs.join("\n");
+    expect(line).toContain("postgres://…");
+    expect(line).not.toContain("hunter2");
+    expect(line).not.toContain("db.example.com");
+  });
+
   test("an unauthenticated caller is refused before any store work", async () => {
     let touched = false;
     const { captured } = await run(
