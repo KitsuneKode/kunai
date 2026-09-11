@@ -10,6 +10,17 @@ lastReviewed: "2026-09-03"
 
 ## What this lab can prove
 
+Record `runtimeVersion` from `node --version` on Android. For iOS record
+`iOS <version>` because JavaScriptCore ships with the OS; also record the a-Shell
+version. Evidence without this field must be recollected.
+
+Test two concurrent launches from the same installation. The second must fail
+without altering the first session's arguments or state. Normal cancellation
+must release `session.lock`. After a forced termination, first close every
+Kunai session, then remove only the empty lock directory with `rmdir`: Android
+uses the state directory's `session.lock`; iOS uses `.runtime/session.lock`.
+Never remove a lock while another session is running. Rerun to recover state.
+
 Use one physical ARM64 Android phone and one physical iPhone. They are the
 minimum support-gating matrix. A desktop run, Android emulator, iOS Simulator,
 successful build, application switch, or accepted intent is diagnostic evidence
@@ -340,6 +351,7 @@ Create one URL-free schema-2 JSON file per physical device. Android example:
   "osVersion": "15",
   "terminal": "termux",
   "terminalVersion": "0.119.0-beta.3",
+  "runtimeVersion": "v22.18.0",
   "architecture": "arm64",
   "player": "vlc",
   "playerVersion": "3.7.0",

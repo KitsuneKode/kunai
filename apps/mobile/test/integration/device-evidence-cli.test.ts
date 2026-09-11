@@ -36,6 +36,7 @@ function evidence(
     osVersion: android ? "15" : "19.6.2",
     terminal: android ? "termux" : "a-shell-mini",
     terminalVersion: android ? "0.119.0-beta.3" : "1.15.11",
+    runtimeVersion: android ? "v22.18.0" : "iOS 19.6.2",
     architecture: "arm64",
     player: "vlc",
     playerVersion: "3.7.0",

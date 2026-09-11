@@ -167,6 +167,44 @@ describe("mobile build artifacts", () => {
     }
   });
 
+  test("rejects a second Node session until the first cancels and releases ownership", async () => {
+    const home = mkdtempSync(join(tmpdir(), "kunai-mobile-node-owner-"));
+    const artifact = join(DIST, "android/kunai-mobile-android.mjs");
+    const args = [
+      artifact,
+      "--host-proof",
+      "--probe-url",
+      "https://probe.example/status",
+      "--media-url",
+      "https://media.example/video.m3u8",
+    ];
+    const env = { ...process.env, HOME: home };
+    try {
+      let competitor: ReturnType<typeof spawnSync> | undefined;
+      const code = await new Promise<number | null>((resolve, reject) => {
+        const child = spawn(NODE_RUNTIME, args, { env, stdio: ["pipe", "pipe", "pipe"] });
+        let output = "";
+        child.stdout.on("data", (chunk) => {
+          output += String(chunk);
+          if (competitor || !output.includes("Continue? ")) return;
+          competitor = spawnSync(NODE_RUNTIME, args, { env, input: "0\n", encoding: "utf8" });
+          child.stdin.end("0\n");
+        });
+        child.once("error", reject);
+        child.once("close", resolve);
+      });
+      expect(code).toBe(0);
+      expect(competitor?.status).toBe(1);
+      expect(spawnSync(NODE_RUNTIME, args, { env, input: "0\n" }).status).toBe(0);
+      expect(
+        JSON.parse(readFileSync(join(home, ".local/share/kunai-mobile/mobile-state.json"), "utf8"))
+          .hostProofRuns,
+      ).toBe(2);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test("exits after typed cancellation while the real Node stdin remains open", async () => {
     const home = mkdtempSync(join(tmpdir(), "kunai-mobile-node-cancel-"));
     const artifact = join(DIST, "android/kunai-mobile-android.mjs");

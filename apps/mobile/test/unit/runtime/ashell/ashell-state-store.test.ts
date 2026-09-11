@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import { runMobileApplication } from "../../../../src/application/run-mobile-application";
 import type { AShellJsc } from "../../../../src/runtime/ashell/ashell-globals";
 import { createAShellStateStore } from "../../../../src/runtime/ashell/ashell-state-store";
+import { FakeMobileEnvironment } from "../../../support/fake-mobile-environment";
 
 const CURRENT = ".runtime/mobile-state.json";
 const TEMPORARY = `${CURRENT}.tmp`;
@@ -57,6 +59,62 @@ function stateFixture(initial: Readonly<Record<string, string>> = {}) {
 }
 
 describe("a-Shell state store", () => {
+  test("application failure recording cannot destroy state after native activation exceptions", async () => {
+    const committed = JSON.stringify({ schemaVersion: 1, hostProofRuns: 8 });
+    const fixture = stateFixture({ [CURRENT]: committed });
+    const move = fixture.jsc.move;
+    fixture.jsc.move = (from, to) => {
+      if (from === TEMPORARY) throw new Error("native failure");
+      return move(from, to);
+    };
+    const fake = new FakeMobileEnvironment();
+    fake.choices.push({ kind: "selected", value: "continue" });
+    const result = await runMobileApplication({
+      argv: [
+        "--host-proof",
+        "--probe-url",
+        "https://probe.example/status",
+        "--media-url",
+        "https://media.example/video",
+      ],
+      environment: { ...fake.environment, state: createAShellStateStore(fixture.jsc) },
+      version: "test",
+    });
+    expect(result.code).toBe(1);
+    expect(fake.playerRequests).toEqual([]);
+    expect(fixture.files.get(CURRENT) ?? fixture.files.get(PREVIOUS)).toBe(committed);
+  });
+  test("preserves committed state through thrown activation and failure-recording retries", async () => {
+    const committed = JSON.stringify({ schemaVersion: 1, hostProofRuns: 8 });
+    const fixture = stateFixture({ [CURRENT]: committed });
+    const move = fixture.jsc.move;
+    fixture.jsc.move = (from, to) => {
+      if (from === TEMPORARY) throw new Error("native failure");
+      return move(from, to);
+    };
+    const store = createAShellStateStore(fixture.jsc);
+    for (const lastResult of ["http-ok", "failed"] as const) {
+      await expect(
+        store.commit({ schemaVersion: 1, hostProofRuns: 9, lastResult }),
+      ).rejects.toThrow();
+      expect(fixture.files.get(CURRENT) ?? fixture.files.get(PREVIOUS)).toBe(committed);
+    }
+  });
+
+  test("retains the backup when both activation and restoration throw", async () => {
+    const committed = JSON.stringify({ schemaVersion: 1, hostProofRuns: 8 });
+    const fixture = stateFixture({ [CURRENT]: committed });
+    const move = fixture.jsc.move;
+    fixture.jsc.move = (from, to) => {
+      if (from === TEMPORARY || from === PREVIOUS) throw new Error("native failure");
+      return move(from, to);
+    };
+    const store = createAShellStateStore(fixture.jsc);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(store.commit({ schemaVersion: 1, hostProofRuns: 9 })).rejects.toThrow();
+      expect(fixture.files.get(PREVIOUS)).toBe(committed);
+    }
+  });
   test("loads a default only for a missing state file", async () => {
     const fixture = stateFixture();
     const store = createAShellStateStore(fixture.jsc);
