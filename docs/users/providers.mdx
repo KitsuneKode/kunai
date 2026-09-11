@@ -77,7 +77,7 @@ playback trace when it falls back to the subbed version. Its catalogue is smalle
 
 <ProviderDocSection id="anidb" title="AniDB">
 
-**Adapter role:** second in the default anime order, behind Miruro. Selected directly, Kunai
+**Adapter role:** third in the default anime order, behind Miruro and AnimeGG. Selected directly, Kunai
 searches AniDB, routes each season to its own AniDB title, and resolves streams from that title.
 It is the source ani-cli v5 uses; anidb.app has been in maintenance since September 2026, which is
 why it is no longer first.
@@ -87,7 +87,7 @@ why it is no longer first.
 ```json
 {
   "animeProvider": "anidb",
-  "animeProviderPriority": ["anidb", "miruro", "allanime"]
+  "animeProviderPriority": ["anidb", "miruro", "animegg", "allanime"]
 }
 ```
 
@@ -99,7 +99,7 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 <ProviderDocSection id="allanime" title="AllManga">
 
-**Adapter role:** third in the default anime order, behind Miruro and AniDB. Display name is AllManga; the runtime id is `allanime`. It carries the ani-cli parity path, which is why it stays registered even when its stream API is gated.
+**Adapter role:** fourth in the default anime order, behind Miruro, AnimeGG and AniDB. Display name is AllManga; the runtime id is `allanime`. It carries the ani-cli parity path, which is why it stays registered even when its stream API is gated.
 
 **Config id:** `allanime` — the display name is not the config id.
 
@@ -123,8 +123,9 @@ AniList is down; if Miruro's search finds nothing, Kunai asks AniList.
 }
 ```
 
-**Caveats:** anime mode must be active. Its requests need `curl` — Cloudflare refuses Bun's own
-HTTP client at Miruro's API, and curl gets through. Some servers burn subtitles into the video
+**Caveats:** anime mode must be active. Kunai tries its own HTTP client first, but Cloudflare
+refuses it at Miruro's API, so in practice `curl` is what gets through — unless you run a provider
+relay, which answers on Kunai's behalf. Some servers burn subtitles into the video
 rather than shipping a separate track, and one opens on a short site bumper before the episode.
 If `miruro.bz` itself is unreachable, every one of its backends is too, and Kunai falls back to
 AniDB and AllManga.

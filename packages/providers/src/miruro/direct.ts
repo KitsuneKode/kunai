@@ -2071,7 +2071,19 @@ export const miruroProviderModule: CoreProviderModule = {
         .map(mapMiruroSearchMedia)
         .filter((result): result is ProviderSearchResult => result !== null);
       return results.length > 0 ? results : null;
-    } catch {
+    } catch (error) {
+      // Still null — that is the fallback contract — but not silent. Without
+      // this the search router records the AniList fallback as a plain success,
+      // and a Miruro search that is broken for everyone looks like it never ran.
+      context.emit?.({
+        type: "source:failed",
+        at: context.now(),
+        providerId: MIRURO_PROVIDER_ID,
+        sourceId: "source:miruro:search",
+        message: `Miruro search failed; falling back to the compatible catalog: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
       return null;
     }
   },

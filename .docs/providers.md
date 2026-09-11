@@ -565,7 +565,7 @@ default.
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
 
-- **AniDB (`anidb`)** — `provider-native`, and the default anime route. Native ids must satisfy
+- **AniDB (`anidb`)** — `provider-native`; third in the default anime order, behind Miruro and AnimeGG. Native ids must satisfy
   `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
   AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
   `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.

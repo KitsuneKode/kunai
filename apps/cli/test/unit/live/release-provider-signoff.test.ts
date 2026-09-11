@@ -331,9 +331,11 @@ describe("release provider route derivation", () => {
     // provider.search would fail signoff on a route that works in production.
     const title = await resolveReleaseAnimeSearchTitle(
       CATALOG_ONLY_ROUTE,
-      {} as never,
+      {},
       { audio: "original", subtitle: "en" },
       {
+        // SAFETY: resolveReleaseAnimeSearchTitle reads only id, type and title
+        // from catalog rows, and each row below sets all three.
         catalog: {
           search: async () => [
             { id: "anilist:1", type: "series", title: "Onigiri Tabetai" },
@@ -350,7 +352,7 @@ describe("release provider route derivation", () => {
     await expect(
       resolveReleaseAnimeSearchTitle(
         CATALOG_ONLY_ROUTE,
-        {} as never,
+        {},
         { audio: "original", subtitle: "en" },
         { catalog: { search: async () => [] } },
       ),
@@ -361,10 +363,14 @@ describe("release provider route derivation", () => {
 
   test("a default with neither its own search nor a catalog fails before any network work", async () => {
     await expect(
-      resolveReleaseAnimeSearchTitle(CATALOG_ONLY_ROUTE, {} as never, {
-        audio: "original",
-        subtitle: "en",
-      }),
+      resolveReleaseAnimeSearchTitle(
+        CATALOG_ONLY_ROUTE,
+        {},
+        {
+          audio: "original",
+          subtitle: "en",
+        },
+      ),
     ).rejects.toThrow("has no search capability and no compatible catalog");
   });
 

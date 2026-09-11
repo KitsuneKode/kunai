@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "6687a58deb87eeccaa00ccfb377a9bc35cd9510f8eabb993a449d11c973d0817",
-  "docsContentFingerprint": "b3b93989735573877d7e028e1340b44414427c1a29713aeb8ba47823c2e54608",
+  "cliSourceFingerprint": "94484c7351b67d7ee193285a06eaf32ba6d768ec34f358f8c7bbeb3f6226837f",
+  "docsContentFingerprint": "40c80751382f7def14e831c90d2b80af576431e9f03bba13061bc2bb0918a031",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "animegg", "youtube"],
@@ -56,7 +56,7 @@
     {
       "id": "anidb",
       "displayName": "AniDB",
-      "description": "anidb.app catalog and streams — ani-cli v5's source; second in the default anime order",
+      "description": "anidb.app catalog and streams — ani-cli v5's source; third in the default anime order",
       "domain": "anidb.app",
       "recommended": true,
       "mediaKinds": ["anime"],
@@ -74,7 +74,7 @@
     {
       "id": "allanime",
       "displayName": "AllManga",
-      "description": "Anime episodes in sub and dub — the primary anime source",
+      "description": "Anime episodes in sub and dub — the ani-cli parity source, fourth in the default order",
       "domain": "mkissa.to",
       "recommended": false,
       "mediaKinds": ["anime"],
