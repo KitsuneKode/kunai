@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-09-01"
 ---
 
 # Kunai — Testing Strategy
@@ -18,6 +18,8 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep opt-in live provider smoke scripts under `apps/cli/test/live/`
 - keep copyable templates for new contract tests under `apps/cli/test/templates/`
 - keep VHS tapes and captured golden outputs under `apps/cli/test/vhs/` for UI demos and visual regression review
+- keep mobile unit/integration contracts under `apps/mobile/test/{unit,integration}/`
+- keep the redacted, opt-in device-evidence validator under `apps/mobile/test/live/`; it validates supplied evidence and never controls a device
 
 The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist/kunai.js`, `dist/assets/**`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
@@ -31,7 +33,7 @@ CLI suites are separate Turbo tasks so a unit-only change does not re-run integr
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `bun run test`                     | every workspace `test` script; CLI runs `test:unit` and `test:integration` in parallel under Turbo                    |
 | `bun run test:unit`                | packages that define `test:unit` (CLI today)                                                                          |
-| `bun run test:integration`         | packages that define `test:integration` (CLI today)                                                                   |
+| `bun run test:integration`         | packages that define `test:integration` (CLI and mobile)                                                              |
 | `bun run --cwd apps/cli test`      | both CLI suites sequentially (outside Turbo); path args after `--` select files, flag-only args append to both suites |
 | `bun run ci:affected` / CI PR jobs | `--affected` — only changed packages and their dependents                                                             |
 
@@ -410,6 +412,31 @@ mpv playback is tracked in [release-reliability-gate.md](./release-reliability-g
 Do not loop live smokes while iterating on a provider. Use fixture payloads, mocked fetch ports,
 and provider contract tests for repeated runs, then perform one focused live smoke when the
 deterministic seam is already green.
+
+The independent mobile application uses a stricter two-part gate. Its default
+unit/integration suites build and scan both platform artifacts, execute the
+Android bundle under real Node, and exercise the iOS fake host. Physical work
+is manual; the opt-in command validates exactly one Android and one iOS
+URL-free evidence row against generated artifact-set metadata:
+
+Portable bundle, metadata, and Node assertions run on every contributor host.
+Windows visibly skips only the POSIX executable-mode and a-Shell launcher
+checks; Linux/macOS and the physical iPhone procedure own those shell-specific
+claims.
+
+```sh
+bun run test:live:mobile-host-proof -- \
+  --metadata apps/mobile/dist/mobile-build-meta.json \
+  --evidence /path/to/android.json \
+  --evidence /path/to/ios.json
+```
+
+The validator rejects unknown or sensitive fields, wrong versions/targets/set
+digests, non-physical or duplicate/missing rows, and every failed observation.
+Android ARM64 Termux and physical iPhone a-Shell mini procedures are owned by
+[mobile-device-lab.md](./mobile-device-lab.md). A green cross-build,
+fake-host run, launcher exit, or intent acceptance must not become a platform
+support claim.
 
 ## Non-Flaky Test Rules
 
