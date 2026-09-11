@@ -291,7 +291,7 @@ Inside the shell, `/` opens the command palette from anywhere.
 | **mpv**        | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                                          |
 | **yt-dlp**     | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp`              |
 | **ffprobe**    | Optional             | Post-download integrity checks (ships with FFmpeg)                                                   |
-| **curl**       | Anime mode           | AniDB, the default anime provider, is behind Cloudflare. `sudo pacman -S curl`                       |
+| **curl**       | Anime mode           | Miruro (the default) and AniDB are behind Cloudflare. `sudo pacman -S curl`                          |
 | **Discord**    | Optional             | Rich Presence via local Unix-socket / Windows named-pipe IPC                                         |
 
 ### Poster quality
@@ -620,7 +620,7 @@ Kunai can talk to these third-party adapters; they are unaffiliated, may break
 or disappear, and Kunai does not host what they serve.
 
 - **videasy**, **rivestream**, **vidlink** — series and movies (Videasy first)
-- **anidb** — automatic anime lane; **allmanga** and **miruro** stay registered and are manually selectable
+- **miruro**, **anidb**, **allmanga** — anime (Miruro first); every registered anime provider is tried automatically
 - **youtube** — YouTube mode (Invidious search + yt-dlp)
 
 Availability varies by title, region, subtitle track, and source mirror. Some

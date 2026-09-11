@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "c85d50bdb16d19c74db7651ae3deb8ae145010246e06573b1ce8f4673e022324",
-  "docsContentFingerprint": "46c297d24941672fc797c4e580319c4fbb08adcd27c06e92225aabbe5fa15168",
+  "cliSourceFingerprint": "3919f0256b3e2ee31396ed2d31f67ef3d111bc073b8077e6a34318f3b1aa2978",
+  "docsContentFingerprint": "e00ee6dff99520eab63a3ded40b8a7d5cfe331690220149811051dde659b464b",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
@@ -74,7 +74,7 @@
     {
       "id": "allanime",
       "displayName": "AllManga",
-      "description": "Anime episodes in sub and dub — the primary anime source",
+      "description": "Anime episodes in sub and dub — the ani-cli parity source, third in the default order",
       "domain": "mkissa.to",
       "recommended": false,
       "mediaKinds": ["anime"],
