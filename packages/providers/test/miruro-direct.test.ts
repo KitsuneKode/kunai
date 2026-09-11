@@ -782,6 +782,28 @@ describe("Miruro search", () => {
     expect(type(null, 1)).toBe("series");
   });
 
+  test("a failed search still returns null, but says so in the trace", async () => {
+    const events: { type: string; sourceId?: string; message: string }[] = [];
+    // SAFETY: the search path reads only providerId, now, emit and fetch; the
+    // fetch rejects before any pipe or curl code could read further members.
+    const context = {
+      providerId: "miruro",
+      now: () => "2026-09-11T00:00:00.000Z",
+      emit: (event: { type: string; sourceId?: string; message: string }) => events.push(event),
+      fetch: {
+        fetch: async () => {
+          throw new Error("offline");
+        },
+      },
+    } as never;
+
+    expect(await miruroProviderModule.search?.({ query: "one piece" }, context)).toBeNull();
+    expect(events.at(-1)).toMatchObject({
+      type: "source:failed",
+      sourceId: "source:miruro:search",
+    });
+  });
+
   test("an empty query never reaches the network", async () => {
     const context = { providerId: "miruro", now: () => "2026-09-11T00:00:00.000Z" } as never;
     expect(await miruroProviderModule.search?.({ query: "   " }, context)).toBeNull();

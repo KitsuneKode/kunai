@@ -19,7 +19,7 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 Mode defaults at a glance:
 
 - **Movies / series** — Videasy first, then Rivestream, then VidLink (from `providerPriority`)
-- **Anime** — AniDB only in the automatic lane. AllManga (`allanime`) and Miruro stay registered and are manually selectable
+- **Anime** — Miruro first, then AniDB, then AllManga (from `animeProviderPriority`). Every registered provider is tried automatically; the list sets the order, not who is included
 - **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
@@ -102,8 +102,9 @@ AniList is down; if Miruro's search finds nothing, Kunai asks AniList.
 }
 ```
 
-**Caveats:** anime mode must be active. Its requests need `curl` — Cloudflare refuses Bun's own
-HTTP client at Miruro's API, and curl gets through. Some servers burn subtitles into the video
+**Caveats:** anime mode must be active. Kunai tries its own HTTP client first, but Cloudflare
+refuses it at Miruro's API, so in practice `curl` is what gets through — unless you run a provider
+relay, which answers on Kunai's behalf. Some servers burn subtitles into the video
 rather than shipping a separate track, and one opens on a short site bumper before the episode.
 If `miruro.bz` itself is unreachable, every one of its backends is too, and Kunai falls back to
 AniDB and AllManga.
