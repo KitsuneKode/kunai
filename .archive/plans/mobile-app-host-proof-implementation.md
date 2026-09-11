@@ -4,7 +4,7 @@
 > and must not be executed as the current mobile contract. The implemented
 > Node/Termux and JavaScriptCore/a-Shell design is owned by
 > `.plans/mobile-app-runtime.md` and `.docs/mobile-terminal-runtime.md`.
-
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Produce fixture-only Android and iOS artifacts that prove Kunai's runtime-neutral mobile application can perform terminal input, bounded HTTP, atomic JSON state, cancellation, and an honest VLC handoff before any catalog or provider is ported.

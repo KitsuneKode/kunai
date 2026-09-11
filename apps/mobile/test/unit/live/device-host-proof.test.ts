@@ -79,6 +79,9 @@ function iosEvidence(overrides: Partial<MobileDeviceEvidence> = {}): MobileDevic
 
 describe("mobile physical-device evidence", () => {
   test("requires a redacted runtime version and includes it in review output", () => {
+    expect(() => validateMobileDeviceEvidence(iosEvidence({ runtimeVersion: "v22.18.0" }))).toThrow(
+      "runtimeVersion",
+    );
     const evidence = androidEvidence();
     expect(validateMobileDeviceEvidence(evidence)).toEqual(evidence);
     expect(formatMobileDeviceEvidenceRow(evidence)).toContain("runtime=v22.18.0");
@@ -102,6 +105,7 @@ describe("mobile physical-device evidence", () => {
         androidEvidence({
           platform: "ios",
           osVersion: "19.6.2",
+          runtimeVersion: "iOS 19.6.2",
           terminal: "a-shell-mini",
           artifactTarget: "ios-ashell",
         }),
@@ -162,6 +166,7 @@ describe("mobile physical-device evidence", () => {
         platform: "ios",
         terminal: "a-shell-mini",
         architecture: "x64",
+        runtimeVersion: "iOS 15",
         artifactTarget: "ios-ashell",
       }),
     ).toThrow("iOS physical evidence");
