@@ -805,12 +805,53 @@ describe("probeMiruroBackendDown", () => {
   test("reports a backend whose host is down", async () => {
     // 503 is what hls.anidb.app answered through AniDB's maintenance, to
     // every client — the case that handed mpv a dead URL.
-    for (const status of [503, 502, 500, 404, 410]) {
+    for (const status of [503, 502, 504, 404, 410]) {
       const { context } = withStatus(status);
       expect(await probeMiruroBackendDown("https://hls.anidb.app/x/master.m3u8", {}, context)).toBe(
         status,
       );
     }
+  });
+
+  test("a plain 500 is not evidence: a CDN returns it to anything but its player", async () => {
+    // AnimeGG (`moo`) hands off to vidcache, which answers
+    // {"error":"Invalid request (bad hand off)"} with 500 to a bare ranged GET
+    // while mpv plays the same URL. Rejecting on it skipped the most reliable
+    // backend Miruro has.
+    const { context } = withStatus(500);
+    expect(
+      await probeMiruroBackendDown("https://www.animegg.org/play/1/video.mp4", {}, context),
+    ).toBeNull();
+  });
+
+  test("a status from a different host than the one asked is not evidence", async () => {
+    // The backend answered and redirected; what the CDN it handed us to says
+    // about one odd request tells us nothing about the backend.
+    const context = {
+      fetch: {
+        fetch: async () =>
+          Object.defineProperty(new Response("{}", { status: 503 }), "url", {
+            value: "https://vidcache.net:8161/abc/video.mp4",
+          }),
+      },
+    } as never;
+    expect(
+      await probeMiruroBackendDown("https://www.animegg.org/play/1/video.mp4", {}, context),
+    ).toBeNull();
+  });
+
+  test("a same-host redirect still counts", async () => {
+    const context = {
+      fetch: {
+        fetch: async () =>
+          Object.defineProperty(new Response("{}", { status: 503 }), "url", {
+            value: "https://hls.anidb.app/redirected/master.m3u8",
+          }),
+      },
+    } as never;
+    expect(await probeMiruroBackendDown("https://hls.anidb.app/x/master.m3u8", {}, context)).toBe(
+      503,
+    );
   });
 
   test("does not condemn a server for refusing this particular client", async () => {
