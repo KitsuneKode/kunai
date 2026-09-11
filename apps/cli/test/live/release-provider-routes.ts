@@ -10,7 +10,7 @@
  */
 
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
-import type { TitleInfo } from "@/domain/types";
+import type { SearchResult, TitleInfo } from "@/domain/types";
 import type { Provider } from "@/services/providers/Provider";
 
 export type ReleaseProviderRouteCase =
@@ -80,19 +80,34 @@ export async function resolveReleaseAnimeSearchTitle(
   route: Extract<ReleaseProviderRouteCase, { readonly lane: "anime" }>,
   provider: Pick<Provider, "search">,
   language: { readonly audio: string; readonly subtitle: string },
-  signal?: AbortSignal,
+  options: {
+    readonly signal?: AbortSignal;
+    /**
+     * The catalog search the app routes to when the provider has no search of
+     * its own — `searchRegistry.getForProvider(id)`, as in `searchTitles`.
+     * Requiring `provider.search` would fail signoff on a route that works.
+     *
+     * Deliberately not used when the provider does search and comes back empty:
+     * the app would fall through to the catalog there, but signoff exists to
+     * catch the default's own search drifting, which that would hide.
+     */
+    readonly catalog?: { search(query: string, signal?: AbortSignal): Promise<SearchResult[]> };
+  } = {},
 ): Promise<TitleInfo> {
-  if (!provider.search) {
+  const { signal, catalog } = options;
+  if (!provider.search && !catalog) {
     throw new Error(
-      `Default anime provider "${route.configuredProvider}" has no search capability`,
+      `Default anime provider "${route.configuredProvider}" has no search capability and no compatible catalog`,
     );
   }
   const results =
-    (await provider.search(
-      route.searchQuery,
-      { audioPreference: language.audio, subtitlePreference: language.subtitle },
-      signal,
-    )) ?? [];
+    (provider.search
+      ? await provider.search(
+          route.searchQuery,
+          { audioPreference: language.audio, subtitlePreference: language.subtitle },
+          signal,
+        )
+      : await catalog?.search(route.searchQuery, signal)) ?? [];
   if (results.length === 0) {
     throw new Error(
       `Default anime provider "${route.configuredProvider}" search returned zero results for "${route.searchQuery}"`,

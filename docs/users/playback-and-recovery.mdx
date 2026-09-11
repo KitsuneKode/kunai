@@ -102,7 +102,7 @@ See [Customization](/docs/users/customization) and [Providers](/docs/users/provi
 
 Autoskip needs IntroDB (TMDB-keyed) and/or AniSkip (MAL-keyed, anime mode). Not every title has timing. Episode numbers in the UI are **1-based**; providers adapt internally.
 
-AniSkip for split-cour anime: when the only MAL mapping is TMDB season-1, Kunai **skips AniSkip for season 2+** rather than applying the wrong show's windows. AniDB stamps MAL at resolve when it can, which avoids that gap for the default anime lane.
+AniSkip for split-cour anime: when the only MAL mapping is TMDB season-1, Kunai **skips AniSkip for season 2+** rather than applying the wrong show's windows. The default anime provider, Miruro, is keyed on AniList, where each cour is its own entry with its own MAL id, so that gap does not arise there; AniDB stamps MAL at resolve when it can.
 
 ## Audio and subtitles
 

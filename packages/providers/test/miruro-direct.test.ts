@@ -10,6 +10,10 @@ import {
   decodeMiruroPipePayload,
   describeMiruroPipeFailure,
   interpretMiruroCurlResult,
+  mapMiruroSearchMedia,
+  miruroProviderModule,
+  probeMiruroBackendDown,
+  type MiruroSearchMedia,
   miruroWafBlockMessage,
   isMiruroAudioFallback,
   MiruroPipeDecodeError,
@@ -671,5 +675,238 @@ describe("the WAF block message advises the cheapest fix that can still work", (
     ]) {
       expect(miruroWafBlockMessage(curl)).toContain("Cloudflare WAF on multiple mirrors");
     }
+  });
+});
+
+/**
+ * Trimmed from a live 2026-09-11 `search` response for `q: "one piece"`, taken
+ * while AniList's own API was answering 403 "temporarily disabled".
+ */
+const ONE_PIECE_ROW: MiruroSearchMedia = {
+  id: 21,
+  idMal: 21,
+  type: "ANIME",
+  format: "TV",
+  status: "RELEASING",
+  isAdult: false,
+  episodes: null,
+  duration: 24,
+  averageScore: 87,
+  popularity: 749552,
+  seasonYear: 1999,
+  startDate: { year: 1999 },
+  description: "Gold Roger was known as the Pirate King.<br><br>\nEnter Monkey D. Luffy.",
+  title: { native: "ONE PIECE", romaji: "ONE PIECE", english: "ONE PIECE" },
+  coverImage: {
+    extraLarge: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21.jpg",
+    large: "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21.jpg",
+  },
+  bannerImage: "https://s4.anilist.co/file/anilistcdn/media/anime/banner/21.jpg",
+};
+
+describe("Miruro search", () => {
+  test("carries the same identity the AniList search service produces", () => {
+    const result = mapMiruroSearchMedia(ONE_PIECE_ROW);
+
+    // A bare AniList id plus externalIds.anilistId is exactly what
+    // definitions/anilist.ts emits, so history sees one title, not two.
+    expect(result?.id).toBe("21");
+    expect(result?.externalIds).toEqual({ anilistId: "21", malId: "21" });
+    expect(result?.title).toBe("ONE PIECE");
+    expect(result?.type).toBe("series");
+    expect(result?.year).toBe("1999");
+    expect(result?.rating).toBe(8.7);
+    expect(result?.durationSeconds).toBe(24 * 60);
+    expect(result?.overview).toBe(
+      "Gold Roger was known as the Pirate King. Enter Monkey D. Luffy.",
+    );
+    expect(result?.posterPath).toContain("/cover/large/");
+    expect(result?.artwork?.backdropUrl).toContain("/banner/");
+  });
+
+  test("declares AniList as the metadata source so routing skips re-enriching it", () => {
+    // SearchRoutingService skips enrichment only for `metadataSource ===
+    // "AniList"` with a poster. Enrichment calls AniList's API — the thing that
+    // is down in the case this search exists for.
+    const result = mapMiruroSearchMedia(ONE_PIECE_ROW);
+    expect(result?.metadataSource).toBe("AniList");
+    expect(result?.posterPath).toBeTruthy();
+  });
+
+  test("drops what the AniList service's query would have excluded", () => {
+    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, type: "MANGA", format: "MANGA" })).toBeNull();
+    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, isAdult: true })).toBeNull();
+    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, status: "NOT_YET_RELEASED" })).toBeNull();
+  });
+
+  test("rejects a row with no usable AniList id or title", () => {
+    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, id: 0 })).toBeNull();
+    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, id: 1.5 })).toBeNull();
+    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, id: undefined })).toBeNull();
+    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, title: {} })).toBeNull();
+  });
+
+  test("omits a MAL id it does not have rather than inventing one", () => {
+    expect(mapMiruroSearchMedia({ ...ONE_PIECE_ROW, idMal: null })?.externalIds).toEqual({
+      anilistId: "21",
+    });
+  });
+
+  test("falls back to romaji when there is no English title, and keeps it as an alias", () => {
+    const result = mapMiruroSearchMedia({
+      ...ONE_PIECE_ROW,
+      title: { romaji: "Sousou no Frieren", native: "葬送のフリーレン" },
+    });
+    expect(result?.title).toBe("Sousou no Frieren");
+    expect(result?.nativeTitle).toBe("葬送のフリーレン");
+    expect(result?.altNames).toBeUndefined();
+
+    const withEnglish = mapMiruroSearchMedia({
+      ...ONE_PIECE_ROW,
+      title: { english: "Frieren", romaji: "Sousou no Frieren" },
+    });
+    expect(withEnglish?.title).toBe("Frieren");
+    expect(withEnglish?.altNames).toEqual(["Sousou no Frieren"]);
+  });
+
+  test("classifies structure the way the CLI's AniList format rule does", () => {
+    const type = (format: string | null, episodes: number | null) =>
+      mapMiruroSearchMedia({ ...ONE_PIECE_ROW, format, episodes })?.type;
+    expect(type("MOVIE", 1)).toBe("movie");
+    expect(type("SPECIAL", 1)).toBe("movie");
+    expect(type("OVA", 1)).toBe("movie");
+    expect(type("SPECIAL", 12)).toBe("series");
+    // TV and ONA stay series even with one episode aired.
+    expect(type("ONA", 1)).toBe("series");
+    expect(type("TV", 1)).toBe("series");
+    expect(type(null, 1)).toBe("series");
+  });
+
+  test("an empty query never reaches the network", async () => {
+    const context = { providerId: "miruro", now: () => "2026-09-11T00:00:00.000Z" } as never;
+    expect(await miruroProviderModule.search?.({ query: "   " }, context)).toBeNull();
+  });
+});
+
+describe("probeMiruroBackendDown", () => {
+  const withStatus = (status: number) => {
+    const seen: { url?: string; headers?: Record<string, string> }[] = [];
+    const context = {
+      fetch: {
+        fetch: async (url: string, init?: RequestInit) => {
+          seen.push({ url, headers: init?.headers as Record<string, string> });
+          return new Response("x", { status });
+        },
+      },
+    } as never;
+    return { context, seen };
+  };
+
+  test("reports a backend whose host is down", async () => {
+    // 503 is what hls.anidb.app answered through AniDB's maintenance, to
+    // every client — the case that handed mpv a dead URL.
+    for (const status of [503, 502, 500, 404, 410]) {
+      const { context } = withStatus(status);
+      expect(await probeMiruroBackendDown("https://hls.anidb.app/x/master.m3u8", {}, context)).toBe(
+        status,
+      );
+    }
+  });
+
+  test("does not condemn a server for refusing this particular client", async () => {
+    // owocdn behind kwik answers Bun's fetch with 403 while mpv plays the URL.
+    for (const status of [401, 403, 429, 416]) {
+      const { context } = withStatus(status);
+      expect(await probeMiruroBackendDown("https://vault-16.owocdn.top/x.m3u8", {}, context)).toBe(
+        null,
+      );
+    }
+  });
+
+  test("a working backend is not reported down", async () => {
+    for (const status of [200, 206]) {
+      const { context } = withStatus(status);
+      expect(
+        await probeMiruroBackendDown("https://www.animegg.org/play/1/video.mp4", {}, context),
+      ).toBe(null);
+    }
+  });
+
+  test("a timeout or connection failure is not evidence the backend is down", async () => {
+    // Being offline must not read as "every server is dead".
+    const context = {
+      fetch: {
+        fetch: async () => {
+          throw new TypeError("fetch failed: ECONNREFUSED");
+        },
+      },
+    } as never;
+    expect(await probeMiruroBackendDown("https://example.test/x.m3u8", {}, context)).toBeNull();
+  });
+
+  test("sends the stream's own headers, ranged to one byte", async () => {
+    const { context, seen } = withStatus(206);
+    await probeMiruroBackendDown(
+      "https://vault-16.owocdn.top/x.m3u8",
+      { Referer: "https://kwik.cx/" },
+      context,
+    );
+    expect(seen[0]?.headers).toMatchObject({ Referer: "https://kwik.cx/", Range: "bytes=0-0" });
+  });
+
+  test("never probes something that is not a remote URL", async () => {
+    const { context, seen } = withStatus(503);
+    expect(await probeMiruroBackendDown("/tmp/local/stream.mpd", {}, context)).toBeNull();
+    expect(seen).toHaveLength(0);
+  });
+});
+
+describe("decodeMiruroPipePayload for search", () => {
+  const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
+  // Plain (un-gzipped) version-2 body: base64url(xor(json, key)).
+  const encode = (value: unknown): string => {
+    const key = Uint8Array.from(
+      (PIPE_KEY.match(/.{2}/g) ?? []).map((hex) => Number.parseInt(hex, 16)),
+    );
+    const bytes = new TextEncoder().encode(JSON.stringify(value));
+    const xored = bytes.map((byte, index) => byte ^ (key[index % key.length] ?? 0));
+    let binary = "";
+    for (const byte of xored) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+  const decode = (value: unknown) =>
+    decodeMiruroPipePayload({
+      body: encode(value),
+      obfuscationVersion: "2",
+      expectedKind: "search",
+      keyHex: PIPE_KEY,
+    });
+
+  test("accepts a list of media rows", () => {
+    expect(decode([ONE_PIECE_ROW])).toEqual([ONE_PIECE_ROW]);
+  });
+
+  test("accepts an empty list as a real no-match, not a shape failure", () => {
+    expect(decode([])).toEqual([]);
+  });
+
+  test("rejects an episodes-shaped body sent to the search contract", () => {
+    try {
+      decode({ providers: {}, mappings: {} });
+    } catch (error) {
+      expect((error as MiruroPipeDecodeError).code).toBe("pipe-json-shape-invalid");
+      return;
+    }
+    throw new Error("expected a shape failure");
+  });
+
+  test("rejects rows without a numeric id", () => {
+    try {
+      decode([{ id: "21" }]);
+    } catch (error) {
+      expect((error as MiruroPipeDecodeError).code).toBe("pipe-json-shape-invalid");
+      return;
+    }
+    throw new Error("expected a shape failure");
   });
 });

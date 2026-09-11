@@ -45,6 +45,17 @@ export interface KitsuneConfig {
   providerPriority: readonly string[];
   animeProviderPriority: readonly string[];
   youtubeProviderPriority: readonly string[];
+  /**
+   * Which revision of the shipped provider defaults this config has been
+   * reconciled against. The whole merged config is written on every save, so an
+   * old default sits on disk looking exactly like a choice; bumping this when a
+   * lane default changes lets load migrate that inherited value once, and then
+   * never again — so a user who picks the old provider back keeps it.
+   *
+   * Absent means "saved before revisions existed". 1 = anime lane moved from
+   * AniDB to Miruro (2026-09-11).
+   */
+  providerDefaultsRevision?: number;
   youtubeLanguageProfile: MediaLanguageProfile;
   youtubeMetadata: YouTubeMetadataConfig;
   /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
