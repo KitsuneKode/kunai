@@ -4,6 +4,7 @@ import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-h
 import {
   buildPersistentLoadfileCommand,
   buildPersistentLoadfileOptions,
+  toMpvLanguageToken,
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
 } from "@/infra/player/mpv-stream-http-headers";
@@ -360,5 +361,33 @@ describe("buildPersistentLoadfileCommand", () => {
         urlKind: "local",
       })[1],
     ).toBe("/tmp/kunai-hls/playlist.m3u8");
+  });
+});
+
+describe("per-file audio language", () => {
+  test("a loadfile carries alang, so a mid-session dub switch reaches mpv", () => {
+    // --alang set at spawn is a process option; a persistent session that
+    // started on sub kept choosing Japanese after the switch without this.
+    const options = buildPersistentLoadfileOptions(
+      "https://cdn.example/master.m3u8",
+      0,
+      {},
+      {
+        audioPreference: "dub",
+      },
+    );
+    expect(options.alang).toBe("en");
+  });
+
+  test("no audio preference leaves mpv's own choice alone", () => {
+    expect(
+      buildPersistentLoadfileOptions("https://cdn.example/master.m3u8", 0, {}).alang,
+    ).toBeUndefined();
+  });
+
+  test("subtitle modes are not rewritten as audio ones", () => {
+    expect(toMpvLanguageToken("sub", { forSubtitle: true })).toBe("sub");
+    expect(toMpvLanguageToken("none", { forSubtitle: true })).toBe("no");
+    expect(toMpvLanguageToken("none", { forSubtitle: false })).toBe("none");
   });
 });

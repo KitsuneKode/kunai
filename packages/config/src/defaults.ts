@@ -33,12 +33,15 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   youtubeProvider: "youtube",
   providerPriority: ["rivestream", "vidlink"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
-  // AnimeGG is second because it is the one that shares nothing with Miruro —
-  // own catalog, own site, own CDN — so a Miruro outage does not take it too.
+  // KickAssAnime and AnimeGG share nothing with Miruro — own catalog, own site,
+  // own CDN — so a Miruro outage does not take them too. Both take over a title
+  // Miruro found by matching its name; KickAssAnime is first because its match
+  // also checks the year (AnimeGG's search exposes none, so a sequel is likelier
+  // to be refused as ambiguous) and it carries real subtitle tracks.
   // AniDB follows for when it returns, then AllAnime for the ani-cli parity path.
-  animeProviderPriority: ["miruro", "animegg", "anidb", "allanime"],
+  animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
-  providerDefaultsRevision: 1,
+  providerDefaultsRevision: 2,
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

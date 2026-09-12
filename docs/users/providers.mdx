@@ -19,7 +19,7 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 Mode defaults at a glance:
 
 - **Movies / series** — Videasy first, then Rivestream, then VidLink (from `providerPriority`)
-- **Anime** — Miruro first, then AnimeGG, then AniDB, then AllManga (from `animeProviderPriority`). Every registered provider is tried automatically; the list sets the order, not who is included
+- **Anime** — Miruro first, then KickAssAnime, then AnimeGG, then AniDB, then AllManga (from `animeProviderPriority`). Every registered provider is tried automatically; the list sets the order, not who is included
 - **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
@@ -54,9 +54,32 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 </ProviderDocSection>
 
+<ProviderDocSection id="kickassanime" title="KickAssAnime">
+
+**Adapter role:** the anime backup, second in the default order. It has its own catalogue, site and
+video servers, so a Miruro outage does not reach it. It picks up a show Kunai found anywhere by
+matching the name and year against its own catalogue.
+
+**Config id:** `kickassanime`.
+
+```json
+{
+  "animeProvider": "miruro",
+  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
+}
+```
+
+**Caveats:** anime mode must be active. This is the one anime source with real subtitle tracks
+rather than subtitles burned into the picture, so `/tracks` can switch languages during playback.
+Dubs usually live inside the same video file as extra audio tracks; when a show has no English
+audio Kunai plays the subbed version and says so in the playback trace. If it cannot tell which
+show you mean, it steps aside rather than playing the wrong one.
+
+</ProviderDocSection>
+
 <ProviderDocSection id="animegg" title="AnimeGG">
 
-**Adapter role:** the anime backup, second in the default order. AnimeGG has its own catalogue, its
+**Adapter role:** the third anime source, behind Miruro and KickAssAnime. AnimeGG has its own catalogue, its
 own site and its own video servers, so it keeps working when Miruro does not — which is the whole
 reason it is there. It picks up a show Kunai found anywhere by matching its name against AnimeGG's
 own catalogue. Sub and dub both come from AnimeGG's own episode tabs.
@@ -66,7 +89,7 @@ own catalogue. Sub and dub both come from AnimeGG's own episode tabs.
 ```json
 {
   "animeProvider": "miruro",
-  "animeProviderPriority": ["miruro", "animegg", "anidb", "allanime"]
+  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
 }
 ```
 
@@ -79,7 +102,7 @@ when more than one of its shows could be the one you picked, it steps aside rath
 
 <ProviderDocSection id="anidb" title="AniDB">
 
-**Adapter role:** third in the default anime order, behind Miruro and AnimeGG. Selected directly, Kunai
+**Adapter role:** fourth in the default anime order, behind Miruro, KickAssAnime and AnimeGG. Selected directly, Kunai
 searches AniDB, routes each season to its own AniDB title, and resolves streams from that title.
 It is the source ani-cli v5 uses; anidb.app has been in maintenance since September 2026, which is
 why it is no longer first.
@@ -89,7 +112,7 @@ why it is no longer first.
 ```json
 {
   "animeProvider": "anidb",
-  "animeProviderPriority": ["anidb", "miruro", "animegg", "allanime"]
+  "animeProviderPriority": ["anidb", "miruro", "kickassanime", "animegg", "allanime"]
 }
 ```
 
@@ -101,7 +124,7 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 <ProviderDocSection id="allanime" title="AllManga">
 
-**Adapter role:** fourth in the default anime order, behind Miruro, AnimeGG and AniDB. Display name is AllManga; the runtime id is `allanime`. It carries the ani-cli parity path, which is why it stays registered even when its stream API is gated.
+**Adapter role:** last in the default anime order, behind Miruro, KickAssAnime, AnimeGG and AniDB. Display name is AllManga; the runtime id is `allanime`. It carries the ani-cli parity path, which is why it stays registered even when its stream API is gated.
 
 **Config id:** `allanime` — the display name is not the config id.
 
@@ -121,7 +144,7 @@ AniList is down; if Miruro's search finds nothing, Kunai asks AniList.
 ```json
 {
   "animeProvider": "miruro",
-  "animeProviderPriority": ["miruro", "animegg", "anidb", "allanime"]
+  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
 }
 ```
 
@@ -231,7 +254,7 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
   "provider": "videasy",
   "providerPriority": ["rivestream", "vidlink"],
   "animeProvider": "miruro",
-  "animeProviderPriority": ["miruro", "animegg", "anidb", "allanime"]
+  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
 }
 ```
 

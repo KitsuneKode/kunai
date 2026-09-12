@@ -11,6 +11,7 @@
     "./allmanga": "./src/allmanga/direct.ts",
     "./anidb": "./src/anidb/direct.ts",
     "./animegg": "./src/animegg/direct.ts",
+    "./kickassanime": "./src/kickassanime/direct.ts",
     "./miruro": "./src/miruro/direct.ts",
     "./rivestream": "./src/rivestream/direct.ts",
     "./videasy": "./src/videasy/index.ts",

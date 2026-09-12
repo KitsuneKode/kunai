@@ -60,6 +60,48 @@ export async function expandHlsMasterPlaylist(
   }
 }
 
+export type HlsAudioRendition = {
+  /** Raw LANGUAGE attribute (`jpn`, `en-US`), as written in the manifest. */
+  readonly language?: string;
+  /** NAME attribute — the label a player shows ("Japanese"). */
+  readonly name?: string;
+  readonly isDefault: boolean;
+};
+
+/**
+ * The `#EXT-X-MEDIA:TYPE=AUDIO` renditions of a master playlist.
+ *
+ * A master can carry one video ladder and several audio tracks; the variant
+ * playlists are then video-only and the player muxes the chosen audio. Which
+ * track that is comes from mpv's `--alang`, so a provider that wants to name
+ * the audio it is about to play has to read the group rather than assume.
+ */
+export function parseHlsMasterAudioRenditions(manifestText: string): HlsAudioRendition[] {
+  const renditions: HlsAudioRendition[] = [];
+  for (const rawLine of manifestText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("#EXT-X-MEDIA:")) continue;
+    if (!/\bTYPE=AUDIO\b/i.test(line)) continue;
+    renditions.push({
+      language: hlsAttribute(line, "LANGUAGE"),
+      name: hlsAttribute(line, "NAME"),
+      isDefault: hlsAttribute(line, "DEFAULT")?.toUpperCase() === "YES",
+    });
+  }
+  return renditions;
+}
+
+/**
+ * One attribute of an HLS tag, matched whole. A bare /LANGUAGE="…"/ also
+ * matches inside ASSOC-LANGUAGE, which would name the wrong track, so the name
+ * must start the list or follow a comma.
+ */
+function hlsAttribute(line: string, name: string): string | undefined {
+  const match = new RegExp(`(?:^|[:,])${name}=(?:"([^"]*)"|([^,]*))`, "i").exec(line);
+  const value = (match?.[1] ?? match?.[2])?.trim();
+  return value || undefined;
+}
+
 /** True when a stream URL looks like an HLS master (leaf or path hint). */
 export function looksLikeHlsMasterUrl(url: string): boolean {
   if (!isHlsPlaylistUrl(url) && !/\.m3u8(?:[?#]|$)/i.test(url)) return false;

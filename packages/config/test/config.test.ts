@@ -74,6 +74,7 @@ describe("@kunai/config parse boundary", () => {
     expect(DEFAULT_CONFIG.animeProvider).toBe("miruro");
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
       "miruro",
+      "kickassanime",
       "animegg",
       "anidb",
       "allanime",
@@ -84,6 +85,6 @@ describe("@kunai/config parse boundary", () => {
     // Load migrates an inherited old default only when the on-disk revision is
     // behind this one. Changing a default without bumping it strands every user
     // who saved a setting on the previous default.
-    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(1);
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(2);
   });
 });
