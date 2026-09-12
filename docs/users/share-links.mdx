@@ -71,16 +71,16 @@ https://kunai.kitsunekode.in/w/v1.<encoded-ref>
 The application handoff inside that page keeps the existing grammar:
 
 ```text
-kunai://play?cat=<namespace>:<id>&kind=<movie|series|anime>&s=<season>&e=<episode>&t=<seconds>
+kunai://play?cat=<namespace>:<id>&kind=<movie|series|anime|video>&s=<season>&e=<episode>&t=<seconds>
 kunai://download?...   # same query params; queues a download instead of playback
 kunai://play?q=<query>&kind=...   # search fallback when no catalog id is known
 ```
 
 | Parameter | Meaning |
 | --- | --- |
-| `cat` | Catalog anchor: `tmdb:`, `anilist:`, `mal:`, or `imdb:` namespace + id |
+| `cat` | Catalog anchor: `tmdb:`, `anilist:`, `mal:`, `imdb:`, or `youtube:` namespace + id |
 | `q` | Search query fallback (use instead of `cat` when no stable id) |
-| `kind` | `movie`, `series`, or `anime` |
+| `kind` | `movie`, `series`, `anime`, or `video`. Optional, but write it: a link without it is read as `series` even when the namespace says otherwise |
 | `s` / `e` | Season and episode (1-based) |
 | `t` | Start offset in seconds, `1m23s`, or `1:23` |
 | `src` | Optional provider hint |

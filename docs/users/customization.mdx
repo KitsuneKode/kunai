@@ -206,9 +206,9 @@ Config keys tune the Kunai Lua bridge script:
 | Key | Purpose |
 | --- | --- |
 | `mpvKunaiScriptPath` | Custom path to `kunai-bridge.lua` (empty = auto-resolve) |
-| `mpvKunaiScriptOpts` | `--script-opts` entries for the bridge (e.g. `margin_bottom`, `chip_width`) |
+| `mpvKunaiScriptOpts` | `--script-opts` entries for the bridge (e.g. `margin_bottom`, `chip_width`). An entry whose key or value contains `,` or `=` is dropped — mpv's option list cannot represent one |
 | `mpvInProcessStreamReconnect` | Reload same URL after network-read-dead stalls |
-| `mpvInProcessStreamReconnectMaxAttempts` | Max reload attempts per playback cycle |
+| `mpvInProcessStreamReconnectMaxAttempts` | Max reload attempts per playback cycle (clamped 0–1; `0` disables reconnect) |
 
 Example `mpvKunaiScriptOpts`:
 
