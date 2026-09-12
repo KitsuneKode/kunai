@@ -26,6 +26,7 @@ const MODULE_TO_ID: Record<string, string> = {
   anidbProviderModule: "anidb",
   hianimeProviderModule: "hianime",
   animeggProviderModule: "animegg",
+  kickassanimeProviderModule: "kickassanime",
   miruroProviderModule: "miruro",
   youtubeProviderModule: "youtube",
 };
