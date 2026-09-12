@@ -81,6 +81,12 @@ export function buildKunaiBridgeScriptOptsArg(
   for (const [k, v] of Object.entries(opts)) {
     const key = k.trim();
     if (!key || v === "") continue;
+    // mpv splits `--script-opts` on commas and a key on its first `=`, with no
+    // escape for either. An entry carrying one cannot be represented, and
+    // emitting it anyway does not fail loudly — it silently redefines the
+    // neighbouring option or truncates this one. Dropping it is the honest
+    // outcome, as with a comma in a stream header value.
+    if (key.includes(",") || key.includes("=") || v.includes(",")) continue;
     parts.push(`${SCRIPT_OPTS_ID}-${key}=${v}`);
   }
   if (parts.length === 0) return undefined;

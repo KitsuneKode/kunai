@@ -5,6 +5,22 @@ export const DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES = 768 * 1024 * 1024;
 export const DEFAULT_OFFLINE_RUNWAY_TARGET = 2;
 
 /**
+ * Ceiling on same-url mpv reloads per playback cycle — and, at 1, also the
+ * shipped default.
+ *
+ * A dead stream answers a reload exactly as fast as a live one, so a budget
+ * above 1 buys a retry loop against a URL that is not coming back rather than
+ * recovery. One attempt covers the case worth covering: a transient network
+ * read that a single reload resolves.
+ *
+ * This is the only place the number lives. `ConfigServiceImpl` clamps persisted
+ * values to it, `PersistentMpvSession.create` clamps a raw config to it, and
+ * `.docs/mpv-in-process-reconnect.md` documents it — those three disagreed
+ * (1 / 3 / 12) until they were made to read from here.
+ */
+export const MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS = 1;
+
+/**
  * yt-dlp player clients Kunai asks for by default.
  *
  * This mirrors yt-dlp's own unauthenticated default (`_DEFAULT_CLIENTS` in
@@ -59,7 +75,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   mpvKunaiScriptPath: "",
   mpvKunaiScriptOpts: {},
   mpvInProcessStreamReconnect: true,
-  mpvInProcessStreamReconnectMaxAttempts: 1,
+  mpvInProcessStreamReconnectMaxAttempts: MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   discoverShowOnStartup: false,
   discoverMode: "auto",
   discoverItemLimit: 24,

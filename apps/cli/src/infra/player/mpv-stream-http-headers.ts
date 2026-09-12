@@ -37,6 +37,19 @@ export type NormalizedStreamHttpHeaders = {
 /** Headers mpv sets through dedicated options rather than the header list. */
 const DEDICATED_HEADER_NAMES = new Set(["referer", "user-agent", "origin"]);
 
+/**
+ * RFC 7230 token: the characters a header name may contain.
+ *
+ * Values are sanitised below, but the names were not, and they are not ours —
+ * a provider builds its header map partly from what the upstream API answered
+ * (VidLink spreads `stream.headers` into its payload). A name carrying a comma
+ * splits one field into two inside `http-header-fields`, and one carrying a
+ * colon or CR/LF writes a field the host never sent us. Nothing legitimate
+ * needs a character outside this set, so an odd name is dropped rather than
+ * forwarded.
+ */
+const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+
 /** Canonical HTTP header fields used for mpv launch args and persistent loadfile options. */
 export function normalizeStreamHttpHeaders(
   headers: Record<string, string> | undefined,
@@ -51,8 +64,10 @@ export function normalizeStreamHttpHeaders(
     return sanitized.length > 0 ? sanitized : undefined;
   };
   const extraFields: string[] = [];
-  for (const [name, value] of Object.entries(source)) {
+  for (const [rawName, value] of Object.entries(source)) {
+    const name = rawName.trim();
     if (DEDICATED_HEADER_NAMES.has(name.toLowerCase())) continue;
+    if (!HEADER_NAME_PATTERN.test(name)) continue;
     const cleaned = sanitize(value, /[\r\n]/g);
     if (!cleaned) continue;
     // mpv separates this list on commas and offers no escape, so a value

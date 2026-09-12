@@ -200,22 +200,30 @@ export class UsageAnalyticsService {
     }
     if (!canSend(state)) return { kind: "quiet" };
 
-    this.pingInBackground();
+    this.pingInBackground(options);
     return { kind: "pinged" };
   }
 
   /** Fire-and-forget; never blocks startup/playback. Failures are silent. */
-  pingInBackground(): void {
-    void this.maybePing().catch(() => {
+  pingInBackground(options: { readonly isInteractive: boolean }): void {
+    void this.maybePing(options).catch(() => {
       // Silent by design — analytics must never surface as a user-facing failure.
     });
   }
 
-  async maybePing(): Promise<void> {
+  /**
+   * `isInteractive` is the caller's, never assumed. This gate is deliberately a
+   * second one — `onSessionStart` has already refused a non-TTY session — but a
+   * second gate that hardcodes the permissive answer is not a gate. Non-TTY is a
+   * hard delivery bar even for an opted-in install (`consent-policy.ts`), so
+   * re-deriving it as `true` here would make the next caller of this method a
+   * contract breach rather than a bug.
+   */
+  async maybePing(options: { readonly isInteractive: boolean }): Promise<void> {
     const config = this.deps.config.getRaw();
     const state = resolveConsentState({
       env: this.env,
-      isInteractive: true,
+      isInteractive: options.isInteractive,
       stored: config.analytics,
     });
     if (!canSend(state)) return;
