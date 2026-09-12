@@ -1937,6 +1937,21 @@ function isSameHost(requestedUrl: string, responseUrl: string | undefined): bool
  * from URLs mpv could not open (issue #361) — so a pass here is not evidence of
  * playability, only the absence of evidence of death.
  */
+/**
+ * Stream hosts this probe cannot judge from Bun, so it does not ask them.
+ *
+ * AnimeGG's `/play` (every `moo` stream) never answers Bun's fetch — it hung
+ * past a 6s timeout on 2026-09-12, redirect followed or not, while curl and mpv
+ * got a 302 at once. The probe returns null on a timeout, so asking only ever
+ * spent the full `MIRURO_BACKEND_PROBE_TIMEOUT_MS` to learn nothing, on every
+ * resolve that landed on Moo — the backend that plays now that `pewe` is down.
+ * AnimeGG's own dossier already says a probe cannot judge these streams.
+ */
+const MIRURO_UNPROBEABLE_STREAM_HOSTS: ReadonlySet<string> = new Set([
+  "www.animegg.org",
+  "animegg.org",
+]);
+
 export async function probeMiruroBackendDown(
   url: string,
   headers: Readonly<Record<string, string>> | undefined,
@@ -1944,6 +1959,7 @@ export async function probeMiruroBackendDown(
   signal?: AbortSignal,
 ): Promise<number | null> {
   if (!/^https?:\/\//i.test(url)) return null;
+  if (MIRURO_UNPROBEABLE_STREAM_HOSTS.has(new URL(url).hostname)) return null;
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const timeout = AbortSignal.timeout(MIRURO_BACKEND_PROBE_TIMEOUT_MS);
   try {
@@ -2229,6 +2245,11 @@ export const miruroProviderModule: CoreProviderModule = {
         signal: context.signal,
         now: context.now,
         emit: context.emit,
+        // Skips a server whose backend is quarantined, so a dead one costs a
+        // probe for its first few plays instead of on every episode. The keys
+        // are server ids (`pewe`, `moo`): sub and dub share a backend.
+        endpointHealth: context.endpointHealth,
+        titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs: providerCycleCandidateTimeoutMs(
           input.startupPriority ?? "balanced",
@@ -2313,6 +2334,15 @@ export const miruroProviderModule: CoreProviderModule = {
               )
             : null;
           if (downStatus !== null) {
+            // The engine records nothing for `candidate-empty` — rightly, since
+            // an episode with no dub must not quarantine a server — so this
+            // definitive backend status is recorded here instead. A timeout or
+            // an aborted probe returns null above and never reaches this line.
+            context.endpointHealth?.recordFailure(MIRURO_PROVIDER_ID, metadata.serverId, {
+              class: "server-error",
+              titleId: input.title.id,
+              at: context.now(),
+            });
             throw createProviderCycleFailureError(candidate, {
               // Not `candidate-network`: retryable schedules a retry of a host
               // that is still down, and non-retryable stops the whole cycle as

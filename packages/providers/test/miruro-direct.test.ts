@@ -840,9 +840,11 @@ describe("probeMiruroBackendDown", () => {
     // {"error":"Invalid request (bad hand off)"} with 500 to a bare ranged GET
     // while mpv plays the same URL. Rejecting on it skipped the most reliable
     // backend Miruro has.
+    // Uses another host: AnimeGG itself is no longer asked (see below), and
+    // this test is about the 500 rule, which any backend's CDN can trip.
     const { context } = withStatus(500);
     expect(
-      await probeMiruroBackendDown("https://www.animegg.org/play/1/video.mp4", {}, context),
+      await probeMiruroBackendDown("https://cdn.backend.test/v/video.mp4", {}, context),
     ).toBeNull();
   });
 
@@ -858,8 +860,28 @@ describe("probeMiruroBackendDown", () => {
       },
     } as never;
     expect(
+      await probeMiruroBackendDown("https://handoff.backend.test/play/1/video.mp4", {}, context),
+    ).toBeNull();
+  });
+
+  test("does not ask AnimeGG at all — Bun gets no answer from it, only a timeout", async () => {
+    // Every moo stream is an animegg.org/play URL, and that endpoint never
+    // answers Bun's fetch; the probe spent its whole timeout on every Moo
+    // resolve to return "no evidence".
+    let asked = 0;
+    const context = {
+      fetch: {
+        fetch: async () => {
+          asked += 1;
+          return new Response("", { status: 503 });
+        },
+      },
+    } as never;
+
+    expect(
       await probeMiruroBackendDown("https://www.animegg.org/play/1/video.mp4", {}, context),
     ).toBeNull();
+    expect(asked).toBe(0);
   });
 
   test("a same-host redirect still counts", async () => {
@@ -900,7 +922,7 @@ describe("probeMiruroBackendDown", () => {
     for (const status of [200, 206]) {
       const { context } = withStatus(status);
       expect(
-        await probeMiruroBackendDown("https://www.animegg.org/play/1/video.mp4", {}, context),
+        await probeMiruroBackendDown("https://cdn.backend.test/v/video.mp4", {}, context),
       ).toBe(null);
     }
   });
