@@ -88,4 +88,32 @@ describe("vidlink DASH delivery", () => {
     expect(result.subtitles.length).toBe(1);
     expect(result.subtitles[0]?.language).toBe("en");
   });
+
+  test("a 200 with a null body is no source, not a crash", async () => {
+    // What VidLink actually answers for every title while its backend has
+    // nothing (2026-09-12). Reading `.stream` off it threw `null is not an
+    // object`, so the lane reported an internal error instead of stepping aside.
+    const context = {
+      providerId: "vidlink",
+      now: () => new Date().toISOString(),
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (url: string) =>
+          url.includes("enc-dec.app")
+            ? new Response(JSON.stringify({ result: "ENCRYPTED" }), { status: 200 })
+            : new Response("null", {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+      },
+    } as unknown as ProviderRuntimeContext;
+
+    const result = await resolveVidlinkDirect(INPUT, context);
+
+    expect(result.status).toBe("exhausted");
+    expect(result.streams).toEqual([]);
+    expect(result.failures.map((failure) => failure.message).join(" ")).not.toContain(
+      "is not an object",
+    );
+  });
 });
