@@ -45,6 +45,7 @@ const PROVIDER_MODULE_DIR: Record<string, string> = {
   rivestreamProviderModule: "rivestream",
   allmangaProviderModule: "allmanga",
   anidbProviderModule: "anidb",
+  animeggProviderModule: "animegg",
   miruroProviderModule: "miruro",
   youtubeProviderModule: "youtube",
 };
@@ -52,6 +53,7 @@ const PROVIDER_MODULE_DIR: Record<string, string> = {
 const PROVIDER_ID_CONSTANTS: Record<string, string> = {
   ALLANIME_PROVIDER_ID: "allanime",
   ANIDB_PROVIDER_ID: "anidb",
+  ANIMEGG_PROVIDER_ID: "animegg",
   CINEBY_PROVIDER_ID: "cineby",
   MIRURO_PROVIDER_ID: "miruro",
   RIVESTREAM_PROVIDER_ID: "rivestream",

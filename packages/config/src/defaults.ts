@@ -33,9 +33,10 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   youtubeProvider: "youtube",
   providerPriority: ["rivestream", "vidlink"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
-  // AniDB and AllAnime are kept behind Miruro — AniDB for when it returns, and
-  // AllAnime because it carries the ani-cli parity path.
-  animeProviderPriority: ["miruro", "anidb", "allanime"],
+  // AnimeGG is second because it is the one that shares nothing with Miruro —
+  // own catalog, own site, own CDN — so a Miruro outage does not take it too.
+  // AniDB follows for when it returns, then AllAnime for the ani-cli parity path.
+  animeProviderPriority: ["miruro", "animegg", "anidb", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   providerDefaultsRevision: 1,
   youtubeProviderPriority: ["youtube"],

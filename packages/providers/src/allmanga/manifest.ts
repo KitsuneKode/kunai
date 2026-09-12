@@ -7,7 +7,7 @@ export const allanimeManifest = defineProviderManifest({
   displayName: "AllManga",
   aliases: ["AllAnime"],
   description:
-    "Anime episodes in sub and dub — the ani-cli parity source, third in the default order",
+    "Anime episodes in sub and dub — the ani-cli parity source, fourth in the default order",
   domain: "mkissa.to",
   recommended: false,
   mediaKinds: ["anime"],

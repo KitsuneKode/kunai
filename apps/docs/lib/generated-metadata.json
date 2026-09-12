@@ -1,11 +1,11 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "1734f3f68092db4309db7e66b8797261b0c49c3e0cdaffc0613f6aa82f4a67b5",
-  "docsContentFingerprint": "e00ee6dff99520eab63a3ded40b8a7d5cfe331690220149811051dde659b464b",
+  "cliSourceFingerprint": "fe2730e78b53b640fd4338f70be6e41d07eab5a25f24c4a69405431562683903",
+  "docsContentFingerprint": "9603f925b2f300d112e4491769394e8aea209cd4b97bd315a094fb8b0c269e7e",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
-  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
+  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "animegg", "youtube"],
   "providers": [
     {
       "id": "videasy",
@@ -56,7 +56,7 @@
     {
       "id": "anidb",
       "displayName": "AniDB",
-      "description": "anidb.app catalog and streams — ani-cli v5's source; second in the default anime order",
+      "description": "anidb.app catalog and streams — ani-cli v5's source; third in the default anime order",
       "domain": "anidb.app",
       "recommended": true,
       "mediaKinds": ["anime"],
@@ -74,7 +74,7 @@
     {
       "id": "allanime",
       "displayName": "AllManga",
-      "description": "Anime episodes in sub and dub — the ani-cli parity source, third in the default order",
+      "description": "Anime episodes in sub and dub — the ani-cli parity source, fourth in the default order",
       "domain": "mkissa.to",
       "recommended": false,
       "mediaKinds": ["anime"],
@@ -116,6 +116,27 @@
         "May hit Cloudflare rate limits if called too frequently.",
         "2026-09-11: the pipe is reachable — Bun fetch is always CF-403'd (its TLS fingerprint), and curl clears the edge on both mirrors. The superseded 2026-08-17 note claiming curl also received CF 403 was measured through a predicate that read any HTML body as a Cloudflare block, including the mirror's own `502 upstream unreachable` page.",
         "A 444/502 from the pipe is one of Miruro's backing servers being down (pewe follows AniDB, ally follows AllManga), not a WAF block, and must not stop the cycle — the remaining servers are usually healthy."
+      ]
+    },
+    {
+      "id": "animegg",
+      "displayName": "AnimeGG",
+      "description": "Independent anime source — direct MP4s, sub and dub, no AniList dependency",
+      "domain": "www.animegg.org",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
+      "status": "active",
+      "notes": [
+        "2026-09-11: added as the anime lane's independent second source. Its value is what it does NOT share with Miruro: its own catalog (provider-native slugs, no AniList), its own site, its own CDN. Miruro reaches AnimeGG too, as its `moo` server — but only through miruro.bz, so it dies with Miruro. This adapter does not.",
+        "Four plain HTML documents, no JavaScript and no crypto: /search/?q= -> /series/<slug> -> /<slug>-episode-<n> -> /embed/<id>, which carries `var videoSources = [{file, label}]` of direct MP4s.",
+        "Sub and dub are the episode page's own `#videos` tabs (`data-id`, `data-mirror`, `data-version`), so audio is read, never guessed. Naruto ep 1 exposes subbed 25881 and dubbed 25882.",
+        "The subbed version is hard-subbed — burned-in English, no separate track. It advertises no subtitle-resolve and must not claim soft subs.",
+        "Streams are /play/<id>/video.mp4?for=<token>, which 302s to a per-request vidcache host. That CDN answers `{\"error\":\"Invalid request (bad hand off)\"}` with HTTP 500 to anything that is not its player — a plain or ranged GET included — while mpv plays the same URL. Never read a probe of these as evidence the stream is dead.",
+        "`bk` on each source is a backup, but not a uniform one: a direct CDN URL for One Piece and an mp4upload embed page for Naruto. Unused until one extractor covers both.",
+        "No Cloudflare challenge on any of the four documents; the four HTML documents need no referer.",
+        "A title found in another catalog is matched against /search/?q= by name — title and alt titles, exactly one hit — and the slug is remembered on the title bridge. `title.id` is never trusted as a slug: AnimeGG slugs are plain kebab, so a same-shaped id from elsewhere (or AniList's numeric 21) would reach /series/<id>. Alt titles are split on both `,` and `;` — Frieren's English name sits after a semicolon.",
+        "The STREAM does need one. Without a referer the CDN refuses the hand-off and mpv writes no frame; with the episode page as referer it plays. animegg.org 302s either way, so a status check on the /play URL cannot see this — only the player can."
       ]
     },
     {
