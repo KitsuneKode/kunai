@@ -138,9 +138,20 @@ export function displayHostForEndpoint(endpoint: string): string {
 
 export type VideasyClientProfile = {
   readonly appId: string;
+  /** Origin sent to the sources API — the site fronting it. */
   readonly origin: string;
   readonly defaultReferer: string;
   readonly streamReferer: string;
+  /**
+   * Origin sent with the stream itself, which is not the API's. Every site in
+   * this family plays media inside the vidking.net player, so that is the origin
+   * a CDN sees from a browser. The peakstorm CDN behind the Yoru server refuses
+   * `Origin: https://www.cineby.at` with a 403 while accepting vidking.net or no
+   * Origin at all (2026-09-12); the other CDNs accept either. The resolve gate
+   * and the shipped stream both read this one field — they diverged once, and
+   * the gate spent months verifying a request mpv never made (issue #361).
+   */
+  readonly streamOrigin: string;
 };
 
 const USER_AGENT =
@@ -1016,8 +1027,10 @@ export function createVidkingResultFromPayload({
     cachePolicy: policy,
     sourceId: resolvedSourceId,
     server: resolvedServer,
-    streamReferer,
-    streamOrigin,
+    // This helper is exported and callable with neither, so the fallbacks live
+    // here; the resolve path always passes the profile's pair.
+    streamReferer: streamReferer ?? VIDKING_REFERER,
+    streamOrigin: streamOrigin ?? VIDKING_ORIGIN,
     sourceQualityFilter,
     flavorLabel: themedLabel,
     serverName: themedLabel,
@@ -1280,6 +1293,7 @@ async function probeSelectedVidkingPayloadStream({
   sourceId,
   server,
   streamReferer,
+  streamOrigin,
   sourceQualityFilter,
   engineOptions,
   events,
@@ -1292,6 +1306,8 @@ async function probeSelectedVidkingPayloadStream({
   readonly sourceId: string;
   readonly server: VidkingServerEndpoint;
   readonly streamReferer?: string;
+  /** Must be the shipped stream's origin: the gate verifies the request mpv will make. */
+  readonly streamOrigin: string;
   readonly sourceQualityFilter?: string;
   readonly engineOptions?: VidKingEngineOptions;
   readonly events: ProviderTraceEvent[];
@@ -1305,7 +1321,8 @@ async function probeSelectedVidkingPayloadStream({
     cachePolicy,
     sourceId,
     server,
-    streamReferer,
+    streamReferer: streamReferer ?? VIDKING_REFERER,
+    streamOrigin,
     sourceQualityFilter,
     flavorLabel: presentation.themeLabel,
     serverName: presentation.themeLabel,
@@ -1582,6 +1599,7 @@ async function tryVidkingServer(opts: {
   const appId = clientProfile.appId;
   const requestReferer = customReferer ?? clientProfile.defaultReferer;
   const streamReferer = clientProfile.streamReferer;
+  const streamOrigin = clientProfile.streamOrigin;
   const requestServers = resolveVideasyRequestServers(server, clientProfile);
 
   emitTraceEvent(events, context, {
@@ -1738,6 +1756,7 @@ async function tryVidkingServer(opts: {
             sourceId,
             server,
             streamReferer,
+            streamOrigin,
             sourceQualityFilter: engineOptions.filterQuality,
             engineOptions,
             events,
@@ -1767,7 +1786,7 @@ async function tryVidkingServer(opts: {
             startedAt,
             failures,
             streamReferer,
-            streamOrigin: clientProfile.origin,
+            streamOrigin,
             sourceQualityFilter: engineOptions.filterQuality,
             engineOptions,
             streamReachabilityVerified: streamProbe.verified,
@@ -1872,6 +1891,7 @@ export function resolveVideasyClientProfile(
       origin: VIDKING_ORIGIN,
       defaultReferer: referer,
       streamReferer: referer,
+      streamOrigin: VIDKING_ORIGIN,
     };
   }
 
@@ -1889,6 +1909,7 @@ export function resolveVideasyClientProfile(
     origin: CINEBY_ORIGIN,
     defaultReferer: referer,
     streamReferer: referer,
+    streamOrigin: VIDKING_ORIGIN,
   };
 }
 
@@ -2090,8 +2111,8 @@ function normalizeStreamCandidates({
   cachePolicy,
   sourceId,
   server,
-  streamReferer = VIDKING_REFERER,
-  streamOrigin = VIDKING_ORIGIN,
+  streamReferer,
+  streamOrigin,
   sourceQualityFilter,
   flavorLabel,
   serverName,
@@ -2102,8 +2123,15 @@ function normalizeStreamCandidates({
   readonly cachePolicy: CachePolicy;
   readonly sourceId: string;
   readonly server?: string;
-  readonly streamReferer?: string;
-  readonly streamOrigin?: string;
+  /**
+   * Both required, with no default: this is the only place stream headers are
+   * built, and the resolve gate and the shipped result both come through it.
+   * When they were optional the gate took the defaults and the result took the
+   * profile, so the gate verified a request mpv never made (#361). A missing
+   * one is now a type error at the call site rather than a silent divergence.
+   */
+  readonly streamReferer: string;
+  readonly streamOrigin: string;
   readonly sourceQualityFilter?: string;
   readonly flavorLabel?: string;
   readonly serverName?: string;
