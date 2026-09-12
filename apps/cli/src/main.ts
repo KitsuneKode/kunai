@@ -203,19 +203,23 @@ function getShutdownCoordinator(): ShutdownCoordinator {
   return shutdownCoordinator;
 }
 
-async function maybeRunOfflineMode(
+/**
+ * `--offline` opens the library and then plays on: offline is a starting
+ * surface, not a mode that owns the process. This deliberately does not end the
+ * run, which is why it reports nothing — it used to return `false`
+ * unconditionally while its caller branched on the result, so the exit path
+ * behind that branch had never run.
+ */
+function openOfflineLibrary(
   args: { offline: boolean },
   container: Awaited<ReturnType<typeof createContainer>>,
-): Promise<boolean> {
-  if (!args.offline) {
-    return false;
-  }
+): void {
+  if (!args.offline) return;
 
   container.stateManager.dispatch({
     type: "OPEN_OVERLAY",
     overlay: { type: "library", view: "library" },
   });
-  return false;
 }
 
 type StartupHistoryTarget = {
@@ -1133,12 +1137,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     container,
     loadSetupWorkflow: () => import("./app-shell/workflows/setup-workflows"),
   });
-  if (await maybeRunOfflineMode(args, container)) {
-    await shutdownShell();
-    await disposeContainer(container);
-    if (process.stdin.isTTY) process.stdin.unref();
-    return;
-  }
+  openOfflineLibrary(args, container);
   if (await maybeRunDownloadMode(args, container, bootstrapTitle)) {
     await shutdownShell();
     await disposeContainer(container);
