@@ -272,10 +272,31 @@ describe("endpoint configuration", () => {
       },
     });
 
-    await service.maybePing();
+    await service.maybePing({ isInteractive: true });
 
     expect(calls).toBe(0);
     expect(config.rawRef.lastAnalyticsPingAt).toBe(0);
+  });
+
+  test("an opted-in install sends nothing from a non-interactive session", async () => {
+    // The send gate is `maybePing`'s own, not an assumption about who called it.
+    // A prior opt-in does not let a scripted or piped run emit a ping, and the
+    // only thing that made that true here was the caller checking first.
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    let calls = 0;
+    const service = makeService(config, {
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await service.maybePing({ isInteractive: false });
+
+    expect(calls).toBe(0);
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(0);
+    // Nor may a suppressed ping be what mints the identifier.
+    expect(config.rawRef.installId).toBe(UUID);
   });
 
   test("a default endpoint is not consent: the gates are unchanged by it", () => {
