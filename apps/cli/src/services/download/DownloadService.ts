@@ -1065,6 +1065,10 @@ export class DownloadService {
 
   private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {
     const resolved = await this.resolveStreamForJob(job);
+    // Resolution can outlive abort/shutdown. Let the queue's cancellation
+    // handler retain that decision before persisting metadata or starting a child.
+    if (this.cancellationRequests.has(job.id))
+      throw new Error("download cancelled during resolution");
     const selectedStream = resolved.stream.providerResolveResult?.streams.find(
       (stream) => stream.id === resolved.stream.providerResolveResult?.selectedStreamId,
     );
