@@ -20,6 +20,7 @@ import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { resolveTuning } from "@/services/persistence/tuning";
 import { checkStreamPreflight } from "@/services/playback/stream-health-check";
+import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
 
 import {
   buildKunaiBridgeScriptOptsArg,
@@ -84,6 +85,14 @@ export {
 
 const IN_PROCESS_RECONNECT_BASE_BACKOFF_MS = 1_800;
 const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
+
+/**
+ * Upper bound on a reconnect budget handed to `create` in a raw config object.
+ * Well above the persisted cap (`MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS`) so the
+ * session harness can drive multi-attempt paths; nothing a user can configure
+ * reaches it.
+ */
+const RECONNECT_ATTEMPT_CEILING = 12;
 
 type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
 
@@ -363,10 +372,19 @@ export class PersistentMpvSession {
     const cfg = opts.kitsuneConfig;
     session.mpvInProcessStreamReconnectEnabled = cfg.mpvInProcessStreamReconnect !== false;
     const maxAttempts = cfg.mpvInProcessStreamReconnectMaxAttempts;
+    // The fallback is the shipped default, not a number of its own. It read 3
+    // while the default has been 1 and `ConfigServiceImpl` has capped persisted
+    // values at 1 — so a config that reached here without the key got a budget
+    // the CLI does not offer anywhere in its UI.
+    //
+    // `RECONNECT_ATTEMPT_CEILING` stays above that cap on purpose: it bounds a
+    // raw config object handed straight to this factory (compiled smoke, the
+    // session harness), which never passes through the persisted clamp. It is a
+    // structural guard against a nonsense value, not the user-facing policy.
     session.mpvInProcessStreamReconnectMaxAttempts =
       typeof maxAttempts === "number" && Number.isFinite(maxAttempts)
-        ? Math.max(0, Math.min(12, Math.trunc(maxAttempts)))
-        : 3;
+        ? Math.max(0, Math.min(RECONNECT_ATTEMPT_CEILING, Math.trunc(maxAttempts)))
+        : MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS;
     const tuning = resolveTuning(cfg.tuningOverrides);
     session.reconnectBaseBackoffMs = tuning.mpvReconnectBaseBackoffMs;
     session.reconnectMaxBackoffMs = tuning.mpvReconnectMaxBackoffMs;

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-09-12"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -32,16 +32,24 @@ If reconnect **fails** or limits are hit, the cycle ends and the usual `Playback
 
 ## Limits and backoff
 
-- **`mpvInProcessStreamReconnectMaxAttempts`** (default `3`, max `12`): counts **started** reloads per playback cycle (new episode resets the counter).
+- **`mpvInProcessStreamReconnectMaxAttempts`** (default `1`, and `1` is also the
+  cap): counts **started** reloads per playback cycle (new episode resets the
+  counter). `ConfigServiceImpl` clamps whatever is persisted down to
+  `MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS` in `packages/config/src/defaults.ts`,
+  so a hand-edited `config.json` asking for more gets one attempt. A dead stream
+  answers a reload as fast as a live one, so a larger budget buys a retry loop
+  against a URL that is not coming back. (`PersistentMpvSession.create` bounds a
+  raw injected config at a higher structural ceiling — that path is for the test
+  harness and the compiled smoke, not for user configuration.)
 - **Backoff** after a failed `loadfile`: exponential from a base delay, capped (see `PersistentMpvSession` constants). Prevents hammering a dead CDN.
 - **`reconnectInFlight`**: serializes overlapping reconnect work.
 
 ## Configuration (`~/.config/kunai/config.json`)
 
-| Field                                    | Default | Meaning                                                                                                    |
-| ---------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
-| `mpvInProcessStreamReconnect`            | `true`  | Master switch. `false` disables automatic same-URL reloads (manual **Ctrl+r** / shell refresh still work). |
-| `mpvInProcessStreamReconnectMaxAttempts` | `3`     | Max reload attempts **per episode play**. Set `0` to disable (same as turning off retries).                |
+| Field                                    | Default | Meaning                                                                                                       |
+| ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
+| `mpvInProcessStreamReconnect`            | `true`  | Master switch. `false` disables automatic same-URL reloads (manual **Ctrl+r** / shell refresh still work).    |
+| `mpvInProcessStreamReconnectMaxAttempts` | `1`     | Max reload attempts **per episode play**, and also the cap. Set `0` to disable (same as turning off retries). |
 
 ## Relationship to other recovery
 
