@@ -83,12 +83,23 @@ export function parseHlsMasterAudioRenditions(manifestText: string): HlsAudioRen
     if (!line.startsWith("#EXT-X-MEDIA:")) continue;
     if (!/\bTYPE=AUDIO\b/i.test(line)) continue;
     renditions.push({
-      language: /LANGUAGE="([^"]*)"/i.exec(line)?.[1]?.trim() || undefined,
-      name: /NAME="([^"]*)"/i.exec(line)?.[1]?.trim() || undefined,
-      isDefault: /\bDEFAULT=YES\b/i.test(line),
+      language: hlsAttribute(line, "LANGUAGE"),
+      name: hlsAttribute(line, "NAME"),
+      isDefault: hlsAttribute(line, "DEFAULT")?.toUpperCase() === "YES",
     });
   }
   return renditions;
+}
+
+/**
+ * One attribute of an HLS tag, matched whole. A bare /LANGUAGE="…"/ also
+ * matches inside ASSOC-LANGUAGE, which would name the wrong track, so the name
+ * must start the list or follow a comma.
+ */
+function hlsAttribute(line: string, name: string): string | undefined {
+  const match = new RegExp(`(?:^|[:,])${name}=(?:"([^"]*)"|([^,]*))`, "i").exec(line);
+  const value = (match?.[1] ?? match?.[2])?.trim();
+  return value || undefined;
 }
 
 /** True when a stream URL looks like an HLS master (leaf or path hint). */

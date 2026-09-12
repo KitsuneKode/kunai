@@ -121,6 +121,8 @@ export type PersistentLoadfileOptions = {
   readonly "http-header-fields"?: string;
   readonly "http-header-fields-clr"?: string;
   readonly "tls-verify"?: string;
+  /** Audio language for this file; see {@link toMpvLanguageToken}. */
+  readonly alang?: string;
   /** mpv's `--ytdl` is a yes/no flag: whether ytdl_hook runs at all. */
   readonly ytdl?: string;
   /** mpv's `--ytdl-format` is the format selector string. */

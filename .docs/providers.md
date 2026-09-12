@@ -555,13 +555,20 @@ decides the order. See
 [the Miruro dossier](./provider-dossiers/miruro.md) for their network failure
 modes.
 
-Configs saved before revision 1 hold the old AniDB default as though it were a
-choice, because the whole merged config is written on every save.
-`ConfigServiceImpl.load` migrates the exact old pair (`"anidb"` with `["anidb"]`
-or no list) once and stamps `providerDefaultsRevision`; any other anime setup is
-left alone, and choosing AniDB afterwards sticks. A future lane-default change
-must bump the revision, or it strands every existing user on the previous
-default.
+A saved config holds whatever lane default was current when it was written, as
+though it were a choice, because the whole merged config is written on every
+save. `ConfigServiceImpl.load` keeps a table of every default a build may have
+written (`INHERITED_ANIME_DEFAULTS`), each tied to the `providerDefaultsRevision`
+it shipped under, and migrates a config only when its exact pair matches an entry
+for its _own_ revision — then stamps the current revision. Any other anime setup
+is left alone, and so is a choice made after a migration: a revision-1 user who
+picks AniDB again holds the revision-0 pair, which is only inherited at
+revision 0. Revision 1's list grew twice across stacked changes, so both of its
+lists are in the table; that keeps the migration correct whichever of those
+builds was released.
+
+A future lane-default change must bump the revision **and** add the previous
+default to the table — a bump alone stamps configs without changing them.
 
 | ID             | Content Types | Runtime     | Module Location                                 |
 | -------------- | ------------- | ----------- | ----------------------------------------------- |

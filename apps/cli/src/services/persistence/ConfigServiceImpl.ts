@@ -861,22 +861,59 @@ function readProviderDefaultsRevision(loaded: Partial<KitsuneConfig>): number {
 }
 
 /**
- * AniDB was the shipped anime default until provider-defaults revision 1.
+ * Every anime-lane default a build may have written to disk, keyed by the
+ * revision it was written under.
  *
- * `ConfigStore.save` writes the whole merged config, so that default sits on disk
+ * `ConfigStore.save` writes the whole merged config, so a default sits on disk
  * for every user who ever saved any setting — and the file cannot tell it apart
- * from a deliberate choice. The exact pre-revision pair is the closest honest
- * signal: anyone who touched the anime lane has something else there, and is left
- * alone. The revision stamp is what keeps this one-shot: once it is written, a
- * user who picks AniDB back gets to keep it.
+ * from a deliberate choice. The exact pair *under the revision it shipped in* is
+ * the closest honest signal: anyone who touched the anime lane has something else
+ * there, and is left alone. Tying each pair to its revision is what keeps a
+ * choice made after a migration: a user stamped with revision 1 who picks AniDB
+ * again holds the revision-0 pair, which is only inherited at revision 0.
  */
+const INHERITED_ANIME_DEFAULTS: readonly {
+  readonly revision: number;
+  readonly animeProvider: string;
+  readonly priorities: readonly (readonly string[] | undefined)[];
+}[] = [
+  // AniDB alone, before revisions existed. A config older than the priority
+  // list has none, and inherited the default by definition.
+  { revision: 0, animeProvider: "anidb", priorities: [undefined, ["anidb"]] },
+  // Revision 1 moved the lane to Miruro, and the list then grew twice in
+  // stacked changes. Either list is on disk if a build shipped between them.
+  {
+    revision: 1,
+    animeProvider: "miruro",
+    priorities: [
+      ["miruro", "anidb", "allanime"],
+      ["miruro", "animegg", "anidb", "allanime"],
+    ],
+  },
+];
+
 function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
-  if (readProviderDefaultsRevision(loaded) >= 1) return false;
-  if (loaded.animeProvider !== "anidb") return false;
+  const revision = readProviderDefaultsRevision(loaded);
+  if (revision >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
   const priority = loaded.animeProviderPriority;
-  // A config older than the priority list inherited the default by definition.
-  if (priority === undefined) return true;
-  return Array.isArray(priority) && priority.length === 1 && priority[0] === "anidb";
+  return INHERITED_ANIME_DEFAULTS.some(
+    (inherited) =>
+      inherited.revision === revision &&
+      loaded.animeProvider === inherited.animeProvider &&
+      inherited.priorities.some((list) => sameProviderList(list, priority)),
+  );
+}
+
+function sameProviderList(
+  expected: readonly string[] | undefined,
+  actual: readonly string[] | undefined,
+): boolean {
+  if (expected === undefined || actual === undefined) return expected === actual;
+  return (
+    Array.isArray(actual) &&
+    actual.length === expected.length &&
+    expected.every((id, index) => actual[index] === id)
+  );
 }
 
 function shouldPersistVideasyAppIdMigration(

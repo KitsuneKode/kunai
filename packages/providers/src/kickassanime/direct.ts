@@ -99,7 +99,7 @@ async function kaaFetch(
     return await attempt(currentBase);
   } catch (error) {
     if (context.signal?.aborted) throw error;
-    const rotated = await discoverBase(context);
+    const rotated = await discoverKaaBase(context);
     if (!rotated || rotated === currentBase) throw error;
     currentBase = rotated;
     return attempt(currentBase);
@@ -107,23 +107,34 @@ async function kaaFetch(
 }
 
 /**
- * Where the alias lands now. Landing on the alias itself is no answer — asking
- * it directly would turn every POST into a GET at the redirect.
+ * Where the alias points now, read from its redirect without following it.
+ *
+ * The alias is an old domain, and old domains lapse and get bought. Following
+ * its redirect blindly would let whoever holds it next choose the API base —
+ * and with it every stream URL and header this adapter hands to mpv. So the
+ * one hop is read by hand and the target must be https and shaped like a
+ * KickAssAnime domain (every rotation so far has been `kaa.<tld>` or
+ * `kickass-anime.<tld>`), or the rotation is refused and the old error stands.
  */
-async function discoverBase(context: ProviderRuntimeContext): Promise<string | null> {
+export async function discoverKaaBase(context: ProviderRuntimeContext): Promise<string | null> {
   try {
     const response = await requester(context)(REDIRECTING_ALIAS, {
       headers: { "user-agent": USER_AGENT },
+      redirect: "manual",
       signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
     });
     void response.body?.cancel().catch(() => {});
-    if (!response.url) return null;
-    const landed = new URL(response.url).origin;
-    return landed === new URL(REDIRECTING_ALIAS).origin ? null : landed;
+    const location = response.headers.get("location");
+    if (response.status < 300 || response.status >= 400 || !location) return null;
+    const target = new URL(location, REDIRECTING_ALIAS);
+    if (target.protocol !== "https:" || !KAA_HOST_SHAPE.test(target.hostname)) return null;
+    return target.origin === new URL(REDIRECTING_ALIAS).origin ? null : target.origin;
   } catch {
     return null;
   }
 }
+
+const KAA_HOST_SHAPE = /^(?:www\.)?(?:kaa|kickass-?anime)\.[a-z]{2,6}$/;
 
 async function fetchJson(
   context: ProviderRuntimeContext,

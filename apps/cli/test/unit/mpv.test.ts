@@ -252,6 +252,29 @@ test("buildMpvArgs maps language preferences to mpv alang/slang", () => {
   expect(args).toContain("--slang=no");
 });
 
+test("buildMpvArgs turns Kunai's sub/dub audio modes into tracks mpv can match", () => {
+  // The Tracks panel writes the mode into the audio profile. `--alang=dub`
+  // matches no track, so on a multi-audio master mpv stayed on the default
+  // Japanese one and a dub request played the sub.
+  const argsFor = (audioPreference: string) =>
+    buildMpvArgs(
+      {
+        url: "https://cdn.example/master.m3u8",
+        headers: {},
+        subtitle: null,
+        audioPreference,
+        subtitlePreference: "en",
+        displayTitle: "Audio mode",
+      },
+      "/tmp/kunai-test.sock",
+    );
+
+  expect(argsFor("dub")).toContain("--alang=en");
+  expect(argsFor("sub")).toContain("--alang=orig");
+  expect(argsFor("DUB")).toContain("--alang=en");
+  expect(argsFor("en")).toContain("--alang=en");
+});
+
 test("buildMpvArgs skips slang for interactive subtitle mode", () => {
   const args = buildMpvArgs(
     {

@@ -41,7 +41,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // AniDB follows for when it returns, then AllAnime for the ani-cli parity path.
   animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
-  providerDefaultsRevision: 1,
+  providerDefaultsRevision: 2,
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

@@ -125,7 +125,10 @@ frame written for both audio modes.
   `kickass-anime.ro` still redirects to the current one and is asked when the
   current base stops answering _at connection level_ — an HTTP error is not a
   rotation signal, and an alias that answers without redirecting is not a new
-  domain.
+  domain. The redirect is read by hand, not followed, and only an https
+  `kaa.<tld>` or `kickass-anime.<tld>` target is accepted: the alias is an old
+  domain that can lapse, and whoever bought it would otherwise choose the API
+  base — and with it every stream URL handed to mpv.
 - The Astro props are matched by shape. A player rewrite must surface as "no
   playable server", never as a wrong stream — `parseKaaPlayerPage` returns null
   rather than guessing.
