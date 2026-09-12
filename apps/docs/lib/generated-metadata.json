@@ -1,11 +1,21 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "94484c7351b67d7ee193285a06eaf32ba6d768ec34f358f8c7bbeb3f6226837f",
-  "docsContentFingerprint": "40c80751382f7def14e831c90d2b80af576431e9f03bba13061bc2bb0918a031",
+  "cliSourceFingerprint": "e6718822315cace8d926eea034a5dc4e3f338d0f230143a6c92f6bb999676656",
+  "docsContentFingerprint": "69644751b5ab69015bacc0ffc8318620ab2834011100eb8717623af8c040b03a",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
-  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "animegg", "youtube"],
+  "providerIds": [
+    "videasy",
+    "vidlink",
+    "rivestream",
+    "anidb",
+    "allanime",
+    "miruro",
+    "animegg",
+    "kickassanime",
+    "youtube"
+  ],
   "providers": [
     {
       "id": "videasy",
@@ -136,6 +146,27 @@
         "`bk` on each source is a backup, but not a uniform one: a direct CDN URL for One Piece and an mp4upload embed page for Naruto. Unused until one extractor covers both.",
         "No Cloudflare challenge on any of the four documents; the four HTML documents need no referer.",
         "The STREAM does need one. Without a referer the CDN refuses the hand-off and mpv writes no frame; with the episode page as referer it plays. animegg.org 302s either way, so a status check on the /play URL cannot see this — only the player can."
+      ]
+    },
+    {
+      "id": "kickassanime",
+      "displayName": "KickAssAnime",
+      "description": "Independent anime source — HLS with separate subtitle tracks, sub and dub",
+      "domain": "kaa.lt",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
+      "status": "active",
+      "notes": [
+        "2026-09-11: added as a second anime source independent of Miruro, and the only one that ships subtitles as separate tracks rather than burned in.",
+        "Catalog is a plain JSON API: POST /api/fsearch {query, page}; GET /api/show/<slug>/episodes?ep=<page>&lang=<locale>; GET /api/show/<slug>/episode/ep-<n>-<epSlug> -> servers. Locales: ja-JP is sub, en-US is dub; dub coverage is often partial (Naruto: 2 of 220).",
+        "The site's JS is obfuscated, but nothing on the stream path is encrypted: the cat-player page carries the manifest and subtitles as serialized Astro island props ([0, value] / [1, array] tuples).",
+        "Headers are the whole trick, and each hop wants a different one. The HLS manifest needs `Referer: https://krussdomi.com/` (403 without). Segments — MPEG-TS served as .jpg from a rotating CDN host (st1.advancedairesearchlab.xyz on 2026-09-11, st1.narutokun.xyz on 2026-09-12) — need `Origin: https://krussdomi.com`; the referer alone is refused. Subtitle .vtt files need the same. Both headers are derived from the player's own origin rather than hardcoded, so a player move carries them along.",
+        "mpv applies the stream's referer and Origin to --sub-file / sub-add requests too, so subtitles load with no per-track headers (verified: sid=1 external webvtt).",
+        "Sub and dub are usually ONE file: the master carries a dub per audio rendition (Frieren ships nine, Japanese marked DEFAULT), so both locales hand back the same manifest id. The track is mpv's to choose via --alang, which is why `selectKaaAudio` reads the rendition group instead of trusting the locale — and why Kunai's audio setting had to stop reaching mpv as the literal `dub`, which matched no track and played Japanese.",
+        "The variant playlists are video-only (the audio lives in the rendition group), so the ladder is never expanded into per-quality URLs — mpv gets the master and picks. That is also why qualityRank is 0 rather than an invented height.",
+        "Only VidStreaming (HLS) is used. BirdStream serves DASH with many subtitle languages, but its manifest answered 404 for the title tested; the doubled slash in its URL (https:////bl.krussdomi.com) is normalized if it is ever enabled.",
+        "The domain rotates (kaa.to -> kaa.mx -> kickass-anime.ro -> kaa.lt). kickass-anime.ro still redirects to the current one, and is what the adapter asks when kaa.lt stops answering."
       ]
     },
     {

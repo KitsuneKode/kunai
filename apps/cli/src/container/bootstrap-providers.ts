@@ -45,6 +45,7 @@ export async function loadProductionProviderModules(
     { allmangaProviderModule },
     { anidbProviderModule },
     { animeggProviderModule },
+    { kickassanimeProviderModule },
     { miruroProviderModule },
     { youtubeProviderModule },
   ] = await Promise.all([
@@ -54,6 +55,7 @@ export async function loadProductionProviderModules(
     import("@kunai/providers/allmanga"),
     import("@kunai/providers/anidb"),
     import("@kunai/providers/animegg"),
+    import("@kunai/providers/kickassanime"),
     import("@kunai/providers/miruro"),
     import("@kunai/providers/youtube"),
   ]);
@@ -67,6 +69,7 @@ export async function loadProductionProviderModules(
       allmangaProviderModule,
       miruroProviderModule,
       animeggProviderModule,
+      kickassanimeProviderModule,
       youtubeProviderModule,
     ],
     providerPriority,

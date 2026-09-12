@@ -74,6 +74,7 @@ describe("@kunai/config parse boundary", () => {
     expect(DEFAULT_CONFIG.animeProvider).toBe("miruro");
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
       "miruro",
+      "kickassanime",
       "animegg",
       "anidb",
       "allanime",

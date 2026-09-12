@@ -36,6 +36,7 @@ import {
 import {
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
+  toMpvLanguageToken,
 } from "@/infra/player/mpv-stream-http-headers";
 import {
   buildYoutubeMpvScriptOpts,
@@ -686,19 +687,6 @@ export function buildMpvArgs(
   args.push("--", opts.url);
 
   return args;
-}
-
-function toMpvLanguageToken(
-  value: string | undefined,
-  options: { forSubtitle: boolean },
-): string | null {
-  if (!value) return null;
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized === "original") return "orig";
-  if (options.forSubtitle && normalized === "none") return "no";
-  if (normalized === "interactive" || normalized === "fzf") return null;
-  return normalized;
 }
 
 export function collectAdditionalSubtitleTracks(

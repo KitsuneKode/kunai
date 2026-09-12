@@ -527,13 +527,25 @@ CDNs refuse Bun's fetch while mpv plays them, and offline must not read as
 every server dead. The check never attests reachability.
 
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
-backends is reached through it. `animegg` is second in the default order for
-exactly that reason: Miruro already reaches AnimeGG as its `moo` server, but only
-through Miruro, whereas the adapter reaches it directly with its own
-provider-native catalog, needing neither AniList nor AniDB. AniDB and AllAnime
-stay behind it, AniDB for when it returns and AllAnime for the ani-cli parity
-path. See [the AnimeGG dossier](./provider-dossiers/animegg.md), including why a
-reachability probe cannot judge its streams.
+backends is reached through it, so the two providers behind it are the ones that
+share none of that. `kickassanime` is second and `animegg` third: both have their
+own catalog, site and CDN, but KickAssAnime can also take over a title found in
+_another_ catalog — it matches the show by name and year and remembers the
+result on the title bridge — whereas AnimeGG only plays what its own search
+found. AniDB and AllAnime stay behind them, AniDB for when it returns and
+AllAnime for the ani-cli parity path. See
+[the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
+[the AnimeGG dossier](./provider-dossiers/animegg.md), both of which record why a
+reachability probe cannot judge their streams.
+
+KickAssAnime is also the first provider to serve **one file with several audio
+renditions** — a dub is an `EXT-X-MEDIA` track inside the same master, not a
+separate URL. The track is chosen by mpv's `--alang`, which is why
+`toMpvLanguageToken` now maps Kunai's `sub`/`dub` modes onto real language
+tokens (`dub` reached mpv verbatim before and matched nothing, so asking for a
+dub silently played Japanese), and why `alang` is set per `loadfile` rather than
+only at spawn. Its variant playlists are video-only, so that master is never
+expanded into per-quality URLs.
 
 The priority list is ordering, not an allowlist. `planProviderCandidates` falls
 back through every registered anime module that health allows; the list only
@@ -550,22 +562,28 @@ left alone, and choosing AniDB afterwards sticks. A future lane-default change
 must bump the revision, or it strands every existing user on the previous
 default.
 
-| ID           | Content Types | Runtime     | Module Location                               |
-| ------------ | ------------- | ----------- | --------------------------------------------- |
-| `vidlink`    | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`    |
-| `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
-| `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
-| `anidb`      | anime         | direct-http | `packages/providers/src/anidb/direct.ts`      |
-| `animegg`    | anime         | direct-http | `packages/providers/src/animegg/direct.ts`    |
-| `allanime`   | anime         | direct-http | `packages/providers/src/allmanga/direct.ts`   |
-| `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
-| `youtube`    | video         | direct-http | `packages/providers/src/youtube/direct.ts`    |
+| ID             | Content Types | Runtime     | Module Location                                 |
+| -------------- | ------------- | ----------- | ----------------------------------------------- |
+| `vidlink`      | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`      |
+| `rivestream`   | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts`   |
+| `videasy`      | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`      |
+| `anidb`        | anime         | direct-http | `packages/providers/src/anidb/direct.ts`        |
+| `animegg`      | anime         | direct-http | `packages/providers/src/animegg/direct.ts`      |
+| `kickassanime` | anime         | direct-http | `packages/providers/src/kickassanime/direct.ts` |
+| `allanime`     | anime         | direct-http | `packages/providers/src/allmanga/direct.ts`     |
+| `miruro`       | anime         | direct-http | `packages/providers/src/miruro/direct.ts`       |
+| `youtube`      | video         | direct-http | `packages/providers/src/youtube/direct.ts`      |
 
 ### Anime catalog identity
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
 
-- **AniDB (`anidb`)** — `provider-native`; third in the default anime order, behind Miruro and AnimeGG. Native ids must satisfy
+- **KickAssAnime (`kickassanime`)** — `provider-native`; second in the default anime order. Slugs are
+  `name-<4 hex>` (`sousou-no-frieren-2d15`), and only that shape is accepted as a native id, so an
+  AniList id or another site's slug is never sent as one. A title from any other catalog is matched
+  by name and year — exactly one hit, or the provider steps aside — and the slug is then stored
+  through `context.titleBridge` against the AniList id, so later plays ask nothing.
+- **AniDB (`anidb`)** — `provider-native`; fourth in the default anime order, behind Miruro, KickAssAnime and AnimeGG. Native ids must satisfy
   `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
   AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
   `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.
