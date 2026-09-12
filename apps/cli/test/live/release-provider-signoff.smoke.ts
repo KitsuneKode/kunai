@@ -21,6 +21,7 @@ import { probeStreamReachability } from "@kunai/providers";
 
 import {
   createProviderSmokeProfile,
+  mpvDecodesStream,
   providerSmokeError,
   resolveProviderSmokeStream,
   smokeStreamReachable,
@@ -149,11 +150,17 @@ async function resolveRoute(
         timeoutMs: 5_000,
       })
     : null;
-  const streamReachable = streamProbe
-    ? smokeStreamReachable(streamProbe)
-    : streamUrl
-      ? false
-      : null;
+  const probed = streamProbe ? smokeStreamReachable(streamProbe) : streamUrl ? false : null;
+  // A probe that timed out has not answered; settle it the way playback would.
+  const streamReachable =
+    probed === null && streamUrl
+      ? await mpvDecodesStream({ url: streamUrl, headers: streamHeaders })
+      : probed;
+  if (probed === null && streamUrl) {
+    console.error(
+      `[signoff] ${routeCase.lane}: probe inconclusive; mpv decode says ${String(streamReachable)}`,
+    );
+  }
   const resolved = Boolean(streamUrl);
   const errorText =
     resolveError instanceof Error
