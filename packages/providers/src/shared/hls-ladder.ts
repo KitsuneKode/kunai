@@ -48,6 +48,13 @@ export async function expandHlsMasterPlaylist(
     if (!isHlsMasterPlaylist(text)) {
       return [fallback];
     }
+    // A variant that names an AUDIO group gets its sound from that rendition,
+    // and its own playlist is often video-only. Handing mpv one variant would
+    // then play silent video, so such a master stays whole and mpv picks.
+    // Losing the quality picker is the worst this can cost.
+    if (masterVariantsUseAudioRenditions(text)) {
+      return [fallback];
+    }
 
     const variants = parseHlsMasterVariants(text, masterUrl);
     if (variants.length === 0) return [fallback];
@@ -58,6 +65,16 @@ export async function expandHlsMasterPlaylist(
   } catch {
     return [fallback];
   }
+}
+
+/** True when any `#EXT-X-STREAM-INF` takes its audio from a named rendition group. */
+export function masterVariantsUseAudioRenditions(manifestText: string): boolean {
+  return manifestText
+    .split(/\r?\n/)
+    .some(
+      (line) =>
+        line.trim().startsWith("#EXT-X-STREAM-INF:") && /(?:^|[:,])AUDIO="/i.test(line.trim()),
+    );
 }
 
 /** True when a stream URL looks like an HLS master (leaf or path hint). */
