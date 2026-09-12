@@ -55,6 +55,29 @@ describe("normalizeStreamHttpHeaders", () => {
   test("drops empty header values", () => {
     expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({ extraFields: [] });
   });
+
+  test("drops a header name that is not an RFC 7230 token", () => {
+    // Header names are not ours: VidLink spreads what its API answered into the
+    // payload, so an upstream can name a header. A comma in the name splits one
+    // field into two, and a colon or CR/LF writes a field the host never sent.
+    const normalized = normalizeStreamHttpHeaders({
+      "X-Ok": "kept",
+      "X-Bad,X-Injected": "dropped",
+      "X-Bad: Injected": "dropped",
+      "X-Bad\r\nX-Injected": "dropped",
+      "X Bad": "dropped",
+    });
+
+    expect(normalized.extraFields).toEqual(["X-Ok: kept"]);
+  });
+
+  test("keeps the unusual-but-legal characters a token allows", () => {
+    // The pattern is a whitelist, so it has to admit the odd names that are
+    // genuinely valid — dropping those would be the same silent loss.
+    expect(normalizeStreamHttpHeaders({ "X-Odd_Name.1~*": "kept" }).extraFields).toEqual([
+      "X-Odd_Name.1~*: kept",
+    ]);
+  });
 });
 
 describe("shouldDisableMpvTlsVerify", () => {
