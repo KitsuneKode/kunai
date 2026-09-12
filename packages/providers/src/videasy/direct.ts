@@ -1027,8 +1027,10 @@ export function createVidkingResultFromPayload({
     cachePolicy: policy,
     sourceId: resolvedSourceId,
     server: resolvedServer,
-    streamReferer,
-    streamOrigin,
+    // This helper is exported and callable with neither, so the fallbacks live
+    // here; the resolve path always passes the profile's pair.
+    streamReferer: streamReferer ?? VIDKING_REFERER,
+    streamOrigin: streamOrigin ?? VIDKING_ORIGIN,
     sourceQualityFilter,
     flavorLabel: themedLabel,
     serverName: themedLabel,
@@ -1319,7 +1321,7 @@ async function probeSelectedVidkingPayloadStream({
     cachePolicy,
     sourceId,
     server,
-    streamReferer,
+    streamReferer: streamReferer ?? VIDKING_REFERER,
     streamOrigin,
     sourceQualityFilter,
     flavorLabel: presentation.themeLabel,
@@ -2109,8 +2111,8 @@ function normalizeStreamCandidates({
   cachePolicy,
   sourceId,
   server,
-  streamReferer = VIDKING_REFERER,
-  streamOrigin = VIDKING_ORIGIN,
+  streamReferer,
+  streamOrigin,
   sourceQualityFilter,
   flavorLabel,
   serverName,
@@ -2121,8 +2123,15 @@ function normalizeStreamCandidates({
   readonly cachePolicy: CachePolicy;
   readonly sourceId: string;
   readonly server?: string;
-  readonly streamReferer?: string;
-  readonly streamOrigin?: string;
+  /**
+   * Both required, with no default: this is the only place stream headers are
+   * built, and the resolve gate and the shipped result both come through it.
+   * When they were optional the gate took the defaults and the result took the
+   * profile, so the gate verified a request mpv never made (#361). A missing
+   * one is now a type error at the call site rather than a silent divergence.
+   */
+  readonly streamReferer: string;
+  readonly streamOrigin: string;
   readonly sourceQualityFilter?: string;
   readonly flavorLabel?: string;
   readonly serverName?: string;
