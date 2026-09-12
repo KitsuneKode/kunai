@@ -520,11 +520,18 @@ answering. A null or empty pipe search falls through to the AniList catalog in
 searches and `/discover` still go to AniList directly.
 
 Before accepting a candidate, the resolve issues one ranged GET of the selected
-URL and rejects the server on 404/410/5xx — the pipe hands out a backend's URL
-whether or not that backend is up (`pewe` served `hls.anidb.app` URLs through
-AniDB's maintenance). 401/403/429 and network errors never reject: some Miruro
-CDNs refuse Bun's fetch while mpv plays them, and offline must not read as
-every server dead. The check never attests reachability.
+URL and rejects the server on 404/410/429/5xx — the pipe hands out a backend's
+URL whether or not that backend is up (`pewe` served `hls.anidb.app` URLs
+through AniDB's maintenance). 401/403 and network errors never reject: some
+Miruro CDNs refuse Bun's fetch while mpv plays them, and offline must not read
+as every server dead. The check never attests reachability.
+
+429 was itself an exception here until 2026-09-12, when the release signoff's
+anime lane resolved a `pewe` stream that answered 429 to mpv, to curl with the
+stream's headers, and to curl with none. That is the evidence the rule above
+demands — the stream does not play for anyone — so Miruro now matches the
+resolve gate's policy that every 4xx is definitive, and 401/403 remain the
+narrow exception because only Bun's fetch sees them.
 
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
 backends is reached through it, so the two providers behind it are the ones that
