@@ -2,7 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { PUBLIC_METRICS_CACHE_CONTROL, snapshotDayKey } from "../../src/public-metrics.js";
 import { buildPublicSeries, clampSeriesDays, seriesStartDay } from "../../src/public-series.js";
-import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config.js";
+import {
+  loadAnalyticsRuntimeConfig,
+  type MetricsHandlerDependencies,
+} from "../../src/runtime-config.js";
 
 /**
  * Public read-only day-by-day aggregates. Same guarantees as the daily
@@ -19,46 +22,59 @@ import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config.js";
  *
  * Served as /metrics/series.json via vercel rewrite.
  */
-export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  if ((req.method ?? "GET") !== "GET") {
-    res.statusCode = 405;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ ok: false, error: "method_not_allowed" }));
-    return;
-  }
+/**
+ * The factory exists so a test can pin the clock and the store; the default
+ * export below is the real handler, exactly as Vercel resolves it. Same shape
+ * as `createSnapshotHandler` in `api/cron/snapshot.ts`, and for the same
+ * reason: `mock.module` is process-global in Bun and applies at file-load time.
+ */
+export function createSeriesMetricsHandler(dependencies: MetricsHandlerDependencies = {}) {
+  const loadConfig = dependencies.loadConfig ?? loadAnalyticsRuntimeConfig;
+  const now = dependencies.now ?? Date.now;
 
-  const runtime = loadAnalyticsRuntimeConfig();
-  if (!runtime) {
-    res.statusCode = 503;
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ ok: false, error: "misconfigured" }));
-    return;
-  }
-
-  try {
-    const requested = new URL(req.url ?? "/", "http://localhost").searchParams.get("days");
-    const days = clampSeriesDays(requested ?? undefined);
-    const toDay = snapshotDayKey();
-    const rollups = await runtime.store.readRollups(seriesStartDay(toDay, days), toDay);
-    const series = buildPublicSeries(rollups);
-
-    if (!series) {
-      res.statusCode = 404;
-      res.setHeader("Cache-Control", "public, s-maxage=60, max-age=60");
+  return async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if ((req.method ?? "GET") !== "GET") {
+      res.statusCode = 405;
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ ok: false, error: "not_ready" }));
+      res.end(JSON.stringify({ ok: false, error: "method_not_allowed" }));
       return;
     }
 
-    res.statusCode = 200;
-    res.setHeader("Cache-Control", PUBLIC_METRICS_CACHE_CONTROL);
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify(series));
-  } catch {
-    res.statusCode = 503;
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ ok: false, error: "upstream_unavailable" }));
-  }
+    const runtime = loadConfig();
+    if (!runtime) {
+      res.statusCode = 503;
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: false, error: "misconfigured" }));
+      return;
+    }
+
+    try {
+      const requested = new URL(req.url ?? "/", "http://localhost").searchParams.get("days");
+      const days = clampSeriesDays(requested ?? undefined);
+      const toDay = snapshotDayKey(now());
+      const rollups = await runtime.store.readRollups(seriesStartDay(toDay, days), toDay);
+      const series = buildPublicSeries(rollups);
+
+      if (!series) {
+        res.statusCode = 404;
+        res.setHeader("Cache-Control", "public, s-maxage=60, max-age=60");
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok: false, error: "not_ready" }));
+        return;
+      }
+
+      res.statusCode = 200;
+      res.setHeader("Cache-Control", PUBLIC_METRICS_CACHE_CONTROL);
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(series));
+    } catch {
+      res.statusCode = 503;
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: false, error: "upstream_unavailable" }));
+    }
+  };
 }
+
+export default createSeriesMetricsHandler();

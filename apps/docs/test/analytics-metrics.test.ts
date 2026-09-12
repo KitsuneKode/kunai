@@ -106,3 +106,30 @@ describe("share buckets", () => {
     expect(rankShareBuckets({ linux: 0 })).toEqual([]);
   });
 });
+
+/**
+ * Production sends a Postgres timestamp, not ISO 8601. Every fixture in this
+ * repo used ISO, which is why the difference went unnoticed until a browser had
+ * to parse it.
+ */
+describe("updatedAt normalisation", () => {
+  test("the Postgres form becomes strict ISO", () => {
+    const parsed = parseDocsAnalyticsMetrics({
+      ...v2,
+      updatedAt: "2026-09-11 00:27:00.82757+00",
+    });
+    expect(parsed?.updatedAt).toBe("2026-09-11T00:27:00.827Z");
+  });
+
+  test("an already-ISO value is unchanged", () => {
+    const parsed = parseDocsAnalyticsMetrics({ ...v2, updatedAt: "2026-09-11T00:27:00.827Z" });
+    expect(parsed?.updatedAt).toBe("2026-09-11T00:27:00.827Z");
+  });
+
+  test("an unparseable value is kept verbatim rather than throwing", () => {
+    // toISOString throws RangeError on an invalid date, and one bad timestamp
+    // must not blank the whole panel.
+    const parsed = parseDocsAnalyticsMetrics({ ...v2, updatedAt: "not a timestamp" });
+    expect(parsed?.updatedAt).toBe("not a timestamp");
+  });
+});

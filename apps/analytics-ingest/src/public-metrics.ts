@@ -181,7 +181,8 @@ export function parsePublicMetrics(raw: unknown): PublicAnalyticsMetrics | null 
   };
 }
 
-/** Prefer yesterday's rollup for the public "active installs" line. */
-export function snapshotDayKey(now = Date.now()): string {
-  return new Date(now - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
+/**
+ * The most recent complete day — what the public "active installs" line shows.
+ * Kept under this name because three endpoints already import it.
+ */
+export { previousAnalyticsDayKey as snapshotDayKey } from "./analytics-day.js";

@@ -115,6 +115,34 @@ function log, with any connection string reduced to its scheme. So
 neither masks the other, and retention that could not run today is retried on
 the next run rather than being lost.
 
+### Where a day begins
+
+From `2026-09-14T18:30:00.000Z` — 00:00 IST on 15 September 2026 — a day ends at
+midnight IST. Before that instant it ends at midnight UTC. `analytics-day.ts` is
+the only place that turns an instant into a label, and a test fails if a second
+one appears, because ingest and the cron disagreeing means the cron rolls up a
+day that holds no rows.
+
+The two grids are 5.5 hours apart, so joining them costs exactly one short day:
+**`2026-09-14` spans 00:00 to 18:30 UTC, 18.5 hours rather than 24**, and its
+active count reads low. That is correct data, not a fault to be patched.
+
+Earlier days keep their UTC labels and are **not** rebuilt. They cannot be: the
+`(day, install_hash)` key kept only the first ping of each install per UTC day,
+so a ping that fell on the far side of an IST midnight was discarded at write
+time and was never available to re-bucket. Rollups older than the raw window
+carry no per-ping time at all. A rebuild would write a systematic undercount
+into the permanent record, which is worse than a documented seam.
+
+Retention cutoffs are computed from the same labels they compare against, so
+around the seam a row may be held at most one extra day. That is the safe
+direction and costs storage only.
+
+The published JSON is unchanged by all of this — same eight keys, same
+`schemaVersion: 2`, same `YYYY-MM-DD` shape for `day`. The wire cannot announce
+a change of meaning, which is why it is stated here and in
+`docs/users/reliability-and-privacy.mdx`.
+
 ### The day-by-day series
 
 `/metrics/series.json` publishes the same aggregates over a window (90 days by

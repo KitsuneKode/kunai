@@ -32,6 +32,8 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 
+import { LocalTime } from "./local-time";
+
 function formatUpdatedAt(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -277,7 +279,12 @@ export function UsagePanel({
             <p className="text-muted-foreground m-0 text-xs">
               Snapshot day <span className="font-mono tabular-nums">{metrics.day}</span>
               {" · "}
-              updated {formatUpdatedAt(metrics.updatedAt)}
+              updated{" "}
+              <LocalTime iso={metrics.updatedAt} utcLabel={formatUpdatedAt(metrics.updatedAt)} />
+            </p>
+            <p className="text-muted-foreground m-0 basis-full text-xs">
+              Days end at midnight IST (18:30 UTC) from 15 September 2026. 14 September 2026 is an
+              18.5-hour changeover day ending at 18:30 UTC; earlier days end at midnight UTC.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">schema v{metrics.schemaVersion}</Badge>
