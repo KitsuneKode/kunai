@@ -22,6 +22,10 @@
       "cache": false,
       "outputs": []
     },
+    "//#lint:root": {
+      "cache": false,
+      "outputs": []
+    },
     "fmt": {
       "cache": false,
       "outputs": []
