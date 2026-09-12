@@ -4,6 +4,7 @@ import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types"
 
 import {
   __testing,
+  discoverKaaBase,
   kaaStreamHeaders,
   kickassanimeProviderModule,
   matchKaaShow,
@@ -380,6 +381,14 @@ describe("selectKaaAudio", () => {
     });
   });
 
+  test("ASSOC-LANGUAGE is not mistaken for the track's own LANGUAGE", () => {
+    const [track] = parseHlsMasterAudioRenditions(
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",ASSOC-LANGUAGE="ja",LANGUAGE="en",NAME="English",URI="a.m3u8"',
+    );
+    expect(track).toEqual({ language: "en", name: "English", isDefault: false });
+    expect(selectKaaAudio(track ? [track] : [], "dub").presentation).toBe("dub");
+  });
+
   test("an unreadable master still plays, labelled as the sub it usually is", () => {
     expect(selectKaaAudio([], "dub")).toEqual({ presentation: "sub", language: "ja" });
   });
@@ -685,16 +694,12 @@ describe("kickassanimeProviderModule", () => {
     expect(requests.some((request) => request.includes("kickass-anime.ro"))).toBe(false);
   });
 
-  test("a dead domain is replaced by wherever the old alias now redirects", async () => {
+  test("a dead domain is replaced by where the old alias redirects", async () => {
     const requests: string[] = [];
     const moved = catalogRoute();
     const route: Route = (url, init) => {
       if (url.startsWith("https://kaa.lt/")) throw new TypeError("fetch failed");
-      if (url === "https://kickass-anime.ro/") {
-        const landed = new Response("<html></html>");
-        Object.defineProperty(landed, "url", { value: "https://kaa.new/" });
-        return landed;
-      }
+      if (url === "https://kickass-anime.ro/") return redirectTo("https://kaa.new/");
       return moved(url.replace("https://kaa.new/", "https://kaa.lt/"), init);
     };
 
@@ -716,12 +721,47 @@ describe("kickassanimeProviderModule", () => {
   test("an alias that answers without redirecting is no new domain", async () => {
     const route: Route = (url) => {
       if (url.startsWith("https://kaa.lt/")) throw new TypeError("fetch failed");
-      const landed = new Response("<html></html>");
-      Object.defineProperty(landed, "url", { value: url });
-      return landed;
+      return new Response("<html></html>");
     };
     await expect(
       kickassanimeProviderModule.search?.({ query: "frieren" }, contextWith(route)),
     ).rejects.toThrow("fetch failed");
+  });
+});
+
+function redirectTo(location: string): Response {
+  return new Response(null, { status: 301, headers: { location } });
+}
+
+describe("discoverKaaBase", () => {
+  const discover = (location: string) => discoverKaaBase(contextWith(() => redirectTo(location)));
+
+  test("reads the one hop by hand rather than following it", async () => {
+    let redirectMode: RequestInit["redirect"];
+    await discoverKaaBase(
+      contextWith((_url, init) => {
+        redirectMode = init?.redirect;
+        return redirectTo("https://kaa.lt/");
+      }),
+    );
+    expect(redirectMode).toBe("manual");
+  });
+
+  test("takes a target shaped like every rotation so far", async () => {
+    expect(await discover("https://kaa.lt/")).toBe("https://kaa.lt");
+    expect(await discover("https://www.kickassanime.io/x")).toBe("https://www.kickassanime.io");
+  });
+
+  test("refuses a lapsed alias pointing somewhere else entirely", async () => {
+    expect(await discover("https://evil.example/")).toBeNull();
+    expect(await discover("https://kaa.lt.evil.example/")).toBeNull();
+  });
+
+  test("refuses a cleartext target", async () => {
+    expect(await discover("http://kaa.lt/")).toBeNull();
+  });
+
+  test("a redirect back to the alias itself is no answer", async () => {
+    expect(await discover("/")).toBeNull();
   });
 });
