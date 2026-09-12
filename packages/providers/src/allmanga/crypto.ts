@@ -3,6 +3,7 @@ import { createCipheriv, createHash, createHmac } from "node:crypto";
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
+import { readJsonObjectBody } from "../shared/json-body";
 
 /**
  * AllManga / mkissa client-crypto (post-2026-08 buildId scheme).
@@ -282,10 +283,30 @@ export async function fetchAllMangaCryptoMaterial(
             "x-aa-boot": boot,
           },
         });
+<<<<<<< HEAD
         if (!response.ok) continue;
         const body = (await response.json()) as BootstrapResponse;
+||||||| parent of 7a49de5ec (fix(providers): read a JSON body at the boundary, not through a cast)
+        if (!response.ok) {
+          lastRotationSignal = classifyAllMangaBootstrapFailure(
+            response.status,
+            await response.text().catch(() => ""),
+          );
+          continue;
+        }
+        const body = (await response.json()) as BootstrapResponse;
+=======
+        if (!response.ok) {
+          lastRotationSignal = classifyAllMangaBootstrapFailure(
+            response.status,
+            await response.text().catch(() => ""),
+          );
+          continue;
+        }
+        const body = await readJsonObjectBody<BootstrapResponse>(response);
+>>>>>>> 7a49de5ec (fix(providers): read a JSON body at the boundary, not through a cast)
         if (
-          !body.partB ||
+          !body?.partB ||
           typeof body.epoch !== "number" ||
           !Number.isFinite(body.epoch) ||
           body.epoch <= 0
