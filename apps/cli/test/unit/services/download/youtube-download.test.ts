@@ -135,6 +135,60 @@ describe("DownloadService youtube argv contract", () => {
     expect(runYtDlpSpy).not.toHaveBeenCalled();
   });
 
+  test.each(["abort", "shutdown"] as const)(
+    "%s during stream resolution does not launch a downloader or persist fresh stream metadata",
+    async (action) => {
+      const resolving = Promise.withResolvers<void>();
+      const releaseResolution = Promise.withResolvers<void>();
+      const resolved = youtubeResolveResult();
+      const freshStreamUrl = "https://www.youtube.com/watch?v=refreshed";
+      const service = buildYoutubeService({
+        repo,
+        downloadPath: tempDir,
+        resolveDownloadStream: async () => {
+          resolving.resolve();
+          await releaseResolution.promise;
+          return {
+            ...resolved,
+            stream: { ...resolved.stream, url: freshStreamUrl },
+          } as unknown as DownloadResolveResult;
+        },
+      });
+      // If the regression starts a child, it exits immediately so the test
+      // reports the forbidden launch rather than hanging behind its lifetime.
+      runYtDlpSpy.mockImplementation(() => ({
+        process: { kill: mock(() => {}), exited: Promise.resolve(1) } as never,
+        completed: Promise.resolve({ exitCode: 1, stderr: "unexpected late launch" }),
+        cancel: mock(() => {}),
+      }));
+      const job = await service.enqueue({
+        title: { id: "youtube:video:abc123", type: "movie", name: "Example video" },
+        stream: { url: "https://www.youtube.com/watch?v=abc123", headers: {}, timestamp: 0 },
+        providerId: "youtube",
+        mode: "youtube",
+      });
+
+      const running = service.processQueue();
+      await resolving.promise;
+      expect(repo.get(job.id)?.status).toBe("running");
+      if (action === "abort") await service.abort(job.id);
+      else service.beginShutdown("download paused during resolution");
+      releaseResolution.resolve();
+      await running;
+
+      expect(runYtDlpSpy).not.toHaveBeenCalled();
+      const reloaded = repo.get(job.id);
+      expect(reloaded?.status).toBe(action === "abort" ? "aborted" : "queued");
+      expect(reloaded?.streamUrl).toBe(job.streamUrl);
+      expect(reloaded?.retryCount).toBe(0);
+      if (action === "abort") expect(reloaded?.nextRetryAt).toBeUndefined();
+      else {
+        expect(reloaded?.errorMessage).toBe("download paused during resolution");
+        expect(reloaded?.nextRetryAt).toBeDefined();
+      }
+    },
+  );
+
   test("abort calls runYtDlpProcess cancel handle", async () => {
     const resolving = Promise.withResolvers<void>();
     const releaseResolution = Promise.withResolvers<void>();
