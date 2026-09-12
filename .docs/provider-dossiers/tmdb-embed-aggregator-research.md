@@ -18,6 +18,27 @@ lastReviewed: "2026-06-12"
 - **Research scripts:** `.reference/experiments/scratchpads/vidapi-research/` (the
   probes that produced the data in this dossier).
 
+## Validation Note — 2026-09-12
+
+Rechecked because VidLink stopped returning sources (it answers `200` with
+`null` for every title), which left the movie/series lane with only Videasy and
+Rivestream — exactly the rescue slot the note below held VidAPI back for.
+
+**The recipe no longer answers.** `GET streamdata.vaplayer.ru/api.php?tmdb=…`
+returns `404` with an empty body for every case in the old matrix (Dune,
+Oppenheimer, Interstellar, Breaking Bad S1E1, Severance S1E1, Attack on Titan
+S1E1) and for Bad Guys S1E4 — with plain curl, with `curl_chrome120` and
+`curl_chrome150`, and with both `https://brightpathsignals.com/` and the exact
+`/embed/movie/{id}` Referer. DNS resolves to ordinary Cloudflare addresses, so
+it is not this network's sinkhole. Whatever the endpoint now requires would have
+to be recovered from a player this dossier already describes as hostile to
+scraping; that is a research task, not a provider change.
+
+Also rechecked, and still not candidates: Braflix (service down, per its own
+dossier), Bitcine (a wrapper over Videasy, so not independent of it), and the
+two adapters already in the tree but unregistered — `vidrock` (its API answers
+HTTP 400) and `rgshows` (`api.rgshows.ru` no longer resolves).
+
 ## Validation Note — 2026-06-05
 
 Follow-up validation from the Kunai provider-quality matrix kept this dossier in
