@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveAnimeggSlug, selectAnimeggTab } from "../src/animegg/direct";
+import { locateAnimeggShow, resolveAnimeggSlug, selectAnimeggTab } from "../src/animegg/direct";
 import {
   animeggStreamUrl,
   parseAnimeggEmbedSources,
@@ -55,6 +55,15 @@ describe("parseAnimeggSearchResults", () => {
     expect(results[1]?.posterUrl).toContain("vidcache.net");
   });
 
+  test("reads alt titles separated by semicolons as well as commas", () => {
+    const html = `<a href="/series/sousou-no-frieren" class="mse"><div><h2>Sousou no Frieren</h2>
+      <div>Alt Titles : 葬送のフリーレン; Frieren: Beyond Journey's End </div></div></a>`;
+    expect(parseAnimeggSearchResults(html)[0]?.altNames).toEqual([
+      "葬送のフリーレン",
+      "Frieren: Beyond Journey's End",
+    ]);
+  });
+
   test("keeps alt titles but never repeats the title itself", () => {
     const [merry] = parseAnimeggSearchResults(SEARCH_HTML);
     expect(merry?.altNames).toEqual(["One Piece Special", "ワンピース"]);
@@ -64,6 +73,16 @@ describe("parseAnimeggSearchResults", () => {
   test("a page with no results yields none rather than throwing", () => {
     expect(parseAnimeggSearchResults("<html><body>no hits</body></html>")).toEqual([]);
     expect(parseAnimeggSearchResults("")).toEqual([]);
+  });
+
+  test("a hit with no title does not borrow the next hit's", () => {
+    const html = `<a href="/series/untitled" class="mse"><div class="media"></div></a>${SEARCH_HTML}`;
+    const results = parseAnimeggSearchResults(html);
+    expect(results.map((result) => result.slug)).toEqual([
+      "one-piece-episode-of-merry",
+      "one-piece",
+    ]);
+    expect(results[0]?.title).toBe("One Piece: Episode of Merry");
   });
 
   test("skips an entry with no title instead of inventing one", () => {
@@ -148,6 +167,10 @@ describe("animeggStreamUrl", () => {
     expect(animeggStreamUrl("javascript:alert(1)")).toBeNull();
     expect(animeggStreamUrl("data:text/html,x")).toBeNull();
   });
+
+  test("refuses a cleartext file rather than handing it to the player", () => {
+    expect(animeggStreamUrl("http://cdn.example/video.mp4")).toBeNull();
+  });
 });
 
 describe("resolveAnimeggSlug", () => {
@@ -163,17 +186,66 @@ describe("resolveAnimeggSlug", () => {
     expect(resolveAnimeggSlug(title("anilist:21", "one-piece"))).toBe("one-piece");
   });
 
-  test("accepts a bare slug as the title id", () => {
-    expect(resolveAnimeggSlug(title("death-note"))).toBe("death-note");
+  test("never takes the title id for a slug, however slug-shaped it is", () => {
+    // AniList's id for One Piece is 21, and another site's slug can be plain
+    // kebab too; either would be sent as /series/<id> and could play a
+    // same-named page as though it were this show.
+    expect(resolveAnimeggSlug(title("21"))).toBeNull();
+    expect(resolveAnimeggSlug(title("death-note"))).toBeNull();
+    expect(resolveAnimeggSlug(title("anilist:21"))).toBeNull();
   });
 
-  test("refuses another catalog's id rather than guessing a slug", () => {
-    // A title found on AniList has no AnimeGG slug; saying so lets the lane fall
-    // through to a provider that can resolve it.
-    expect(resolveAnimeggSlug(title("anilist:21"))).toBeNull();
-    expect(resolveAnimeggSlug(title("tmdb:1399"))).toBeNull();
-    expect(resolveAnimeggSlug(title("21"))).toBe("21");
-    expect(resolveAnimeggSlug(title("Death Note"))).toBeNull();
+  test("refuses a stored id that is not a slug", () => {
+    expect(resolveAnimeggSlug(title("x", "../series"))).toBeNull();
+    expect(resolveAnimeggSlug(title("x", "Death Note"))).toBeNull();
+  });
+});
+
+describe("locateAnimeggShow", () => {
+  type Remembered = Map<string, string>;
+  const context = (html: string, remembered: Remembered = new Map(), requests: string[] = []) =>
+    ({
+      providerId: "animegg",
+      now: () => "2026-09-12T00:00:00.000Z",
+      fetch: {
+        runtime: "direct-http" as const,
+        async fetch(input: string | URL | Request) {
+          requests.push(String(input));
+          return new Response(html);
+        },
+      },
+      titleBridge: {
+        get: (key: { catalogId: string }) => remembered.get(key.catalogId),
+        set: (key: { catalogId: string; nativeId: string }) =>
+          void remembered.set(key.catalogId, key.nativeId),
+      },
+    }) as never;
+  const fromAnilist = (name: string) =>
+    ({ id: "21", kind: "anime", title: name, externalIds: { anilistId: "21" } }) as never;
+
+  test("matches a title found elsewhere by name, and remembers it", async () => {
+    const remembered: Remembered = new Map();
+    expect(
+      await locateAnimeggShow(fromAnilist("One Piece"), context(SEARCH_HTML, remembered)),
+    ).toBe("one-piece");
+    expect(remembered.get("21")).toBe("one-piece");
+  });
+
+  test("the alt titles connect a romaji name to the English one", async () => {
+    expect(await locateAnimeggShow(fromAnilist("One Piece Special"), context(SEARCH_HTML))).toBe(
+      "one-piece-episode-of-merry",
+    );
+  });
+
+  test("a remembered match asks the site nothing", async () => {
+    const requests: string[] = [];
+    const remembered: Remembered = new Map([["21", "one-piece"]]);
+    await locateAnimeggShow(fromAnilist("One Piece"), context(SEARCH_HTML, remembered, requests));
+    expect(requests).toEqual([]);
+  });
+
+  test("a partial name is no match — no guessing the first result", async () => {
+    expect(await locateAnimeggShow(fromAnilist("One"), context(SEARCH_HTML))).toBeNull();
   });
 });
 

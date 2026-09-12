@@ -83,12 +83,13 @@ None. The subbed version burns them in, so the manifest advertises no
 
 ## Sample Cases For Regression
 
-| Case       | Slug          | Episode | Expectation                                               |
-| ---------- | ------------- | ------- | --------------------------------------------------------- |
-| Sub        | `death-note`  | 5       | resolves, mpv writes a frame (verified: Light at the bus) |
-| Dub        | `naruto`      | 2       | picks `data-version="dubbed"`, mpv exit 0                 |
-| Search     | `one piece`   | —       | `one-piece` with `Episodes: 1161`                         |
-| Foreign id | AniList title | —       | resolve refuses with `unsupported-title`                  |
+| Case      | Slug          | Episode | Expectation                                               |
+| --------- | ------------- | ------- | --------------------------------------------------------- |
+| Sub       | `death-note`  | 5       | resolves, mpv writes a frame (verified: Light at the bus) |
+| Dub       | `naruto`      | 2       | picks `data-version="dubbed"`, mpv exit 0                 |
+| Search    | `one piece`   | —       | `one-piece` with `Episodes: 1161`                         |
+| Bridge    | AniList title | —       | matched by name, slug stored on the title bridge          |
+| Ambiguous | `"One"`       | —       | `not-found`, never the first search hit                   |
 
 ## Risks And Drift Watchlist
 
@@ -97,6 +98,33 @@ None. The subbed version burns them in, so the manifest advertises no
 - `var videoSources` is matched by shape, not by a parser; a player swap breaks
   extraction and must surface as "no playable file", never as a wrong stream.
 - The referer requirement is invisible to every check except a real player.
+
+## Taking over a title found elsewhere
+
+Most titles reaching AnimeGG come from Miruro or AniList and carry no AnimeGG
+slug. `locateAnimeggShow` searches `/search/?q=` by name and accepts exactly one
+row whose title or alt titles key the same (`matchProviderCatalogTitle` in
+`packages/providers/src/shared/provider-title-match.ts`), then stores the slug
+through `context.titleBridge` against the AniList id.
+
+`title.id` is never read as a slug. AnimeGG slugs are plain kebab with no
+discriminator, so AniList's `21` or another site's `death-note` would reach
+`/series/<id>` and could play a same-named page. The search page exposes no
+year, so the name match carries the whole decision — hence exact keys and the
+uniqueness rule, not a fuzzy score.
+
+Two catalog quirks the matcher handles, both found against the live site on
+2026-09-12:
+
+- **Alt titles use `;` as well as `,`.** Frieren's row is
+  `葬送のフリーレン; Frieren: Beyond Journey's End`; a comma-only split left the
+  English name glued to the Japanese one, out of reach.
+- **Format suffixes.** "Jujutsu Kaisen (TV)" keys as "jujutsu kaisen". Only
+  format words are dropped — `(2011)` still separates two shows.
+
+Live result: Death Note, Naruto, One Piece, Frieren, Attack on Titan and
+Jujutsu Kaisen all matched from AniList-shaped titles; Death Note ep 5 then
+resolved end to end.
 
 ## Implementation Handoff Notes
 

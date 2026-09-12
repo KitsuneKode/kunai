@@ -51,6 +51,7 @@ export const animeggManifest = defineProviderManifest({
     'Streams are /play/<id>/video.mp4?for=<token>, which 302s to a per-request vidcache host. That CDN answers `{"error":"Invalid request (bad hand off)"}` with HTTP 500 to anything that is not its player — a plain or ranged GET included — while mpv plays the same URL. Never read a probe of these as evidence the stream is dead.',
     "`bk` on each source is a backup, but not a uniform one: a direct CDN URL for One Piece and an mp4upload embed page for Naruto. Unused until one extractor covers both.",
     "No Cloudflare challenge on any of the four documents; the four HTML documents need no referer.",
+    "A title found in another catalog is matched against /search/?q= by name — title and alt titles, exactly one hit — and the slug is remembered on the title bridge. `title.id` is never trusted as a slug: AnimeGG slugs are plain kebab, so a same-shaped id from elsewhere (or AniList's numeric 21) would reach /series/<id>. Alt titles are split on both `,` and `;` — Frieren's English name sits after a semicolon.",
     "The STREAM does need one. Without a referer the CDN refuses the hand-off and mpv writes no frame; with the episode page as referer it plays. animegg.org 302s either way, so a status check on the /play URL cannot see this — only the player can.",
   ],
 });
