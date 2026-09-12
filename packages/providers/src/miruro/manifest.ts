@@ -94,6 +94,7 @@ export const miruroManifest = defineProviderManifest({
     "May hit Cloudflare rate limits if called too frequently.",
     "2026-09-11: the pipe is reachable — Bun fetch is always CF-403'd (its TLS fingerprint), and curl clears the edge on both mirrors. The superseded 2026-08-17 note claiming curl also received CF 403 was measured through a predicate that read any HTML body as a Cloudflare block, including the mirror's own `502 upstream unreachable` page.",
     "2026-09-12: 429 joined that list. The release signoff's anime lane resolved a pewe stream that answered 429 to mpv, to curl with the stream's headers and to curl with none — a rate-limited master is refused to everyone, unlike the 403 that only Bun's fetch sees. Skipping it costs one server attempt; accepting it cost a failed play on the default anime provider. With pewe skipped the cycle lands on moo and plays (verified: 1080p frame).",
+    "2026-09-12: rejected backends are recorded through context.endpointHealth as server-error against the server id, and the cycle skips a quarantined one without asking it. The probe also no longer asks animegg.org, whose /play never answers Bun's fetch (curl and mpv get a 302 at once): it spent the full timeout on every Moo resolve. Together they took a Miruro resolve from ~4.3s to ~1.1s once pewe was quarantined.",
     "A 444/502 from the pipe is one of Miruro's backing servers being down (pewe follows AniDB, ally follows AllManga), not a WAF block, and must not stop the cycle — the remaining servers are usually healthy.",
   ],
 });

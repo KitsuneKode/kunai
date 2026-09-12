@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { StreamInfo, TitleInfo } from "@/domain/types";
+import { normalizeStreamHttpHeaders } from "@/infra/player/mpv-stream-http-headers";
 import type { StreamRequest } from "@/services/providers/Provider";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
@@ -258,4 +259,57 @@ export function smokeStreamReachable(
   if (probe.status === "reachable") return true;
   if (probe.status === "unreachable") return false;
   return null;
+}
+
+/**
+ * Whether mpv decodes a frame from the stream — the only thing this repo
+ * accepts as proof of playback. For a release gate that demands proof
+ * (`streamReachable === true`), a Bun probe that times out is not an answer:
+ * some hosts never reply to Bun's fetch while mpv plays them (AnimeGG's
+ * `/play`, which Miruro's `moo` streams start at), and reading that silence as
+ * provider drift failed the signoff on a stream that plays.
+ *
+ * - `true`  -- a frame was written
+ * - `false` -- mpv gave up without one; evidence the stream will not play
+ * - `null`  -- no mpv on PATH, or it was still working when time ran out
+ */
+export async function mpvDecodesStream(input: {
+  readonly url: string;
+  readonly headers?: Record<string, string>;
+  readonly timeoutMs?: number;
+}): Promise<boolean | null> {
+  const mpv = Bun.which("mpv");
+  if (!mpv) return null;
+  const outDir = mkdtempSync(join(tmpdir(), "kunai-smoke-frame-"));
+  try {
+    const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(input.headers);
+    const headerFields = [...(origin ? [`Origin: ${origin}`] : []), ...extraFields];
+    const args = [
+      "--no-config",
+      "--ytdl=no",
+      "--ao=null",
+      "--vo=image",
+      `--vo-image-outdir=${outDir}`,
+      "--frames=1",
+      "--really-quiet",
+      ...(referer ? [`--referrer=${referer}`] : []),
+      ...(userAgent ? [`--user-agent=${userAgent}`] : []),
+      ...(headerFields.length > 0 ? [`--http-header-fields=${headerFields.join(",")}`] : []),
+      "--",
+      input.url,
+    ];
+    const child = Bun.spawn([mpv, ...args], { stdout: "ignore", stderr: "ignore" });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, input.timeoutMs ?? 45_000);
+    await child.exited;
+    clearTimeout(timer);
+    const wroteFrame = [...new Bun.Glob("*").scanSync(outDir)].length > 0;
+    if (wroteFrame) return true;
+    return timedOut ? null : false;
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
 }

@@ -533,6 +533,20 @@ demands — the stream does not play for anyone — so Miruro now matches the
 resolve gate's policy that every 4xx is definitive, and 401/403 remain the
 narrow exception because only Bun's fetch sees them.
 
+A rejected backend is recorded against its server id (`pewe`, `moo` — sub and
+dub share one) as a `server-error` through `context.endpointHealth`, and the
+cycle is handed the same port, so a backend quarantined by the usual rules
+(three consecutive failures on one title, or two titles) is skipped without a
+request. The engine records nothing for `candidate-empty`, which is correct — an
+episode a server lacks is not evidence against the server — so the definitive
+status is recorded by Miruro itself, and never for a timeout or an aborted probe.
+
+The probe does not ask `animegg.org` at all. Its `/play` endpoint, where every
+`moo` stream starts, never answers Bun's fetch while curl and mpv get a 302 at
+once, so each probe spent the full timeout to learn nothing. Measured on
+2026-09-12 against the live pipe, a Miruro resolve went from ~4.3 s to ~2.3 s
+from that alone, and ~1.1 s once `pewe` was quarantined.
+
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
 backends is reached through it, so the two providers behind it are the ones that
 share none of that. `kickassanime` is second and `animegg` third: both have their

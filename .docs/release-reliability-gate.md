@@ -261,6 +261,16 @@ Expected result for each provider:
 - `failureCodes` is empty or contains only non-blocking fallback evidence when a fallback stream was selected
 - output includes `isolatedProfile: true`
 
+The route signoff needs `streamReachable: true` — proof, not neutrality. Its
+first judge is a Bun probe; when that times out, the route is settled by mpv
+decoding one frame (`mpvDecodesStream` in `apps/cli/test/live/provider-smoke.ts`)
+and a `[signoff] … mpv decode says …` line is written to stderr. Some hosts never
+answer Bun's fetch while mpv plays them — AnimeGG's `/play`, where Miruro's `moo`
+streams start — and reading that silence as `provider-drift` failed the signoff
+on a stream that played. mpv giving up without a frame is still a failure; mpv
+missing or still working at 45 s leaves the route inconclusive, which still
+fails approval.
+
 Do not run live provider smokes in default CI. They are opt-in checks for provider drift and release confidence.
 
 Provider smokes should be run once per touched provider family, not in a loop while developing. Repeated iteration belongs in fixture-backed provider tests and mocked fetch/runtime ports.
