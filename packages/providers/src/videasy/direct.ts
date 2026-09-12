@@ -30,6 +30,7 @@ import type {
 } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { readJsonObjectBody } from "../shared/json-body";
 import { HealthTracker, TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
@@ -1496,8 +1497,8 @@ async function fetchWingsdatabaseSeed(
             headers: seedHeaders,
           });
           if (!response.ok) throw new Error(`seed HTTP ${response.status}`);
-          const body = (await response.json()) as { seed?: string; ttlMs?: number };
-          if (!body.seed) throw new Error("seed payload missing seed");
+          const body = await readJsonObjectBody<{ seed?: string; ttlMs?: number }>(response);
+          if (!body?.seed) throw new Error("seed payload missing seed");
           return { apiBase, seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
         } catch (error) {
           // Three different causes reach this catch and only one is host
@@ -2340,13 +2341,14 @@ async function fetchVideasyDbTitleMetadata(
     });
     if (!response.ok) return null;
 
-    const data = (await response.json()) as {
+    const data = await readJsonObjectBody<{
       readonly name?: string;
       readonly title?: string;
       readonly first_air_date?: string;
       readonly release_date?: string;
       readonly external_ids?: { readonly imdb_id?: string | null };
-    };
+    }>(response);
+    if (!data) return null;
 
     const releaseDate = data.first_air_date ?? data.release_date;
     const year =
