@@ -2,6 +2,28 @@
 
 import { useEffect, useState } from "react";
 
+function formatInViewerZone(date: Date): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+    date,
+  );
+}
+
+/**
+ * The viewer-local rendering of an ISO instant, or null when it cannot be
+ * parsed — in which case the caller keeps showing its UTC label.
+ *
+ * Kept pure and separate from the component so it is testable without a DOM:
+ * the parsing, the invalid-date guard and the formatting are what can go wrong,
+ * not React running an effect.
+ */
+export function formatLocalTimestamp(
+  iso: string,
+  format: (date: Date) => string = formatInViewerZone,
+): string | null {
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : format(parsed);
+}
+
 /**
  * Renders a UTC timestamp on the server and upgrades it to the viewer's own
  * clock after mount.
@@ -22,13 +44,7 @@ export function LocalTime({ iso, utcLabel }: { readonly iso: string; readonly ut
   const [local, setLocal] = useState<string | null>(null);
 
   useEffect(() => {
-    const parsed = new Date(iso);
-    if (Number.isNaN(parsed.getTime())) return;
-    setLocal(
-      new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-        parsed,
-      ),
-    );
+    setLocal(formatLocalTimestamp(iso));
   }, [iso]);
 
   return <time dateTime={iso}>{local ?? utcLabel}</time>;
