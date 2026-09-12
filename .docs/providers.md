@@ -529,10 +529,11 @@ every server dead. The check never attests reachability.
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
 backends is reached through it, so the two providers behind it are the ones that
 share none of that. `kickassanime` is second and `animegg` third: both have their
-own catalog, site and CDN, but KickAssAnime can also take over a title found in
-_another_ catalog — it matches the show by name and year and remembers the
-result on the title bridge — whereas AnimeGG only plays what its own search
-found. AniDB and AllAnime stay behind them, AniDB for when it returns and
+own catalog, site and CDN, and both take over a title found in _another_ catalog
+by matching its name (`matchProviderCatalogTitle`: exactly one hit, or step
+aside) and remembering the slug on the title bridge. KickAssAnime is ahead
+because its catalog carries a year, so its match can separate a sequel from its
+first season, and because it has real subtitle tracks. AniDB and AllAnime stay behind them, AniDB for when it returns and
 AllAnime for the ani-cli parity path. See
 [the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
 [the AnimeGG dossier](./provider-dossiers/animegg.md), both of which record why a

@@ -9,10 +9,9 @@ lastReviewed: "2026-09-12"
 
 ## Request Summary
 
-Give the anime lane a source that can take over a title **Miruro found**, and
-that ships subtitles as tracks rather than burned in. AnimeGG (added 2026-09-11)
-is independent of Miruro but only plays what its own search found, and its subs
-are hard-subbed; KickAssAnime closes both gaps.
+Give the anime lane a second source independent of Miruro that ships subtitles
+as tracks rather than burned in. AnimeGG (added 2026-09-11) is independent too,
+but its subs are hard-subbed and its search exposes no year to match on.
 
 ## Scope
 
@@ -138,6 +137,8 @@ frame written for both audio modes.
 ## Implementation Handoff Notes
 
 Registered in `loadProductionProviderModules()` and **second** in the default
-anime order, ahead of AnimeGG: it can take over a title found in any catalog,
-where AnimeGG only plays what its own search found. Miruro stays first for
-catalogue breadth.
+anime order, ahead of AnimeGG. Both take over a title found in any catalog by
+name through the shared `matchProviderCatalogTitle`; KickAssAnime's rows carry a
+year, so its match can tell a sequel from its first season where AnimeGG's can
+only refuse the pair as ambiguous, and it has real subtitle tracks. Miruro stays
+first for catalogue breadth.

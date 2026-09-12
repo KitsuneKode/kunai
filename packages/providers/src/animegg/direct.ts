@@ -31,6 +31,7 @@ import {
 } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { matchProviderCatalogTitle } from "../shared/provider-title-match";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   createSourceCandidateFromStream,
@@ -86,16 +87,62 @@ async function fetchText(
 }
 
 /**
- * The AnimeGG slug for a title, from the provider-native id the catalog stored.
- * A title Kunai only knows by AniList or TMDB id has no slug, and this provider
- * must say so rather than guess one from the name.
+ * The AnimeGG slug a title already carries, from the provider-native id its own
+ * search stored. `title.id` is deliberately not a fallback: an AnimeGG slug is
+ * plain lowercase kebab (`one-piece`) with nothing to tell it apart from
+ * another catalog's slug of the same shape, so trusting it would let a
+ * same-named page play as though it were this show. A title from elsewhere is
+ * matched by name instead, in `locateAnimeggShow`.
  */
 export function resolveAnimeggSlug(title: TitleIdentity): string | null {
-  const native = title.externalIds?.providerNativeIds?.[ANIMEGG_PROVIDER_ID];
-  const candidate = typeof native === "string" && native.trim() ? native.trim() : title.id?.trim();
-  if (!candidate) return null;
-  // Slugs are lowercase kebab; anything else is another catalog's id.
-  return /^[a-z0-9][a-z0-9-]*$/.test(candidate) ? candidate : null;
+  const native = title.externalIds?.providerNativeIds?.[ANIMEGG_PROVIDER_ID]?.trim();
+  if (!native) return null;
+  return /^[a-z0-9][a-z0-9-]*$/.test(native) ? native : null;
+}
+
+/**
+ * The show for a title found in any catalog. AnimeGG is a fallback, so the
+ * titles reaching it usually came from Miruro or AniList and carry no slug;
+ * without this the provider could only ever play what its own search found.
+ *
+ * The search page is the only name index the site has, and it exposes no year,
+ * so the match is on name alone and must be unique — including the alt titles
+ * both sides list, which is what connects "Sousou no Frieren" to
+ * "Frieren: Beyond Journey's End". The answer is remembered against the AniList
+ * id so later episodes cost nothing.
+ */
+export async function locateAnimeggShow(
+  title: TitleIdentity,
+  context: ProviderRuntimeContext,
+  events?: ProviderTraceEvent[],
+): Promise<string | null> {
+  const own = resolveAnimeggSlug(title);
+  if (own) return own;
+
+  const anilistId = title.externalIds?.anilistId ?? title.anilistId;
+  const bridgeKey = anilistId
+    ? { providerId: ANIMEGG_PROVIDER_ID, catalogKind: "anime" as const, catalogId: anilistId }
+    : undefined;
+  const remembered = bridgeKey ? context.titleBridge?.get(bridgeKey) : undefined;
+  if (remembered) return remembered;
+
+  const query = title.title.trim();
+  if (!query) return null;
+  const rows = parseAnimeggSearchResults(await fetchText(animeggSearchPath(query), context));
+  const match = matchProviderCatalogTitle(rows, { title: query });
+  if (!match) return null;
+
+  if (bridgeKey) context.titleBridge?.set({ ...bridgeKey, nativeId: match.slug });
+  if (events) {
+    emitTraceEvent(events, context, {
+      type: "source:success",
+      providerId: ANIMEGG_PROVIDER_ID,
+      sourceId: `source:${ANIMEGG_PROVIDER_ID}:title-match`,
+      message: `Matched "${title.title}" to AnimeGG ${match.slug} by name`,
+      attributes: { slug: match.slug },
+    });
+  }
+  return match.slug;
 }
 
 /**
@@ -145,7 +192,7 @@ export const animeggProviderModule: CoreProviderModule = {
   },
 
   async listEpisodes(input, context) {
-    const slug = resolveAnimeggSlug(input.title);
+    const slug = await locateAnimeggShow(input.title, context);
     if (!slug) return null;
     const html = await fetchText(animeggSeriesPath(slug), context);
     const numbers = parseAnimeggEpisodeNumbers(html, slug);
@@ -182,12 +229,14 @@ export const animeggProviderModule: CoreProviderModule = {
     if (input.mediaKind !== "anime") {
       return fail("unsupported-title", "AnimeGG only supports anime");
     }
-    const slug = resolveAnimeggSlug(input.title);
+    let slug: string | null;
+    try {
+      slug = await locateAnimeggShow(input.title, context, events);
+    } catch (error) {
+      return fail("network-error", `AnimeGG search failed: ${describe(error)}`, true);
+    }
     if (!slug) {
-      return fail(
-        "unsupported-title",
-        "AnimeGG needs its own catalog id; this title was found in another catalog",
-      );
+      return fail("not-found", `AnimeGG has no show that is clearly "${input.title.title}"`);
     }
 
     const episode = selectProviderEpisodeNumber(input.episode);

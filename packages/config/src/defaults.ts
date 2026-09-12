@@ -34,9 +34,10 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   providerPriority: ["rivestream", "vidlink"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // KickAssAnime and AnimeGG share nothing with Miruro — own catalog, own site,
-  // own CDN — so a Miruro outage does not take them too. KickAssAnime is first
-  // of the two because it can take over a title Miruro found (it matches the
-  // show by name and year); AnimeGG only plays titles found in its own search.
+  // own CDN — so a Miruro outage does not take them too. Both take over a title
+  // Miruro found by matching its name; KickAssAnime is first because its match
+  // also checks the year (AnimeGG's search exposes none, so a sequel is likelier
+  // to be refused as ambiguous) and it carries real subtitle tracks.
   // AniDB follows for when it returns, then AllAnime for the ani-cli parity path.
   animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.

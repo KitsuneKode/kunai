@@ -27,6 +27,7 @@ import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { matchProviderCatalogTitle } from "../shared/provider-title-match";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   createSourceCandidateFromStream,
@@ -216,37 +217,17 @@ export function resolveKaaSlug(title: TitleIdentity): string | null {
 
 const KAA_SLUG_SHAPE = /^[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{4}$/;
 
-function titleKey(value: string): string {
-  return (
-    value
-      .normalize("NFKD")
-      .replace(/\p{M}+/gu, "")
-      .toLowerCase()
-      // "Journey's" and "Journeys" are one word; other punctuation separates words.
-      .replace(/['\u2019`]/g, "")
-      .replace(/[^\p{L}\p{N}]+/gu, " ")
-      .trim()
-  );
-}
-
 /**
- * The one search row that is this title: same romaji or English name, and the
- * same year when both sides know it. The site exposes no AniList or MAL id to
- * match on, so anything short of exactly one such row is no match — a wrong
- * show played confidently is worse than falling through to the next provider.
+ * The one search row that is this title — same romaji or English name, and the
+ * same year when both sides know it — through the matcher AnimeGG shares. The
+ * site exposes no AniList or MAL id, so anything short of exactly one such row
+ * is no match: a wrong show played confidently is worse than falling through.
  */
 export function matchKaaShow(
   rows: readonly KaaSearchResult[],
   title: Pick<TitleIdentity, "title" | "year">,
 ): string | null {
-  const wanted = titleKey(title.title);
-  if (!wanted) return null;
-  const hits = rows.filter((row) => {
-    const names = [row.title, row.englishTitle].flatMap((name) => (name ? [titleKey(name)] : []));
-    if (!names.includes(wanted)) return false;
-    return title.year === undefined || row.year === undefined || row.year === title.year;
-  });
-  return hits.length === 1 ? (hits[0]?.slug ?? null) : null;
+  return matchProviderCatalogTitle(rows, { title: title.title, year: title.year })?.slug ?? null;
 }
 
 /**

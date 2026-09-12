@@ -44,6 +44,8 @@ function clean(value: string | undefined): string {
  * wraps its own poster, title and info block, so the anchor is the record
  * boundary.
  */
+const NEXT_SEARCH_ANCHOR = /<a\s+href="\/series\//i;
+
 export function parseAnimeggSearchResults(html: string): AnimeggSearchResult[] {
   const results: AnimeggSearchResult[] = [];
   const seen = new Set<string>();
@@ -53,9 +55,12 @@ export function parseAnimeggSearchResults(html: string): AnimeggSearchResult[] {
   while ((match = anchor.exec(html)) !== null) {
     const slug = match[1]?.trim();
     if (!slug || seen.has(slug)) continue;
+    // Bound the record at the next result anchor, not at a fixed width: a hit
+    // with no <h2> would otherwise borrow the following hit's title and pair it
+    // with this slug.
     const next = anchor.lastIndex;
-    anchor.lastIndex = next;
-    const block = html.slice(next, next + 1500);
+    const following = NEXT_SEARCH_ANCHOR.exec(html.slice(next));
+    const block = html.slice(next, following ? next + following.index : undefined);
 
     const title = clean(/<h2[^>]*>([\s\S]*?)<\/h2>/i.exec(block)?.[1]);
     if (!title) continue;
@@ -71,8 +76,11 @@ export function parseAnimeggSearchResults(html: string): AnimeggSearchResult[] {
       title,
       ...(posterUrl ? { posterUrl } : {}),
       ...(Number.isFinite(episodes) && episodes > 0 ? { episodeCount: episodes } : {}),
+      // The site separates alt titles with either "," or ";" — Frieren's
+      // English name sits after a semicolon, and splitting on commas alone
+      // left it glued to the Japanese one where no title match could reach it.
       altNames: altRaw
-        .split(",")
+        .split(/[,;]/)
         .map((name) => name.trim())
         .filter((name) => name.length > 0 && name !== title)
         .slice(0, 6),
@@ -152,7 +160,10 @@ export function parseAnimeggEmbedSources(html: string): AnimeggEmbedSource[] {
 export function animeggStreamUrl(file: string): string | null {
   try {
     const url = new URL(file, `${ANIMEGG_BASE_URL}/`);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    // The embed's own files are relative and resolve to https. An absolute
+    // http: one would be handed to the player in the clear, with the episode
+    // referer attached, so it is refused rather than downgraded silently.
+    if (url.protocol !== "https:") return null;
     return url.toString();
   } catch {
     return null;

@@ -57,8 +57,8 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 <ProviderDocSection id="kickassanime" title="KickAssAnime">
 
 **Adapter role:** the anime backup, second in the default order. It has its own catalogue, site and
-video servers, so a Miruro outage does not reach it — and unlike the others it can pick up a show
-Kunai found anywhere, by matching the name and year against its own catalogue.
+video servers, so a Miruro outage does not reach it. It picks up a show Kunai found anywhere by
+matching the name and year against its own catalogue.
 
 **Config id:** `kickassanime`.
 
@@ -81,7 +81,8 @@ show you mean, it steps aside rather than playing the wrong one.
 
 **Adapter role:** the third anime source, behind Miruro and KickAssAnime. AnimeGG has its own catalogue, its
 own site and its own video servers, so it keeps working when Miruro does not — which is the whole
-reason it is there. Sub and dub both come from AnimeGG's own episode tabs.
+reason it is there. It picks up a show Kunai found anywhere by matching its name against AnimeGG's
+own catalogue. Sub and dub both come from AnimeGG's own episode tabs.
 
 **Config id:** `animegg`.
 
@@ -94,7 +95,8 @@ reason it is there. Sub and dub both come from AnimeGG's own episode tabs.
 
 **Caveats:** anime mode must be active. Subtitles are burned into the picture on subbed episodes, so
 there is no separate subtitle track to switch. Not every show has a dub, and Kunai says so in the
-playback trace when it falls back to the subbed version. Its catalogue is smaller than Miruro's.
+playback trace when it falls back to the subbed version. Its catalogue is smaller than Miruro's, and
+when more than one of its shows could be the one you picked, it steps aside rather than guess.
 
 </ProviderDocSection>
 
