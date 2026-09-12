@@ -1882,23 +1882,36 @@ function classifyMiruroPipeError(error: unknown): {
 const MIRURO_BACKEND_PROBE_TIMEOUT_MS = 2_000;
 
 /**
- * HTTP statuses that mean the backend behind a Miruro server is down, as opposed
- * to refusing this particular request.
+ * HTTP statuses that mean the backend behind a Miruro server cannot serve this
+ * stream — gone, down, or refusing everyone — as opposed to refusing this
+ * particular client.
  *
- * Deliberately narrow, because every status a CDN can return to a non-player is
- * a working server this would otherwise skip:
+ * Deliberately narrow, because a status a CDN returns only to a non-player is a
+ * working server this would otherwise skip:
  *
- * - 401/403/429 — owocdn behind kwik (`kiwi`) answers Bun's fetch with 403 while
+ * - 401/403 — owocdn behind kwik (`kiwi`) answers Bun's fetch with 403 while
  *   mpv plays the same URL.
  * - plain 500 — AnimeGG (`moo`, the most reliable backend) redirects to a
  *   vidcache host that answers `{"error":"Invalid request (bad hand off)"}` with
  *   500 to anything that is not its player, including a bare ranged GET. mpv
  *   plays those URLs.
  *
- * What is left is a host saying it is gone or cannot serve at all.
+ * 429 is here, unlike 401/403, because a rate-limited master is refused to
+ * everyone: on 2026-09-12 `pewe`'s hls.anidb.app answered 429 to mpv, to curl
+ * with the stream's headers, and to curl with none, so the release signoff's
+ * anime lane resolved a stream no player could open. Accepting it costs a failed
+ * play and a slow recovery on the default anime provider; rejecting it costs one
+ * more server attempt.
  */
 export function isMiruroBackendDownStatus(status: number): boolean {
-  return status === 404 || status === 410 || status === 502 || status === 503 || status === 504;
+  return (
+    status === 404 ||
+    status === 410 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
 }
 
 /**

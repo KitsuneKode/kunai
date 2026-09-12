@@ -878,12 +878,22 @@ describe("probeMiruroBackendDown", () => {
 
   test("does not condemn a server for refusing this particular client", async () => {
     // owocdn behind kwik answers Bun's fetch with 403 while mpv plays the URL.
-    for (const status of [401, 403, 429, 416]) {
+    for (const status of [401, 403, 416]) {
       const { context } = withStatus(status);
       expect(await probeMiruroBackendDown("https://vault-16.owocdn.top/x.m3u8", {}, context)).toBe(
         null,
       );
     }
+  });
+
+  test("a rate-limited master is rejected — no player gets past one", async () => {
+    // 2026-09-12: pewe's hls.anidb.app answered 429 to mpv, to curl with the
+    // stream's headers and to curl with none, so the anime lane resolved a
+    // stream nothing could open. Unlike 403, this is not a client-specific no.
+    const { context } = withStatus(429);
+    expect(await probeMiruroBackendDown("https://hls.anidb.app/x/master.m3u8", {}, context)).toBe(
+      429,
+    );
   });
 
   test("a working backend is not reported down", async () => {
