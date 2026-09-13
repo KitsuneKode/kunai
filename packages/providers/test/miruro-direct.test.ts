@@ -179,36 +179,52 @@ describe("Miruro server order has one authority", () => {
     expect(catalogServers).toEqual([...EXPECTED_ORDER]);
   });
 
-  test("a hardcoded subtitle preference pulls sub servers ahead of dub", () => {
-    // The builder gives sub servers a -5000 boost when hard-sub is preferred.
-    // The resolve path never passed the preference, so the boost was dead code;
-    // this proves it now reorders when the preference is supplied.
+  describe("audio order under a subtitle-delivery preference", () => {
     const bothLangs = { sub: [{ id: "s-1", number: 1 }], dub: [{ id: "d-1", number: 1 }] };
-    const providers = { kiwi: { episodes: bothLangs } };
+    const providers = { pewe: { episodes: bothLangs }, moo: { episodes: bothLangs } };
 
     // The cycle engine orders by the `priority` field, so sort as it would.
-    const leader = (
-      candidates: ReturnType<typeof buildMiruroCycleCandidates>,
-    ): string | undefined => [...candidates].sort((a, b) => a.priority - b.priority)[0]?.groupId;
+    const tryOrder = (candidates: ReturnType<typeof buildMiruroCycleCandidates>): string[] =>
+      [...candidates]
+        .sort((a, b) => a.priority - b.priority)
+        .map((candidate) => `${candidate.serverId}:${candidate.groupId}`);
 
-    const withoutPreference = buildMiruroCycleCandidates({
-      providers,
-      episodeNum: 1,
-      targetAudio: "dub",
-      fallbackAudio: "sub",
+    test("a requested dub is tried before any sub, even when hard subs are preferred", () => {
+      // The adapter prefers hard subs for every anime request, so a preference
+      // that could outrank the audio the user chose meant Miruro never played
+      // a dub while any sub server worked.
+      const candidates = buildMiruroCycleCandidates({
+        providers,
+        episodeNum: 1,
+        targetAudio: "dub",
+        fallbackAudio: "sub",
+        preferredSubtitleDelivery: "hardcoded",
+      });
+      expect(tryOrder(candidates)).toEqual(["pewe:dub", "moo:dub", "pewe:sub", "moo:sub"]);
     });
-    // Default: dub (the target) is tried first.
-    expect(leader(withoutPreference)).toBe("dub");
 
-    const withHardsub = buildMiruroCycleCandidates({
-      providers,
-      episodeNum: 1,
-      targetAudio: "dub",
-      fallbackAudio: "sub",
-      preferredSubtitleDelivery: "hardcoded",
+    test("a sub request keeps the canonical server order", () => {
+      const candidates = buildMiruroCycleCandidates({
+        providers,
+        episodeNum: 1,
+        targetAudio: "sub",
+        fallbackAudio: "dub",
+        preferredSubtitleDelivery: "hardcoded",
+      });
+      expect(tryOrder(candidates)).toEqual(["pewe:sub", "moo:sub", "pewe:dub", "moo:dub"]);
     });
-    // With the preference honoured, the boosted sub server leads.
-    expect(leader(withHardsub)).toBe("sub");
+
+    test("a source the user picked still leads, whatever its audio", () => {
+      const candidates = buildMiruroCycleCandidates({
+        providers,
+        episodeNum: 1,
+        targetAudio: "dub",
+        fallbackAudio: "sub",
+        preferredSubtitleDelivery: "hardcoded",
+        preferredSourceId: "source:miruro:pipe:moo:sub",
+      });
+      expect(tryOrder(candidates)[0]).toBe("moo:sub");
+    });
   });
 
   test("fallback construction with no discovered providers follows the canonical order", () => {
