@@ -23,6 +23,7 @@ import type {
 
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
   findLastCycleFailure,
@@ -101,6 +102,15 @@ let providerServicesCache:
       readonly expiresAtMs: number;
     }
   | undefined;
+
+/**
+ * Test-only: the services cache is process-wide and keyed to the injected clock,
+ * so a test file with a later clock leaves entries another file's earlier clock
+ * still reads as fresh.
+ */
+export function clearRivestreamCachesForTest(): void {
+  providerServicesCache = undefined;
+}
 
 type RivestreamProviderServicesResponse = {
   readonly data?: unknown;
@@ -825,6 +835,60 @@ function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
+/**
+ * The upstream hands out an HLS master, and mpv opening a master makes ffmpeg's
+ * HLS demuxer load and probe every variant before it plays one. Through
+ * Rivestream's proxy (~1.3s a request) that alone cost ~8s: measured on
+ * 2026-09-12, a 3-variant master took 19.1s to a first frame and one of its
+ * variants 11.2s. So each master is split into its variants here and mpv is
+ * handed exactly one — which also gives the Tracks panel a real quality ladder
+ * instead of a bare "HLS".
+ *
+ * The expander keeps a master whole when its variants take audio from a
+ * separate rendition (their playlists are then video-only), and on any fetch
+ * failure — so the worst case is today's behaviour. The deadline is short
+ * because this sits on the resolve path: a hung proxy must cost seconds, not
+ * the expander's default twelve.
+ */
+const RIVESTREAM_LADDER_TIMEOUT_MS = 4_000;
+
+/**
+ * A source as the provider described it, plus the resolution rung it was split
+ * to. `quality` stays the provider's own string ("HindiCast (1080)"): the audio
+ * language is read from it, and a rung label would erase that.
+ */
+type RivestreamPlayableSource = RivestreamRawSource & {
+  readonly rung?: { readonly label: string; readonly rank: number };
+};
+
+async function expandRivestreamHlsMasters(
+  rawSources: readonly RivestreamRawSource[],
+  context: ProviderRuntimeContext,
+): Promise<RivestreamPlayableSource[]> {
+  const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
+  const headers = { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT };
+  const expanded = await Promise.all(
+    rawSources.map(async (source): Promise<RivestreamPlayableSource[]> => {
+      if (!source.url || !source.url.includes(".m3u8")) return [source];
+      const ladder = await expandHlsMasterPlaylist({
+        fetch: requester,
+        masterUrl: source.url,
+        headers,
+        signal: createTimeoutSignal(context.signal, RIVESTREAM_LADDER_TIMEOUT_MS),
+      });
+      // One row pointing back at the master is the expander declining to
+      // split; keep the source exactly as the provider described it.
+      if (ladder.length <= 1 && ladder[0]?.url === source.url) return [source];
+      return ladder.map((variant) => ({
+        ...source,
+        url: variant.url,
+        rung: { label: variant.qualityLabel, rank: variant.qualityRank },
+      }));
+    }),
+  );
+  return expanded.flat();
+}
+
 async function resolveRivestreamProviderCandidate({
   candidate,
   provider,
@@ -859,11 +923,13 @@ async function resolveRivestreamProviderCandidate({
   const variants: ProviderVariantCandidate[] = [];
   const subtitles: SubtitleCandidate[] = [];
 
-  rawSources.forEach((source) => {
+  const playable = await expandRivestreamHlsMasters(rawSources, context);
+
+  playable.forEach((source) => {
     if (!source.url) return;
     const qualityStr = String(source.quality || source.format || "auto");
-    const qualityLabel = normalizeQualityLabel(qualityStr);
-    const qualityRank = qualityRankFromLabel(qualityStr) ?? 0;
+    const qualityLabel = source.rung?.label ?? normalizeQualityLabel(qualityStr);
+    const qualityRank = source.rung?.rank ?? qualityRankFromLabel(qualityStr) ?? 0;
     const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [source.url]);
     const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, source.url]);
     const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
