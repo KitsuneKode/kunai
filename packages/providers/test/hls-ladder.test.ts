@@ -76,6 +76,64 @@ describe("hls ladder", () => {
     expect(isHlsDeadHostStatus(inventory.probe.httpStatus)).toBe(false);
   });
 
+  test("still splits a master whose variants carry their own audio", async () => {
+    const muxed = `#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=661118,CODECS="mp4a.40.2,avc1.42c015",RESOLUTION=640x256
+v0.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3652287,CODECS="mp4a.40.2,avc1.640028",RESOLUTION=1920x768
+v2.m3u8
+`;
+    const variants = await expandHlsMasterPlaylist({
+      masterUrl: "https://cdn.example/master.m3u8",
+      // SAFETY: stub returns Response like fetch; the option type expects the full fetch signature.
+      fetch: (async () => new Response(muxed)) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    expect(variants.map((variant) => variant.url)).toEqual([
+      "https://cdn.example/v2.m3u8",
+      "https://cdn.example/v0.m3u8",
+    ]);
+  });
+
+  test("splits a master whose audio group only labels the audio each variant already has", async () => {
+    // A rendition with no URI names audio muxed into every variant (RFC 8216
+    // §4.3.4.2.1), so one variant alone still plays with sound.
+    const labelledOnly = `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",LANGUAGE="eng",DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=13298235,RESOLUTION=1920x1080,AUDIO="aac"
+v-1080/playlist.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=1764061,RESOLUTION=640x360,AUDIO="aac"
+v-360/playlist.m3u8
+`;
+    const variants = await expandHlsMasterPlaylist({
+      masterUrl: "https://cdn.example/master.m3u8",
+      // SAFETY: stub returns Response like fetch; the option type expects the full fetch signature.
+      fetch: (async () => new Response(labelledOnly)) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    expect(variants.map((variant) => variant.url)).toEqual([
+      "https://cdn.example/v-1080/playlist.m3u8",
+      "https://cdn.example/v-360/playlist.m3u8",
+    ]);
+  });
+
+  test("keeps a master whole when the default audio is muxed but another language is not", async () => {
+    // Splitting would still play sound, but only the muxed track: the dub the
+    // user picked lives in the separate rendition and would be gone.
+    const mixedGroup = `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Japanese",LANGUAGE="jpn",DEFAULT=YES
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",LANGUAGE="eng",URI="a-eng/playlist.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=13298235,RESOLUTION=1920x1080,AUDIO="aac"
+v-1080/playlist.m3u8
+`;
+    const variants = await expandHlsMasterPlaylist({
+      masterUrl: "https://cdn.example/master.m3u8",
+      // SAFETY: stub returns Response like fetch; the option type expects the full fetch signature.
+      fetch: (async () => new Response(mixedGroup)) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    expect(variants).toEqual([
+      { url: "https://cdn.example/master.m3u8", qualityLabel: "auto", qualityRank: 0 },
+    ]);
+  });
+
   test("looksLikeHlsMasterUrl detects master leaf names", () => {
     expect(looksLikeHlsMasterUrl("https://cdn.example/master.m3u8")).toBe(true);
     expect(looksLikeHlsMasterUrl("https://cdn.example/vod/index-v1-a1.m3u8")).toBe(false);
@@ -135,7 +193,10 @@ describe("hls rendition tracks (#EXT-X-MEDIA)", () => {
         })) as ExpandHlsMasterPlaylistOptions["fetch"],
     });
 
-    expect(inventory.variants.map((v) => v.qualityLabel)).toEqual(["1080p", "720p"]);
+    // MASTER_WITH_MEDIA's variants reference an audio group with URI-addressed
+    // renditions, so the ladder keeps the master whole — a lone variant would
+    // be video-only. The rendition inventory still parses.
+    expect(inventory.variants.map((v) => v.qualityLabel)).toEqual(["auto"]);
     expect(inventory.audioTracks).toHaveLength(3);
     expect(inventory.subtitleTracks).toHaveLength(2);
     expect(inventory.audioLanguages).toEqual(["en", "ja", "hi"]);
