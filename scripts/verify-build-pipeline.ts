@@ -14,6 +14,7 @@ import {
   RELEASE_BINARY_TARGETS,
   resolveHostReleaseBinaryTarget,
 } from "../apps/cli/src/services/update/platform-assets";
+import { assertBuildCacheSummary } from "./build-cache-proof";
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const CLI_ROOT = join(REPO_ROOT, "apps/cli");
@@ -87,8 +88,8 @@ function assertDiskBudget(): void {
   }
 }
 
-function assertTurboCacheHit(): void {
-  const output = capture("bunx", [
+export function assertTurboCacheHit(captureRun: typeof capture = capture): void {
+  const output = captureRun("bunx", [
     "turbo",
     "run",
     "build",
@@ -96,13 +97,8 @@ function assertTurboCacheHit(): void {
     "--filter=@kitsunekode/kunai",
     "--summarize",
   ]);
-  const hitCount = (output.match(/\bcache hit\b/gi) ?? []).length;
-  if (hitCount < 2) {
-    throw new Error(
-      `[verify:build-pipeline] expected Turbo cache hits for build + build:binary:host, got ${hitCount}.`,
-    );
-  }
-  log(`turbo cache hits: ${hitCount}`);
+  assertBuildCacheSummary(output, REPO_ROOT);
+  log("turbo cache hits verified for build + build:binary:host");
 }
 
 function hostBinaryPath(): string {
@@ -198,4 +194,4 @@ async function main(): Promise<void> {
   log("ok");
 }
 
-await main();
+if (import.meta.main) await main();
