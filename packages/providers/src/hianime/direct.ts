@@ -522,7 +522,11 @@ export const hianimeProviderModule: CoreProviderModule = {
       const selection = selectReadyStream(streams, {
         startupPriority: input.startupPriority,
         qualityPreference: input.qualityPreference,
-        preferredSourceId: input.preferredSourceId ?? sourceId,
+        // User value only: every stream here shares `sourceId`, so defaulting
+        // would match streams[0] as `explicit` and bypass favorites, quality
+        // preference, and startup ordering. The mode switch already resolved
+        // above via explicitSourceMode, so nothing is lost.
+        preferredSourceId: input.preferredSourceId,
         preferredStreamId: input.preferredStreamId,
         favoriteSourceNames: input.favoriteSourceNames,
       });

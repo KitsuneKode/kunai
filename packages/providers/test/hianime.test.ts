@@ -160,6 +160,20 @@ describe("hianime search parsing", () => {
     ]);
   });
 
+  test("strips control characters from search titles", () => {
+    const html = [
+      '<div class="film-detail"><h3 class="film-name"><a href="/ctrl-99" title="FooBar&#27;Baz">x</a></h3></div>',
+    ].join("");
+    const [entry] = parseHianimeSearchHtml(html);
+    expect(entry?.id).toBe("ctrl-99");
+    // No C0/C1 bytes may survive into terminal-bound text (asserted via
+    // code points: a control-character regex class is itself forbidden here).
+    const codes = [...(entry?.title ?? "")].map((c) => c.codePointAt(0) ?? 0);
+    expect(codes.length).toBeGreaterThan(0);
+    expect(codes.every((cp) => cp >= 0x20 && !(cp >= 0x7f && cp <= 0x9f))).toBe(true);
+    expect(entry?.title).toContain("FooBar");
+  });
+
   test("matches exact, then prefix, then first", () => {
     const results = [
       { id: "boruto-naruto-next-generations-650", title: "Boruto: Naruto Next Generations" },
@@ -186,6 +200,15 @@ describe("hianime episode parsing", () => {
     expect(entries[1]?.title).toBe("I'm used to it");
   });
 
+  test("reads the first ep-name title and ignores other divs", () => {
+    const html = [
+      '<a class="ssl-item ep-item" data-number="1" data-id="11" href="https://hianime.at/watch/show-9?ep=11">',
+      '<div class="other" title="Wrong">x</div>',
+      '<div class="ep-name" title="Right">x</div></a>',
+    ].join("");
+    expect(parseHianimeEpisodesHtml(html, "show-9")).toMatchObject([{ title: "Right" }]);
+  });
+
   test("drops rows from a foreign slug and rows without episodeId", () => {
     const html = [
       '<a class="ssl-item ep-item" data-number="1" data-id="11" href="https://hianime.at/watch/other-9?ep=11">x</a>',
@@ -199,6 +222,19 @@ describe("hianime episode parsing", () => {
 });
 
 describe("hianime servers parsing", () => {
+  test("matches server-item as an exact class token", () => {
+    const html = [
+      '<div class="item not-server-item" data-type="sub" data-server-name="Fake" data-hash="aHR0cHM6Ly9leGFtcGxlLmNvbS94">',
+      '<div class="item server-item active" data-type="sub" data-server-name="ZokoAnime" data-hash="aHR0cHM6Ly96b2tvYW5pbWUudmlkZW8vc3RyZWFtL21hbC8yMC8xL3N1Yg==">',
+    ].join("");
+    expect(parseHianimeServersHtml(html)).toEqual([
+      {
+        audioMode: "sub",
+        serverName: "ZokoAnime",
+        embedUrl: "https://zokoanime.video/stream/mal/20/1/sub",
+      },
+    ]);
+  });
   test("builds the sub/dub matrix and drops undecodable hashes", () => {
     const html = `${SERVERS_HTML}<div class="item server-item" data-type="sub" data-server-name="Broken" data-hash="!!!">`;
     const entries = parseHianimeServersHtml(html);
@@ -341,6 +377,26 @@ describe("hianime module resolve", () => {
     expect(selected?.metadata).toMatchObject({ intro: { start: 10, end: 90 } });
   });
 
+  test("honors an explicit quality preference over ladder order", async () => {
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        qualityPreference: "360p",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext(happyRouter),
+    );
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved");
+    const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+    expect(selected?.qualityLabel).toBe("360p");
+    expect(selected?.url).toBe("https://hls2.aniwatchtv.uk/v/demo/sub/360/index.m3u8");
+  });
+
   test("fails closed on unknown episodes and stale episode identities", async () => {
     clearHianimeCachesForTest();
     const context = stubContext(happyRouter);
@@ -427,11 +483,18 @@ describe("hianime curl http trailer", () => {
       body: "ends in 200",
       httpCode: 404,
     });
+    // curl prints `000` when no HTTP response arrived: missing status, not
+    // status zero (verified: connection-refused stdout is exactly "\n000").
+    expect(splitCurlHttpTrailer("\n000")).toEqual({ body: "", httpCode: null });
+    expect(splitCurlHttpTrailer("partial\n000")).toEqual({ body: "partial", httpCode: null });
   });
 
   test("curl failure names the transport layer before the HTTP layer", () => {
     // ani-cli 5.1.2 parity: "no HTTP response" (DNS/TCP/TLS) vs "HTTP NNN".
     expect(hianimeCurlFailureMessage("", "", 7)).toBe(
+      "hianime fetch connection error (no HTTP response; curl exit 7)",
+    );
+    expect(hianimeCurlFailureMessage("\n000", "", 7)).toBe(
       "hianime fetch connection error (no HTTP response; curl exit 7)",
     );
     expect(hianimeCurlFailureMessage("partial page\n403", "", 18)).toBe(

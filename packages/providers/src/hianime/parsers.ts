@@ -64,9 +64,9 @@ export function parseHianimeSearchHtml(html: string): readonly HianimeSearchResu
     const anchor = /<h3 class="film-name">\s*<a href="([^"]*)"\s*title="([^"]*)"/.exec(block);
     if (!anchor) continue;
     const id = lastPathSegment(decodeMarkupEntities(anchor[1] ?? "").trim());
-    const title = decodeMarkupEntities(anchor[2] ?? "")
-      .replace(/\s+/g, " ")
-      .trim();
+    // Terminal-bound: markupToPlainText (not bare entity decode) so raw
+    // control bytes from the fetched page can never reach Ink output.
+    const title = markupToPlainText(anchor[2] ?? "");
     if (!looksLikeHianimeShowId(id) || !title || seen.has(id)) continue;
     seen.add(id);
     results.push({ id, title });
@@ -107,13 +107,31 @@ function extractAttribute(tag: string, name: string): string | undefined {
   return value?.trim() ? value : undefined;
 }
 
+/**
+ * Class-token test without `[^"]*token[^"]*`-style nesting: that shape is
+ * polynomial on repeated tokens (CodeQL js/polynomial-redos) and runs on
+ * fetched markup, so the tag is matched plainly and the token tested after.
+ */
+function hasClassToken(tag: string, token: string): boolean {
+  const classes = extractAttribute(tag, "class")?.split(/\s+/) ?? [];
+  return classes.some((entry) => entry.toLowerCase() === token);
+}
+
 function extractEpisodeTitle(block: string): string | undefined {
   const jname = /data-jname\s*=\s*["']([^"']*)["']/i.exec(block)?.[1];
-  if (jname?.trim()) return decodeMarkupEntities(jname).replace(/\s+/g, " ").trim();
-  const named = /<div\b[^>]*class="[^"]*ep-name[^"]*"[^>]*title\s*=\s*["']([^"']*)["']/i.exec(
-    block,
-  )?.[1];
-  if (named?.trim()) return decodeMarkupEntities(named).replace(/\s+/g, " ").trim();
+  const fromJname = jname?.trim() ? markupToPlainText(jname) : "";
+  if (fromJname) return fromJname;
+  let named: string | undefined;
+  const divPattern = /<div\b([^>]*)>/gi;
+  let divMatch: RegExpExecArray | null;
+  while ((divMatch = divPattern.exec(block)) !== null) {
+    const attrs = divMatch[1] ?? "";
+    if (!hasClassToken(attrs, "ep-name")) continue;
+    named = extractAttribute(attrs, "title");
+    break;
+  }
+  const fromTitle = named?.trim() ? markupToPlainText(named) : "";
+  if (fromTitle) return fromTitle;
   const text = markupToPlainText(block);
   return text || undefined;
 }
@@ -157,10 +175,11 @@ export function parseHianimeEpisodesHtml(
  */
 export function parseHianimeServersHtml(html: string): readonly HianimeServerEntry[] {
   const entries: HianimeServerEntry[] = [];
-  const divPattern = /<div\b([^>]*\bserver-item\b[^>]*)>/gi;
+  const divPattern = /<div\b([^>]*)>/gi;
   let match: RegExpExecArray | null;
   while ((match = divPattern.exec(html)) !== null) {
     const attrs = match[1] ?? "";
+    if (!hasClassToken(attrs, "server-item")) continue;
     const rawType = extractAttribute(attrs, "data-type")?.toLowerCase();
     if (rawType !== "sub" && rawType !== "dub") continue;
     const serverName = extractAttribute(attrs, "data-server-name");

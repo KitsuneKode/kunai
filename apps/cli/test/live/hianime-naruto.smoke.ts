@@ -112,7 +112,6 @@ const payload = {
     stream: sub.stream,
     resolveDurationMs: sub.resolveDurationMs,
   }),
-  ...(sub.resolveError ? providerSmokeError(sub.resolveError) : {}),
   searchedProvider: "hianime",
   searchResults: searchResults.length,
   failureCodes: sub.result?.failures.map((failure) => failure.code) ?? [],
@@ -120,6 +119,10 @@ const payload = {
   streamCandidates: sub.result?.streams.length ?? 0,
   streamProbe: sub.probe,
   streamReachable: sub.reachable,
+  // Structured resolve errors win over the empty fallbacks above: when the
+  // resolve rejected, sub.result is null and the fallbacks would otherwise
+  // blank the error's own failure codes and trace summary.
+  ...(sub.resolveError ? providerSmokeError(sub.resolveError) : {}),
   dub: {
     streamResolved: Boolean(dub.stream?.url),
     quality:
@@ -131,12 +134,7 @@ const payload = {
     failureCodes: dub.result?.failures.map((failure) => failure.code) ?? [],
     probe: dub.probe,
     reachable: dub.reachable,
-    ...(dub.resolveError
-      ? {
-          error:
-            dub.resolveError instanceof Error ? dub.resolveError.message : String(dub.resolveError),
-        }
-      : {}),
+    ...(dub.resolveError ? providerSmokeError(dub.resolveError) : {}),
   },
   ...providerSmokeProfilePayload(profile),
   cacheCleared: clearCache,

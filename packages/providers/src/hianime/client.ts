@@ -124,7 +124,8 @@ const CURL_TIMEOUT_EXIT_CODE = 28;
  * Split curl's `-w '\n%{http_code}'` trailer into `{ body, httpCode }`.
  * `httpCode` is null when curl never received an HTTP response (DNS, TCP, or
  * TLS failure) — the ani-cli 5.1.2 distinction between "no HTTP response"
- * and "HTTP NNN", so a dead route is never misread as an HTTP error.
+ * and "HTTP NNN", so a dead route is never misread as an HTTP error. curl
+ * prints `000` for that case, which is a missing status, not status zero.
  * Only one trailing line is ever cut, so a body that naturally ends in
  * `\nNNN` keeps its bytes.
  */
@@ -134,7 +135,9 @@ export function splitCurlHttpTrailer(stdout: string): {
 } {
   const match = /\n(\d{3})$/.exec(stdout);
   if (!match?.[1]) return { body: stdout, httpCode: null };
-  return { body: stdout.slice(0, stdout.length - match[0].length), httpCode: Number(match[1]) };
+  const code = Number(match[1]);
+  const body = stdout.slice(0, stdout.length - match[0].length);
+  return { body, httpCode: code === 0 ? null : code };
 }
 
 /** Name the failed layer first: transport (`no HTTP response`) or HTTP status. */
