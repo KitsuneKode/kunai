@@ -42,9 +42,26 @@ export function normalizeStreamHttpHeaders(
   headers: Record<string, string> | undefined,
 ): NormalizedStreamHttpHeaders {
   const source = headers ?? {};
-  const referer = source.referer ?? source.Referer;
-  const userAgent = source["user-agent"] ?? source["User-Agent"];
-  const origin = source.origin ?? source.Origin;
+  // HTTP header names are case-insensitive, and the dedicated-option lookups
+  // below used to read two spellings each while the extraFields loop excluded
+  // every spelling via `toLowerCase()`. A provider emitting `REFERER` therefore
+  // lost it twice over: not matched as the referer, and not forwarded as a
+  // header either. No provider in the tree spells it that way today, so this is
+  // a trap for the next one rather than a live bug — but it fails silently,
+  // which is the expensive kind.
+  // The exact lowercase spelling still wins when both are present, which is what
+  // `source.referer ?? source.Referer` did; anything else is decided by key
+  // order, and object key order is not a contract a provider should depend on.
+  const dedicated = (canonical: string): string | undefined => {
+    if (typeof source[canonical] === "string") return source[canonical];
+    for (const [name, value] of Object.entries(source)) {
+      if (name.toLowerCase() === canonical) return value;
+    }
+    return undefined;
+  };
+  const referer = dedicated("referer");
+  const userAgent = dedicated("user-agent");
+  const origin = dedicated("origin");
   const sanitize = (value: unknown, pattern: RegExp): string | undefined => {
     if (typeof value !== "string") return undefined;
     const sanitized = value.trim().replace(pattern, "");
