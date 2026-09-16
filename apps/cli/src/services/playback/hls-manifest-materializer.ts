@@ -1,8 +1,8 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { StreamInfo } from "@/domain/types";
+import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import { streamNeedsHlsRelay } from "@/infra/player/hls-relay";
 import {
   absolutizeHostRootHlsManifest,
@@ -96,7 +96,7 @@ export async function materializeHlsManifestForPlayback(
     return null;
   }
 
-  const dir = await createTempDir();
+  const dir = await createPrivateTempDir("hls");
   const playlistPath = join(dir, "playlist.m3u8");
   const absolutized = absolutizeHostRootHlsManifest(manifestText, manifestUrl);
   await writeFile(playlistPath, absolutized, "utf8");
@@ -110,13 +110,4 @@ export async function materializeHlsManifestForPlayback(
       await rm(dir, { recursive: true, force: true });
     },
   };
-}
-
-async function createTempDir(): Promise<string> {
-  const dir = join(
-    tmpdir(),
-    `kunai-hls-${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`,
-  );
-  await mkdir(dir, { recursive: true });
-  return dir;
 }
