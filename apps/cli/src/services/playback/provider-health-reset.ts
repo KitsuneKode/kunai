@@ -34,9 +34,10 @@ function describeResetResult(
   scope: Exclude<ProviderHealthResetScope, false>,
   clearedGlobal: number,
   clearedTitle: number,
+  clearedEndpoints: number,
 ): string {
   const target = RESET_SCOPE_LABELS[scope];
-  if (clearedGlobal === 0 && clearedTitle === 0) {
+  if (clearedGlobal === 0 && clearedTitle === 0 && clearedEndpoints === 0) {
     return `No failure memory found for ${target}. Playback can retry as-is, or use /recompute.`;
   }
   const parts: string[] = [];
@@ -49,6 +50,13 @@ function describeResetResult(
   }
   if (clearedTitle > 0) {
     parts.push("Cleared per-show provider memory");
+  }
+  if (clearedEndpoints > 0) {
+    parts.push(
+      clearedEndpoints === 1
+        ? "Cleared 1 quarantined endpoint"
+        : `Cleared ${clearedEndpoints} quarantined endpoints`,
+    );
   }
   return `${parts.join(". ")}. Retry playback or /recompute.`;
 }
@@ -120,11 +128,16 @@ export function buildProviderHealthResetOptions(
 export async function applyProviderHealthResetScope(
   container: Container,
   scope: Exclude<ProviderHealthResetScope, false>,
-): Promise<{ readonly clearedGlobal: number; readonly clearedTitle: number }> {
+): Promise<{
+  readonly clearedGlobal: number;
+  readonly clearedTitle: number;
+  readonly clearedEndpoints: number;
+}> {
   const state = container.stateManager.getState();
   const title = state.currentTitle;
   let clearedGlobal = 0;
   let clearedTitle = 0;
+  let clearedEndpoints = 0;
 
   const laneProviderIds = (isAnime: boolean): ProviderId[] =>
     container.providerRegistry
@@ -135,29 +148,46 @@ export async function applyProviderHealthResetScope(
   switch (scope) {
     case "current-provider":
       clearedGlobal = container.providerHealth.delete(state.provider as ProviderId);
+      clearedEndpoints = container.endpointHealth.deleteByProvider(state.provider as ProviderId);
       break;
     case "current-title":
       if (title) {
         container.titleProviderHealth.clear(title.id);
         clearedTitle = 1;
+        // Endpoint rows are keyed by provider+endpoint, not by title: only
+        // lift rows this title contributed evidence to.
+        clearedEndpoints = container.endpointHealth.clearTitle(title.id);
       }
       break;
     case "current-title-provider":
       if (title) {
         container.titleProviderHealth.clear(title.id, state.provider);
         clearedTitle = 1;
+        clearedEndpoints = container.endpointHealth.clearTitle(
+          title.id,
+          state.provider as ProviderId,
+        );
       }
       break;
     case "anime-lane":
       clearedGlobal = container.providerHealth.deleteMany(laneProviderIds(true));
+      clearedEndpoints = laneProviderIds(true).reduce(
+        (count, providerId) => count + container.endpointHealth.deleteByProvider(providerId),
+        0,
+      );
       break;
     case "series-lane":
       clearedGlobal = container.providerHealth.deleteMany(laneProviderIds(false));
+      clearedEndpoints = laneProviderIds(false).reduce(
+        (count, providerId) => count + container.endpointHealth.deleteByProvider(providerId),
+        0,
+      );
       break;
     case "all":
       clearedGlobal = container.providerHealth.clearAll();
       container.titleProviderHealth.clearAll();
       clearedTitle = 1;
+      clearedEndpoints = container.endpointHealth.clearAll();
       break;
   }
 
@@ -168,6 +198,7 @@ export async function applyProviderHealthResetScope(
       scope,
       clearedGlobal,
       clearedTitle,
+      clearedEndpoints,
       titleId: title?.id ?? null,
       providerId: state.provider,
     },
@@ -175,10 +206,10 @@ export async function applyProviderHealthResetScope(
 
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
-    note: describeResetResult(scope, clearedGlobal, clearedTitle),
+    note: describeResetResult(scope, clearedGlobal, clearedTitle, clearedEndpoints),
   });
 
-  return { clearedGlobal, clearedTitle };
+  return { clearedGlobal, clearedTitle, clearedEndpoints };
 }
 
 export function buildEffectiveHealthByProviderId(

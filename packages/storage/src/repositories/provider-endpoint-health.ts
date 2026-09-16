@@ -95,6 +95,12 @@ export class ProviderEndpointHealthRepository {
       .run(providerId, endpoint).changes;
   }
 
+  deleteByProvider(providerId: ProviderId): number {
+    return this.db
+      .query("DELETE FROM provider_endpoint_health WHERE provider_id = ?")
+      .run(providerId).changes;
+  }
+
   deleteExpiredQuarantines(nowIso: string): number {
     return this.db
       .query(
