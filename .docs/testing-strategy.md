@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-14"
+lastReviewed: "2026-09-12"
 ---
 
 # Kunai — Testing Strategy
@@ -19,13 +19,13 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep copyable templates for new contract tests under `apps/cli/test/templates/`
 - keep VHS tapes and captured golden outputs under `apps/cli/test/vhs/` for UI demos and visual regression review
 
-The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist/kunai.js`, `dist/assets/**`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
+The published npm launcher package excludes the entire `test/` tree: its file allowlist contains `dist/kunai.mjs`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
-## Turborepo Test Caching
+## Turborepo Test Execution
 
-`bun run test` is `turbo run test`. Unchanged packages replay from cache (local `.turbo` and optional remote `TURBO_TOKEN` / `TURBO_TEAM`).
+`bun run test` is `turbo run test`. Test tasks currently set `cache: false`; selected suites execute on every invocation. Typecheck and build tasks can still replay from cache. Use `--force` when reporting fresh execution of those gates.
 
-CLI suites are separate Turbo tasks so a unit-only change does not re-run integration:
+CLI suites are separate Turbo tasks for scheduling and focused invocation. Because test caching is disabled, a unit-only change selecting the CLI package still runs both suites:
 
 | Command                            | What runs                                                                                                             |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -35,7 +35,54 @@ CLI suites are separate Turbo tasks so a unit-only change does not re-run integr
 | `bun run --cwd apps/cli test`      | both CLI suites sequentially (outside Turbo); path args after `--` select files, flag-only args append to both suites |
 | `bun run ci:affected` / CI PR jobs | `--affected` — only changed packages and their dependents                                                             |
 
-Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integration cache inputs. Test/typecheck tasks depend on a local `transit` node (`dependsOn: ["transit"]`, with `transit` → `^transit`) so dependency-package changes invalidate caches without serializing suites behind each other or behind `typecheck`. Typecheck remains its own CI job and is no longer a hard prerequisite of `test`.
+Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integration cache inputs. Test/typecheck tasks depend on a local `transit` node (`dependsOn: ["transit"]`, with `transit` → `^transit`) so dependency-package changes invalidate caches without serializing suites behind each other or behind `typecheck`. Typecheck remains its own CI job. CLI integration depends on `build`, which in turn requires typecheck; this orders shared `dist/` writers. CLI unit tests have no build prerequisite. Formatting has no typecheck prerequisite.
+
+## Verification loop for contributors and agents
+
+1. Start with the feature map and the owning test file. Use
+   `bun run --cwd apps/cli test:file test/unit/<area>/<file>.test.ts` for a focused
+   reproduction; the package script supplies the timeout budget and preload.
+2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
+   injected clock, or fake timer. A sleep is not an acknowledgement. A generous
+   test timeout bounds a hang; it does not prove synchronization.
+3. For a regression test, temporarily remove the behavior it protects and confirm
+   the assertion fails. Restore it before broader validation. Do not mutate source
+   while another verification command is reading the same tree.
+4. Run the owning suite, then `bun run ci:affected` with a verified
+   `TURBO_SCM_BASE`. Missing or stale comparison history is not evidence of a
+   small change; inspect Turbo's dry run before relying on selection.
+5. Before handoff, run the required full gates and report the exact revision,
+   command, exit status, failures, skips, and cache status. Separate local Linux,
+   hosted Windows/macOS, opt-in database/native, and live-provider evidence.
+
+The debounce contract in
+`apps/cli/test/unit/app-shell/settle-value.test.tsx` advances Bun fake timers inside
+React `act()`. It covers the pre-deadline frame, the final frame, and cancellation
+of an older selection's timer. Restore real timers after each test.
+
+The activation-lock multiprocess test drains child output immediately, reports a
+nonzero child exit during handshake polling, and kills/reaps every remaining
+child before profile cleanup. Keep the real-process mutual-exclusion coverage:
+mock-only lock tests cannot establish cross-process exclusion.
+
+Storage corruption recovery tests inject a failure only at the main-file rename
+boundary, retaining real SQLite and filesystem assertions. This exercises the
+surviving-WAL ordering contract without depending on chmod denying access on the
+host. Restore the filesystem spy in `finally`; never report a pass by returning
+before the recovery assertions when a platform cannot establish a premise.
+
+The process-shutdown integration tests wait for the isolated data store, then
+send the real signal. `startCli` registers signal handlers before initializing
+that store, so no UI-mount sleep is required. Require the shutdown-handler
+message in the PTY transcript as well as the exit status: the default OS signal
+action can produce the same status without running Kunai's cleanup.
+
+The direct CLI runner consumes option values separately from file patterns:
+`test -- -t "name"` still searches only unit/integration. Focused runs retain the
+20-second baseline; explicit timeout flags override it and
+`KUNAI_TEST_TIMEOUT_MS` takes final precedence. Subprocess fixtures in
+`apps/cli/test/unit/scripts/default-test-runner.test.ts` verify discovery,
+timeout argv, failure propagation, and the Turbo aggregator path.
 
 ## Ink Render Harness (`apps/cli/test/harness/render-capture.ts`)
 

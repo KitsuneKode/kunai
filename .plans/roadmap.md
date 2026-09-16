@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-31
+Last updated: 2026-09-12
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -77,6 +77,12 @@ archive and put only the residue here.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | Analytics series + social cards | Serve the retained `daily_rollup` history, adoption/trend charts, per-share OG images                                                | [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md) |
 | User docs overhaul              | Accuracy/framing PR first; then first-run, debugging playbook, coverage, nav, agent-docs, deploy `apps/docs` to kunai.kitsunekode.in | [2026-08-18-user-docs-overhaul.md](./2026-08-18-user-docs-overhaul.md)                               |
+
+### Verification and CI
+
+| Track                | Remaining                                                                                         | Plan                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Test and CI maturity | Native crash diagnosis, merge enforcement, measured CI cost, coverage and agent verification gaps | [2026-09-12-test-ci-audit.md](./2026-09-12-test-ci-audit.md) |
 
 ### Structure
 
