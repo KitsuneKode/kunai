@@ -1493,13 +1493,18 @@ describe("install.sh lifecycle contract", () => {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
-            KUNAI_ACTIVATION_LOCK_POLL_MS: "500",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "10000",
           });
           await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
           const activationStartedAt = performance.now();
           const result = await install;
           expect(result.status).not.toBe(0);
-          expect(performance.now() - activationStartedAt).toBeLessThan(300);
+          // The claim is "it does not sleep a whole poll interval", so the poll
+          // and the bound are far apart: a correct run returns at the 40ms
+          // deadline, a regression waits 10s. Measuring a spawned shell's wall
+          // clock against 300ms instead made a loaded macOS runner fail a
+          // working installer — the same ratio the pwsh test already uses.
+          expect(performance.now() - activationStartedAt).toBeLessThan(5_000);
         },
       );
     } finally {
@@ -1538,7 +1543,10 @@ describe("install.sh lifecycle contract", () => {
               KUNAI_ACTIVATION_LOCK_POLL_MS: "0",
               PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
             },
-            500,
+            // A hot-looping reclaim never exits, so any budget catches it; this
+            // one only has to outlast bash startup, the fixture download and
+            // teardown on a shared runner, which 500ms did not.
+            5_000,
           );
           expect(result).not.toBeNull();
           expect(result?.status).not.toBe(0);
