@@ -177,6 +177,7 @@ accounts, usage ping, done. Implementation is
 - Offline artwork caching is best-effort and post-completion; artwork failure must never fail or delay a completed download.
 - Thumbnail sidecars are written through a temporary file and renamed only after a non-empty image exists.
 - External subtitle/artwork sidecars are repairable metadata, not proof the video failed. If the video artifact validates but an expected sidecar is missing, the job becomes `repairable` and `/downloads` can retry just the sidecar path without re-running `yt-dlp`.
+- A `repairable` job is completed work carrying a repair, not a failure, and the repository lists it that way: it appears in `listCompleted()` and in the dedicated `listRepairable()` used by the repair sweep, and **not** in `listFailed()`. The three lists are disjoint by status, so one job can never render as two rows sharing an id. Diagnostics count it under `downloadSummary.repairable`, which keeps the downloads health row `recoverable` without calling it failed.
 - If the stream is hard-subbed or no external subtitle URL exists, subtitle sidecar work is marked not-applicable/expected-missing as appropriate; it should not be reported as a full download failure.
 
 ## Canonical Media Presentation

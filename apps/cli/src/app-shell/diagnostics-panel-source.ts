@@ -32,6 +32,7 @@ export function buildDiagnosticsPanelInput(
       active: container.downloadService.listActive(200).length,
       completed: container.downloadService.listCompleted(200).length,
       failed: container.downloadService.listFailed(200).length,
+      repairable: container.downloadService.listRepairable(200).length,
     },
     releaseSummary: container.releaseProgressCache.summarizeActive(),
     releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),

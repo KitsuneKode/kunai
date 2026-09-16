@@ -23,7 +23,13 @@ export type DiagnosticsBundleBuilderInput = {
   readonly resolveWorkLedgers?: readonly ResolveWorkLedgerSnapshot[] | null;
   readonly events: readonly DiagnosticEvent[];
   readonly sessionState?: SessionState | null;
-  readonly downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  readonly downloadSummary?: {
+    active: number;
+    completed: number;
+    failed?: number;
+    /** Completed downloads whose sidecars still need a pass; not counted in `failed`. */
+    repairable?: number;
+  } | null;
   readonly releaseSummary?: { titleCount: number; episodeCount: number } | null;
   readonly releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   readonly presenceSnapshot?: PresenceSnapshot | null;

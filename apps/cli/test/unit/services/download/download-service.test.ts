@@ -1147,6 +1147,65 @@ describe("DownloadService", () => {
     expect(repo.get(second.id)?.status).toBe("completed");
   });
 
+  test("lists a repairable job once, as completed work rather than a failure", async () => {
+    // #341: 'repairable' was returned by both listCompleted and listFailed, so
+    // the download manager rendered one job as two rows sharing an id and
+    // index-based selection acted on a phantom.
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => ({
+        stream: {
+          url: "https://fresh.example/master.m3u8",
+          headers: { Referer: "https://fresh.example" },
+          timestamp: 0,
+          subtitle: "https://fresh.example/subs/en.vtt",
+          subtitleList: [{ url: "https://fresh.example/subs/en.vtt", language: "en" }],
+        },
+        providerId: "vidking",
+        selectionChanged: false,
+      }),
+    });
+    spawnSpy.mockImplementation((command: string[]) => {
+      if (command[0] !== "yt-dlp") {
+        return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
+      }
+      const oIndex = command.indexOf("-o");
+      const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      return {
+        stdout: streamOf("[download] 100% of 1.2GiB\n"),
+        stderr: streamOf("Duration: 00:00:10.00\n"),
+        exited: Promise.resolve(0),
+      } as never;
+    });
+    // Sidecar fetch keeps failing, so the job lands in 'repairable'.
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 503 }),
+    ) as unknown as typeof fetch;
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 6, name: "Episode 6" },
+      providerId: "vidking",
+      mode: "series",
+      audioPreference: "original",
+      subtitlePreference: "en",
+    });
+    await service.processQueue();
+    expect(repo.get(job.id)?.status).toBe("repairable");
+
+    const ids = (jobs: readonly { id: string }[]) => jobs.map((entry) => entry.id);
+    expect(ids(service.listCompleted(10))).toContain(job.id);
+    expect(ids(service.listFailed(10))).not.toContain(job.id);
+    expect(ids(service.listRepairable(10))).toContain(job.id);
+
+    // The queue summary still calls it repairable, not failed.
+    expect(service.describeQueueSummary()).toBe("1 repairable");
+  });
+
   test("continues repair sweep when one repairable artifact is missing", async () => {
     const service = buildService({
       repo,
