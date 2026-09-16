@@ -112,32 +112,56 @@ export class PlaylistsRepository {
   }
 
   addItem(input: UserPlaylistItemRecord): UserPlaylistItemRecord {
-    this.db
-      .query(
-        `INSERT INTO user_playlist_items
-           (id, playlist_id, title_id, media_kind, content_type, external_ids_json, title, season, episode, absolute_episode,
-            sort_order, provider_hints_json, notes, added_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        input.id,
-        input.playlistId,
-        input.titleId,
-        input.mediaKind,
-        input.contentType ?? null,
-        serializeExternalIds(input.externalIds),
-        input.title,
-        input.season ?? null,
-        input.episode ?? null,
-        input.absoluteEpisode ?? null,
-        input.sortOrder,
-        input.providerHintsJson ?? null,
-        input.notes ?? null,
-        input.addedAt,
-      );
-    const row = this.listItems(input.playlistId).find((item) => item.id === input.id);
-    if (!row) throw new Error(`Playlist item not found after add: ${input.id}`);
-    return row;
+    const [added] = this.addItems([input]);
+    if (!added) throw new Error(`Playlist item not found after add: ${input.id}`);
+    return added;
+  }
+
+  addItems(inputs: readonly UserPlaylistItemRecord[]): UserPlaylistItemRecord[] {
+    const insert = this.db.query(
+      `INSERT INTO user_playlist_items
+         (id, playlist_id, title_id, media_kind, content_type, external_ids_json, title, season, episode, absolute_episode,
+          sort_order, provider_hints_json, notes, added_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    return this.db.transaction(() =>
+      inputs.map((input) => {
+        const row: UserPlaylistItemRow = {
+          id: input.id,
+          playlist_id: input.playlistId,
+          title_id: input.titleId,
+          media_kind: input.mediaKind,
+          content_type: input.contentType ?? null,
+          external_ids_json: serializeExternalIds(input.externalIds),
+          title: input.title,
+          season: input.season ?? null,
+          episode: input.episode ?? null,
+          absolute_episode: input.absoluteEpisode ?? null,
+          sort_order: input.sortOrder,
+          provider_hints_json: input.providerHintsJson ?? null,
+          notes: input.notes ?? null,
+          added_at: input.addedAt,
+        };
+        insert.run(
+          row.id,
+          row.playlist_id,
+          row.title_id,
+          row.media_kind,
+          row.content_type,
+          row.external_ids_json,
+          row.title,
+          row.season,
+          row.episode,
+          row.absolute_episode,
+          row.sort_order,
+          row.provider_hints_json,
+          row.notes,
+          row.added_at,
+        );
+        // Use the read mapper without scanning the playlist after every insert.
+        return mapPlaylistItemRow(row);
+      }),
+    )();
   }
 
   listItems(playlistId: string): UserPlaylistItemRecord[] {
