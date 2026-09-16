@@ -146,7 +146,8 @@ curl -fsSL https://kunai.kitsunekode.in/install.sh | bash -s -- --version 0.3.0
 ```
 
 Keep it current with `kunai upgrade`; remove it with ownership-aware `kunai uninstall`
-(add `--purge` to also delete config/history/cache).
+(add `--purge` to also delete config/history/cache and default downloaded videos;
+see [Uninstall](#uninstall) for paths and what is preserved).
 
 > **Alternatives:** the npm channel needs **Node** (the published bin is a Node launcher
 > that spawns a platform binary — you do not need Bun). `bun install -g` needs Bun.
@@ -559,7 +560,6 @@ KUNAI_POSTER=0                          # Disable posters
 KUNAI_PET=off                           # Retire the fox companion entirely
 KUNAI_PET=glyph                         # Keep the companion, but only as 🦊
 KUNAI_IMAGE_PROTOCOL=kitty              # Force protocol
-KUNAI_IMAGE_SIZE=30x18                  # Custom dimensions
 KUNAI_IMAGE_DEBUG=1                     # Verbose poster logging
 ```
 
@@ -607,10 +607,14 @@ Download location and finer preferences live in the [settings panel](#settings-p
 | Path                             | What it holds              |
 | -------------------------------- | -------------------------- |
 | `~/.config/kunai/config.json`    | Human-readable user config |
-| `~/.config/kunai/providers.json` | Provider overrides         |
 
-Both are editable directly, but the setup wizard and settings panel are the
-recommended interface.
+The config file is editable directly, but the setup wizard and settings panel
+are the recommended interface. Provider domains for the media (movie/TV and anime) providers are compiled in;
+Kunai does not read `providers.json`. Exception: YouTube metadata endpoints are
+configurable via `youtubeMetadata.instanceUrl` and `youtubeMetadata.pipedApiUrl`
+in settings or `config.json` — no rebuild needed. The supported network-path
+override is your own relay's `providerRelay.baseUrl` in settings or `config.json`
+(metadata only; video stays direct).
 
 ---
 
@@ -733,9 +737,14 @@ Set `youtubeMetadata.cookiesFromBrowser` or an absolute `cookiesFile` in
 installed. It keeps your data by default.
 
 ```bash
-kunai uninstall            # remove kunai, keep config/history/cache
-kunai uninstall --purge    # also delete config, data, and cache
+kunai uninstall            # remove kunai, keep config/history/cache/downloads
+kunai uninstall --purge    # also delete config, data, cache, and default downloads
 ```
+
+**`--purge` deletes downloaded videos** in the default download directory
+(e.g. `~/.local/share/kunai/downloads` on Linux; platform paths below).
+Custom/external download directories outside Kunai's config, data, and cache
+directories are preserved.
 
 Manual fallback if `kunai` isn't on PATH:
 
@@ -753,6 +762,11 @@ rm -f ~/.local/bin/kunai
 User data locations (removed by `--purge`): Linux `~/.config/kunai`,
 `~/.local/share/kunai`, `~/.cache/kunai`; macOS `~/Library/Application Support/kunai`
 and `~/Library/Caches/kunai`; Windows `%APPDATA%\kunai` and `%LOCALAPPDATA%\kunai`.
+This includes downloaded videos at Linux `~/.local/share/kunai/downloads`
+(or `$XDG_DATA_HOME/kunai/downloads`), macOS
+`~/Library/Application Support/kunai/downloads`, and Windows
+`%LOCALAPPDATA%\kunai\downloads`. Custom/external download directories outside
+these config, data, and cache roots are preserved.
 
 ---
 
