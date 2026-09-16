@@ -125,4 +125,75 @@ describe("provider cycling correctness", () => {
     // must not be quarantined for every other title.
     expect(recorded).not.toContain("deadmirror");
   });
+
+  test("an on-demand fetch does not outlive cancellation", async () => {
+    const { resolve: resolveStream } = rivestreamProviderModule;
+    if (!resolveStream) throw new Error("rivestream module must expose resolve");
+
+    // Quarantined at prefetch time so the cycle must fetch on demand, then
+    // eligible when the cycle reaches it. The first consult per endpoint is
+    // the prefetch fan-out (skip it); the second is the cycle itself (try
+    // it). Keyed by endpoint, so it holds for any discovery list length —
+    // the discovery cache is module-level and shared across tests in file.
+    const consulted = new Set<string>();
+    const endpointHealth: EndpointHealthPort = {
+      shouldTry: (_providerId, endpoint) => {
+        if (consulted.has(endpoint)) return true;
+        consulted.add(endpoint);
+        return false;
+      },
+      recordSuccess: () => {},
+      recordFailure: () => {},
+    };
+
+    const fetchedSignals: AbortSignal[] = [];
+    const requested: string[] = [];
+    const controller = new AbortController();
+    const context = {
+      providerId: "rivestream",
+      now: () => new Date().toISOString(),
+      signal: controller.signal,
+      fetch: {
+        runtime: "direct-http",
+        fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+          const href = String(url);
+          requested.push(href);
+          if (href.includes("requestID=VideoProviderServices")) {
+            return jsonResponse({ data: ["goodmirror"] });
+          }
+          // Hang until cancelled: proves the request is bound to a signal
+          // that observes cancellation instead of the 8s fetch timeout.
+          const signal = init?.signal as AbortSignal | undefined;
+          if (signal) fetchedSignals.push(signal);
+          await new Promise<void>((_, reject) => {
+            if (signal?.aborted) {
+              reject(new DOMException("Aborted", "AbortError"));
+              return;
+            }
+            signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+          });
+          throw new Error("unreachable");
+        }) as NonNullable<ProviderRuntimeContext["fetch"]>["fetch"],
+      },
+      endpointHealth,
+    } as unknown as ProviderRuntimeContext;
+
+    const pending = resolveStream(buildInput(), context);
+    await Bun.sleep(20);
+    controller.abort();
+    const result = await pending;
+
+    expect(fetchedSignals.length).toBe(1);
+    expect(fetchedSignals[0]?.aborted).toBe(true);
+    // Settles via cancellation (promptly, not via the 8s fetch timeout):
+    // the cycle reports cancelled and the terminal trace says so, even
+    // though the collected per-attempt failures keep the raw abort cause.
+    expect(result.status).toBe("exhausted");
+    const messages = (result.trace?.events ?? []).map((event) => event.message ?? "");
+    expect(messages.some((message) => message.includes("was cancelled"))).toBe(true);
+  });
 });
