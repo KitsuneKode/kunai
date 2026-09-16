@@ -74,17 +74,14 @@ export const MIRURO_REFERER = "https://www.miruro.bz/";
 export const MIRURO_PIPE_BASE_URLS = ["https://www.miruro.bz", "https://www.miruro.ru"] as const;
 
 /**
- * Miruro pipe API only answers from the `www.` hosts. The bare `miruro.bz` /
- * `miruro.ru` origins are 301 redirects to `www.` and still return Cloudflare
- * 403 HTML at the pipe path when blocked, so they add only latency and burn the
- * fail-fast budget without ever resolving. `miruro.com` serves a different
- * static app shell (no `/api/secure/pipe`), and `.tv` / `.to` are TLS-dead.
- *
- * Consecutive Cloudflare HTML 403s before aborting remaining mirrors. Matches
- * the real mirror count (www.miruro.bz + www.miruro.ru): when both return CF
- * HTML the block is region-wide and further candidates fail the same way.
+ * Consecutive Cloudflare HTML 403s before aborting remaining mirrors. Tracks
+ * the real mirror count (`MIRURO_PIPE_BASE_URLS`): when every mirror returns
+ * CF HTML the block is region-wide and further candidates fail the same way.
+ * A hardcoded count goes stale the moment the mirror list changes.
+ * (Bare `miruro.bz`/`miruro.ru` are 301s, `miruro.com` serves a static shell
+ * with no pipe path, and `.tv`/`.to` are TLS-dead — none belong in the list.)
  */
-const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
+export const MIRURO_WAF_FAIL_FAST_THRESHOLD = MIRURO_PIPE_BASE_URLS.length;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -1908,6 +1905,8 @@ export const miruroProviderModule: CoreProviderModule = {
         signal: context.signal,
         now: context.now,
         emit: context.emit,
+        endpointHealth: context.endpointHealth,
+        titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs: providerCycleCandidateTimeoutMs(
           input.startupPriority ?? "balanced",
