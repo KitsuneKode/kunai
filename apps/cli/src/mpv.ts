@@ -63,6 +63,7 @@ import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
+import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
 import {
   checkStreamPreflight,
@@ -105,7 +106,16 @@ export async function launchMpv(opts: {
     await unlinkIfExists(ipcEndpoint.path);
   }
 
-  const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), {
+  let chaptersFile: string | null = null;
+  if (opts.timing) {
+    try {
+      chaptersFile = await writeMpvChaptersFile(opts.timing, sessionId);
+    } catch {
+      // Best effort chapters file
+    }
+  }
+
+  const args = buildMpvArgs({ ...opts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
     mpv: opts.mpv,
   });
   const stats = createPlayerStatsState(ipcEndpoint.path);
@@ -142,6 +152,9 @@ export async function launchMpv(opts: {
     );
   } finally {
     unregisterMpv();
+    if (chaptersFile) {
+      await removeMpvChaptersFile(chaptersFile).catch(() => {});
+    }
   }
 }
 
@@ -524,6 +537,7 @@ export function buildMpvArgs(
     ytdlFormat?: string;
     ytdlRawOptions?: string;
     isLive?: boolean;
+    chaptersFile?: string | null;
   },
   ipcPath: string | null,
   config?: {
@@ -597,6 +611,9 @@ export function buildMpvArgs(
     args.push(`--start=${opts.startAt}`);
   }
   args.push(`--force-media-title=${opts.displayTitle}`);
+  if (opts.chaptersFile) {
+    args.push(`--chapters-file=${opts.chaptersFile}`);
+  }
   if (config?.persistent) {
     // keep-open=no is intentional: with keep-open=yes, mpv silently pauses at the last
     // frame on natural EOF and never fires the end-file IPC event, so play() hangs and
