@@ -496,6 +496,7 @@ only the contracts every provider must honour.
 | AllManga / AllAnime | [allmanga.md](./provider-dossiers/allmanga.md) · [allanime-parity-history.md](./provider-dossiers/allanime-parity-history.md)                                     |
 | AniDB               | [anidb-runtime-contract.md](./provider-dossiers/anidb-runtime-contract.md) · [anidb-metadata-capabilities.md](./provider-dossiers/anidb-metadata-capabilities.md) |
 | Miruro              | [miruro.md](./provider-dossiers/miruro.md)                                                                                                                        |
+| HiAnime             | [hianime.md](./provider-dossiers/hianime.md)                                                                                                                      |
 | Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
 | Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
 | Cineby              | [cineby.md](./provider-dossiers/cineby.md) · [cineby-anime.md](./provider-dossiers/cineby-anime.md)                                                               |
@@ -506,9 +507,11 @@ it live, and release signoff derives its cases from that list plus the configure
 
 `anidb` is the **default** provider-native anime catalog and the first configured
 anime priority (`animeProvider: "anidb"`, `animeProviderPriority: ["anidb"]`).
-The priority list is ordering, not an allowlist: registered `allanime` and
-`miruro` modules remain available after AniDB and are manually selectable. See
-[the AllAnime parity history](./provider-dossiers/allanime-parity-history.md) and
+The priority list is ordering, not an allowlist: registered `allanime`,
+`hianime`, and `miruro` modules remain available after AniDB and are manually
+selectable. See
+[the AllAnime parity history](./provider-dossiers/allanime-parity-history.md),
+[the HiAnime dossier](./provider-dossiers/hianime.md), and
 [the Miruro dossier](./provider-dossiers/miruro.md) for their network failure
 modes.
 
@@ -519,6 +522,7 @@ modes.
 | `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
 | `anidb`      | anime         | direct-http | `packages/providers/src/anidb/direct.ts`      |
 | `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
+| `hianime`    | anime         | direct-http | `packages/providers/src/hianime/direct.ts`    |
 | `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
 | `youtube`    | video         | direct-http | `packages/providers/src/youtube/direct.ts`    |
 
@@ -535,6 +539,10 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is
   preserved on merge. An AllAnime lookup may populate only `providerNativeIds.allanime`.
 - **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
+- **HiAnime (`hianime`)** — `provider-native`, registered as a fallback and
+  manually selectable. Native ids are `slug-positiveNumericSuffix` (same shape
+  as AniDB); discovery searches by title and remaps to the matched slug.
+  A HiAnime lookup populates only `providerNativeIds.hianime`.
 - **AllAnime and Miruro episode numbering** — when a request carries both a
   season-relative `episode` and `absoluteEpisode`, their APIs receive the
   season-relative value. Absolute numbering is used only for an absolute-only
@@ -553,6 +561,12 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   prefetch/recent-stream reuse, cache invalidation, queued downloads, offline
   artifact admission, and local playback retain the same identity so an older
   row at the same UI index cannot supply the wrong stream.
+- **HiAnime provider-native episode identity** — each row carries the opaque
+  servers-API `episodeId` (`data-id`) in `EpisodeIdentity.providerEpisodeIdentity`.
+  Resolve uses it only while it still belongs to the active catalog and fails
+  closed otherwise, mirroring the AllAnime contract above. Numbering follows
+  the same season-relative-first rule as AllAnime/Miruro via the shared
+  `selectProviderEpisodeNumber` helper.
 
 A catalog's own id space is numeric, so a non-numeric id is never accepted into the `anilistId` or
 `tmdbId` slot even when the active provider declares that catalog identity.
