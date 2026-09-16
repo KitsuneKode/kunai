@@ -114,7 +114,13 @@ export type DiagnosticsInsight = {
 export type BuildDiagnosticsInsightInput = {
   readonly state: SessionState;
   readonly recentEvents: readonly DiagnosticEvent[];
-  readonly downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  readonly downloadSummary?: {
+    active: number;
+    completed: number;
+    failed?: number;
+    /** Completed downloads whose sidecars still need a pass; not counted in `failed`. */
+    repairable?: number;
+  } | null;
   readonly releaseSummary?: { titleCount: number; episodeCount: number } | null;
   readonly releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   readonly presenceSnapshot?: PresenceSnapshot | null;
@@ -299,6 +305,11 @@ function buildHealthRows(
     (event) => event.operation === "subtitle.attach.outcome",
   );
   const failedDownloads = downloadSummary?.failed ?? 0;
+  // Repairable jobs used to arrive inside `failed`. They are still the
+  // recoverable half of the download health row, so count them explicitly
+  // now that the two lists are disjoint.
+  const repairableDownloads = downloadSummary?.repairable ?? 0;
+  const actionableDownloads = failedDownloads + repairableDownloads;
 
   const playbackSeverity: DiagnosticSeverity =
     state.playbackProblem?.severity === "blocking"
@@ -353,7 +364,7 @@ function buildHealthRows(
 
   const downloadSeverity: DiagnosticSeverity = !downloadSummary
     ? "unknown"
-    : failedDownloads > 0
+    : actionableDownloads > 0
       ? "recoverable"
       : "healthy";
 
@@ -414,7 +425,7 @@ function buildHealthRows(
       "downloads",
       downloadSeverity,
       resolveDownloadReason(downloadSummary),
-      failedDownloads > 0 ? "retry-download" : "none",
+      actionableDownloads > 0 ? "retry-download" : "none",
     ),
     buildHealthRow(
       "discord",
@@ -769,11 +780,20 @@ function resolveProviderAction(
 }
 
 function resolveDownloadReason(
-  summary: { active: number; completed: number; failed?: number } | null | undefined,
+  summary:
+    | { active: number; completed: number; failed?: number; repairable?: number }
+    | null
+    | undefined,
 ): string {
   if (!summary) return "Queue status unavailable";
   const failed = summary.failed ?? 0;
+  const repairable = summary.repairable ?? 0;
   if (failed > 0) return `${failed} download job${failed === 1 ? "" : "s"} failed`;
+  // Distinct wording: the media is on disk and playable, only sidecars are
+  // missing, so this is not the same news as a failed download.
+  if (repairable > 0) {
+    return `${repairable} download${repairable === 1 ? "" : "s"} need${repairable === 1 ? "s" : ""} sidecar repair`;
+  }
   if (summary.active > 0) return `${summary.active} active job${summary.active === 1 ? "" : "s"}`;
   return "Queue idle";
 }

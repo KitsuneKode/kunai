@@ -495,6 +495,15 @@ export class DownloadService {
     return this.deps.repo.listFailed(limit);
   }
 
+  /**
+   * Completed downloads whose sidecars still need a pass. Separate from
+   * {@link listFailed} because a repairable job is playable -- see the note on
+   * `DownloadJobsRepository.listFailed`.
+   */
+  listRepairable(limit = 100): readonly DownloadJobRecord[] {
+    return this.deps.repo.listRepairable(limit);
+  }
+
   getJob(id: string): DownloadJobRecord | undefined {
     return this.deps.repo.get(id);
   }
@@ -507,11 +516,10 @@ export class DownloadService {
 
   describeQueueSummary(): string | null {
     const active = this.listActive(120);
-    const failed = this.listFailed(20);
     const running = active.filter((job) => job.status === "running").length;
     const queued = active.filter((job) => job.status === "queued").length;
-    const repairable = failed.filter((job) => job.status === "repairable").length;
-    const terminalFailed = failed.length - repairable;
+    const repairable = this.listRepairable(20).length;
+    const terminalFailed = this.listFailed(20).length;
     const parts: string[] = [];
     if (running > 0) parts.push(`${running} running`);
     if (queued > 0) parts.push(`${queued} queued`);
@@ -566,7 +574,7 @@ export class DownloadService {
   }
 
   async repairRepairableSidecars(limit = 100): Promise<DownloadRepairSummary> {
-    const jobs = this.listFailed(limit).filter((job) => job.status === "repairable");
+    const jobs = this.listRepairable(limit);
     let repaired = 0;
     let stillRepairable = 0;
     let failed = 0;

@@ -841,7 +841,12 @@ test("download jobs repository preserves repairable sidecar status without losin
   expect(repairable?.status).toBe("repairable");
   expect(repairable?.artifactStatus).toBe("expected-missing");
   expect(repairable?.repairMetadataJson).toContain("retry-sidecar");
-  expect(repo.listFailed(10).map((job) => job.id)).toContain("job-sidecar");
+  // A repairable job is a completed download carrying repair work, not a
+  // failure: it must appear in exactly one of the two lists, and be reachable
+  // for the repair sweep.
+  expect(repo.listRepairable(10).map((job) => job.id)).toContain("job-sidecar");
+  expect(repo.listCompleted(10).map((job) => job.id)).toContain("job-sidecar");
+  expect(repo.listFailed(10).map((job) => job.id)).not.toContain("job-sidecar");
 
   repo.completeWithNotes(
     "job-sidecar",
