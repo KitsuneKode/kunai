@@ -55,18 +55,25 @@ function lastPathSegment(href: string): string {
 /**
  * Search page → show slugs. Cuts the `main-sidebar` (it repeats result markup)
  * and reads one `(slug, title)` per `film-detail` block, like ani-cli.
+ *
+ * The anchor tag is matched structurally, then `href`/`title` are read
+ * attribute-order-free (and quote-flexible): mirrors reorder or re-quote
+ * attributes and a positional regex would silently return zero results.
  */
 export function parseHianimeSearchHtml(html: string): readonly HianimeSearchResult[] {
   const main = html.split('id="main-sidebar"')[0] ?? html;
   const results: HianimeSearchResult[] = [];
   const seen = new Set<string>();
   for (const block of main.split('<div class="film-detail">').slice(1)) {
-    const anchor = /<h3 class="film-name">\s*<a href="([^"]*)"\s*title="([^"]*)"/.exec(block);
-    if (!anchor) continue;
-    const id = lastPathSegment(decodeMarkupEntities(anchor[1] ?? "").trim());
+    const anchorTag = /<h3 class="film-name">\s*(<a\b[^>]*>)/i.exec(block)?.[1];
+    if (!anchorTag) continue;
+    const href = extractAttribute(anchorTag, "href");
+    const titleAttr = extractAttribute(anchorTag, "title");
+    if (!href || !titleAttr) continue;
+    const id = lastPathSegment(decodeMarkupEntities(href).trim());
     // Terminal-bound: markupToPlainText (not bare entity decode) so raw
     // control bytes from the fetched page can never reach Ink output.
-    const title = markupToPlainText(anchor[2] ?? "");
+    const title = markupToPlainText(titleAttr);
     if (!looksLikeHianimeShowId(id) || !title || seen.has(id)) continue;
     seen.add(id);
     results.push({ id, title });
