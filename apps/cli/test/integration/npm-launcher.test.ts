@@ -118,9 +118,10 @@ const code = process.argv.indexOf("--exit-code");
 if (code !== -1) process.exit(Number(process.argv[code + 1] ?? 0));
 if (process.argv.includes("--echo-args")) {
   process.stdout.write(process.argv.slice(2).join(","));
-  process.exit(0);
+  // Natural exit lets piped stdout drain before the stand-in terminates.
+} else {
+  setTimeout(() => {}, 30000);
 }
-setTimeout(() => {}, 30000);
 `,
   );
   chmodSync(stand, 0o755);
