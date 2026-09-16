@@ -5,6 +5,8 @@ export * from "./allmanga/direct";
 export * from "./allmanga/manifest";
 export * from "./anidb/direct";
 export * from "./anidb/manifest";
+export * from "./hianime/direct";
+export * from "./hianime/manifest";
 export * from "./miruro/direct";
 export * from "./miruro/manifest";
 export * from "./rivestream/direct";
