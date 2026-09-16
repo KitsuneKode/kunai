@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-09-16"
 ---
 
 # Kunai — Provider Guide
@@ -31,7 +31,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `rivestream`, `allmanga`, `miruro`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
+- `@kunai/providers` — supported direct-provider modules (`videasy`, `vidlink`, `rivestream`, `allmanga`, `anidb`, `miruro`, `youtube`) plus research/candidate modules kept out of the production resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -498,7 +498,15 @@ only the contracts every provider must honour.
 | Miruro              | [miruro.md](./provider-dossiers/miruro.md)                                                                                                                        |
 | Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
 | Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
-| Cineby              | [cineby.md](./provider-dossiers/cineby.md) · [cineby-anime.md](./provider-dossiers/cineby-anime.md)                                                               |
+| VidLink             | — (direct-http TMDB lane; see the VidLink notes under "Endpoint quarantine" above)                                                                                |
+| YouTube             | — (third lane; see "Provider Types: YouTube" above)                                                                                                               |
+
+Cineby is **not** a production provider: it is a research-only Videasy-flavor
+wrapper (`packages/providers/src/cineby`, `status: "research"`, kept out of
+`loadProductionProviderModules()` until it passes the provider quality gate).
+Its dossiers ([cineby.md](./provider-dossiers/cineby.md) ·
+[cineby-anime.md](./provider-dossiers/cineby-anime.md)) are research material,
+not active contracts — do not cite that table row as a capability.
 
 Active providers are registered in `apps/cli/src/container/bootstrap-providers.ts` via
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
