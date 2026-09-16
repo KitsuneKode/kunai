@@ -194,7 +194,14 @@ title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
   MAL enrichment at list time (resolve supplies it).
 - Diagnostics needed: stage-coded embed failures (base64 vs JSON vs shape),
   server matrix in trace attributes (which servers were observed vs used),
-  `blocked` on Cloudflare challenge text.
+  `blocked` on Cloudflare challenge text, `not-found` on HTTP 404/410 (gone
+  routes never retry), and `ladder:fallback` when the HLS ladder collapses to
+  the single `auto` row.
+- Failure classification: `not-found` (404/410) and `parse-failed` are
+  non-retryable; only `blocked` and `network-error` retry. Retryability is an
+  allowlist — a future code must opt in.
+- Caching: title-query → slug lookups share the episode catalog's 30-minute
+  memory TTL (hits only, never empty); native-id resolves bypass it.
 
 ## Sample Cases For Regression
 

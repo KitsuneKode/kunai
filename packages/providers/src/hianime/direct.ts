@@ -37,6 +37,7 @@ import {
   resolveHianimeShow,
   searchHianime,
   type HianimeAudioMode,
+  type HianimeStreamFailureCode,
   type HianimeStreamLink,
 } from "./client";
 import { HIANIME_PROVIDER_ID, hianimeManifest } from "./manifest";
@@ -76,6 +77,7 @@ export {
   type HianimeSearchResult,
   type HianimeServerEntry,
   type HianimeShow,
+  type HianimeStreamFailureCode,
 } from "./client";
 
 function buildHianimeSourceInventory(
@@ -281,6 +283,15 @@ async function resolveShowId(
   return (await resolveHianimeShow(input, signal, context))?.id ?? null;
 }
 
+/**
+ * Allowlist: a failure code added later must opt into retries explicitly
+ * instead of inheriting them. Gone routes (not-found) and undecodable
+ * payloads (parse-failed) never heal; transport errors and WAF blocks might.
+ */
+function isRetryableHianimeStreamFailure(code: HianimeStreamFailureCode): boolean {
+  return code === "blocked" || code === "network-error";
+}
+
 export const hianimeProviderModule: CoreProviderModule = {
   providerId: HIANIME_PROVIDER_ID,
   manifest: hianimeManifest,
@@ -455,7 +466,7 @@ export const hianimeProviderModule: CoreProviderModule = {
             ? {
                 code: requested.failure.code,
                 message: requested.failure.message,
-                retryable: requested.failure.code !== "parse-failed",
+                retryable: isRetryableHianimeStreamFailure(requested.failure.code),
               }
             : {
                 code: "not-found" as const,
@@ -488,6 +499,15 @@ export const hianimeProviderModule: CoreProviderModule = {
         message: `HiAnime ${audioMode} source resolved via ${HIANIME_SUPPORTED_SERVER}`,
         attributes: { mode: audioMode, server: HIANIME_SUPPORTED_SERVER },
       });
+      if (requested.ladderFallback === true) {
+        emitTraceEvent(events, context, {
+          type: "ladder:fallback",
+          providerId: HIANIME_PROVIDER_ID,
+          sourceId,
+          message: "HiAnime ladder expansion fell back to a single auto row",
+          attributes: { mode: audioMode },
+        });
+      }
       if (requested.subtitles.length > 0) {
         emitTraceEvent(events, context, {
           type: "subtitle:discovered",
@@ -610,11 +630,15 @@ export const hianimeProviderModule: CoreProviderModule = {
         );
       }
       const message = error instanceof Error ? error.message : String(error);
+      const gone = /hianime fetch HTTP (404|410)\b/.test(message);
+      let code: ProviderFailure["code"] = "network-error";
+      if (gone) code = "not-found";
+      else if (/cloudflare|just a moment/i.test(message)) code = "blocked";
       const failure: ProviderFailure = {
         providerId: HIANIME_PROVIDER_ID,
-        code: /cloudflare|just a moment/i.test(message) ? "blocked" : "network-error",
+        code,
         message,
-        retryable: true,
+        retryable: !gone,
         at: context.now(),
       };
       failures.push(failure);

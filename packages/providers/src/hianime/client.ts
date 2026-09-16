@@ -69,9 +69,17 @@ const episodeCache = new TTLCache<string, readonly HianimeEpisodeEntry[]>(
   { maxEntries: 128 },
 );
 
+/** Title-query → show slug. Same memory TTL as the episode catalog: repeat
+ * title-identity resolves (browse lists, post-play) skip a /search round
+ * trip while native-id resolves bypass the cache entirely (no network). */
+const showCache = new TTLCache<string, HianimeShow>(EPISODE_CATALOG_MEMORY_TTL_MS, {
+  maxEntries: 256,
+});
+
 /** Test-only: drop the module episode catalog so fixtures control the read. */
 export function clearHianimeCachesForTest(): void {
   episodeCache.clear();
+  showCache.clear();
 }
 
 export type HianimeShow = {
@@ -96,6 +104,8 @@ export type HianimeModeResolution =
       readonly intro?: { readonly start: number; readonly end: number };
       readonly outro?: { readonly start: number; readonly end: number };
       readonly embedReferer: string;
+      /** True when the ladder collapsed to the single `auto` fallback row. */
+      readonly ladderFallback?: boolean;
     }
   | {
       readonly mode: HianimeAudioMode;
@@ -105,7 +115,7 @@ export type HianimeModeResolution =
       readonly mode: HianimeAudioMode;
       readonly status: "failed";
       readonly failure: {
-        readonly code: "blocked" | "network-error" | "parse-failed";
+        readonly code: HianimeStreamFailureCode;
         readonly message: string;
       };
     };
@@ -275,6 +285,15 @@ function directHianimeShowFromInput(title: ProviderResolveInput["title"]): Hiani
   return { id, title: title.title || id };
 }
 
+/** Cache key mirrors the match normalization in parsers: queries that match
+ * the same title share one slug. */
+function normalizeHianimeShowQuery(query: string): string {
+  return query
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 export async function resolveHianimeShow(
   input: { readonly title: ProviderResolveInput["title"] },
   signal?: AbortSignal,
@@ -284,7 +303,14 @@ export async function resolveHianimeShow(
   if (direct) return direct;
   const query = input.title.title?.trim() ?? "";
   if (!query) return null;
-  return chooseHianimeSearchMatch(query, await searchHianime(query, signal, context));
+  const key = normalizeHianimeShowQuery(query);
+  const cached = key ? showCache.get(key) : undefined;
+  if (cached) return cached;
+  const match = chooseHianimeSearchMatch(query, await searchHianime(query, signal, context));
+  // Cache hits only: a transient empty search must not poison later resolves,
+  // mirroring the episode catalog's never-cache-empty rule.
+  if (match && key) showCache.set(key, match);
+  return match;
 }
 
 export async function fetchHianimeEpisodeCatalog(
@@ -353,8 +379,10 @@ function isSupportedServer(serverName: string): boolean {
   );
 }
 
+export type HianimeStreamFailureCode = "blocked" | "network-error" | "parse-failed" | "not-found";
+
 type HianimeStreamFailure = {
-  readonly code: "blocked" | "network-error" | "parse-failed";
+  readonly code: HianimeStreamFailureCode;
   readonly message: string;
 };
 
@@ -362,6 +390,11 @@ function failureOf(error: unknown): HianimeStreamFailure {
   const message = error instanceof Error ? error.message : String(error);
   if (error instanceof HianimeEmbedDecodeError) {
     return { code: "parse-failed", message: `hianime embed decode failed: ${error.code}` };
+  }
+  // Structural before textual: a 404/410 page can carry any body, but the
+  // status means the route is gone — retrying cannot heal it.
+  if (/hianime fetch HTTP (404|410)\b/.test(message)) {
+    return { code: "not-found", message };
   }
   if (/cloudflare|just a moment/i.test(message)) {
     return { code: "blocked", message };
@@ -380,7 +413,20 @@ export async function resolveHianimeEpisodeStreams({
   readonly requestedMode: HianimeAudioMode;
   readonly signal?: AbortSignal;
 }): Promise<HianimeEpisodeStreamResolution> {
-  const servers = await fetchHianimeServers(episodeId, signal, context);
+  let servers: readonly HianimeServerEntry[];
+  try {
+    servers = await fetchHianimeServers(episodeId, signal, context);
+  } catch (error) {
+    // One failure channel: a dead servers stage reports as a coded failure,
+    // never as a throw (abort still propagates). With no listing there are no
+    // observed modes or servers to report.
+    if (signal?.aborted === true) throw error;
+    return {
+      availableModes: [],
+      observedServers: [],
+      requested: { mode: requestedMode, status: "failed", failure: failureOf(error) },
+    };
+  }
   const observedServers = [...new Set(servers.map((server) => server.serverName))];
   const supported = servers.filter((server) => isSupportedServer(server.serverName));
   const availableModes = (["sub", "dub"] as const).filter((mode) =>
@@ -439,6 +485,16 @@ export async function resolveHianimeEpisodeStreams({
       };
     }
     const malId = hianimeMalIdFromEmbedUrl(embedUrl);
+    // The ladder helper is total: it returns the single `auto` fallback row
+    // (pointing at the master URL, rank 0) whenever the master is
+    // unreachable or unparseable. That shape is the fallback's alone — a
+    // parsed variant never points at the master with rank 0 — so flag it for
+    // the trace instead of letting it pose as a genuine single rung.
+    const ladderFallback =
+      links.length === 1 &&
+      links[0]?.url === payload.src &&
+      links[0]?.quality === "auto" &&
+      links[0]?.qualityRank === 0;
     return {
       availableModes,
       observedServers,
@@ -451,6 +507,7 @@ export async function resolveHianimeEpisodeStreams({
         ...(payload.intro ? { intro: payload.intro } : {}),
         ...(payload.outro ? { outro: payload.outro } : {}),
         embedReferer,
+        ...(ladderFallback ? { ladderFallback: true as const } : {}),
       },
     };
   } catch (error) {

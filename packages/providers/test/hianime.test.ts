@@ -19,6 +19,9 @@ import {
   parseHianimeEpisodesHtml,
   parseHianimeSearchHtml,
   parseHianimeServersHtml,
+  resolveHianimeEpisodeStreams,
+  resolveHianimeShow,
+  fetchHianimeEpisodeCatalog,
   splitCurlHttpTrailer,
 } from "../src/hianime/direct";
 import { HIANIME_PROVIDER_ID, hianimeManifest } from "../src/hianime/manifest";
@@ -172,6 +175,20 @@ describe("hianime search parsing", () => {
     expect(codes.length).toBeGreaterThan(0);
     expect(codes.every((cp) => cp >= 0x20 && !(cp >= 0x7f && cp <= 0x9f))).toBe(true);
     expect(entry?.title).toContain("FooBar");
+  });
+
+  test("reads anchors regardless of attribute order or quote style", () => {
+    const html = [
+      // title-first, single quotes, extra attributes: mirrors reorder freely.
+      `<div class="film-detail"><h3 class="film-name"><a title='Naruto' data-x="1" href='/naruto-1335'>x</a></h3></div>`,
+      `<div class="film-detail"><H3 CLASS="film-name"><A HREF="/one-piece-100" TITLE="One Piece">x</A></H3></div>`,
+      // Missing title carries no usable result.
+      '<div class="film-detail"><h3 class="film-name"><a href="/no-title-2">x</a></h3></div>',
+    ].join("");
+    expect(parseHianimeSearchHtml(html)).toEqual([
+      { id: "naruto-1335", title: "Naruto" },
+      { id: "one-piece-100", title: "One Piece" },
+    ]);
   });
 
   test("matches exact, then prefix, then first", () => {
@@ -397,6 +414,27 @@ describe("hianime module resolve", () => {
     expect(selected?.url).toBe("https://hls2.aniwatchtv.uk/v/demo/sub/360/index.m3u8");
   });
 
+  test("flags a collapsed ladder in the trace", async () => {
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        if (url.endsWith("master.m3u8")) return "this is not a playlist";
+        return happyRouter(url);
+      }),
+    );
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved");
+    expect(result.streams.map((stream) => stream.qualityLabel)).toEqual(["auto"]);
+    expect(result.trace.events?.map((event) => event.type)).toContain("ladder:fallback");
+  });
+
   test("fails closed on unknown episodes and stale episode identities", async () => {
     clearHianimeCachesForTest();
     const context = stubContext(happyRouter);
@@ -506,6 +544,115 @@ describe("hianime curl http trailer", () => {
   });
 });
 
+describe("hianime http failures", () => {
+  const httpStatus = (status: number) => async () => new Response(`error ${status}`, { status });
+
+  async function withoutCurl<T>(
+    fetchImpl: () => Promise<Response>,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      return await run();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  }
+
+  test("maps 404/410 to not-found at the stream layer", async () => {
+    const resolution = await withoutCurl(httpStatus(404), () =>
+      resolveHianimeEpisodeStreams({
+        context: { now: () => NOW },
+        episodeId: "22676",
+        requestedMode: "sub",
+      } as never),
+    );
+    expect(resolution.requested.status).toBe("failed");
+    if (resolution.requested.status !== "failed") throw new Error("expected failed");
+    expect(resolution.requested.failure).toMatchObject({ code: "not-found" });
+  });
+
+  test("catalog 404 exhausts as non-retryable not-found", async () => {
+    clearHianimeCachesForTest();
+    const result = await withoutCurl(httpStatus(410), () =>
+      hianimeProviderModule.resolve(
+        {
+          title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+          episode: { episode: 1 },
+          mediaKind: "anime",
+          intent: "play",
+          allowedRuntimes: ["direct-http"],
+        },
+        { now: () => NOW },
+      ),
+    );
+    expect(result.status).toBe("exhausted");
+    if (result.status !== "exhausted") throw new Error("expected exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "not-found", retryable: false });
+  });
+
+  test("embed 404 stays non-retryable through the failed branch", async () => {
+    clearHianimeCachesForTest();
+    const result = await withoutCurl(httpStatus(404), () =>
+      hianimeProviderModule.resolve(
+        {
+          title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+          episode: { episode: 1 },
+          mediaKind: "anime",
+          intent: "play",
+          allowedRuntimes: ["direct-http"],
+        },
+        stubContext((url) => {
+          if (url.includes("/api/theme/episode/list/")) {
+            return jsonResponse({ status: true, totalItems: 1, html: EPISODES_HTML });
+          }
+          if (url.includes("/api/theme/episode/servers")) {
+            return jsonResponse({ status: true, html: SERVERS_HTML });
+          }
+          return new Response("gone", { status: 404 });
+        }),
+      ),
+    );
+    expect(result.status).toBe("exhausted");
+    if (result.status !== "exhausted") throw new Error("expected exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "not-found", retryable: false });
+  });
+
+  test("search returns null on http errors without curl", async () => {
+    const search = hianimeProviderModule.search;
+    if (!search) throw new Error("expected search");
+    const failed = await withoutCurl(
+      async () => new Response("err", { status: 500 }),
+      () => search({ query: "naruto" }, { now: () => NOW }),
+    );
+    expect(failed).toBeNull();
+  });
+
+  test("episode catalog honors the persistent cache without network", async () => {
+    clearHianimeCachesForTest();
+    const cached = [{ episodeId: "99001", number: 1, title: "Cached Premiere" }];
+    let writes = 0;
+    const context = {
+      ...stubContext(() => {
+        throw new Error("network must not be touched on a persistent hit");
+      }),
+      cache: {
+        read: async <T>(): Promise<T | null> => [...cached] as unknown as T,
+        write: async (): Promise<void> => {
+          writes += 1;
+        },
+      },
+    };
+    const entries = await fetchHianimeEpisodeCatalog("cached-show-99", undefined, context);
+    expect(entries).toEqual(cached);
+    expect(writes).toBe(0);
+  });
+});
+
 describe("hianime module search and episodes", () => {
   test("search maps slugs and returns null on transport failure", async () => {
     const ok = await hianimeProviderModule.search?.(
@@ -556,5 +703,25 @@ describe("hianime module search and episodes", () => {
       providerEpisodeIdentity: { providerId: HIANIME_PROVIDER_ID, value: "22676" },
     });
     expect(options?.[0]?.label).toContain("Episode 1");
+  });
+
+  test("caches title-query show slugs across resolves", async () => {
+    clearHianimeCachesForTest();
+    let searchHits = 0;
+    const context = stubContext((url) => {
+      if (url.includes("/search?")) {
+        searchHits += 1;
+        return '<div class="film-detail"><h3 class="film-name"><a href="/naruto-1335" title="Naruto">x</a></h3></div>';
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const input = { title: { id: "anilist:20", kind: "anime" as const, title: "Naruto" } };
+    expect(await resolveHianimeShow(input, undefined, context)).toMatchObject({
+      id: "naruto-1335",
+    });
+    expect(await resolveHianimeShow(input, undefined, context)).toMatchObject({
+      id: "naruto-1335",
+    });
+    expect(searchHits).toBe(1);
   });
 });
