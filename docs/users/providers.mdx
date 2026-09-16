@@ -347,6 +347,10 @@ Kunai remembers provider health locally to avoid hammering known-bad paths. Heal
 
 Network-unavailable failures stop cycling early. Kunai does not mark unrelated providers as unhealthy because your Wi-Fi dropped.
 
+## Domain overrides
+
+Provider domains for the media (movie/TV and anime) providers are compiled in; changing a media-provider domain requires a code change and rebuild, not a config file. Exception: YouTube metadata endpoints are configurable via `youtubeMetadata.instanceUrl` and `youtubeMetadata.pipedApiUrl` in settings or `config.json`, no rebuild needed. To use a different network path for metadata calls, set `providerRelay.baseUrl` in `/settings` or `config.json` to your own relay; see [Provider geo relay](#provider-geo-relay).
+
 ## Provider geo relay
 
 Some provider metadata APIs are geo-blocked from some countries while the final

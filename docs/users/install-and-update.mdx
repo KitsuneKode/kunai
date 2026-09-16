@@ -156,12 +156,12 @@ what a Dockerfile or CI step usually wants.
 
 | `install.sh`         | `install.ps1`     | Environment                | Effect                                                                                                                             |
 | -------------------- | ----------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `--method X`         | `-Method X`       | `KUNAI_INSTALL_METHOD`     | `binary` (default), `npm`, `bun`, or `source`.                                                                                       |
-| `--version X.Y.Z`    | `-Version X.Y.Z`  | `KUNAI_INSTALL_VERSION`    | Pin a release instead of `latest`.                                                                                                   |
-| `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages; see below.                                          |
-| `--dry-run`          | `-DryRun`         | `KUNAI_INSTALL_DRY_RUN=1`  | Print the plan; change nothing.                                                                                                      |
+| `--method X`         | `-Method X`       | `KUNAI_INSTALL_METHOD`     | `binary` (default), `npm`, `bun`, or `source`.                                                                                     |
+| `--version X.Y.Z`    | `-Version X.Y.Z`  | `KUNAI_INSTALL_VERSION`    | Pin a release instead of `latest`.                                                                                                 |
+| `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages; see below.                                           |
+| `--dry-run`          | `-DryRun`         | `KUNAI_INSTALL_DRY_RUN=1`  | Print the plan; change nothing.                                                                                                    |
 | `--skip-deps`        | `-SkipDeps`       | `KUNAI_SKIP_DEPS=1`        | Skip optional dependencies (`mpv` via your package manager; on Windows also the portable `yt-dlp` and `curl-impersonate` helpers). |
-| `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone; see [PATH](#path).                                                                                              |
+| `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone; see [PATH](#path).                                                                                               |
 
 Both installers refuse to run **as root / elevated** by default: a `sudo` or
 Administrator install lands Kunai in the wrong profile and the user never gets
@@ -259,8 +259,14 @@ kunai rollback --to <ver>  # explicit verified version
 kunai doctor               # PATH / ownership health
 kunai doctor --json        # same report as JSON
 kunai uninstall            # ownership-aware removal
-kunai uninstall --purge    # also delete config/history/cache
+kunai uninstall --purge    # also delete config, data, cache, and default downloads
 ```
+
+**`--purge` deletes downloaded videos in the default download directory:**
+Linux `~/.local/share/kunai/downloads` (or `$XDG_DATA_HOME/kunai/downloads`),
+macOS `~/Library/Application Support/kunai/downloads`, and Windows
+`%LOCALAPPDATA%\kunai\downloads`. Custom/external download directories outside
+Kunai's config, data, and cache directories are preserved.
 
 Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall; lifecycle logic stays inside the binary.
 
@@ -295,13 +301,13 @@ You can snooze automatic checks for seven days or disable them from the update p
 
 ## Platform support matrix (0.3.0)
 
-| Target                                        | Status                                                                     |
-| --------------------------------------------- | -------------------------------------------------------------------------- |
-| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                                                              |
-| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                                                              |
-| `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                   |
-| `windows-x64`                                 | **Beta**                                                                   |
-| `windows-arm64`                               | **Experimental**                                                           |
+| Target                                        | Status                                                                    |
+| --------------------------------------------- | ------------------------------------------------------------------------- |
+| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                                                             |
+| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                                                             |
+| `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                  |
+| `windows-x64`                                 | **Beta**                                                                  |
+| `windows-arm64`                               | **Experimental**                                                          |
 | WSL                                           | Linux binary + Linux mpv/PATH/data, not Windows-native                    |
 | FreeBSD / other BSD                           | **Unsupported** binary; npm/bun/source only                               |
 | Code signing / notarization                   | Not in beta scope; see [Unsigned binaries](#unsigned-binaries-beta) above |
@@ -323,7 +329,7 @@ kunai --setup
 | Binary           | `kunai.exe` under `%LOCALAPPDATA%\kunai\bin` | `~/.local/bin/kunai` (Linux)              |
 | Player           | Windows `mpv.exe` on User PATH               | Linux `mpv` on WSL PATH                   |
 | Config / data    | `%APPDATA%\kunai`, `%LOCALAPPDATA%\kunai`    | `~/.config/kunai`, `~/.local/share/kunai` |
-| Protocol handler | Not registered; use `kunai --open`          | Linux-only registration available         |
+| Protocol handler | Not registered; use `kunai --open`           | Linux-only registration available         |
 
 Do not point a Windows-native Kunai at WSL `mpv`, or a WSL Kunai at Windows PATH entries.
 
