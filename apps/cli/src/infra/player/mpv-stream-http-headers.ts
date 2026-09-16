@@ -17,6 +17,27 @@ export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b/ba";
 export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
   "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
 
+/**
+ * mpv's `--alang`/`--slang` take language codes, but Kunai's audio setting is a
+ * mode ("sub"/"dub") as often as a code, because the Tracks panel writes the
+ * mode straight into the language profile. Passing those through matched no
+ * track at all: `--alang=dub` on a multi-audio master left mpv on the default
+ * Japanese track, so asking for a dub played the sub with nothing said. "dub"
+ * is English here — the same mapping providers use to pick a dub catalog.
+ */
+export function toMpvLanguageToken(
+  value: string | undefined,
+  options: { forSubtitle: boolean },
+): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "original" || (!options.forSubtitle && normalized === "sub")) return "orig";
+  if (!options.forSubtitle && normalized === "dub") return "en";
+  if (options.forSubtitle && normalized === "none") return "no";
+  if (normalized === "interactive" || normalized === "fzf") return null;
+  return normalized;
+}
+
 export type NormalizedStreamHttpHeaders = {
   readonly referer?: string;
   readonly userAgent?: string;
