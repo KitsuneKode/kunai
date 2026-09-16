@@ -12,7 +12,7 @@
 //      the highlight" guarantee.
 // =============================================================================
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { Box, Text, useInput } from "ink";
@@ -20,7 +20,8 @@ import React, { act, useState } from "react";
 
 import { render } from "../../harness/render-capture";
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+beforeEach(() => jest.useFakeTimers());
+afterEach(() => jest.useRealTimers());
 
 /** Counter surface: each key bumps the live value; the settled value debounces. */
 function SettleProbe({ delayMs }: { readonly delayMs: number }) {
@@ -36,7 +37,23 @@ function SettleProbe({ delayMs }: { readonly delayMs: number }) {
 }
 
 describe("useSettledValue", () => {
-  test("lags rapid changes, then catches up to the latest once they rest", async () => {
+  test("a new value cancels the previous deadline", () => {
+    const handle = render(<SettleProbe delayMs={50} />, { columns: 60 });
+    try {
+      handle.stdin.enqueue("a");
+      act(() => jest.advanceTimersByTime(30));
+      handle.stdin.enqueue("a");
+      act(() => jest.advanceTimersByTime(20));
+      expect(handle.lastFrame()).toContain("live=2");
+      expect(handle.lastFrame()).toContain("settled=0");
+      act(() => jest.advanceTimersByTime(30));
+      expect(handle.lastFrame()).toContain("settled=2");
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("lags rapid changes, then catches up to the latest once they rest", () => {
     const handle = render(<SettleProbe delayMs={50} />, { columns: 60 });
     try {
       handle.stdin.enqueue("a");
@@ -49,9 +66,9 @@ describe("useSettledValue", () => {
       // Once the burst rests past the delay, settled jumps straight to the
       // latest value (3) — not 1, 2, 3 — because intermediate timers were
       // cleared by each new change.
-      await act(async () => {
-        await sleep(90);
-      });
+      act(() => jest.advanceTimersByTime(49));
+      expect(handle.lastFrame()).toContain("settled=0");
+      act(() => jest.advanceTimersByTime(1));
       expect(handle.lastFrame()).toContain("live=3");
       expect(handle.lastFrame()).toContain("settled=3");
     } finally {
@@ -76,7 +93,7 @@ function NavProbe({ delayMs }: { readonly delayMs: number }) {
 }
 
 describe("navigation burst frame-count", () => {
-  test("commits exactly one frame per keystroke during a hold; preview defers", async () => {
+  test("commits exactly one frame per keystroke during a hold; preview defers", () => {
     const handle = render(<NavProbe delayMs={50} />, { columns: 60 });
     try {
       const before = handle.frames.length;
@@ -91,9 +108,7 @@ describe("navigation burst frame-count", () => {
       expect(handle.lastFrame()).toContain("preview=0");
 
       // After the burst settles, the preview catches up in a single extra frame.
-      await act(async () => {
-        await sleep(90);
-      });
+      act(() => jest.advanceTimersByTime(50));
       expect(handle.frames.length - before).toBe(presses + 1);
       expect(handle.lastFrame()).toContain("preview=5");
     } finally {
