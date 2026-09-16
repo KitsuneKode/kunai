@@ -131,7 +131,10 @@ export class PersistentMpvPropertyRouter {
     next: "next",
     previous: "previous",
     quality: "pick-quality",
+    source: "pick-source",
     refresh: "refresh",
+    "cycle-source": "cycle-source",
+    "cycle-audio": "cycle-audio",
   };
 
   private handleKunaiRequest(value: unknown): void {

@@ -15,6 +15,7 @@ import type {
 } from "@/domain/types";
 import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
+import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
 import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -494,6 +495,7 @@ export class PersistentMpvSession {
     if (!this.activeCycle) return;
     this.currentOptions = { ...this.currentOptions, timing };
     void this.handleSegmentSkipProgress(this.currentOptions);
+    void this.syncMpvChaptersFile(timing);
   }
 
   updateAutoSkipEnabled(enabled: boolean): void {
@@ -518,6 +520,12 @@ export class PersistentMpvSession {
     this.retired = true;
     this.retirePendingFileLoad();
     this.loadedFileGeneration = null;
+
+    if (this.currentChaptersFilePath) {
+      const path = this.currentChaptersFilePath;
+      this.currentChaptersFilePath = null;
+      void removeMpvChaptersFile(path);
+    }
 
     const target = this.mpv;
 
@@ -1255,6 +1263,27 @@ export class PersistentMpvSession {
       ) {
         this.skipPromptSegmentKey = null;
       }
+    }
+  }
+
+  private currentChaptersFilePath: string | null = null;
+
+  private async syncMpvChaptersFile(timing: PlaybackTimingMetadata | null): Promise<void> {
+    if (!timing) return;
+    try {
+      const oldPath = this.currentChaptersFilePath;
+      const newPath = await writeMpvChaptersFile(timing, `${this.id}-${Date.now()}`);
+      if (newPath) {
+        this.currentChaptersFilePath = newPath;
+        if (this.ipcSession) {
+          await this.ipcSession.send(["set_property", "chapters-file", newPath], 1_000);
+        }
+      }
+      if (oldPath && oldPath !== newPath) {
+        await removeMpvChaptersFile(oldPath);
+      }
+    } catch {
+      // Best-effort chapters sync
     }
   }
 
