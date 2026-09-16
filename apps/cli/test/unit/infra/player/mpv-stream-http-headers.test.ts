@@ -6,6 +6,7 @@ import {
   buildPersistentLoadfileOptions,
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
+  toMpvLanguageToken,
 } from "@/infra/player/mpv-stream-http-headers";
 
 describe("normalizeStreamHttpHeaders", () => {
@@ -389,5 +390,42 @@ describe("buildPersistentLoadfileCommand", () => {
         urlKind: "local",
       })[1],
     ).toBe("/tmp/kunai-hls/playlist.m3u8");
+  });
+});
+
+describe("toMpvLanguageToken", () => {
+  test("maps audio modes to mpv language tokens", () => {
+    expect(toMpvLanguageToken("dub", { forSubtitle: false })).toBe("en");
+    expect(toMpvLanguageToken("sub", { forSubtitle: false })).toBe("orig");
+    expect(toMpvLanguageToken("original", { forSubtitle: false })).toBe("orig");
+    expect(toMpvLanguageToken("ja", { forSubtitle: false })).toBe("ja");
+  });
+
+  test("maps subtitle modes to mpv language tokens", () => {
+    expect(toMpvLanguageToken("none", { forSubtitle: true })).toBe("no");
+    expect(toMpvLanguageToken("en", { forSubtitle: true })).toBe("en");
+    expect(toMpvLanguageToken("interactive", { forSubtitle: true })).toBeNull();
+  });
+
+  test("attaches alang to persistent loadfile options when preference exists", () => {
+    const dubOptions = buildPersistentLoadfileOptions(
+      "https://cdn.example/master.m3u8",
+      0,
+      undefined,
+      {
+        audioPreference: "dub",
+      },
+    );
+    expect(dubOptions.alang).toBe("en");
+
+    const subOptions = buildPersistentLoadfileOptions(
+      "https://cdn.example/master.m3u8",
+      0,
+      undefined,
+      {
+        audioPreference: "sub",
+      },
+    );
+    expect(subOptions.alang).toBe("orig");
   });
 });
