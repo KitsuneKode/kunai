@@ -20,7 +20,7 @@ import {
   buildAllmangaCycleCandidates,
   buildAllMangaAaReq,
   buildAllMangaBootToken,
-  ALLMANGA_BUILD_ID,
+  ALLMANGA_CRYPTO_PROFILE,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
   BUNDLED_ALLMANGA_CRYPTO,
@@ -330,7 +330,7 @@ describe("buildAllMangaAaReq", () => {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = "92bd9687f091aabd760228c5983cc2d03b278f0e1a12bfbea02fcaff5899bd5b";
+  const EXPECTED_KEY_HEX = "84b04eb6e807c6e4699bb4d93bdffe747136b6b39e7f8000831fa020034ab00b";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -421,10 +421,10 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(material?.epoch).toBe(6900);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
-    expect(material?.buildId).toBe("166");
-    expect(site.bootstrapHeaders?.get("x-build-id")).toBe("166");
+    expect(material?.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
+    expect(site.bootstrapHeaders?.get("x-build-id")).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
-      "0046b60be8f98c4901a15d7ae5a37199c36131972fe815df2ccc7e7f07d63e88",
+      "fce9de7e9494f996c7b70e7976c613a5125beb3ae16e36b3800504ddff50aa80",
     );
     expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
     expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
@@ -434,34 +434,34 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("matches independent build-166 derivation and boot-token vectors", () => {
-    expect(hashBuildId("166").toString("hex")).toBe(
-      "422e8b53319a60c0ad71d3bc1ee24f2ff55e3c8461cd9770daa603eb4912f858",
+  test("matches independent build-171 derivation and boot-token vectors", () => {
+    expect(hashBuildId("171").toString("hex")).toBe(
+      "1264b282d422724492e2340252a4f2c21462b284d222744292e4320254a2f2c4",
     );
-    expect(deriveMaskKey("166").toString("hex")).toBe(
-      "93bf9583f597adb57f0823c99532cdc02a359c1a0f04a8a6b935d1e34587a27b",
+    expect(deriveMaskKey("171").toString("hex")).toBe(
+      "85b24db2ed01c1ec6091bfd536d1f1646024a5a78b6997189a05bb3c1e54af2b",
     );
-    expect(deriveKeyFromPartB(PART_B, "166").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(deriveKeyFromPartB(PART_B, "171").toString("hex")).toBe(EXPECTED_KEY_HEX);
     expect(
       buildAllMangaBootToken({
-        buildId: "166",
+        buildId: "171",
         epoch: 6900,
         keyGroup: "mkissa",
         refererHost: "mkissa.to",
         contentLane: "k7",
       }),
-    ).toBe("0046b60be8f98c4901a15d7ae5a37199c36131972fe815df2ccc7e7f07d63e88");
+    ).toBe("fce9de7e9494f996c7b70e7976c613a5125beb3ae16e36b3800504ddff50aa80");
   });
 
   test("bundled fallback key is derived under the pinned profile", () => {
     // A key left over from a previous build is not a degraded fallback, it is
     // a guaranteed decrypt failure. This is what made the 140 -> 171 rotation
     // fail silently: the buildId moved and the bundled key did not.
-    // partB synthesized as mask(build-166) ^ bundled key — the XOR inverse of
-    // deriveKeyFromPartB, so this is the exact blob upstream would have served.
-    const livePartB = "0M3a/rOE8dmkIAc5mXwvsorKaTWGbLq1rTm9yMUoL1o=";
-    expect(deriveKeyFromPartB(livePartB, ALLMANGA_BUILD_ID).toString("hex")).toBe(ALLMANGA_KEY_HEX);
-    expect(BUNDLED_ALLMANGA_CRYPTO.buildId).toBe(ALLMANGA_BUILD_ID);
+    const livePartB = "rEQQIwFZTN5GvqbQmJuMeJ4b/xGVHvdUOEyp/Wl4Tc0=";
+    expect(deriveKeyFromPartB(livePartB, ALLMANGA_CRYPTO_PROFILE.buildId).toString("hex")).toBe(
+      ALLMANGA_KEY_HEX,
+    );
+    expect(BUNDLED_ALLMANGA_CRYPTO.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
   });
 
   test("classifies the two rotation failures apart", () => {
