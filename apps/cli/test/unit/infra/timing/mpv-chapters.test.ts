@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import {
+  buildChapterSegmentsFromTiming,
+  buildFfmetadataChaptersFromTiming,
   buildOgmChaptersFromTiming,
   formatOgmTimestamp,
   removeMpvChaptersFile,
@@ -16,11 +18,11 @@ test("formatOgmTimestamp correctly formats milliseconds to OGM HH:MM:SS.mmm form
   expect(formatOgmTimestamp(3_661_250)).toBe("01:01:01.250");
 });
 
-test("buildOgmChaptersFromTiming returns null for empty or null timing", () => {
-  expect(buildOgmChaptersFromTiming(null)).toBeNull();
-  expect(buildOgmChaptersFromTiming(undefined)).toBeNull();
+test("buildChapterSegmentsFromTiming returns empty for null/empty timing", () => {
+  expect(buildChapterSegmentsFromTiming(null)).toEqual([]);
+  expect(buildChapterSegmentsFromTiming(undefined)).toEqual([]);
   expect(
-    buildOgmChaptersFromTiming({
+    buildChapterSegmentsFromTiming({
       tmdbId: "123",
       type: "series",
       intro: [],
@@ -28,7 +30,47 @@ test("buildOgmChaptersFromTiming returns null for empty or null timing", () => {
       recap: [],
       preview: [],
     }),
-  ).toBeNull();
+  ).toEqual([]);
+});
+
+test("buildChapterSegmentsFromTiming builds continuous Prologue -> Intro -> Episode -> Credits -> Epilogue segments", () => {
+  const timing: PlaybackTimingMetadata = {
+    tmdbId: "123",
+    type: "series",
+    intro: [{ startMs: 90_000, endMs: 180_000 }],
+    credits: [{ startMs: 1_320_000, endMs: 1_410_000 }],
+    recap: [],
+    preview: [],
+  };
+
+  const segments = buildChapterSegmentsFromTiming(timing);
+  expect(segments).toHaveLength(5);
+  expect(segments[0]).toEqual({ startMs: 0, endMs: 90_000, title: "Prologue" });
+  expect(segments[1]).toEqual({ startMs: 90_000, endMs: 180_000, title: "Intro" });
+  expect(segments[2]).toEqual({ startMs: 180_000, endMs: 1_320_000, title: "Episode" });
+  expect(segments[3]).toEqual({ startMs: 1_320_000, endMs: 1_410_000, title: "Credits" });
+  expect(segments[4]?.title).toBe("Epilogue");
+});
+
+test("buildFfmetadataChaptersFromTiming generates valid FFMETADATA1 syntax", () => {
+  const timing: PlaybackTimingMetadata = {
+    tmdbId: "123",
+    type: "series",
+    intro: [{ startMs: 90_000, endMs: 180_000 }],
+    credits: [{ startMs: 1_320_000, endMs: 1_410_000 }],
+    recap: [],
+    preview: [],
+  };
+
+  const meta = buildFfmetadataChaptersFromTiming(timing);
+  expect(meta).not.toBeNull();
+  expect(meta).toContain(";FFMETADATA1");
+  expect(meta).toContain("[CHAPTER]");
+  expect(meta).toContain("TIMEBASE=1/1000");
+  expect(meta).toContain("START=0\nEND=90000\ntitle=Prologue");
+  expect(meta).toContain("START=90000\nEND=180000\ntitle=Intro");
+  expect(meta).toContain("START=180000\nEND=1320000\ntitle=Episode");
+  expect(meta).toContain("START=1320000\nEND=1410000\ntitle=Credits");
 });
 
 test("buildOgmChaptersFromTiming generates ordered OGM chapters for anime segments", () => {
@@ -63,7 +105,7 @@ test("writeMpvChaptersFile and removeMpvChaptersFile manage chapter files correc
   const id = `test-${Date.now()}`;
   const filePath = await writeMpvChaptersFile(timing, id);
   expect(filePath).not.toBeNull();
-  expect(filePath).toContain(`kunai-chapters-${id}.ogm`);
+  expect(filePath).toContain(`kunai-chapters-${id}.ffmeta`);
 
   expect(existsSync(filePath!)).toBe(true);
 

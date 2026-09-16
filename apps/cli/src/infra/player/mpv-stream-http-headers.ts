@@ -139,6 +139,7 @@ export type PersistentLoadfileOptions = {
   readonly "http-header-fields-clr"?: string;
   readonly "tls-verify"?: string;
   readonly alang?: string;
+  readonly "chapters-file"?: string;
   /** mpv's `--ytdl` is a yes/no flag: whether ytdl_hook runs at all. */
   readonly ytdl?: string;
   /** mpv's `--ytdl-format` is the format selector string. */
@@ -196,6 +197,8 @@ export type PersistentLoadfileMediaOptions = {
   readonly urlKind?: MpvUrlKind;
   /** Kunai audio setting: a language code, or the mode "sub"/"dub". */
   readonly audioPreference?: string;
+  /** Ephemeral chapters file path containing chapter markers. */
+  readonly chaptersFile?: string | null;
 };
 
 export function buildPersistentLoadfileOptions(
@@ -223,6 +226,10 @@ export function buildPersistentLoadfileOptions(
   }
   if (shouldDisableMpvTlsVerify(url, headers)) {
     loadOptions["tls-verify"] = "no";
+  }
+
+  if (ytdlOptions?.chaptersFile) {
+    loadOptions["chapters-file"] = ytdlOptions.chaptersFile;
   }
 
   // Per-file, not only at spawn: `--alang` is a process option, so a session

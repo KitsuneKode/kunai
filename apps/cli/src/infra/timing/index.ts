@@ -2,6 +2,8 @@ export { AniSkipTimingSource } from "./AniSkipTimingSource";
 export { IntroDbTimingSource } from "./IntroDbTimingSource";
 export { mergeTimingMetadata } from "./merge-timing";
 export {
+  buildChapterSegmentsFromTiming,
+  buildFfmetadataChaptersFromTiming,
   buildOgmChaptersFromTiming,
   formatOgmTimestamp,
   removeMpvChaptersFile,
