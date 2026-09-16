@@ -422,6 +422,21 @@ export class PersistentMpvSession {
       requiresYtdl: stream.requiresYtdl,
     });
 
+    if (options.timing) {
+      try {
+        const oldChapters = this.currentChaptersFilePath;
+        this.currentChaptersFilePath = await writeMpvChaptersFile(
+          options.timing,
+          `${this.id}-${this.cycleGeneration.cycle}`,
+        );
+        if (oldChapters && oldChapters !== this.currentChaptersFilePath) {
+          void removeMpvChaptersFile(oldChapters);
+        }
+      } catch {
+        // Best effort chapters file
+      }
+    }
+
     const loadResult = await this.ipcSession?.send(
       buildPersistentLoadfileCommand(
         stream.url,
@@ -434,6 +449,7 @@ export class PersistentMpvSession {
           isLive: stream.isLive,
           urlKind: options.urlKind,
           audioPreference: options.audioPreference,
+          chaptersFile: this.currentChaptersFilePath,
         },
       ),
       3_000,
@@ -576,6 +592,17 @@ export class PersistentMpvSession {
     // Persistent replacements always pass a file-local loadfile `start` option
     // (`0` for normal navigation, resume seconds for direct continue). That
     // clears any process-level --start used for the initial file.
+    if (this.initialOptions.timing) {
+      try {
+        this.currentChaptersFilePath = await writeMpvChaptersFile(
+          this.initialOptions.timing,
+          `${this.id}-${Date.now()}`,
+        );
+      } catch {
+        // Best effort chapters file
+      }
+    }
+
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -592,6 +619,7 @@ export class PersistentMpvSession {
         requiresYtdl: this.initialStream.requiresYtdl,
         ytdlFormat: this.initialStream.ytdlFormat,
         ytdlRawOptions: this.initialStream.ytdlRawOptions,
+        chaptersFile: this.currentChaptersFilePath,
       },
       ipcServerCliArg(this.ipcEndpoint),
       {
@@ -976,6 +1004,7 @@ export class PersistentMpvSession {
         this.waitResumeOrStartOverChoice(seconds, displayTitle, timeLabel),
       handleSegmentSkipProgress: async (readyOptions) =>
         this.handleSegmentSkipProgress(readyOptions),
+      syncChaptersFile: (timing) => this.syncMpvChaptersFile(timing ?? null),
       isLiveStream: () => this.playbackStream.isLive === true,
       onIpcCommandFailure: (command, error) => {
         dbg("mpv-ipc", `${command}-failed`, { error });
@@ -1405,6 +1434,11 @@ export class PersistentMpvSession {
       await this.closeIpcSession();
       await this.cleanupSocket();
       await this.cleanupLuaScript();
+      if (this.currentChaptersFilePath) {
+        const fileToClean = this.currentChaptersFilePath;
+        this.currentChaptersFilePath = null;
+        await removeMpvChaptersFile(fileToClean);
+      }
 
       this.mpvUnregister?.();
       this.mpvUnregister = null;
