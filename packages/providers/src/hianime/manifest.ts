@@ -58,13 +58,12 @@ export const hianimeManifest = defineProviderManifest({
   browserSafe: false,
   relaySafe: true,
   relayProfile: {
-    upstreamHosts: [
-      "hianime.at",
-      "zokoanime.video",
-      "hls2.aniwatchtv.uk",
-      "megaplay.buzz",
-      "vidtube.site",
-    ],
+    // Fetched hosts only: hianime.at (search/catalog/servers), zokoanime.video
+    // (embeds), aniwatchtv.uk (HLS ladder + subtitles — parent domain so CDN
+    // host rotation stays relay-routed via suffix match). Megaplay/VidTube
+    // embed hosts decode for the observed-servers trace but are never fetched
+    // (ZokoAnime is the only resolved server), so they stay out.
+    upstreamHosts: ["hianime.at", "zokoanime.video", "aniwatchtv.uk"],
   },
   status: "candidate",
   notes: [

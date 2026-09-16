@@ -435,6 +435,7 @@ export async function resolveHianimeEpisodeStreams({
         },
       };
     }
+    const malId = hianimeMalIdFromEmbedUrl(embedUrl);
     return {
       availableModes,
       observedServers,
@@ -443,9 +444,7 @@ export async function resolveHianimeEpisodeStreams({
         status: "resolved",
         links,
         subtitles: payload.subtitles,
-        ...(hianimeMalIdFromEmbedUrl(embedUrl)
-          ? { malId: hianimeMalIdFromEmbedUrl(embedUrl) as string }
-          : {}),
+        ...(malId ? { malId } : {}),
         ...(payload.intro ? { intro: payload.intro } : {}),
         ...(payload.outro ? { outro: payload.outro } : {}),
         embedReferer,

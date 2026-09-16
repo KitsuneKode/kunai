@@ -134,6 +134,8 @@ export function parseHianimeEmbedPayload(json: string): HianimeEmbedPayload {
     });
   }
   const skip = isRecord(parsed.skip) ? parsed.skip : undefined;
+  const intro = parseSkipSegment(skip?.intro);
+  const outro = parseSkipSegment(skip?.outro);
   const downloadUrl =
     typeof parsed.download_url === "string" && parsed.download_url.trim()
       ? parsed.download_url.trim()
@@ -147,8 +149,8 @@ export function parseHianimeEmbedPayload(json: string): HianimeEmbedPayload {
   return {
     src: (parsed.src as string).trim(),
     subtitles,
-    ...(parseSkipSegment(skip?.intro) ? { intro: parseSkipSegment(skip?.intro) } : {}),
-    ...(parseSkipSegment(skip?.outro) ? { outro: parseSkipSegment(skip?.outro) } : {}),
+    ...(intro ? { intro } : {}),
+    ...(outro ? { outro } : {}),
     ...(downloadUrl ? { downloadUrl } : {}),
     ...(poster ? { poster } : {}),
     ...(spriteVtt ? { spriteVtt } : {}),
