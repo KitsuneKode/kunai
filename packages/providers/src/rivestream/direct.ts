@@ -71,14 +71,6 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /**
- * Per-candidate bound for one mirror. Sized through the shared clamp so it can
- * never exceed the attempt budget it runs inside — an unclamped value is dead
- * code: the engine kills the whole attempt before the candidate bound fires and
- * the trace records nothing attributable.
- */
-const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
-
-/**
  * Failure sentinels from `generateSecretKey`. They must never be cached: a
  * single transient generation error would otherwise pin a bad key for a title
  * for the life of the process.
@@ -471,7 +463,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
           }
           // A mirror quarantined when prefetch ran can become eligible by the
           // time the cycle reaches it (or vice versa): fetch on demand rather
-          // than failing a candidate the cycle chose to try.
+          // than failing a candidate the cycle chose to try. The on-demand
+          // request binds the candidate signal so it does not outlive the
+          // attempt; shared prefetch requests stay on the parent signal.
           const sourceDataPromise =
             prefetchedSources.get(provider) ??
             fetchRivestreamSourceData({
@@ -483,6 +477,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
               season,
               episode,
               secretKey,
+              signal: candidateContext.signal,
             });
 
           try {
@@ -866,8 +861,14 @@ function fetchRivestreamSourceData(opts: {
   readonly season: number;
   readonly episode: number;
   readonly secretKey: string;
+  /**
+   * Bound to the cycle candidate when the request is made for one specific
+   * attempt (on-demand fetch). Prefetch requests stay on `context.signal`:
+   * they are shared across candidates and must outlive any single one.
+   */
+  readonly signal?: AbortSignal;
 }): Promise<RivestreamSourceResponse> {
-  const { context, provider, input, tmdbId, typeStr, season, episode, secretKey } = opts;
+  const { context, provider, input, tmdbId, typeStr, season, episode, secretKey, signal } = opts;
   let url = `${RIVESTREAM_API_BASE}?requestID=${typeStr}VideoProvider&id=${tmdbId}`;
   if (input.mediaKind === "series") url += `&season=${season}&episode=${episode}`;
   url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
@@ -877,7 +878,7 @@ function fetchRivestreamSourceData(opts: {
     url,
     {
       headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
-      signal: createTimeoutSignal(context.signal, 8000),
+      signal: createTimeoutSignal(signal ?? context.signal, 8000),
     },
     { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
   );
@@ -1177,7 +1178,12 @@ async function resolveRivestreamProviderCandidate({
   return { provider, sourceId, streams, variants, subtitles };
 }
 
-/** How long one candidate may take before the cycle abandons it. */
+/**
+ * Per-candidate bound for one mirror. Sized through the shared clamp so it can
+ * never exceed the attempt budget it runs inside — an unclamped value is dead
+ * code: the engine kills the whole attempt before the candidate bound fires and
+ * the trace records nothing attributable.
+ */
 export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
 
 /**
