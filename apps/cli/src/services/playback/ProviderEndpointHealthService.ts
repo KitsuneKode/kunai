@@ -28,7 +28,7 @@ export type EndpointHealthSeed = {
 
 type Repository = Pick<
   ProviderEndpointHealthRepository,
-  "get" | "set" | "isQuarantined" | "delete"
+  "get" | "set" | "isQuarantined" | "delete" | "deleteByProvider" | "clearAll" | "list"
 >;
 
 export class ProviderEndpointHealthService implements EndpointHealthPort {
@@ -105,6 +105,46 @@ export class ProviderEndpointHealthService implements EndpointHealthPort {
     this.clearTransient(key);
     this.repository.delete(providerId, endpoint);
     this.curatedDead.delete(key);
+  }
+
+  /**
+   * Forget every endpoint row for one provider, including in-memory transient
+   * cooldowns and curated dead seeds. Re-observed failures re-quarantine, so
+   * over-clearing on an explicit user reset only costs a few requests.
+   */
+  deleteByProvider(providerId: ProviderId): number {
+    const prefix = `${providerId}:`;
+    for (const key of this.transientCooldowns.keys()) {
+      if (key.startsWith(prefix)) this.clearTransient(key);
+    }
+    for (const key of this.curatedDead) {
+      if (key.startsWith(prefix)) this.curatedDead.delete(key);
+    }
+    return this.repository.deleteByProvider(providerId);
+  }
+
+  /**
+   * Forget endpoint rows that mention a title. Quarantine evidence is keyed by
+   * provider+endpoint (not by title), so a per-show reset can only lift rows
+   * this title contributed to — rows with no title evidence stay quarantined.
+   */
+  clearTitle(titleId: string, providerId?: ProviderId): number {
+    let cleared = 0;
+    for (const record of this.repository.list()) {
+      if (providerId && record.providerId !== providerId) continue;
+      if (!record.distinctTitleIds.includes(titleId)) continue;
+      this.clearTransient(this.key(record.providerId, record.endpoint));
+      this.curatedDead.delete(this.key(record.providerId, record.endpoint));
+      cleared += this.repository.delete(record.providerId, record.endpoint);
+    }
+    return cleared;
+  }
+
+  clearAll(): number {
+    this.transientCooldowns.clear();
+    this.transientFailureCounts.clear();
+    this.curatedDead.clear();
+    return this.repository.clearAll();
   }
 
   isQuarantined(providerId: ProviderId, endpoint: string): boolean {
