@@ -5,6 +5,7 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -56,6 +57,14 @@ export const RIVESTREAM_API_BASE = "https://www.rivestream.app/api/backendfetch"
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/**
+ * Per-candidate bound for one mirror. Sized through the shared clamp so it can
+ * never exceed the attempt budget it runs inside — an unclamped value is dead
+ * code: the engine kills the whole attempt before the candidate bound fires and
+ * the trace records nothing attributable.
+ */
+const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
 
 /**
  * Failure sentinels from `generateSecretKey`. They must never be cached: a
@@ -413,12 +422,16 @@ export const rivestreamProviderModule: CoreProviderModule = {
         signal: context.signal,
         now: context.now,
         emit: context.emit,
+        endpointHealth: context.endpointHealth,
+        titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
-        candidateTimeoutMs: 10_000,
+        candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+          input.startupPriority ?? "balanced",
+          RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+        ),
         resolveCandidate: async (candidate) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
-          const sourceDataPromise = prefetchedSources.get(provider);
-          if (!provider || !sourceDataPromise) {
+          if (!provider) {
             throw createProviderCycleFailureError(candidate, {
               failureClass: "candidate-unsupported",
               message: `Rivestream candidate ${candidate.id} is missing provider metadata`,
@@ -426,6 +439,21 @@ export const rivestreamProviderModule: CoreProviderModule = {
               at: context.now(),
             });
           }
+          // A mirror quarantined when prefetch ran can become eligible by the
+          // time the cycle reaches it (or vice versa): fetch on demand rather
+          // than failing a candidate the cycle chose to try.
+          const sourceDataPromise =
+            prefetchedSources.get(provider) ??
+            fetchRivestreamSourceData({
+              context,
+              provider,
+              input,
+              tmdbId,
+              typeStr,
+              season,
+              episode,
+              secretKey,
+            });
 
           try {
             return await resolveRivestreamProviderCandidate({
@@ -814,6 +842,15 @@ function prefetchRivestreamServiceCandidates(opts: {
   for (const candidate of candidates) {
     const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
     if (!provider || prefetched.has(provider)) continue;
+    // A quarantined mirror is skipped by the cycle, so firing its request here
+    // is pure waste — one request per quarantined mirror per resolve. The
+    // cycle still owns the skip decision; this only avoids the HTTP call.
+    if (
+      context.endpointHealth &&
+      !context.endpointHealth.shouldTry(RIVESTREAM_PROVIDER_ID, provider)
+    ) {
+      continue;
+    }
     const promise = fetchRivestreamSourceData({
       context,
       provider,

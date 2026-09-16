@@ -79,16 +79,23 @@ export class ProviderCycleFailureError extends Error {
 export function createProviderCycleFailureError(
   candidate: Pick<ProviderCycleCandidate, "id" | "providerId">,
   input: Omit<ProviderCycleFailure, "candidateId" | "providerId"> &
-    Partial<Pick<ProviderCycleFailure, "candidateId" | "providerId">>,
+    Partial<Pick<ProviderCycleFailure, "candidateId" | "providerId">> &
+    Record<string, unknown>,
 ): ProviderCycleFailureError {
-  return new ProviderCycleFailureError({
-    providerId: input.providerId ?? candidate.providerId,
-    candidateId: input.candidateId ?? candidate.id,
-    failureClass: input.failureClass,
-    message: input.message,
-    retryable: input.retryable,
-    at: input.at,
-  });
+  const { providerId, candidateId, failureClass, message, retryable, at, ...extra } = input;
+  const failure = {
+    failureClass,
+    message,
+    retryable,
+    at,
+    providerId: providerId ?? candidate.providerId,
+    candidateId: candidateId ?? candidate.id,
+  } as ProviderCycleFailure;
+  // Forward-compatible: fields added to the failure contract later (e.g. an
+  // endpoint-scoped quarantine signal) survive the builder instead of being
+  // silently dropped here while the type moves on.
+  Object.assign(failure, extra);
+  return new ProviderCycleFailureError(failure);
 }
 
 export async function runProviderCycle<TResolved>(
