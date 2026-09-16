@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "9399f4e19c122a598078ee554d5ef0659a4c62985eef9ea2a9a7b0aa8ac691de",
+  "cliSourceFingerprint": "25e7bc11d691cd51e79b07fb3213178847090a1e72172b0f68fd2d2b1c707b6e",
   "docsContentFingerprint": "6cf519d315982a3c8c0617891325b79a3179587b3761e6097f012d298ee5dfc7",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
@@ -84,7 +84,7 @@
         "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
         "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
-        "2026-08: mkissa crypto rotates buildId + derivation constants (81 → 119 → 140; 140 added bootPrefix HMAC and group.host.lane.buildId.epoch payload) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. ani-cli v5 moved primary to anidb.app."
+        "2026-09: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171; 171 moved the boot payload to lane/epoch/host/group/buildId) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
       ]
     },
     {

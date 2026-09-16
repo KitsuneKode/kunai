@@ -472,11 +472,49 @@ rotations — lives in
   - search GraphQL query shape
   - episode list query shape
   - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch/build returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`/`AA_CRYPTO_MISSING_BUILD`
-  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=140&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
+  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=<pinned>&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only, and must be derived under the pinned profile
   - `aaReq` AES-256-GCM over `{v,ts,epoch,buildId,qh,k}` with IV `SHA-256(epoch:buildId:qh:ts:k)[0:12]`; send `x-build-id` on API GETs
   - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16)
   - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
   - downstream link extraction from decoded source URLs — `Mp4` scrapes the embed HTML for `src: "…"` and plays with `Referer: https://www.mp4upload.com` plus mpv `--tls-verify=no`
+
+### mkissa crypto rotations
+
+**A rotation moves every derivation constant, not just the `buildId`.** The
+140 -> 171 rotation (2026-09-16) changed `saltMul`, `saltAdd`, `fragMul`,
+`fragAdd`, the boot prefix, the boot-token separator (`.` -> `/`), the order of
+the boot-token parts, and all four mask fragments. A token built from the new
+`buildId` with the old constants is rejected `invalid_boot_token`, so pinning
+the number alone does not restore playback.
+
+Everything that rotates therefore lives in one object,
+`ALLMANGA_CRYPTO_PROFILE` in `packages/providers/src/allmanga/crypto.ts`.
+Replace the whole object; never one field.
+
+The endpoint distinguishes the two failures, and so does
+`classifyAllMangaBootstrapFailure`:
+
+| Response                             | Meaning                                                     |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `404 {"error":"unknown_build_id"}`   | `build-rotated` — upstream dropped our build; re-extract    |
+| `403 {"error":"invalid_boot_token"}` | `token-rejected` — constants drifted under a live build     |
+| anything else                        | `unavailable` — upstream flake, bundled material is correct |
+
+Upstream keeps a small window of recent builds addressable, but each build has
+its own constants, so a neighbouring `buildId` is not a usable fallback.
+
+To catch the next rotation before users do:
+
+```sh
+KUNAI_LIVE_ALLMANGA_ROTATION=1 bun run test:live:allmanga-rotation
+```
+
+It re-reads the buildId from the live bundle and asks the bootstrap endpoint to
+accept a token built from the pinned profile. Only an HTTP 200 proves the whole
+profile still derives. To re-extract after it fails, pull the crypto chunk
+(the one containing `x-aa-boot`) from
+`cdn.mkissa.net/all/mk/_app/immutable/chunks/`, decode its rotated string
+table, and read the config object next to the `bootPrefix` literal.
 
 ## Capability Flags
 

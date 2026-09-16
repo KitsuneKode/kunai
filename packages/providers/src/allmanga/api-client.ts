@@ -25,24 +25,35 @@ import {
   BUNDLED_ALLMANGA_CRYPTO,
   buildAllMangaAaReq,
   fetchAllMangaCryptoMaterial,
+  getLastAllMangaRotationSignal,
   type AllMangaCryptoMaterial,
 } from "./crypto";
 import { ALLANIME_PROVIDER_ID } from "./manifest";
 
 export {
+  ALLMANGA_BOOTSTRAP_URL,
   ALLMANGA_BUILD_ID,
   ALLMANGA_CONTENT_LANE_EPISODE,
+  ALLMANGA_CRYPTO_PROFILE,
+  ALLMANGA_KEY_GROUP,
   ALLMANGA_EPOCH,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
+  ALLMANGA_SITE_ORIGIN,
   BUNDLED_ALLMANGA_CRYPTO,
   buildAllMangaAaReq,
   buildAllMangaBootToken,
+  classifyAllMangaBootstrapFailure,
   currentAllMangaEpochCandidates,
   deriveKeyFromPartB,
   deriveMaskKey,
+  getLastAllMangaRotationSignal,
   hashBuildId,
+  resetAllMangaRotationSignalForTest,
+  type AllMangaBootPart,
   type AllMangaCryptoMaterial,
+  type AllMangaCryptoProfile,
+  type AllMangaRotationSignal,
 } from "./crypto";
 
 export type AllMangaSearchResult = {
@@ -396,6 +407,27 @@ export function refreshAllMangaCryptoMaterial(
   inFlightCryptoMaterial ??= fetchAllMangaCryptoMaterial(context, ua, signal)
     .then((material) => {
       const resolved = material ?? BUNDLED_ALLMANGA_CRYPTO;
+      if (!material) {
+        // Say which failure this was. A rotation and a flaky upstream both used
+        // to surface as the same unexplained crypto miss, which is why the
+        // 140 -> 171 rotation went unnoticed until playback broke.
+        const signalKind = getLastAllMangaRotationSignal() ?? "unavailable";
+        context.emit?.({
+          type: "cache:stale",
+          at: context.now(),
+          providerId: ALLANIME_PROVIDER_ID,
+          message:
+            signalKind === "build-rotated"
+              ? `mkissa rejected build ${ALLMANGA_BUILD_ID} as unknown — upstream rotated; re-extract ALLMANGA_CRYPTO_PROFILE`
+              : signalKind === "token-rejected"
+                ? `mkissa rejected our boot token for build ${ALLMANGA_BUILD_ID} — derivation constants drifted; re-extract ALLMANGA_CRYPTO_PROFILE`
+                : "mkissa bootstrap unavailable — using bundled crypto material",
+          attributes: {
+            rotationSignal: signalKind,
+            buildId: ALLMANGA_BUILD_ID,
+          },
+        });
+      }
       cachedCryptoMaterial = {
         material: resolved,
         // A failed bootstrap falls back to bundled material; retry sooner.
