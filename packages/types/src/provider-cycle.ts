@@ -52,6 +52,18 @@ export interface ProviderCycleFailure {
   readonly message: string;
   readonly retryable: boolean;
   readonly at: string;
+  /**
+   * This failure is about *this endpoint*, not the provider or the region.
+   *
+   * `candidate-blocked` normally carries no endpoint evidence, because it lumps
+   * together provider-wide session guards, region-wide WAF responses and
+   * endpoint-local refusals — persisting all of those would quarantine healthy
+   * mirrors. A resolve-gate rejection is different in kind: it is a segment
+   * probe against one server's own stream, so a definitive refusal there says
+   * something durable about that server alone. Set it only when the failure was
+   * observed against the endpoint itself.
+   */
+  readonly endpointScoped?: boolean;
 }
 
 export interface ProviderCycleAttempt {
