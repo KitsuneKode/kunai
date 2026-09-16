@@ -1,8 +1,8 @@
 name: Release Guard
 
 # Runs the same version ↔ changelog consistency check that release.yml runs,
-# but on every PR that touches apps/cli/**, .changeset/**, or the release
-# pipeline. Catches hand-bumps, missed changesets, and changelog drift
+# on every PR so the required check is emitted even for docs-only changes.
+# Catches hand-bumps, missed changesets, and changelog drift
 # *before* merge so the release workflow can stay simple and trusted.
 #
 # Publication is not part of this guard. Push-to-main Release only opens the
@@ -11,25 +11,6 @@ name: Release Guard
 
 on:
   pull_request:
-    paths:
-      - "apps/cli/**"
-      - "install.sh"
-      - "install.ps1"
-      - "packages/**"
-      - ".changeset/**"
-      - ".changeset/config.json"
-      - "package.json"
-      - "bun.lock"
-      - "turbo.json"
-      - "CHANGELOG.md"
-      - ".release/**"
-      - ".github/workflows/release.yml"
-      - ".github/workflows/release-guard.yml"
-      - "scripts/release-changelog.ts"
-      - "scripts/generate-release-notes.ts"
-      - "scripts/release-guard.ts"
-      - "scripts/set-release-status.ts"
-      - "scripts/sync-root-changelog.ts"
   push:
     branches: [main]
     paths:
