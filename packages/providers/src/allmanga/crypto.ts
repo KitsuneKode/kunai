@@ -3,6 +3,7 @@ import { createCipheriv, createHash, createHmac } from "node:crypto";
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
+import { readJsonObjectBody } from "../shared/json-body";
 
 /**
  * AllManga / mkissa client-crypto (post-2026-08 buildId scheme).
@@ -246,9 +247,9 @@ export async function fetchAllMangaCryptoMaterial(
           },
         });
         if (!response.ok) continue;
-        const body = (await response.json()) as BootstrapResponse;
+        const body = await readJsonObjectBody<BootstrapResponse>(response);
         if (
-          !body.partB ||
+          !body?.partB ||
           typeof body.epoch !== "number" ||
           !Number.isFinite(body.epoch) ||
           body.epoch <= 0
