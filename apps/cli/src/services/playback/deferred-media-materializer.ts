@@ -1,8 +1,8 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { StreamInfo } from "@/domain/types";
+import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import {
   releaseAllMangaAkDeferredLocator,
   resolveAllMangaAkDeferredLocator,
@@ -27,7 +27,7 @@ export async function materializeDeferredMediaForPlayback(
     if (!descriptor) {
       throw new Error("Deferred AllManga Ak media expired before playback");
     }
-    const dir = await createTempDir();
+    const dir = await createPrivateTempDir("media");
     const mpdPath = join(dir, "stream.mpd");
     await writeFile(mpdPath, buildAllMangaAkMpd(descriptor));
     return {
@@ -44,15 +44,6 @@ export async function materializeDeferredMediaForPlayback(
   }
 
   throw new Error(`Unsupported deferred media locator: ${stream.deferredLocator.split(":")[0]}`);
-}
-
-async function createTempDir(): Promise<string> {
-  const dir = join(
-    tmpdir(),
-    `kunai-media-${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`,
-  );
-  await mkdir(dir, { recursive: true });
-  return dir;
 }
 
 function buildAllMangaAkMpd(descriptor: AllMangaAkDeferredDescriptor): string {
