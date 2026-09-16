@@ -161,11 +161,11 @@ jobs:
 
       - name: Lint (affected on PR)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run lint --affected --summarize
+        run: bunx turbo run lint //#lint:root --affected --summarize
 
       - name: Lint (full on main)
         if: github.event_name == 'push'
-        run: bunx turbo run lint --summarize
+        run: bunx turbo run lint //#lint:root --summarize
 
       - name: Anti-slop changed-file advisory
         if: github.event_name == 'pull_request'
