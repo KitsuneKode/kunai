@@ -62,3 +62,29 @@ describe("kunai mpv bridge episode navigation", () => {
     expect(fileLoadedSource).toContain('mp.set_property("user-data/kunai-resume-choice", "")');
   });
 });
+
+describe("kunai mpv bridge server and audio cycling", () => {
+  test("provides in-player cycling for servers and audio with fallback to terminal selection", () => {
+    const source = readFileSync(BRIDGE_PATH, "utf8");
+
+    // In-player server cycling bindings
+    expect(source).toContain('mp.add_forced_key_binding("c", "kunai-cycle-source"');
+    expect(source).toContain('mp.add_forced_key_binding("C", "kunai-cycle-source-shift"');
+
+    // Terminal source selection bindings
+    expect(source).toContain('mp.add_forced_key_binding("s", "kunai-source"');
+    expect(source).toContain('mp.add_forced_key_binding("S", "kunai-source-shift"');
+
+    // Audio cycling bindings
+    expect(source).toContain('mp.add_forced_key_binding("a", "kunai-cycle-audio"');
+    expect(source).toContain('mp.add_forced_key_binding("A", "kunai-cycle-audio-shift"');
+    expect(source).toContain('mp.add_forced_key_binding("d", "kunai-cycle-audio-alt"');
+    expect(source).toContain('mp.add_forced_key_binding("D", "kunai-cycle-audio-alt-shift"');
+
+    // Logic checks
+    expect(source).toContain('signal("cycle-source")');
+    expect(source).toContain('signal("cycle-audio")');
+    expect(source).toContain('signal("source")');
+    expect(source).toContain("has_multiple_internal_audio_tracks");
+  });
+});

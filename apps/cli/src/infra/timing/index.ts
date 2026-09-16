@@ -1,6 +1,12 @@
 export { AniSkipTimingSource } from "./AniSkipTimingSource";
 export { IntroDbTimingSource } from "./IntroDbTimingSource";
 export { mergeTimingMetadata } from "./merge-timing";
+export {
+  buildOgmChaptersFromTiming,
+  formatOgmTimestamp,
+  removeMpvChaptersFile,
+  writeMpvChaptersFile,
+} from "./mpv-chapters";
 export { PlaybackTimingAggregator } from "./PlaybackTimingAggregator";
 export { extractProviderNativeTiming } from "./provider-native-timing";
 export type {
