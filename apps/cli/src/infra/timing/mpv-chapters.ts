@@ -97,7 +97,9 @@ export function buildChapterSegmentsFromTiming(
   for (let i = 0; i < markers.length; i++) {
     const marker = markers[i]!;
     if (marker.startMs > cursor + 1000) {
-      const gapTitle = cursor === 0 ? "Prologue" : "Episode";
+      const prevMarker = i > 0 ? markers[i - 1] : undefined;
+      const gapTitle =
+        cursor === 0 ? "Prologue" : prevMarker?.title === "Credits" ? "Epilogue" : "Episode";
       chapters.push({
         startMs: cursor,
         endMs: marker.startMs,
@@ -107,7 +109,12 @@ export function buildChapterSegmentsFromTiming(
 
     const nextMarker = markers[i + 1];
     const boundedEnd = nextMarker ? Math.min(marker.endMs, nextMarker.startMs) : marker.endMs;
-    const finalEnd = Math.max(boundedEnd, marker.startMs + 1000);
+    const finalEnd = nextMarker
+      ? Math.max(
+          marker.startMs,
+          Math.min(Math.max(boundedEnd, marker.startMs + 100), nextMarker.startMs),
+        )
+      : Math.max(boundedEnd, marker.startMs + 1000);
 
     chapters.push({
       startMs: marker.startMs,

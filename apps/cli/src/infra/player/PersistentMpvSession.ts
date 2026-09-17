@@ -433,6 +433,10 @@ export class PersistentMpvSession {
       } catch {
         // Best effort chapters file
       }
+    } else if (this.currentChaptersFilePath) {
+      const oldChapters = this.currentChaptersFilePath;
+      this.currentChaptersFilePath = null;
+      void removeMpvChaptersFile(oldChapters);
     }
 
     const loadResult = await this.ipcSession?.send(
@@ -1298,9 +1302,18 @@ export class PersistentMpvSession {
   private currentChaptersFilePath: string | null = null;
 
   private async syncMpvChaptersFile(timing: PlaybackTimingMetadata | null): Promise<void> {
-    if (!timing) return;
+    const oldPath = this.currentChaptersFilePath;
+    if (!timing) {
+      if (oldPath) {
+        this.currentChaptersFilePath = null;
+        if (this.ipcSession) {
+          await this.ipcSession.send(["set_property", "chapters-file", ""], 1_000).catch(() => {});
+        }
+        await removeMpvChaptersFile(oldPath).catch(() => {});
+      }
+      return;
+    }
     try {
-      const oldPath = this.currentChaptersFilePath;
       const newPath = await writeMpvChaptersFile(timing, `${this.id}-${Date.now()}`);
       if (newPath) {
         this.currentChaptersFilePath = newPath;
@@ -1649,6 +1662,7 @@ export class PersistentMpvSession {
             isLive: this.playbackStream.isLive,
             urlKind: opts.urlKind,
             audioPreference: opts.audioPreference,
+            chaptersFile: this.currentChaptersFilePath ?? undefined,
           },
         ),
         12_000,

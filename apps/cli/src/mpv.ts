@@ -115,43 +115,46 @@ export async function launchMpv(opts: {
     }
   }
 
-  const args = buildMpvArgs({ ...opts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
-    mpv: opts.mpv,
-  });
-  const stats = createPlayerStatsState(ipcEndpoint.path);
-  noteTrustedSeek(stats, opts.startAt ?? 0);
-  const baseEmit = opts.onPlaybackEvent ?? (() => {});
-  const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
-    if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
-      noteStreamStall(stats, Date.now());
-    }
-    baseEmit(event);
-  };
-
-  if (!Bun.which("mpv")) {
-    throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
-  }
-
-  const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
-  const mpv = Bun.spawn(["mpv", ...args], {
-    stdin: stdio,
-    stdout: stdio,
-    stderr: stdio,
-    env: process.env as Record<string, string>,
-  });
-  const unregisterMpv = registerMpvProcess(mpv);
   try {
-    return await launchMpvInner(
-      mpv,
-      unregisterMpv,
-      opts,
-      sessionId,
-      ipcEndpoint,
-      stats,
-      emitPlaybackEvent,
-    );
+    const args = buildMpvArgs({ ...opts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
+      mpv: opts.mpv,
+    });
+    const stats = createPlayerStatsState(ipcEndpoint.path);
+    noteTrustedSeek(stats, opts.startAt ?? 0);
+    const baseEmit = opts.onPlaybackEvent ?? (() => {});
+    const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
+      if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
+        noteStreamStall(stats, Date.now());
+      }
+      baseEmit(event);
+    };
+
+    if (!Bun.which("mpv")) {
+      throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
+    }
+
+    const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
+    const mpv = Bun.spawn(["mpv", ...args], {
+      stdin: stdio,
+      stdout: stdio,
+      stderr: stdio,
+      env: process.env as Record<string, string>,
+    });
+    const unregisterMpv = registerMpvProcess(mpv);
+    try {
+      return await launchMpvInner(
+        mpv,
+        unregisterMpv,
+        opts,
+        sessionId,
+        ipcEndpoint,
+        stats,
+        emitPlaybackEvent,
+      );
+    } finally {
+      unregisterMpv();
+    }
   } finally {
-    unregisterMpv();
     if (chaptersFile) {
       await removeMpvChaptersFile(chaptersFile).catch(() => {});
     }
