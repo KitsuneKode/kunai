@@ -152,9 +152,22 @@ network-free surface, so they regenerate deterministically:
 bun run --cwd apps/cli test:vhs:setup     # setup wizard
 bun run --cwd apps/cli test:vhs:offline   # offline library + download queue
 bun run --cwd apps/cli test:vhs:palette   # command-palette tour
+bun run --cwd apps/cli test:vhs:playback  # series + anime play walkthrough
 bun run --cwd apps/cli test:vhs:all       # all of the above
 ```
 
-Output lands in the gitignored `apps/cli/test/vhs/golden/`. Tapes deliberately
-avoid live search and trending so they never depend on provider availability —
-keep it that way when adding one.
+Output lands in the gitignored `apps/cli/test/vhs/golden/`. The playback tape
+records `test/harness/playback-walkthrough.ts`, which mounts the real browse /
+loading / post-play shells on fixtures — it does not call providers or mpv.
+The tape types search, arrows, Enter, `q`, and `/anime` the way a session
+does. `Set PlaybackSpeed` on that tape is encode-only (the gif is long);
+the app itself plays at 1×.
+Copy the published demo into brand after a green tape:
+
+```bash
+cp apps/cli/test/vhs/golden/playback-walkthrough.gif .reference/design/brand/demo-playback-walkthrough.gif
+cp apps/cli/test/vhs/golden/playback-walkthrough.mp4 .reference/design/brand/demo-playback-walkthrough.mp4
+```
+
+Tapes deliberately avoid live search and trending so they never depend on
+provider availability — keep it that way when adding one.
