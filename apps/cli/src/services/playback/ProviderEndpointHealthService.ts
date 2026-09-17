@@ -109,12 +109,16 @@ export class ProviderEndpointHealthService implements EndpointHealthPort {
 
   /**
    * Forget every endpoint row for one provider, including in-memory transient
-   * cooldowns and curated dead seeds. Re-observed failures re-quarantine, so
-   * over-clearing on an explicit user reset only costs a few requests.
+   * cooldowns, sub-threshold transient failure counts, and curated dead seeds.
+   * Re-observed failures re-quarantine, so over-clearing on an explicit user reset
+   * only costs a few requests.
    */
   deleteByProvider(providerId: ProviderId): number {
     const prefix = `${providerId}:`;
     for (const key of this.transientCooldowns.keys()) {
+      if (key.startsWith(prefix)) this.clearTransient(key);
+    }
+    for (const key of this.transientFailureCounts.keys()) {
       if (key.startsWith(prefix)) this.clearTransient(key);
     }
     for (const key of this.curatedDead) {

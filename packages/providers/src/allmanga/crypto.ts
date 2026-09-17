@@ -244,11 +244,64 @@ type BootstrapResponse = {
   readonly switchAt?: number;
 };
 
+/**
+ * Why a bootstrap was refused. The two rotation failures need different
+ * responses and used to be indistinguishable, so a rotation looked exactly
+ * like a network blip and degraded silently to bundled material:
+ *
+ * - `build-rotated` — upstream no longer knows our `buildId`. The profile is
+ *   stale wholesale; re-extract it from the live chunk.
+ * - `token-rejected` — upstream knows the `buildId` but not our token, so the
+ *   derivation constants drifted out from under a still-valid build.
+ */
+export type AllMangaRotationSignal = "build-rotated" | "token-rejected" | "unavailable";
+
+export function classifyAllMangaBootstrapFailure(
+  status: number,
+  body: string,
+): AllMangaRotationSignal {
+  if (body.includes("unknown_build_id")) return "build-rotated";
+  if (body.includes("invalid_boot_token")) return "token-rejected";
+
+  // Cloudflare and generic HTML challenge pages are WAF/network blocks, not mkissa rotations.
+  const lower = body.toLowerCase();
+  if (
+    lower.includes("<!doctype html") ||
+    lower.includes("<html") ||
+    lower.includes("just a moment") ||
+    lower.includes("cf-browser-verification")
+  ) {
+    return "unavailable";
+  }
+
+  // Fall back to status alone when the body is not the documented JSON.
+  if (status === 404) return "build-rotated";
+  if (status === 403) return "token-rejected";
+  return "unavailable";
+}
+
+/**
+ * Last rotation signal observed by {@link fetchAllMangaCryptoMaterial}.
+ * `api-client.ts` reads this to say *why* it fell back to bundled material
+ * instead of reporting an unexplained crypto miss.
+ */
+let lastAllMangaRotationSignal: AllMangaRotationSignal | null = null;
+
+export function getLastAllMangaRotationSignal(): AllMangaRotationSignal | null {
+  return lastAllMangaRotationSignal;
+}
+
+/** Test seam: clear the module-level signal between cases. */
+export function resetAllMangaRotationSignalForTest(): void {
+  lastAllMangaRotationSignal = null;
+}
+
 export async function fetchAllMangaCryptoMaterial(
   context: ProviderRuntimeContext,
   ua: string,
   signal?: AbortSignal,
 ): Promise<AllMangaCryptoMaterial | null> {
+  let lastRotationSignal: AllMangaRotationSignal | null = null;
   try {
     const buildId = ALLMANGA_BUILD_ID;
     const contentLane = ALLMANGA_CONTENT_LANE_EPISODE;
@@ -283,19 +336,6 @@ export async function fetchAllMangaCryptoMaterial(
             "x-aa-boot": boot,
           },
         });
-<<<<<<< HEAD
-        if (!response.ok) continue;
-        const body = (await response.json()) as BootstrapResponse;
-||||||| parent of 7a49de5ec (fix(providers): read a JSON body at the boundary, not through a cast)
-        if (!response.ok) {
-          lastRotationSignal = classifyAllMangaBootstrapFailure(
-            response.status,
-            await response.text().catch(() => ""),
-          );
-          continue;
-        }
-        const body = (await response.json()) as BootstrapResponse;
-=======
         if (!response.ok) {
           lastRotationSignal = classifyAllMangaBootstrapFailure(
             response.status,
@@ -304,7 +344,6 @@ export async function fetchAllMangaCryptoMaterial(
           continue;
         }
         const body = await readJsonObjectBody<BootstrapResponse>(response);
->>>>>>> 7a49de5ec (fix(providers): read a JSON body at the boundary, not through a cast)
         if (
           !body?.partB ||
           typeof body.epoch !== "number" ||
@@ -314,6 +353,7 @@ export async function fetchAllMangaCryptoMaterial(
           continue;
         }
         const key = deriveKeyFromPartB(body.partB, buildId);
+        lastAllMangaRotationSignal = null;
         return {
           keyHex: key.toString("hex"),
           epoch: body.epoch,
@@ -325,8 +365,10 @@ export async function fetchAllMangaCryptoMaterial(
         // try next epoch candidate
       }
     }
+    lastAllMangaRotationSignal = lastRotationSignal ?? "unavailable";
     return null;
   } catch {
+    lastAllMangaRotationSignal = lastRotationSignal ?? "unavailable";
     return null;
   }
 }

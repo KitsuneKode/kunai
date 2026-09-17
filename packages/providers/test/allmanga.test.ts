@@ -20,10 +20,12 @@ import {
   buildAllmangaCycleCandidates,
   buildAllMangaAaReq,
   buildAllMangaBootToken,
+  ALLMANGA_BUILD_ID,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
   BUNDLED_ALLMANGA_CRYPTO,
   buildStreamHeaders,
+  classifyAllMangaBootstrapFailure,
   AllMangaCaptchaError,
   AllMangaQueryDriftError,
   clearAllMangaProviderCachesForTest,
@@ -448,6 +450,40 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
         contentLane: "k7",
       }),
     ).toBe("0046b60be8f98c4901a15d7ae5a37199c36131972fe815df2ccc7e7f07d63e88");
+  });
+
+  test("bundled fallback key is derived under the pinned profile", () => {
+    // A key left over from a previous build is not a degraded fallback, it is
+    // a guaranteed decrypt failure. This is what made the 140 -> 171 rotation
+    // fail silently: the buildId moved and the bundled key did not.
+    // partB synthesized as mask(build-166) ^ bundled key — the XOR inverse of
+    // deriveKeyFromPartB, so this is the exact blob upstream would have served.
+    const livePartB = "0M3a/rOE8dmkIAc5mXwvsorKaTWGbLq1rTm9yMUoL1o=";
+    expect(deriveKeyFromPartB(livePartB, ALLMANGA_BUILD_ID).toString("hex")).toBe(ALLMANGA_KEY_HEX);
+    expect(BUNDLED_ALLMANGA_CRYPTO.buildId).toBe(ALLMANGA_BUILD_ID);
+  });
+
+  test("classifies the two rotation failures apart", () => {
+    expect(classifyAllMangaBootstrapFailure(404, '{"error":"unknown_build_id"}')).toBe(
+      "build-rotated",
+    );
+    expect(classifyAllMangaBootstrapFailure(403, '{"error":"invalid_boot_token"}')).toBe(
+      "token-rejected",
+    );
+    expect(classifyAllMangaBootstrapFailure(500, "upstream exploded")).toBe("unavailable");
+    // Status alone still classifies when the body is not the documented JSON.
+    expect(classifyAllMangaBootstrapFailure(404, "")).toBe("build-rotated");
+    expect(classifyAllMangaBootstrapFailure(403, "")).toBe("token-rejected");
+    // Cloudflare or generic HTML blocks must report unavailable, never token-rejected.
+    expect(
+      classifyAllMangaBootstrapFailure(
+        403,
+        "<!DOCTYPE html><html><title>Just a moment...</title></html>",
+      ),
+    ).toBe("unavailable");
+    expect(classifyAllMangaBootstrapFailure(404, "<html><body>404 Not Found</body></html>")).toBe(
+      "unavailable",
+    );
   });
 
   test("falls back to bundled material when bootstrap fails", async () => {
