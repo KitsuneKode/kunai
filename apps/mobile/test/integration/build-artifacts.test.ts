@@ -56,6 +56,21 @@ describe("mobile build artifacts", () => {
     }
   });
 
+  test("declares every emitted artifact as a Turbo build output", () => {
+    const config = Bun.JSONC.parse(readFileSync(join(MOBILE_ROOT, "../../turbo.json"), "utf8")) as {
+      tasks: { build: { outputs: string[] } };
+    };
+    const outputs = config.tasks.build.outputs;
+    const included = outputs.filter((pattern) => !pattern.startsWith("!"));
+    const excluded = outputs.filter((pattern) => pattern.startsWith("!"));
+
+    for (const artifact of BUILD_METADATA.artifacts) {
+      const path = `dist/${artifact.path}`;
+      expect(included.some((pattern) => new Bun.Glob(pattern).match(path))).toBe(true);
+      expect(excluded.some((pattern) => new Bun.Glob(pattern.slice(1)).match(path))).toBe(false);
+    }
+  });
+
   for (const artifact of BUILD_METADATA.artifacts) {
     test(`matches checksum, size, and mode for ${artifact.path}`, () => {
       const path = join(DIST, artifact.path);
