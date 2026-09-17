@@ -23,6 +23,16 @@ describe("a-Shell curl config", () => {
     expect(config).not.toContain("\0");
   });
 
+  test("keeps brackets in probe URLs literal instead of treating them as curl ranges", () => {
+    const config = encodeCurlConfig({
+      ...REQUEST,
+      url: "https://probe.example/status?filter=[draft]",
+    });
+
+    expect(config).toContain('url = "https://probe.example/status?filter=[draft]"');
+    expect(config.split("\n")).toContain("globoff");
+  });
+
   test("rejects config-breaking controls and non-portable URLs", () => {
     for (const url of [
       "https://x.example/\r\noutput=/tmp/pwn",

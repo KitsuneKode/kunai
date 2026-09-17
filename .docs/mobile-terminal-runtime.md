@@ -134,7 +134,8 @@ recovery is explicit rather than guessing whether another session is alive.
   `termux-am` or `/system/bin/am`.
 - iOS uses a literal helper allowlist and fixed private files.
 - The iOS HTTP helper disables implicit curl configuration with `-q` before
-  loading its private request configuration.
+  loading its private request configuration. That configuration disables URL
+  globbing so brackets in probe URLs remain literal rather than curl ranges.
 - Android state directories are forced to `0700` and state files to `0600`.
 - Logs, state, metadata, and review evidence contain no URLs, headers, cookies,
   tokens, install identifiers, or raw device logs.
