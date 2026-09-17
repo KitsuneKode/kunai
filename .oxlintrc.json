@@ -7,30 +7,34 @@
     "es2026": true
   },
   "plugins": ["eslint", "typescript", "import", "unicorn", "promise", "node", "react", "jsx-a11y"],
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    }
+  ],
   "categories": {
     "correctness": "error",
     "suspicious": "warn",
     "perf": "warn"
   },
   "rules": {
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
     "no-debugger": "error",
     "no-console": "off",
-
     "curly": "off",
     "eqeqeq": "warn",
-
     "no-await-in-loop": "off",
     "no-underscore-dangle": "off",
-
     "eslint/no-unused-vars": "off",
     "typescript/no-unused-vars": "warn",
-
     "typescript/no-explicit-any": "warn",
     "typescript/no-non-null-assertion": "warn",
-
     "import/no-cycle": "warn",
     "promise/no-return-wrap": "warn",
-
     "react/react-in-jsx-scope": "off",
     "unicorn/prefer-node-protocol": "warn",
     "unicorn/no-array-for-each": "off",
@@ -48,6 +52,15 @@
         "typescript/no-explicit-any": "off",
         "typescript/no-non-null-assertion": "off",
         "unicorn/consistent-function-scoping": "off"
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.spec.ts", "**/*.test.tsx", "**/*.spec.tsx", "**/test/**", "**/__mocks__/**"],
+      "rules": {
+        "anti-slop/no-chained-type-assertions": "off",
+        "anti-slop/no-object-parameters": "off",
+        "anti-slop/no-reflect-apply": "off",
+        "anti-slop/no-reflect-get": "off"
       }
     },
     {
@@ -77,7 +90,6 @@
     "apps/cli/dist/**",
     "dist/**",
     "node_modules/**",
-
     ".agent/**",
     ".agents/**",
     ".claude/**",
@@ -89,18 +101,15 @@
     ".pi/**",
     ".roo/**",
     ".windsurf/**",
-
     ".git/**",
     ".turbo/**",
     ".next/**",
     ".cache/**",
     "coverage/**",
-
     "bun.lock",
     "pnpm-lock.yaml",
     "package-lock.json",
     "yarn.lock",
-
     "**/*.min.js",
     "**/*.d.ts"
   ]

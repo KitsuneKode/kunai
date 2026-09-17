@@ -278,6 +278,35 @@ type WasmExports = {
   decrypt(payloadPointer: number, tmdbId: number): number;
 };
 
+/**
+ * Narrow an instantiated module's exports to the three functions this provider
+ * calls.
+ *
+ * The WASM boundary is genuinely untyped — `ASUtil & Record<string, unknown>`
+ * shares no structure with `WasmExports`, so no assertion can be honest here.
+ * Checking the three callables is what earns the type, and a module missing one
+ * fails loudly at load rather than as `undefined is not a function` mid-decode.
+ */
+function requireWasmFunction<K extends keyof WasmExports>(
+  exports: Readonly<Record<string, unknown>>,
+  name: K,
+): WasmExports[K] {
+  const value = exports[name];
+  if (typeof value !== "function") {
+    throw new Error(`videasy wasm module is missing ${String(name)}()`);
+  }
+  // `value` is `unknown` until checked, so this narrows rather than reinterprets.
+  return value as WasmExports[K];
+}
+
+function toWasmExports(exports: Readonly<Record<string, unknown>>): WasmExports {
+  return {
+    __newString: requireWasmFunction(exports, "__newString"),
+    __getString: requireWasmFunction(exports, "__getString"),
+    decrypt: requireWasmFunction(exports, "decrypt"),
+  };
+}
+
 let wasmExportsPromise: Promise<WasmExports> | null = null;
 let wasmDecodeQueue: Promise<void> = Promise.resolve();
 
@@ -2011,7 +2040,7 @@ async function loadWasmExports(): Promise<WasmExports> {
         abort: () => {},
       },
     });
-    return module.exports as unknown as WasmExports;
+    return toWasmExports(module.exports);
   })();
 
   wasmExportsPromise = attempt;

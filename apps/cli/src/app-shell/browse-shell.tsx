@@ -63,6 +63,7 @@ import {
   resolveDetailsOverlaySubmitValue,
 } from "./browse-search-state";
 import {
+  browseOptionFacts,
   buildBrowseDetailsSheetSeed,
   formatBrowseShellError,
   MIN_RESULTS_FOR_LOCAL_FILTER,
@@ -815,7 +816,7 @@ export function BrowseShell<T>({
       // not a forced dump into the search field.
 
       const seed = buildBrowseDetailsSheetSeed(resolved);
-      const value = resolved.value as unknown as Partial<SearchResult>;
+      const value = browseOptionFacts(resolved.value);
       const titleId = typeof value?.id === "string" ? value.id : undefined;
       const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
 

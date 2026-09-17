@@ -33,6 +33,12 @@ interface NotificationRow {
   readonly title: string;
   readonly body: string;
   readonly item_json: string | null;
+  /**
+   * A create-time snapshot of the actions a notification offered. It is NOT the
+   * authority: actions are derived from `kind` at render time, because a stored
+   * snapshot goes stale as soon as the action set for that kind changes. Read it
+   * for history, never to decide what to show.
+   */
   readonly action_json: string | null;
   readonly created_at: string;
   readonly updated_at: string;

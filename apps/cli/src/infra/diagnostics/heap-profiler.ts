@@ -19,6 +19,23 @@ export type HeapSnapshotLike = {
   readonly nodeClassNames: readonly string[];
 };
 
+/**
+ * Narrow a Bun heap snapshot to the raw node table this profiler walks.
+ *
+ * Bun's own `HeapSnapshot` type does not describe the parallel `nodes` /
+ * `nodeClassNames` arrays, so the shape has to be checked rather than claimed.
+ * A Bun release that changes the table fails here with a clear message instead
+ * of silently producing an empty histogram.
+ */
+function toHeapSnapshotLike(snapshot: unknown): HeapSnapshotLike {
+  const record = snapshot as Readonly<Record<string, unknown>>;
+  const { nodes, nodeClassNames } = record;
+  if (!Array.isArray(nodes) || !Array.isArray(nodeClassNames)) {
+    throw new Error("Bun.generateHeapSnapshot() did not return the expected node table");
+  }
+  return { nodes, nodeClassNames };
+}
+
 /** Count live heap nodes per class name. */
 export function classNameHistogram(snapshot: HeapSnapshotLike): Map<string, number> {
   const counts = new Map<string, number>();
@@ -63,11 +80,11 @@ export function installHeapProfiler(): void {
   const startedAt = Date.now();
   writeFileSync(rssCsv, "elapsed_s,rss_mb,heap_used_mb\n");
 
-  const baseline = classNameHistogram(Bun.generateHeapSnapshot() as unknown as HeapSnapshotLike);
+  const baseline = classNameHistogram(toHeapSnapshotLike(Bun.generateHeapSnapshot()));
 
   const report = (reason: string): void => {
     const snap = Bun.generateHeapSnapshot();
-    const growth = topGrowth(baseline, classNameHistogram(snap as unknown as HeapSnapshotLike));
+    const growth = topGrowth(baseline, classNameHistogram(toHeapSnapshotLike(snap)));
     const summary = formatGrowthReport(reason, growth);
     process.stderr.write(summary);
     const ts = new Date().toISOString().replace(/[:.]/g, "-");

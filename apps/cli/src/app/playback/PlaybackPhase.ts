@@ -4285,11 +4285,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           return;
         }
 
-        const mergedSubtitleList = mergeSubtitleTracks(
-          stream.subtitleList,
-          result.list as unknown as SubtitleTrack[],
-        );
-        const selected = selectAutomaticSubtitle(mergedSubtitleList as never, requestedSubLang);
+        const mergedSubtitleList = mergeSubtitleTracks(stream.subtitleList, result.list);
+        const selected = selectAutomaticSubtitle(mergedSubtitleList, requestedSubLang);
         const selectedUrl = selected?.url ?? result.selected ?? null;
         if (!selectedUrl) {
           diagnosticsService.record(

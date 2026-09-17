@@ -26,8 +26,19 @@ export function formatBrowseShellError(error: unknown): string {
  * (the SearchResult): header + synopsis render with no network; the detail fetch
  * only gap-fills cast/seasons/trailer/links.
  */
+/**
+ * Read the `SearchResult`-shaped fields a browse option may carry.
+ *
+ * `BrowseShellOption<T>` is generic over its value, so a row's payload is only
+ * a search result by convention. Narrowing here keeps that assumption in one
+ * checked place instead of asserting it at each reader.
+ */
+export function browseOptionFacts(value: unknown): Partial<SearchResult> {
+  return typeof value === "object" && value !== null ? (value as Partial<SearchResult>) : {};
+}
+
 export function buildBrowseDetailsSheetSeed<T>(option: BrowseShellOption<T>): DetailsSheetSeed {
-  const value = option.value as unknown as Partial<SearchResult> | undefined;
+  const value = browseOptionFacts(option.value);
   return {
     title: option.previewTitle ?? option.label,
     type: value?.type === "movie" ? "movie" : "series",

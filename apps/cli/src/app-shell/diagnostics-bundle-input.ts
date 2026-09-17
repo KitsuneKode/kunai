@@ -21,7 +21,7 @@ export function buildSupportBundleInputFromContainer(
 ): SupportBundleInputFromContainer {
   const state = panelInput.state;
   return {
-    capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
+    capabilities: container.capabilitySnapshot as Record<string, unknown> | null,
     playbackSourceInventory: state.stream?.providerResolveResult
       ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
           selectedSubtitleUrl: state.stream.subtitle,
