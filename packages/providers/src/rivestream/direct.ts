@@ -45,6 +45,7 @@ import {
   streamPresentationFields,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
+import { probeStreamReachability } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
@@ -55,6 +56,9 @@ export const RIVESTREAM_API_BASE = "https://www.rivestream.app/api/backendfetch"
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/** Resolve-gate probe budget per service candidate (inside the 10s candidate timeout). */
+const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 3_000;
 
 /**
  * Failure sentinels from `generateSecretKey`. They must never be cached: a
@@ -128,6 +132,75 @@ type RivestreamRawSubtitle = {
   readonly file?: string;
   readonly label?: string;
 };
+
+/**
+ * Per-source headers baked into proxy URLs. Flowcast answers ship
+ * `…/proxy?url=<upstream>&headers={"Referer":"…",…}` — a working proxy whose
+ * upstream fetch needs those headers. Forward them on the stream instead of
+ * the static site referer; anything else keeps the default set.
+ *
+ * Values are sanitized of CR/LF (header-injection safety); comma-bearing
+ * values are kept here and dropped later by `normalizeStreamHttpHeaders`,
+ * which is the single place that knows mpv's list encoding.
+ */
+export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
+  let params: URLSearchParams;
+  try {
+    params = new URL(sourceUrl).searchParams;
+  } catch {
+    return null;
+  }
+  const raw = params.get("headers");
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== "string") continue;
+    const cleaned = value.replace(/[\r\n]/g, "").trim();
+    if (!name.trim() || !cleaned) continue;
+    headers[name.trim()] = cleaned;
+  }
+  return Object.keys(headers).length > 0 ? headers : null;
+}
+
+function resolveRivestreamStreamHeaders(sourceUrl: string): Record<string, string> {
+  const proxyHeaders = parseRivestreamProxyHeaders(sourceUrl);
+  if (!proxyHeaders) {
+    return { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT };
+  }
+  const headers: Record<string, string> = { ...proxyHeaders };
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")) {
+    headers["user-agent"] = USER_AGENT;
+  }
+  return headers;
+}
+
+type ProvenRefusalProbe = {
+  readonly status: "unreachable";
+  readonly definitive: true;
+  readonly reason: string;
+};
+
+/**
+ * Refusal evidence strong enough to fail a candidate mid-cycle: an HTTP error
+ * status, an HTML body where media bytes should be, or a truncated body. A
+ * 200 with an unparseable playlist is inconclusive (captive portals and test
+ * fixtures both serve those) and must not condemn the candidate.
+ */
+export function isProvenStreamRefusal(probe: {
+  readonly status: string;
+  readonly definitive?: boolean;
+  readonly reason?: string;
+}): probe is ProvenRefusalProbe {
+  if (probe.status !== "unreachable" || probe.definitive !== true) return false;
+  return /HTTP [45]\d\d|content-type|body too small/i.test(probe.reason ?? "");
+}
 
 type RivestreamResolvedCandidate = {
   readonly provider: string;
@@ -909,7 +982,7 @@ async function resolveRivestreamProviderCandidate({
       qualityRank,
       languageEvidence,
       sourceEvidence,
-      headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+      headers: resolveRivestreamStreamHeaders(source.url),
       confidence: 0.95,
       cachePolicy,
       ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
@@ -925,6 +998,32 @@ async function resolveRivestreamProviderCandidate({
       );
     }
   });
+
+  // Probe-before-select: a service that returns URLs is not proof they play
+  // (primevids answers JSON while its ImageX segments 403 every origin,
+  // including real browsers). A proven refusal fails this candidate so the
+  // cycle falls through to the next service; anything inconclusive (timeout,
+  // unparseable body, DNS wobble) still passes, per the shared resolve-gate
+  // leniency. Only refusal evidence — an HTTP error status, an HTML body
+  // where bytes should be, or a truncated body — condemns the candidate.
+  const probeTarget = [...streams].sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0))[0];
+  if (probeTarget?.url) {
+    const probe = await probeStreamReachability({
+      url: probeTarget.url,
+      headers: probeTarget.headers,
+      fetchImpl: context.fetch?.fetch.bind(context.fetch),
+      timeoutMs: RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+      signal: context.signal,
+    });
+    if (isProvenStreamRefusal(probe)) {
+      throw createProviderCycleFailureError(candidate, {
+        failureClass: "candidate-blocked",
+        message: `Rivestream ${provider} streams refused playback (${probe.reason})`,
+        retryable: false,
+        at: context.now(),
+      });
+    }
+  }
 
   const embeddedCaptions = extractRivestreamCaptions(sourceData.data);
   for (const subtitle of embeddedCaptions) {

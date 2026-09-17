@@ -302,9 +302,14 @@ export async function searchAnidb(
 ): Promise<readonly AnidbSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  // reportStatus so an HTTP error page (maintenance 503, WAF block) throws
+  // AnidbHttpStatusError instead of parsing as zero results — a 503 page has
+  // no result cards, which used to read as "no such title" (provider-drift)
+  // when the truth was "site down" (environment-network).
   const page = await anidbFetchText(`${ANIDB_BASE}/browse?q=${encodeURIComponent(trimmed)}`, {
     signal,
     context,
+    reportStatus: true,
   });
   return parseAnidbBrowseHtml(page);
 }

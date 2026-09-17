@@ -886,7 +886,7 @@ test("rivestream falls back to static provider services when service discovery i
           const url = String(input);
           requests.push(url);
           if (url.includes("VideoProviderServices")) return new Response("", { status: 503 });
-          return jsonResponse(sourceFixture);
+          return rivestreamResolveTestFetch(null, sourceFixture)(input);
         },
       },
     },
@@ -929,7 +929,8 @@ test("rivestream evidence fixture preserves provider server label and normalized
         fetch: async (input) => {
           const url = String(input);
           requests.push(url);
-          return jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture);
+          if (url.includes("VideoProviderServices")) return jsonResponse(services);
+          return rivestreamResolveTestFetch(null, sourceFixture)(input);
         },
       },
     },
@@ -993,8 +994,7 @@ test("rivestream fixture fast startup keeps the first ready stream", async () =>
       now: () => "2026-05-20T00:00:00.000Z",
       fetch: {
         runtime: "direct-http",
-        fetch: async (input) =>
-          jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
+        fetch: rivestreamResolveTestFetch(services, source),
       },
     },
   );
@@ -1046,8 +1046,7 @@ test("rivestream fast startup selects provider ready-order before returned quali
         now: () => "2026-05-22T00:00:00.000Z",
         fetch: {
           runtime: "direct-http",
-          fetch: async (input) =>
-            jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
+          fetch: rivestreamResolveTestFetch(services, source),
         },
       },
     );
@@ -1103,7 +1102,8 @@ test("rivestream caches provider services across cold resolves", async () => {
           fetch: async (input) => {
             const url = String(input);
             requests.push(url);
-            return jsonResponse(url.includes("VideoProviderServices") ? services : source);
+            if (url.includes("VideoProviderServices")) return jsonResponse(services);
+            return rivestreamResolveTestFetch(null, source)(input);
           },
         },
       },
@@ -1778,4 +1778,28 @@ function jsonResponse(value: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/**
+ * Faithful rivestream fetch stub: the resolve-gate probe fetches stream URLs,
+ * so media URLs must answer with media bytes — serving the API JSON fixture
+ * for a playlist URL reads as a truncated/error body and trips the refusal
+ * gate. API-shaped URLs keep returning the JSON fixtures.
+ */
+function rivestreamResolveTestFetch(services: unknown, source: unknown) {
+  return async (input: unknown): Promise<Response> => {
+    const url = String(input);
+    if (url.includes("VideoProviderServices")) return jsonResponse(services);
+    if (url.includes(".m3u8")) {
+      return new Response(
+        "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg-0.ts\n#EXT-X-ENDLIST\n",
+        { status: 200, headers: { "Content-Type": "application/vnd.apple.mpegurl" } },
+      );
+    }
+    if (url.includes("service=")) return jsonResponse(source);
+    return new Response(new Uint8Array(2048), {
+      status: 206,
+      headers: { "Content-Type": "video/mp2t" },
+    });
+  };
 }

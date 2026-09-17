@@ -22,7 +22,7 @@ const container = await createContainer({ debug: true });
 const provider = container.providerRegistry.get("anidb");
 
 if (!provider) {
-  console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_anidb" }));
+  console.log(JSON.stringify({ ok: false, stage: "provider", reason: "missing_anidb" }));
   process.exit(1);
 }
 
@@ -33,15 +33,31 @@ if (clearCache) {
 // Search through the default provider itself. A hard-coded native id would let
 // this smoke pass while AniDB search — the route users actually take — is dead.
 if (!provider.search) {
-  console.error(JSON.stringify({ ok: false, stage: "search", reason: "anidb_has_no_search" }));
+  console.log(JSON.stringify({ ok: false, stage: "search", reason: "anidb_has_no_search" }));
   process.exit(1);
 }
 
-const searchResults =
-  (await provider.search(searchQuery, {
-    audioPreference: container.config.animeLanguageProfile.audio,
-    subtitlePreference: container.config.animeLanguageProfile.subtitle,
-  })) ?? [];
+let searchResults: Awaited<ReturnType<NonNullable<typeof provider.search>>> = [];
+try {
+  searchResults =
+    (await provider.search(searchQuery, {
+      audioPreference: container.config.animeLanguageProfile.audio,
+      subtitlePreference: container.config.animeLanguageProfile.subtitle,
+    })) ?? [];
+} catch (error) {
+  // Structured failure to stdout so the matrix reports provider evidence
+  // (e.g. environment-network on HTTP 503) instead of harness-failure.
+  console.log(
+    JSON.stringify({
+      ok: false,
+      stage: "search",
+      searchedProvider: "anidb",
+      searchResults: 0,
+      reason: error instanceof Error ? error.message : String(error),
+    }),
+  );
+  process.exit(1);
+}
 
 const normalizeTitle = (value: string) =>
   value
@@ -53,7 +69,10 @@ const selected =
   searchResults[0];
 
 if (!selected) {
-  console.error(
+  // Structured failure goes to stdout so provider-matrix parses provider
+  // evidence (provider-drift) instead of harness-failure. Matrix also falls
+  // back to stderr, but stdout keeps this consistent with the success path.
+  console.log(
     JSON.stringify({
       ok: false,
       stage: "search",

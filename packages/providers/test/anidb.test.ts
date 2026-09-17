@@ -511,6 +511,29 @@ describe("anidb search delegation", () => {
     }
   });
 
+  test("searchAnidb throws on HTTP error instead of parsing it as zero results", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () =>
+        new Response("<html><title>Under Maintenance</title></html>", {
+          status: 503,
+        })) as unknown as typeof fetch;
+      const error = await searchAnidb("naruto").then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain("503");
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
   test("does not claim audio or subtitle availability before an episode probe", async () => {
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;

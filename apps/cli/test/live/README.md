@@ -104,12 +104,33 @@ a 45-second deadline so a provider outage returns a diagnostic report instead of
 
 Each matrix row includes a `healthClass`:
 
-| Class                 | Meaning                                                              |
-| --------------------- | -------------------------------------------------------------------- |
-| `healthy`             | Stream resolved through `container.engine.resolve`                   |
-| `provider-drift`      | Upstream route/contract failure (404, exhausted, no playable source) |
-| `environment-network` | Timeout, connect/DNS/TLS, or WAF-shaped block                        |
-| `harness-failure`     | Unparseable smoke JSON or matrix deadline without provider evidence  |
+| Class                 | Meaning                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `healthy`             | Stream resolved through `container.engine.resolve`                                       |
+| `provider-drift`      | Upstream route/contract failure (404, exhausted, no playable source, zero-result search) |
+| `environment-network` | Timeout, connect/DNS/TLS, captcha, or WAF-shaped block (incl. HLS 403 segment refusal)   |
+| `harness-failure`     | Unparseable smoke JSON or matrix deadline without provider evidence                      |
+
+Parser rules live in `matrix-harness.mjs` (shared with `test/unit/live/matrix-harness.test.ts`):
+stdout is tried first, then stderr; NDJSON check lines (`youtube` quality-ladder /
+type-short-search) resolve to the primary payload, so extra checks no longer flip
+a healthy provider to `harness-failure`. Search-stage failures print structured
+JSON to stdout for the same reason.
+
+### Headless mpv decode check
+
+Probe `reachable` is not playback. `mpv-playback.smoke.ts` resolves one matrix
+fixture and decodes it headless (`--vo=null --ao=null --frames=30`, 20s deadline)
+with the exact production header split:
+
+```sh
+bun test/live/mpv-playback.smoke.ts vidlink
+bun test/live/mpv-playback.smoke.ts youtube
+```
+
+`ok:true` means mpv exited 0 after decoding; anything else prints a redacted
+reason. Arg forwarding is covered by `test/unit/live/mpv-playback-verify.test.ts`
+(no mpv spawn). Isolated profile, opt-in, never part of `bun run test`.
 
 ### Cloudflare-fronted providers need an impersonating curl
 

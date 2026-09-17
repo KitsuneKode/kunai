@@ -126,6 +126,27 @@ function wingsEndpointToServer(endpoint: string): string {
     : endpoint;
 }
 
+/**
+ * Wings CDN family serving Videasy HLS (`moon.*.peakstorm.top` playlists,
+ * `prime*.top` segments). Measured 2026-09-09: the playlist host answers 403
+ * to any request carrying an `Origin` header (any value) and 200 without it,
+ * while segments 206 either way. There is nothing to forward (no cookies or
+ * tokens on any media response, unlike VidLink) — the fix is subtractive.
+ */
+const WINGS_CDN_HOST_SUFFIXES = ["peakstorm.top", "primecomet.top"] as const;
+
+export function isWingsCdnHost(url: string): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return WINGS_CDN_HOST_SUFFIXES.some(
+    (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
+  );
+}
+
 /** Resolve the correct API base URL for a server endpoint. */
 export function apiBaseForEndpoint(endpoint: string): string {
   return isWingsdatabaseEndpoint(endpoint) ? WINGS_API_BASE : VIDKING_API_BASE;
@@ -2186,7 +2207,10 @@ function normalizeStreamCandidates({
       sourceEvidence,
       headers: {
         referer: streamReferer,
-        origin: streamOrigin,
+        // The wings CDN family 403s any playlist request carrying Origin
+        // (measured 2026-09-09); segments are ungated. Omit it per-URL so
+        // non-CDN flavors keep their existing header set.
+        ...(isWingsCdnHost(source.url) ? {} : { origin: streamOrigin }),
         "user-agent": USER_AGENT,
       },
       confidence: qualityRank > 0 ? 0.92 : 0.82,
