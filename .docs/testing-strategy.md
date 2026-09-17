@@ -164,6 +164,19 @@ dropped. Step-level `timeout-minutes` in CI stays the real hang detector.
 
 ### Determinism: prefer `simulateTicks` over `countCommits`
 
+For asynchronous process tests, await a fixture-owned process-start promise
+before asserting active-process cancellation. A persisted download `running`
+lease precedes stream resolution and process registration; it is not a process
+readiness signal. A synchronous spawn acknowledgment resumes its awaiting test
+only after the production call finishes registering the returned handle. Keep
+pre-registration cancellation tests separate from active-process tests.
+
+The polling helper in `apps/cli/test/support/wait-until.ts` accepts both `now`
+and `tick`. Inject both when testing its deadlines, advance the clock from the
+tick, and assert predicate/tick behavior rather than elapsed wall time. Exercise
+readiness exactly at the deadline to cover the final predicate check. Ordinary
+callers retain the real clock, bounded polling, and descriptive timeout errors.
+
 `countCommits` uses real `setTimeout`, which is sensitive to CI load. The same
 property — "this surface commits at most N frames in a window" — is usually
 provable with `simulateTicks` instead, with no time dependence. Keep
