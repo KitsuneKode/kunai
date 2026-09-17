@@ -164,6 +164,14 @@ async function runInstallShAsync(
   return { status, stdout, stderr };
 }
 
+/**
+ * Long enough that only a non-terminating installer can exceed it.
+ *
+ * Wall-clock budgets in this file bound whether a run *finishes*, never how
+ * fast it is — a CI runner's speed is not a contract.
+ */
+const ACTIVATION_TERMINATION_BUDGET_MS = 5_000;
+
 async function runInstallShWithin(
   args: string[],
   env: NodeJS.ProcessEnv,
@@ -1538,7 +1546,14 @@ describe("install.sh lifecycle contract", () => {
               KUNAI_ACTIVATION_LOCK_POLL_MS: "0",
               PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
             },
-            500,
+            // Bounds *termination*, not speed. A zero poll that hot-loops never
+            // returns, so any finite completion proves the contract — while the
+            // budget has to cover the whole script (bash startup, the shimmed
+            // `mv`, the fixture download and its checksum), not just the 40ms
+            // lock wait. At 500ms a loaded macOS runner lost the race at 541ms
+            // and reported a hot-loop that was not there. Do not tighten this
+            // to make it "stricter": it would only re-pin one runner's speed.
+            ACTIVATION_TERMINATION_BUDGET_MS,
           );
           expect(result).not.toBeNull();
           expect(result?.status).not.toBe(0);
