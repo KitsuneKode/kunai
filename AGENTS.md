@@ -72,8 +72,8 @@ Each of these is enforced by a test or is expensive to get wrong.
 **The house failure mode is the silent no-op** — a flag parsed and dropped, a
 setting persisted and ignored, a capability declared and never read.
 `apps/cli/test/unit/architecture/contract-conformance.test.ts` catches some of
-it; the rest is this list. Before calling work done, walk it and say which
-entries applied.
+it; the rest is this list. On a change that adds or alters behaviour, walk it
+before calling the work done and say which entries applied.
 
 - **Declaration → reader.** If you add a flag, config key, capability, or
   contract field, name the code that consumes it. If nothing does, you shipped
@@ -126,41 +126,24 @@ what gives mpv IPC its cancellable deadlines. Do not change APIs for style alone
 
 ## Deep docs
 
-Read one when your change lands in its subject. Not before. Full index with the
-rest of `.docs/`: [.docs/README.md](.docs/README.md).
+`.docs/` holds how the system works and why. Read one when your change lands in
+its subject — not before, and never the directory end to end.
 
-| Changing…                                                        | Read                                                                                                                                                 |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Where feature X lives                                            | [feature-map.md](.docs/feature-map.md)                                                                                                               |
-| Playback flow, provider orchestration, persistence, recovery     | [architecture.md](.docs/architecture.md)                                                                                                             |
-| Which layer or package work belongs in                           | [runtime-boundary-map.md](.docs/runtime-boundary-map.md)                                                                                             |
-| Broad refactors, service extraction, caching                     | [engineering-guide.md](.docs/engineering-guide.md)                                                                                                   |
-| Shell flow, hotkeys, overlays, setup UX                          | [ux-architecture.md](.docs/ux-architecture.md) · [keybindings.md](.docs/keybindings.md)                                                              |
-| Terminal styling and interaction patterns                        | [design-system.md](.docs/design-system.md) · [ui-redesign-playbook.md](.docs/ui-redesign-playbook.md)                                                |
-| Poster previews, Kitty/iTerm2/Sixel output, capability detection | [poster-image-rendering.md](.docs/poster-image-rendering.md)                                                                                         |
-| Adding or hardening a provider                                   | [providers.md](.docs/providers.md) · [provider-intake.md](.docs/provider-intake.md) · [provider-agent-workflow.md](.docs/provider-agent-workflow.md) |
-| A provider shape from scratch                                    | [provider-examples.md](.docs/provider-examples.md)                                                                                                   |
-| Source, quality, audio, subtitle inventory                       | [playback-source-inventory-contract.md](.docs/playback-source-inventory-contract.md)                                                                 |
-| IntroDB/AniSkip, MAL resolution, auto-skip metadata              | [playback-timing-and-aniskip.md](.docs/playback-timing-and-aniskip.md)                                                                               |
-| mpv reconnect on the persistent session path                     | [mpv-in-process-reconnect.md](.docs/mpv-in-process-reconnect.md)                                                                                     |
-| Debug logs, diagnostics panels, provider tracing                 | [diagnostics-guide.md](.docs/diagnostics-guide.md)                                                                                                   |
-| Broad reliability or debugging sweeps                            | [debugging-map.md](.docs/debugging-map.md)                                                                                                           |
-| Provider health, cache layers, reset behavior                    | [title-provider-health-and-cache-reset.md](.docs/title-provider-health-and-cache-reset.md)                                                           |
-| `/discover` and recommendations                                  | [recommendations-and-discover.md](.docs/recommendations-and-discover.md)                                                                             |
-| Share URLs, `/share`, `/watch`, `kunai --open`                   | [share-links.md](.docs/share-links.md)                                                                                                               |
-| Discord presence and social status                               | [presence-integrations.md](.docs/presence-integrations.md)                                                                                           |
-| Download, offline library, setup, onboarding                     | [download-offline-onboarding.md](.docs/download-offline-onboarding.md)                                                                               |
-| AniList/TMDB sync, the outbox, tracker auth                      | [tracker-sync.md](.docs/tracker-sync.md)                                                                                                             |
-| Tests, test seams, new runtime behaviors                         | [testing-strategy.md](.docs/testing-strategy.md)                                                                                                     |
-| CI, Husky, lint-staged, issue and PR templates                   | [repo-infrastructure.md](.docs/repo-infrastructure.md) · [lint-policy.md](.docs/lint-policy.md)                                                      |
-| Release gating                                                   | [release-reliability-gate.md](.docs/release-reliability-gate.md)                                                                                     |
-| Setup, local run flow, troubleshooting                           | [quickstart.md](.docs/quickstart.md)                                                                                                                 |
-| Product vocabulary (Watchlist / Playlists / Up Next / …)         | [adr/0001-personal-media-vocabulary.md](.docs/adr/0001-personal-media-vocabulary.md)                                                                 |
-| Parked surfaces — web, desktop, daemon, cache direction          | [architecture-v2.md](.docs/architecture-v2.md)                                                                                                       |
+Four entry points cover most work:
 
-Per-feature product rules live in [.docs/features/](.docs/features/); provider
-research dossiers in [.docs/provider-dossiers/](.docs/provider-dossiers/); local
-UI prototype harnesses in [.docs/prototypes.md](.docs/prototypes.md).
+- [feature-map.md](.docs/feature-map.md) — where feature X lives
+- [architecture.md](.docs/architecture.md) — playback flow, provider
+  orchestration, persistence, recovery
+- [runtime-boundary-map.md](.docs/runtime-boundary-map.md) — which layer or
+  package work belongs in
+- [glossary.md](.docs/glossary.md) — what we call things; product vocabulary is
+  pinned by [adr/0001](.docs/adr/0001-personal-media-vocabulary.md)
+
+Everything else routes from [.docs/README.md](.docs/README.md) — the full index,
+grouped by subsystem, contract, and working-on-it, and the one that gets updated
+when `.docs/` moves. Per-feature product rules live in
+[.docs/features/](.docs/features/); provider research dossiers in
+[.docs/provider-dossiers/](.docs/provider-dossiers/).
 
 ## Where things are written down
 
