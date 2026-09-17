@@ -36,6 +36,16 @@
       "cache": false,
       "outputs": []
     },
+    "@kunai/mobile#test": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": []
+    },
+    "@kunai/mobile#test:integration": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": []
+    },
     "generate": {
       // apps/docs only. Writes generated-provenance.json, which is gitignored
       // (uncommitted) and refreshed every run, so it is not a declared output.
@@ -55,6 +65,9 @@
         "dist/npm/**",
         "dist/assets/**",
         "dist/build-meta.json",
+        "dist/kunai-mobile-*",
+        "dist/ios/**",
+        "dist/mobile-build-meta.json",
         ".next/**",
         "!.next/cache/**"
       ],
