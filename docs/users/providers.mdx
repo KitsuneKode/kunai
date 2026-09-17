@@ -261,15 +261,7 @@ Network-unavailable failures stop cycling early. Kunai does not mark unrelated p
 
 ## Domain overrides
 
-Advanced users can point providers at alternate base domains via `~/.config/kunai/providers.json`:
-
-```json
-{
-  "videasy": "https://mirror.example"
-}
-```
-
-Overrides affect URL construction only. They do not register new providers or bypass site authentication.
+Provider domains for the media (movie/TV and anime) providers are compiled in; Kunai does not read `providers.json`. Changing a media-provider domain requires a code change and rebuild. Exception: YouTube metadata endpoints are configurable via `youtubeMetadata.instanceUrl` and `youtubeMetadata.pipedApiUrl` in settings or `config.json` — no rebuild needed. To use a different network path for metadata calls, set `providerRelay.baseUrl` in `/settings` or `config.json` to your own relay — see [Provider geo relay](#provider-geo-relay).
 
 ## Provider geo relay
 

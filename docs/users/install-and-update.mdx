@@ -250,8 +250,14 @@ kunai rollback --to <ver>  # explicit verified version
 kunai doctor               # PATH / ownership health
 kunai doctor --json        # same report as JSON
 kunai uninstall            # ownership-aware removal
-kunai uninstall --purge    # also delete config/history/cache
+kunai uninstall --purge    # also delete config, data, cache, and default downloads
 ```
+
+**`--purge` deletes downloaded videos in the default download directory:**
+Linux `~/.local/share/kunai/downloads` (or `$XDG_DATA_HOME/kunai/downloads`),
+macOS `~/Library/Application Support/kunai/downloads`, and Windows
+`%LOCALAPPDATA%\kunai\downloads`. Custom/external download directories outside
+Kunai's config, data, and cache directories are preserved.
 
 Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall — lifecycle logic stays inside the binary.
 
