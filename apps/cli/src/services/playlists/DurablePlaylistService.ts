@@ -148,18 +148,24 @@ export class DurablePlaylistService {
   importPlaylist(document: KunaiPlaylistDocument): UserPlaylistRecord {
     const imported = importKunaiPlaylist(document);
     const playlist = this.createPlaylist(imported.playlist.name, "Imported Kunai playlist");
-    for (const item of [...imported.items].sort((a, b) => a.sortOrder - b.sortOrder)) {
-      this.addItem(playlist.id, {
-        titleId: item.titleId,
-        mediaKind: item.mediaKind,
-        contentType: item.contentType,
-        externalIds: item.externalIds,
-        title: item.title,
-        season: item.season,
-        episode: item.episode,
-        providerHints: item.providerHints,
-      });
-    }
+    this.repo.addItems(
+      [...imported.items]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item, sortOrder) => ({
+          id: this.clock.id("playlist-item"),
+          playlistId: playlist.id,
+          titleId: item.titleId,
+          mediaKind: item.mediaKind,
+          contentType: item.contentType,
+          externalIds: item.externalIds,
+          title: item.title,
+          season: item.season,
+          episode: item.episode,
+          sortOrder,
+          providerHintsJson: JSON.stringify(item.providerHints ?? []),
+          addedAt: this.clock.now(),
+        })),
+    );
     return playlist;
   }
 
