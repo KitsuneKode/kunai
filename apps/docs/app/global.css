@@ -115,6 +115,28 @@ pre,
   box-shadow: 0 12px 28px color-mix(in oklab, var(--kunai-accent) 30%, transparent);
 }
 
+/* The third level of the CTA hierarchy. A row of same-weight buttons asks the
+   visitor to choose; this one steps out of the running and reads as a link
+   while keeping the button's hit area and baseline. */
+.kunai-button-quiet {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 0.75rem;
+  color: var(--color-fd-muted-foreground);
+  box-shadow: none;
+}
+
+.kunai-button-quiet:hover {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-fd-foreground);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--kunai-accent) 60%, transparent);
+  text-underline-offset: 0.3em;
+  text-decoration-thickness: 1px;
+}
+
 /* Reduced motion: drop transform/animation motion, keep opacity + color. */
 @media (prefers-reduced-motion: reduce) {
   *,
