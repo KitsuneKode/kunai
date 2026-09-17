@@ -17,6 +17,27 @@ export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b";
 export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
   "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
 
+/**
+ * mpv's `--alang`/`--slang` take language codes, but Kunai's audio setting is a
+ * mode ("sub"/"dub") as often as a code, because the Tracks panel writes the
+ * mode straight into the language profile. Passing those through matched no
+ * track at all: `--alang=dub` on a multi-audio master left mpv on the default
+ * Japanese track, so asking for a dub played the sub with nothing said. "dub"
+ * is English here — the same mapping providers use to pick a dub catalog.
+ */
+export function toMpvLanguageToken(
+  value: string | undefined,
+  options: { forSubtitle: boolean },
+): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "original" || (!options.forSubtitle && normalized === "sub")) return "orig";
+  if (!options.forSubtitle && normalized === "dub") return "en";
+  if (options.forSubtitle && normalized === "none") return "no";
+  if (normalized === "interactive" || normalized === "fzf") return null;
+  return normalized;
+}
+
 export type NormalizedStreamHttpHeaders = {
   readonly referer?: string;
   readonly userAgent?: string;
@@ -42,9 +63,26 @@ export function normalizeStreamHttpHeaders(
   headers: Record<string, string> | undefined,
 ): NormalizedStreamHttpHeaders {
   const source = headers ?? {};
-  const referer = source.referer ?? source.Referer;
-  const userAgent = source["user-agent"] ?? source["User-Agent"];
-  const origin = source.origin ?? source.Origin;
+  // HTTP header names are case-insensitive, and the dedicated-option lookups
+  // below used to read two spellings each while the extraFields loop excluded
+  // every spelling via `toLowerCase()`. A provider emitting `REFERER` therefore
+  // lost it twice over: not matched as the referer, and not forwarded as a
+  // header either. No provider in the tree spells it that way today, so this is
+  // a trap for the next one rather than a live bug — but it fails silently,
+  // which is the expensive kind.
+  // The exact lowercase spelling still wins when both are present, which is what
+  // `source.referer ?? source.Referer` did; anything else is decided by key
+  // order, and object key order is not a contract a provider should depend on.
+  const dedicated = (canonical: string): string | undefined => {
+    if (typeof source[canonical] === "string") return source[canonical];
+    for (const [name, value] of Object.entries(source)) {
+      if (name.toLowerCase() === canonical) return value;
+    }
+    return undefined;
+  };
+  const referer = dedicated("referer");
+  const userAgent = dedicated("user-agent");
+  const origin = dedicated("origin");
   const sanitize = (value: unknown, pattern: RegExp): string | undefined => {
     if (typeof value !== "string") return undefined;
     const sanitized = value.trim().replace(pattern, "");
@@ -100,6 +138,7 @@ export type PersistentLoadfileOptions = {
   readonly "http-header-fields"?: string;
   readonly "http-header-fields-clr"?: string;
   readonly "tls-verify"?: string;
+  readonly alang?: string;
   /** mpv's `--ytdl` is a yes/no flag: whether ytdl_hook runs at all. */
   readonly ytdl?: string;
   /** mpv's `--ytdl-format` is the format selector string. */
@@ -148,17 +187,22 @@ export function composeDemuxerLavfOptions(
   return present.length > 0 ? present.join(",") : undefined;
 }
 
+/** Per-file media options a persistent `loadfile` carries alongside the URL. */
+export type PersistentLoadfileMediaOptions = {
+  readonly requiresYtdl?: boolean;
+  readonly ytdlFormat?: string;
+  readonly ytdlRawOptions?: string;
+  readonly isLive?: boolean;
+  readonly urlKind?: MpvUrlKind;
+  /** Kunai audio setting: a language code, or the mode "sub"/"dub". */
+  readonly audioPreference?: string;
+};
+
 export function buildPersistentLoadfileOptions(
   url: string,
   startAt: number | undefined,
   headers: Record<string, string> | undefined,
-  ytdlOptions?: {
-    readonly requiresYtdl?: boolean;
-    readonly ytdlFormat?: string;
-    readonly ytdlRawOptions?: string;
-    readonly isLive?: boolean;
-    readonly urlKind?: MpvUrlKind;
-  },
+  ytdlOptions?: PersistentLoadfileMediaOptions,
 ): PersistentLoadfileOptions {
   const { referer, userAgent, origin, extraFields } = normalizeStreamHttpHeaders(headers);
   const loadOptions: Record<string, string> = {
@@ -180,6 +224,13 @@ export function buildPersistentLoadfileOptions(
   if (shouldDisableMpvTlsVerify(url, headers)) {
     loadOptions["tls-verify"] = "no";
   }
+
+  // Per-file, not only at spawn: `--alang` is a process option, so a session
+  // that started on sub kept choosing Japanese after the user switched to dub.
+  // Every provider but KickAssAnime serves the two as separate URLs, which is
+  // why the stale option never showed.
+  const alang = toMpvLanguageToken(ytdlOptions?.audioPreference, { forSubtitle: false });
+  if (alang) loadOptions.alang = alang;
 
   if (isYoutubeWatchUrl(url) || ytdlOptions?.requiresYtdl) {
     // `ytdl` is a yes/no flag and `ytdl-format` is the selector, so assigning
@@ -218,13 +269,7 @@ export function buildPersistentLoadfileCommand(
   url: string,
   startAt?: number,
   headers?: Record<string, string>,
-  ytdlOptions?: {
-    readonly requiresYtdl?: boolean;
-    readonly ytdlFormat?: string;
-    readonly ytdlRawOptions?: string;
-    readonly isLive?: boolean;
-    readonly urlKind?: MpvUrlKind;
-  },
+  ytdlOptions?: PersistentLoadfileMediaOptions,
 ): ["loadfile", string, "replace", -1, PersistentLoadfileOptions] {
   if (!isAllowedMpvUrl(url, ytdlOptions?.urlKind ?? "remote")) {
     throw new Error("Refusing to load unsafe stream URL scheme in mpv");

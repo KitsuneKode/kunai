@@ -1,6 +1,7 @@
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
+import { readJsonObjectBody } from "../shared/json-body";
 import { TTLCache } from "../shared/provider-cache";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { searchAllManga } from "./api-client";
@@ -150,7 +151,7 @@ async function buildAllMangaBridgeQueries(
       }),
     });
     if (!response.ok) return queries.slice(0, 5);
-    const payload = (await response.json()) as {
+    const payload = await readJsonObjectBody<{
       readonly data?: {
         readonly Media?: {
           readonly title?: {
@@ -160,8 +161,8 @@ async function buildAllMangaBridgeQueries(
           } | null;
         } | null;
       };
-    };
-    const title = payload.data?.Media?.title;
+    }>(response);
+    const title = payload?.data?.Media?.title;
     if (title?.romaji) queries.push(title.romaji);
     if (title?.english) queries.push(title.english);
     if (title?.native) queries.push(title.native);

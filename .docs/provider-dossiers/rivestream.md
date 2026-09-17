@@ -66,6 +66,17 @@ sequenceDiagram
 - **Region/block:** Upstream API blocks.
 - **Expired stream:** Tokenized stream URLs.
 - **Slow response:** Upstream aggregator fetching can take 5+ seconds to resolve all sources.
+- **Slow first frame from a master:** sources arrive as an HLS master behind
+  `proxy.valhallastream.dpdns.org` (~1.3 s a request). mpv opening a master makes
+  ffmpeg's HLS demuxer load and probe **every** variant: counted on 2026-09-12,
+  12 requests to a first frame for a 3-variant master against 5 for one of its
+  variants, and a clean A/B round of 18.4 s vs 11.2 s. The adapter therefore
+  splits each master into its rungs (`expandRivestreamHlsMasters`) and mpv gets
+  exactly one; the Tracks panel gains a real ladder instead of a bare "HLS". A
+  master whose variants name an `AUDIO` rendition stays whole — their playlists
+  are video-only — and so does one the proxy fails to return, on a 4 s deadline.
+  The provider's own `quality` string ("HindiCast (1080)") is kept for audio
+  language inference; the rung travels separately.
 - **Missing subtitle:** Normal fallback.
 - **Hardsub-only:** Unpredictable based on upstream source.
 - **Multi-server duplicate:** High probability. Aggregators often scrape the same underlying file hosts. Deduplication required.

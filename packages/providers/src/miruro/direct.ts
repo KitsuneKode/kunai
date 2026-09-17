@@ -74,17 +74,13 @@ export const MIRURO_REFERER = "https://www.miruro.bz/";
 export const MIRURO_PIPE_BASE_URLS = ["https://www.miruro.bz", "https://www.miruro.ru"] as const;
 
 /**
- * Miruro pipe API only answers from the `www.` hosts. The bare `miruro.bz` /
- * `miruro.ru` origins are 301 redirects to `www.` and still return Cloudflare
- * 403 HTML at the pipe path when blocked, so they add only latency and burn the
- * fail-fast budget without ever resolving. `miruro.com` serves a different
- * static app shell (no `/api/secure/pipe`), and `.tv` / `.to` are TLS-dead.
- *
- * Consecutive Cloudflare HTML 403s before aborting remaining mirrors. Matches
- * the real mirror count (www.miruro.bz + www.miruro.ru): when both return CF
- * HTML the block is region-wide and further candidates fail the same way.
+ * Consecutive Cloudflare HTML 403s before aborting remaining mirrors.
+ * Two different mirror domains refusing in a row is already evidence the block
+ * follows the client IP rather than the host, and every further mirror would cost a
+ * full request to learn the same thing. Deliberately capped at 2 rather than tracking
+ * mirror discovery count: more mirrors makes fail-fast worth more, not less.
  */
-const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
+export const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -601,6 +597,16 @@ export function isMiruroAudioFallback(
   return (resolved === "sub" || resolved === "dub") && resolved !== requested;
 }
 
+/**
+ * Priority bands for the cycle builder. The audio is the user's choice, so each
+ * audio category owns a band no boost inside it can leave; a subtitle-delivery
+ * match only reorders servers within the band, and a source the user picked
+ * outranks every band.
+ */
+const MIRURO_AUDIO_BAND = 10_000;
+const MIRURO_DELIVERY_MATCH_BOOST = 1_000;
+const MIRURO_PICKED_SOURCE_BOOST = 100_000;
+
 export function buildMiruroCycleCandidates({
   providers,
   episodes,
@@ -621,12 +627,12 @@ export function buildMiruroCycleCandidates({
   const candidates: ProviderCycleCandidate[] = [];
   const audioOrder: readonly MiruroAudioCategory[] =
     targetAudio === fallbackAudio ? [targetAudio] : [targetAudio, fallbackAudio];
-  let priority = 0;
   const providerEntries = providers
     ? sortMiruroProviderEntries(Object.entries(providers))
     : MIRURO_SERVER_TRY_ORDER.map((server) => [server, { episodes }] as const);
 
-  for (const audioCategory of audioOrder) {
+  for (const [audioRank, audioCategory] of audioOrder.entries()) {
+    let serverRank = 0;
     for (const [providerKey, providerEntry] of providerEntries) {
       const episodeEntry = findMiruroEpisodeEntry(
         providerEntry?.episodes?.[audioCategory],
@@ -640,8 +646,16 @@ export function buildMiruroCycleCandidates({
         audio: audioCategory,
         subtitleMode: miruroSubtitleDeliveryToMode(serverProfile.subtitleDelivery),
       });
-      const subtitlePriorityBoost =
-        preferredSubtitleDelivery === "hardcoded" && audioCategory === "sub" ? -5_000 : 0;
+      // Delivery ranks servers within the requested audio, never across it. It
+      // used to lift every sub server by 5000, and the adapter prefers hard
+      // subs for all anime, so a dub request played a sub whenever one worked.
+      const deliveryBoost =
+        preferredSubtitleDelivery !== undefined &&
+        preferredSubtitleDelivery !== "unknown" &&
+        serverProfile.subtitleDelivery === preferredSubtitleDelivery
+          ? MIRURO_DELIVERY_MATCH_BOOST
+          : 0;
+      const pickedBoost = sourceId === preferredSourceId ? MIRURO_PICKED_SOURCE_BOOST : 0;
       candidates.push({
         id: `candidate:${sourceId}:${audioCategory}:${episodeEntry.id}`,
         providerId: MIRURO_PROVIDER_ID,
@@ -653,8 +667,7 @@ export function buildMiruroCycleCandidates({
         normalizedAudioLanguage: audioCategory === "sub" ? "ja" : "en",
         normalizedSubtitleLanguage: serverProfile.hardSubLanguage,
         presentation: audioCategory,
-        priority:
-          (sourceId === preferredSourceId ? priority - 10_000 : priority) + subtitlePriorityBoost,
+        priority: audioRank * MIRURO_AUDIO_BAND + serverRank - deliveryBoost - pickedBoost,
         metadata: {
           audioCategory,
           episodeId: episodeEntry.id,
@@ -663,7 +676,7 @@ export function buildMiruroCycleCandidates({
           sourceDetail,
         } satisfies MiruroCycleCandidateMetadata & { readonly sourceDetail: string },
       });
-      priority += 1;
+      serverRank += 1;
     }
   }
 
@@ -1880,10 +1893,10 @@ export const miruroProviderModule: CoreProviderModule = {
         targetAudio,
         fallbackAudio,
         preferredSourceId: input.preferredSourceId,
-        // The builder gives hard-sub sub servers a priority boost, but this was
-        // never supplied, so the boost was dead. The adapter sets this to
-        // "hardcoded" for anime; `external` has no Miruro equivalent, so it maps
-        // to `unknown` and simply does not trigger the boost.
+        // Ranks servers whose subtitle delivery matches ahead of the others
+        // within the requested audio; it never outranks the audio itself. The
+        // adapter sets this to "hardcoded" for anime; `external` has no Miruro
+        // equivalent, so it maps to `unknown`, which ranks nothing.
         preferredSubtitleDelivery:
           input.preferredSubtitleDelivery === "external"
             ? "unknown"
@@ -1908,6 +1921,8 @@ export const miruroProviderModule: CoreProviderModule = {
         signal: context.signal,
         now: context.now,
         emit: context.emit,
+        endpointHealth: context.endpointHealth,
+        titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs: providerCycleCandidateTimeoutMs(
           input.startupPriority ?? "balanced",

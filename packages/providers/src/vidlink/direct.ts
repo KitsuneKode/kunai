@@ -13,6 +13,7 @@ import {
   type DirectStreamPayload,
 } from "../shared/direct-stream-source";
 import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
+import { readJsonObjectBody } from "../shared/json-body";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -94,8 +95,8 @@ export function resolveVidlinkDirect(
 
       const response = await fetchVidlinkApi(ctx, `${VIDLINK_API_BASE}/${path}`, ctx.signal);
 
-      const data = (await response.json()) as { stream?: VidlinkStream };
-      const stream = data.stream;
+      const data = await readJsonObjectBody<{ stream?: VidlinkStream }>(response);
+      const stream = data?.stream;
       if (!stream) return null;
 
       const streams: DirectStreamInput[] = [];
