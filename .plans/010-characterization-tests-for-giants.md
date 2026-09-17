@@ -19,11 +19,13 @@
 
 ## Why this matters
 
-The four highest-churn files in the repo — `PlaybackPhase.ts` (3,635 lines, 185 commits/3mo), `shell-workflows.ts` (3,080), `ink-shell.tsx` (2,102, 214 commits), `root-overlay-shell.tsx` (1,945) — carry the most change and the least _direct_ behavioral coverage. `PlaybackPhase` is exercised only by a 187-line test of one private method; `shell-workflows` by a 32-line test of one function; `ink-shell` only by an import-boundary lint. Splitting these files (plans 011–013) with no safety net is how regressions ship. This plan pins current end-to-end behavior with characterization tests so the later refactors can prove they preserved it. It changes no runtime code.
+The four highest-churn files in the repo — `PlaybackPhase.ts` (3,635 lines, 185 commits/3mo), `shell-workflows.ts` (3,080), `ink-shell.tsx` (2,102, 214 commits), `root-overlay-shell.tsx` (1,945) — carry the most change and the least _direct_ behavioral coverage. At the time this plan was written `PlaybackPhase` was exercised only by a 187-line test of one private method; `shell-workflows` by a 32-line test of one function; `ink-shell` only by an import-boundary lint.
+
+**That is no longer true for `PlaybackPhase`.** A dedicated `apps/cli/test/unit/app/playback/` directory has since appeared — 13 files, 1,939 lines, 63 tests — including `playback-phase-outer-loop.test.ts` (11), `run-mpv-playback-session.test.ts` (17), `run-post-playback-menu.test.ts` (10), `playback-source-failover.test.ts` (5) and `playback-catalog-autoadvance.test.ts` (2). Those cover the resolve → play → post-play, auto-advance and dead-stream fallback scenarios Step 2 asks for, so Step 2 is treated as satisfied and is not re-done here. The remaining gap is the shell side. Splitting these files (plans 011–013) with no safety net is how regressions ship. This plan pins current end-to-end behavior with characterization tests so the later refactors can prove they preserved it. It changes no runtime code.
 
 ## Current state
 
-- Test harness support already exists: `apps/cli/test/support/` and `apps/cli/test/harness/` (confirm with `ls apps/cli/test/support apps/cli/test/harness`), including container fakes and a render-capture helper (`test/harness/render-capture.ts` per the audit — verify path). Existing good patterns: `apps/cli/test/unit/services/playback/playback-resolve-service.test.ts`, `apps/cli/test/unit/app-shell/input-router.useinput.test.tsx`, `apps/cli/test/unit/app/mpv-session-lifecycle.test.ts`.
+- Test harness support already exists and was re-confirmed: `apps/cli/test/support/container-fixture.ts`, `apps/cli/test/support/session-state-fixture.ts` and `apps/cli/test/harness/render-capture.ts` (a 644-line Ink harness with `render()`, a stdin bridge and `simulateTicks`). Step 1's STOP condition does not fire. Existing good patterns: `apps/cli/test/unit/services/playback/playback-resolve-service.test.ts`, `apps/cli/test/unit/app-shell/input-router.useinput.test.tsx`, `apps/cli/test/unit/app/mpv-session-lifecycle.test.ts`.
 - Runner: `bun run --cwd apps/cli test` (turbo → bun:test). Never `bun test` directly (CLAUDE.md).
 
 ## Commands you will need
@@ -62,7 +64,7 @@ Read `apps/cli/test/support/` and `apps/cli/test/harness/` and one exemplar test
 
 **Verify**: you can run one existing shell test: `cd apps/cli && bun run test:file test/unit/app-shell/input-router.useinput.test.tsx` → pass.
 
-### Step 2: Characterize `PlaybackPhase` transitions
+### Step 2: Characterize `PlaybackPhase` transitions — SATISFIED, do not re-do
 
 Drive the _observable_ behavior, not internals: given a title + episode selection and a fake provider/mpv, assert the sequence of high-level outcomes (resolve → play → post-play), auto-advance decisions (next episode chosen), dead-stream fallback (switches provider), and cancel-before-play (returns to prior surface). Assert on emitted events / returned `PlaybackOutcome` / dispatched state — never on private method names (the existing `playback-phase-events.test.ts` uses reflection casts; do NOT copy that; see plan 012 for extracting that logic). Cover 5–8 whole-flow scenarios.
 
