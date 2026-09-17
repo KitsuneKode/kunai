@@ -106,7 +106,8 @@ mobile-build-meta.json
 `mobile-build-meta.json` schema 2 records the release version, target graph,
 individual SHA-256/raw/gzip measurements, and a canonical digest for each
 platform artifact set. The integration suite independently recalculates these
-values, verifies executable modes and graph restrictions, starts the Android
+values, checks that every artifact is included in Turbo's build outputs,
+verifies executable modes and graph restrictions, starts the Android
 artifact with real Node, exercises SIGINT at its real prompt, validates the
 evidence CLI, and runs the iOS fake-host workflow.
 
