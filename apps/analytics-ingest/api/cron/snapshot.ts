@@ -3,7 +3,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { authorizeBearer } from "../../src/bearer-auth.js";
 import { RAW_RETENTION_DAYS } from "../../src/ingest.js";
 import { buildPublicMetrics, snapshotDayKey } from "../../src/public-metrics.js";
-import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config.js";
+import {
+  loadAnalyticsRuntimeConfig,
+  type AnalyticsRuntimeConfig,
+} from "../../src/runtime-config.js";
 import type { AnalyticsStore } from "../../src/store.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -28,6 +31,38 @@ function sendJson(res: ServerResponse, status: number, payload: Record<string, u
 }
 
 /**
+ * A connection string carries credentials and Postgres puts the host into plenty
+ * of its error messages. Function logs are operator-only, but a password does
+ * not belong in one regardless, so URLs are reduced to their scheme.
+ */
+function redactConnectionStrings(message: string): string {
+  return message.replace(
+    /\b[a-z][a-z0-9+.-]*:\/\/\S*/gi,
+    (match) => `${match.split("://")[0]}://…`,
+  );
+}
+
+/**
+ * The reply body stays the uniform opaque `upstream_unavailable` every other
+ * endpoint returns — the caller learns nothing new. The reason goes to stderr,
+ * which Vercel keeps as function logs, tagged with the step that failed.
+ *
+ * Before this, one `catch {}` swallowed the error entirely. The contract says a
+ * stale `daily_rollup.computed_at` signals cron failure, but there was nothing
+ * anywhere that said *why* it failed, so the signal was undiagnosable.
+ */
+function logFailure(stage: string, error: unknown): void {
+  // Redact the whole description, not just the message: `name` is a writable
+  // string too, and the contract promises *any* connection string is reduced
+  // to its scheme.
+  const described =
+    error instanceof Error ? `${error.name}: ${error.message}` : `non-error: ${typeof error}`;
+  console.error(
+    `[analytics:cron:snapshot] ${stage} failed — ${redactConnectionStrings(described)}`,
+  );
+}
+
+/**
  * Days that still hold raw rows but never got a rollup, oldest first.
  *
  * The previous revision rolled up exactly yesterday. A cron run that failed, or
@@ -48,54 +83,91 @@ async function daysToRollUp(
   return ordered.slice(-MAX_BACKFILL_DAYS);
 }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const runtime = loadAnalyticsRuntimeConfig();
-  if (!runtime || !runtime.cronSecret) {
-    sendJson(res, 503, { ok: false, error: "misconfigured" });
-    return;
-  }
+export type SnapshotHandlerDependencies = {
+  readonly loadConfig?: () => AnalyticsRuntimeConfig | null;
+};
 
-  const method = req.method ?? "GET";
-  if (method !== "GET" && method !== "POST") {
-    sendJson(res, 405, { ok: false, error: "method_not_allowed" });
-    return;
-  }
+/**
+ * Mirrors `createRelayRpcHandler` in `apps/relay-server`: the default export is
+ * the real handler, and the factory exists so a test can supply a store without
+ * `mock.module`, which is process-global in Bun and applies at file-load time.
+ */
+export function createSnapshotHandler(dependencies: SnapshotHandlerDependencies = {}) {
+  const loadConfig = dependencies.loadConfig ?? loadAnalyticsRuntimeConfig;
 
-  if (!authorizeBearer(req, runtime.cronSecret)) {
-    sendJson(res, 401, { ok: false, error: "unauthorized" });
-    return;
-  }
+  return async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const runtime = loadConfig();
+    if (!runtime || !runtime.cronSecret) {
+      sendJson(res, 503, { ok: false, error: "misconfigured" });
+      return;
+    }
 
-  try {
+    const method = req.method ?? "GET";
+    if (method !== "GET" && method !== "POST") {
+      sendJson(res, 405, { ok: false, error: "method_not_allowed" });
+      return;
+    }
+
+    if (!authorizeBearer(req, runtime.cronSecret)) {
+      sendJson(res, 401, { ok: false, error: "unauthorized" });
+      return;
+    }
+
     const now = Date.now();
     const today = new Date(now).toISOString().slice(0, 10);
     const day = snapshotDayKey(now);
 
+    // The rollup is the permanent record and the only part the public JSON
+    // reads. It gets its own failure path: nothing after this point is allowed
+    // to turn a committed rollup into a reported failure.
+    let metrics: ReturnType<typeof buildPublicMetrics>;
     const rolledUp: string[] = [];
-    for (const pending of await daysToRollUp(runtime.store, today, day)) {
-      rolledUp.push((await runtime.store.rollUpDay(pending)).day);
+    try {
+      for (const pending of await daysToRollUp(runtime.store, today, day)) {
+        rolledUp.push((await runtime.store.rollUpDay(pending)).day);
+      }
+      const rollup = await runtime.store.readRollup(day);
+      if (!rollup) throw new Error(`snapshot day ${day} has no rollup`);
+      metrics = buildPublicMetrics(rollup);
+    } catch (error) {
+      logFailure("rollup", error);
+      sendJson(res, 503, { ok: false, error: "upstream_unavailable" });
+      return;
     }
-    const rollup = await runtime.store.readRollup(day);
-    if (!rollup) throw new Error(`snapshot day ${day} has no rollup`);
-    const metrics = buildPublicMetrics(rollup);
 
-    // Raw dimension rows past retention go now; the rollups above already
-    // captured everything the public JSON and the admin view need.
-    const pruned = await runtime.store.pruneRawBefore(dayKeyBefore(today, RAW_RETENTION_DAYS));
+    // Retention runs on its own statements, in its own transactions — a prune
+    // failure cannot roll the rollup back. Reporting 503 here would mark the
+    // cron run failed for a day whose data actually landed, which is the
+    // opposite of what an operator needs to know. Deferred work is named in the
+    // reply and logged instead.
+    const deferred: string[] = [];
+
+    let pruned = 0;
+    try {
+      pruned = await runtime.store.pruneRawBefore(dayKeyBefore(today, RAW_RETENTION_DAYS));
+    } catch (error) {
+      logFailure("pruneRaw", error);
+      deferred.push("pruneRaw");
+    }
 
     // install_lifetime is the only table with no natural ceiling: every install
     // id ever seen leaves a permanent row, and ids are minted by the client.
     // Retiring long-silent installs into a counter bounds both the storage and
     // the durable pseudonymous set without losing the exact lifetime total.
+    let retired = 0;
     const retention = runtime.limits.lifetimeRetentionDays;
-    const retired =
-      retention > 0
-        ? (await runtime.store.pruneLifetimeBefore(dayKeyBefore(today, retention))).retired
-        : 0;
+    if (retention > 0) {
+      try {
+        retired = (await runtime.store.pruneLifetimeBefore(dayKeyBefore(today, retention))).retired;
+      } catch (error) {
+        logFailure("pruneLifetime", error);
+        deferred.push("pruneLifetime");
+      }
+    }
 
     // Operators only — not public; cron secret required.
-    sendJson(res, 200, { ok: true, metrics, rolledUp, pruned, retired });
-  } catch {
-    sendJson(res, 503, { ok: false, error: "upstream_unavailable" });
-  }
+    sendJson(res, 200, { ok: true, metrics, rolledUp, pruned, retired, deferred });
+  };
 }
+
+export default createSnapshotHandler();
