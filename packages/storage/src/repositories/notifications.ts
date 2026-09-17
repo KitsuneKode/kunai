@@ -226,14 +226,17 @@ export class NotificationRepository {
     return before?.n ?? 0;
   }
 
-  /** Permanently remove every archived notification (cleanup of the Archive tab). */
-  clearArchived(): number {
-    const before = this.db
-      .query<{ n: number }, []>(
-        "SELECT COUNT(*) AS n FROM notifications WHERE archived_at IS NOT NULL",
-      )
-      .get();
-    this.db.query("DELETE FROM notifications WHERE archived_at IS NOT NULL").run();
-    return before?.n ?? 0;
+  /** Permanently remove archived notices and suppress re-derived signals of the same identity. */
+  clearArchived(now: string = new Date().toISOString()): number {
+    return this.db.transaction(() => {
+      this.db
+        .query(
+          `INSERT INTO notification_suppressions (dedup_key, suppressed_at)
+           SELECT dedup_key, ? FROM notifications WHERE archived_at IS NOT NULL
+           ON CONFLICT(dedup_key) DO UPDATE SET suppressed_at = excluded.suppressed_at`,
+        )
+        .run(now);
+      return this.db.query("DELETE FROM notifications WHERE archived_at IS NOT NULL").run().changes;
+    })();
   }
 }
