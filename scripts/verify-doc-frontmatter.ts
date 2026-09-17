@@ -14,8 +14,28 @@
 // code. It is NOT a formatting stamp — do not bulk-update it to "today" without
 // actually re-reading the doc against the tree.
 //
+// Enforcing that the field *exists* is not enough. A field nothing checks stops
+// tracking reality: when this half was added, 62 of 66 live docs carried a
+// `lastReviewed` older than their own last commit, so the freshness signal that
+// `AGENTS.md` tells every agent to trust had quietly become decoration. A doc
+// asserting `status: current` over a body the tree has moved past is worse than
+// an undated one — it invites confident work on a description of code that no
+// longer exists.
+//
+// So the check also asks, of every doc a change actually touches: did the body
+// change without the review date changing? That is a question about *this* diff,
+// which is why there is no baseline file and no retroactive sweep. The 62 are
+// not the bug this prevents — they are the reason it exists, and they get
+// reconciled as they are next edited.
+//
+// Escape hatch for mechanical sweeps that cannot change meaning (a formatter
+// run, a path rename): `SKIP_DOC_FRESHNESS=1`. Reach for it rarely, and never to
+// get a content edit past the gate.
+//
 // Usage:
 //   bun run verify:doc-frontmatter
+//   DOC_FRESHNESS_BASE=origin/main bun run verify:doc-frontmatter
+//   SKIP_DOC_FRESHNESS=1 bun run verify:doc-frontmatter
 // =============================================================================
 
 import { readFileSync } from "node:fs";
@@ -28,6 +48,53 @@ const BANNER = "Agent-facing (L3)";
 const EXCLUDED_DIRS = ["archive/"];
 
 const STATUS_VALUES = new Set(["current", "draft", "superseded"]);
+
+const DOC_PREFIX = ".docs/";
+const REVIEWED_LINE = /^[+-]lastReviewed:/m;
+
+function git(...args: string[]): string | null {
+  const proc = Bun.spawnSync(["git", ...args], { cwd: ROOT });
+  if (proc.exitCode !== 0) return null;
+  return new TextDecoder().decode(proc.stdout);
+}
+
+/**
+ * The commit this change set departs from.
+ *
+ * A shallow or detached CI checkout may not have the base ref at all. That is a
+ * missing precondition, not a violation, so the freshness half is skipped with a
+ * notice rather than failing a build for the shape of its checkout.
+ */
+function freshnessBase(): string | null {
+  const configured = process.env.DOC_FRESHNESS_BASE;
+  const candidates = configured ? [configured] : ["origin/main", "main"];
+  for (const ref of candidates) {
+    const merged = git("merge-base", "HEAD", ref)?.trim();
+    if (merged) return merged;
+  }
+  return null;
+}
+
+/**
+ * Docs whose body changed since `base` without their `lastReviewed` moving.
+ *
+ * Deletions are excluded (`--diff-filter=d`): a removed doc has nothing left to
+ * reconcile. Additions are included — a new doc states a review date it should
+ * have actually earned.
+ */
+function unreconciledSince(base: string): string[] {
+  const changed = git("diff", "--name-only", "--diff-filter=d", base, "HEAD", "--", ".docs");
+  if (changed === null) return [];
+
+  const result: string[] = [];
+  for (const path of changed.split("\n")) {
+    if (!path.startsWith(DOC_PREFIX) || !path.endsWith(".md")) continue;
+    if (EXCLUDED_DIRS.some((dir) => path.startsWith(DOC_PREFIX + dir))) continue;
+    const patch = git("diff", "-U0", base, "HEAD", "--", path);
+    if (patch !== null && !REVIEWED_LINE.test(patch)) result.push(path);
+  }
+  return result;
+}
 
 const files = [...new Bun.Glob("**/*.md").scanSync({ cwd: resolve(ROOT, ".docs") })]
   .filter((path) => !EXCLUDED_DIRS.some((dir) => path.startsWith(dir)))
@@ -77,6 +144,37 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
+if (process.env.SKIP_DOC_FRESHNESS === "1") {
+  console.log(
+    `verify:doc-frontmatter — ${files.length} docs scanned, all declare status and ` +
+      `audience. Freshness skipped (SKIP_DOC_FRESHNESS=1).`,
+  );
+  process.exit(0);
+}
+
+const base = freshnessBase();
+if (base === null) {
+  console.log(
+    `verify:doc-frontmatter — ${files.length} docs scanned, all declare status and ` +
+      `audience. Freshness skipped: no base ref (set DOC_FRESHNESS_BASE).`,
+  );
+  process.exit(0);
+}
+
+const unreconciled = unreconciledSince(base);
+if (unreconciled.length > 0) {
+  console.error("verify:doc-frontmatter — changed without being reconciled:\n");
+  for (const path of unreconciled) console.error(`  ${path}`);
+  console.error(
+    `\n${unreconciled.length} doc(s) changed in this change set with no change to ` +
+      `'lastReviewed'. Re-read each against the tree and set lastReviewed to today ` +
+      `— or, for a mechanical sweep that cannot change meaning, re-run with ` +
+      `SKIP_DOC_FRESHNESS=1.`,
+  );
+  process.exit(1);
+}
+
 console.log(
-  `verify:doc-frontmatter — ${files.length} docs scanned, all declare status and audience.`,
+  `verify:doc-frontmatter — ${files.length} docs scanned, all declare status and ` +
+    `audience; every doc changed since ${base.slice(0, 9)} was reconciled.`,
 );
