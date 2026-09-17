@@ -239,7 +239,11 @@ resolve_installed_package_version() {
 		global_dir="${BUN_INSTALL_GLOBAL_DIR:-${BUN_INSTALL:-$HOME/.bun}/install/global}"
 		read_owned_package_version "$global_dir/node_modules/$KUNAI_PACKAGE/package.json"
 		;;
-	source) read_owned_package_version "$SOURCE_DIR/package.json" ;;
+	source)
+		root="$SOURCE_DIR"
+		[[ ! -d "$root/apps/cli" ]] || root="$root/apps/cli"
+		read_owned_package_version "$root/package.json"
+		;;
 	*) return 1 ;;
 	esac
 }
