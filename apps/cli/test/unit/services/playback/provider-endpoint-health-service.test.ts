@@ -134,6 +134,28 @@ describe("ProviderEndpointHealthService", () => {
     expect(service.shouldTry("rivestream", "primevids")).toBe(false);
   });
 
+  test("deleteByProvider clears sub-threshold transient failure counts", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    const service = new ProviderEndpointHealthService(repo);
+
+    // 1 transient failure (below threshold 2, so no cooldown yet)
+    service.recordFailure("videasy", "slow", {
+      class: "transient",
+      at: new Date().toISOString(),
+    });
+    expect(service.shouldTry("videasy", "slow")).toBe(true);
+
+    // Resetting videasy must forget that single count
+    expect(service.deleteByProvider("videasy")).toBe(0);
+
+    // The next single transient failure should NOT trigger cooldown because count was reset
+    service.recordFailure("videasy", "slow", {
+      class: "transient",
+      at: new Date().toISOString(),
+    });
+    expect(service.shouldTry("videasy", "slow")).toBe(true);
+  });
+
   test("clearTitle lifts only rows the title contributed to", () => {
     const repo = new MemoryEndpointHealthRepo();
     const now = new Date("2026-06-23T12:00:00.000Z");

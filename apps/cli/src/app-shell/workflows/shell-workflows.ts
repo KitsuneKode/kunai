@@ -1239,6 +1239,7 @@ async function handleClearCache(container: Container): Promise<"handled"> {
     await container.cacheStore.clear();
     container.providerHealth.clearAll();
     container.titleProviderHealth.clearAll();
+    container.endpointHealth.clearAll();
     container.diagnosticsService.record(
       buildDiagnosticEvent({
         category: "cache",

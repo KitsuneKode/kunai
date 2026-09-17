@@ -277,6 +277,18 @@ export function classifyAllMangaBootstrapFailure(
 ): AllMangaRotationSignal {
   if (body.includes("unknown_build_id")) return "build-rotated";
   if (body.includes("invalid_boot_token")) return "token-rejected";
+
+  // Cloudflare and generic HTML challenge pages are WAF/network blocks, not mkissa rotations.
+  const lower = body.toLowerCase();
+  if (
+    lower.includes("<!doctype html") ||
+    lower.includes("<html") ||
+    lower.includes("just a moment") ||
+    lower.includes("cf-browser-verification")
+  ) {
+    return "unavailable";
+  }
+
   // Fall back to status alone when the body is not the documented JSON.
   if (status === 404) return "build-rotated";
   if (status === 403) return "token-rejected";

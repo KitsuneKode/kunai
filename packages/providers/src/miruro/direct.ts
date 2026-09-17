@@ -74,14 +74,13 @@ export const MIRURO_REFERER = "https://www.miruro.bz/";
 export const MIRURO_PIPE_BASE_URLS = ["https://www.miruro.bz", "https://www.miruro.ru"] as const;
 
 /**
- * Consecutive Cloudflare HTML 403s before aborting remaining mirrors. Tracks
- * the real mirror count (`MIRURO_PIPE_BASE_URLS`): when every mirror returns
- * CF HTML the block is region-wide and further candidates fail the same way.
- * A hardcoded count goes stale the moment the mirror list changes.
- * (Bare `miruro.bz`/`miruro.ru` are 301s, `miruro.com` serves a static shell
- * with no pipe path, and `.tv`/`.to` are TLS-dead — none belong in the list.)
+ * Consecutive Cloudflare HTML 403s before aborting remaining mirrors.
+ * Two different mirror domains refusing in a row is already evidence the block
+ * follows the client IP rather than the host, and every further mirror would cost a
+ * full request to learn the same thing. Deliberately capped at 2 rather than tracking
+ * mirror discovery count: more mirrors makes fail-fast worth more, not less.
  */
-export const MIRURO_WAF_FAIL_FAST_THRESHOLD = MIRURO_PIPE_BASE_URLS.length;
+export const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
