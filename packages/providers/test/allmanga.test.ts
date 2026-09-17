@@ -472,6 +472,16 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     // Status alone still classifies when the body is not the documented JSON.
     expect(classifyAllMangaBootstrapFailure(404, "")).toBe("build-rotated");
     expect(classifyAllMangaBootstrapFailure(403, "")).toBe("token-rejected");
+    // Cloudflare or generic HTML blocks must report unavailable, never token-rejected.
+    expect(
+      classifyAllMangaBootstrapFailure(
+        403,
+        "<!DOCTYPE html><html><title>Just a moment...</title></html>",
+      ),
+    ).toBe("unavailable");
+    expect(classifyAllMangaBootstrapFailure(404, "<html><body>404 Not Found</body></html>")).toBe(
+      "unavailable",
+    );
   });
 
   test("falls back to bundled material when bootstrap fails", async () => {
