@@ -57,6 +57,7 @@ import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import {
   isStreamReachabilityVerified,
+  probeStreamReachability,
   type StreamReachabilityProbeResult,
 } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
@@ -1974,6 +1975,27 @@ export const miruroProviderModule: CoreProviderModule = {
               retryable: true,
               at: context.now(),
             });
+          }
+
+          const selected =
+            result.streams.find((s) => s.id === result.selectedStreamId) ?? result.streams[0];
+          if (selected?.url) {
+            const probe = await probeStreamReachability({
+              url: selected.url,
+              headers: selected.headers,
+              timeoutMs: 3_000,
+              signal: cycleContext.signal,
+            });
+            if (probe.status === "unreachable" && probe.definitive) {
+              throw createProviderCycleFailureError(candidate, {
+                failureClass: "candidate-network",
+                message:
+                  `${serverProfile.label} ` +
+                  `(${metadata.serverId}/${metadata.audioCategory}) stream unreachable: ${probe.reason}`,
+                retryable: true,
+                at: context.now(),
+              });
+            }
           }
 
           return result;

@@ -41,7 +41,7 @@ describe("buildYoutubeYtdlProfile", () => {
 
   test("uses live playback format when stream is live", () => {
     const profile = buildYoutubeYtdlProfile({ isLive: true, qualityLabel: "1080p" });
-    expect(profile.formatSelector).toBe("bv*+ba/b");
+    expect(profile.formatSelector).toBe("bv*+ba/b/ba");
     expect(profile.cliArgs).toContain("--no-live-from-start");
   });
 });

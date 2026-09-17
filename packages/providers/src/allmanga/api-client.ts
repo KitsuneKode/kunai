@@ -709,6 +709,22 @@ export function isAllMangaCaptchaResponse(rawText: string): boolean {
   return rawText.includes("NEED_CAPTCHA");
 }
 
+export class AllMangaQueryDriftError extends Error {
+  readonly code = "allmanga-query-drift" as const;
+
+  constructor() {
+    super(
+      "AllAnime rejected the persisted query hash (PersistedQueryNotFound). " +
+        "Upstream rotated its GraphQL schema or query hash.",
+    );
+    this.name = "AllMangaQueryDriftError";
+  }
+}
+
+export function isAllMangaPersistedQueryNotFound(rawText: string): boolean {
+  return rawText.includes("PersistedQueryNotFound");
+}
+
 export async function resolveEpisodeSources(opts: {
   readonly context: ProviderRuntimeContext;
   readonly apiUrl: string;
@@ -784,6 +800,10 @@ export async function resolveEpisodeSources(opts: {
     // and retrying or re-bootstrapping against it only wastes the budget.
     if (isAllMangaCaptchaResponse(rawText)) {
       throw new AllMangaCaptchaError();
+    }
+
+    if (isAllMangaPersistedQueryNotFound(rawText)) {
+      throw new AllMangaQueryDriftError();
     }
 
     if (rawText.includes("Too many requests")) {

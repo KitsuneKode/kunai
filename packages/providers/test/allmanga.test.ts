@@ -25,6 +25,8 @@ import {
   BUNDLED_ALLMANGA_CRYPTO,
   buildStreamHeaders,
   AllMangaCaptchaError,
+  AllMangaQueryDriftError,
+  isAllMangaPersistedQueryNotFound,
   clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
   decryptTobeparsedPlaintext,
@@ -528,6 +530,29 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     } finally {
       clearAllMangaProviderCachesForTest();
     }
+  });
+
+  test("surfaces PersistedQueryNotFound as AllMangaQueryDriftError", async () => {
+    expect(
+      isAllMangaPersistedQueryNotFound('{"errors":[{"message":"PersistedQueryNotFound"}]}'),
+    ).toBe(true);
+    expect(isAllMangaPersistedQueryNotFound('{"data":{"episode":null}}')).toBe(false);
+
+    using site = mockCryptoSiteFetch({
+      apiResponses: ['{"errors":[{"message":"PersistedQueryNotFound"}]}'],
+    });
+
+    let thrown: unknown;
+    try {
+      await resolveWithSiteSources();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AllMangaQueryDriftError);
+    expect((thrown as Error).message).toContain("PersistedQueryNotFound");
+    expect(site.apiCallCount).toBe(1);
+    expect(site.bootstrapFetchCount).toBe(1);
   });
 
   test("backs off on API rate limiting instead of failing", async () => {

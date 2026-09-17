@@ -64,6 +64,18 @@ const RULES: readonly Rule[] = [
   {
     code: "blocked",
     terminal: true,
+    message: "This YouTube video requires payment or rental to watch",
+    patterns: [
+      /requires payment/i,
+      /purchase or rental/i,
+      /buy or rent/i,
+      /rent or buy/i,
+      /available to rent/i,
+    ],
+  },
+  {
+    code: "blocked",
+    terminal: true,
     message:
       "YouTube is asking Kunai to prove it is not a bot — try again later or configure cookies",
     patterns: [/confirm you'?re not a bot/i, /not a bot/i],

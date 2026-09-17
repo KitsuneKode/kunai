@@ -67,6 +67,7 @@ export {
   fetchAnidbExternalIds,
   fetchAnidbOfficialEpisodeMetadata,
   fetchAnidbMalId,
+  isAnidbMaintenanceText,
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
   parseAnidbSeasonEvidence,
@@ -283,28 +284,33 @@ export const anidbProviderModule: CoreProviderModule = {
   providerId: ANIDB_PROVIDER_ID,
   manifest: anidbManifest,
 
-  async search(input, context) {
-    const results = await searchAnidb(input.query, context.signal, context);
-    const mapped: ProviderSearchResult[] = [];
-    for (const result of results.slice(0, 40)) {
-      mapped.push({
-        id: result.id,
-        type: result.kind === "movie" ? "movie" : "series",
-        title: result.title,
-        metadataSource: "AniDB",
-        ...(result.posterUrl
-          ? {
-              posterPath: result.posterUrl,
-              artwork: { posterUrl: result.posterUrl, thumbnailUrl: result.posterUrl },
-            }
-          : {}),
-        ...(result.rating !== undefined ? { rating: result.rating } : {}),
-        externalIds: {
-          providerNativeIds: { [ANIDB_PROVIDER_ID]: result.id },
-        },
-      });
+  async search(input, context): Promise<readonly ProviderSearchResult[] | null> {
+    try {
+      const results = await searchAnidb(input.query, context.signal, context);
+      const mapped: ProviderSearchResult[] = [];
+      for (const result of results.slice(0, 40)) {
+        mapped.push({
+          id: result.id,
+          type: result.kind === "movie" ? "movie" : "series",
+          title: result.title,
+          metadataSource: "AniDB",
+          ...(result.posterUrl
+            ? {
+                posterPath: result.posterUrl,
+                artwork: { posterUrl: result.posterUrl, thumbnailUrl: result.posterUrl },
+              }
+            : {}),
+          ...(result.rating !== undefined ? { rating: result.rating } : {}),
+          externalIds: {
+            providerNativeIds: { [ANIDB_PROVIDER_ID]: result.id },
+          },
+        });
+      }
+      return mapped;
+    } catch (error) {
+      if (context.signal?.aborted) throw error;
+      return null;
     }
-    return mapped;
   },
 
   async listEpisodes(input, context) {

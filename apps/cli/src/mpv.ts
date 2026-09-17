@@ -34,6 +34,7 @@ import {
   LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
 } from "@/infra/player/mpv-stream-http-headers";
 import {
+  DEFAULT_MPV_YTDL_FORMAT,
   normalizeStreamHttpHeaders,
   shouldDisableMpvTlsVerify,
 } from "@/infra/player/mpv-stream-http-headers";
@@ -544,7 +545,8 @@ export function buildMpvArgs(
   const args: string[] = [];
 
   if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
-    args.push(`--ytdl-format=${opts.ytdlFormat ?? "bv*+ba/b"}`);
+    args.push("--ytdl=yes");
+    args.push(`--ytdl-format=${opts.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT}`);
     if (opts.ytdlRawOptions?.trim()) {
       args.push(`--ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
     }

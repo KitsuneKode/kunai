@@ -68,10 +68,9 @@ export async function extractYtDlpVideoInfo(
 }
 
 export function defaultYtdlPlaybackFormat(): string {
-  // yt-dlp's own documented default. `bv*` means "best format that contains
-  // video" — `bv`/`bestvideo` is video-*only* (`best*[acodec=none]`), which drops
-  // the pre-merged renditions YouTube serves for live HLS and for older uploads.
-  return "bv*+ba/b";
+  // yt-dlp's default format selector is `bv*+ba/b`. Adding `/ba` ensures
+  // audio-only tracks, music, and podcasts without video streams resolve cleanly.
+  return "bv*+ba/b/ba";
 }
 
 export function buildYtdlFormatSelector(qualityLabel?: string): string {
