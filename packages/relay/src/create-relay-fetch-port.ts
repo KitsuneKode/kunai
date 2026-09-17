@@ -1,5 +1,5 @@
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
-import { RELAY_ERROR_CODE_HEADER, type RelayRpcRequest } from "./types";
+import { RELAY_ERROR_CODE_HEADER, RELAY_HOP_HEADER, type RelayRpcRequest } from "./types";
 import type { RelayFetchPort, RelayFetchPortOptions } from "./types";
 
 type RelayHeadersInit = ConstructorParameters<typeof Headers>[0];
@@ -52,7 +52,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
         if (fallbackToDirect && isRelayAuthorizationFailure(response)) {
           return fetchImpl(input, init);
         }
-        return response;
+        return markRelayHop(response);
       } catch (error) {
         if (!fallbackToDirect) throw error;
         return fetchImpl(input, init);
@@ -62,6 +62,24 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
 }
 
 export { normalizeRelayBaseUrl } from "./normalize-relay-base-url";
+
+/**
+ * Stamp a response that travelled over a relay hop.
+ *
+ * Written after the fact and always overwriting, so an upstream cannot forge or
+ * suppress it. A successful body is passed through untouched; only failures
+ * need the marker, and rebuilding every 200 would cost a copy for nothing.
+ */
+function markRelayHop(response: Response): Response {
+  if (response.ok) return response;
+  const headers = new Headers(response.headers);
+  headers.set(RELAY_HOP_HEADER, "1");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 function isRelayAuthorizationFailure(response: Response): boolean {
   const code = response.headers.get(RELAY_ERROR_CODE_HEADER);
