@@ -94,6 +94,27 @@ describe("PersistentMpvPropertyRouter", () => {
 
     expect(actions).toEqual(["pick-quality"]);
     expect(commands).toContainEqual(["set_property", "user-data/kunai-request", ""]);
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "source",
+      observedAt: 2,
+    });
+    expect(actions).toEqual(["pick-quality", "pick-source"]);
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "cycle-source",
+      observedAt: 3,
+    });
+    expect(actions).toEqual(["pick-quality", "pick-source", "cycle-source"]);
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "cycle-audio",
+      observedAt: 4,
+    });
+    expect(actions).toEqual(["pick-quality", "pick-source", "cycle-source", "cycle-audio"]);
   });
 
   test("accepts playback samples, updates position, and emits ready/start progress hooks", () => {

@@ -112,6 +112,8 @@ export function resolvePlaybackResultDecision({
     controlAction === "pick-stream" ||
     controlAction === "pick-source" ||
     controlAction === "pick-quality" ||
+    controlAction === "cycle-source" ||
+    controlAction === "cycle-audio" ||
     controlAction === "reload-subtitles" ||
     controlAction === "select-subtitle";
   const interruptedStop =

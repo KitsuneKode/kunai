@@ -2827,6 +2827,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     episode: currentEpisode.episode,
                   },
                 });
+                void playerControl
+                  .getActive()
+                  ?.setEpisodeTransitionLoading?.(
+                    `Kunai · Server unreachable, switching to backup server (${failoverPlan.sourceId})…`,
+                  );
               } else if (failoverPlan.kind === "fallback-provider") {
                 shouldAutoFallbackProvider = true;
                 skipRefreshContinue = true;
@@ -3056,6 +3061,104 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               resumeInterruptedAutoplay: true,
             });
             continue;
+          }
+
+          if (playbackControlAction === "cycle-source") {
+            const streams = preparedStream.providerResolveResult?.streams ?? [];
+            const resumePos = toHistoryTimestamp(
+              result,
+              effectiveTiming.current,
+              config.quitNearEndThresholdMode,
+            );
+            if (streams.length > 1) {
+              const currentStreamId = preparedStream.providerResolveResult?.selectedStreamId;
+              const currentStream = streams.find((s) => s.id === currentStreamId);
+              const currentSourceId = currentStream?.sourceId ?? currentStreamId;
+              const availableSourceIds = Array.from(
+                new Set(
+                  streams
+                    .map((s) => s.sourceId)
+                    .filter((id): id is string => typeof id === "string" && id.length > 0),
+                ),
+              );
+
+              let nextSelection: StreamSelectionIntent | null = null;
+              if (availableSourceIds.length > 1) {
+                const currentIndex = availableSourceIds.indexOf(currentSourceId ?? "");
+                const nextIndex = (currentIndex + 1) % availableSourceIds.length;
+                const nextSourceId = availableSourceIds[nextIndex];
+                if (nextSourceId) {
+                  nextSelection = { sourceId: nextSourceId, streamId: null };
+                }
+              } else {
+                const currentIndex = streams.findIndex((s) => s.id === currentStreamId);
+                const nextIndex = (currentIndex + 1) % streams.length;
+                const nextStream = streams[nextIndex];
+                if (nextStream) {
+                  nextSelection = {
+                    sourceId: nextStream.sourceId ?? null,
+                    streamId: nextStream.id,
+                  };
+                }
+              }
+
+              if (nextSelection) {
+                run.pendingStart = await applyConfirmedPlaybackTrackSelection(
+                  "pick-source",
+                  nextSelection,
+                  resumePos,
+                );
+                continue;
+              }
+            } else {
+              run.pendingSourceRefreshAction = "recover";
+              run.pendingRecomputeSources = true;
+              run.pendingStart = startAtResumePoint(resumePos, { suppressResumePrompt: true });
+              continue;
+            }
+          }
+
+          if (playbackControlAction === "cycle-audio") {
+            const streams = preparedStream.providerResolveResult?.streams ?? [];
+            const resumePos = toHistoryTimestamp(
+              result,
+              effectiveTiming.current,
+              config.quitNearEndThresholdMode,
+            );
+            const currentStream = streams.find(
+              (s) => s.id === preparedStream.providerResolveResult?.selectedStreamId,
+            );
+            const currentPresentation =
+              currentStream?.presentation ??
+              (currentStream?.audioLanguages?.includes("en") ? "dub" : "sub");
+            const targetPresentation = currentPresentation === "dub" ? "sub" : "dub";
+
+            const matchingStream = streams.find((s) => {
+              if (s.presentation) {
+                return s.presentation === targetPresentation;
+              }
+              if (targetPresentation === "dub") {
+                return s.audioLanguages?.includes("en");
+              }
+              return s.audioLanguages?.includes("ja") || !s.audioLanguages?.includes("en");
+            });
+
+            if (matchingStream) {
+              const nextSelection: StreamSelectionIntent = {
+                sourceId: matchingStream.sourceId ?? null,
+                streamId: matchingStream.id,
+              };
+              run.pendingStart = await applyConfirmedPlaybackTrackSelection(
+                "pick-stream",
+                nextSelection,
+                resumePos,
+              );
+              continue;
+            } else {
+              run.pendingSourceRefreshAction = "recover";
+              run.pendingStart = startAtResumePoint(resumePos, { suppressResumePrompt: true });
+              continue;
+            }
           }
 
           if (playbackControlAction === "pick-source") {

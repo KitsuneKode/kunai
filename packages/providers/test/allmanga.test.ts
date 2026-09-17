@@ -20,8 +20,10 @@ import {
   buildAllmangaCycleCandidates,
   buildAllMangaAaReq,
   buildAllMangaBootToken,
+  ALLMANGA_CRYPTO_PROFILE,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
+  classifyAllMangaBootstrapFailure,
   BUNDLED_ALLMANGA_CRYPTO,
   buildStreamHeaders,
   AllMangaCaptchaError,
@@ -325,7 +327,7 @@ describe("buildAllMangaAaReq", () => {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = "532fbba462deed2b68657d7c758b7bcd6978e4ebeac46cd4e3f6d4c24ab863c7";
+  const EXPECTED_KEY_HEX = "84b04eb6e807c6e4699bb4d93bdffe747136b6b39e7f8000831fa020034ab00b";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -416,10 +418,10 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(material?.epoch).toBe(6900);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
-    expect(material?.buildId).toBe("140");
-    expect(site.bootstrapHeaders?.get("x-build-id")).toBe("140");
+    expect(material?.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
+    expect(site.bootstrapHeaders?.get("x-build-id")).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
-      "9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35",
+      "fce9de7e9494f996c7b70e7976c613a5125beb3ae16e36b3800504ddff50aa80",
     );
     expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
     expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
@@ -429,23 +431,57 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("matches independent build-140 derivation and boot-token vectors", () => {
-    expect(hashBuildId("140").toString("hex")).toBe(
-      "07041a152a2823383631cec4dfdcd2ede2e0fbf08e89869c9794aaa5bab8b348",
+  test("matches independent build-171 derivation and boot-token vectors", () => {
+    expect(hashBuildId("171").toString("hex")).toBe(
+      "1264b282d422724492e2340252a4f2c21462b284d222744292e4320254a2f2c4",
     );
-    expect(deriveMaskKey("140").toString("hex")).toBe(
-      "522db8a067d8ea23616f7670788574dd786af7ffffd27bccfaeccfde57a67ce7",
+    expect(deriveMaskKey("171").toString("hex")).toBe(
+      "85b24db2ed01c1ec6091bfd536d1f1646024a5a78b6997189a05bb3c1e54af2b",
     );
-    expect(deriveKeyFromPartB(PART_B, "140").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(deriveKeyFromPartB(PART_B, "171").toString("hex")).toBe(EXPECTED_KEY_HEX);
     expect(
       buildAllMangaBootToken({
-        buildId: "140",
+        buildId: "171",
         epoch: 6900,
         keyGroup: "mkissa",
         refererHost: "mkissa.to",
         contentLane: "k7",
       }),
-    ).toBe("9589a0b5c93919e01039dc83eeced3966f2abda839f8302dc7087e7b3df5cd35");
+    ).toBe("fce9de7e9494f996c7b70e7976c613a5125beb3ae16e36b3800504ddff50aa80");
+  });
+
+  test("bundled fallback key is derived under the pinned profile", () => {
+    // A key left over from a previous build is not a degraded fallback, it is
+    // a guaranteed decrypt failure. This is what made the 140 -> 171 rotation
+    // fail silently: the buildId moved and the bundled key did not.
+    const livePartB = "rEQQIwFZTN5GvqbQmJuMeJ4b/xGVHvdUOEyp/Wl4Tc0=";
+    expect(deriveKeyFromPartB(livePartB, ALLMANGA_CRYPTO_PROFILE.buildId).toString("hex")).toBe(
+      ALLMANGA_KEY_HEX,
+    );
+    expect(BUNDLED_ALLMANGA_CRYPTO.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
+  });
+
+  test("classifies the two rotation failures apart", () => {
+    expect(classifyAllMangaBootstrapFailure(404, '{"error":"unknown_build_id"}')).toBe(
+      "build-rotated",
+    );
+    expect(classifyAllMangaBootstrapFailure(403, '{"error":"invalid_boot_token"}')).toBe(
+      "token-rejected",
+    );
+    expect(classifyAllMangaBootstrapFailure(500, "upstream exploded")).toBe("unavailable");
+    // Status alone still classifies when the body is not the documented JSON.
+    expect(classifyAllMangaBootstrapFailure(404, "")).toBe("build-rotated");
+    expect(classifyAllMangaBootstrapFailure(403, "")).toBe("token-rejected");
+    // Cloudflare or generic HTML blocks must report unavailable, never token-rejected.
+    expect(
+      classifyAllMangaBootstrapFailure(
+        403,
+        "<!DOCTYPE html><html><title>Just a moment...</title></html>",
+      ),
+    ).toBe("unavailable");
+    expect(classifyAllMangaBootstrapFailure(404, "<html><body>404 Not Found</body></html>")).toBe(
+      "unavailable",
+    );
   });
 
   test("falls back to bundled material when bootstrap fails", async () => {

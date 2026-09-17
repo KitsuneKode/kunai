@@ -18,6 +18,8 @@ export type PlaybackControlAction =
   | "select-subtitle"
   | "next"
   | "previous"
+  | "cycle-source"
+  | "cycle-audio"
   | "back-to-search";
 
 export type PlaybackPickerAction = Extract<
@@ -35,7 +37,7 @@ export type PlaybackPickerAction = Extract<
  */
 export type MpvRequestedAction = Extract<
   PlaybackControlAction,
-  "next" | "previous" | "pick-quality" | "refresh"
+  "next" | "previous" | "pick-quality" | "pick-source" | "refresh" | "cycle-source" | "cycle-audio"
 >;
 
 export type PlaybackStreamSelection = {
@@ -113,6 +115,8 @@ export interface PlayerControlService {
   skipCurrentSegment(reason?: string): Promise<boolean>;
   pickSourceCurrentPlayback(reason?: string): Promise<boolean>;
   pickQualityCurrentPlayback(reason?: string): Promise<boolean>;
+  cycleSourceCurrentPlayback(reason?: string): Promise<boolean>;
+  cycleAudioCurrentPlayback(reason?: string): Promise<boolean>;
   nextCurrentPlayback(reason?: string): Promise<boolean>;
   previousCurrentPlayback(reason?: string): Promise<boolean>;
   returnToSearchFromPlayback(reason?: string): Promise<boolean>;
