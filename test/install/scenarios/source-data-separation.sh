@@ -20,6 +20,16 @@ assert_runtime_alias_rejected() {
     || fail "$name alias changed seeded runtime data" "$seed"
 }
 
+fixture="$(mktemp -d "${TMPDIR:-/tmp}/source-fixture-XXXXXX")"
+trap 'rm -rf "$fixture"' EXIT
+export HOME="$fixture/home"
+export APPDATA="$fixture/appdata"
+export LOCALAPPDATA="$fixture/localappdata"
+export USERPROFILE="$HOME"
+export TMPDIR="$fixture/tmp"
+export TMP="$TMPDIR"
+export TEMP="$TMPDIR"
+mkdir -p "$HOME" "$APPDATA" "$LOCALAPPDATA" "$TMPDIR"
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_CACHE_HOME="$HOME/.cache"
@@ -41,7 +51,9 @@ cat >"$shim_dir/git" <<'SHIM'
 target=""
 for argument in "$@"; do target="$argument"; done
 if [ "$1" = "clone" ]; then
-  mkdir -p "$target/.git"
+  mkdir -p "$target/.git" "$target/apps/cli"
+  printf '{"name":"kunai","private":true}\n' >"$target/package.json"
+  printf '{"name":"@kitsunekode/kunai","version":"0.3.0"}\n' >"$target/apps/cli/package.json"
   printf 'source checkout\n' >"$target/README.fixture"
   exit 0
 fi
@@ -53,7 +65,16 @@ printf '#!/bin/sh\nexit 0\n' >"$shim_dir/bun"
 chmod 0755 "$shim_dir/bun"
 export PATH="$shim_dir:$PATH"
 
-/harness/install.sh --method source --version 0.3.0 --yes --skip-deps
+if /harness/install.sh --method source --version 0.3.0 --yes --skip-deps --skip-path-update; then
+  pass "source monorepo installation completed"
+else
+  fail "source monorepo installation failed"
+fi
+if node -e 'const m = require(process.argv[1]); process.exit(m.method === "source" && m.activeVersion === "0.3.0" ? 0 : 1)' "$KUNAI_CONFIG_DIR/install.json"; then
+  pass "source manifest records CLI workspace version"
+else
+  fail "source manifest did not record CLI workspace version"
+fi
 
 [[ -f "$seed" && "$(cat "$seed")" == "preserve-me" ]] \
   && pass "seeded runtime data survived" \

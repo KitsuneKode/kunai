@@ -123,8 +123,15 @@ function Get-NormalizedVersion([string]$Value) {
   return $trimmed
 }
 
-function Read-KunaiPackageVersion([string]$PackageRoot) {
-  $pkgJson = Join-Path $PackageRoot (Join-Path $Package 'package.json')
+function Read-KunaiPackageVersion([string]$PackageRoot, [switch]$SourceCheckout) {
+  if ($SourceCheckout) {
+    $cliRoot = Join-Path $PackageRoot 'apps/cli'
+    $root = if (Test-Path -LiteralPath $cliRoot -PathType Container) { $cliRoot } else { $PackageRoot }
+    $pkgJson = Join-Path $root 'package.json'
+  }
+  else {
+    $pkgJson = Join-Path $PackageRoot (Join-Path $Package 'package.json')
+  }
   if (Test-Path -LiteralPath $pkgJson) {
     try {
       $pkg = Get-Content -LiteralPath $pkgJson -Raw | ConvertFrom-Json
@@ -172,7 +179,7 @@ function Resolve-InstalledPackageVersion([string]$InstallMethod) {
   }
   elseif ($InstallMethod -eq 'source') {
     $src = if ($env:KUNAI_SOURCE_DIR) { $env:KUNAI_SOURCE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\src' }
-    $version = Read-KunaiPackageVersion $src
+    $version = Read-KunaiPackageVersion $src -SourceCheckout
     if ($version) { return $version }
   }
   throw "Could not resolve installed Kunai version from $InstallMethod-owned package metadata."
