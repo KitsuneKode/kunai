@@ -31,7 +31,10 @@ Read this before touching `apps/cli/src/services/analytics/`,
 - An `enabled` value written before this opt-in contract is migrated to `unset`
   and its legacy id is cleared before startup; it is not treated as consent.
 - `/settings` exposes the enable/disable option. Disabling clears `installId`.
-  The id exists on disk only while analytics is enabled.
+  The id exists on disk only while analytics is enabled. A ping already in flight
+  may finish, but its result must not restore an id cleared by disable, undo a
+  rotation, or apply the old identity's cadence/retry bookkeeping. The completion
+  checks current consent and the pre-send stored identity before updating config.
 - No analytics request is made before consent, in a non-TTY session, or while
   `DO_NOT_TRACK` or `CI` is truthy (`1`, `true`, or `yes`).
 - A default endpoint ships: `analytics.kunai.kitsunekode.in`. It is where a ping
