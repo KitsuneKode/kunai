@@ -106,7 +106,8 @@ mobile-build-meta.json
 `mobile-build-meta.json` schema 2 records the release version, target graph,
 individual SHA-256/raw/gzip measurements, and a canonical digest for each
 platform artifact set. The integration suite independently recalculates these
-values, verifies executable modes and graph restrictions, starts the Android
+values, checks that every artifact is included in Turbo's build outputs,
+verifies executable modes and graph restrictions, starts the Android
 artifact with real Node, exercises SIGINT at its real prompt, validates the
 evidence CLI, and runs the iOS fake-host workflow.
 
@@ -134,7 +135,8 @@ recovery is explicit rather than guessing whether another session is alive.
   `termux-am` or `/system/bin/am`.
 - iOS uses a literal helper allowlist and fixed private files.
 - The iOS HTTP helper disables implicit curl configuration with `-q` before
-  loading its private request configuration.
+  loading its private request configuration. That configuration disables URL
+  globbing so brackets in probe URLs remain literal rather than curl ranges.
 - Android state directories are forced to `0700` and state files to `0600`.
 - Logs, state, metadata, and review evidence contain no URLs, headers, cookies,
   tokens, install identifiers, or raw device logs.

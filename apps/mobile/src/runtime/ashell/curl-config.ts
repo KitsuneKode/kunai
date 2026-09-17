@@ -15,6 +15,7 @@ export function encodeCurlConfig(request: MobileHttpRequest): string {
   const timeoutMs = requirePositiveInteger(request.timeoutMs, "timeout");
   const maxBytes = requirePositiveInteger(request.maxBytes, "response cap");
   return [
+    "globoff",
     `url = ${quoteCurlConfig(normalizedUrl)}`,
     `request = ${quoteCurlConfig(request.method)}`,
     `max-time = ${timeoutMs / 1_000}`,
