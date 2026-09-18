@@ -29,6 +29,12 @@ const MATRIX = [
     fixture: "Onigiri S01E01",
   },
   {
+    provider: "hianime",
+    command: ["bun", "-e", "await import('./test/live/hianime-naruto.smoke.ts')"],
+    media: "anime",
+    fixture: "Naruto E01 (sub + dub legs)",
+  },
+  {
     provider: "allanime",
     command: ["bun", "-e", "await import('./test/live/allanime-demonslayer.smoke.ts')"],
     media: "anime",

@@ -24,6 +24,7 @@ const MODULE_TO_ID: Record<string, string> = {
   rivestreamProviderModule: "rivestream",
   allmangaProviderModule: "allanime",
   anidbProviderModule: "anidb",
+  hianimeProviderModule: "hianime",
   miruroProviderModule: "miruro",
   youtubeProviderModule: "youtube",
 };
