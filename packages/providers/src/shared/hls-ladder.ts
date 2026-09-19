@@ -2,12 +2,37 @@ import type { ProviderFetchPort } from "@kunai/types";
 
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
 import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
+import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 
 export type HlsLadderVariant = {
   readonly url: string;
   readonly qualityLabel: string;
   readonly qualityRank: number;
   readonly bandwidth?: number;
+};
+
+/** A resolved `#EXT-X-MEDIA` rendition — an alternate audio or subtitle playlist. */
+export type HlsRenditionTrack = {
+  readonly url: string;
+  readonly groupId: string;
+  /** ISO language code when the master declares one. */
+  readonly language?: string;
+  /** The rendition NAME attribute — what a player would show. */
+  readonly label: string;
+  readonly isDefault: boolean;
+};
+
+/**
+ * Everything a master playlist carries: ranked variants plus the alternate
+ * rendition groups (`#EXT-X-MEDIA`) the Tracks panel shows as audio/subtitle
+ * inventory. `audioLanguages` covers muxed audio too — a rendition may declare
+ * a LANGUAGE without a URI, which still tells us the language exists.
+ */
+export type HlsMasterInventory = {
+  readonly variants: readonly HlsLadderVariant[];
+  readonly audioTracks: readonly HlsRenditionTrack[];
+  readonly subtitleTracks: readonly HlsRenditionTrack[];
+  readonly audioLanguages: readonly string[];
 };
 
 export type ExpandHlsMasterPlaylistOptions = {
@@ -29,6 +54,16 @@ const DEFAULT_MAX_VARIANTS = 12;
 export async function expandHlsMasterPlaylist(
   options: ExpandHlsMasterPlaylistOptions,
 ): Promise<readonly HlsLadderVariant[]> {
+  return (await expandHlsMasterInventory(options)).variants;
+}
+
+/**
+ * Same fetch + fallback contract as `expandHlsMasterPlaylist`, but also parses
+ * `#EXT-X-MEDIA` rendition groups into audio/subtitle track inventory.
+ */
+export async function expandHlsMasterInventory(
+  options: ExpandHlsMasterPlaylistOptions,
+): Promise<HlsMasterInventory> {
   const { masterUrl, headers, signal, maxVariants = DEFAULT_MAX_VARIANTS } = options;
   const fallback: HlsLadderVariant = {
     url: masterUrl,
@@ -36,27 +71,34 @@ export async function expandHlsMasterPlaylist(
     // Keep rank 0 so callers do not invent a fake 1080p height from auto.
     qualityRank: 0,
   };
+  const empty: HlsMasterInventory = {
+    variants: [fallback],
+    audioTracks: [],
+    subtitleTracks: [],
+    audioLanguages: [],
+  };
 
   try {
     const response = await options.fetch(masterUrl, {
       headers: headers ?? {},
       signal: signal ?? AbortSignal.timeout(12_000),
     });
-    if (!response.ok) return [fallback];
+    if (!response.ok) return empty;
 
     const text = await response.text();
     if (!isHlsMasterPlaylist(text)) {
-      return [fallback];
+      return empty;
     }
 
     const variants = parseHlsMasterVariants(text, masterUrl);
-    if (variants.length === 0) return [fallback];
+    if (variants.length === 0) return empty;
 
     const sorted = [...variants].sort((left, right) => right.qualityRank - left.qualityRank);
     const capped = maxVariants > 0 ? sorted.slice(0, maxVariants) : sorted;
-    return capped;
+    const renditions = parseHlsMasterRenditions(text, masterUrl);
+    return { variants: capped, ...renditions };
   } catch {
-    return [fallback];
+    return empty;
   }
 }
 
@@ -145,4 +187,73 @@ function dedupeHlsVariantsByUrl(variants: readonly HlsLadderVariant[]): HlsLadde
     out.push(variant);
   }
   return out;
+}
+
+/**
+ * `#EXT-X-MEDIA` rows declare rendition groups: `TYPE=AUDIO|SUBTITLES|…`,
+ * `GROUP-ID`, `NAME`, `LANGUAGE`, `URI`, `DEFAULT`. Audio renditions may omit
+ * URI entirely (muxed into the variant) — those still feed `audioLanguages`
+ * even though there is no separate playlist to hand to a player.
+ *
+ * CLOSED-CAPTIONS renditions are skipped: they never carry a URI and mpv reads
+ * the embedded captions in-container.
+ */
+export function parseHlsMasterRenditions(
+  manifestText: string,
+  masterUrl: string,
+): Pick<HlsMasterInventory, "audioTracks" | "subtitleTracks" | "audioLanguages"> {
+  const audioTracks: HlsRenditionTrack[] = [];
+  const subtitleTracks: HlsRenditionTrack[] = [];
+  const audioLanguages: string[] = [];
+  const seenAudioLanguages = new Set<string>();
+  const seenUrls = new Set<string>();
+
+  for (const rawLine of manifestText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("#EXT-X-MEDIA:")) continue;
+    const attrs = parseHlsTagAttributes(line.slice("#EXT-X-MEDIA:".length));
+    const type = attrs["TYPE"]?.toUpperCase();
+    if (type !== "AUDIO" && type !== "SUBTITLES") continue;
+
+    const language = normalizeIsoLanguageCode(attrs["LANGUAGE"]) ?? attrs["LANGUAGE"]?.trim();
+    if (type === "AUDIO" && language && !seenAudioLanguages.has(language)) {
+      seenAudioLanguages.add(language);
+      audioLanguages.push(language);
+    }
+
+    const uri = attrs["URI"];
+    if (!uri) continue; // muxed rendition — language recorded above, nothing to hand a player
+    const url = resolveHlsVariantUrl(masterUrl, uri);
+    if (!url || seenUrls.has(url)) continue;
+    seenUrls.add(url);
+
+    const track: HlsRenditionTrack = {
+      url,
+      groupId: attrs["GROUP-ID"] ?? "",
+      ...(language ? { language } : {}),
+      label: attrs["NAME"]?.trim() || language || url,
+      isDefault: attrs["DEFAULT"]?.toUpperCase() === "YES",
+    };
+    if (type === "AUDIO") audioTracks.push(track);
+    else subtitleTracks.push(track);
+  }
+
+  return { audioTracks, subtitleTracks, audioLanguages };
+}
+
+/**
+ * Parse an `EXT-X` attribute list (`KEY=value,KEY="quoted"`). Quoted values may
+ * contain commas; unquoted values terminate at the next comma per RFC 8216.
+ */
+function parseHlsTagAttributes(input: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const re = /([A-Z0-9-]+)\s*=\s*("([^"]*)"|[^,]*)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(input)) !== null) {
+    const key = match[1]?.toUpperCase();
+    if (!key) continue;
+    const value = match[2] ?? "";
+    attrs[key] = value.startsWith('"') ? (match[3] ?? "") : value.trim();
+  }
+  return attrs;
 }
