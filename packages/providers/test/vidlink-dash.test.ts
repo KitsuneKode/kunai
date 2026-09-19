@@ -6,7 +6,7 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
-import { resolveVidlinkDirect } from "../src/vidlink/direct";
+import { clearVidlinkEncDecCacheForTest, resolveVidlinkDirect } from "../src/vidlink/direct";
 
 const COOKIE = "CloudFront-Policy=abc;CloudFront-Signature=def;CloudFront-Key-Pair-Id=ghi";
 
@@ -294,5 +294,40 @@ describe("vidlink endpoint health", () => {
     expect(health.successes).toContain("enc-dec.app");
     expect(health.successes).toContain("vidlink.pro");
     expect(health.failures).toHaveLength(0);
+  });
+});
+
+describe("vidlink enc-dec persistent cache (#205)", () => {
+  test("writes the encrypted id to the port on fetch", async () => {
+    clearVidlinkEncDecCacheForTest();
+    const writes: string[] = [];
+    const ctx = {
+      ...buildContext(),
+      cache: {
+        read: async <T>(): Promise<T | null> => null,
+        write: async (ns: string, key: string) => {
+          writes.push(`${ns}:${key}`);
+        },
+      },
+    } as unknown as ProviderRuntimeContext;
+    const result = await resolveVidlinkDirect(INPUT, ctx);
+    expect(result.status).toBe("resolved");
+    expect(writes).toContain("vidlink:enc-dec:27205");
+  });
+
+  test("a port hit serves the id without touching enc-dec.app", async () => {
+    clearVidlinkEncDecCacheForTest();
+    const ctx = {
+      ...buildContext((url) => {
+        if (url.includes("enc-dec.app")) throw new Error("enc-dec must not be called");
+      }),
+      cache: {
+        read: async <T>(ns: string, key: string): Promise<T | null> =>
+          (ns === "vidlink:enc-dec" && key === "27205" ? "SEEDED" : null) as T,
+        write: async () => {},
+      },
+    } as unknown as ProviderRuntimeContext;
+    const result = await resolveVidlinkDirect(INPUT, ctx);
+    expect(result.status).toBe("resolved");
   });
 });
