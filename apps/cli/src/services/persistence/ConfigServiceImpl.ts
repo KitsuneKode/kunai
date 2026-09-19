@@ -25,6 +25,7 @@ import type {
 } from "./ConfigService";
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
+import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
@@ -158,12 +159,18 @@ export class ConfigServiceImpl implements ConfigService {
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
   videasyAppIdMigratedOnLoad = false;
 
-  constructor(private store: ConfigStore) {
+  constructor(
+    private store: ConfigStore,
+    private vault?: CredentialVaultPort,
+  ) {
     this.config = { ...DEFAULT_CONFIG };
   }
 
-  static async load(store: ConfigStore): Promise<ConfigServiceImpl> {
-    const service = new ConfigServiceImpl(store);
+  /** Whether the vault holds the videasy token — hydrated or migrated this session. */
+  private videasyTokenVaulted = false;
+
+  static async load(store: ConfigStore, vault?: CredentialVaultPort): Promise<ConfigServiceImpl> {
+    const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
     // Configs written before explicit consent had no notice marker. Their
     // enabled value was opt-out state, not evidence of a current opt-in, so
@@ -251,11 +258,70 @@ export class ConfigServiceImpl implements ConfigService {
         typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
     const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
-    if (requiresExplicitAnalyticsConsent || repairedAnalyticsIdentity || migratedVideasyAppId) {
-      await store.save(service.config);
+    // Vault lane: hydrate the in-memory token from the vault when config.json
+    // no longer carries it, or migrate plaintext that predates the vault. The
+    // scrubbed write below is what removes it from disk — the in-memory config
+    // keeps serving it so consumers never learn where it lives.
+    let videasyVaultResave = false;
+    if (vault && vault.backend !== "file") {
+      try {
+        const key = CREDENTIAL_KEYS.videasySessionToken;
+        if (service.config.videasySessionToken) {
+          await vault.set(key, service.config.videasySessionToken);
+          if ((await vault.get(key)) === service.config.videasySessionToken) {
+            service.videasyTokenVaulted = true;
+            videasyVaultResave = true;
+          }
+        } else {
+          const vaulted = await vault.get(key);
+          if (vaulted) {
+            service.config = { ...service.config, videasySessionToken: vaulted };
+            service.videasyTokenVaulted = true;
+          }
+        }
+      } catch {
+        // Vault write/read failed — keep the plaintext and retry next launch.
+      }
+    }
+    if (
+      requiresExplicitAnalyticsConsent ||
+      repairedAnalyticsIdentity ||
+      migratedVideasyAppId ||
+      videasyVaultResave
+    ) {
+      await service.persistConfig(service.config);
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
     }
     return service;
+  }
+
+  /**
+   * Persist config.json with vaulted secrets stripped from the on-disk shape.
+   * The value lives in the vault; `videasySessionToken` in the file is "".
+   * write → read-back → compare before the plaintext is ever omitted, and on
+   * any vault failure we fall through to the unscrubbed write so the value is
+   * never lost to a failed migration.
+   */
+  private async persistConfig(config: KitsuneConfig): Promise<void> {
+    if (this.vault && this.vault.backend !== "file") {
+      const key = CREDENTIAL_KEYS.videasySessionToken;
+      const token = config.videasySessionToken;
+      try {
+        if (token) {
+          await this.vault.set(key, token);
+          if ((await this.vault.get(key)) === token) {
+            this.videasyTokenVaulted = true;
+            return await this.store.save({ ...config, videasySessionToken: "" });
+          }
+        } else if (this.videasyTokenVaulted) {
+          await this.vault.delete(key);
+          this.videasyTokenVaulted = false;
+        }
+      } catch {
+        // Vault unreachable — persist plaintext rather than drop the value.
+      }
+    }
+    await this.store.save(config);
   }
 
   // Accessors
@@ -800,7 +866,7 @@ export class ConfigServiceImpl implements ConfigService {
     this.saveInFlight = pending;
     void (async () => {
       try {
-        await this.store.save(this.config);
+        await this.persistConfig(this.config);
         resolve?.();
       } catch (error) {
         reject?.(error);
@@ -813,7 +879,7 @@ export class ConfigServiceImpl implements ConfigService {
 
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
-    await this.store.save(this.config);
+    await this.persistConfig(this.config);
   }
 }
 

@@ -179,9 +179,19 @@ Two things about the v3 write path are easy to get wrong, and both were:
 
 ## Privacy
 
-Tokens live only in `configDir/sync-tokens.json`, written atomically with
-owner-only permissions — never in SQLite, config, or logs. Token-store mutations
-are serialized so concurrent patches cannot erase each other.
+Tokens live in the OS credential vault when one is reachable — macOS Keychain
+(`security`), Windows Credential Manager (`pwsh` PasswordVault), or Linux
+Secret Service (`secret-tool`), probed once per launch in that order with
+`KUNAI_CREDENTIAL_BACKEND` as an override. One vault entry per tracker
+(`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. On machines
+with no keyring — headless Linux without a Secret Service daemon — a `file`
+backend keeps the old guarantee: `configDir/secrets.json` written atomically
+with owner-only permissions. The first launch on a vault-capable machine
+migrates `sync-tokens.json` write → read-back → compare → delete, restart-safe
+and idempotent. Token-store mutations stay serialized so concurrent patches
+cannot erase each other; the same vault lane holds `videasy.sessionToken`,
+which is scrubbed from `config.json` at the persistence boundary while the
+in-memory config keeps serving it.
 
 Dead-letter diagnostics are bounded (64-char code, 256-char detail) and never
 contain payload JSON, since an unparseable row is the likeliest to hold
