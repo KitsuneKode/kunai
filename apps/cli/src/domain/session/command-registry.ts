@@ -107,6 +107,11 @@ export const COMMAND_CONTEXTS = {
     "watchlist",
     "playlists",
     "up-next",
+    // Title-scoped queue mutations belong beside the queue view: they show
+    // their "select a title/episode first" reason when nothing is selected,
+    // which is better discovery than not listing them at all.
+    "playlist-add",
+    "queue-season",
     "stats",
     "library",
     "downloads",
@@ -114,6 +119,7 @@ export const COMMAND_CONTEXTS = {
     "history",
     "setup",
     "settings",
+    "image-pane",
     "sync",
     "providers",
     "presence",
