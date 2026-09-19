@@ -306,6 +306,9 @@ export class DownloadService {
       readonly diagnostics?: Pick<DiagnosticsService, "record">;
       readonly onCompletedArtifact?: (job: DownloadJobRecord) => Promise<void> | void;
       readonly onTerminalFailure?: (job: DownloadJobRecord, error: string) => Promise<void> | void;
+      // Volume stats go through deps so unit tests don't read host disk — the
+      // suite's verdict must not depend on how full the test volume happens to be.
+      readonly statfs?: (path: string) => Promise<{ bavail: number; bsize: number }>;
     },
   ) {}
 
@@ -536,7 +539,7 @@ export class DownloadService {
   async estimateAvailableEpisodeSlots(outputDirectory?: string): Promise<number> {
     const baseDir = outputDirectory?.trim() || this.resolveDefaultDownloadDirectory();
     await mkdir(baseDir, { recursive: true });
-    const diskStats = await statfs(baseDir);
+    const diskStats = await this.statfs(baseDir);
     return estimateAllowedNewAssets({
       availableBytes: diskStats.bavail * diskStats.bsize,
       reserveBytes: this.offlineFreeSpaceReserveBytes(),
@@ -1885,13 +1888,17 @@ export class DownloadService {
       : join(dirname(getKunaiPaths().dataDbPath), "downloads");
   }
 
+  private statfs(path: string): Promise<{ bavail: number; bsize: number }> {
+    return (this.deps.statfs ?? statfs)(path);
+  }
+
   private async evaluateStorageForPath(
     outputPath: string,
     excludeJobId?: string,
     qualityLabel?: string,
   ) {
     await mkdir(dirname(outputPath), { recursive: true });
-    const diskStats = await statfs(dirname(outputPath));
+    const diskStats = await this.statfs(dirname(outputPath));
     const qualityEstimate = estimateBytesForDownloadQuality(qualityLabel);
     return evaluateStorageAdmission({
       availableBytes: diskStats.bavail * diskStats.bsize,
