@@ -64,6 +64,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-bun-monorepo/**'
             cli:
+              - '.github/scripts/open-release-metadata-pr.sh'
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-bun-monorepo/**'
               - 'scripts/**'

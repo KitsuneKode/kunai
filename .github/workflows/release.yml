@@ -1265,20 +1265,21 @@ jobs:
   # Post-release: mark .release metadata published after public verification.
   # ---------------------------------------------------------------------------
   metadata:
-    name: Publish release metadata
+    name: Propose release metadata
     needs: publish
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
-          # Push a narrow metadata commit back to the dispatch ref (no force).
+          # Push a review branch, never bypass main's required checks.
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-bun-monorepo
         with:
@@ -1301,17 +1302,11 @@ jobs:
       - name: Release notes guard
         run: bun run release:notes:check
 
-      - name: Commit and push metadata update
+      - name: Open metadata review PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.publish.outputs.version }}
         run: |
-          set -euo pipefail
-          VERSION="${{ needs.publish.outputs.version }}"
-          ARTIFACT=".release/kunai-v${VERSION}.json"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "${ARTIFACT}"
-          if git diff --cached --quiet; then
-            echo "No metadata changes to commit."
-            exit 0
-          fi
-          git commit -m "chore(release): mark v${VERSION} published"
-          git push
+          bash .github/scripts/open-release-metadata-pr.sh "$RELEASE_VERSION"

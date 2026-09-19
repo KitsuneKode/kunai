@@ -92,6 +92,12 @@ job conditions. Release Guard runs on every PR so docs-only changes also emit
 `Version ↔ changelog guard`; a required workflow must not disappear behind a
 PR path filter. Remote enforcement must be checked separately from this YAML.
 
+Release publication proposes its status update through a reviewed metadata PR,
+using `.github/scripts/open-release-metadata-pr.sh`. It does not push to main.
+Maintainers approve bot-created workflow runs when requested, then review and
+merge the PR after required checks pass. Recovery is documented in
+[RELEASING.md](../RELEASING.md#metadata-pr-recovery).
+
 **Every job must run `actions/checkout` before it uses a local composite
 action.** The composite deliberately does not check out.
 

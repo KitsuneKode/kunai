@@ -469,3 +469,32 @@ tests passed 23/23 tasks with zero cache in 90.5s on host Bun 1.4.2; hosted CI
 continues to pin Bun 1.4.0. Typecheck passed 14/14 and lint 12/12 without warnings.
 Doc paths/frontmatter/coverage and release guards passed. The Windows worker
 root cause is still unproven; no timeout, GC, or concurrency change was made.
+
+## Hosted qualification and release policy — 2026-09-19
+
+PR #407 run `35371158196` passed Windows CLI parity, storage lifecycle, the
+compiled Windows launcher, Linux checks, Postgres suites, and all six installer
+cells. The Windows eight-process stale-lock case passed in 1.67s; this single
+pass does not explain the historical worker crash or establish a flake rate.
+macOS failed three shutdown transcript assertions, and `CI ready` correctly
+failed with it. A real Expect reproduction established that `log_user 0` plus
+plain `log_file` suppresses the transcript. `log_file -a` fixes recording while
+keeping console echo disabled; the behavioral regression checks transcript,
+quiet stdout and exit-status propagation. Native rerun is still required.
+
+The approved release policy replaces direct main pushes with metadata PRs.
+The helper stages only the release artifact, uses a version/run-specific branch,
+reuses interrupted pushes and open/merged PRs, and fails for closed unmerged PRs
+or API errors. Eight real local Git fixtures verify remote main stays unchanged.
+GitHub settings currently permit Actions-created PRs; maintainers may need to
+approve their workflow runs before checks execute. No bypass token is needed.
+An independent review found no blockers in workflow wiring or retry behavior.
+
+The focused follow-up suite passed 34 cases. Fresh typecheck (14 tasks), lint
+(12 tasks), formatting (12 tasks), doc paths and release notes passed. A full
+sandboxed run failed on denied loopback binds and empty launcher stdout; its
+unsandboxed retry was initially blocked by approval-service quota, then started
+successfully after the user resumed and passed 23/23 tasks with zero cached
+tasks in 100.4s, including 302 CLI integration cases. Final hosted qualification,
+controlled Windows concurrency measurements, merge and remote enforcement
+remain pending.

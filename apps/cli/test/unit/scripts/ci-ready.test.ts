@@ -120,6 +120,7 @@ for (const [path, expected] of [
   ["install.sh", ["installer"]],
   ["package.json", ["cli", "docs", "installer", "analytics"]],
   ["scripts/ci-ready.mjs", ["cli"]],
+  [".github/scripts/open-release-metadata-pr.sh", ["cli"]],
   [".github/workflows/ci.yml", ["cli", "docs", "installer", "analytics", "doc-coverage"]],
 ] as const) {
   test(`changed path selects required lanes: ${path}`, async () => {
