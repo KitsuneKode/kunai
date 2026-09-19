@@ -864,6 +864,12 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   "export-diagnostics": (c) => handleExportDiagnostics(c),
   "report-issue": (c) => handleReportIssue(c),
   update: (c) => handleUpdate(c),
+  // The command existed with an availability gate but no handler — its owner is
+  // the companion-pane layout preference, which nothing else toggled.
+  "image-pane": async (c) => {
+    c.stateManager.dispatch({ type: "TOGGLE_COMPANION_PANE" });
+    return "handled";
+  },
   "mark-anime": (c) => handleMarkKind(c, "anime"),
   "mark-series": (c) => handleMarkKind(c, "series"),
   share: (c) => handleShare(c),
