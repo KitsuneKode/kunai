@@ -153,6 +153,29 @@ answers, so one dead or hotlink-protected URL no longer condemns its working
 siblings. It stops immediately when `context.signal` aborts — a cancelled resolve
 keeps its selection rather than recording a stream failure.
 
+### Persistent provider cache (`context.cache`)
+
+`ProviderCachePort` (SQLite-backed) survives process restarts — a cold Miruro
+resolve was measured at 12s where a warm one is 0ms, so stable data belongs
+here. The rule is _what may be persisted_, not whether to cache:
+
+- **Persist:** episode lists/catalogs, id mappings (AniDB `malId`/`anilistId`/
+  `officialAid`, official episode titles), manifest _structure_ — data that is
+  effectively immutable for its TTL class (`episode-list`, `provider-metadata`,
+  `catalog-static`).
+- **Never persist:** resolved stream URLs, signed cookies/headers, or any value
+  whose validity is tied to a session or a signature. Those stay in memory
+  (or at `session`/`stream-manifest` TTL at most). VidLink's `enc-dec` output
+  is the edge case that _is_ allowed: it is a deterministic function of the
+  tmdb id, not a signed artifact, so it persists inside its own 30-minute
+  window — and a port hit must not re-write the entry or it would outlive the
+  window indefinitely.
+- Miss-or-expired must degrade to a refetch, and a port failure degrades to
+  `null`/no-op — the provider never fails because the cache did.
+- Namespace keys `<provider>:<purpose>` (`anidb:external-ids`,
+  `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
+  sweeps can scope them.
+
 **VidLink needs the browser playback environment (2026-08-24).** Without an
 `x-playback-environment` header, `vidlink.pro/api/b` answers with
 `deliveryType: "file"` — direct MP4s on `bcdn.hakunaymatata.com` flagged

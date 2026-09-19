@@ -40,6 +40,13 @@ const ENC_DEC_CACHE_TTL_MS = 30 * 60_000;
  * session touches many titles. Evicts oldest-first via Map insertion order.
  */
 const ENC_DEC_CACHE_MAX_ENTRIES = 256;
+/**
+ * enc-dec's output is a deterministic encryption of the tmdb id, so persisting
+ * it within its own 30-minute TTL is safe — it is not a signed URL or a
+ * per-session credential. The in-memory Map stays L1 so a hot loop never
+ * round-trips SQLite.
+ */
+const ENC_DEC_PERSIST_NAMESPACE = "vidlink:enc-dec";
 
 const encDecCache = new Map<number, { result: string; expiresAt: number }>();
 
@@ -100,7 +107,16 @@ function vidlinkHttpError(status: number, endpoint: string, stage: string): Prov
   });
 }
 
-function rememberEncDecResult(tmdbId: number, result: string): void {
+/** Test-only: drop the L1 enc-dec map so the persistent cache path is observable. */
+export function clearVidlinkEncDecCacheForTest(): void {
+  encDecCache.clear();
+}
+
+function rememberEncDecResult(
+  context: ProviderRuntimeContext,
+  tmdbId: number,
+  result: string,
+): void {
   // Refresh insertion order so re-encrypted ids are treated as recently used.
   encDecCache.delete(tmdbId);
   encDecCache.set(tmdbId, { result, expiresAt: Date.now() + ENC_DEC_CACHE_TTL_MS });
@@ -109,6 +125,9 @@ function rememberEncDecResult(tmdbId: number, result: string): void {
     if (oldest.done) break;
     encDecCache.delete(oldest.value);
   }
+  void context.cache
+    ?.write(ENC_DEC_PERSIST_NAMESPACE, String(tmdbId), result, ENC_DEC_CACHE_TTL_MS)
+    .catch(() => {});
 }
 
 interface VidlinkCaption {
@@ -338,6 +357,18 @@ async function encryptTmdbId(
 ): Promise<string> {
   const cached = encDecCache.get(tmdbId);
   if (cached && Date.now() < cached.expiresAt) return cached.result;
+  const persisted = await context.cache
+    ?.read<string>(ENC_DEC_PERSIST_NAMESPACE, String(tmdbId))
+    .catch(() => null);
+  if (persisted) {
+    // L1 only — re-writing the port entry here would restart its TTL and let a
+    // repeatedly-read value outlive the 30-minute window indefinitely.
+    encDecCache.set(tmdbId, {
+      result: persisted,
+      expiresAt: Date.now() + ENC_DEC_CACHE_TTL_MS,
+    });
+    return persisted;
+  }
 
   const endpointHealth = createVidlinkEndpointHealth(context);
   if (!endpointHealth.shouldTry(ENC_DEC_ENDPOINT)) {
@@ -367,7 +398,7 @@ async function encryptTmdbId(
       }
       // TTL runs from when the value was received, not from when the request
       // started — a slow request must not shorten its own cache lifetime.
-      rememberEncDecResult(tmdbId, data.result);
+      rememberEncDecResult(context, tmdbId, data.result);
       endpointHealth.recordSuccess(ENC_DEC_ENDPOINT);
       return data.result;
     } catch (error) {
