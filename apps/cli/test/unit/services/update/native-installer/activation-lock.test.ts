@@ -361,9 +361,30 @@ describe("activation lock", () => {
         }),
       );
 
+      // Drain immediately: a crashing worker must not block on a full pipe or
+      // lose its actual error behind the parent's handshake timeout.
+      const outputs = processes.map(async (child) => {
+        const [stdout, stderr] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        return { stdout, stderr };
+      });
+      const assertWorkersHealthy = async (): Promise<void> => {
+        for (const [index, child] of processes.entries()) {
+          if (child.exitCode === null || child.exitCode === 0) continue;
+          const output = await outputs[index];
+          throw new Error(
+            `Activation worker ${index} exited ${child.exitCode}\n` +
+              `stdout: ${output?.stdout}\nstderr: ${output?.stderr}`,
+          );
+        }
+      };
+
       const waitForWorkerCount = async (prefix: string, expected: number): Promise<void> => {
         const deadlineAt = Date.now() + CONTENTION_HANDSHAKE_DEADLINE_MS;
         while (Date.now() < deadlineAt) {
+          await assertWorkersHealthy();
           const count = (await readdir(layout.locksDir)).filter((name) =>
             name.startsWith(prefix),
           ).length;
@@ -385,24 +406,34 @@ describe("activation lock", () => {
         );
       };
 
-      await waitForWorkerCount("activation-worker-ready-", CONTENTION_WORKERS);
-      await writeFile(startPath, "start");
-      const released = new Set<string>();
-      for (let enteredCount = 1; enteredCount <= CONTENTION_WORKERS; enteredCount += 1) {
-        await waitForWorkerCount("activation-worker-entered-", enteredCount);
-        expect(existsSync(violationPath)).toBe(false);
-        const entered = (await readdir(layout.locksDir)).filter((name) =>
-          name.startsWith("activation-worker-entered-"),
-        );
-        const next = entered.find((name) => !released.has(name));
-        if (!next) throw new Error("Missing newly entered activation worker");
-        released.add(next);
-        await writeFile(join(layout.locksDir, next.replace("entered", "release")), "release");
-      }
-      const statuses = await Promise.all(processes.map((process) => process.exited));
+      try {
+        await waitForWorkerCount("activation-worker-ready-", CONTENTION_WORKERS);
+        await writeFile(startPath, "start");
+        const released = new Set<string>();
+        for (let enteredCount = 1; enteredCount <= CONTENTION_WORKERS; enteredCount += 1) {
+          await waitForWorkerCount("activation-worker-entered-", enteredCount);
+          expect(existsSync(violationPath)).toBe(false);
+          const entered = (await readdir(layout.locksDir)).filter((name) =>
+            name.startsWith("activation-worker-entered-"),
+          );
+          const next = entered.find((name) => !released.has(name));
+          if (!next) throw new Error("Missing newly entered activation worker");
+          released.add(next);
+          await writeFile(join(layout.locksDir, next.replace("entered", "release")), "release");
+        }
+        const statuses = await Promise.all(processes.map((process) => process.exited));
 
-      expect(statuses).toEqual(Array.from({ length: CONTENTION_WORKERS }, () => 0));
-      expect(existsSync(violationPath)).toBe(false);
+        expect(statuses).toEqual(Array.from({ length: CONTENTION_WORKERS }, () => 0));
+        expect(existsSync(violationPath)).toBe(false);
+      } finally {
+        // Reap before afterEach removes the profile, including assertion and
+        // handshake failures. Otherwise workers keep polling deleted paths.
+        for (const child of processes) {
+          if (child.exitCode === null) child.kill();
+        }
+        await Promise.all(processes.map((child) => child.exited));
+        await Promise.all(outputs);
+      }
     },
     CONTENTION_TEST_TIMEOUT_MS,
   );

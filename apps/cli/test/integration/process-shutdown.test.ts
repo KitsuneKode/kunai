@@ -32,7 +32,7 @@ const exitTimeoutMs = 10_000;
 // Must exceed every bounded wait in spawnAndSignal. In particular, a slow
 // macOS cold boot is allowed the full startup deadline before the helper can
 // either signal the CLI or report its transcript.
-const testTimeoutMs = startupTimeoutMs + 1_500 + exitTimeoutMs + 5_000;
+const testTimeoutMs = startupTimeoutMs + exitTimeoutMs + 5_000;
 
 afterEach(() => {
   for (const pid of spawnedPids.splice(0)) {
@@ -129,24 +129,9 @@ async function spawnAndSignal(
   expect(Number.isInteger(cliPid)).toBe(true);
   spawnedPids.push(cliPid);
 
-  // Poll for liveness rather than sleeping a fixed 1.5s: a loaded CI runner can
-  // take longer to mount, and a fixed wait either flakes or wastes time. If the
-  // process is gone, report the transcript instead of an opaque ESRCH.
-  const readyDeadline = Date.now() + 10_000;
-  while (Date.now() < readyDeadline) {
-    try {
-      process.kill(cliPid, 0);
-      break;
-    } catch {
-      throw new Error(
-        `CLI process ${cliPid} exited before it could be signalled.\n` +
-          `--- transcript ---\n${readTranscript()}`,
-      );
-    }
-  }
-  // Signal handlers are registered during mount; give that a brief beat once we
-  // know the process is actually alive.
-  await Bun.sleep(1_500);
+  // startCli registers shutdown handlers before initializing the data store.
+  // The database prerequisite above therefore orders registration before this
+  // signal; UI mount and an arbitrary grace period are not prerequisites.
   try {
     process.kill(cliPid, signal);
   } catch (error) {
@@ -158,6 +143,9 @@ async function spawnAndSignal(
   }
 
   const exitCode = await Promise.race([child.exited, Bun.sleep(exitTimeoutMs).then(() => -1)]);
+  // A default OS signal exit has the same status. Require evidence that Kunai's
+  // handler actually ran instead of mistaking a killed process for clean exit.
+  expect(readTranscript()).toContain(`Received ${signal}, shutting down cleanly`);
   return { exitCode: exitCode as number, dataDbPath };
 }
 

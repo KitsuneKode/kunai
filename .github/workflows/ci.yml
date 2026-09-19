@@ -64,12 +64,18 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/actions/setup-bun-monorepo/**'
             cli:
+              - '.github/scripts/open-release-metadata-pr.sh'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-bun-monorepo/**'
+              - 'scripts/**'
               - 'apps/cli/**'
               - 'packages/**'
               - 'turbo.json'
               - 'package.json'
               - 'bun.lock'
             docs:
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-bun-monorepo/**'
               - 'apps/docs/**'
               - 'docs/**'
               - '.docs/**'
@@ -78,6 +84,7 @@ jobs:
               - 'scripts/verify-doc-paths.ts'
               - 'scripts/verify-doc-frontmatter.ts'
               - 'apps/cli/src/container.ts'
+              - 'apps/cli/src/container/bootstrap-providers.ts'
               - 'apps/cli/src/domain/session/command-registry.ts'
               - 'apps/cli/src/cli-args.ts'
               - 'packages/providers/**/manifest.ts'
@@ -91,6 +98,7 @@ jobs:
             # pure-code PR would add an unrouted directory and skip the gate
             # that exists to catch exactly that.
             doc-coverage:
+              - '.github/workflows/ci.yml'
               - 'apps/**'
               - 'packages/**'
               - 'scripts/*.ts'
@@ -145,6 +153,17 @@ jobs:
         if: github.event_name == 'push'
         run: bunx turbo run fmt:check --summarize
 
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-fmt-${{ github.run_attempt }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .turbo/runs/*.json
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -171,6 +190,17 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bun run lint:anti-slop:changed
 
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-lint-${{ github.run_attempt }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .turbo/runs/*.json
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -193,6 +223,17 @@ jobs:
         if: github.event_name == 'push'
         run: bunx turbo run typecheck --summarize
 
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-typecheck-${{ github.run_attempt }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .turbo/runs/*.json
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -209,11 +250,27 @@ jobs:
 
       - name: Test (affected on PR)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run test --affected --summarize
+        run: |
+          set -o pipefail
+          bunx turbo run test --affected --summarize 2>&1 | tee ci-test.log
 
       - name: Test (full on main)
         if: github.event_name == 'push'
-        run: bunx turbo run test --summarize
+        run: |
+          set -o pipefail
+          bunx turbo run test --summarize 2>&1 | tee ci-test.log
+
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verification-test-${{ github.run_attempt }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .turbo/runs/*.json
+            ci-test.log
 
   analytics-postgres:
     name: Analytics Postgres suites
@@ -753,3 +810,16 @@ jobs:
           turbo-cache-prefix: installer-scenarios
       - name: Run hermetic installer scenarios
         run: bun run test:installer:scenarios
+
+  ci-ready:
+    name: CI ready
+    if: ${{ always() }}
+    needs: [changes, fmt, lint, typecheck, test, analytics-postgres, windows-cli, macos-cli, installer-lint, build-cli, checks-docs, checks-doc-coverage, build-binaries, installer-docker, installer-scenarios]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5
+      - name: Require successful jobs or expected path-filter skips
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-ready.mjs

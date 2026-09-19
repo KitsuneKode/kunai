@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-09-12"
 ---
 
 # Kunai — Repo Infrastructure
@@ -83,6 +83,21 @@ Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
 
 ### Checkout is caller-owned
 
+`CI ready` is the aggregate merge check. It runs with `always()` after every
+CI job and executes `scripts/ci-ready.mjs` using the runner's Node, without a
+workspace install. It rejects missing dependencies, failures, cancellations,
+invalid filter outputs and unexpected skips. Only jobs whose path conditions
+are false may skip. Update the policy and its routing fixtures when changing
+job conditions. Release Guard runs on every PR so docs-only changes also emit
+`Version ↔ changelog guard`; a required workflow must not disappear behind a
+PR path filter. Remote enforcement must be checked separately from this YAML.
+
+Release publication proposes its status update through a reviewed metadata PR,
+using `.github/scripts/open-release-metadata-pr.sh`. It does not push to main.
+Maintainers approve bot-created workflow runs when requested, then review and
+merge the PR after required checks pass. Recovery is documented in
+[RELEASING.md](../RELEASING.md#metadata-pr-recovery).
+
 **Every job must run `actions/checkout` before it uses a local composite
 action.** The composite deliberately does not check out.
 
@@ -109,17 +124,26 @@ The invariant is enforced two ways:
 
 **Parallel jobs** (`.github/workflows/ci.yml`):
 
-| Job                   | PR                                                                                    | Main         |
-| --------------------- | ------------------------------------------------------------------------------------- | ------------ |
-| `fmt`                 | `turbo run fmt:check --affected`                                                      | full         |
-| `lint`                | `turbo run lint --affected` + changed-file anti-slop advisory                         | full         |
-| `typecheck`           | `turbo run typecheck --affected`                                                      | full         |
-| `test`                | `turbo run test --affected` (CLI splits into cached `test:unit` + `test:integration`) | full         |
-| `windows-cli`         | root typecheck + CLI tests when CLI paths change                                      | same on main |
-| `build-cli`           | `bun run build` + `bun run pkg:check` when CLI paths change                           | same on main |
-| `build-binaries`      | 2 Linux targets via Turbo when CLI/installer paths change                             | same         |
-| `checks-docs`         | docs gate when docs paths change                                                      | same         |
-| `checks-doc-coverage` | `verify:doc-coverage` when a scanned code root or the feature map changes             | same         |
+| Job                   | PR                                                                                      | Main         |
+| --------------------- | --------------------------------------------------------------------------------------- | ------------ |
+| `fmt`                 | `turbo run fmt:check --affected`                                                        | full         |
+| `lint`                | `turbo run lint --affected` + changed-file anti-slop advisory                           | full         |
+| `typecheck`           | `turbo run typecheck --affected`                                                        | full         |
+| `test`                | `turbo run test --affected` (CLI splits into uncached `test:unit` + `test:integration`) | full         |
+| `windows-cli`         | root typecheck + CLI tests when CLI paths change                                        | same on main |
+| `build-cli`           | `bun run build` + `bun run pkg:check` when CLI paths change                             | same on main |
+| `build-binaries`      | 2 Linux targets via Turbo when CLI/installer paths change                               | same         |
+| `checks-docs`         | docs gate when docs paths change                                                        | same         |
+| `checks-doc-coverage` | `verify:doc-coverage` when a scanned code root or the feature map changes               | same         |
+
+Format, lint, typecheck, and test jobs retain Turbo run summaries for seven days,
+including failed attempts. The Linux test job also retains its combined output;
+`pipefail` preserves the test failure when output is piped through `tee`. Artifact
+names include the run attempt so retries retain distinct evidence.
+
+Formatting runs independently of typecheck. Provider registration changes in
+`apps/cli/src/container/bootstrap-providers.ts` reach the docs freshness gate;
+`apps/cli/test/unit/scripts/ci-ready.test.ts` guards that selection.
 
 `checks-doc-coverage` is separate from `checks-docs` on purpose. Its trigger is
 every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
@@ -232,7 +256,7 @@ KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 
 Release workflow details live in [RELEASING.md](../RELEASING.md). Infrastructure touchpoints:
 
 - `bun run guard` — local version ↔ changelog consistency check
-- `.github/workflows/release-guard.yml` — runs `bun run guard` on PRs that touch `apps/cli/**`, `.changeset/**`, or release scripts
+- `.github/workflows/release-guard.yml` — runs `bun run guard` on every PR; main pushes remain path-filtered to release-related changes
 - `.github/workflows/release.yml` — version/publish pipeline (scoped paths; runs guard before publish)
 - Changelog parser tests: `apps/cli/test/unit/scripts/release-changelog.test.ts`
 

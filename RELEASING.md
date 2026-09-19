@@ -68,7 +68,7 @@ network, malformed-response, and integrity errors are failures, not absence.
 4. Open a PR. The **Release Guard** workflow runs `bun run guard` and fails on version/changelog drift.
 5. Merge to `main`. The **Release** workflow opens or updates a version PR only — it never publishes on push.
 6. Review and merge the version PR (`chore: version packages`). That commit bumps `apps/cli/package.json`, both changelogs, and regenerates staged `.release/kunai-vX.Y.Z.{md,json}` artifacts.
-7. Manually dispatch **Release** with the exact version string (must match `apps/cli/package.json`) and the provider signoff run id, wait for **confirmation**, approve `release-production`, and let candidate → confirmation → publish → metadata complete.
+7. Manually dispatch **Release** with the exact version string (must match `apps/cli/package.json`) and the provider signoff run id, wait for **confirmation**, approve `release-production`, and let candidate → confirmation → publish → metadata complete. Review the resulting metadata PR, approve its workflow runs if requested, and merge after required checks pass.
 
 **Never hand-edit** `apps/cli/package.json` `version` or `apps/cli/src/main.ts` for releases. Runtime version (`KUNAI_VERSION`) is derived from `package.json` at build time.
 
@@ -280,7 +280,7 @@ Job **`metadata`** runs only after publish succeeds:
 bun run scripts/set-release-status.ts <version> published <UTC-ISO>
 ```
 
-Then focused release-artifact tests, `release:notes:check`, and a narrow commit/push of `.release/kunai-v<version>.json` (`chore(release): mark vX.Y.Z published`). No force-push.
+Then focused release-artifact tests and `release:notes:check` run before a narrow PR containing `.release/kunai-v<version>.json` is opened against main. The branch is keyed by version and workflow run ID, so retrying the metadata job reuses its review branch. Main is updated only through review and required checks. GitHub may require a maintainer to approve workflow runs for this bot-created PR.
 
 ## npm publication recovery
 
@@ -343,21 +343,23 @@ Because the publish job pins `HEAD == origin/main`, merging anything to main
 while a Release run is waiting for approval invalidates that run. Dispatch the
 release when main is quiet, approve once, and let it finish.
 
-## Metadata push recovery
+## Metadata PR recovery
 
-The metadata job authenticates with `GITHUB_TOKEN`. If branch protection blocks that push:
+The metadata job uses `GITHUB_TOKEN` with contents and pull-request write
+permissions. Repository Actions settings must allow GitHub Actions to create
+pull requests. It never pushes directly to main or needs a protection bypass.
 
 1. Confirm npm, tag `vX.Y.Z`, and the public GitHub release are already correct.
-2. Locally on a clean checkout of the dispatch ref:
+2. Rerun only the failed metadata job. If the review branch was pushed before PR
+   creation failed, the helper reuses it without another commit or publication.
+3. Open the resulting PR, approve bot-created workflow runs if GitHub requests
+   it, review the metadata diff, and merge after required checks pass.
+4. If the metadata PR was closed without merging, reopen it or create a reviewed
+   replacement. A closed PR is not evidence that main records publication.
 
-```sh
-bun run scripts/set-release-status.ts <version> published <UTC-ISO>
-git add .release/kunai-v<version>.json
-git commit -m "chore(release): mark v<version> published"
-git push
-```
-
-3. Prefer a fine-grained PAT (or classic PAT) with **contents: write** that bypasses the bot restriction, either for the manual push or as a repo secret wired into the metadata job checkout token. Do not force-push and do not re-run publish solely to fix metadata.
+Do not rerun publication solely to repair metadata, force-push, or bypass main's
+required checks. If automation is unavailable, make the same narrow metadata
+change on a new branch and open a PR manually.
 
 ## Related automation
 

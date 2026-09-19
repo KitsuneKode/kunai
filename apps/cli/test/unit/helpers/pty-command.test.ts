@@ -18,7 +18,6 @@ describe("PTY command", () => {
     expect(argv[1]).toBe("-c");
     expect(argv[2]).toBe(buildDarwinExpectScript("exec bun cli.ts", "/tmp/cli.log"));
     expect(argv[2]).toContain('spawn /bin/sh -c "exec bun cli.ts"');
-    expect(argv[2]).toContain('log_file "/tmp/cli.log"');
     expect(argv[2]).toContain("CHILDKILLED");
     expect(argv[2]).toContain("SIGINT { exit 130 }");
   });

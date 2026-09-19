@@ -57,13 +57,4 @@ test("suite scripts that touch SQLite or spawn shells carry an explicit per-test
   }
 });
 
-test("the default test runner still lets CI override the scripted budget", async () => {
-  const runner = await Bun.file(
-    resolve(import.meta.dir, "../../../scripts/run-default-tests.ts"),
-  ).text();
-
-  // Bun applies the last --timeout on the command line, so the runner appending
-  // the env override after the scripted baseline is what makes CI's value win.
-  expect(runner).toContain("KUNAI_TEST_TIMEOUT_MS");
-  expect(runner).toContain("--timeout=");
-});
+// Executed argv and override precedence are covered by default-test-runner.test.ts.

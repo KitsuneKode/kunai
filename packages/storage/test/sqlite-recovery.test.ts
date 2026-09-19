@@ -1,14 +1,6 @@
-import { expect, test } from "bun:test";
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -109,43 +101,29 @@ test("quarantines the corrupt main file and does not strand its siblings", () =>
   }
 });
 
-/**
- * Reproduces the Windows failure on Linux by making the *directory*
- * unwritable, which is the only way to make `renameSync` fail here. On Windows
- * the rename fails for a different reason — an open handle on the main file
- * returns EBUSY — but the recovery code sees the identical outcome.
- *
- * What must not happen: `-wal` moving aside while the database it belongs to
- * stays put. That detaches uncheckpointed history from its database, which is
- * the data loss this function's comment promises not to cause, and the caller
- * would read the non-empty result as a successful quarantine and log "starting
- * fresh" naming a WAL backup as if it were the database.
- */
 test("leaves the wal in place when the database itself cannot be quarantined", () => {
   const dir = mkdtempSync(join(tmpdir(), "kunai-sqlite-recovery-locked-"));
   const dbPath = join(dir, "kunai-data.sqlite");
-  try {
-    writeFileSync(dbPath, "this is definitely not a sqlite database");
+  const rename = fs.renameSync;
+  const messages: string[] = [];
+  let blockedMainRename = false;
+  const renameSpy = spyOn(fs, "renameSync").mockImplementation((source, target) => {
+    if (source !== dbPath) return rename(source, target);
+    blockedMainRename = true;
+    // SQLite may remove invalid siblings when closing the failed handle. Set
+    // up the surviving-sibling case at the filesystem failure boundary so the
+    // quarantine ordering contract is exercised on every OS, including root.
     writeFileSync(`${dbPath}-wal`, "uncheckpointed history lives here");
     writeFileSync(`${dbPath}-shm`, "shared memory index");
-    chmodSync(dir, 0o500); // r-x: entries readable, nothing renamed or created.
-
-    // Verify the premise before testing the behaviour. A read-only directory
-    // does not block renames as root, on Windows, or on some CI filesystems —
-    // and without a failing rename this test silently asserts nothing. Skipping
-    // where the setup cannot hold is honest; passing vacuously is not.
-    let renameBlocked = false;
-    try {
-      renameSync(dbPath, `${dbPath}.premise-probe`);
-      renameSync(`${dbPath}.premise-probe`, dbPath);
-    } catch {
-      renameBlocked = true;
-    }
-    if (!renameBlocked) return;
-
-    expect(() => openKunaiDatabaseWithCorruptionRecovery(dbPath)).toThrow();
-
-    chmodSync(dir, 0o700);
+    throw Object.assign(new Error("database is held open"), { code: "EBUSY" });
+  });
+  try {
+    writeFileSync(dbPath, "this is definitely not a sqlite database");
+    expect(() =>
+      openKunaiDatabaseWithCorruptionRecovery(dbPath, {}, (message) => messages.push(message)),
+    ).toThrow();
+    expect(blockedMainRename).toBe(true);
+    expect(messages).toEqual([]);
     const names = readdirSync(dir);
     // Nothing moved, so nothing was separated from anything else.
     expect(names.filter((name) => name.includes(".corrupt."))).toHaveLength(0);
@@ -154,13 +132,11 @@ test("leaves the wal in place when the database itself cannot be quarantined", (
       "kunai-data.sqlite-shm",
       "kunai-data.sqlite-wal",
     ]);
-    // Deliberately not asserting the wal's *contents*. SQLite may reset or
-    // truncate a `-wal` whose database it could not open, and does so on macOS
-    // but not Linux — that is its business, not this function's. What this test
-    // owns is that quarantine moved nothing: the database is still the
-    // database, and no sibling was detached from it and renamed aside.
+    expect(readFileSync(dbPath, "utf8")).toBe("this is definitely not a sqlite database");
+    expect(readFileSync(`${dbPath}-wal`, "utf8")).toBe("uncheckpointed history lives here");
+    expect(readFileSync(`${dbPath}-shm`, "utf8")).toBe("shared memory index");
   } finally {
-    chmodSync(dir, 0o700);
+    renameSpy.mockRestore();
     rmSync(dir, { recursive: true, force: true });
   }
 });
