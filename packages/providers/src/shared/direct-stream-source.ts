@@ -12,6 +12,7 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import { ProviderHttpError } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "./catalog-id";
 import { createExhaustedResult, emitTraceEvent } from "./resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "./series-coordinates";
@@ -370,11 +371,16 @@ export async function resolveDirectStreamSource(
       });
     }
     const timedOut = isTimeoutError(error);
+    // A ProviderHttpError already carries the classified code and retryability
+    // (e.g. 429 → rate-limited, 403 → blocked); collapsing it to network-error
+    // would retry-storm throttled endpoints and mis-report them as generic
+    // network failures.
+    const httpError = error instanceof ProviderHttpError ? error : undefined;
     const failure: ProviderFailure = {
       providerId,
-      code: timedOut ? "timeout" : "network-error",
+      code: httpError?.code ?? (timedOut ? "timeout" : "network-error"),
       message: error instanceof Error ? error.message : `${label} resolution failed`,
-      retryable: true,
+      retryable: httpError?.retryable ?? true,
       at: context.now(),
     };
     failures.push(failure);

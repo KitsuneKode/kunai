@@ -133,7 +133,7 @@ function createProviderHttpError(
   });
 }
 
-function statusToResolveErrorCode(status: number): ResolveErrorCode {
+export function statusToResolveErrorCode(status: number): ResolveErrorCode {
   if (status === 408 || status === 504) return "timeout";
   if (status === 429) return "rate-limited";
   if (status === 401 || status === 403) return "blocked";
@@ -142,7 +142,7 @@ function statusToResolveErrorCode(status: number): ResolveErrorCode {
   return "network-error";
 }
 
-function isRetryableStatus(status: number): boolean {
+export function isRetryableStatus(status: number): boolean {
   return (
     status === 408 ||
     status === 429 ||
