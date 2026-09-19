@@ -268,7 +268,15 @@ export async function lockCurrentVersion(
   if (lifetimeLockPath === path) return;
 
   const lock = await tryAcquireVersionLock(layout, version, { execPath });
-  if (!lock.acquired) return;
+  if (!lock.acquired) {
+    // Second instance: the lock guards the binary's lifetime (cleanup,
+    // activation), not the session — running unprotected is a supported
+    // degradation per ADR 0003, but it must be visible, not silent.
+    console.error(
+      `kunai: version lock held by pid ${lock.holderPid ?? "unknown"} — running unprotected`,
+    );
+    return;
+  }
 
   lifetimeLockPath = path;
   lifetimeLockRelease = lock.release;
