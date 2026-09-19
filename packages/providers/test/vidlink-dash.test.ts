@@ -77,6 +77,55 @@ function recordingEndpointHealth(quarantined: readonly string[] = []) {
   return { port, failures, successes };
 }
 
+const HLS_MASTER = `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",LANGUAGE="en",DEFAULT=YES,URI="audio/en.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="日本語",LANGUAGE="ja",URI="audio/ja.m3u8"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",URI="subs/en.m3u8"
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Español",LANGUAGE="es",URI="subs/es.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=1280x720,AUDIO="aud",SUBTITLES="subs"
+720p.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1920x1080,AUDIO="aud",SUBTITLES="subs"
+1080p.m3u8
+`;
+
+function buildHlsContext(onRequest?: (url: string) => void) {
+  const fetchImpl = async (url: string) => {
+    onRequest?.(url);
+    if (url.includes("enc-dec.app")) {
+      return new Response(JSON.stringify({ result: "ENCRYPTED" }), { status: 200 });
+    }
+    if (url.includes("vidlink.pro/api/b")) {
+      return new Response(
+        JSON.stringify({
+          stream: {
+            type: "hls",
+            playlist: "https://cdn.example/master.m3u8",
+            captions: [],
+          },
+        }),
+        { status: 200 },
+      );
+    }
+    if (url.endsWith("master.m3u8")) {
+      return new Response(HLS_MASTER, { status: 200 });
+    }
+    if (url.endsWith(".m3u8")) {
+      // Variant media playlist — the stream health check needs real segment rows.
+      return new Response("#EXTM3U\n#EXTINF:4,\nseg0.ts\n", { status: 200 });
+    }
+    // Segment probe: reachability requires ≥ HLS_SEGMENT_PROBE_MIN_BYTES (1 KiB).
+    return new Response(new Uint8Array(2048), {
+      status: 200,
+      headers: { "content-type": "video/mp2t" },
+    });
+  };
+  return {
+    providerId: "vidlink",
+    now: () => new Date().toISOString(),
+    fetch: { runtime: "direct-http", fetch: fetchImpl },
+  } as unknown as ProviderRuntimeContext;
+}
+
 const INPUT = {
   mediaKind: "movie",
   title: { id: "tmdb:27205", title: "Inception", tmdbId: 27205 },
@@ -120,6 +169,25 @@ describe("vidlink DASH delivery", () => {
     const result = await resolveVidlinkDirect(INPUT, buildContext());
     expect(result.subtitles.length).toBe(1);
     expect(result.subtitles[0]?.language).toBe("en");
+  });
+
+  test("master-manifest renditions feed audioLanguages and subtitle inventory (#189)", async () => {
+    const result = await resolveVidlinkDirect(INPUT, buildHlsContext());
+
+    expect(result.status).toBe("resolved");
+    expect(result.streams.map((stream) => stream.qualityLabel)).toEqual(
+      expect.arrayContaining(["1080p", "720p"]),
+    );
+    for (const stream of result.streams) {
+      expect(stream.audioLanguages).toEqual(expect.arrayContaining(["en", "ja"]));
+    }
+    const subUrls = result.subtitles.map((subtitle) => subtitle.url);
+    expect(subUrls).toEqual(
+      expect.arrayContaining([
+        "https://cdn.example/subs/en.m3u8",
+        "https://cdn.example/subs/es.m3u8",
+      ]),
+    );
   });
 });
 
