@@ -1,3 +1,4 @@
+import { catalogExternalIds } from "@/app/bootstrap/catalog-ids";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import type { Container } from "@/container";
 import type { PlaybackTargetRef } from "@/domain/share/playback-target-ref";
@@ -82,24 +83,6 @@ function buildTitleFromCatalogAnchor(ref: PlaybackTargetRef): TitleInfo {
   };
 }
 
-function catalogExternalIds(
-  ns: Extract<PlaybackTargetRef["anchor"], { by: "catalog" }>["ns"],
-  id: string,
-) {
-  switch (ns) {
-    case "youtube":
-      return /^PL[\w-]+$/.test(id) ? { youtubePlaylistId: id } : { youtubeId: id };
-    case "tmdb":
-      return { tmdbId: id };
-    case "anilist":
-      return { anilistId: id };
-    case "mal":
-      return { malId: id };
-    case "imdb":
-      return { imdbId: id.startsWith("tt") ? id : `tt${id}` };
-  }
-}
-
 function buildEpisode(ref: PlaybackTargetRef): EpisodeInfo | undefined {
   if (typeof ref.season === "number" && typeof ref.episode === "number") {
     return { season: ref.season, episode: ref.episode };
@@ -129,7 +112,7 @@ function validateProviderHint(ref: PlaybackTargetRef, container: Container): str
   return undefined;
 }
 
-async function mapAnimeTitleToProviderNative(
+export async function mapAnimeTitleToProviderNative(
   title: TitleInfo,
   container: Container,
   mode: ShellMode,

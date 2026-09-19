@@ -41,12 +41,15 @@ USAGE
   kunai [options]            Launch the interactive shell
   kunai -S "Dune"            Search straight away
   kunai -i 438631 -t movie   Open a known TMDB id
+  kunai -i anilist:21        Open a known AniList id (anime lane)
   kunai -a                   Start in anime mode
   kunai -y                   Start in YouTube mode
 
 LAUNCH
   -S, --search <query>       Search for a title on launch
-  -i, --id <id>              Open a specific title id
+  -i, --id <id>              Open a specific title id (bare = TMDB; or
+                             anilist:<id>, mal:<id>, tmdb:<id>, imdb:<id>,
+                             youtube:<id>)
   -t, --type <movie|tv>      Content type for --id (tv = series)
   -a, --anime                Anime mode (AniDB default with provider fallback)
   -y, --youtube              YouTube mode (YouTube provider)
