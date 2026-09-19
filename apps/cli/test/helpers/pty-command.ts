@@ -38,7 +38,8 @@ export function buildDarwinExpectScript(command: string, transcript: string): st
   // `{pid spawn_id 0 0 CHILDKILLED SIGNAME ...}`. Map those to shell-style
   // 128+signal codes so the shutdown suite matches util-linux `script -e`.
   return [
-    `log_file "${tclTranscript}"`,
+    // -a records dialogue even when log_user disables console echo.
+    `log_file -a "${tclTranscript}"`,
     "log_user 0",
     "set timeout -1",
     `spawn /bin/sh -c "${tclCommand}"`,

@@ -76,6 +76,9 @@ send the real signal. `startCli` registers signal handlers before initializing
 that store, so no UI-mount sleep is required. Require the shutdown-handler
 message in the PTY transcript as well as the exit status: the default OS signal
 action can produce the same status without running Kunai's cleanup.
+The macOS Expect wrapper uses `log_file -a` so disabling console echo does not
+also suppress the transcript. The real Expect integration fixture checks both
+quiet stdout and retained child output; it skips explicitly without Expect.
 
 The direct CLI runner consumes option values separately from file patterns:
 `test -- -t "name"` still searches only unit/integration. Focused runs retain the
