@@ -226,7 +226,8 @@ describe("createCredentialVault backend selection", () => {
     const spawned: string[][] = [];
     const spawn: CredentialSpawn = async (argv) => {
       spawned.push([...argv]);
-      return { exitCode: 1, stdout: "", stderr: "" }; // lookup miss still proves the daemon answered
+      // lookup miss still proves the daemon answered
+      return { exitCode: 1, stdout: "", stderr: "", timedOut: false };
     };
     const vault = await createCredentialVault({
       paths: fakePaths(dir),
@@ -237,6 +238,96 @@ describe("createCredentialVault backend selection", () => {
     });
     expect(vault.backend).toBe("secret-service");
     expect(spawned[0]).toEqual(["secret-tool", "lookup", "service", "kunai", "key", "__probe__"]);
+  });
+});
+
+describe("vault read failures abort mutations", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "kunai-vault-fail-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const ok = { exitCode: 1, stdout: "", stderr: "", timedOut: false } as const;
+
+  test("a stalled vault get rejects, and the queued patch never deletes the other tracker", async () => {
+    // Probe answers (exit 1 = answered, entry absent); real gets stall out.
+    const spawn: CredentialSpawn = async (argv) =>
+      argv.includes("__probe__") ? ok : { exitCode: 2, stdout: "", stderr: "", timedOut: true };
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      env: { KUNAI_CREDENTIAL_BACKEND: "secret-service" },
+      which: () => "/usr/bin/secret-tool",
+      spawn,
+    });
+    expect(vault.backend).toBe("secret-service");
+
+    const deletes: string[] = [];
+    const sets: string[] = [];
+    const baseDelete = vault.delete.bind(vault);
+    const baseSet = vault.set.bind(vault);
+    vault.delete = async (key) => {
+      deletes.push(key);
+      return baseDelete(key);
+    };
+    vault.set = async (key, value) => {
+      sets.push(key);
+      return baseSet(key, value);
+    };
+
+    const io = vaultSyncTokenFileIo(vault);
+    const store = new SyncTokenStore(fakePaths(dir), io);
+
+    await expect(io.readTokens("ignored")).rejects.toThrow();
+    await expect(store.patchAniList({ accessToken: "a", userId: 1 })).rejects.toThrow();
+    // The aborted mutation never reached writeTokens — tmdb.tokens survives.
+    expect(deletes).toEqual([]);
+    expect(sets).toEqual([]);
+  });
+
+  test.each([
+    ["secret-service", "secret-tool", { exitCode: 1, stdout: "", stderr: "", timedOut: false }],
+    ["keychain", "security", { exitCode: 44, stdout: "", stderr: "", timedOut: false }],
+    [
+      "keychain",
+      "security",
+      { exitCode: 1, stdout: "", stderr: "could not be found", timedOut: false },
+    ],
+    ["wincred", "pwsh", { exitCode: 1, stdout: "", stderr: "", timedOut: false }],
+  ] as const)(
+    "%s reads its documented not-found exit as undefined",
+    async (backend, cli, result) => {
+      const vault = await createCredentialVault({
+        paths: fakePaths(dir),
+        env: { KUNAI_CREDENTIAL_BACKEND: backend },
+        which: () => `/usr/bin/${cli}`,
+        spawn: async () => result,
+      });
+      expect(vault.backend).toBe(backend);
+      expect(await vault.get(CREDENTIAL_KEYS.anilistTokens)).toBeUndefined();
+    },
+  );
+
+  test.each([
+    ["secret-service", "secret-tool", { exitCode: 2, stdout: "", stderr: "", timedOut: false }],
+    [
+      "keychain",
+      "security",
+      { exitCode: 1, stdout: "", stderr: "errSecAuthFailed", timedOut: false },
+    ],
+    ["wincred", "pwsh", { exitCode: 3, stdout: "", stderr: "", timedOut: false }],
+  ] as const)("%s throws on a non-not-found failure", async (backend, cli, result) => {
+    const spawn: CredentialSpawn = async (argv) => (argv.includes("__probe__") ? ok : result);
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      env: { KUNAI_CREDENTIAL_BACKEND: backend },
+      which: () => `/usr/bin/${cli}`,
+      spawn,
+    });
+    expect(vault.backend).toBe(backend);
+    await expect(vault.get(CREDENTIAL_KEYS.anilistTokens)).rejects.toThrow();
   });
 });
 

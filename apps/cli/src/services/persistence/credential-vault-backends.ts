@@ -14,13 +14,17 @@ async function defaultSpawn(
   argv: readonly string[],
   input: string,
   timeoutMs: number,
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<{ exitCode: number; stdout: string; stderr: string; timedOut: boolean }> {
   const proc = Bun.spawn(argv as string[], {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
   });
-  const timeout = setTimeout(() => proc.kill(), timeoutMs);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    proc.kill();
+  }, timeoutMs);
   try {
     if (input) proc.stdin.write(input);
     proc.stdin.end();
@@ -29,7 +33,7 @@ async function defaultSpawn(
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
-    return { exitCode, stdout, stderr };
+    return { exitCode, stdout, stderr, timedOut };
   } finally {
     clearTimeout(timeout);
   }
@@ -84,7 +88,13 @@ function secretServiceVault(spawn: CredentialSpawn): CredentialVaultPort {
         "",
         SECRET_SERVICE_PROBE_TIMEOUT_MS,
       );
-      return out.exitCode === 0 ? out.stdout.replace(/\n$/, "") : undefined;
+      if (out.exitCode === 0) return out.stdout.replace(/\n$/, "");
+      // exit 1 is the documented not-found; any other failure — including a
+      // killed spawn — is a daemon fault and must not read as "absent".
+      if (out.exitCode === 1 && !out.timedOut) return undefined;
+      throw new Error(
+        `secret-tool lookup failed (${out.timedOut ? "timeout" : `exit ${out.exitCode}`})`,
+      );
     },
     async set(key, value) {
       const out = await spawn(
@@ -117,8 +127,15 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
         "",
         SPAWN_TIMEOUT_MS,
       );
-      // exit 44 = item not found; anything else non-zero is also "absent".
-      return out.exitCode === 0 ? out.stdout.replace(/\n$/, "") : undefined;
+      if (out.exitCode === 0) return out.stdout.replace(/\n$/, "");
+      // exit 44 / "could not be found" = item not found; anything else —
+      // including a killed spawn — is a Keychain fault, not "absent".
+      if (!out.timedOut && (out.exitCode === 44 || out.stderr.includes("could not be found"))) {
+        return undefined;
+      }
+      throw new Error(
+        `security find-generic-password failed (${out.timedOut ? "timeout" : `exit ${out.exitCode}`})`,
+      );
     },
     async set(key, value) {
       const out = await spawn(
@@ -161,7 +178,13 @@ function wincredVault(spawn: CredentialSpawn): CredentialVaultPort {
         ].join("; "),
         "",
       );
-      return out.exitCode === 0 ? out.stdout : undefined;
+      if (out.exitCode === 0) return out.stdout;
+      // The script exits 1 from its own catch — the documented not-found.
+      // Anything else (or a killed spawn) is a vault fault, not "absent".
+      if (out.exitCode === 1 && !out.timedOut) return undefined;
+      throw new Error(
+        `PasswordVault Retrieve failed (${out.timedOut ? "timeout" : `exit ${out.exitCode}`})`,
+      );
     },
     async set(key, value) {
       const out = await run(
@@ -199,13 +222,13 @@ async function probeBackend(
     if (backend === "secret-service") {
       if (!which("secret-tool")) return undefined;
       // A lookup on a nonexistent key exercises the daemon round-trip; exit 1
-      // (not found) still proves the service answered.
+      // (not found) still proves the service answered. A killed spawn does not.
       const out = await spawn(
         ["secret-tool", "lookup", ...SERVICE_ATTRS, "key", "__probe__"],
         "",
         SECRET_SERVICE_PROBE_TIMEOUT_MS,
       );
-      return out.exitCode <= 1 ? secretServiceVault(spawn) : undefined;
+      return out.exitCode <= 1 && !out.timedOut ? secretServiceVault(spawn) : undefined;
     }
     if (backend === "keychain") {
       return which("security") ? keychainVault(spawn) : undefined;
