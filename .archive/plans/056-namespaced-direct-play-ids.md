@@ -31,7 +31,7 @@ scheme, so a shared link and a typed flag can never drift apart.
 function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInfo | null {
   if (!args.id) return null;
   if (args.anime) {
-    logs.push({ kind: "anime-id-unsupported", id: args.id });   // ← the wall
+    logs.push({ kind: "anime-id-unsupported", id: args.id }); // ← the wall
     return null;
   }
   if (args.type === "movie" || args.type === "series") {
@@ -58,16 +58,17 @@ function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInf
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Unit tests | `bun run --cwd apps/cli test:unit` | all pass |
-| Full suite | `bun run test --force` | 0 failures |
-| Typecheck | `bun run typecheck --force` | exit 0 |
-| Manual smoke | `bun run dev -- -i anilist:21 -a` | resolves One Piece (or clear failure) |
+| Purpose      | Command                            | Expected                              |
+| ------------ | ---------------------------------- | ------------------------------------- |
+| Unit tests   | `bun run --cwd apps/cli test:unit` | all pass                              |
+| Full suite   | `bun run test --force`             | 0 failures                            |
+| Typecheck    | `bun run typecheck --force`        | exit 0                                |
+| Manual smoke | `bun run dev -- -i anilist:21 -a`  | resolves One Piece (or clear failure) |
 
 ## Scope
 
 **In scope:**
+
 - `apps/cli/src/cli-args.ts` — help text + parsing of `ns:id`
 - `apps/cli/src/app/bootstrap/bootstrap-intent.ts` — `resolveDirectTitle`
 - The share/catalog-anchor resolution path — reuse, don't fork
@@ -76,6 +77,7 @@ function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInf
 - `.changeset/` — user-facing flag change
 
 **Out of scope:**
+
 - Minimal mode — already shipped (`-m`). Verify and close that half of the issue in the PR body.
 - `--anilist-id` or any second flag — explicitly rejected by the issue.
 - Changing share-link parsing.
@@ -89,7 +91,8 @@ Accept `anilist:21`, `tmdb:1396`, `mal:5114`, `imdb:tt…`, `youtube:…` — th
 back-compat — record that decision in the code comment and help text.
 
 Behavior rules:
-- `-i anilist:21` implies anime mode is *compatible* — remove the
+
+- `-i anilist:21` implies anime mode is _compatible_ — remove the
   `anime-id-unsupported` dead end for namespaced ids: when `ns` is `anilist`/
   `mal`, the id is meaningful in anime mode and must resolve, not warn-drop.
   (If the flag is used without `-a`, decide whether anime-typed namespaces
