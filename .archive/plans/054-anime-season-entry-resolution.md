@@ -52,12 +52,12 @@ wrong-able guess from a title string that cannot carry the answer.
 - **The #265 trap to encode in the contract:** a sequel chain is not an
   ordinal. Attack on Titan: base → Season 2 → Season 3 → Season 3 Part 2 →
   Final Season — naive sequel counting yields season 4 = "Season 3 Part 2".
-  Any mapping must distinguish *new season* from *continuation of one*.
+  Any mapping must distinguish _new season_ from _continuation of one_.
 
 ## Direction (from the issue — the plan's spine)
 
 Stop asking for an ordinal. Resolve the **specific catalog entry the user
-picked** — which already *is* the season — and map that entry to a provider
+picked** — which already _is_ the season — and map that entry to a provider
 title:
 
 1. `TitleIdentity` (or the resolve input) gains the data adapters need:
@@ -70,16 +70,17 @@ title:
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Provider tests | `bun run --cwd packages/providers test` | all pass |
-| CLI unit | `bun run --cwd apps/cli test:unit` | all pass |
-| Full suite | `bun run test --force` | 0 failures |
-| Typecheck | `bun run typecheck --force` | exit 0 |
+| Purpose        | Command                                 | Expected   |
+| -------------- | --------------------------------------- | ---------- |
+| Provider tests | `bun run --cwd packages/providers test` | all pass   |
+| CLI unit       | `bun run --cwd apps/cli test:unit`      | all pass   |
+| Full suite     | `bun run test --force`                  | 0 failures |
+| Typecheck      | `bun run typecheck --force`             | exit 0     |
 
 ## Scope
 
 **In scope:**
+
 - `packages/types/src/index.ts` — contract additions (alias/relation fields or a richer resolve input)
 - `apps/cli/src/domain/catalog/` — the shared season→entry mapping (find the right home via `feature-map.md`; identity reconciliation lives there)
 - Anime provider adapters as each mapping lands: `anidb` first (the failing case), then allmanga; miruro needs nothing (already AniList-keyed); hianime + others get a decision per adapter ("hit every seam" — each adapter gets an explicit verdict even if "not supported")
@@ -88,6 +89,7 @@ title:
 - `.changeset/` — user-facing (anime resolves titles it couldn't before)
 
 **Out of scope:**
+
 - Text-based "arc name → ordinal" heuristics — explicitly rejected by the issue and by `season-routing.ts`'s fail-closed rule.
 - Series/movie lanes — anime-only defect.
 - Merging with #44/#45 (MAL namespacing/repointing plans) — orthogonal; do not entangle.
@@ -163,7 +165,7 @@ n/a). Update `.docs/architecture.md`/`.docs/providers.md` + changeset.
 - [ ] `TitleIdentity` (or resolve input) carries relation/alias data to providers
 - [ ] Season→entry mapping is centralized (one service), not per-adapter
 - [ ] AoT chain test proves continuation ≠ new season
-- [ ] AniDB resolves Demon Slayer S2 correctly *or* fails closed — never wrong
+- [ ] AniDB resolves Demon Slayer S2 correctly _or_ fails closed — never wrong
 - [ ] Every provider has a recorded verdict in `.docs/providers.md`
 - [ ] `bun run test --force` + `typecheck --force` green; changeset present
 
