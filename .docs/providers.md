@@ -372,6 +372,11 @@ to `vidking`; use `bc-frontend` only for Bitcine-minted sessions. This is an
 attended session handoff only; do not add code that bypasses Turnstile or
 silently harvests browser tokens.
 
+Videasy/VidKing payloads arrive as the OpenSSL `Salted__` envelope that
+CryptoJS's passphrase-mode `AES.decrypt` consumes. That envelope is implemented
+locally in `packages/providers/src/shared/openssl-evp.ts` (EVP_BytesToKey, MD5,
+one iteration, AES-256-CBC with PKCS7); `crypto-js` is no longer a dependency.
+
 ## Registration
 
 - Implement provider module in `packages/providers/src/<provider>/direct.ts` implementing `CoreProviderModule`
