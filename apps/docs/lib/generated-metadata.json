@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "ad31326ecc35cfb5e7f7ace9f47a6dd9d2b16f3d21fd1f1544cf2fb0b20449af",
-  "docsContentFingerprint": "0565da2340cf1f44c5fd8adab9e5f90bf5ddb7ce4d10ccd196a86f34318e5f47",
+  "cliSourceFingerprint": "b4305067629d9b21023055b94d4c73233e7cc5f9593a328a384e63828d50ff04",
+  "docsContentFingerprint": "06c6a8a5f239f5ab377b98d4675d37cfa3c523e50f9e16016c5f6f488d6c4827",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "hianime", "miruro", "youtube"],
@@ -655,7 +655,7 @@
     {
       "short": "-i",
       "long": "--id",
-      "description": "Open a specific title id"
+      "description": "Open a specific title id or namespaced catalog id"
     },
     {
       "short": "-t",

@@ -57,9 +57,10 @@ describe("namespaced -i/--id", () => {
     expect(intent.directTitle?.type).toBe("series");
   });
 
-  test("imdb:<id> normalises to a tt-prefixed imdbId", () => {
+  test("imdb:<id> rejects as an unknown namespace until imdb→tmdb resolution exists", () => {
     const intent = resolveBootstrapIntent(parse(["-i", "imdb:0944947", "-t", "tv"]));
-    expect(intent.directTitle?.externalIds?.imdbId).toBe("tt0944947");
+    expect(intent.directTitle).toBeNull();
+    expect(intent.logs).toContainEqual({ kind: "id-unknown-namespace", id: "imdb:0944947" });
   });
 
   test("youtube:<id> implies the youtube lane and picks video vs playlist", () => {

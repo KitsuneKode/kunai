@@ -930,7 +930,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         logger.warn("Ignoring direct ID with an unknown namespace", { id: entry.id });
         process.stderr.write(
           `kunai: -i/--id ${entry.id} uses an unknown namespace, so it was ignored.\n` +
-            `Supported: anilist:<id>, mal:<id>, tmdb:<id>, imdb:<id>, youtube:<id> — or a bare TMDB id.\n`,
+            `Supported: anilist:<id>, mal:<id>, tmdb:<id>, youtube:<id> — or a bare TMDB id.\n`,
         );
         break;
       case "id-lane-conflict":

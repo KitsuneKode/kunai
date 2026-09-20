@@ -47,9 +47,9 @@ USAGE
 
 LAUNCH
   -S, --search <query>       Search for a title on launch
-  -i, --id <id>              Open a specific title id (bare = TMDB; or
-                             anilist:<id>, mal:<id>, tmdb:<id>, imdb:<id>,
-                             youtube:<id>)
+  -i, --id <id>              Open a specific title id or namespaced catalog id
+                             (bare = TMDB; or anilist:<id>, mal:<id>,
+                             tmdb:<id>, youtube:<id>)
   -t, --type <movie|tv>      Content type for --id (tv = series)
   -a, --anime                Anime mode (AniDB default with provider fallback)
   -y, --youtube              YouTube mode (YouTube provider)

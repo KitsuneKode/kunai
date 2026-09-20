@@ -52,13 +52,10 @@ type ParsedDirectId =
   | { readonly kind: "namespaced"; readonly ns: CatalogNs; readonly id: string }
   | { readonly kind: "invalid"; readonly raw: string };
 
-const DIRECT_ID_NAMESPACES: ReadonlySet<string> = new Set([
-  "tmdb",
-  "anilist",
-  "mal",
-  "imdb",
-  "youtube",
-]);
+// `imdb:` is deliberately absent — nothing resolves an imdb id to a TMDB one
+// (no /find call exists), so it rejects as an unknown namespace instead of
+// producing a `tt…` id TMDB cannot take.
+const DIRECT_ID_NAMESPACES: ReadonlySet<string> = new Set(["tmdb", "anilist", "mal", "youtube"]);
 
 function parseDirectId(raw: string): ParsedDirectId {
   const match = /^([a-z]+):(.+)$/i.exec(raw.trim());
@@ -70,7 +67,7 @@ function parseDirectId(raw: string): ParsedDirectId {
 
 /**
  * The lane a namespaced `-i` id implies — `anilist:`/`mal:` mean anime,
- * `youtube:` means youtube. Bare and `tmdb:`/`imdb:` ids imply nothing (the
+ * `youtube:` means youtube. Bare and `tmdb:` ids imply nothing (the
  * caller still needs `-t` for those). `main.ts` reads this before mode
  * dispatch so `-i anilist:21` does not need a redundant `-a`.
  */
@@ -221,16 +218,17 @@ export function resolveBootstrapIntent(args: BootstrapArgs): BootstrapIntent {
 
 /**
  * `-i/--id` accepts a bare TMDB id or a namespaced catalog id using the share
- * grammar — `anilist:21`, `mal:…`, `tmdb:1396`, `imdb:tt…`, `youtube:…`.
- * Namespaced ids carry `externalIds` so providers key off the catalog identity
- * rather than title-name guessing.
+ * grammar — `anilist:21`, `mal:…`, `tmdb:1396`, `youtube:…`. Namespaced ids
+ * carry `externalIds` so providers key off the catalog identity rather than
+ * title-name guessing.
  *
  * `anilist:`/`mal:` resolve in the anime lane and `youtube:` in the youtube
  * lane — the namespace implies the mode (see `directIdImpliedLane`), so no
  * `-a`/`-y` is needed, and an explicit conflicting lane flag warns instead of
- * silently picking one. `tmdb:`/`imdb:` and bare ids still need `-t` — the id
+ * silently picking one. `tmdb:` and bare ids still need `-t` — the id
  * alone cannot say whether it names a film or a show, and guessing is a
- * silent wrong-title hazard.
+ * silent wrong-title hazard. `imdb:` is rejected as an unknown namespace
+ * until a TMDB /find resolution exists.
  */
 function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInfo | null {
   if (!args.id) return null;
@@ -269,7 +267,7 @@ function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInf
     };
   }
 
-  // Bare and tmdb:/imdb: ids share one path: the catalog cannot tell movie
+  // Bare and tmdb: ids share one path: the catalog cannot tell movie
   // from series without -t, and in the anime lane a TMDB-shaped id has no
   // meaning.
   if (args.anime) {
