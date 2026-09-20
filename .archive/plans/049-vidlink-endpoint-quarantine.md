@@ -72,30 +72,32 @@ The machinery to adopt (all already on `main`):
   so recording on abort is already safe — do not re-guard.
 
 **Critical rule from #267 that applies verbatim here:** `not-found` means
-*this service does not carry this title* — it is not health evidence. Only
+_this service does not carry this title_ — it is not health evidence. Only
 transport failures (5xx, timeouts, connection errors) and 429/403
 (rate-limit/WAF) may feed endpoint health. A 404 from VidLink must never mark
 a host unhealthy.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Provider unit tests | `bun run --cwd packages/providers test` | all pass |
+| Purpose                                    | Command                                    | Expected         |
+| ------------------------------------------ | ------------------------------------------ | ---------------- |
+| Provider unit tests                        | `bun run --cwd packages/providers test`    | all pass         |
 | VidLink live smoke (opt-in, needs network) | `bun run --cwd apps/cli test:live:vidlink` | resolves streams |
-| Full suite | `bun run test --force` | 0 failures |
-| Typecheck | `bun run typecheck --force` | exit 0 |
-| Lint/fmt | `bun run lint --force && bun run fmt` | exit 0 |
+| Full suite                                 | `bun run test --force`                     | 0 failures       |
+| Typecheck                                  | `bun run typecheck --force`                | exit 0           |
+| Lint/fmt                                   | `bun run lint --force && bun run fmt`      | exit 0           |
 
 ## Scope
 
 **In scope:**
+
 - `packages/providers/src/vidlink/direct.ts`
 - `packages/providers/test/` — new or extended VidLink tests
 - `.docs/providers.md` — one-line note that VidLink participates in endpoint health (docs land in the same change set per repo rules)
 - `.changeset/` — user-facing fix requires a changeset (`bunx changeset`, patch, `@kitsunekode/kunai`)
 
 **Out of scope:**
+
 - `apps/cli` resolve service — the engine already persists `healthDelta`.
 - Relay allowlist (#329 owns that file path on its stack).
 - Removing the `enc-dec.app` dependency or adding a second encoder — accepted SPOF.
@@ -179,7 +181,7 @@ existing VidLink tests handle it first).
 
 ## Done criteria
 
-- [ ] No `new Error(\`... HTTP ${...}\`)` remains in `vidlink/direct.ts` — all non-OK statuses classify through `ProviderHttpError`
+- [ ] No `new Error(\`... HTTP ${...}\`)`remains in`vidlink/direct.ts`— all non-OK statuses classify through`ProviderHttpError`
 - [ ] `endpointHealth.shouldTry`/`recordFailure`/`recordSuccess` are consulted on both the API and enc-dec legs
 - [ ] 404/`not-found` never writes endpoint health (asserted by test)
 - [ ] Cancelled resolves write no health (asserted by test)

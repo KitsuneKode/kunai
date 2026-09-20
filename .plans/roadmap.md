@@ -116,11 +116,11 @@ the K-reconciliation below and the commit history both cite them by id.
 Written against `main@51f19b633` for open issues with no PR in flight. Execute
 in number order unless a row says otherwise.
 
-| Plan                                                  | Issue | Remaining work                                                                                                            | Status                             |
-| ----------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| [048](./048-deterministic-download-disk-admission.md) | #238  | Inject a `statfs` dep so the unit suite ignores host disk                                                                 | TODO                               |
-| [049](./049-vidlink-endpoint-quarantine.md)           | #194  | VidLink: `ProviderHttpError` classification + endpoint quarantine on both legs                                            | TODO                               |
-| [050](./050-hls-rendition-tracks.md)                  | #189  | Parse `#EXT-X-MEDIA` into audio/subtitle inventory; Miruro first                                                          | TODO                               |
+| Plan                                                        | Issue | Remaining work                                                                                                            | Status                             |
+| ----------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| [048](./048-deterministic-download-disk-admission.md)       | #238  | Inject a `statfs` dep so the unit suite ignores host disk                                                                 | TODO                               |
+| [049](../.archive/plans/049-vidlink-endpoint-quarantine.md) | #194  | none — `ProviderHttpError` classification + quarantine on both legs landed                                                | LANDED                             |
+| [050](./050-hls-rendition-tracks.md)                        | #189  | Parse `#EXT-X-MEDIA` into audio/subtitle inventory; Miruro first                                                          | TODO                               |
 | [051](./051-audit-adrs.md)                            | #117  | ADRs 0003–0005: concurrency, side-channel containment, gate trust                                                         | TODO                               |
 | [052](./052-os-credential-vault.md)                   | #179  | OS credential vault port + migration + headless fallback                                                                  | TODO                               |
 | [053](../.archive/plans/053-evp-bytes-to-key.md)      | #106  | none — EVP_BytesToKey port landed, `crypto-js` dropped                                                                    | LANDED                             |
