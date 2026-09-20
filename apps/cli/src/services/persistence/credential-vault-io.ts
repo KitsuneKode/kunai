@@ -16,6 +16,9 @@ import type { SyncTokenFileIo, SyncTokens } from "./SyncTokenStore";
 export function vaultSyncTokenFileIo(vault: CredentialVaultPort): SyncTokenFileIo {
   return {
     async readTokens() {
+      // A vault fault throws out of `get` — never read as "absent".
+      // SyncTokenStore re-reads before every write, so propagating is what
+      // stops a stalled daemon from erasing the other tracker's entry.
       const [anilist, tmdb] = await Promise.all([
         vault.get(CREDENTIAL_KEYS.anilistTokens),
         vault.get(CREDENTIAL_KEYS.tmdbTokens),
@@ -101,20 +104,4 @@ export async function migrateSyncTokensToVault(options: {
     const { writeAtomicSecretJson } = await import("../../infra/fs/atomic-write");
     await writeAtomicSecretJson(file, plaintext).catch(() => {});
   }
-}
-
-/**
- * Read the vaulted videasy session token for the synchronous `getSecret` port.
- * Called once at bootstrap after migration; the result is a snapshot — vault
- * writes mid-session refresh through ConfigService's scrub path, not here.
- */
-export async function readVaultSecretSnapshot(
-  vault: CredentialVaultPort,
-): Promise<ReadonlyMap<string, string>> {
-  const snapshot = new Map<string, string>();
-  for (const key of Object.values(CREDENTIAL_KEYS)) {
-    const value = await vault.get(key).catch(() => undefined);
-    if (typeof value === "string" && value) snapshot.set(key, value);
-  }
-  return snapshot;
 }

@@ -39,4 +39,10 @@ export type CredentialSpawn = (
   argv: readonly string[],
   input: string,
   timeoutMs: number,
-) => Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }>;
+) => Promise<{
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  /** True when the timeout killed the process — a stall, not an answer. */
+  readonly timedOut: boolean;
+}>;

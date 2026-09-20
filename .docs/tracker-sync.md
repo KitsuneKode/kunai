@@ -189,7 +189,9 @@ backend keeps the old guarantee: `configDir/secrets.json` written atomically
 with owner-only permissions. The first launch on a vault-capable machine
 migrates `sync-tokens.json` write → read-back → compare → delete, restart-safe
 and idempotent. Token-store mutations stay serialized so concurrent patches
-cannot erase each other; the same vault lane holds `videasy.sessionToken`,
+cannot erase each other, and a vault read that fails for anything but the
+backend's not-found signal aborts the write instead of reading as empty; the
+same vault lane holds `videasy.sessionToken`,
 which is scrubbed from `config.json` at the persistence boundary while the
 in-memory config keeps serving it.
 
