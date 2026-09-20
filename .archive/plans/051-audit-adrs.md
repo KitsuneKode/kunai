@@ -9,7 +9,7 @@ Closes #117.
 
 - **Priority:** P2
 - **Effort:** M (mostly writing + verification reads)
-- **Risk:** LOW — docs only, but each ADR must state a decision the code is then *made to match*; an ADR that describes aspirational behavior is worse than none
+- **Risk:** LOW — docs only, but each ADR must state a decision the code is then _made to match_; an ADR that describes aspirational behavior is worse than none
 - **Depends on:** none
 - **Category:** docs / architecture
 - **Planned at:** `51f19b633`, 2026-09-19
@@ -30,13 +30,14 @@ other two verifiable), then concurrency and side-channel containment
   `0002-browserless-provider-strategy.md` — next numbers are **0003–0005**.
 - ADR format (from `0002`): frontmatter `status: current` +
   `lastReviewed: "YYYY-MM-DD"`, title `# NNNN — <decision>`, `> Agent-facing
-  (L3)` line, then `Status: accepted` / `Date:` / `## Context` /
+(L3)` line, then `Status: accepted` / `Date:` / `## Context` /
   `## Decision` sections. Match it.
 - `bun run verify:doc-paths` and `bun run verify:doc-frontmatter` gate `.docs/`.
 
 Evidence each ADR must reckon with (all verified on `main`):
 
 **Concurrency (ADR 0003):**
+
 - `packages/storage/src/sqlite.ts` — WAL readers don't block writers;
   corruption quarantine exists.
 - `apps/cli/src/services/update/native-installer/version-lock.ts:176` —
@@ -49,6 +50,7 @@ Evidence each ADR must reckon with (all verified on `main`):
   lock, mpv IPC sockets, `claimedJobIds`, sync outbox, `config.json`.
 
 **Side-channel containment (ADR 0004):**
+
 - `main.ts:1124` escalates any `uncaughtException` to fatal shutdown exit 1.
 - #94: a malformed Discord IPC frame reached it through an unguarded
   `JSON.parse` in a raw socket callback — a cosmetic integration can kill a
@@ -57,6 +59,7 @@ Evidence each ADR must reckon with (all verified on `main`):
   recommendations prefetch, artwork.
 
 **Gate trust (ADR 0005):**
+
 - Two fake gates shipped green: `filename-convention.test.ts` populated its
   allowlist by walking the tree it checked (asserted `A ⊆ A`; fixed in #104),
   and the `install.sh` consent test never detaches the controlling TTY so the
@@ -69,16 +72,17 @@ Evidence each ADR must reckon with (all verified on `main`):
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Doc paths | `bun run verify:doc-paths` | exit 0 |
-| Doc frontmatter | `bun run verify:doc-frontmatter` | exit 0 |
-| Doc coverage | `bun run verify:doc-coverage` | exit 0 |
-| Format | `bun run fmt` | exit 0 |
+| Purpose         | Command                          | Expected |
+| --------------- | -------------------------------- | -------- |
+| Doc paths       | `bun run verify:doc-paths`       | exit 0   |
+| Doc frontmatter | `bun run verify:doc-frontmatter` | exit 0   |
+| Doc coverage    | `bun run verify:doc-coverage`    | exit 0   |
+| Format          | `bun run fmt`                    | exit 0   |
 
 ## Scope
 
 **In scope:**
+
 - `.docs/adr/0003-concurrent-instance-state-ownership.md` (new)
 - `.docs/adr/0004-best-effort-side-channel-containment.md` (new)
 - `.docs/adr/0005-gate-trustworthiness.md` (new)
@@ -86,6 +90,7 @@ Evidence each ADR must reckon with (all verified on `main`):
 - The issue's "make the code match" clause: **only** the one-line fix at `version-lock.ts:176` (log loudly when the lock isn't acquired) may ride along — everything else is follow-up
 
 **Out of scope:**
+
 - Refactoring call sites to enforce ADR-0004's boundary — the ADR states the rule; enforcement is a separate change.
 - Closing #109/#105 (the holed-gate issues stay open with their own plans).
 - `.docs/agents/` index updates unless it lists ADRs.
@@ -144,7 +149,7 @@ logging, no behavior gate. State that explicitly in the PR body.
 ## Done criteria
 
 - [ ] `0003`, `0004`, `0005` exist under `.docs/adr/` with correct frontmatter
-- [ ] Each ADR states a *decision* (not options), names the shared state / subsystems / rules explicitly
+- [ ] Each ADR states a _decision_ (not options), names the shared state / subsystems / rules explicitly
 - [ ] `version-lock.ts` logs when the lock isn't acquired (one line, in the same PR)
 - [ ] `bun run verify:doc-paths`, `verify:doc-frontmatter`, `verify:doc-coverage`, `bun run fmt` all exit 0
 - [ ] Issue #117 body re-read before PR submission — every "What the ADR must settle" bullet is answered in the text
