@@ -10,7 +10,7 @@ warm-on-search landed in `SearchPhase.ts`).
 
 - **Priority:** P3
 - **Effort:** M
-- **Risk:** MED — the failure mode is caching something short-lived (signed URLs) and serving rotten data; the plan's whole discipline is *what may be cached*
+- **Risk:** MED — the failure mode is caching something short-lived (signed URLs) and serving rotten data; the plan's whole discipline is _what may be cached_
 - **Depends on:** none (port already shipped)
 - **Category:** perf
 - **Planned at:** `51f19b633`, 2026-09-19
@@ -35,8 +35,9 @@ Users today: `allmanga/api-client.ts`, `miruro/direct.ts`. Non-users:
 `vidlink`, `anidb`, `hianime`, `rivestream`, `videasy`, `youtube`.
 
 **What may and may not be cached** (from the issue — the hard rule):
+
 - ✅ Episode lists/catalogs, id mappings, external-id lookups, manifest
-  *structure* — stable, TTL-classable.
+  _structure_ — stable, TTL-classable.
 - ❌ Resolved stream URLs, signed cookies, `enc-dec` outputs beyond their own
   TTL — signed/short-lived; leave in-memory (5min) until proven stable. The
   VidLink cookie trap is cited in the issue.
@@ -47,7 +48,7 @@ Candidates with real value, by provider:
   (`anidb/client.ts:320-327`) — process-local Map today; MAL/external ids are
   effectively immutable → strong cache candidate. HTML browse pages — moderate
   TTL.
-- **vidlink**: DASH manifest *metadata* if stable across sessions (verify
+- **vidlink**: DASH manifest _metadata_ if stable across sessions (verify
   expiry); `enc-dec` results already have a TTL'd in-memory cache
   (`encDecCache` :226) — persisting within its own TTL window is legitimate.
 - **hianime/rivestream**: episode catalogs — same shape as miruro's win.
@@ -60,26 +61,28 @@ Candidates with real value, by provider:
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Provider tests | `bun run --cwd packages/providers test` | all pass |
-| Storage tests | `bun run --cwd packages/storage test` | all pass |
-| Full suite | `bun run test --force` | 0 failures |
-| Typecheck | `bun run typecheck --force` | exit 0 |
+| Purpose        | Command                                 | Expected   |
+| -------------- | --------------------------------------- | ---------- |
+| Provider tests | `bun run --cwd packages/providers test` | all pass   |
+| Storage tests  | `bun run --cwd packages/storage test`   | all pass   |
+| Full suite     | `bun run test --force`                  | 0 failures |
+| Typecheck      | `bun run typecheck --force`             | exit 0     |
 
 ## Scope
 
 **In scope:**
-- Provider adapters' *stable-data* reads routed through `context.cache`
+
+- Provider adapters' _stable-data_ reads routed through `context.cache`
 - `packages/providers/test/` — cache-hit/miss/TTL-expiry tests per migrated call
 - `.docs/providers.md` — cache-port guidance: what may be persisted (with the signed-URL rule)
 - `.changeset/` — patch
 
 **Out of scope:**
+
 - Changing the port's shape or the `provider_cache` schema (landed, works).
 - Caching stream URLs or signed credentials — explicitly rejected.
 - Warm-on-search for other providers (already exists for anime top result; extending it is a separate UX call).
-- Migrating existing in-memory caches' *keys* — adopt `cachePolicy`-compatible keys; do not import old Maps' contents.
+- Migrating existing in-memory caches' _keys_ — adopt `cachePolicy`-compatible keys; do not import old Maps' contents.
 
 ## Steps
 
