@@ -1,4 +1,11 @@
+---
+status: draft
+lastReviewed: "2026-09-20"
+---
+
 # Second Full-Tree Audit — Coverage Ledger
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Base: `main@51f19b633` (post-PR #398). Date: 2026-09-17. Session: ses_f54e1f770ffe8dUt9ULLL771qS.
 
