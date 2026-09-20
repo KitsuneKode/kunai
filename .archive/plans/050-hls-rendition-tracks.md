@@ -1,7 +1,7 @@
 # Plan 050: Surface HLS `#EXT-X-MEDIA` renditions as audio/subtitle inventory
 
 > **Drift check (run first):** `git diff --stat 51f19b633..HEAD -- packages/providers/src/shared/hls-ladder.ts packages/providers/src/shared/hls-manifest.ts packages/types/src/index.ts`
-> Mismatch → re-read the parser before proceeding. Note: `PlaybackPhase.ts` and provider `direct.ts` files are contended by open PRs (#400, #399, #390) — if the callers changed shape, adapt the *wiring* steps, not the parser.
+> Mismatch → re-read the parser before proceeding. Note: `PlaybackPhase.ts` and provider `direct.ts` files are contended by open PRs (#400, #399, #390) — if the callers changed shape, adapt the _wiring_ steps, not the parser.
 
 Closes #189.
 
@@ -61,16 +61,17 @@ needed below the provider boundary:
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Provider tests | `bun run --cwd packages/providers test` | all pass |
-| Full suite | `bun run test --force` | 0 failures |
-| Typecheck | `bun run typecheck --force` | exit 0 |
-| Lint/fmt | `bun run lint --force && bun run fmt` | exit 0 |
+| Purpose        | Command                                 | Expected   |
+| -------------- | --------------------------------------- | ---------- |
+| Provider tests | `bun run --cwd packages/providers test` | all pass   |
+| Full suite     | `bun run test --force`                  | 0 failures |
+| Typecheck      | `bun run typecheck --force`             | exit 0     |
+| Lint/fmt       | `bun run lint --force && bun run fmt`   | exit 0     |
 
 ## Scope
 
 **In scope:**
+
 - `packages/providers/src/shared/hls-ladder.ts` — parse `#EXT-X-MEDIA`
 - `packages/providers/src/shared/hls-ladder.test.ts` or `packages/providers/test/` — new tests (find the existing hls-ladder test file first)
 - One caller migration to prove the data lands end-to-end: `miruro/direct.ts` (it already calls `expandHlsMasterPlaylist` at :886 and swallows expansion failures — see below)
@@ -78,6 +79,7 @@ needed below the provider boundary:
 - `.changeset/` — user-facing (picker now shows real tracks): `bunx changeset`, patch `@kitsunekode/kunai`
 
 **Out of scope:**
+
 - `PlaybackPhase.ts` — contended (#400); inventory projection already picks the fields up.
 - Videasy/Rivestream master-expansion adoption — Rivestream's variant handling is owned by open PR #387; Videasy's expansion is a separate call. Do not add ladder calls to providers that don't have one.
 - Fetching rendition sub-playlists or subtitle bodies — this plan reads the master manifest only.
@@ -165,7 +167,7 @@ asserts a master with EXT-X-MEDIA yields non-empty `subtitles` and
 ## STOP conditions
 
 - A merged PR already added EXT-X-MEDIA parsing (check `git log -S EXT-X-MEDIA` first).
-- The Tracks panel consumes a *different* field than `audioLanguages`/`subtitles` — if the picker still shows nothing after Step 3 with correct provider output, the consumption seam is elsewhere; report before patching UI.
+- The Tracks panel consumes a _different_ field than `audioLanguages`/`subtitles` — if the picker still shows nothing after Step 3 with correct provider output, the consumption seam is elsewhere; report before patching UI.
 - Miruro's expansion call site moved/changed signature on a merged PR — adapt wiring only.
 
 ## Maintenance notes
