@@ -37,21 +37,23 @@ against the tree; #91 was filed 2026-08-23 and parts may have landed since.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Unit tests | `bun run --cwd apps/cli test:unit` | all pass |
+| Purpose       | Command                                                                                  | Expected |
+| ------------- | ---------------------------------------------------------------------------------------- | -------- |
+| Unit tests    | `bun run --cwd apps/cli test:unit`                                                       | all pass |
 | Coverage test | `bun run --cwd apps/cli test:file test/unit/app-shell/command-registry.coverage.test.ts` | all pass |
-| Typecheck | `bun run typecheck --force` | exit 0 |
+| Typecheck     | `bun run typecheck --force`                                                              | exit 0   |
 
 ## Scope
 
 **In scope:**
+
 - `command-registry.ts`, `shell-workflows.ts`, browse-surface command sets
   (`SEARCH_BROWSE_COMMAND_IDS` or its current equivalent)
 - `command-registry.coverage.test.ts` — extend if the residue adds surface
 - `.changeset/` — patch if any user-visible command appears/disappears
 
 **Out of scope:**
+
 - Re-litigating the deliberate-hidden set (`/sync-connect-*`, `/sync-disconnect`, `/clear-history`, `/random`, `/surprise`, `/favorites` per ADR-0001) — the issue already triaged them as correct.
 - The coverage test itself — it exists; only extend it if a new surface/command class is added.
 
