@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-08-31
+Last updated: 2026-09-19
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -110,6 +110,66 @@ the K-reconciliation below and the commit history both cite them by id.
 | [032](./032-sync-identity-and-capability-truth.md)   | Disposable-account production container → outbox → restart → remote smoke | PARTIAL; deterministic implementation is complete |
 | [044](./044-namespace-mal-history-keys.md)           | Namespace MAL-derived history keys                                        | READY (needs migration review)                    |
 | [045](./045-repoint-title-id-references-on-merge.md) | Repoint `title_id` references when consolidation merges                   | READY (classify tables first)                     |
+
+### Second audit — 2026-09-19
+
+Written against `main@51f19b633` for open issues with no PR in flight. Execute
+in number order unless a row says otherwise.
+
+| Plan                                                             | Issue | Remaining work                                              | Status |
+| ---------------------------------------------------------------- | ----- | ----------------------------------------------------------- | ------ |
+| [048](./048-deterministic-download-disk-admission.md)            | #238  | Inject a `statfs` dep so the unit suite ignores host disk   | TODO   |
+| [049](./049-vidlink-endpoint-quarantine.md)                      | #194  | VidLink: `ProviderHttpError` classification + endpoint quarantine on both legs | TODO   |
+| [050](./050-hls-rendition-tracks.md)                             | #189  | Parse `#EXT-X-MEDIA` into audio/subtitle inventory; Miruro first | TODO   |
+| [051](./051-audit-adrs.md)                                       | #117  | ADRs 0003–0005: concurrency, side-channel containment, gate trust | TODO   |
+| [052](./052-os-credential-vault.md)                              | #179  | OS credential vault port + migration + headless fallback    | TODO   |
+| [053](./053-evp-bytes-to-key.md)                                 | #106  | EVP_BytesToKey port, parity fixtures, drop `crypto-js`      | TODO   |
+| [054](./054-anime-season-entry-resolution.md)                    | #266  | Season→entry resolution via relation graph, not ordinals    | TODO   |
+| [055](./055-provider-cache-generalization.md)                    | #205  | Extend `ProviderCachePort` to remaining providers (stable data only) | TODO   |
+| [056](./056-namespaced-direct-play-ids.md)                       | #92   | `-i anilist:21` via the share grammar                       | TODO   |
+| [057](./057-command-reachability-residue.md)                     | #91   | `/queue-season` in browse; `/image-pane` verdict            | TODO   |
+| [058](./058-fractional-episode-count-source.md)                  | #273  | Instrument guard sites; name the `448.2` producer           | TODO   |
+| [059](./059-npm-update-notify-e2e.md)                            | #121  | Real-machine pass on the npm-channel update notify path     | TODO (needs npm-installed machine) |
+| [060](./060-first-paint-profile.md)                              | #275  | Cold/warm first-paint attribution before any reorder; must also cover the 052 vault probe/migrate spawns on the boot path | TODO   |
+| [061](./061-install-ps1-parity-gaps.md)                          | —     | `KUNAI_REPO` + deps-for-all-methods; then a parity-contract test so seams can't drift | TODO   |
+| [062](./062-post-install-cleanup-rejection.md)                   | —     | Fix `cleanupOldVersions` rejection; classify all `void` sites; write the convention | TODO   |
+| [063](./063-docs-dev-dep-advisories.md)                          | —     | Clear `bun audit`; `minimumReleaseAge` floor; weekly informational audit job | TODO   |
+| [064](./064-analytics-day-table-order-and-paging.md)             | —     | Day-by-day table: newest-first + chunked reveal (bounded at 180 rows) | TODO   |
+| [065](./065-share-landing-cta-resilience.md)                     | —     | `/w/` CTA: post-click "install below" state + copyable `kunai://` link | TODO   |
+| [066](./066-analytics-cross-links-and-staleness.md)              | —     | Version rows → release pages; window tile → `#day-by-day`; stale badge | TODO   |
+| [067](./067-chart-table-highlight-sync.md)                       | —     | Chart hover → table row highlight/scroll (after 064)          | TODO   |
+
+048–058 are implemented on `advisor/NNN-*` worktree branches (see each plan's
+"Implementation" note); rows stay until the branch lands. Review residue that
+did not fit a row above:
+
+- **054 follow-ups** — live AniList `relations` fetch into `TitleIdentity` and
+  the AniDB adapter consuming `resolveSeasonEntryId`. The landed branch is the
+  contract + pure resolver only; ordinal guessing is still what runs today.
+- **052 follow-ups** — native Keychain binding to remove the `security -w`
+  argv exposure; vault spawns off the first-paint path (measure under 060).
+- **056 residue** — `imdb:` is accepted by the grammar but nothing resolves
+  imdb→tmdb (`TitleDetailService` only *reads* `imdb_id` from TMDB). Reject or
+  add `/find` before advertising it in `--help`.
+
+Audit reconciliation (verified against `main@51f19b633` — close, don't plan):
+
+- **#192 cancelled resolves → negative health** — already fixed;
+  `isProviderHealthNeutral` guards `createExhaustedResult`
+  (`resolve-helpers.ts:79-94`), landed in PR #185 on 2026-08-25. Stale issue.
+- **#278 changeset-on-staged-version guard** — already fixed;
+  `release-guard.ts:135-140` fails when pending changesets meet a `staged`
+  release artifact. Stale issue.
+- **#91 command reachability** — mostly landed (#268 coverage test + #282);
+  residue only → plan 057.
+- **#92 minimal mode** — shipped as `-m/--minimal`; residue is the
+  namespaced-id flag → plan 056.
+- **#274 hedge calibration** — owned by provider-resolve-hardening-handoff
+  Slice C; not re-planned.
+- **#205 provider cache** — port + Miruro landed in #206, warm-on-search in
+  `SearchPhase`; residue is generalization → plan 055.
+- **#109–#113** — owned by the numbered architecture plans (010–015) and the
+  codebase-architecture-sweep; not re-planned.
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
