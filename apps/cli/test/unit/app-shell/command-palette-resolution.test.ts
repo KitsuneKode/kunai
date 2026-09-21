@@ -89,6 +89,9 @@ test("typing a partial query runs the best-ranked match at the default highlight
 // boundary in the target — so the id itself must be a search target.
 test("a hyphenated command id matches the palette query", () => {
   const commands = [
+    // SAFETY: buildCommandPickerModel reads only id/label/aliases/description/
+    // enabled; the resolved-workflow fields the full type requires are never
+    // dereferenced here, so a literal fixture is sound.
     {
       id: "image-pane",
       label: "Image Pane",
