@@ -101,6 +101,32 @@ const USER_AGENT =
 const MIRURO_CANDIDATE_TIMEOUT_MS = 5_000;
 const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
 
+function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return Bun.sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+  return Promise.race([
+    Bun.sleep(ms),
+    new Promise<void>((resolve) => {
+      const onAbort = () => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    }),
+  ]);
+}
+
+let miruroPipeRetrySleepImpl: (ms: number, signal?: AbortSignal) => Promise<void> = sleepAbortable;
+
+const miruroPipeRetrySleep = (ms: number, signal?: AbortSignal) =>
+  miruroPipeRetrySleepImpl(ms, signal);
+
+export function setMiruroPipeRetrySleepForTest(
+  sleep: ((ms: number, signal?: AbortSignal) => Promise<void>) | null,
+): void {
+  miruroPipeRetrySleepImpl = sleep ?? sleepAbortable;
+}
+
 let curlSupportsHttp2: boolean | null = null;
 
 function detectCurlHttp2Support(): boolean {
@@ -1533,7 +1559,7 @@ export function interpretMiruroCurlResult(input: {
  * When `wafLikely` is set (prior mirror already returned CF HTML), skip the long curl
  * wait — curl rarely clears a region-wide WAF block and burns the resolve budget.
  */
-async function fetchMiruroPipeBody(
+export async function fetchMiruroPipeBody(
   url: string,
   headers: Record<string, string>,
   signal?: AbortSignal,
@@ -1547,13 +1573,29 @@ async function fetchMiruroPipeBody(
 }> {
   const requester = fetchPort?.fetch.bind(fetchPort) ?? fetch;
   // Always bound the fetch, even when the caller passes a signal — a stalled
-  // pipe connection must not hang the whole resolve.
+  // pipe connection must not hang the whole resolve. The signal bounds the
+  // whole leg including the single CF-challenge retry below.
   const timeoutSignal = AbortSignal.timeout(options.wafLikely ? 3_000 : 8_000);
-  const response = await requester(url, {
-    signal: signal ? anySignal(signal, timeoutSignal) : timeoutSignal,
-    headers,
-  });
-  const responseText = await response.text();
+  const requestSignal = signal ? anySignal(signal, timeoutSignal) : timeoutSignal;
+
+  // The pipe's managed challenge is intermittent — a challenged response on an
+  // otherwise-healthy window clears on a plain refetch often enough to be
+  // worth one cheap retry before paying for a curl subprocess. wafLikely
+  // means a sibling mirror already saw a challenge, so don't re-poll.
+  let response: Response | undefined;
+  let responseText = "";
+  const attempts = options.wafLikely ? 1 : 2;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    response = await requester(url, { signal: requestSignal, headers });
+    responseText = await response.text();
+    const challenged = response.status === 403 || isCloudflareHtmlBody(responseText);
+    if (!challenged || attempt === attempts) break;
+    await miruroPipeRetrySleep(400 + Math.floor(Math.random() * 400), requestSignal);
+    if (requestSignal.aborted) break;
+  }
+  if (response === undefined) {
+    throw new Error("Miruro pipe fetch did not produce a response");
+  }
   if (
     response.ok &&
     isMiruroObfuscatedPipeBody(responseText, response.headers.get("x-obfuscated"))
