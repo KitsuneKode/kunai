@@ -176,6 +176,13 @@ the same user-facing hierarchy.
 - Hard subtitles and embedded/external subtitles are different facts. A hard-sub
   stream should advertise `hardSubLanguage` / `subtitleDelivery: "hardcoded"`;
   soft subtitle tracks should stay in `subtitles`.
+- HLS master playlists carry their own inventory: `#EXT-X-MEDIA` rendition
+  groups are parsed by `expandHlsMasterInventory` in
+  `packages/providers/src/shared/hls-ladder.ts`. Renditions with a `URI` become
+  audio/subtitle track candidates; `TYPE=AUDIO` renditions without a `URI`
+  (muxed audio) still contribute their declared `LANGUAGE` to the stream's
+  `audioLanguages`. `CLOSED-CAPTIONS` rows are skipped — embedded captions are
+  read in-container by the player.
 
 UI surfaces can simplify this into tabs like "Sub", "Dub", "Servers", and
 "Quality", but diagnostics must always show the underlying `providerId`,
