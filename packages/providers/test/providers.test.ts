@@ -39,6 +39,7 @@ import {
   getProviderResearchProfile,
   providerResearchProfiles,
 } from "../src/research";
+import { encryptOpensslSalted, sha256Hex } from "../src/shared/openssl-evp";
 
 /** Route policies are built by the provider's one owner, never hand-rolled here. */
 const TEST_ROUTE_POLICY = (apiRoute: string) =>
@@ -617,10 +618,9 @@ test("vidking direct resolver classifies Videasy session guard responses as bloc
 });
 
 test("vidking guarded v2 payload unwraps with Videasy session key", async () => {
-  const { default: CryptoJS } = await import("crypto-js");
   const sessionToken = "session-123";
-  const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
-  const guarded = `v2:${CryptoJS.AES.encrypt("inner-payload", key).toString()}`;
+  const key = sha256Hex(`g:${sessionToken}`);
+  const guarded = `v2:${encryptOpensslSalted("inner-payload", key)}`;
 
   await expect(decodeVideasyGuardedPayload(guarded, sessionToken)).resolves.toBe("inner-payload");
   await expect(decodeVideasyGuardedPayload(guarded, undefined)).rejects.toThrow(
@@ -629,13 +629,11 @@ test("vidking guarded v2 payload unwraps with Videasy session key", async () => 
 });
 
 test("vidking guarded v2 unwrap is path agnostic for every Videasy flavor", async () => {
-  const { default: CryptoJS } = await import("crypto-js");
-
   for (const flavor of listVidkingFlavors()) {
     const sessionToken = `session-${flavor.id}`;
-    const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
+    const key = sha256Hex(`g:${sessionToken}`);
     const innerPayload = `payload-for-${flavor.endpoint}-${flavor.id}`;
-    const guarded = `v2:${CryptoJS.AES.encrypt(innerPayload, key).toString()}`;
+    const guarded = `v2:${encryptOpensslSalted(innerPayload, key)}`;
 
     await expect(decodeVideasyGuardedPayload(guarded, sessionToken)).resolves.toBe(innerPayload);
   }

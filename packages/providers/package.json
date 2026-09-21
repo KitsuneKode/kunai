@@ -28,9 +28,7 @@
   "dependencies": {
     "@assemblyscript/loader": "catalog:providers",
     "@kunai/core": "workspace:*",
-    "@kunai/types": "workspace:*",
-    "@types/crypto-js": "catalog:providers",
-    "crypto-js": "catalog:providers"
+    "@kunai/types": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:"

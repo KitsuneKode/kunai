@@ -30,6 +30,7 @@ import type {
 } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { decryptOpensslSalted, sha256Hex } from "../shared/openssl-evp";
 import { HealthTracker, TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
@@ -1972,9 +1973,8 @@ export async function decodeVideasyGuardedPayload(
   if (!sessionToken) {
     throw new Error("Videasy guarded payload requires a session token");
   }
-  const { default: CryptoJS } = await import("crypto-js");
-  const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();
-  const decrypted = CryptoJS.AES.decrypt(payload.slice(3), key).toString(CryptoJS.enc.Utf8);
+  const key = sha256Hex(`g:${sessionToken}`);
+  const decrypted = decryptOpensslSalted(payload.slice(3), key);
   if (!decrypted) {
     throw new Error("Videasy guarded session payload could not be decrypted");
   }
@@ -2047,9 +2047,7 @@ export async function decodeVidkingPayload(
     const payloadPtr = wasm.__newString(payload);
     const decryptedPtr = wasm.decrypt(payloadPtr, tmdbId);
     const wasmDecryptedBase64 = wasm.__getString(decryptedPtr);
-    const { default: CryptoJS } = await import("crypto-js");
-    const decryptedBytes = CryptoJS.AES.decrypt(wasmDecryptedBase64, "");
-    const finalJson = decryptedBytes.toString(CryptoJS.enc.Utf8);
+    const finalJson = decryptOpensslSalted(wasmDecryptedBase64, "");
     return JSON.parse(finalJson) as VidkingPayload;
   });
 }

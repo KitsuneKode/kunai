@@ -32,7 +32,7 @@ case (explicit key/IV) and does not transfer.
 if (!payload.startsWith("v2:")) return payload;
 if (!sessionToken) throw new Error("Videasy guarded payload requires a session token");
 const { default: CryptoJS } = await import("crypto-js");
-const key = CryptoJS.SHA256(`g:${sessionToken}`).toString();          // hex string passphrase
+const key = CryptoJS.SHA256(`g:${sessionToken}`).toString(); // hex string passphrase
 const decrypted = CryptoJS.AES.decrypt(payload.slice(3), key).toString(CryptoJS.enc.Utf8);
 ```
 
@@ -55,16 +55,17 @@ the WASM path).
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Provider tests | `bun run --cwd packages/providers test` | all pass |
-| Full suite | `bun run test --force` | 0 failures |
-| Typecheck | `bun run typecheck --force` | exit 0 |
-| Audit | `bun audit` | crypto-js gone from dep tree |
+| Purpose        | Command                                 | Expected                     |
+| -------------- | --------------------------------------- | ---------------------------- |
+| Provider tests | `bun run --cwd packages/providers test` | all pass                     |
+| Full suite     | `bun run test --force`                  | 0 failures                   |
+| Typecheck      | `bun run typecheck --force`             | exit 0                       |
+| Audit          | `bun audit`                             | crypto-js gone from dep tree |
 
 ## Scope
 
 **In scope:**
+
 - New `packages/providers/src/videasy/openssl-compat.ts` (or `shared/` if another provider needs it — check for other passphrase-mode users first; if none, keep it provider-local)
 - `packages/providers/src/videasy/direct.ts` — swap the two call sites
 - `packages/providers/test/` — parity test + fixtures
@@ -72,6 +73,7 @@ the WASM path).
 - `.docs/providers.md` — record the EVP_BytesToKey port (ani-cli parity conventions live there)
 
 **Out of scope:**
+
 - The WASM decode path itself (`loadWasmExports` stays).
 - VidLink/AllManga crypto — different schemes entirely.
 - Any `crypto-js` import anywhere else — verify none exist first (`grep -rn "crypto-js" --include="*.ts" apps/ packages/` should show only the two videasy sites).
@@ -88,7 +90,7 @@ plan as unneeded and drop the dependency with the lane instead.
 
 ### Step 1: Capture parity fixtures BEFORE touching anything
 
-Write a throwaway script (do not commit) that runs the *current* crypto-js
+Write a throwaway script (do not commit) that runs the _current_ crypto-js
 path over a fixed input set and records outputs:
 
 - `CryptoJS.AES.encrypt(knownPlaintext, "g:test-token-123")` → base64
@@ -99,7 +101,7 @@ path over a fixed input set and records outputs:
   one exists in test fixtures — check `packages/providers/test/` for videasy
   fixture data first.
 
-Commit the *fixtures* (input + expected plaintext) into the test file —
+Commit the _fixtures_ (input + expected plaintext) into the test file —
 extracted constants, not a crypto-js runtime dep.
 
 ### Step 2: Implement `evpBytesToKey` + `aesDecryptCryptoJs`
@@ -114,7 +116,7 @@ decrypt         = createDecipheriv("aes-256-cbc", key, iv) over ciphertext
 ```
 
 Details that bite: passphrase is the raw string bytes (UTF-8), not hex —
-`CryptoJS.SHA256(...).toString()` produces a hex *string*, which is then used
+`CryptoJS.SHA256(...).toString()` produces a hex _string_, which is then used
 as the passphrase (so `g:` + token is hashed to hex, and THAT hex string is
 the passphrase fed to EVP_BytesToKey). Get this wrong and every decode fails.
 No padding quirks: CryptoJS uses PKCS7, same as node default. Validate the
