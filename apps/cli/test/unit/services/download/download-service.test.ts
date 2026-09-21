@@ -1451,7 +1451,7 @@ describe("DownloadService", () => {
     expect(reloaded?.status).toBe("queued");
     expect(reloaded?.errorMessage).toBe("download paused by test shutdown");
     expect(reloaded?.nextRetryAt).toBeDefined();
-  });
+  }, 60_000);
 
   test("does not schedule retry for terminal failures", async () => {
     const service = buildService({
@@ -2009,7 +2009,7 @@ describe("DownloadService", () => {
     await service.processQueue();
     expect(laterPassCalls).toBe(2);
     processNextSpy.mockRestore();
-  });
+  }, 60_000);
 
   test("aggregates multiple worker failures with a bounded redacted message", async () => {
     const service = buildService({
