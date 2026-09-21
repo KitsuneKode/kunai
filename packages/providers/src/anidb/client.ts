@@ -60,6 +60,15 @@ const officialEpisodeMetadataCache = new TTLCache<
   ReadonlyMap<number, AnimeEpisodeMetadata>
 >(30 * 24 * 60 * 60 * 1000);
 
+// External ids and official episode numbers are effectively immutable — a
+// MAL/AniList link or an episode title doesn't change between sessions, so
+// they persist through `context.cache` (SQLite) and the process-local TTLMap
+// stays as L1. Neither is signed or session-scoped.
+const ANIDB_EXTERNAL_IDS_NAMESPACE = "anidb:external-ids";
+const ANIDB_EXTERNAL_IDS_PERSIST_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const ANIDB_OFFICIAL_EPISODES_NAMESPACE = "anidb:official-episodes";
+const ANIDB_OFFICIAL_EPISODES_PERSIST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 export type AnidbEpisodeEntry = {
   readonly id: number;
   readonly number: number;
@@ -348,6 +357,23 @@ export async function fetchAnidbExternalIds(
       posterUrl: cached.posterUrl ?? undefined,
     };
   }
+  const persisted = await context?.cache
+    ?.read<{
+      malId: number | null;
+      anilistId: string | null;
+      officialAid: number | null;
+      posterUrl: string | null;
+    }>(ANIDB_EXTERNAL_IDS_NAMESPACE, showId)
+    .catch(() => null);
+  if (persisted) {
+    externalIdsCache.set(showId, persisted);
+    return {
+      malId: persisted.malId ?? undefined,
+      anilistId: persisted.anilistId ?? undefined,
+      officialAid: persisted.officialAid ?? undefined,
+      posterUrl: persisted.posterUrl ?? undefined,
+    };
+  }
 
   try {
     const page = await anidbFetchText(`${ANIDB_BASE}/anime/${encodeURIComponent(showId)}`, {
@@ -363,7 +389,11 @@ export async function fetchAnidbExternalIds(
     const officialAid =
       Number.isFinite(parsedOfficial) && parsedOfficial > 0 ? parsedOfficial : null;
     const posterUrl = readMetaContent(page, "og:image") ?? null;
-    externalIdsCache.set(showId, { malId, anilistId, officialAid, posterUrl });
+    const ids = { malId, anilistId, officialAid, posterUrl };
+    externalIdsCache.set(showId, ids);
+    void context?.cache
+      ?.write(ANIDB_EXTERNAL_IDS_NAMESPACE, showId, ids, ANIDB_EXTERNAL_IDS_PERSIST_TTL_MS)
+      .catch(() => {});
     return {
       malId: malId ?? undefined,
       anilistId: anilistId ?? undefined,
@@ -380,10 +410,22 @@ export async function fetchAnidbExternalIds(
 export async function fetchAnidbOfficialEpisodeMetadata(
   officialAid: number,
   signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
 ): Promise<ReadonlyMap<number, AnimeEpisodeMetadata>> {
   const cacheKey = String(officialAid);
   const cached = officialEpisodeMetadataCache.get(cacheKey);
   if (cached) return new Map(cached);
+  const persisted = await context?.cache
+    ?.read<ReadonlyArray<[number, AnimeEpisodeMetadata]>>(
+      ANIDB_OFFICIAL_EPISODES_NAMESPACE,
+      cacheKey,
+    )
+    .catch(() => null);
+  if (persisted?.length) {
+    const map = new Map(persisted);
+    officialEpisodeMetadataCache.set(cacheKey, map);
+    return new Map(map);
+  }
 
   try {
     const response = await fetch(
@@ -403,6 +445,14 @@ export async function fetchAnidbOfficialEpisodeMetadata(
     const metadata = parseAnidbOfficialEpisodeMetadata(xml);
     if (metadata.size === 0) return new Map();
     officialEpisodeMetadataCache.set(cacheKey, metadata);
+    void context?.cache
+      ?.write(
+        ANIDB_OFFICIAL_EPISODES_NAMESPACE,
+        cacheKey,
+        [...metadata],
+        ANIDB_OFFICIAL_EPISODES_PERSIST_TTL_MS,
+      )
+      .catch(() => {});
     return new Map(metadata);
   } catch {
     return new Map();
