@@ -963,6 +963,40 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         // checkForUpdate records its own failures; keep startup fire-and-forget.
       }
     })();
+
+  // Provider-health notice: if a lane's configured default provider is
+  // measured `down`, surface a one-row suggestion for a healthier alternative.
+  // Runs even in offline mode — the health rows are local SQLite, not a
+  // network probe — and deletes the stale row when the provider heals.
+  try {
+    const { providerHealthNotice } = await import("./services/playback/provider-health-notice");
+    const laneDefaults = new Set([config.provider, config.animeProvider, config.youtubeProvider]);
+    const healthRows = container.providerHealth.list();
+    const loadedProviders = container.engine.modules.map((module) => module.providerId);
+    for (const laneDefault of laneDefaults) {
+      const notice = providerHealthNotice({
+        configuredProvider: laneDefault,
+        providerPriority: config.providerPriority,
+        loadedProviders,
+        healthRows,
+      });
+      if (notice) {
+        container.notificationService.recordSignals([
+          {
+            type: "provider-health",
+            providerId: notice.downProviderId,
+            suggestedProviderId: notice.suggestedProviderId ?? undefined,
+          },
+        ]);
+      } else {
+        // Not delete() — that tombstones the key and a later relapse would
+        // never surface again. remove() clears the healed row only.
+        container.notificationService.remove(`provider-health:${laneDefault}`);
+      }
+    }
+  } catch {
+    // The notice is advisory; a broken health row must never block startup.
+  }
   if (!config.offlineMode) {
     try {
       // Awaited, not fire-and-forget: the shell reads
