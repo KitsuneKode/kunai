@@ -8,7 +8,7 @@ import {
   type CurlCandidate,
   type CurlEnvironment,
 } from "../shared/curl-impersonate";
-import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { markupToPlainText } from "../shared/markup-text";
 import { TTLCache } from "../shared/provider-cache";
 import {
@@ -658,21 +658,34 @@ export async function resolveAnidbLanguageStreams(options: {
   );
   if (!masterUrl) return [];
 
-  const variants = await expandHlsMasterPlaylist({
+  const inventory = await expandHlsMasterInventory({
     fetch: async (url: string, init?: RequestInit) => {
-      const text = await anidbFetchText(url, {
-        signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
-        context: options.context,
-      });
-      return new Response(text, {
-        status: 200,
-        headers: { "content-type": "application/vnd.apple.mpegurl" },
-      });
+      try {
+        const text = await anidbFetchText(url, {
+          signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
+          context: options.context,
+          // Surface the HTTP status so a dead master host reads as `http-error`
+          // instead of a generic network failure.
+          reportStatus: true,
+        });
+        return new Response(text, {
+          status: 200,
+          headers: { "content-type": "application/vnd.apple.mpegurl" },
+        });
+      } catch (error) {
+        if (error instanceof AnidbHttpStatusError) {
+          return new Response(null, { status: error.status });
+        }
+        throw error;
+      }
     },
     masterUrl,
     headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
     signal: options.signal,
   });
+  // Dead master host → drop the `auto` fallback row that would point mpv at
+  // the same dead URL.
+  const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
 
   return variants.map((variant) => ({
     url: variant.url,
