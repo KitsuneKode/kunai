@@ -571,6 +571,28 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
 A catalog's own id space is numeric, so a non-numeric id is never accepted into the `anilistId` or
 `tmdbId` slot even when the active provider declares that catalog identity.
 
+### Season→entry resolution (#266)
+
+Providers must not be asked for "season N of <title>" — the season the user
+picked _is_ a catalog entry, and resolving it by title ordinal fails on
+arc-named seasons (AniDB's `Entertainment District Arc`) and mis-counts
+continuations (AoT's `Season 3 Part 2` is not season 4). The contract:
+
+- `TitleIdentity.relations` carries prequel/sequel edges (AniList `relations`,
+  corroborated by AniDB `Sequel` links) and `aliases` carries the known names.
+- `resolveSeasonEntryId` in `apps/cli/src/domain/catalog/season-entry-resolution.ts`
+  walks the graph: prequel chain to the franchise root, then forward over
+  sequel edges — counting only real seasons. Movies/OVAs are traversed but not
+  counted; `Part N`/`Cour N`/`第Nクール` titles are continuations and extend the
+  current season. Any ambiguity (branching sequels, multiple prequels, a cycle)
+  returns `undefined` — the caller fails closed, never guesses by title match.
+
+Per-adapter verdicts: **anidb** — consumes the graph for arc-named seasons
+(fail-closed without it, unchanged); **allmanga** — same contract when its
+entry mapping lands; **miruro** — already AniList-keyed, nothing needed;
+**hianime** — episode catalogs are season-flat, verdict: not applicable;
+**vidlink/videasy/youtube** — TMDB/movie lanes, not applicable.
+
 ### Title identity persistence contract
 
 History and continuation use **canonical catalog ids** as the merge key (`anilistId` for anime, `tmdb:…` for series/movie) via `resolveCanonicalCatalogTitleId()` / `resolvePersistedHistoryTitle()` in `@kunai/core`.
