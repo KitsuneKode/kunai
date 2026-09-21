@@ -54,6 +54,16 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 </ProviderDocSection>
 
+<ProviderDocSection id="movy" title="Movy">
+
+**Adapter role:** registered movies/series adapter backed by the movy.sx source aggregator. Each upstream lane (`denver`, `atlanta`, …) is a separate source, so `/source` switches lanes directly.
+
+**Config id:** `movy`.
+
+**Caveats:** lanes are independent upstream scrapers — coverage varies per title and individual lanes may 500 while others still resolve. A `seed` exchange precedes each resolve; a stale seed is retried once automatically.
+
+</ProviderDocSection>
+
 <ProviderDocSection id="anidb" title="AniDB">
 
 **Adapter role:** the only adapter in the automatic anime lane. Kunai searches AniDB, routes each

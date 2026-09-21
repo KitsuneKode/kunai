@@ -15,7 +15,8 @@
     "./rivestream": "./src/rivestream/direct.ts",
     "./videasy": "./src/videasy/index.ts",
     "./vidlink": "./src/vidlink/direct.ts",
-    "./youtube": "./src/youtube/index.ts"
+    "./youtube": "./src/youtube/index.ts",
+    "./movy": "./src/movy/direct.ts"
   },
   "scripts": {
     "typecheck": "bun tsc --noEmit",
