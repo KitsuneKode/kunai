@@ -15,6 +15,7 @@
     "./rivestream": "./src/rivestream/direct.ts",
     "./videasy": "./src/videasy/index.ts",
     "./vidlink": "./src/vidlink/direct.ts",
+    "./vidrock": "./src/vidrock/direct.ts",
     "./youtube": "./src/youtube/index.ts"
   },
   "scripts": {

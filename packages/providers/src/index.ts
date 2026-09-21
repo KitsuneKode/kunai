@@ -18,4 +18,6 @@ export * from "./utils/variant-tree";
 export * from "./videasy";
 export * from "./vidlink/direct";
 export * from "./vidlink/manifest";
+export * from "./vidrock/direct";
+export * from "./vidrock/manifest";
 export * from "./youtube";

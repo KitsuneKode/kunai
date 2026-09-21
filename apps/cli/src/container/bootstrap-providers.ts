@@ -41,6 +41,7 @@ export async function loadProductionProviderModules(
   const [
     { videasyProviderModule },
     { vidlinkProviderModule },
+    { vidrockProviderModule },
     { rivestreamProviderModule },
     { allmangaProviderModule },
     { anidbProviderModule },
@@ -50,6 +51,7 @@ export async function loadProductionProviderModules(
   ] = await Promise.all([
     import("@kunai/providers/videasy"),
     import("@kunai/providers/vidlink"),
+    import("@kunai/providers/vidrock"),
     import("@kunai/providers/rivestream"),
     import("@kunai/providers/allmanga"),
     import("@kunai/providers/anidb"),
@@ -62,6 +64,7 @@ export async function loadProductionProviderModules(
     [
       videasyProviderModule,
       vidlinkProviderModule,
+      vidrockProviderModule,
       rivestreamProviderModule,
       anidbProviderModule,
       allmangaProviderModule,

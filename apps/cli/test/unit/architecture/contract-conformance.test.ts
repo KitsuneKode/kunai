@@ -295,6 +295,7 @@ describe("contract conformance", () => {
       import("@kunai/providers/videasy"),
       import("@kunai/providers/vidlink"),
       import("@kunai/providers/rivestream"),
+      import("@kunai/providers/vidrock"),
       import("@kunai/providers/allmanga"),
       import("@kunai/providers/anidb"),
       import("@kunai/providers/hianime"),
