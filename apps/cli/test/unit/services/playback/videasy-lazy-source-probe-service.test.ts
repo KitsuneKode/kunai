@@ -9,6 +9,8 @@ import type {
   ProviderSourceCandidate,
 } from "@kunai/types";
 
+import { waitUntil } from "../../../support/wait-until";
+
 const inventoryKey = {
   providerId: VIDKING_PROVIDER_ID,
   mediaKind: "movie" as const,
@@ -110,11 +112,15 @@ describe("VideasyLazySourceProbeService", () => {
     const gate1080 = new Promise<void>((resolve) => {
       release1080 = resolve;
     });
+    let entered1080Gate = false;
     const service = new VideasyLazySourceProbeService({
       probeConcurrency: 1,
       sourceInventory: {
         get: async (key) => {
-          if (key.qualityPreference === "1080p") await gate1080;
+          if (key.qualityPreference === "1080p") {
+            entered1080Gate = true;
+            await gate1080;
+          }
           return null;
         },
         set: async () => {},
@@ -132,7 +138,7 @@ describe("VideasyLazySourceProbeService", () => {
       inventoryKey: { ...inventoryKey, qualityPreference: "1080p" },
       preferredAudioLanguage: "de",
     });
-    await Bun.sleep(5);
+    await waitUntil(() => entered1080Gate, { label: "1080p probe holding the concurrency slot" });
     const pending720 = service.schedulePhaseB({
       resolveInput: { ...resolveInput(), qualityPreference: "720p" },
       context: runtimeContext(),

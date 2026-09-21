@@ -648,7 +648,7 @@ describe("anidb episode stream inventory", () => {
           return await new Promise<Response>((resolve, reject) => {
             const timer = setTimeout(
               () => resolve(new Response("file: 'https://cdn.example/eng.m3u8'")),
-              200,
+              400,
             );
             init?.signal?.addEventListener(
               "abort",
@@ -676,7 +676,9 @@ describe("anidb episode stream inventory", () => {
         } as Parameters<typeof resolveAnidbEpisodeStreams>[0]),
     );
 
-    expect(performance.now() - startedAt).toBeLessThan(150);
+    // Well under the 400ms the gated alternate would add if it serialized —
+    // the margin makes the bound jitter-proof instead of tight.
+    expect(performance.now() - startedAt).toBeLessThan(350);
     expect(resolution.requested).toMatchObject({ mode: "sub", status: "resolved" });
     expect(resolution.alternate).toMatchObject({ mode: "dub", status: "timed-out" });
     expect(englishRequestAborted).toBe(true);

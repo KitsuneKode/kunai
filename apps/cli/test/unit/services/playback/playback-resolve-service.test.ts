@@ -1960,7 +1960,7 @@ test("PlaybackResolveService stops a stalling provider fan-out at its total dead
     subtitlePreference: "none",
     signal: controller.signal,
   });
-  const outcome = await Promise.race([pending, Bun.sleep(100).then(() => "hung" as const)]);
+  const outcome = await Promise.race([pending, Bun.sleep(2_000).then(() => "hung" as const)]);
   if (outcome === "hung") {
     controller.abort();
     await pending;

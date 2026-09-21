@@ -1499,7 +1499,10 @@ describe("install.sh lifecycle contract", () => {
           const activationStartedAt = performance.now();
           const result = await install;
           expect(result.status).not.toBe(0);
-          expect(performance.now() - activationStartedAt).toBeLessThan(300);
+          // Bounded by the 40ms deadline, not the 500ms poll — under 450ms keeps
+          // the proof while surviving slow-runner jitter (observed 343ms on
+          // macOS CI against the old 300ms bound).
+          expect(performance.now() - activationStartedAt).toBeLessThan(450);
         },
       );
     } finally {

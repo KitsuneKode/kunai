@@ -144,9 +144,17 @@ async function spawnAndSignal(
       );
     }
   }
-  // Signal handlers are registered during mount; give that a brief beat once we
-  // know the process is actually alive.
-  await Bun.sleep(1_500);
+  // Signal handlers register during mount, before the first frame lands in the
+  // transcript — so a non-empty transcript is the post-registration signal. A
+  // short grace covers the write→register ordering slack; the old fixed 1.5s
+  // either wasted time or flaked under runner load.
+  const mountDeadline = Date.now() + 10_000;
+  while (Date.now() < mountDeadline) {
+    const rendered = readTranscript();
+    if (rendered !== "<no transcript captured>" && rendered.length > 0) break;
+    await Bun.sleep(50);
+  }
+  await Bun.sleep(100);
   try {
     process.kill(cliPid, signal);
   } catch (error) {

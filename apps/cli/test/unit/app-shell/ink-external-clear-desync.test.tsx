@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
 
 import { Box, render, Text } from "ink";
-import React from "react";
+import React, { act } from "react";
+
+import { waitUntil } from "../../support/wait-until";
 
 // Ink owns the screen buffer. It erases the previous frame by walking UP from
 // where it believes the cursor is — bottom of the last frame — using one
@@ -56,12 +58,32 @@ async function renderThenExternallyClear(): Promise<string> {
     interactive: true,
   });
   try {
-    await Bun.sleep(80);
+    const actTick = async (ms: number) => {
+      await act(async () => {
+        await Bun.sleep(ms);
+      });
+    };
+    // Ink flushes a frame across several writes; "done" is the write count
+    // going quiet across a poll interval, not a fixed sleep that can outlive
+    // or undercut the batch on a loaded runner.
+    const writesSettled = async (label: string, baseline = 0) => {
+      let last = -1;
+      await waitUntil(
+        () => {
+          const count = stdout.written.length;
+          const settled = count > baseline && count === last;
+          last = count;
+          return settled;
+        },
+        { label, tick: actTick },
+      );
+    };
+    await writesSettled("mount frame flushed");
     stdout.written = [];
     // What the transition helper writes today, outside Ink's knowledge.
     stdout.write(`${CLEAR_SCREEN}${HOME}`);
     instance.rerender(<Frame rows={3} />);
-    await Bun.sleep(120);
+    await writesSettled("rerender frame flushed", 1);
     return stdout.written.join("");
   } finally {
     instance.unmount();

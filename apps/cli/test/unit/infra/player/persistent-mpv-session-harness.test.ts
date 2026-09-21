@@ -742,7 +742,17 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         (command) => command[0] === "set_property" && command[1] === "user-data/kunai-resume-at",
       ),
     );
-    await Bun.sleep(10);
+    // The 5ms resumeChoiceTimeoutMs fires on a real timer: finishResumeChoiceWait
+    // issues a second kunai-resume-at clear when the offer lapses, which is the
+    // observable "prompt timed out" — polling commands survives slow runners
+    // where a fixed sleep under or overshoots.
+    await waitUntil(
+      () =>
+        harness.commands.filter(
+          (command) => command[0] === "set_property" && command[1] === "user-data/kunai-resume-at",
+        ).length >= 2,
+      { label: "resume offer timed out" },
+    );
     harness.callbacks().onPropertyUpdate({
       name: "user-data/kunai-resume-choice",
       value: "resume",
@@ -1028,10 +1038,12 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     await flushAsyncWork();
     markNetworkable(7);
     harness.callbacks().onEndFile({ reason: "error", observedAt: 12 });
-    await Bun.sleep(10);
+    await flushAsyncWork();
     (session as unknown as { advanceCycleGeneration(): unknown }).advanceCycleGeneration();
     const commandCountAtReplacement = harness.commands.length;
-    await Bun.sleep(150);
+    // Negative window: must exceed the real 100ms reconnect backoff plus
+    // scheduler margin — a shorter wait proves nothing on a loaded runner.
+    await Bun.sleep(400);
     await flushAsyncWork();
 
     expect(
@@ -1099,8 +1111,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     // The stale reconnectInFlight flag must not block reconnect attempt 2.
     markNetworkable(7);
     harness.callbacks().onEndFile({ reason: "error", observedAt: 12 });
-    await Bun.sleep(250);
-    await flushAsyncWork();
+    await waitUntil(() => startedCount() === 2, { label: "reconnect attempt 2 started" });
     expect(startedCount()).toBe(2);
 
     const playbackResult = session.waitForCurrentPlayback();

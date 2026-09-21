@@ -1418,7 +1418,10 @@ test("hedged fallback aborts losing candidates once a winner appears", async () 
   });
 
   await engine.resolveWithFallback(HEDGE_INPUT as never, ["slow-primary", "fast-hedge"] as never);
-  await Bun.sleep(50);
+  const abortDeadline = Date.now() + 1_000;
+  while (!log.aborted.includes("slow-primary") && Date.now() < abortDeadline) {
+    await Bun.sleep(5);
+  }
 
   expect(log.aborted).toContain("slow-primary");
 });
