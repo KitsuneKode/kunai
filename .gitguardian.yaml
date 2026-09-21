@@ -21,3 +21,8 @@ secret:
     # including the rest of apps/analytics-ingest.
     - apps/analytics-ingest/docker-compose.yml
     - apps/analytics-ingest/scripts/test-postgres.ts
+    # Credential-vault unit tests use labelled placeholder strings
+    # (`session-secret-1234`, `fresh-token-9999`) to assert vault round-trips.
+    # They are fixtures, not credentials — the file itself is the vault under
+    # test, so the values must look secret-shaped. Scoped to the test file.
+    - apps/cli/test/unit/services/persistence/credential-vault.test.ts
