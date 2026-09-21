@@ -5,6 +5,7 @@ import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types"
 import { getMiruroKnownCatalog } from "../src/catalogs/miruro";
 import {
   buildMiruroCycleCandidates,
+  fetchMiruroPipeBody,
   computeMiruroEpisodesPersistTtlMs,
   createMiruroResultFromPayload,
   decodeMiruroPipePayload,
@@ -12,6 +13,7 @@ import {
   isMiruroAudioFallback,
   MiruroPipeDecodeError,
   type MiruroPipeDecodeFailureCode,
+  setMiruroPipeRetrySleepForTest,
   MIRURO_SERVER_TRY_ORDER,
   resolveMiruroAnilistId,
   type MiruroServerProfile,
@@ -626,5 +628,69 @@ describe("computeMiruroEpisodesPersistTtlMs", () => {
   test("uses the newest air date across mixed entries", () => {
     const entries = [ep("2020-01-01T00:00:00.000Z"), ep(new Date(NOW - 6 * DAY).toISOString())];
     expect(computeMiruroEpisodesPersistTtlMs(entries, NOW)).toBe(DAY);
+  });
+});
+
+describe("fetchMiruroPipeBody CF-challenge retry", () => {
+  test("a challenged first fetch is refetched once and can clear to a valid body", async () => {
+    let calls = 0;
+    const sleepCalls: number[] = [];
+    setMiruroPipeRetrySleepForTest((ms) => {
+      sleepCalls.push(ms);
+      return Promise.resolve();
+    });
+    try {
+      const fetchPort = {
+        fetch: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return new Response("<!DOCTYPE html><html><title>Just a moment</title>", {
+              status: 403,
+            });
+          }
+          return new Response("bh4YNPj7obfuscated-pipe-body", { status: 200 });
+        },
+      };
+      const result = await fetchMiruroPipeBody(
+        "https://www.miruro.bz/api/secure/pipe?x=1",
+        {},
+        undefined,
+        fetchPort as never,
+      );
+      expect(calls).toBe(2);
+      expect(result.status).toBe(200);
+      expect(result.cloudflareHtml).toBe(false);
+      expect(sleepCalls.length).toBe(1);
+      expect(sleepCalls[0]).toBeGreaterThanOrEqual(400);
+      expect(sleepCalls[0]).toBeLessThan(800);
+    } finally {
+      setMiruroPipeRetrySleepForTest(null);
+    }
+  });
+
+  test("wafLikely skips the retry — a region-wide block is not re-polled", async () => {
+    let calls = 0;
+    setMiruroPipeRetrySleepForTest(() => {
+      throw new Error("sleep must not run when wafLikely is set");
+    });
+    try {
+      const fetchPort = {
+        fetch: async () => {
+          calls += 1;
+          return new Response("<html>just a moment</html>", { status: 403 });
+        },
+      };
+      const result = await fetchMiruroPipeBody(
+        "https://www.miruro.bz/api/secure/pipe?x=1",
+        {},
+        undefined,
+        fetchPort as never,
+        { wafLikely: true },
+      );
+      expect(calls).toBe(1);
+      expect(result.cloudflareHtml).toBe(true);
+    } finally {
+      setMiruroPipeRetrySleepForTest(null);
+    }
   });
 });
