@@ -20,3 +20,37 @@ export function keyLabel(key: string): string {
   if (key.length > 1 && !key.startsWith("\x1b")) return `"${key}"`;
   return JSON.stringify(key);
 }
+
+const NAMED_KEY_TOKENS: Record<string, string> = {
+  enter: K.enter,
+  esc: K.esc,
+  escape: K.esc,
+  tab: K.tab,
+  space: K.space,
+  backspace: K.backspace,
+  up: K.up,
+  down: K.down,
+  left: K.left,
+  right: K.right,
+  ctrlc: K.ctrlC,
+};
+
+/**
+ * Decode one CLI token into input bytes. `<name>` maps to the K vocabulary;
+ * everything else is literal text with C-escapes decoded (`\r`, `\x1b`, `\e`,
+ * `\t`, `\n`). Shared by `agent:drive` and `agent:session` so both drivers
+ * accept the same spelling.
+ */
+export function decodeKeyToken(raw: string): string {
+  const name = /^<([a-zA-Z]+)>$/.exec(raw)?.[1];
+  if (name) {
+    const key = NAMED_KEY_TOKENS[name.toLowerCase()];
+    if (!key) throw new Error(`unknown key name <${name}>`);
+    return key;
+  }
+  return raw
+    .replace(/\\x1b|\\e/g, "\x1b")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\n/g, "\n");
+}

@@ -21,45 +21,14 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { IsolatedCliProfile } from "../integration/helpers/isolated-container";
-import { K } from "./keys";
+import { decodeKeyToken } from "./keys";
 import { createProfileInspector } from "./profile-inspector";
-import { attachTmuxSession, startTmuxSession, tmuxSessionStatePath } from "./tmux-session";
-
-interface SessionSidecar {
-  readonly name: string;
-  readonly profile: IsolatedCliProfile;
-  readonly runScript: string;
-  readonly startedAt: string;
-}
-
-const NAMED_KEYS: Record<string, string> = {
-  enter: K.enter,
-  esc: K.esc,
-  escape: K.esc,
-  tab: K.tab,
-  space: K.space,
-  backspace: K.backspace,
-  up: K.up,
-  down: K.down,
-  left: K.left,
-  right: K.right,
-  ctrlc: K.ctrlC,
-};
-
-function decodeKey(raw: string): string {
-  const name = /^<([a-zA-Z]+)>$/.exec(raw)?.[1];
-  if (name) {
-    const key = NAMED_KEYS[name.toLowerCase()];
-    if (!key) throw new Error(`unknown key name <${name}>`);
-    return key;
-  }
-  return raw
-    .replace(/\\x1b|\\e/g, "\x1b")
-    .replace(/\\r/g, "\r")
-    .replace(/\\t/g, "\t")
-    .replace(/\\n/g, "\n");
-}
+import {
+  attachTmuxSession,
+  startTmuxSession,
+  tmuxSessionStatePath,
+  type SessionSidecar,
+} from "./tmux-session";
 
 function usage(): never {
   console.error(`usage: bun run agent:session -- <command> [opts]
@@ -84,6 +53,21 @@ function sessionName(argv: string[]): string {
   return argValue(argv, "--name") ?? "kunai-agent";
 }
 
+/** Positional args with the `--name N` pair removed — `do`/`wait-for`/`inspect`
+ * all take their payload positionally. */
+function positionalArgs(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--name") {
+      i += 1; // skip the flag's value too
+      continue;
+    }
+    if (arg !== undefined && !arg.startsWith("--")) out.push(arg);
+  }
+  return out;
+}
+
 function loadSidecar(name: string): SessionSidecar {
   const path = tmuxSessionStatePath(name);
   if (!existsSync(path)) {
@@ -91,7 +75,11 @@ function loadSidecar(name: string): SessionSidecar {
       `no session "${name}" (missing ${path}). Start one: bun run agent:session -- start --name ${name}`,
     );
   }
-  return JSON.parse(readFileSync(path, "utf8")) as SessionSidecar;
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as SessionSidecar;
+  if (typeof parsed.profile?.rootDir !== "string" || typeof parsed.runScript !== "string") {
+    throw new Error(`corrupt session sidecar ${path} — delete it and start a fresh session`);
+  }
+  return parsed;
 }
 
 function attach(name: string) {
@@ -142,11 +130,7 @@ async function main(): Promise<void> {
     }
 
     case "do": {
-      // Positional args only — "--name" and its value are consumed separately.
-      const nameIdx = rest.indexOf("--name");
-      const positional =
-        nameIdx >= 0 ? [...rest.slice(0, nameIdx), ...rest.slice(nameIdx + 2)] : rest;
-      const keys = positional.filter((a) => !a.startsWith("--")).map(decodeKey);
+      const keys = positionalArgs(rest).map(decodeKeyToken);
       if (keys.length === 0) usage();
       const session = attach(name);
       await session.send(...keys);
@@ -156,7 +140,7 @@ async function main(): Promise<void> {
     }
 
     case "wait-for": {
-      const needle = rest.find((a) => !a.startsWith("--") && a !== name);
+      const needle = positionalArgs(rest)[0];
       if (!needle) usage();
       const session = attach(name);
       await session.waitFor((f) => f.includes(needle), `pane contains ${JSON.stringify(needle)}`);
@@ -174,7 +158,7 @@ async function main(): Promise<void> {
 
     case "inspect": {
       const sidecar = loadSidecar(name);
-      const what = rest.find((a) => !a.startsWith("--") && a !== name) ?? "tables";
+      const what = positionalArgs(rest)[0] ?? "tables";
       const inspect = createProfileInspector(sidecar.profile.paths);
       const section =
         what === "history"
@@ -189,7 +173,7 @@ async function main(): Promise<void> {
     }
 
     case "report": {
-      const dir = rest.find((a) => !a.startsWith("--") && a !== name);
+      const dir = positionalArgs(rest)[0];
       if (!dir) usage();
       const session = attach(name);
       const frame = await session.see();
@@ -217,14 +201,15 @@ async function main(): Promise<void> {
 
     case "stop": {
       const sidecar = loadSidecar(name);
-      const session = attach(name);
-      await session.stop();
-      rmSync(tmuxSessionStatePath(name), { force: true });
       if (!sidecar.profile.rootDir.includes("kunai-integration-")) {
-        // Paranoia: never delete a dir that isn't one of our sandboxes.
+        // Paranoia FIRST: a refusal must not leave a half-cleaned state —
+        // check before killing the session or touching the sidecar.
         throw new Error(`refusing to delete unexpected profile dir: ${sidecar.profile.rootDir}`);
       }
+      const session = attach(name);
+      await session.stop();
       rmSync(sidecar.profile.rootDir, { force: true, recursive: true });
+      rmSync(tmuxSessionStatePath(name), { force: true });
       console.log(`stopped "${name}" and removed sandbox`);
       break;
     }

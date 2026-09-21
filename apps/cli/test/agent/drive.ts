@@ -24,7 +24,7 @@
  */
 import { createAgentSession, type AgentSessionOptions } from "./agent-driver";
 import { writeEvidenceBundle, verifyCitations } from "./evidence";
-import { K } from "./keys";
+import { decodeKeyToken } from "./keys";
 
 type ShowSection = "frame" | "history" | "queue" | "config" | "tables" | "delta" | "journal";
 
@@ -37,35 +37,6 @@ const SHOW_SECTIONS: readonly ShowSection[] = [
   "delta",
   "journal",
 ];
-
-const NAMED_KEYS: Record<string, string> = {
-  enter: K.enter,
-  esc: K.esc,
-  escape: K.esc,
-  tab: K.tab,
-  space: K.space,
-  backspace: K.backspace,
-  up: K.up,
-  down: K.down,
-  left: K.left,
-  right: K.right,
-  ctrlc: K.ctrlC,
-};
-
-function decodeKey(raw: string): string {
-  const named = /^<([a-zA-Z]+)>$/.exec(raw);
-  const name = named?.[1];
-  if (name) {
-    const key = NAMED_KEYS[name.toLowerCase()];
-    if (!key) throw new Error(`unknown key name <${name}>`);
-    return key;
-  }
-  return raw
-    .replace(/\\x1b|\\e/g, "\x1b")
-    .replace(/\\r/g, "\r")
-    .replace(/\\t/g, "\t")
-    .replace(/\\n/g, "\n");
-}
 
 type DriveStep =
   | { kind: "key"; value: string }
@@ -132,7 +103,7 @@ function parseArgs(argv: string[]): DriveArgs {
               ? { kind: "wait", text: wait[1] }
               : waitConfig?.[1] !== undefined
                 ? { kind: "waitConfig", key: waitConfig[1], value: waitConfig[2] ?? "" }
-                : { kind: "key", value: decodeKey(token) },
+                : { kind: "key", value: decodeKeyToken(token) },
           );
           consumed++;
         }

@@ -19,12 +19,11 @@
  * Platform: tmux only exists on Linux/macOS — call sites gate with
  * `Bun.which("tmux")` and land in the skip line, never the failure line.
  */
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { ONBOARDING_VERSION } from "@/app/bootstrap/startup-setup";
-
+import { stripAnsi } from "../harness/render-capture";
 import {
   createIsolatedCliProfile,
   disposeIsolatedCliProfile,
@@ -37,6 +36,7 @@ import {
   type ProfileInspector,
   type ProfileSnapshot,
 } from "./profile-inspector";
+import { onboardedConfig } from "./seed";
 
 const CLI_ROOT = resolve(import.meta.dirname, "../..");
 const FIXTURE_PROVIDER = resolve(CLI_ROOT, "src/app/compiled-smoke/fixture-provider.ts");
@@ -77,7 +77,7 @@ export interface TmuxSession {
   readonly profile: IsolatedCliProfile;
   /** The tmux target (`name`). */
   readonly target: string;
-  /** Send keys; each entry is one tmux send-keys argument set. */
+  /** Send keys; consecutive literals batch into one send-keys -l call. */
   send(...keys: string[]): Promise<void>;
   /** Current visible pane, ANSI-stripped. */
   see(): Promise<string>;
@@ -119,15 +119,16 @@ const SETTLE_POLLS = 3;
 const SETTLE_TIMEOUT_MS = 15_000;
 const DEATH_TIMEOUT_MS = 15_000;
 
-function onboardedConfig(): Record<string, unknown> {
-  return {
-    onboardingVersion: ONBOARDING_VERSION,
-    downloadOnboardingDismissed: true,
-    provider: "videasy",
-    animeProvider: "allanime",
-    analytics: "disabled",
-    installId: "",
-  };
+/** Session names become tmux session names AND sidecar filenames. */
+const SESSION_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+function assertSessionName(name: string): void {
+  if (!SESSION_NAME_PATTERN.test(name)) {
+    throw new Error(
+      `invalid session name ${JSON.stringify(name)} — use letters, digits, "_" or "-" ` +
+        `(it becomes a tmux session name and a tmp filename)`,
+    );
+  }
 }
 
 /** tmux send-keys accepts key NAMES for control keys; literals need `-l`. */
@@ -149,39 +150,43 @@ export async function startTmuxSession(options: TmuxSessionOptions = {}): Promis
     throw new Error("tmux is not installed — L3 driver requires tmux (Linux/macOS)");
   }
   const name = options.name ?? `kunai-agent-${process.pid}-${Date.now().toString(36)}`;
+  assertSessionName(name);
   const columns = options.columns ?? 100;
   const rows = options.rows ?? 30;
 
+  const ownProfile = options.profile === undefined;
   const profile = options.profile ?? createIsolatedCliProfile(name);
-  if ((options.seed ?? "onboarded") === "onboarded") {
-    writeFileSync(profile.paths.configPath, `${JSON.stringify(onboardedConfig())}\n`);
+  try {
+    if ((options.seed ?? "onboarded") === "onboarded") {
+      writeFileSync(profile.paths.configPath, `${JSON.stringify(onboardedConfig())}\n`);
+    }
+
+    const runScript = writeLaunchScript(profile, options);
+    await tmux([
+      "new-session",
+      "-d",
+      "-s",
+      name,
+      "-x",
+      String(columns),
+      "-y",
+      String(rows),
+      `sh ${JSON.stringify(runScript)}`,
+    ]);
+    // remain-on-exit keeps the final frame + pane_dead after the app exits —
+    // that is how `isDead` and the post-quit screenshot both work.
+    await tmux(["set-option", "-t", name, "remain-on-exit", "on"]);
+
+    return attachTmuxSession({ name, profile, runScript, keepProfile: options.keepProfile });
+  } catch (error) {
+    // A start that never became a session must not leak the sandbox it made.
+    if (ownProfile) disposeIsolatedCliProfile(profile);
+    throw error;
   }
-
-  const runScript = await writeLaunchScript(profile, name, options);
-  await tmux([
-    "new-session",
-    "-d",
-    "-s",
-    name,
-    "-x",
-    String(columns),
-    "-y",
-    String(rows),
-    `sh ${JSON.stringify(runScript)}`,
-  ]);
-  // remain-on-exit keeps the final frame + pane_dead after the app exits —
-  // that is how `isDead` and the post-quit screenshot both work.
-  await tmux(["set-option", "-t", name, "remain-on-exit", "on"]);
-
-  return attachTmuxSession({ name, profile, runScript, keepProfile: options.keepProfile });
 }
 
 /** Write the env-owning launch script into the sandbox; returns its path. */
-async function writeLaunchScript(
-  profile: IsolatedCliProfile,
-  _name: string,
-  options: TmuxSessionOptions,
-): Promise<string> {
+function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOptions): string {
   // The launch script owns env so tmux gets one simple argv and quoting stays
   // out of the tmux layer entirely. `profile.env` is the storageRootEnv set —
   // HOME + XDG + APPDATA, the same isolation every other harness uses.
@@ -196,12 +201,11 @@ async function writeLaunchScript(
     ...options.env,
   };
 
+  const bunBin = Bun.which("bun") ?? "bun";
   const pathParts: string[] = options.pathPrefix ? [options.pathPrefix] : [];
   if (options.fakeMpv !== false) {
     const shimDir = join(profile.rootDir, "shim");
-    const { mkdirSync } = await import("node:fs");
     mkdirSync(shimDir, { recursive: true });
-    const bunBin = Bun.which("bun") ?? "bun";
     writeFileSync(
       join(shimDir, "mpv"),
       `#!/bin/sh\nexec ${JSON.stringify(bunBin)} ${JSON.stringify(FAKE_MPV_BIN)} "$@"\n`,
@@ -212,16 +216,26 @@ async function writeLaunchScript(
     pathParts.push(shimDir);
   }
 
-  const bunBin = Bun.which("bun") ?? "bun";
   const command =
     options.command ?? `${JSON.stringify(bunBin)} ${JSON.stringify(join(CLI_ROOT, "src/main.ts"))}`;
   const runScript = join(profile.rootDir, "run.sh");
-  const envLines = Object.entries(env)
+  // PATH is computed, not exported like the rest — a caller-provided env.PATH
+  // must merge INTO the computation (after the prefix dirs), or it would be
+  // written then silently overwritten by the line below.
+  const { PATH: callerPath, ...envRest } = env;
+  const envLines = Object.entries(envRest)
     .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
     .join("\n");
+  const finalPath = [
+    ...pathParts,
+    ...(callerPath ? callerPath.split(":") : []),
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+  ].join(":");
   writeFileSync(
     runScript,
-    `#!/bin/sh\n${envLines}\nexport PATH=${JSON.stringify([...pathParts, "/usr/local/bin", "/usr/bin", "/bin"].join(":"))}\ncd ${JSON.stringify(CLI_ROOT)}\nexec ${command}\n`,
+    `#!/bin/sh\n${envLines}\nexport PATH=${JSON.stringify(finalPath)}\ncd ${JSON.stringify(CLI_ROOT)}\nexec ${command}\n`,
     { mode: 0o755 },
   );
   return runScript;
@@ -242,11 +256,10 @@ export function attachTmuxSession(input: {
 }): TmuxSession {
   const { name, profile, runScript } = input;
   let stopped = false;
-  const ANSI_CSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`, "g");
 
   const see = async (): Promise<string> => {
     const out = await tmux(["capture-pane", "-p", "-t", name]);
-    return out.replace(ANSI_CSI, "").replace(/\s+$/, "");
+    return stripAnsi(out).replace(/\s+$/, "");
   };
 
   const isDead = async (): Promise<boolean> => {
@@ -259,15 +272,25 @@ export function attachTmuxSession(input: {
     profile,
     target: name,
     async send(...keys) {
+      // Consecutive literals coalesce into one send-keys -l call — typing a
+      // query is one tmux invocation, not one per character.
+      let literals: string[] = [];
+      const flushLiterals = async () => {
+        if (literals.length === 0) return;
+        // -l sends the literal bytes — safe for text like "Enter" too.
+        await tmux(["send-keys", "-t", name, "-l", literals.join("")]);
+        literals = [];
+      };
       for (const key of keys) {
         const named = TMUX_KEY_NAMES[key];
         if (named) {
+          await flushLiterals();
           await tmux(["send-keys", "-t", name, named]);
         } else {
-          // -l sends the literal bytes — safe for text like "Enter" too.
-          await tmux(["send-keys", "-t", name, "-l", key]);
+          literals.push(key);
         }
       }
+      await flushLiterals();
     },
     see,
     seeRaw: async () => {
@@ -337,14 +360,18 @@ export function attachTmuxSession(input: {
   return session;
 }
 
-/** Sidecar for the `agent:session` CLI — where the sandbox lives. */
-export interface TmuxSessionState {
+/** Sidecar for the `agent:session` CLI — where the sandbox lives. The whole
+ * profile serializes cleanly (it is plain data) so `attach` can rebuild the
+ * inspector and the launch script path across process invocations. */
+export interface SessionSidecar {
   readonly name: string;
-  readonly profileDir: string;
+  readonly profile: IsolatedCliProfile;
+  readonly runScript: string;
   readonly startedAt: string;
 }
 
 /** Deterministic per-name state path so `start`/`do`/`stop` invocations agree. */
 export function tmuxSessionStatePath(name: string): string {
+  assertSessionName(name);
   return join(tmpdir(), `kunai-agent-${name}.json`);
 }

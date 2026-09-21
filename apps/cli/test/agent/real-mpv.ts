@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 /**
  * Real-mpv tier — the deepest "it actually works" the harness can reach.
  *
@@ -16,11 +19,11 @@
  * loudly, never silently pass. Headless flags ride on the wrapper so the
  * app's own argv stays untouched.
  */
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import type { Socket } from "bun";
 
 import {
   createIsolatedCliProfile,
+  disposeIsolatedCliProfile,
   type IsolatedCliProfile,
 } from "../integration/helpers/isolated-container";
 import { startTmuxSession, type TmuxSession, type TmuxSessionOptions } from "./tmux-session";
@@ -102,27 +105,28 @@ export async function startRealMpvSession(
   mkdirSync(tmpDir, { recursive: true });
 
   const mediaPath = join(mediaDir, "fixture.mp4");
-  await generateMedia(mediaPath);
-
-  const server = Bun.serve({
-    port: 0,
-    hostname: "127.0.0.1",
-    fetch: () => new Response(Bun.file(mediaPath), { headers: { "content-type": "video/mp4" } }),
-  });
-
-  const realMpv = Bun.which("mpv");
-  if (!realMpv) {
-    server.stop(true);
-    throw new Error("real-mpv tier requires `mpv` on PATH (gate: KUNAI_REAL_MPV=1)");
-  }
-  writeFileSync(
-    join(binDir, "mpv"),
-    `#!/bin/sh\nexec ${JSON.stringify(realMpv)} --vo=null --ao=null "$@"\n`,
-    { mode: 0o755 },
-  );
-
+  let server: ReturnType<typeof Bun.serve> | null = null;
   let session: TmuxSession;
   try {
+    await generateMedia(mediaPath);
+
+    server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => new Response(Bun.file(mediaPath), { headers: { "content-type": "video/mp4" } }),
+    });
+
+    // realMpvStatus() already gated on mpv — narrow without re-checking PATH.
+    const realMpv = Bun.which("mpv");
+    if (!realMpv) {
+      throw new Error("real-mpv tier requires `mpv` on PATH (gate: KUNAI_REAL_MPV=1)");
+    }
+    writeFileSync(
+      join(binDir, "mpv"),
+      `#!/bin/sh\nexec ${JSON.stringify(realMpv)} --vo=null --ao=null "$@"\n`,
+      { mode: 0o755 },
+    );
+
     session = await startTmuxSession({
       ...options,
       profile,
@@ -138,7 +142,10 @@ export async function startRealMpvSession(
       },
     });
   } catch (error) {
-    server.stop(true);
+    // Any failure before the session owns the profile must not leak either
+    // the server or the sandbox.
+    server?.stop(true);
+    disposeIsolatedCliProfile(profile);
     throw error;
   }
 
@@ -176,33 +183,49 @@ export async function readMpvTimePos(profile: IsolatedCliProfile): Promise<numbe
 async function queryTimePos(socketPath: string): Promise<number | null> {
   try {
     const response = await new Promise<string>((resolvePromise, reject) => {
-      const timeout = setTimeout(() => reject(new Error("time-pos query timed out")), 3000);
+      let sock: Socket | undefined;
       let buffer = "";
+      // Every exit path closes the socket AND clears the deadline — leaving
+      // either behind leaks an fd or fires a reject on an already-settled
+      // promise (harmless but noisy).
+      const cleanup = () => {
+        clearTimeout(timer);
+        try {
+          sock?.end();
+        } catch {
+          // already closed
+        }
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("time-pos query timed out"));
+      }, 3000);
       Bun.connect({
         unix: socketPath,
         socket: {
-          data(_socket, data) {
+          data(socket, data) {
             buffer += data.toString("utf8");
             const nl = buffer.indexOf("\n");
             if (nl >= 0) {
-              clearTimeout(timeout);
+              cleanup();
               resolvePromise(buffer.slice(0, nl));
             }
           },
           error(_socket, err) {
-            clearTimeout(timeout);
+            cleanup();
             reject(err);
           },
           connectError(_socket, err) {
-            clearTimeout(timeout);
+            cleanup();
             reject(err);
           },
           open(socket) {
+            sock = socket;
             socket.write(`${JSON.stringify({ command: ["get_property", "time-pos"] })}\n`);
           },
         },
       }).catch((err: unknown) => {
-        clearTimeout(timeout);
+        cleanup();
         reject(err);
       });
     });

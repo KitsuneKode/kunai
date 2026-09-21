@@ -31,7 +31,6 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { forceSettleAllRootContent } from "@/app-shell/root-content-state";
-import { ONBOARDING_VERSION } from "@/app/bootstrap/startup-setup";
 import type { SessionController } from "@/app/session/SessionController";
 import type { ShutdownIntent } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
@@ -46,7 +45,7 @@ import {
   type IsolatedCliProfile,
 } from "../integration/helpers/isolated-container";
 import { waitUntil } from "../support/wait-until";
-import { keyLabel } from "./keys";
+import { K, keyLabel } from "./keys";
 import {
   createProfileInspector,
   diffSnapshots,
@@ -54,6 +53,7 @@ import {
   type ProfileInspector,
   type ProfileSnapshot,
 } from "./profile-inspector";
+import { onboardedConfig } from "./seed";
 
 const CLI_ROOT = resolve(import.meta.dirname, "../..");
 const FIXTURE_PROVIDER = resolve(CLI_ROOT, "src/app/compiled-smoke/fixture-provider.ts");
@@ -185,25 +185,6 @@ async function pollSleep(ms: number): Promise<void> {
   await Bun.sleep(ms);
 }
 
-function onboardedConfig(): Record<string, unknown> {
-  return {
-    // Imported, not hardcoded: the seed tracks the current wizard revision so
-    // a bump can never silently drag the harness back through onboarding.
-    onboardingVersion: ONBOARDING_VERSION,
-    downloadOnboardingDismissed: true,
-    provider: "videasy",
-    animeProvider: "allanime",
-    // Explicit decline — hazard 3. Never "unset": an unset state is what makes
-    // the real shell raise the disclosure banner and schedule markNoticeShown.
-    analytics: "disabled",
-    installId: "",
-    // NOTE: do NOT seed offlineMode here. offlineMode + empty search query makes
-    // SearchPhase return {status:"cancelled"} synchronously and the session
-    // loop spins forever on retries (SearchPhase.ts ~331 → SessionController.ts
-    // ~126) — a real livelock the harness caught on its first dogfood.
-  };
-}
-
 export async function createAgentSession(options: AgentSessionOptions): Promise<AgentSession> {
   if (activeSession) {
     throw new Error(
@@ -214,9 +195,8 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
   const sessionLabel = options.label ?? "agent-session";
   activeSession = { label: sessionLabel };
 
-  const envUndos: Array<() => void> = [];
-  const restoreConsole = installActWarningFilter();
-  envUndos.push(restoreConsole);
+  const cleanups: Array<() => void> = [];
+  cleanups.push(installActWarningFilter());
   let unbindShutdown: (() => void) | null = null;
   let handle: RenderHandle | null = null;
   let container: Container | null = null;
@@ -248,9 +228,12 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     journal.push({ step: journal.length, kind, label, frame, dbDelta: deltaSummary(delta) });
   };
 
-  const undoAllEnv = () => {
-    while (envUndos.length > 0) envUndos.pop()?.();
+  const runCleanups = () => {
+    while (cleanups.length > 0) cleanups.pop()?.();
   };
+
+  const columns = options.columns ?? 100;
+  const rows = options.rows ?? 30;
 
   const closeContainerDbs = () => {
     if (!container) return;
@@ -265,10 +248,10 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
 
   try {
     profile = createIsolatedCliProfile(sessionLabel);
-    envUndos.push(applyStorageRootEnv(profile.rootDir));
+    cleanups.push(applyStorageRootEnv(profile.rootDir));
 
-    // Deterministic-shell env. Seeded BEFORE the container import — FileStorage
-    // bakes paths at module-load time.
+    // Deterministic-shell env. Seeded BEFORE the container import so the
+    // first config read already sees the onboarded state.
     const seed = options.seed ?? "onboarded";
     if (seed !== "fresh") {
       const config = seed === "onboarded" ? onboardedConfig() : seed;
@@ -299,11 +282,13 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
         `#!/bin/sh\nexec ${JSON.stringify(bunBin)} ${JSON.stringify(FAKE_MPV_BIN)} "$@"\n`,
         { mode: 0o755 },
       );
-      env.PATH = `${shimDir}:${process.env.PATH ?? "/usr/bin:/bin"}`;
+      // extraEnv.PATH merges AFTER the shim dir — a plain env.PATH assignment
+      // would silently drop it.
+      env.PATH = `${shimDir}:${options.extraEnv?.PATH ?? process.env.PATH ?? "/usr/bin:/bin"}`;
       env.KUNAI_FAKE_MPV_EVIDENCE = join(profile.rootDir, "fake-mpv-evidence.jsonl");
       env.KUNAI_FAKE_MPV_MODE = options.fakeMpvMode ?? "normal";
     }
-    envUndos.push(applyEnv(env));
+    cleanups.push(applyEnv(env));
 
     const { createContainer } = await import("@/container");
     if (env.KUNAI_COMPILED_SMOKE === "1") {
@@ -315,10 +300,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     container = await createContainer({ providerModulesOverride, searchServiceDefinitions });
 
     const { AppRoot } = await import("@/app-shell/ink-shell");
-    handle = render(createElement(AppRoot, { container }), {
-      columns: options.columns ?? 100,
-      rows: options.rows ?? 30,
-    });
+    handle = render(createElement(AppRoot, { container }), { columns, rows });
   } catch (error) {
     try {
       handle?.unmount();
@@ -327,7 +309,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     }
     forceSettleAllRootContent("agent-session-boot-failed");
     closeContainerDbs();
-    undoAllEnv();
+    runCleanups();
     activeSession = null;
     if (profile) disposeIsolatedCliProfile(profile);
     throw error;
@@ -352,22 +334,21 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
   // same way main.ts's SessionController.run does. Without it, AppRoot only
   // ever shows the idle welcome.
   const { SessionController } = await import("@/app/session/SessionController");
-  let controller: SessionController | null = new SessionController(container);
+  let controller: SessionController = new SessionController(container);
   let runPromise: Promise<void> | null = null;
   let quitIntent: ShutdownIntent | null = null;
   let controllerGeneration = 0;
 
+  let loopError: Error | null = null;
+  const throwIfLoopFailed = () => {
+    if (loopError) throw loopError;
+  };
+
   const startLoop = () => {
-    if (!controller) return;
     runPromise = controller.run({}).catch((error) => {
       // A failed loop is a finding, not a crash — surface it on the next wait.
       loopError = error instanceof Error ? error : new Error(String(error));
     });
-  };
-
-  let loopError: Error | null = null;
-  const throwIfLoopFailed = () => {
-    if (loopError) throw loopError;
   };
 
   // The shell's quit paths (Ctrl+C, /quit) request shutdown through this
@@ -375,7 +356,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
   // binding is not optional. The intent drives the real quiescence path.
   unbindShutdown = bindShutdownRequestHandler((intent) => {
     quitIntent = intent;
-    controller?.beginShutdown();
+    controller.beginShutdown();
   });
   startLoop();
 
@@ -386,7 +367,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     // verified: Esc-then-dispose unwinds in ~10ms), then Ctrl+C reaches the
     // shell's own handler → requestAppShutdown → our bound handler →
     // beginShutdown. forceSettle alone cannot unwind an overlay-blocked mount.
-    for (const key of ["\x1b", "\x1b", "\x03"]) {
+    for (const key of [K.esc, K.esc, K.ctrlC]) {
       try {
         handle?.stdin.enqueue(key);
       } catch {
@@ -394,7 +375,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       }
       await Bun.sleep(60);
     }
-    controller?.beginShutdown();
+    controller.beginShutdown();
     // Phases mount NEW root content while unwinding (killing mpv resolves the
     // player promise, which mounts post-play, which blocks on input nobody
     // sends) — keep settling mounts until run() actually returns, bounded.
@@ -414,7 +395,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
   };
 
   const session: AgentSession = {
-    profile,
+    profile: sessionProfile,
     journal,
     press(...keys) {
       throwIfLoopFailed();
@@ -475,18 +456,17 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     },
     quitRequested: () => quitIntent,
     async relaunch() {
-      pushJournal("quit", `quit (${quitIntent?.reason ?? "driver"})`, frame());
+      // stopLoop sends the real Ctrl+C — only after it returns is quitIntent
+      // populated, so the journal records the actual reason, not a guess.
       await stopLoop();
+      pushJournal("quit", `quit (${quitIntent?.reason ?? "driver"})`, frame());
       const generation = ++controllerGeneration;
       requireHandle().unmount();
       forceSettleAllRootContent("agent-session-relaunch");
       quitIntent = null;
       controller = new SessionController(sessionContainer);
       const { AppRoot } = await import("@/app-shell/ink-shell");
-      handle = render(createElement(AppRoot, { container: sessionContainer }), {
-        columns: options.columns ?? 100,
-        rows: options.rows ?? 30,
-      });
+      handle = render(createElement(AppRoot, { container: sessionContainer }), { columns, rows });
       if (generation !== controllerGeneration) return; // disposed mid-relaunch
       startLoop();
       pushJournal("relaunch", "relaunch", frame());
@@ -519,7 +499,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
           forceSettleAllRootContent("agent-session-dispose");
           closeContainerDbs();
           unbindShutdown?.();
-          undoAllEnv();
+          runCleanups();
           disposeIsolatedCliProfile(sessionProfile);
           activeSession = null;
         }
