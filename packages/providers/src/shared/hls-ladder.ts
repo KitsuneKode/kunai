@@ -28,11 +28,34 @@ export type HlsRenditionTrack = {
  * inventory. `audioLanguages` covers muxed audio too — a rendition may declare
  * a LANGUAGE without a URI, which still tells us the language exists.
  */
+/**
+ * Why an expansion returned what it did. Callers that only want variants ignore
+ * this; callers deciding whether a stream host is *alive* (as opposed to merely
+ * unlabeled or WAF-gatekept) branch on it — a 5xx/404/410 `http-error` is a dead
+ * host, while `network`/`not-master`/403 stay ambiguous because gatekept CDNs
+ * reject expansion fetches yet still play.
+ */
+export type HlsMasterProbe = {
+  readonly kind: "ok" | "http-error" | "not-master" | "network";
+  readonly httpStatus?: number;
+};
+
+/**
+ * HTTP statuses that prove a stream host is dead, not merely gatekept.
+ * 5xx and 404/410 mean mpv will fail identically on the same URL. 401/403 stay
+ * ambiguous on purpose — WAF-fronted CDNs reject expansion fetches yet still
+ * play once the player carries the provider's headers.
+ */
+export function isHlsDeadHostStatus(status: number | undefined): boolean {
+  return status !== undefined && (status >= 500 || status === 404 || status === 410);
+}
+
 export type HlsMasterInventory = {
   readonly variants: readonly HlsLadderVariant[];
   readonly audioTracks: readonly HlsRenditionTrack[];
   readonly subtitleTracks: readonly HlsRenditionTrack[];
   readonly audioLanguages: readonly string[];
+  readonly probe: HlsMasterProbe;
 };
 
 export type ExpandHlsMasterPlaylistOptions = {
@@ -71,34 +94,39 @@ export async function expandHlsMasterInventory(
     // Keep rank 0 so callers do not invent a fake 1080p height from auto.
     qualityRank: 0,
   };
-  const empty: HlsMasterInventory = {
+  const empty = (probe: HlsMasterProbe): HlsMasterInventory => ({
     variants: [fallback],
     audioTracks: [],
     subtitleTracks: [],
     audioLanguages: [],
-  };
+    probe,
+  });
 
   try {
     const response = await options.fetch(masterUrl, {
       headers: headers ?? {},
       signal: signal ?? AbortSignal.timeout(12_000),
     });
-    if (!response.ok) return empty;
+    if (!response.ok) {
+      return empty({ kind: "http-error", httpStatus: response.status });
+    }
 
     const text = await response.text();
     if (!isHlsMasterPlaylist(text)) {
-      return empty;
+      return empty({ kind: "not-master", httpStatus: response.status });
     }
 
     const variants = parseHlsMasterVariants(text, masterUrl);
-    if (variants.length === 0) return empty;
+    if (variants.length === 0) {
+      return empty({ kind: "not-master", httpStatus: response.status });
+    }
 
     const sorted = [...variants].sort((left, right) => right.qualityRank - left.qualityRank);
     const capped = maxVariants > 0 ? sorted.slice(0, maxVariants) : sorted;
     const renditions = parseHlsMasterRenditions(text, masterUrl);
-    return { variants: capped, ...renditions };
+    return { variants: capped, ...renditions, probe: { kind: "ok", httpStatus: response.status } };
   } catch {
-    return empty;
+    return empty({ kind: "network" });
   }
 }
 
