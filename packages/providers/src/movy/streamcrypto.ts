@@ -30,7 +30,14 @@ const PAYLOAD_MAGIC = [109, 118, 109, 49] as const;
 const GOLDEN = 0x9e3779b9;
 const SBOX_SIZE = 61;
 
-/** `(e * (e + 1)) & 1` — true for e ≡ 0 or 3 (mod 4). */
+/**
+ * `(e * (e + 1)) & 1` — reads like triangular-parity intent, but the product
+ * is always even, so this is an always-true constant. That is faithful to
+ * upstream: live ciphertext decrypts only under the always-true path, which
+ * means the obfuscated bundle carries this exact dead branch. The odd-parity
+ * alternatives below are unreachable upstream code, kept so the keystream
+ * stays byte-identical to the site's.
+ */
 function laneParity(e: number): boolean {
   return ((e * (e + 1)) & 1) === 0;
 }
@@ -91,7 +98,7 @@ function oddSeedAcc(seed: string): number {
 type Keystream = { s: Record<number, number>; acc: number };
 
 function initKeystream(seed: string, mediaId: number): Keystream {
-  if ((seed.length * (seed.length + 1)) & 1) {
+  if (!laneParity(seed.length)) {
     const sbox = oddSeedSBox(seed);
     const record: Record<number, number> = {};
     for (let i = 0; i < sbox.length; i++) record[i] = sbox[i] ?? 0;
