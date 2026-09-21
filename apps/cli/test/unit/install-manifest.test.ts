@@ -21,6 +21,8 @@ import {
 } from "@/services/update/native-installer/install-layout";
 import { writeInstalledVersionMetadata } from "@/services/update/native-installer/version-metadata";
 
+import { waitUntil } from "../support/wait-until";
+
 const made: string[] = [];
 afterEach(() => {
   for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -44,11 +46,7 @@ function migrationLayout(configDir: string) {
 }
 
 async function waitForPath(path: string): Promise<void> {
-  const deadline = Date.now() + 2_000;
-  while (!existsSync(path)) {
-    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
-    await Bun.sleep(5);
-  }
+  await waitUntil(() => existsSync(path), { label: `path exists: ${path}` });
 }
 
 const LEGACY_VERSIONED = {
