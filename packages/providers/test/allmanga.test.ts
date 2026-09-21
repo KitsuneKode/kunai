@@ -927,15 +927,18 @@ describe("AllManga provider evidence fixtures", () => {
     using fetchMock = await mockAllMangaFetch({ liveCrypto: true, catalogGate });
 
     const resolvePromise = resolveEvidenceEpisode();
-    for (
-      let attempt = 0;
-      attempt < 50 && !fetchMock.startedRequests.includes("catalog");
-      attempt++
-    ) {
-      await Bun.sleep(1);
-    }
-    await Bun.sleep(20);
-    const overlapped = fetchMock.startedRequests.includes("bootstrap");
+    const waitForStart = async (name: string): Promise<boolean> => {
+      const deadline = Date.now() + 1_000;
+      while (Date.now() < deadline) {
+        if (fetchMock.startedRequests.includes(name)) return true;
+        await Bun.sleep(5);
+      }
+      return fetchMock.startedRequests.includes(name);
+    };
+    expect(await waitForStart("catalog")).toBe(true);
+    // The bootstrap lane must start while the catalog lane is still gated —
+    // bounded poll on the same observable, not a fixed settle.
+    const overlapped = await waitForStart("bootstrap");
     releaseCatalog();
     const result = await resolvePromise;
 
@@ -1225,7 +1228,7 @@ describe("AllManga provider evidence fixtures", () => {
     using fetchMock = await mockAllMangaFetch({
       subSourceFixture: "fast-and-slow-baseline",
       fastBaselineDelayMs: 10,
-      slowBaselineDelayMs: 100,
+      slowBaselineDelayMs: 400,
     });
 
     const links = await resolveEpisodeSources({

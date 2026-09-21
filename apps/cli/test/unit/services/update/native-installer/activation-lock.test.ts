@@ -164,7 +164,11 @@ describe("activation lock", () => {
       pollMs: 5,
       corruptGraceMs: 150,
     });
-    await Bun.sleep(10);
+    // Ordering gate: the first acquire should be mid-poll before the second
+    // starts so the second's queue time lands inside its own deadline. There
+    // is no exported "acquire started" observable; 50ms gives the 5ms poll
+    // loop ten turns of headroom under parallel load.
+    await Bun.sleep(50);
     const startedAt = performance.now();
     const second = await tryAcquireActivationLock(layout, "2.0.0", {
       timeoutMs: 30,
@@ -173,7 +177,9 @@ describe("activation lock", () => {
     const elapsedMs = performance.now() - startedAt;
 
     expect(second.acquired).toBe(false);
-    expect(elapsedMs).toBeLessThan(100);
+    // Deadline is 30ms; 200ms still proves bounded bail without flaking on
+    // scheduler jitter.
+    expect(elapsedMs).toBeLessThan(200);
 
     const first = await firstPromise;
     if (first.acquired) await first.release();

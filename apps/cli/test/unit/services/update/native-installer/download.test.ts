@@ -12,6 +12,8 @@ import {
   writeAllBytes,
 } from "@/services/update/native-installer/download";
 
+import { waitUntil } from "../../../../support/wait-until";
+
 /**
  * The two stall cases below are skipped on Windows.
  *
@@ -340,7 +342,7 @@ describe("downloadToFile", () => {
       policy: { ...DEFAULT_BINARY_DOWNLOAD_POLICY, maxAttempts: 3, retryBaseDelayMs: 1 },
     });
 
-    await Bun.sleep(10);
+    await waitUntil(() => calls === 1, { label: "download fetch invoked" });
     controller.abort();
 
     await expect(pending).rejects.toThrow();

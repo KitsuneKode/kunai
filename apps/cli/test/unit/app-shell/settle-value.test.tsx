@@ -19,6 +19,7 @@ import { Box, Text, useInput } from "ink";
 import React, { act, useState } from "react";
 
 import { render } from "../../harness/render-capture";
+import { waitUntil } from "../../support/wait-until";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -49,8 +50,13 @@ describe("useSettledValue", () => {
       // Once the burst rests past the delay, settled jumps straight to the
       // latest value (3) — not 1, 2, 3 — because intermediate timers were
       // cleared by each new change.
-      await act(async () => {
-        await sleep(90);
+      await waitUntil(() => handle.lastFrame().includes("settled=3"), {
+        label: "settled value caught up",
+        tick: async (ms) => {
+          await act(async () => {
+            await sleep(ms);
+          });
+        },
       });
       expect(handle.lastFrame()).toContain("live=3");
       expect(handle.lastFrame()).toContain("settled=3");
@@ -91,8 +97,13 @@ describe("navigation burst frame-count", () => {
       expect(handle.lastFrame()).toContain("preview=0");
 
       // After the burst settles, the preview catches up in a single extra frame.
-      await act(async () => {
-        await sleep(90);
+      await waitUntil(() => handle.lastFrame().includes("preview=5"), {
+        label: "settled preview caught up",
+        tick: async (ms) => {
+          await act(async () => {
+            await sleep(ms);
+          });
+        },
       });
       expect(handle.frames.length - before).toBe(presses + 1);
       expect(handle.lastFrame()).toContain("preview=5");
