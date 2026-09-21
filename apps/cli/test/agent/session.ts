@@ -75,11 +75,25 @@ function loadSidecar(name: string): SessionSidecar {
       `no session "${name}" (missing ${path}). Start one: bun run agent:session -- start --name ${name}`,
     );
   }
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as SessionSidecar;
-  if (typeof parsed.profile?.rootDir !== "string" || typeof parsed.runScript !== "string") {
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (!isSessionSidecar(parsed)) {
     throw new Error(`corrupt session sidecar ${path} — delete it and start a fresh session`);
   }
   return parsed;
+}
+
+/** Real shape guard — `in`-narrowing, no assertions. */
+function isSessionSidecar(v: unknown): v is SessionSidecar {
+  if (typeof v !== "object" || v === null) return false;
+  if (!("profile" in v) || !("runScript" in v)) return false;
+  const { profile, runScript } = v;
+  return (
+    typeof runScript === "string" &&
+    typeof profile === "object" &&
+    profile !== null &&
+    "rootDir" in profile &&
+    typeof profile.rootDir === "string"
+  );
 }
 
 function attach(name: string) {

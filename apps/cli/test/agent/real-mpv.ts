@@ -229,7 +229,9 @@ async function queryTimePos(socketPath: string): Promise<number | null> {
         reject(err);
       });
     });
-    const parsed = JSON.parse(response) as { data?: number; error?: string };
+    const parsed: unknown = JSON.parse(response);
+    // mpv IPC answers {data, error}; narrow the field, don't assert the shape.
+    if (typeof parsed !== "object" || parsed === null || !("data" in parsed)) return null;
     return typeof parsed.data === "number" ? parsed.data : null;
   } catch {
     return null;

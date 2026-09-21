@@ -39,6 +39,7 @@ export type QueueRow = {
 
 /** Canonical JSON for one row — sorted keys so equal rows serialize equal. */
 function canonicalRow(row: unknown): string {
+  // SAFETY: bun:sqlite .all() yields row objects — Object.keys needs the record shape.
   return JSON.stringify(row, Object.keys(row as Record<string, unknown>).sort());
 }
 
@@ -86,6 +87,7 @@ function snapshotFile(dbPath: string): DbFileSnapshot {
 
   const db = new Database(dbPath, { readonly: true });
   try {
+    // SAFETY: bun:sqlite .all() is untyped; sqlite_master.name is a TEXT column.
     const names = db
       .query(
         `SELECT name FROM sqlite_master
@@ -170,7 +172,13 @@ export function createProfileInspector(paths: ProfileStoragePaths): ProfileInspe
     config() {
       if (!existsSync(paths.configPath)) return {};
       try {
-        return JSON.parse(readFileSync(paths.configPath, "utf8")) as Record<string, unknown>;
+        const parsed: unknown = JSON.parse(readFileSync(paths.configPath, "utf8"));
+        // config.json is always an object; a scalar/array would be corruption.
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          return { __unreadable: true };
+        }
+        // SAFETY: object-narrowed above — the top level of a config file is a record.
+        return parsed as Record<string, unknown>;
       } catch {
         // A torn write is a finding, not a crash — report what we could see.
         return { __unreadable: true };
@@ -213,6 +221,7 @@ export function openDataDb(path: string): Database {
 }
 
 export function historyRows(db: Database): HistoryRow[] {
+  // SAFETY: bun:sqlite .all() is untyped; columns match the history_progress schema.
   return db
     .query(
       `SELECT title_id, media_kind, season, episode, absolute_episode
@@ -223,6 +232,7 @@ export function historyRows(db: Database): HistoryRow[] {
 }
 
 export function queueRows(db: Database): QueueRow[] {
+  // SAFETY: bun:sqlite .all() is untyped; columns match the playlist_queue schema.
   return db
     .query(
       `SELECT id, title_id, absolute_episode, status, last_failure_json

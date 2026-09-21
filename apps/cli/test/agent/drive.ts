@@ -38,6 +38,8 @@ const SHOW_SECTIONS: readonly ShowSection[] = [
   "journal",
 ];
 
+const SHOW_SECTION_SET: ReadonlySet<string> = new Set(SHOW_SECTIONS);
+
 type DriveStep =
   | { kind: "key"; value: string }
   | { kind: "wait"; text: string }
@@ -111,12 +113,16 @@ function parseArgs(argv: string[]): DriveArgs {
         break;
       }
       case "--show": {
+        // Validate, then narrow — the type predicate is earned by the set
+        // membership check (no bare `as` over parsed input).
         const sections = next()
           .split(",")
-          .map((s) => s.trim()) as ShowSection[];
-        for (const s of sections) {
-          if (!SHOW_SECTIONS.includes(s)) usage();
-        }
+          .map((s) => s.trim())
+          .filter((s): s is ShowSection => {
+            const valid = SHOW_SECTION_SET.has(s);
+            if (!valid) usage();
+            return valid;
+          });
         if (!showSet) {
           out.show = sections;
           showSet = true;
