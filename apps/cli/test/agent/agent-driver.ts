@@ -294,8 +294,10 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     if (env.KUNAI_COMPILED_SMOKE === "1") {
       const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
         await import("@/container/compiled-smoke-provider-override");
-      providerModulesOverride = await loadCompiledSmokeProviderOverride();
-      searchServiceDefinitions = await loadCompiledSmokeSearchDefinitions();
+      [providerModulesOverride, searchServiceDefinitions] = await Promise.all([
+        loadCompiledSmokeProviderOverride(),
+        loadCompiledSmokeSearchDefinitions(),
+      ]);
     }
     container = await createContainer({ providerModulesOverride, searchServiceDefinitions });
 

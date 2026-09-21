@@ -789,8 +789,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
     await import("./container/compiled-smoke-provider-override");
-  const providerModulesOverride = await loadCompiledSmokeProviderOverride();
-  const searchServiceDefinitions = await loadCompiledSmokeSearchDefinitions();
+  const [providerModulesOverride, searchServiceDefinitions] = await Promise.all([
+    loadCompiledSmokeProviderOverride(),
+    loadCompiledSmokeSearchDefinitions(),
+  ]);
 
   // Bootstrap the DI container
   const container = await createContainer({
