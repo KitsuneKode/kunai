@@ -91,8 +91,8 @@ describe("migrateSyncTokensToVault", () => {
 
   const file = (d: string) => join(d, "sync-tokens.json");
   const plaintext: SyncTokens = {
-    anilist: { accessToken: "ani-secret", userId: 9 },
-    tmdb: { sessionId: "tmdb-secret" },
+    anilist: { accessToken: "fixture-ani-access", userId: 9 },
+    tmdb: { sessionId: "fixture-tmdb-session" },
   };
 
   test("write → verify → delete: file removed only after vault round-trip", async () => {
@@ -214,10 +214,10 @@ describe("createCredentialVault backend selection", () => {
       paths: fakePaths(dir),
       env: { KUNAI_CREDENTIAL_BACKEND: "file" },
     });
-    await vault.set("k", "secret-value");
-    expect(await vault.get("k")).toBe("secret-value");
+    await vault.set("k", "fixture-vault-value");
+    expect(await vault.get("k")).toBe("fixture-vault-value");
     const onDisk = JSON.parse(await readFile(join(dir, "secrets.json"), "utf8"));
-    expect(onDisk.k).toBe("secret-value");
+    expect(onDisk.k).toBe("fixture-vault-value");
     await vault.delete("k");
     expect(await vault.get("k")).toBeUndefined();
   });
@@ -349,35 +349,35 @@ describe("ConfigService vault lane (#179)", () => {
 
   test("plaintext videasySessionToken migrates to the vault and leaves config.json", async () => {
     const vault = fakeVault();
-    const store = captureStore({ videasySessionToken: "session-secret-1234" });
+    const store = captureStore({ videasySessionToken: "fixture-videasy-session-a" });
     const service = await ConfigServiceImpl.load(store, vault);
 
     // In-memory config keeps serving the token — consumers are vault-blind.
-    expect(service.videasySessionToken).toBe("session-secret-1234");
+    expect(service.videasySessionToken).toBe("fixture-videasy-session-a");
     // The persisted shape was scrubbed.
     expect(store.written.at(-1)?.videasySessionToken).toBe("");
     // And the vault holds it.
-    expect(vault.store.get(CREDENTIAL_KEYS.videasySessionToken)).toBe("session-secret-1234");
+    expect(vault.store.get(CREDENTIAL_KEYS.videasySessionToken)).toBe("fixture-videasy-session-a");
   });
 
   test("save() scrubs the token from disk but keeps it in memory", async () => {
     const vault = fakeVault();
     const store = captureStore({});
     const service = await ConfigServiceImpl.load(store, vault);
-    await service.update({ videasySessionToken: "fresh-token-9999" } as never);
+    await service.update({ videasySessionToken: "fixture-videasy-session-b" } as never);
     await service.save();
 
-    expect(service.videasySessionToken).toBe("fresh-token-9999");
+    expect(service.videasySessionToken).toBe("fixture-videasy-session-b");
     expect(store.written.at(-1)?.videasySessionToken).toBe("");
-    expect(vault.store.get(CREDENTIAL_KEYS.videasySessionToken)).toBe("fresh-token-9999");
+    expect(vault.store.get(CREDENTIAL_KEYS.videasySessionToken)).toBe("fixture-videasy-session-b");
   });
 
   test("clearing the token deletes the vault entry", async () => {
     const vault = fakeVault();
-    vault.store.set(CREDENTIAL_KEYS.videasySessionToken, "old-token");
+    vault.store.set(CREDENTIAL_KEYS.videasySessionToken, "fixture-videasy-session-old");
     const store = captureStore({});
     const service = await ConfigServiceImpl.load(store, vault);
-    expect(service.videasySessionToken).toBe("old-token"); // hydrated from vault
+    expect(service.videasySessionToken).toBe("fixture-videasy-session-old"); // hydrated from vault
 
     await service.update({ videasySessionToken: "" } as never);
     await service.save();
