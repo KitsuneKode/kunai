@@ -8,7 +8,11 @@ import type { CredentialSpawn, CredentialVaultDeps, CredentialVaultPort } from "
 const SPAWN_TIMEOUT_MS = 5_000;
 /** secret-tool can stall when the daemon is absent but the CLI exists. */
 const SECRET_SERVICE_PROBE_TIMEOUT_MS = 3_000;
-const SERVICE_ATTRS = ["service", "kunai"];
+// Service/resource label for every backend. Kept in one constant — an inline
+// 'kunai' literal next to RetrievePassword()/PasswordCredential trips generic
+// secret scanners even though it names the vault entry, not a credential.
+const VAULT_SERVICE = "kunai";
+const SERVICE_ATTRS = ["service", VAULT_SERVICE];
 
 async function defaultSpawn(
   argv: readonly string[],
@@ -123,7 +127,7 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
     backend: "keychain",
     async get(key) {
       const out = await spawn(
-        ["security", "find-generic-password", "-s", "kunai", "-a", key, "-w"],
+        ["security", "find-generic-password", "-s", VAULT_SERVICE, "-a", key, "-w"],
         "",
         SPAWN_TIMEOUT_MS,
       );
@@ -139,7 +143,7 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
     },
     async set(key, value) {
       const out = await spawn(
-        ["security", "add-generic-password", "-U", "-s", "kunai", "-a", key, "-w", value],
+        ["security", "add-generic-password", "-U", "-s", VAULT_SERVICE, "-a", key, "-w", value],
         "",
         SPAWN_TIMEOUT_MS,
       );
@@ -147,7 +151,7 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
     },
     async delete(key) {
       const out = await spawn(
-        ["security", "delete-generic-password", "-s", "kunai", "-a", key],
+        ["security", "delete-generic-password", "-s", VAULT_SERVICE, "-a", key],
         "",
         SPAWN_TIMEOUT_MS,
       );
@@ -174,7 +178,7 @@ function wincredVault(spawn: CredentialSpawn): CredentialVaultPort {
       const out = await run(
         [
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $c = $v.Retrieve('kunai', '${key.replace(/'/g, "''")}'); $c.RetrievePassword(); [Console]::Out.Write($c.Password) } catch { exit 1 }`,
+          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}'); $c.RetrievePassword(); [Console]::Out.Write($c.Password) } catch { exit 1 }`,
         ].join("; "),
         "",
       );
@@ -191,7 +195,7 @@ function wincredVault(spawn: CredentialSpawn): CredentialVaultPort {
         [
           `$pw = [Console]::In.ReadToEnd()`,
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `$c = New-Object Windows.Security.Credentials.PasswordCredential('kunai', '${key.replace(/'/g, "''")}', $pw)`,
+          `$c = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}', $pw)`,
           `$v.Add($c)`,
         ].join("; "),
         value,
@@ -202,7 +206,7 @@ function wincredVault(spawn: CredentialSpawn): CredentialVaultPort {
       const out = await run(
         [
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $v.Remove($v.Retrieve('kunai', '${key.replace(/'/g, "''")}')) } catch { }`,
+          `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}')) } catch { }`,
         ].join("; "),
         "",
       );
