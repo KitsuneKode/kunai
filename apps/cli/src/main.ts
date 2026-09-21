@@ -29,6 +29,7 @@ import {
   formatBootstrapPlan,
   resolveAutoPickIndex,
   resolveBootstrapIntent,
+  resolveLaunchMode,
   resolveLaunchSurfaceName,
 } from "@/app/bootstrap/bootstrap-intent";
 import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
@@ -41,6 +42,7 @@ import {
   titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
 import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
+import { mapAnimeTitleToProviderNative } from "@/app/bootstrap/resolve-share-target";
 import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
@@ -718,7 +720,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (args.dryRun) {
     const plan = formatBootstrapPlan({
       intent: resolveBootstrapIntent(args),
-      mode: args.anime ? "anime" : args.youtube ? "youtube" : "movie/series",
+      mode: resolveLaunchMode(args) ?? "movie/series",
       route: resolveLaunchSurfaceName(args),
       shareAction: pendingShareLaunch?.action,
       download: args.download,
@@ -849,7 +851,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     config.youtubeProvider,
   );
 
-  const initialMode = args.youtube ? "youtube" : args.anime ? "anime" : config.defaultMode;
+  const initialMode = resolveLaunchMode(args) ?? config.defaultMode;
   if (initialMode === "anime") {
     stateManager.dispatch({
       type: "SET_MODE",
@@ -867,6 +869,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const bootstrapIntent = resolveBootstrapIntent(args);
   let bootstrapQuery: string | undefined = bootstrapIntent.query;
   let bootstrapTitle: TitleInfo | null = bootstrapIntent.directTitle;
+  if (bootstrapTitle?.isAnime) {
+    // `-i anilist:`/`mal:` ids are catalog-keyed, but the anime provider still
+    // needs the provider-native id — the same mapping a share link runs.
+    const mapped = await mapAnimeTitleToProviderNative(bootstrapTitle, container, "anime");
+    bootstrapTitle = mapped.title;
+  }
   let bootstrapEpisode: EpisodeInfo | null = null;
   let autoPickSearchResultIndex = bootstrapIntent.autoPickSearchResultIndex;
 
@@ -916,6 +924,24 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
           `kunai: -i/--id ${entry.id} needs -t movie or -t series` +
             `${entry.type ? ` (got: ${entry.type})` : ""}, so it was ignored.\n` +
             `Try: kunai -i ${entry.id} -t movie\n`,
+        );
+        break;
+      case "id-unknown-namespace":
+        logger.warn("Ignoring direct ID with an unknown namespace", { id: entry.id });
+        process.stderr.write(
+          `kunai: -i/--id ${entry.id} uses an unknown namespace, so it was ignored.\n` +
+            `Supported: anilist:<id>, mal:<id>, tmdb:<id>, youtube:<id> — or a bare TMDB id.\n`,
+        );
+        break;
+      case "id-lane-conflict":
+        logger.warn("Direct ID namespace conflicts with the requested lane", {
+          id: entry.id,
+          namespace: entry.namespace,
+          lane: entry.lane,
+        });
+        process.stderr.write(
+          `kunai: -i/--id ${entry.id} is a ${entry.namespace}: id but ` +
+            `${entry.lane === "youtube" ? "-y/--youtube" : "-a/--anime"} selected the ${entry.lane} lane, so it was ignored.\n`,
         );
         break;
     }

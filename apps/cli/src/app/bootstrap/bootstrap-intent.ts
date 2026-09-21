@@ -1,5 +1,7 @@
+import { catalogExternalIds } from "@/app/bootstrap/catalog-ids";
 import { directIdTitleName } from "@/domain/types";
 import type { TitleInfo } from "@/domain/types";
+import type { CatalogNs } from "@kunai/types";
 
 /**
  * Pure resolution of how a CLI invocation should bootstrap the first session
@@ -26,15 +28,71 @@ export type BootstrapLog =
   | { readonly kind: "search"; readonly query: string }
   | { readonly kind: "direct-title"; readonly id: string; readonly type: "movie" | "series" }
   | { readonly kind: "anime-id-unsupported"; readonly id: string }
-  | { readonly kind: "id-without-type"; readonly id: string; readonly type?: string };
+  | { readonly kind: "id-without-type"; readonly id: string; readonly type?: string }
+  | { readonly kind: "id-unknown-namespace"; readonly id: string }
+  | {
+      readonly kind: "id-lane-conflict";
+      readonly id: string;
+      readonly namespace: string;
+      readonly lane: "anime" | "youtube";
+    };
 
 export interface BootstrapArgs {
   readonly search?: string;
   readonly id?: string;
   readonly type?: string;
   readonly anime: boolean;
+  readonly youtube?: boolean;
   readonly quick: boolean;
   readonly jump?: number;
+}
+
+type ParsedDirectId =
+  | { readonly kind: "bare"; readonly id: string }
+  | { readonly kind: "namespaced"; readonly ns: CatalogNs; readonly id: string }
+  | { readonly kind: "invalid"; readonly raw: string };
+
+// `imdb:` is deliberately absent — nothing resolves an imdb id to a TMDB one
+// (no /find call exists), so it rejects as an unknown namespace instead of
+// producing a `tt…` id TMDB cannot take.
+const DIRECT_ID_NAMESPACES: ReadonlySet<string> = new Set(["tmdb", "anilist", "mal", "youtube"]);
+
+function parseDirectId(raw: string): ParsedDirectId {
+  const match = /^([a-z]+):(.+)$/i.exec(raw.trim());
+  if (!match?.[1] || !match[2]?.trim()) return { kind: "bare", id: raw.trim() };
+  const ns = match[1].toLowerCase();
+  if (!DIRECT_ID_NAMESPACES.has(ns)) return { kind: "invalid", raw };
+  return { kind: "namespaced", ns: ns as CatalogNs, id: match[2].trim() };
+}
+
+/**
+ * The lane a namespaced `-i` id implies — `anilist:`/`mal:` mean anime,
+ * `youtube:` means youtube. Bare and `tmdb:` ids imply nothing (the
+ * caller still needs `-t` for those). `main.ts` reads this before mode
+ * dispatch so `-i anilist:21` does not need a redundant `-a`.
+ */
+export function directIdImpliedLane(id: string | undefined): "anime" | "youtube" | undefined {
+  if (!id) return undefined;
+  const parsed = parseDirectId(id);
+  if (parsed.kind !== "namespaced") return undefined;
+  if (parsed.ns === "anilist" || parsed.ns === "mal") return "anime";
+  if (parsed.ns === "youtube") return "youtube";
+  return undefined;
+}
+
+/**
+ * Launch lane from CLI flags plus the lane a namespaced `-i` id implies.
+ * Explicit flags win over the id; an id that conflicts with a flag is rejected
+ * by `resolveDirectTitle` (`id-lane-conflict`) rather than silently relaned.
+ */
+export function resolveLaunchMode(args: {
+  readonly anime: boolean;
+  readonly youtube?: boolean;
+  readonly id?: string;
+}): "anime" | "youtube" | undefined {
+  if (args.youtube) return "youtube";
+  if (args.anime) return "anime";
+  return directIdImpliedLane(args.id);
 }
 
 /**
@@ -158,8 +216,60 @@ export function resolveBootstrapIntent(args: BootstrapArgs): BootstrapIntent {
   return { query, directTitle, autoPickSearchResultIndex, logs };
 }
 
+/**
+ * `-i/--id` accepts a bare TMDB id or a namespaced catalog id using the share
+ * grammar — `anilist:21`, `mal:…`, `tmdb:1396`, `youtube:…`. Namespaced ids
+ * carry `externalIds` so providers key off the catalog identity rather than
+ * title-name guessing.
+ *
+ * `anilist:`/`mal:` resolve in the anime lane and `youtube:` in the youtube
+ * lane — the namespace implies the mode (see `directIdImpliedLane`), so no
+ * `-a`/`-y` is needed, and an explicit conflicting lane flag warns instead of
+ * silently picking one. `tmdb:` and bare ids still need `-t` — the id
+ * alone cannot say whether it names a film or a show, and guessing is a
+ * silent wrong-title hazard. `imdb:` is rejected as an unknown namespace
+ * until a TMDB /find resolution exists.
+ */
 function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInfo | null {
   if (!args.id) return null;
+  const parsed = parseDirectId(args.id);
+  if (parsed.kind === "invalid") {
+    logs.push({ kind: "id-unknown-namespace", id: args.id });
+    return null;
+  }
+
+  if (parsed.kind === "namespaced" && (parsed.ns === "anilist" || parsed.ns === "mal")) {
+    if (args.youtube) {
+      logs.push({ kind: "id-lane-conflict", id: args.id, namespace: parsed.ns, lane: "youtube" });
+      return null;
+    }
+    logs.push({ kind: "direct-title", id: args.id, type: "series" });
+    return {
+      id: `${parsed.ns}:${parsed.id}`,
+      type: "series",
+      name: directIdTitleName(args.id),
+      externalIds: catalogExternalIds(parsed.ns, parsed.id),
+      isAnime: true,
+    };
+  }
+
+  if (parsed.kind === "namespaced" && parsed.ns === "youtube") {
+    if (args.anime) {
+      logs.push({ kind: "id-lane-conflict", id: args.id, namespace: parsed.ns, lane: "anime" });
+      return null;
+    }
+    logs.push({ kind: "direct-title", id: args.id, type: "movie" });
+    return {
+      id: `youtube:${parsed.id}`,
+      type: "movie",
+      name: directIdTitleName(args.id),
+      externalIds: catalogExternalIds("youtube", parsed.id),
+    };
+  }
+
+  // Bare and tmdb: ids share one path: the catalog cannot tell movie
+  // from series without -t, and in the anime lane a TMDB-shaped id has no
+  // meaning.
   if (args.anime) {
     logs.push({ kind: "anime-id-unsupported", id: args.id });
     return null;
@@ -167,9 +277,13 @@ function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInf
   if (args.type === "movie" || args.type === "series") {
     logs.push({ kind: "direct-title", id: args.id, type: args.type });
     return {
-      id: args.id,
+      id: parsed.id,
       type: args.type,
       name: directIdTitleName(args.id),
+      externalIds:
+        parsed.kind === "namespaced"
+          ? catalogExternalIds(parsed.ns, parsed.id)
+          : { tmdbId: parsed.id },
     };
   }
   logs.push({ kind: "id-without-type", id: args.id, type: args.type });
