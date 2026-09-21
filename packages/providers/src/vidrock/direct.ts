@@ -102,10 +102,17 @@ export function resolveVidrockDirect(
         const audioLanguages = audio ? [audio] : undefined;
 
         if (url.includes("/playlist/")) {
-          const playlist = await fetchPlaylist(url, ctx.signal, {
-            Referer: REFERER,
-            "User-Agent": USER_AGENT,
-          });
+          let playlist: Awaited<ReturnType<typeof fetchPlaylist>>;
+          try {
+            // Playlist URLs live on the same ngcorp hosts as the streams:
+            // they require the single-space UA and die on a Referer.
+            playlist = await fetchPlaylist(url, ctx.signal, {
+              "User-Agent": STREAM_USER_AGENT,
+            });
+          } catch (error) {
+            if (ctx.signal?.aborted) throw error;
+            continue;
+          }
           for (const item of playlist) {
             streams.push({
               url: item.url,
