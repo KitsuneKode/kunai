@@ -583,6 +583,7 @@ only the contracts every provider must honour.
 | Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
 | VidLink             | [vidlink.md](./provider-dossiers/vidlink.md)                                                                                                                      |
 | Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
+| VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                                                      |
 | YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
 
 Cineby is **not** a production provider: it is a research-only Videasy-flavor
