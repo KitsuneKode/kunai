@@ -6,7 +6,9 @@
 version: 2
 
 secret:
-  ignored-paths:
+  # ggshield's key is `ignored_paths` (snake_case) — the previous `ignored-paths`
+  # spelling was silently ignored, so the Postgres exception never applied.
+  ignored_paths:
     # The throwaway Postgres for `bun run --cwd apps/analytics-ingest test:pg`.
     # `kunai:kunai` guards a container that binds loopback only, stores its
     # data in tmpfs, and is destroyed when the run ends — it protects nothing
@@ -21,8 +23,3 @@ secret:
     # including the rest of apps/analytics-ingest.
     - apps/analytics-ingest/docker-compose.yml
     - apps/analytics-ingest/scripts/test-postgres.ts
-    # Credential-vault unit tests use labelled placeholder strings
-    # (`session-secret-1234`, `fresh-token-9999`) to assert vault round-trips.
-    # They are fixtures, not credentials — the file itself is the vault under
-    # test, so the values must look secret-shaped. Scoped to the test file.
-    - apps/cli/test/unit/services/persistence/credential-vault.test.ts
