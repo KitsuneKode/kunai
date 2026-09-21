@@ -50,16 +50,17 @@ credential type only.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Unit tests | `bun run --cwd apps/cli test:unit` | all pass |
-| Full suite | `bun run test --force` | 0 failures |
-| Typecheck | `bun run typecheck --force` | exit 0 |
-| Lint/fmt | `bun run lint --force && bun run fmt` | exit 0 |
+| Purpose    | Command                               | Expected   |
+| ---------- | ------------------------------------- | ---------- |
+| Unit tests | `bun run --cwd apps/cli test:unit`    | all pass   |
+| Full suite | `bun run test --force`                | 0 failures |
+| Typecheck  | `bun run typecheck --force`           | exit 0     |
+| Lint/fmt   | `bun run lint --force && bun run fmt` | exit 0     |
 
 ## Scope
 
 **In scope:**
+
 - New vault port + backends under `apps/cli/src/services/persistence/` (or a `packages/` home if layering dictates — `services/` may import `infra` and `packages/storage`; check `runtime-boundary-map.md` before placing)
 - `SyncTokenStore.ts` — route through the vault port
 - The `videasySessionToken` config migration (decide: vault it and drop the config key, or keep a `videasySessionTokenIsInVault` marker — no plaintext once migrated)
@@ -68,6 +69,7 @@ credential type only.
 - `.changeset/` — user-facing security improvement
 
 **Out of scope:**
+
 - The AniList/TMDB OAuth flows themselves.
 - Relay bearer token storage (user-configured in config.json — document whether it joins the vault now or later; a deferral is acceptable if the port supports it).
 - `.release` / installer changes.
