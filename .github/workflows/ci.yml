@@ -159,6 +159,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bun run lint:anti-slop:changed
 
+      - name: Anti-slop count baseline
+        run: bun run lint:anti-slop:baseline
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
