@@ -188,7 +188,7 @@ describe("createMiruroResultFromPayload dead-host drop", () => {
     });
 
     expect(result?.status).toBe("resolved");
-    expect(result?.streams.some((s) => s.url.includes("uwucdn"))).toBe(true);
+    expect(result?.streams.some((s) => s.url?.includes("uwucdn"))).toBe(true);
   });
 });
 

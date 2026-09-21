@@ -205,7 +205,7 @@ describe("vidlink DASH delivery", () => {
     } as unknown as ProviderRuntimeContext;
 
     const result = await resolveVidlinkDirect(INPUT, ctx);
-    expect(result.streams.every((stream) => !stream.url.includes("master.m3u8"))).toBe(true);
+    expect(result.streams.every((stream) => !stream.url?.includes("master.m3u8"))).toBe(true);
   });
 });
 
