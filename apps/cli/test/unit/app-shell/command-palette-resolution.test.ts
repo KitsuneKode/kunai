@@ -83,3 +83,21 @@ test("typing a partial query runs the best-ranked match at the default highlight
   const resolved = getHighlightedCommand("ca", COMMANDS, 0);
   expect(resolved?.id).toBe("calendar");
 });
+
+// Regression (KitsuneKode/kunai#420): a hyphenated id like `image-pane` can
+// never fuzzy-match its own label "Image Pane" — the query's `-` is not a word
+// boundary in the target — so the id itself must be a search target.
+test("a hyphenated command id matches the palette query", () => {
+  const commands = [
+    {
+      id: "image-pane",
+      label: "Image Pane",
+      aliases: ["image", "preview", "poster"],
+      description: "Toggle the image and details companion pane",
+      enabled: true,
+    } as unknown as ResolvedAppCommand,
+  ];
+
+  const model = buildCommandPickerModel("image-pane", commands, 0);
+  expect(model.options.map((option) => option.value)).toContain("image-pane");
+});
