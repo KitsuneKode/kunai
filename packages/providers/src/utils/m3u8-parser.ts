@@ -1,6 +1,6 @@
 import type { ProviderFetchPort, StreamCandidate } from "@kunai/types";
 
-import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 
 /**
  * A lightweight utility to fetch a master HLS playlist and split it into explicitly
@@ -13,11 +13,12 @@ export async function extractQualitiesFromMaster(
   baseStreamTemplate: Omit<StreamCandidate, "id" | "url" | "qualityLabel" | "qualityRank">,
   headers?: Record<string, string>,
 ): Promise<StreamCandidate[]> {
-  const variants = await expandHlsMasterPlaylist({
+  const inventory = await expandHlsMasterInventory({
     fetch: fetchPort.fetch.bind(fetchPort),
     masterUrl,
     headers,
   });
+  const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
 
   return variants.map((variant) => ({
     ...baseStreamTemplate,

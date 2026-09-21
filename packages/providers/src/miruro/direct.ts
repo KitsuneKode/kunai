@@ -44,7 +44,11 @@ import {
   miruroSubtitleDeliveryToMode,
 } from "../shared/anime-source-presentation";
 import { curlCipherArgs, resolveCurlCandidate } from "../shared/curl-impersonate";
-import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
+import {
+  expandHlsMasterInventory,
+  isHlsDeadHostStatus,
+  looksLikeHlsMasterUrl,
+} from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
@@ -289,11 +293,19 @@ export async function createMiruroResultFromPayload({
       startupPriority: input.startupPriority,
     });
   const sourceId = miruroInventorySourceId(serverProfile.id, audioCategory);
-  const expandedStreams = await expandMiruroPipeStreams(
+  const { streams: expandedStreams, deadHosts } = await expandMiruroPipeStreams(
     sourceData.streams ?? [],
     context,
     context?.signal,
   );
+  if (deadHosts.length > 0) {
+    emitTraceEvent(events, context, {
+      type: "source:failed",
+      providerId: MIRURO_PROVIDER_ID,
+      sourceId,
+      message: `${displayMiruroSourceLabel(serverProfile, audioCategory)} dropped ${deadHosts.length} dead stream(s): ${deadHosts.join(", ")}`,
+    });
+  }
   const rawStreams = rankMiruroStreams(
     expandedStreams.filter(
       (s) => (s.type === "hls" || s.type === "mp4") && s.url && !isMiruroPlaceholderStream(s),
@@ -824,8 +836,11 @@ function collectMiruroAvailableAudioModes(
  * For labeled streams the quality is already final and passes through.
  * For unlabeled masters we attempt a brief fetch to expand into quality
  * variants (most direct-play CDNs respond in <500ms). If the fetch fails
- * (403 / timeout / non-master body) the original URL passes through as a
- * single `auto` row — mpv plays a master playlist directly.
+ * ambiguously (403 / timeout / non-master body) the original URL passes
+ * through as a single `auto` row — mpv plays a master playlist directly.
+ * If the fetch gets a definitive dead answer (5xx / 404 / 410) the stream is
+ * dropped instead: mpv would fail identically, and a candidate whose every
+ * stream is dead must lose to the next server in the cycle.
  *
  * Expansion fetches are run in parallel and capped at 1.5 s so that
  * gatekept CDNs (owocdn via kwik.cx) do not block the pipeline.
@@ -834,9 +849,10 @@ async function expandMiruroPipeStreams(
   streams: readonly MiruroPipeStream[],
   context: ProviderRuntimeContext | undefined,
   signal?: AbortSignal,
-): Promise<MiruroPipeStream[]> {
+): Promise<{ streams: MiruroPipeStream[]; deadHosts: string[] }> {
   const seen = new Set<string>();
   const out: MiruroPipeStream[] = [];
+  const deadHosts: string[] = [];
 
   function push(stream: MiruroPipeStream): void {
     if (!stream.url || seen.has(stream.url)) return;
@@ -862,7 +878,7 @@ async function expandMiruroPipeStreams(
     push(stream);
   }
 
-  if (expandable.length === 0) return out;
+  if (expandable.length === 0) return { streams: out, deadHosts };
 
   const fetchImpl =
     context?.fetch?.fetch.bind(context.fetch) ??
@@ -883,7 +899,7 @@ async function expandMiruroPipeStreams(
       };
       const expandSignal = AbortSignal.timeout(1_500);
       const combinedSignal = signal ? anySignal(signal, expandSignal) : expandSignal;
-      return expandHlsMasterPlaylist({
+      return expandHlsMasterInventory({
         fetch: fetchImpl,
         masterUrl: url,
         headers: fetchHeaders,
@@ -902,7 +918,11 @@ async function expandMiruroPipeStreams(
       continue;
     }
 
-    const variants = settled.value;
+    const { variants, probe } = settled.value;
+    if (probe.kind === "http-error" && isHlsDeadHostStatus(probe.httpStatus)) {
+      deadHosts.push(`${hostOf(stream.url)} (HTTP ${probe.httpStatus})`);
+      continue;
+    }
     const first = variants[0];
     const isAutoFallback =
       variants.length === 1 &&
@@ -931,7 +951,16 @@ async function expandMiruroPipeStreams(
     }
   }
 
-  return out;
+  return { streams: out, deadHosts };
+}
+
+function hostOf(url: string | undefined): string {
+  if (!url) return "unknown-host";
+  try {
+    return new URL(url).host;
+  } catch {
+    return "unknown-host";
+  }
 }
 
 function anySignal(...signals: AbortSignal[]): AbortSignal {

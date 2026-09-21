@@ -14,7 +14,7 @@ import {
   isCloudflareChallengeText,
   resolveCurlCandidate,
 } from "../shared/curl-impersonate";
-import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
@@ -458,12 +458,16 @@ export async function resolveHianimeEpisodeStreams({
     const fetchImpl =
       context.fetch?.fetch.bind(context.fetch) ??
       ((url: string, init?: RequestInit) => fetch(url, init));
-    const variants = await expandHlsMasterPlaylist({
+    const inventory = await expandHlsMasterInventory({
       fetch: fetchImpl,
       masterUrl: payload.src,
       headers: ladderHeaders,
       signal: createTimeoutSignal(signal, 15_000),
     });
+    // A dead master host (5xx/404/410) means the fallback `auto` row would point
+    // at the same dead URL — drop it so the caller fails instead of playing a
+    // corpse. 403/timeout stays: gatekept CDNs still play in mpv.
+    const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
     const links: HianimeStreamLink[] = variants.map((variant) => ({
       url: variant.url,
       quality: variant.qualityLabel,

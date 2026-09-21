@@ -14,7 +14,7 @@ import {
   shouldSkipExternalEpisodeMetadataEnrichment,
   type AnimeEpisodeMetadata,
 } from "../shared/anime-metadata";
-import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
@@ -1497,7 +1497,7 @@ async function fetchM3u8Variants({
   readonly subtitle?: string;
   readonly signal?: AbortSignal;
 }): Promise<StreamLink[]> {
-  const variants = await expandHlsMasterPlaylist({
+  const inventory = await expandHlsMasterInventory({
     fetch: (requestUrl: string, init?: RequestInit) =>
       providerFetch(context, requestUrl, {
         ...init,
@@ -1512,6 +1512,9 @@ async function fetchM3u8Variants({
     headers: { Referer: referer, "User-Agent": ua },
     signal,
   });
+  // Dead master host → the `auto` fallback row points at the same dead URL;
+  // drop it so upstream failure propagates instead of handing mpv a corpse.
+  const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
 
   return variants.map((variant) => ({
     url: variant.url,

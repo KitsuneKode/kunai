@@ -19,7 +19,11 @@ import {
   type DirectStreamPayload,
   type DirectSubtitleInput,
 } from "../shared/direct-stream-source";
-import { expandHlsMasterInventory, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
+import {
+  expandHlsMasterInventory,
+  isHlsDeadHostStatus,
+  looksLikeHlsMasterUrl,
+} from "../shared/hls-ladder";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -197,22 +201,31 @@ export function resolveVidlinkDirect(
             headers: playlistHeaders,
             signal: ctx.signal,
           });
-          for (const variant of inventory.variants) {
-            streams.push({
-              url: variant.url,
-              qualityHint: variant.qualityLabel,
-              audioLanguages:
-                inventory.audioLanguages.length > 0 ? inventory.audioLanguages : undefined,
-            });
-          }
-          // Rendition playlists the provider didn't list in `captions` still
-          // belong in subtitle inventory — the Tracks panel reads it.
-          for (const track of inventory.subtitleTracks) {
-            manifestSubtitles.push({
-              url: track.url,
-              language: track.language,
-              label: track.label,
-            });
+          // A dead host (5xx / 404 / 410) fails identically in mpv — dropping
+          // the row beats emitting an `auto` fallback to a corpse URL. Ambiguous
+          // failures (403 / timeout / non-master) still fall back because
+          // gatekept CDNs reject expansion yet play once headers ride along.
+          if (
+            inventory.probe.kind !== "http-error" ||
+            !isHlsDeadHostStatus(inventory.probe.httpStatus)
+          ) {
+            for (const variant of inventory.variants) {
+              streams.push({
+                url: variant.url,
+                qualityHint: variant.qualityLabel,
+                audioLanguages:
+                  inventory.audioLanguages.length > 0 ? inventory.audioLanguages : undefined,
+              });
+            }
+            // Rendition playlists the provider didn't list in `captions` still
+            // belong in subtitle inventory — the Tracks panel reads it.
+            for (const track of inventory.subtitleTracks) {
+              manifestSubtitles.push({
+                url: track.url,
+                language: track.language,
+                label: track.label,
+              });
+            }
           }
         } else {
           // A DASH manifest is one adaptive URL: mpv switches renditions inside

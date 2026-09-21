@@ -189,6 +189,24 @@ describe("vidlink DASH delivery", () => {
       ]),
     );
   });
+
+  test("a dead HLS master host drops the row instead of emitting a corpse auto stream", async () => {
+    const base = buildHlsContext();
+    const inner = (base.fetch as { fetch: (url: string) => Promise<Response> }).fetch;
+    const ctx = {
+      ...base,
+      fetch: {
+        runtime: "direct-http",
+        fetch: (url: string) =>
+          url.endsWith("master.m3u8")
+            ? Promise.resolve(new Response("dead", { status: 503 }))
+            : inner(url),
+      },
+    } as unknown as ProviderRuntimeContext;
+
+    const result = await resolveVidlinkDirect(INPUT, ctx);
+    expect(result.streams.every((stream) => !stream.url?.includes("master.m3u8"))).toBe(true);
+  });
 });
 
 // encDecCache is module-level and keyed on tmdbId — enc-dec tests each need a
