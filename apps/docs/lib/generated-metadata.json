@@ -1,11 +1,11 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "ad31326ecc35cfb5e7f7ace9f47a6dd9d2b16f3d21fd1f1544cf2fb0b20449af",
+  "cliSourceFingerprint": "49279be048d69ce800f500240e7ee085c8fa98d78c86fe3cae40586d6d5e0954",
   "docsContentFingerprint": "0565da2340cf1f44c5fd8adab9e5f90bf5ddb7ce4d10ccd196a86f34318e5f47",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
-  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "hianime", "miruro", "youtube"],
+  "providerIds": ["videasy", "vidlink", "vidrock", "rivestream", "anidb", "allanime", "hianime", "miruro", "youtube"],
   "providers": [
     {
       "id": "videasy",
@@ -40,6 +40,24 @@
         "Browserless: TMDB id is encrypted via enc-dec.app, then sources are fetched from vidlink.pro/api/b.",
         "Returns a multi-quality HLS playlist (mpv selects the rendition) plus provider subtitles.",
         "External dependency: relies on enc-dec.app for the id-encryption step; falls back to other providers if it is unavailable."
+      ]
+    },
+    {
+      "id": "vidrock",
+      "displayName": "VidRock",
+      "description": "Backup source for movies and series with direct video files",
+      "domain": "vidrock.net",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "multi-source", "quality-ranked"],
+      "status": "active",
+      "notes": [
+        "Browserless fallback: GET vidrock.net/api/{movie|tv}/… returns a map of",
+        "server lanes whose url fields are AES-256-GCM ciphertexts; each decrypts",
+        "to a direct HLS URL. Streams carry a single-space User-Agent — the ngcorp",
+        "segment hosts drop connections that send a real UA, and ' ' is the only",
+        "value ffmpeg can emit that passes. A resolve-gate probe filters TLS-gated",
+        "lanes (workers.dev, CF-challenged .lol/.site hosts) that mpv cannot play."
       ]
     },
     {

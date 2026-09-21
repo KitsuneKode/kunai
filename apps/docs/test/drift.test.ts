@@ -22,6 +22,7 @@ const MODULE_TO_ID: Record<string, string> = {
   videasyProviderModule: "videasy",
   vidlinkProviderModule: "vidlink",
   rivestreamProviderModule: "rivestream",
+  vidrockProviderModule: "vidrock",
   allmangaProviderModule: "allanime",
   anidbProviderModule: "anidb",
   hianimeProviderModule: "hianime",

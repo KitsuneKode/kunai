@@ -499,6 +499,7 @@ only the contracts every provider must honour.
 | HiAnime             | [hianime.md](./provider-dossiers/hianime.md)                                                                                                                      |
 | Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
 | Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
+| VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                                                      |
 | Cineby              | [cineby.md](./provider-dossiers/cineby.md) · [cineby-anime.md](./provider-dossiers/cineby-anime.md)                                                               |
 
 Active providers are registered in `apps/cli/src/container/bootstrap-providers.ts` via
