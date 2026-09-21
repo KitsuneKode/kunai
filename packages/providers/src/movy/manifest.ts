@@ -15,7 +15,7 @@ export const movyManifest = defineProviderManifest({
     {
       runtime: "direct-http",
       operations: ["resolve-stream", "resolve-subtitles", "health-check"],
-      browserSafe: true,
+      browserSafe: false,
       relaySafe: true,
       localOnly: false,
     },
@@ -39,7 +39,7 @@ export const movyManifest = defineProviderManifest({
     ],
     allowStale: true,
   },
-  browserSafe: true,
+  browserSafe: false,
   relaySafe: true,
   relayProfile: {
     upstreamHosts: ["api.wecollege.net"],

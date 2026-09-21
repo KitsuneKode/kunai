@@ -1,4 +1,5 @@
 import {
+  ProviderCycleFailureError,
   createProviderCycleFailureError,
   createProviderCachePolicy,
   createResolveTrace,
@@ -477,16 +478,22 @@ export async function resolveMovyDirect(
           tmdbId,
         });
       } catch (error) {
+        // resolveMovyLaneCandidate already classifies its own failures (e.g.
+        // candidate-empty) — rewrapping them would flatten every lane error
+        // into not-found and hide transient/server evidence from provider
+        // health and offline detection.
+        if (error instanceof ProviderCycleFailureError) throw error;
         const message = error instanceof Error ? error.message : `Movy lane ${lane} failed`;
+        const isParse = error instanceof MovyDecryptError;
         failures.push({
           providerId: MOVY_PROVIDER_ID,
-          code: error instanceof MovyDecryptError ? "not-found" : "network-error",
+          code: isParse ? "not-found" : "network-error",
           message,
           retryable: true,
           at: context.now(),
         });
         throw createProviderCycleFailureError(candidate, {
-          failureClass: "candidate-empty",
+          failureClass: isParse ? "candidate-parse" : "candidate-network",
           message,
           retryable: true,
           at: context.now(),
