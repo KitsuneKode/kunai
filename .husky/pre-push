@@ -1,1 +1,28 @@
-bun run test
+# Pre-push verification.
+#
+# 1. Generated docs metadata freshness first — a committed
+#    generated-metadata.json fingerprint that drifted after an amend was a
+#    repeated docs-build failure class; this check is ~200ms and fails fast
+#    with the regenerate instruction instead of surfacing in CI minutes later.
+# 2. Pushes to main run the full suite; branch pushes run the same affected
+#    scope the PR jobs use — turbo's dependency graph still covers every
+#    package that transitively imports the touched ones, so the guarantee is
+#    identical and docs-only pushes skip the ~2min full run.
+
+bun run --cwd apps/docs scripts/check-codegen-freshness.ts || {
+  echo "pre-push: generated docs metadata is stale — run 'bun run --cwd apps/docs generate' and re-stage" >&2
+  exit 1
+}
+
+targets_main=0
+while read -r _local_ref _local_oid remote_ref _remote_oid; do
+  case "$remote_ref" in
+    refs/heads/main|refs/tags/*) targets_main=1 ;;
+  esac
+done
+
+if [ "$targets_main" -eq 1 ]; then
+  bunx turbo run test --summarize
+else
+  bunx turbo run test --affected --summarize
+fi
