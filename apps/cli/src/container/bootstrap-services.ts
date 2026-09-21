@@ -336,7 +336,9 @@ export function bootstrapServices(input: {
     diagnostics: diagnosticsService,
   });
   const durablePlaylistService = new DurablePlaylistService(playlistsRepository);
-  const searchRegistry = new SearchRegistryImpl({ logger, tracer }, SEARCH_SERVICE_DEFINITIONS);
+  const searchRegistry = new SearchRegistryImpl({ logger, tracer }, [
+    ...(options?.searchServiceDefinitions ?? SEARCH_SERVICE_DEFINITIONS),
+  ]);
   const shellChrome = options?.shellChrome ?? "default";
   const capabilitySnapshot = options?.capabilitySnapshot ?? null;
   const recommendationService = new RecommendationServiceImpl(recommendationCache);

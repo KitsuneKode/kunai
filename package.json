@@ -139,6 +139,7 @@
     "prototype:layout-fixtures": "bun run apps/cli/scripts/export-list-row-layout-fixtures.ts",
     "test:unit": "turbo run test:unit",
     "test:integration": "turbo run test:integration",
+    "test:agent": "turbo run test:agent",
     "build:npm-platform": "bun run --cwd apps/cli build:npm-platform",
     "release:publish": "bun run scripts/publish-npm-release.ts",
     "release:publish:check": "bun run scripts/publish-npm-release.ts"

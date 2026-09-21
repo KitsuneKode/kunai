@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -192,53 +191,9 @@ export function evidenceHasPlaybackStart(evidence: readonly Record<string, unkno
   });
 }
 
-export function openDataDb(path: string): Database {
-  return new Database(path, { readonly: true });
-}
-
-export function historyRows(db: Database): Array<{
-  title_id: string;
-  media_kind: string;
-  season: number | null;
-  episode: number | null;
-  absolute_episode: number | null;
-}> {
-  return db
-    .query(
-      `SELECT title_id, media_kind, season, episode, absolute_episode
-       FROM history_progress
-       ORDER BY updated_at DESC`,
-    )
-    .all() as Array<{
-    title_id: string;
-    media_kind: string;
-    season: number | null;
-    episode: number | null;
-    absolute_episode: number | null;
-  }>;
-}
-
-export function queueRows(db: Database): Array<{
-  id: string;
-  title_id: string;
-  absolute_episode: number | null;
-  status: string;
-  last_failure_json: string | null;
-}> {
-  return db
-    .query(
-      `SELECT id, title_id, absolute_episode, status, last_failure_json
-       FROM playlist_queue
-       ORDER BY queue_position ASC, added_at ASC`,
-    )
-    .all() as Array<{
-    id: string;
-    title_id: string;
-    absolute_episode: number | null;
-    status: string;
-    last_failure_json: string | null;
-  }>;
-}
+// Canonical home of these readers is test/agent/profile-inspector.ts — the
+// profile inspector is the single way every driver asks "what persisted".
+export { openDataDb, historyRows, queueRows } from "../../agent/profile-inspector";
 
 export { COMPILED_SMOKE_FIXTURES, COMPILED_SMOKE_SCENARIO_IDS };
 export type { CompiledSmokeScenarioId };

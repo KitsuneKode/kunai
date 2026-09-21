@@ -73,8 +73,12 @@ type CapabilityNoticeState = {
   readonly fingerprint: string;
 };
 
-const NOTICE_DIR = getKunaiPaths().configDir;
-const NOTICE_FILE = join(NOTICE_DIR, "capability-notice.json");
+// Resolved at call time, not module load — same reason as FileStorage: the
+// storage root can change between containers in one process (test profiles).
+const noticePaths = () => {
+  const dir = getKunaiPaths().configDir;
+  return { dir, file: join(dir, "capability-notice.json") };
+};
 
 function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
   const issueBits = [...snapshot.issues]
@@ -87,7 +91,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
   try {
-    const file = Bun.file(NOTICE_FILE);
+    const file = Bun.file(noticePaths().file);
     if (!(await file.exists())) return null;
     const parsed = (await file.json()) as Partial<CapabilityNoticeState>;
     if (typeof parsed.version !== "string" || typeof parsed.fingerprint !== "string") {
@@ -100,8 +104,9 @@ async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null
 }
 
 async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<void> {
-  await mkdir(NOTICE_DIR, { recursive: true });
-  await Bun.write(NOTICE_FILE, JSON.stringify(state, null, 2));
+  const { dir, file } = noticePaths();
+  await mkdir(dir, { recursive: true });
+  await Bun.write(file, JSON.stringify(state, null, 2));
 }
 
 /**

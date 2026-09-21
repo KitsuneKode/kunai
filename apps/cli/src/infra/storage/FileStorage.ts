@@ -16,19 +16,28 @@ import { getKunaiPaths } from "@kunai/storage";
 import type { StorageService } from "./StorageService";
 
 // Key → file path mapping (history and cache are SQLite — no JSON paths here)
-const PATHS: Record<string, string> = {
-  config: join(getKunaiPaths().configDir, "config.json"),
-};
+// Resolved per construction, never at module load: a process that swaps the
+// storage root between containers (isolated test profiles, in-process
+// relaunch) must not inherit the first import's configDir — that silently
+// writes config into the previous profile while readers look at the new one.
+function defaultPaths(): Record<string, string> {
+  return {
+    config: join(getKunaiPaths().configDir, "config.json"),
+  };
+}
 
 export class FileStorage implements StorageService {
   // Simple mutex to prevent concurrent writes from interleaving and corrupting files
   private writeLock: Promise<void> = Promise.resolve();
+  private readonly paths: Record<string, string>;
 
   constructor(
-    private readonly paths: Record<string, string> = PATHS,
+    paths?: Record<string, string>,
     /** Warn channel for user-relevant events; debug-only detail goes through dbg(). */
     private readonly warn?: (message: string, context?: Record<string, unknown>) => void,
-  ) {}
+  ) {
+    this.paths = paths ?? defaultPaths();
+  }
 
   async read<T>(key: string): Promise<T | null> {
     const path = this.paths[key];

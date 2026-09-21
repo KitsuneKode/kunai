@@ -36,6 +36,13 @@
       "cache": false,
       "outputs": []
     },
+    "test:agent": {
+      // User-path verification loop (test/agent): drives real sessions,
+      // tmux, and optionally real mpv — never cacheable.
+      "dependsOn": ["transit"],
+      "cache": false,
+      "outputs": []
+    },
     "generate": {
       // apps/docs only. Writes generated-provenance.json, which is gitignored
       // (uncommitted) and refreshed every run, so it is not a declared output.

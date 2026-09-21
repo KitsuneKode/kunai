@@ -18,6 +18,7 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep opt-in live provider smoke scripts under `apps/cli/test/live/`
 - keep copyable templates for new contract tests under `apps/cli/test/templates/`
 - keep VHS tapes and captured golden outputs under `apps/cli/test/vhs/` for UI demos and visual regression review
+- keep the agent verification loop under `apps/cli/test/agent/` — user-path drivers, evidence bundles, wiring scenarios (`bun run test:agent`; not swept into `test:unit`/`test:integration`)
 
 The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist/kunai.js`, `dist/assets/**`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
@@ -385,6 +386,55 @@ mpv playback is tracked in [release-reliability-gate.md](./release-reliability-g
 Do not loop live smokes while iterating on a provider. Use fixture payloads, mocked fetch ports,
 and provider contract tests for repeated runs, then perform one focused live smoke when the
 deterministic seam is already green.
+
+### 7. Agent verification loop (`apps/cli/test/agent/`)
+
+Best target for:
+
+- "does the feature actually work for a user" — real keystrokes in, rendered
+  frame out, SQLite/config truth checked in the same run
+- wiring claims that sit between unit tests and VHS tapes (a key reaching a
+  reader that commits a row)
+- bug reproductions that need a narrated, reviewable artifact instead of a
+  boolean
+
+Two drivers share one sandbox model (seeded throwaway profile via
+storage-root env, fixture providers + fixture search, optional fake-mpv shim,
+`ProfileInspector` reading SQLite/config directly):
+
+- **L2 `bun run agent:drive`** — stateless replay against the real `AppRoot`
+  - `SessionController` in-process. `--keys` replays literal text, named keys
+    (`<enter>`, `<esc>`, …), `<wait:TEXT>` for human-paced surface waits, and
+    `<wait-config:key=value>` for debounced config writes. `--show` prints
+    frame/history/queue/config/tables/delta/journal; `--evidence` writes the
+    bundle; `--verify-citation` re-checks a quoted claim against captured
+    artifacts.
+- **L3 `bun run agent:session`** — a held tmux session running real
+  `src/main.ts` under a real PTY. `start` / `see` / `do` / `wait-for` /
+  `inspect` / `report` / `relaunch` / `stop`. `see` is `capture-pane` — the
+  actual rendered screen — and `relaunch` is a first-class verb (quit, reboot
+  the same profile, prove state survived). Linux/macOS only; tmux missing is
+  a loud failure, not a skip-pass.
+
+`KUNAI_REAL_MPV=1` opts into real playback: the harness serves a generated
+mp4 over `Bun.serve`, remaps a fixture stream URL via `KUNAI_SMOKE_MEDIA_BASE`,
+and proves playback with two independent witnesses — mpv IPC `time-pos`
+advancing AND Kunai's own `history_progress` row. Gate it like other opt-in
+tiers (local + a main-branch CI job at most); absence prints a skip line.
+
+Rules that make the loop trustworthy:
+
+- every claim cites captured evidence — no quote, no verification
+- the profile is always a throwaway; `KUNAI_CONFIG_DIR` is never an override
+- analytics stays off and `dispose()` asserts no `installId` was minted
+- a frame that renders before its input handlers attach is real UX truth —
+  wait on the surface (`<wait:>`), don't retry keys blindly
+- a frame that says "applied" while the file stays unchanged is a deferred
+  write or a silent no-op — wait on the backend (`<wait-config:>` /
+  `waitForBackend`) before concluding either way
+
+The agent-facing recipe lives in `.agents/skills/verify-kunai/SKILL.md`;
+scenarios in `test/agent/wiring.test.ts` are the regression-shaped subset.
 
 ## Non-Flaky Test Rules
 

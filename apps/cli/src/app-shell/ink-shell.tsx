@@ -396,7 +396,14 @@ export function useSessionState(stateManager: SessionStateManager) {
  * Holds the identity logo and renders the appropriate shell based on state.
  */
 
-function AppRoot({ container }: { container: Container }) {
+/**
+ * Exported for the agent-verification harness (`test/agent/agent-driver.ts`),
+ * which mounts the root shell against a real container in-process.
+ * `launchSessionApp` remains the only production mount — it owns
+ * alternate-screen, stdinManager, and the sixel paint hook that the harness
+ * deliberately leaves out.
+ */
+export function AppRoot({ container }: { container: Container }) {
   // Counts root-shell commits. With no keystroke recorded for this surface, the
   // tracer flags every AppRoot render as an "idle render", so `--debug` exposes
   // background-timer-driven full-frame redraws while parked on /calendar.

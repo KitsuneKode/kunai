@@ -71,6 +71,7 @@ import type { RecommendationService } from "../services/recommendations/Recommen
 import type { ReleaseProgressWriter } from "../services/release-reconciliation/ReleaseProgressWriter";
 import type { ReleaseReconciliationService } from "../services/release-reconciliation/ReleaseReconciliationService";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
+import type { SearchServiceDefinition } from "../services/search/SearchService";
 import type { SyncAuthAvailability } from "../services/sync/auth-contract";
 import type { SyncService } from "../services/sync/SyncService";
 import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
@@ -227,4 +228,12 @@ export interface ContainerOptions {
    * Production startup never sets this; prefer `loadCompiledSmokeProviderOverride`.
    */
   providerModulesOverride?: readonly CoreProviderModule[];
+  /**
+   * Test-only search-service override (agent verification harness, compiled
+   * smokes). The search registry is a separate seam from provider modules —
+   * swapping providers without this still routes typed searches at the real
+   * TMDB/AniList catalog. Production startup never sets this; prefer
+   * `loadCompiledSmokeSearchDefinitions`.
+   */
+  searchServiceDefinitions?: readonly SearchServiceDefinition[];
 }
