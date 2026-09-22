@@ -406,21 +406,34 @@ storage-root env, fixture providers + fixture search, optional fake-mpv shim,
   - `SessionController` in-process. `--keys` replays literal text, named keys
     (`<enter>`, `<esc>`, …), `<wait:TEXT>` for human-paced surface waits, and
     `<wait-config:key=value>` for debounced config writes. `--show` prints
-    frame/history/queue/config/tables/delta/journal; `--evidence` writes the
-    bundle; `--verify-citation` re-checks a quoted claim against captured
+    frame/keys/history/queue/config/tables/delta/journal; `--evidence` writes
+    the bundle; `--verify-citation` re-checks a quoted claim against captured
     artifacts.
 - **L3 `bun run agent:session`** — a held tmux session running real
   `src/main.ts` under a real PTY. `start` / `see` / `do` / `wait-for` /
-  `inspect` / `report` / `relaunch` / `stop`. `see` is `capture-pane` — the
-  actual rendered screen — and `relaunch` is a first-class verb (quit, reboot
-  the same profile, prove state survived). Linux/macOS only; tmux missing is
-  a loud failure, not a skip-pass.
+  `inspect` / `report` / `relaunch` / `stop` / `keys`. `see` is
+  `capture-pane` — the actual rendered screen — and `relaunch` is a
+  first-class verb (quit, reboot the same profile, prove state survived).
+  Linux/macOS only; tmux missing is a loud failure, not a skip-pass.
+
+Wait predicates share a grammar: text is a literal substring unless wrapped in
+`/…/`, which compiles a RegExp (`[\s\S]` spans lines). `keys` (or
+`--show keys`) extracts the `[key]` hints a surface advertises — build a key
+plan from that list instead of guessing. `dispose()` replays the real quit
+sequence and resends Esc on a cadence through the settle window — cancel keys
+dropped into an overlay's input-attach gap are a real UX hazard the harness
+survives the way a user does. A phase still parked at the deadline is recorded
+as a `forced-stop` journal finding, not silently abandoned.
 
 `KUNAI_REAL_MPV=1` opts into real playback: the harness serves a generated
 mp4 over `Bun.serve`, remaps a fixture stream URL via `KUNAI_SMOKE_MEDIA_BASE`,
 and proves playback with two independent witnesses — mpv IPC `time-pos`
-advancing AND Kunai's own `history_progress` row. Gate it like other opt-in
-tiers (local + a main-branch CI job at most); absence prints a skip line.
+advancing AND Kunai's own `history_progress` row. CI runs it on pushes to
+main (the Test job installs mpv/ffmpeg/tmux); elsewhere absence prints a skip
+line. The same Test job runs `bun run test:agent` on PRs — L2 is in-process,
+no external tools needed. `onboarding.test.ts` drives the real setup wizard
+over tmux (fresh seed → s → S → Enter → `onboardingVersion` committed,
+`analytics` still `unset`) and self-gates on `Bun.which("tmux")`.
 
 Rules that make the loop trustworthy:
 
