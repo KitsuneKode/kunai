@@ -384,8 +384,21 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     // Phases mount NEW root content while unwinding (killing mpv resolves the
     // player promise, which mounts post-play, which blocks on input nobody
     // sends) — keep settling mounts until run() actually returns, bounded.
+    // And resend Esc on a slow cadence: a quit key can land in a surface's
+    // input-attach gap (overlay mounted, handlers attach a tick later) and be
+    // dropped, leaving the picker wait parked. A user just presses it again.
+    // Esc is the safe retry — it cancels overlays without typing into inputs.
     const deadline = Date.now() + SESSION_STOP_TIMEOUT_MS;
+    let nextEscAt = 0;
     while (Date.now() < deadline) {
+      if (Date.now() >= nextEscAt) {
+        try {
+          handle?.stdin.enqueue(K.esc);
+        } catch {
+          // stdin already torn down — keep settling
+        }
+        nextEscAt = Date.now() + 800;
+      }
       forceSettleAllRootContent("agent-session-stop");
       const done = await Promise.race([
         runPromise.then(
