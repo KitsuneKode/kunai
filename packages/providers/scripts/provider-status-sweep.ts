@@ -264,7 +264,7 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
       servers: [],
       audioLanguages: [],
       subtitleLanes: 0,
-      effectiveStatus: upstreamHttp === null ? "dead" : "down",
+      effectiveStatus: upstreamHttp === null ? "dead" : upstreamHttp === 503 ? "down" : "degraded",
       note: error instanceof Error ? error.message.slice(0, 140) : String(error),
     };
   }
