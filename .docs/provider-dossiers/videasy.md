@@ -7,6 +7,19 @@ lastReviewed: "2026-08-13"
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
+## Production status (2026-11) — catalog host moved
+
+`api.videasy.to` and `db.videasy.to` are **NXDOMAIN** on public resolvers —
+the TMDB-format catalog (`/3/search/multi`, `/{movie|tv}/{id}?append_to_response=external_ids`)
+moved to **`db.wingsdatabase.com/3`** (verified live: 200 with real results).
+`db.speedracelight.com` answers but 429s every catalog path — not usable.
+
+`VIDEASY_DB_BASES` now walks mirrors live-first (wingsdatabase, then the dead
+canonical host so a revival wins for free). Consumers: the app-level
+`fetchTmdbProxyJson` chain (search/discover/trending) and videasy's own
+`fetchVideasyDbTitleMetadata` enrichment — both iterate all bases before
+giving up; the search chain still ends at direct TMDB with the baked key.
+
 ## Production status (2026-08-13) — cache and transport hardening
 
 Plan 038's active-path correctness work landed. What changed:

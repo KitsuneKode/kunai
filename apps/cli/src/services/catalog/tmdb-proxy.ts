@@ -1,7 +1,7 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
-import { VIDEASY_DB_BASE } from "@kunai/providers";
+import { VIDEASY_DB_BASE, VIDEASY_DB_BASES } from "@kunai/providers";
 
 export { VIDEASY_DB_BASE as TMDB_PROXY_BASE };
 
@@ -77,12 +77,26 @@ export async function fetchTmdbProxyJson(
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<unknown> {
   const normalized = normalizePath(path);
-  const url = `${VIDEASY_DB_BASE}${normalized}`;
-  return observeOnlineIfBound("search-error", async () => {
-    const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
-    if (!res.ok) throw new Error(`${res.status} ${url}`);
-    return res.json();
-  });
+  let lastError: unknown;
+  // Mirror chain: api.videasy.to went NXDOMAIN while db.wingsdatabase.com
+  // serves the same /3 contract — walk the live-first list so one dead host
+  // never burns the whole proxy leg.
+  for (const base of VIDEASY_DB_BASES) {
+    const url = `${base}${normalized}`;
+    try {
+      return await observeOnlineIfBound("search-error", async () => {
+        const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
+        if (!res.ok) throw new Error(`${res.status} ${url}`);
+        return res.json();
+      });
+    } catch (error) {
+      // A caller abort stops the chain; a per-request timeout still earns the
+      // next mirror its attempt.
+      if (signal?.aborted) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 export async function fetchTmdbJsonWithFallback(
