@@ -69,6 +69,14 @@ const DEFAULT_RETRY_DELAY_MS = 0;
  */
 const DEFAULT_TRANSIENT_RETRY_DELAY_MS = 750;
 
+/**
+ * Distinct servers that must produce offline-classified failures before a
+ * cycle calls the uplink dead. One source's ENOTFOUND can be that domain's
+ * own death; two different servers failing the same way is real evidence.
+ * Mirrors the provider-level `OfflineEvidenceTracker` threshold.
+ */
+const OFFLINE_EVIDENCE_QUORUM = 2;
+
 export class ProviderCycleFailureError extends Error {
   constructor(readonly failure: ProviderCycleFailure) {
     super(failure.message);
@@ -146,6 +154,11 @@ export async function runProviderCycle<TResolved>(
 
   let skippedQuarantined = 0;
   let attemptedCandidates = 0;
+  // Offline evidence is corroborated across distinct servers before the walk
+  // abandons the pool: one source's DNS failure can be a dead upstream domain,
+  // not a dead uplink — miruro-style multi-mirror providers would otherwise
+  // skip every remaining mirror on the first one's ENOTFOUND.
+  const offlineEvidenceServers = new Set<string>();
 
   for (const candidate of orderCycleCandidates(input.candidates)) {
     const endpoint = candidate.serverId;
@@ -251,13 +264,16 @@ export async function runProviderCycle<TResolved>(
         }
 
         if (failure.failureClass === "candidate-network" && !failure.retryable) {
-          return {
-            attempts,
-            events,
-            stopReason: "network-offline",
-            fallbackRequested: false,
-            cancelled: false,
-          };
+          offlineEvidenceServers.add(candidate.serverId ?? candidate.id);
+          if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
+            return {
+              attempts,
+              events,
+              stopReason: "network-offline",
+              fallbackRequested: false,
+              cancelled: false,
+            };
+          }
         }
 
         if (input.shouldStopAfterFailure?.(failure, candidate)) {
@@ -365,6 +381,7 @@ async function runProviderCycleRaced<TResolved>(args: {
   }
 
   let skippedQuarantined = 0;
+  const offlineEvidenceServers = new Set<string>();
   const eligible = orderCycleCandidates(input.candidates).filter((candidate) => {
     const endpoint = candidate.serverId;
     if (!endpoint || !input.endpointHealth) return true;
@@ -519,14 +536,17 @@ async function runProviderCycleRaced<TResolved>(args: {
       }
 
       if (failure.failureClass === "candidate-network" && !failure.retryable) {
-        abortAll();
-        return {
-          attempts,
-          events,
-          stopReason: "network-offline",
-          fallbackRequested: false,
-          cancelled: false,
-        };
+        offlineEvidenceServers.add(entry.candidate.serverId ?? entry.candidate.id);
+        if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
+          abortAll();
+          return {
+            attempts,
+            events,
+            stopReason: "network-offline",
+            fallbackRequested: false,
+            cancelled: false,
+          };
+        }
       }
 
       // A provider-wide guard is not answered by hammering the rest of the
