@@ -18,8 +18,17 @@ type SessionCacheEntry = {
   readonly value: JsonValue;
 };
 
+const SESSION_CACHE_MAX = 500;
 const sessionCache = new Map<string, SessionCacheEntry>();
 const inflightRequests = new Map<string, Promise<JsonValue>>();
+
+function sessionCacheWrite(key: string, entry: SessionCacheEntry): void {
+  if (sessionCache.size >= SESSION_CACHE_MAX) {
+    const oldest = sessionCache.keys().next().value;
+    if (oldest !== undefined) sessionCache.delete(oldest);
+  }
+  sessionCache.set(key, entry);
+}
 
 function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
@@ -50,7 +59,7 @@ export async function fetchTmdbJsonCached(
 
   const task = fetchTmdbJsonWithFallback(normalized, signal, timeoutMs)
     .then((value) => {
-      sessionCache.set(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
+      sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
       inflightRequests.delete(normalized);
       return value;
     })

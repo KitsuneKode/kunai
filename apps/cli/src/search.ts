@@ -41,7 +41,31 @@ export type SearchService = {
 // db.videasy.to is the same TMDB-format API that powers Cineplay + Videasy.
 // No API key needed. Response is identical to TMDB /search/multi.
 
-const cache = new Map<string, SearchResult[]>();
+// Mapped-result cache on top of fetchTmdbJsonCached's JSON cache — the extra
+// layer buys case-insensitive dedup (path keys differ by raw casing). Same
+// short TTL as the JSON cache, plus a bound so a long session of distinct
+// queries cannot grow it forever.
+const RESULT_CACHE_TTL_MS = 2 * 60 * 1_000;
+const RESULT_CACHE_MAX = 100;
+const cache = new Map<string, { readonly expiresAt: number; readonly value: SearchResult[] }>();
+
+function cacheRead(key: string): SearchResult[] | undefined {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return undefined;
+  }
+  return entry.value;
+}
+
+function cacheWrite(key: string, value: SearchResult[]): void {
+  if (cache.size >= RESULT_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, { expiresAt: Date.now() + RESULT_CACHE_TTL_MS, value });
+}
 
 async function fetchTmdbSearchJson(path: string, signal?: AbortSignal): Promise<unknown> {
   try {
@@ -53,7 +77,7 @@ async function fetchTmdbSearchJson(path: string, signal?: AbortSignal): Promise<
 
 export async function searchVideasy(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const key = query.toLowerCase().trim();
-  const cached = cache.get(key);
+  const cached = cacheRead(key);
   if (cached !== undefined) return cached;
 
   let data: Record<string, unknown>;
@@ -83,7 +107,7 @@ export async function searchVideasy(query: string, signal?: AbortSignal): Promis
       externalIds: { tmdbId: String(r.id) },
     }));
 
-  cache.set(key, results);
+  cacheWrite(key, results);
   return results;
 }
 
@@ -366,7 +390,7 @@ export const TMDB_SERVICE: SearchService = {
   id: "tmdb",
   name: "TMDB / Videasy",
   description: "TMDB proxy (db.videasy.to) — movies, series, no API key",
-  compatibleProviders: ["videasy", "vidlink", "rivestream"],
+  compatibleProviders: [],
   search: searchVideasy,
 };
 
