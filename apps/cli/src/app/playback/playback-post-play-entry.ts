@@ -94,6 +94,7 @@ export type CreatePostPlaybackMenuDepsInput = {
   readonly episodeInfoFromSelection: PostPlaybackMenuDeps["episodeInfoFromSelection"];
   readonly readAutoAdvanceGuards: () => AutoAdvanceGuards;
   readonly getCompatibleProviders: () => readonly { metadata: { id: string } }[];
+  readonly providerFallbackEligible?: (providerId: string) => boolean;
   readonly teardownPlaybackForPostPlayExit: () => Promise<void>;
 };
 
@@ -139,6 +140,7 @@ export function createPostPlaybackMenuDeps(
     episodeInfoFromSelection: input.episodeInfoFromSelection,
     readAutoAdvanceGuards: input.readAutoAdvanceGuards,
     getCompatibleProviders: input.getCompatibleProviders,
+    providerFallbackEligible: input.providerFallbackEligible,
     switchPlaybackProviderFallback,
     teardownPlaybackForPostPlayExit: input.teardownPlaybackForPostPlayExit,
     enqueuePostPlaybackRecommendation,

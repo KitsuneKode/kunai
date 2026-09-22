@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import {
   pickCompatibleFallbackProvider,
+  providerFallbackEligibility,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type { ProviderId } from "@kunai/types";
 
 const config = {
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
@@ -28,6 +30,61 @@ describe("playback provider fallback", () => {
     expect(
       pickCompatibleFallbackProvider([{ metadata: { id: "vidking" } }], "vidking"),
     ).toBeUndefined();
+  });
+
+  test("skips a down provider and lands on the next healthy compatible one", () => {
+    const eligibility = providerFallbackEligibility({
+      get: (providerId: ProviderId) =>
+        providerId === "videasy"
+          ? {
+              providerId,
+              status: "down" as const,
+              checkedAt: new Date().toISOString(),
+              consecutiveFailures: 9,
+            }
+          : undefined,
+    } as never);
+    expect(
+      pickCompatibleFallbackProvider(
+        [
+          { metadata: { id: "vidlink" } },
+          { metadata: { id: "videasy" } },
+          { metadata: { id: "rivestream" } },
+        ],
+        "vidlink",
+        eligibility,
+      )?.metadata.id,
+    ).toBe("rivestream");
+  });
+
+  test("treats unknown health as eligible — absence of a row is no evidence", () => {
+    const eligibility = providerFallbackEligibility({ get: () => undefined } as never);
+    expect(
+      pickCompatibleFallbackProvider(
+        [{ metadata: { id: "vidlink" } }, { metadata: { id: "rivestream" } }],
+        "vidlink",
+        eligibility,
+      )?.metadata.id,
+    ).toBe("rivestream");
+  });
+
+  test("keeps a degraded provider eligible — it still resolves", () => {
+    const eligibility = providerFallbackEligibility({
+      get: () =>
+        ({
+          providerId: "rivestream",
+          status: "degraded" as const,
+          checkedAt: new Date().toISOString(),
+          consecutiveFailures: 3,
+        }) as never,
+    } as never);
+    expect(
+      pickCompatibleFallbackProvider(
+        [{ metadata: { id: "vidlink" } }, { metadata: { id: "rivestream" } }],
+        "vidlink",
+        eligibility,
+      )?.metadata.id,
+    ).toBe("rivestream");
   });
 
   test("switches provider through the shared user-switch path and invalidates recent stream", async () => {

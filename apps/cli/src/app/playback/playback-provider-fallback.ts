@@ -1,18 +1,44 @@
 import { applyUserProviderSwitch } from "@/app/playback/playback-provider-switch";
 import type { Container } from "@/container";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
+import {
+  isProviderFallbackEligible,
+  resolveEffectiveProviderHealth,
+} from "@/services/playback/provider-health-policy";
+import type { ProviderHealthRepository } from "@kunai/storage";
+import type { ProviderId } from "@kunai/types";
 
 export type FallbackProviderCandidate = {
   readonly metadata: {
     readonly id: string;
+    readonly name?: string;
   };
 };
+
+/**
+ * Eligibility predicate for fallback targets. Providers the health policy
+ * reports as `down` are already excluded from engine auto-fallback; a manual
+ * or stall-triggered hop landing on them would just burn the dead provider's
+ * timeout and need a second hop. Healthy, degraded, and unknown stay
+ * eligible — degraded still resolves, unknown is no evidence.
+ */
+export function providerFallbackEligibility(
+  providerHealth: Pick<ProviderHealthRepository, "get">,
+): (providerId: string) => boolean {
+  return (providerId) =>
+    isProviderFallbackEligible(
+      resolveEffectiveProviderHealth(providerHealth.get(providerId as ProviderId)),
+    );
+}
 
 export function pickCompatibleFallbackProvider(
   providers: readonly FallbackProviderCandidate[],
   currentProviderId: string,
+  isEligible: (providerId: string) => boolean = () => true,
 ): FallbackProviderCandidate | undefined {
-  return providers.find((candidate) => candidate.metadata.id !== currentProviderId);
+  return providers.find(
+    (candidate) => candidate.metadata.id !== currentProviderId && isEligible(candidate.metadata.id),
+  );
 }
 
 export async function switchPlaybackProviderFallback(input: {
