@@ -12,8 +12,9 @@
  * (`<enter>`, `<esc>`, `<up>`, `<down>`, `<left>`, `<right>`, `<tab>`,
  * `<space>`, `<backspace>`, `<ctrlC>`). Literal text like `history` types
  * character by character. The pseudo-token `<wait:TEXT>` pauses the replay
- * until a frame contains TEXT — how a multi-surface flow waits like a human
- * instead of typing into a surface that hasn't rendered yet.
+ * until a frame contains TEXT — or matches it, when TEXT is `/regex/` — how a
+ * multi-surface flow waits like a human instead of typing into a surface that
+ * hasn't rendered yet.
  * `<wait-config:key=value>` waits for the (debounced) config write to land —
  * frame says it AND the file commits it, or the run times out honestly.
  *
@@ -24,6 +25,7 @@
  */
 import { createAgentSession, type AgentSessionOptions } from "./agent-driver";
 import { writeEvidenceBundle, verifyCitations } from "./evidence";
+import { frameMatcher } from "./frame-match";
 import { decodeKeyToken } from "./keys";
 
 type ShowSection = "frame" | "history" | "queue" | "config" | "tables" | "delta" | "journal";
@@ -199,10 +201,8 @@ async function main(): Promise<void> {
     await session.waitSettled();
     for (const step of args.steps) {
       if (step.kind === "wait") {
-        await session.waitForFrame(
-          (f) => f.includes(step.text),
-          `frame contains ${JSON.stringify(step.text)}`,
-        );
+        const pred = frameMatcher(step.text);
+        await session.waitForFrame(pred, `frame matches ${JSON.stringify(step.text)}`);
       } else if (step.kind === "waitConfig") {
         // Config writes are debounced (~300ms) — a frame claiming "Minimal"
         // while config.json still says nothing is a deferred write, not a
@@ -217,10 +217,7 @@ async function main(): Promise<void> {
       }
     }
     for (const needle of args.waitFor) {
-      await session.waitForFrame(
-        (f) => f.includes(needle),
-        `frame contains ${JSON.stringify(needle)}`,
-      );
+      await session.waitForFrame(frameMatcher(needle), `frame matches ${JSON.stringify(needle)}`);
     }
 
     const inspect = session.inspect();
@@ -300,4 +297,9 @@ async function main(): Promise<void> {
   process.exit(failed ? 1 : 0);
 }
 
-await main();
+// A failed wait or bad flag is a user-facing error, not a programming fault —
+// print the message, not a raw stack.
+main().catch((error: unknown) => {
+  console.error(`[agent] ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+});

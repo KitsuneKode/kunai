@@ -211,6 +211,18 @@ jobs:
         timeout-minutes: 5
         run: bun run test:agent
 
+      - name: Agent verification with real mpv
+        # The L3 tier that proves playback end-to-end: real main.ts under tmux,
+        # real mpv decoding generated media over loopback, asserted by two
+        # witnesses (mpv IPC time-pos advancing + the committed history row).
+        # Push-only: the apt install costs a couple of minutes, too heavy for
+        # every PR — the L2 suite above covers PRs.
+        if: github.event_name == 'push'
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq mpv ffmpeg tmux
+          KUNAI_REAL_MPV=1 bun run test:agent
+
   windows-cli:
     name: Windows CLI parity
     needs: changes

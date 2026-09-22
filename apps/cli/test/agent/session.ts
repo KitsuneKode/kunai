@@ -9,7 +9,8 @@
  *            --command "bun src/main.ts"    (default session name: kunai-agent)
  *   see      print the current rendered pane (add --raw for ANSI colors)
  *   do       send keys: `do smoke "<enter>"` — same key vocabulary as agent:drive
- *   wait-for <text>     block until the pane contains text (bounded)
+ *   wait-for <text>     block until the pane contains text (bounded);
+ *                       `/pattern/` waits on a regex match instead
  *   relaunch            quit via Ctrl+C, then respawn the same profile
  *   inspect  history|queue|config|tables — read the live SQLite/config
  *   report   <dir>      write an evidence bundle (pane + backend snapshot)
@@ -21,6 +22,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { frameMatcher } from "./frame-match";
 import { decodeKeyToken } from "./keys";
 import { createProfileInspector } from "./profile-inspector";
 import {
@@ -158,7 +160,7 @@ async function main(): Promise<void> {
       const needle = positionalArgs(rest)[0];
       if (!needle) usage();
       const session = attach(name);
-      await session.waitFor((f) => f.includes(needle), `pane contains ${JSON.stringify(needle)}`);
+      await session.waitFor(frameMatcher(needle), `pane matches ${JSON.stringify(needle)}`);
       console.log(await session.see());
       break;
     }
@@ -238,4 +240,9 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+// A failed wait or bad flag is a user-facing error, not a programming fault —
+// print the message, not a raw stack.
+main().catch((error: unknown) => {
+  console.error(`[agent] ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+});
