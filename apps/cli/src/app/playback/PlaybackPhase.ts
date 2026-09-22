@@ -541,6 +541,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       status: "error",
       error: message,
     });
+    // The wait is parked on a user dismissal transition; session shutdown must
+    // release it too, otherwise the phase outlives the abort and the loop's
+    // stop path has to force-settle around a still-pending run.
+    if (context.signal.aborted) return;
     await new Promise<void>((resolve) => {
       const unsubscribe = stateManager.subscribe((state) => {
         if (state.playbackStatus !== "error") {
@@ -548,6 +552,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           resolve();
         }
       });
+      context.signal.addEventListener(
+        "abort",
+        () => {
+          unsubscribe();
+          resolve();
+        },
+        { once: true },
+      );
     });
   }
 
