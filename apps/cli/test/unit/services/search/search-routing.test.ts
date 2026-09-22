@@ -5,6 +5,7 @@ import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import type { SearchResult, ProviderMetadata } from "@/domain/types";
 import { AniListSearchService } from "@/services/search/definitions/anilist";
 import { SEARCH_SERVICE_DEFINITIONS } from "@/services/search/definitions/index";
+import { TMDBSearchService } from "@/services/search/definitions/tmdb";
 import { searchTitles } from "@/services/search/SearchRoutingService";
 
 describe("searchTitles", () => {
@@ -918,6 +919,18 @@ describe("searchTitles", () => {
 
     expect(anilistDefinition?.compatibleProviders).toEqual(expected);
     expect(anilistService.compatibleProviders).toEqual(expected);
+  });
+
+  test("declares TMDB catalog compatibility for every TMDB-id provider in both authorities", () => {
+    const tmdbDefinition = SEARCH_SERVICE_DEFINITIONS.find((def) => def.id === "tmdb");
+    const tmdbService = new TMDBSearchService({} as never);
+    // vidlink and rivestream resolve titles by TMDB catalog id — a filtered
+    // search that excluded them would report "unsupported" on catalogs they
+    // can actually serve.
+    const expected = ["videasy", "vidlink", "rivestream"];
+
+    expect(tmdbDefinition?.compatibleProviders).toEqual(expected);
+    expect(tmdbService.compatibleProviders).toEqual(expected);
   });
 
   test("uses explicitly compatible AniList search for advanced AniDB filters", async () => {
