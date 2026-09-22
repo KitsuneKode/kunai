@@ -216,8 +216,12 @@ function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOpti
     pathParts.push(shimDir);
   }
 
-  const command =
-    options.command ?? `${JSON.stringify(bunBin)} ${JSON.stringify(join(CLI_ROOT, "src/main.ts"))}`;
+  // `--command` documents as extra args to main.ts, not a replacement —
+  // appending keeps the real entrypoint while letting a run carry `-S`,
+  // `--debug`, etc. The string lands verbatim in the launch script, so
+  // shell quoting inside it is honored.
+  const baseCommand = `${JSON.stringify(bunBin)} ${JSON.stringify(join(CLI_ROOT, "src/main.ts"))}`;
+  const command = options.command ? `${baseCommand} ${options.command}` : baseCommand;
   const runScript = join(profile.rootDir, "run.sh");
   // PATH is computed, not exported like the rest — a caller-provided env.PATH
   // must merge INTO the computation (after the prefix dirs), or it would be
@@ -368,6 +372,9 @@ export interface SessionSidecar {
   readonly profile: IsolatedCliProfile;
   readonly runScript: string;
   readonly startedAt: string;
+  /** Start's `--keep-profile` decision — stop is a separate process, so the
+   *  choice has to ride in the sidecar or it is silently dropped. */
+  readonly keepProfile?: boolean;
 }
 
 /** Deterministic per-name state path so `start`/`do`/`stop` invocations agree. */

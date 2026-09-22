@@ -72,8 +72,10 @@ Waits and output (all repeatable):
 
 Environment knobs:
 
-- `--seed onboarded|fresh` — profile seed (default `onboarded`; `fresh` boots
-  the real onboarding wizard)
+- `--seed onboarded|fresh` — profile seed (default `onboarded`). `fresh` writes
+  no config, but the wizard only runs on a real TTY — under `agent:drive`
+  (in-process, no TTY) it lands on the browse shell. For the real onboarding
+  flow use `agent:session -- start --seed fresh`.
 - `--providers smoke|none` — fixture providers (default `smoke`)
 - `--mpv fake|none` — PATH-shim fake mpv (default `none`)
 - `--fake-mpv-mode <m>` — `normal | fail-pre-loaded | hold`
@@ -95,8 +97,9 @@ bun run agent:session -- relaunch --name myrun   # real quit + real reboot, SAME
 bun run agent:session -- stop --name myrun       # tmux kill-session + sandbox cleanup
 ```
 
-`start` also takes `--seed fresh`, `--no-fake-mpv`, `--width/--rows`,
-`--command "..."` (extra CLI args to `main.ts`), `--keep-profile`.
+`start` also takes `--seed fresh` (boots the real setup wizard — the tmux pane
+is a real TTY), `--no-fake-mpv`, `--width/--rows`, `--command "..."` (extra CLI
+args to `main.ts`), `--keep-profile` (stop leaves the sandbox on disk).
 Default session name is `kunai-agent`. Each invocation reattaches via a
 sidecar state file, so a session survives across separate commands — exactly
 like a user leaving the app open. `relaunch` is a first-class verb: close,

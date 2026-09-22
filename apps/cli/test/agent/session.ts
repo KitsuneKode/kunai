@@ -128,6 +128,7 @@ async function main(): Promise<void> {
         profile: session.profile,
         runScript: join(session.profile.rootDir, "run.sh"),
         startedAt: new Date().toISOString(),
+        keepProfile: rest.includes("--keep-profile"),
       };
       writeFileSync(tmuxSessionStatePath(name), `${JSON.stringify(sidecar)}\n`);
       // Boot takes a beat — wait for the shell chrome before reporting ready.
@@ -222,9 +223,13 @@ async function main(): Promise<void> {
       }
       const session = attach(name);
       await session.stop();
-      rmSync(sidecar.profile.rootDir, { force: true, recursive: true });
+      if (sidecar.keepProfile) {
+        console.log(`stopped "${name}" — profile kept at ${sidecar.profile.rootDir}`);
+      } else {
+        rmSync(sidecar.profile.rootDir, { force: true, recursive: true });
+        console.log(`stopped "${name}" and removed sandbox`);
+      }
       rmSync(tmuxSessionStatePath(name), { force: true });
-      console.log(`stopped "${name}" and removed sandbox`);
       break;
     }
 
