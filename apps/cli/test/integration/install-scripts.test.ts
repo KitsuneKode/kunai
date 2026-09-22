@@ -1541,7 +1541,11 @@ describe("install.sh lifecycle contract", () => {
               KUNAI_ACTIVATION_LOCK_POLL_MS: "0",
               PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
             },
-            500,
+            // What the test proves is "terminates instead of hot-looping", not
+            // "finishes fast" — a real loop runs for minutes; 5s still catches
+            // it while surviving a loaded runner's bash+spawn startup (~550ms
+            // observed on the macOS leg).
+            5_000,
           );
           expect(result).not.toBeNull();
           expect(result?.status).not.toBe(0);
