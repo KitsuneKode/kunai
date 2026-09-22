@@ -306,6 +306,7 @@ export function attachTmuxSession(input: {
       // family leaves exactly this signature (dead=0, silent pane). SigPnd
       // confirms which signal is pending against it.
       try {
+        // SAFETY: the utf8 encoding overload returns string.
         const status = require("node:fs").readFileSync(`/proc/${pid}/status`, "utf8") as string;
         const state = /^State:\s*(.+)$/m.exec(status)?.[1]?.trim();
         const pending = /^SigPnd:\s*(\S+)/m.exec(status)?.[1];
