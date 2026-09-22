@@ -4,6 +4,7 @@ import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playbac
 
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
+import { whichLive } from "../infra/os/which";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
@@ -181,7 +182,7 @@ export function bootstrapServices(input: {
     config,
     logger,
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
-    ffprobeAvailable: Boolean(Bun.which("ffprobe")),
+    ffprobeAvailable: Boolean(whichLive("ffprobe")),
     diagnostics: diagnosticsService,
     onCompletedArtifact: (job) => {
       const asset = offlineAssetService.adoptCompletedJob(job);

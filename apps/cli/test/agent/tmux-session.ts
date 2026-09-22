@@ -19,7 +19,7 @@
  * Platform: tmux only exists on Linux/macOS — call sites gate with
  * `Bun.which("tmux")` and land in the skip line, never the failure line.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -239,7 +239,7 @@ function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOpti
   ].join(":");
   writeFileSync(
     runScript,
-    `#!/bin/sh\n${envLines}\nexport PATH=${JSON.stringify(finalPath)}\ncd ${JSON.stringify(CLI_ROOT)}\nexec ${command}\n`,
+    `#!/bin/sh\n${envLines}\nexport PATH=${JSON.stringify(finalPath)}\ncd ${JSON.stringify(CLI_ROOT)}\necho "agent-launch: ${command}"\nexec ${command}\n`,
     { mode: 0o755 },
   );
   return runScript;
@@ -334,10 +334,35 @@ export function attachTmuxSession(input: {
         }
         await Bun.sleep(120);
       }
+      // -S - pulls the scrollback too: anything the app (or the alt-screen
+      // swap) cleared still shows — the launch marker, a bun error, a
+      // first-paint flash. An empty scrollback means the pane truly never
+      // produced output.
+      let scrollback = "";
+      try {
+        scrollback = (await tmux(["capture-pane", "-p", "-S", "-", "-t", name])).trimEnd();
+      } catch {
+        scrollback = "(scrollback unavailable)";
+      }
+      // A blank pane with a live `bun` means the process is stuck before the
+      // first frame. When the session launched with --debug, ./logs.txt (the
+      // run script cd's to CLI_ROOT) records how far startup got.
+      const debugLogPath = join(CLI_ROOT, "logs.txt");
+      let debugTail = "";
+      try {
+        if (existsSync(debugLogPath)) {
+          const lines = readFileSync(debugLogPath, "utf8").trim().split("\n");
+          debugTail = `\nlogs.txt tail:\n${lines.slice(-40).join("\n")}`;
+        }
+      } catch {
+        debugTail = "\nlogs.txt: (unreadable)";
+      }
       throw new Error(
         `waitFor(${label ?? "predicate"}) timed out after ${timeoutMs ?? SETTLE_TIMEOUT_MS}ms ` +
           `(${await paneStatus()}).\n` +
-          `Final pane:\n${last.length > 0 ? last : "(empty — the process produced no output)"}`,
+          `Final pane:\n${last.length > 0 ? last : "(empty — the process produced no output)"}\n` +
+          `Scrollback:\n${scrollback.length > 0 ? scrollback : "(empty)"}` +
+          debugTail,
       );
     },
     async waitSettled() {

@@ -109,6 +109,8 @@ import {
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 import { warmTopAnimeEpisodeCache } from "@/services/providers/warm-episode-cache";
 
+import { whichLive } from "../../infra/os/which";
+
 export { SEARCH_BROWSE_COMMAND_IDS };
 
 /** Projection-only display title from cached aliases — does not hit providers. */
@@ -704,7 +706,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             void playTrailer(
               {
                 playUrl: async (target) => {
-                  if (!Bun.which("mpv")) return false;
+                  if (!whichLive("mpv")) return false;
                   // Same scheme gate as every other mpv playback path; a
                   // non-URL target falls back to the browser opener below.
                   if (!isAllowedMpvUrl(target, "remote")) return false;

@@ -25,7 +25,13 @@ describe("agent driver · fresh-profile onboarding", () => {
   itTmux(
     "the setup wizard commits an onboarded config without touching analytics",
     async () => {
-      const s = await startTmuxSession({ name: "onboarding-proof", seed: "fresh" });
+      // --debug writes logs.txt under CLI_ROOT; on a timeout the waitFor dump
+      // tails it, which is what makes a blank-pane stall diagnosable on CI.
+      const s = await startTmuxSession({
+        name: "onboarding-proof",
+        seed: "fresh",
+        command: "--debug",
+      });
       try {
         // First paint is a cold `bun src/main.ts` boot inside tmux — on a
         // throttled CI runner that legitimately exceeds the 15s default.

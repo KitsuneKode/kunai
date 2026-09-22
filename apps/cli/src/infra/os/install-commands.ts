@@ -1,3 +1,4 @@
+import { whichLive } from "./which";
 /**
  * Per-platform install commands, and how to pick the one that applies here.
  *
@@ -51,7 +52,7 @@ export function resolveInstallCommand(
   if (platform === "darwin") return install.darwin ?? install.fallback ?? null;
   if (platform === "win32") return install.win32 ?? install.fallback ?? null;
 
-  const which = options.which ?? ((command: string) => Bun.which(command));
+  const which = options.which ?? ((command: string) => whichLive(command));
   for (const manager of LINUX_MANAGERS) {
     // Probe rather than read /etc/os-release: a user on Arch with `apt` from a
     // container, or on an immutable distro, is described by what they can run.

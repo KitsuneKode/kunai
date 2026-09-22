@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 
+import { whichLive } from "../../../infra/os/which";
+
 // Windows PowerShell startup can exceed one second on a loaded runner. Normal
 // lifecycle operations allow one bounded probe and cache its positive result;
 // short activation deadlines skip optional self-identity enrichment entirely.
@@ -57,7 +59,7 @@ export function processStartId(
   let value: string | null = null;
   if (process.platform === "win32") {
     try {
-      const powershell = Bun.which("powershell.exe") ?? Bun.which("pwsh.exe") ?? Bun.which("pwsh");
+      const powershell = whichLive("powershell.exe") ?? whichLive("pwsh.exe") ?? whichLive("pwsh");
       if (powershell) {
         const result = boundedSpawn(
           [

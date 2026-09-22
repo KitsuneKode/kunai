@@ -27,6 +27,7 @@ import type { ConfigService } from "@/services/persistence/ConfigService";
 import { isTerminalHlsHttpStatus } from "@/services/playback/hls-manifest-materializer";
 import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
 
+import { whichLive } from "../os/which";
 import {
   startHlsRelay,
   streamNeedsHlsRelay,
@@ -542,7 +543,7 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   async isAvailable(): Promise<boolean> {
-    return Boolean(Bun.which("mpv"));
+    return Boolean(whichLive("mpv"));
   }
 
   async playLocal(options: {

@@ -21,6 +21,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { resolveTuning } from "@/services/persistence/tuning";
 import { checkStreamPreflight } from "@/services/playback/stream-health-check";
 
+import { whichLive } from "../os/which";
 import {
   buildKunaiBridgeScriptOptsArg,
   isEphemeralKunaiLuaScript,
@@ -90,7 +91,7 @@ type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error"
 type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
 
 const defaultPersistentMpvSessionRuntime: PersistentMpvSessionRuntime = {
-  which: (command) => Bun.which(command),
+  which: (command) => whichLive(command),
   spawn: (command, options) => Bun.spawn(command, options),
   waitForIpcEndpoint: waitForMpvIpcEndpoint,
   openIpcSession: openMpvIpcSession,

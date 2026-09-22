@@ -101,12 +101,15 @@ describe("agent wiring · queue", () => {
       const queued = s.inspect().queue();
       expect(queued.at(-1)?.title_id).toBe("tmdb:smoke-movie-1");
 
-      // `Q` opens Up Next; `x` removes the selected row — reverse state.
+      // `Q` opens Up Next; `x` removes the selected row — reverse state. The
+      // predicate must name the overlay uniquely: "Smoke Movie" also appears
+      // on the results frame, which let the wait resolve before the overlay's
+      // input handler attached — x then dropped into the gap and removed
+      // nothing. waitSettled is the human beat between seeing the panel and
+      // pressing a key on it.
       s.press("Q");
-      await s.waitForFrame(
-        (f) => f.includes("Up Next") || f.includes("Smoke Movie"),
-        "up-next surface",
-      );
+      await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
+      await s.waitSettled();
       s.press("x");
       await s.waitForBackend(
         (i) => i.queue().length === before,

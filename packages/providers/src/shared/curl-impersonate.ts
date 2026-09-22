@@ -146,7 +146,8 @@ export function curlCipherArgs(
 export function resolveCurlCandidate(
   environment: Partial<CurlEnvironment> = {},
 ): CurlCandidate | null {
-  const which = environment.which ?? ((command: string) => Bun.which(command));
+  const which =
+    environment.which ?? ((command: string) => Bun.which(command, { PATH: process.env.PATH }));
   const listPathEntries = environment.listPathEntries ?? defaultListPathEntries;
 
   let best: ParsedWrapper | null = null;

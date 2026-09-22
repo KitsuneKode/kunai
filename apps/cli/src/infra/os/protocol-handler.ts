@@ -1,6 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { posix as posixPath } from "node:path";
 
+import { whichLive } from "./which";
+
 export type LinuxProtocolHandlerPaths = {
   readonly applicationsDir: string;
   readonly desktopPath: string;
@@ -49,7 +51,7 @@ export function buildLinuxProtocolDesktopEntry(executable: string): string {
 
 export function buildProtocolHandlerInstallPlan({
   platform = process.platform,
-  executable = Bun.which("kunai") ?? process.argv[1] ?? "kunai",
+  executable = whichLive("kunai") ?? process.argv[1] ?? "kunai",
   home = process.env.HOME,
   xdgDataHome = process.env.XDG_DATA_HOME,
 }: {
@@ -89,7 +91,7 @@ export function buildProtocolHandlerInstallPlan({
 }
 
 export async function installKunaiProtocolHandler({
-  executable = Bun.which("kunai") ?? process.argv[1] ?? "kunai",
+  executable = whichLive("kunai") ?? process.argv[1] ?? "kunai",
   home = process.env.HOME,
   xdgDataHome = process.env.XDG_DATA_HOME,
 }: {
@@ -110,7 +112,7 @@ export async function installKunaiProtocolHandler({
     desktopEntry?.contents ?? buildLinuxProtocolDesktopEntry(executable),
   );
 
-  const xdgMime = Bun.which("xdg-mime");
+  const xdgMime = whichLive("xdg-mime");
   if (xdgMime) {
     const proc = Bun.spawn([
       xdgMime,

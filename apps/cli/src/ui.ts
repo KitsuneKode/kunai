@@ -15,6 +15,8 @@ import {
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
 
+import { whichLive } from "./infra/os/which";
+
 // ── Dependency check ───────────────────────────────────────────────────────
 
 export type CapabilitySeverity = "fatal" | "degraded";
@@ -123,7 +125,7 @@ export async function probeCapabilities(
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
-  const which = options.which ?? ((command: string) => Bun.which(command));
+  const which = options.which ?? ((command: string) => whichLive(command));
   const issues: CapabilityIssue[] = [];
   const mpv = Boolean(which("mpv"));
   const ffprobe = Boolean(which("ffprobe"));

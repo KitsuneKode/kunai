@@ -42,6 +42,7 @@ import {
 } from "@kunai/storage";
 import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
+import { whichLive } from "../../infra/os/which";
 import { downloadJobShellMode } from "./download-job-mode";
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
 import { resolveDownloadOutputPath } from "./download-path-naming";
@@ -1365,7 +1366,7 @@ export class DownloadService {
     if (!fileStat.isFile() || fileStat.size <= 0) {
       throw new Error("artifact-invalid: downloaded file is empty or not a regular file");
     }
-    if (!this.deps.ffprobeAvailable || !Bun.which("ffprobe")) {
+    if (!this.deps.ffprobeAvailable || !whichLive("ffprobe")) {
       return { fileSize: fileStat.size };
     }
     const proc = Bun.spawn(

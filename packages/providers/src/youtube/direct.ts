@@ -200,7 +200,7 @@ async function searchYoutubeViaYtsearch(
   context: ProviderRuntimeContext,
   requestedShape?: YouTubeContentShape,
 ): Promise<readonly ProviderSearchResult[] | null> {
-  if (!Bun.which("yt-dlp")) return null;
+  if (!Bun.which("yt-dlp", { PATH: process.env.PATH })) return null;
 
   const args = [
     "--flat-playlist",
@@ -345,7 +345,7 @@ async function loadYtDlpVideoInfo(
   const service = globalYoutubeConfig.metadataService;
   if (!service) return null;
 
-  if (!Bun.which("yt-dlp")) return null;
+  if (!Bun.which("yt-dlp", { PATH: process.env.PATH })) return null;
 
   return service.getOrFetch(videoId, watchUrl, { signal: context.signal });
 }
@@ -384,7 +384,7 @@ async function resolveYoutube(
     });
   }
 
-  if (!Bun.which("yt-dlp")) {
+  if (!Bun.which("yt-dlp", { PATH: process.env.PATH })) {
     return createExhaustedResult(input, context, YOUTUBE_PROVIDER_ID, {
       code: "yt-dlp-missing",
       message: "yt-dlp is required for YouTube playback. Install yt-dlp and retry.",

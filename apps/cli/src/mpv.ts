@@ -70,6 +70,8 @@ import {
 import type { StreamPreflightResult } from "@/services/playback/stream-health-check";
 import { normalizeSubtitleUrl } from "@/subtitle";
 
+import { whichLive } from "./infra/os/which";
+
 export async function launchMpv(opts: {
   url: string;
   urlKind?: MpvUrlKind;
@@ -117,7 +119,7 @@ export async function launchMpv(opts: {
     baseEmit(event);
   };
 
-  if (!Bun.which("mpv")) {
+  if (!whichLive("mpv")) {
     throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
   }
 
