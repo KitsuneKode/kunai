@@ -156,6 +156,7 @@ export async function startTmuxSession(options: TmuxSessionOptions = {}): Promis
 
   const ownProfile = options.profile === undefined;
   const profile = options.profile ?? createIsolatedCliProfile(name);
+  let sessionCreated = false;
   try {
     if ((options.seed ?? "onboarded") === "onboarded") {
       writeFileSync(profile.paths.configPath, `${JSON.stringify(onboardedConfig())}\n`);
@@ -173,12 +174,18 @@ export async function startTmuxSession(options: TmuxSessionOptions = {}): Promis
       String(rows),
       `sh ${JSON.stringify(runScript)}`,
     ]);
+    sessionCreated = true;
     // remain-on-exit keeps the final frame + pane_dead after the app exits —
     // that is how `isDead` and the post-quit screenshot both work.
     await tmux(["set-option", "-t", name, "remain-on-exit", "on"]);
 
     return attachTmuxSession({ name, profile, runScript, keepProfile: options.keepProfile });
   } catch (error) {
+    // Only kill a session this start actually created — a failed new-session
+    // can be a name collision, and the live same-named session isn't ours.
+    if (sessionCreated) {
+      await tmux(["kill-session", "-t", name]).catch(() => {});
+    }
     // A start that never became a session must not leak the sandbox it made.
     if (ownProfile) disposeIsolatedCliProfile(profile);
     throw error;
@@ -227,8 +234,16 @@ function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOpti
   // must merge INTO the computation (after the prefix dirs), or it would be
   // written then silently overwritten by the line below.
   const { PATH: callerPath, ...envRest } = env;
+  // Keys interpolate into `export K=...` shell syntax — a name outside the
+  // identifier grammar would inject arbitrary commands into the pane's shell.
+  // Validate at the sink so every options.env caller is covered.
   const envLines = Object.entries(envRest)
-    .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
+    .map(([k, v]) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
+        throw new Error(`invalid env name for launch script: ${JSON.stringify(k)}`);
+      }
+      return `export ${k}=${JSON.stringify(v)}`;
+    })
     .join("\n");
   const finalPath = [
     ...pathParts,

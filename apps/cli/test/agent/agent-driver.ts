@@ -35,6 +35,7 @@ import type { SessionController } from "@/app/session/SessionController";
 import type { ShutdownIntent } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
+import { disposeContainer } from "@/container/dispose-container";
 import { createElement } from "react";
 
 import { render, stripAnsi, type RenderHandle } from "../harness/render-capture";
@@ -268,7 +269,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       await work();
     } catch (error) {
       if (error instanceof Error && /timed out/.test(error.message)) {
-        throw new Error(`${error.message}\n\n${timeoutContext()}`);
+        throw new Error(`${error.message}\n\n${timeoutContext()}`, { cause: error });
       }
       throw error;
     }
@@ -280,17 +281,6 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
 
   const columns = options.columns ?? 100;
   const rows = options.rows ?? 30;
-
-  const closeContainerDbs = () => {
-    if (!container) return;
-    for (const db of [container.dataDb, container.cacheDb]) {
-      try {
-        db.close();
-      } catch {
-        // Already closed — disposal must not mask a real assertion failure.
-      }
-    }
-  };
 
   try {
     profile = createIsolatedCliProfile(sessionLabel);
@@ -356,7 +346,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       // best effort
     }
     forceSettleAllRootContent("agent-session-boot-failed");
-    closeContainerDbs();
+    await disposeContainer(container);
     runCleanups();
     activeSession = null;
     if (profile) disposeIsolatedCliProfile(profile);
@@ -577,7 +567,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
           // synchronously, or a following createAgentSession can inherit the
           // previous session's content mount or leak a blocked mount promise.
           forceSettleAllRootContent("agent-session-dispose");
-          closeContainerDbs();
+          await disposeContainer(sessionContainer);
           unbindShutdown?.();
           runCleanups();
           disposeIsolatedCliProfile(sessionProfile);

@@ -151,8 +151,9 @@ async function main(): Promise<void> {
         if (rest[i] !== "--set-env") continue;
         const kv = rest[i + 1] ?? "";
         const eq = kv.indexOf("=");
-        if (eq <= 0) usage();
-        env[kv.slice(0, eq)] = kv.slice(eq + 1);
+        const key = kv.slice(0, eq);
+        if (eq <= 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) usage();
+        env[key] = kv.slice(eq + 1);
       }
       const session = await startTmuxSession({
         name,

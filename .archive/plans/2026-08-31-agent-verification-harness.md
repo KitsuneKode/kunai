@@ -1,5 +1,11 @@
 # Agent verification harness: drive the shell like a human, assert the backend in the same run
 
+> **LANDED.** `test/agent/` carries the L2 driver, the tmux L3 driver, the
+> real-mpv tier, and the wiring/onboarding scenarios; `verify-kunai` documents
+> the loop. Residue lives on the roadmap row. Note the FileStorage claim below
+> is the _pre-fix_ hazard this plan discovered — `FileStorage` now resolves
+> `getKunaiPaths()` at call time.
+
 > **Executor instructions**: Follow step by step; verify each step; STOP on any
 > STOP condition; update `./roadmap.md` when done. **v2 (2026-09-22):** revised
 > after cross-review — the `script`-transcript Layer B was replaced by a tmux
