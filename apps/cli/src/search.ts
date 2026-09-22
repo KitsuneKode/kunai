@@ -60,9 +60,17 @@ function cacheRead(key: string): SearchResult[] | undefined {
 }
 
 function cacheWrite(key: string, value: SearchResult[]): void {
-  if (cache.size >= RESULT_CACHE_MAX) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
+  // Overwriting an existing key frees no slot — only a new key can need one.
+  if (!cache.has(key) && cache.size >= RESULT_CACHE_MAX) {
+    let oldestKey: string | undefined;
+    let oldestExpiry = Number.POSITIVE_INFINITY;
+    for (const [entryKey, entry] of cache) {
+      if (entry.expiresAt < oldestExpiry) {
+        oldestExpiry = entry.expiresAt;
+        oldestKey = entryKey;
+      }
+    }
+    if (oldestKey !== undefined) cache.delete(oldestKey);
   }
   cache.set(key, { expiresAt: Date.now() + RESULT_CACHE_TTL_MS, value });
 }
