@@ -22,7 +22,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { frameMatcher } from "./frame-match";
+import { advertisedKeys, frameMatcher } from "./frame-match";
 import { decodeKeyToken } from "./keys";
 import { createProfileInspector } from "./profile-inspector";
 import {
@@ -38,6 +38,7 @@ function usage(): never {
         [--no-fake-mpv] [--command "..."] [--keep-profile]
   see [--name N] [--raw]
   do <key>... [--name N]      keys: text types literally, <enter> <esc> <up> ...
+  keys [--name N]             list the [key] hints the current pane advertises
   wait-for <text> [--name N]
   relaunch [--name N]
   inspect <history|queue|config|tables> [--name N]
@@ -153,6 +154,13 @@ async function main(): Promise<void> {
       await session.send(...keys);
       await session.waitSettled();
       console.log(await session.see());
+      break;
+    }
+
+    case "keys": {
+      const session = attach(name);
+      const keys = advertisedKeys(await session.see());
+      console.log(keys.length > 0 ? keys.join("\n") : "(no advertised keys in pane)");
       break;
     }
 

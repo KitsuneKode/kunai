@@ -56,15 +56,17 @@ Input — `--keys` consumes every following non-flag token (put it last):
 <backspace> <ctrlC>`
 - `<wait:TEXT>` — pause replay until a frame contains TEXT (multi-surface
   flows wait like a human instead of typing into a surface that hasn't
-  rendered yet)
+  rendered yet). `/pattern/` waits on a regex instead (`[\s\S]` spans lines)
 - `<wait-config:key=value>` — pause until the debounced config write lands
   (frame claims it AND `config.json` commits it, or the run times out honestly)
 
 Waits and output (all repeatable):
 
 - `--wait-for <text>` — after the keys, wait for a frame containing text
-- `--show <a,b,c>` — sections: `frame,history,queue,config,tables,delta,journal`
-  (default `frame,tables`)
+  (`/pattern/` waits on a regex)
+- `--show <a,b,c>` — sections: `frame,keys,history,queue,config,tables,delta,journal`
+  (default `frame,tables`). `keys` lists the `[key]` hints the current frame
+  advertises — read it before writing a key plan for an unfamiliar surface.
 - `--evidence <dir>` — write the bundle (transcript.md, frames/, steps/,
   final state)
 - `--verify-citation <text>` — assert the text exists in captured evidence;
@@ -90,7 +92,8 @@ cd apps/cli
 bun run agent:session -- start --name myrun      # tmux session, real main.ts, fresh sandbox
 bun run agent:session -- see --name myrun        # capture-pane → the actual screen
 bun run agent:session -- do smoke "<enter>" --name myrun   # positional keys
-bun run agent:session -- wait-for "Smoke" --name myrun     # wait for pane text
+bun run agent:session -- wait-for "Smoke" --name myrun     # wait for pane text (`/re/` = regex)
+bun run agent:session -- keys --name myrun                 # [key] hints the pane advertises
 bun run agent:session -- inspect history --name myrun      # history|queue|config|tables
 bun run agent:session -- report /tmp/ev --name myrun       # frame + backend.json bundle
 bun run agent:session -- relaunch --name myrun   # real quit + real reboot, SAME profile

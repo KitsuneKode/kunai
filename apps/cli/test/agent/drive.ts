@@ -25,13 +25,22 @@
  */
 import { createAgentSession, type AgentSessionOptions } from "./agent-driver";
 import { writeEvidenceBundle, verifyCitations } from "./evidence";
-import { frameMatcher } from "./frame-match";
+import { advertisedKeys, frameMatcher } from "./frame-match";
 import { decodeKeyToken } from "./keys";
 
-type ShowSection = "frame" | "history" | "queue" | "config" | "tables" | "delta" | "journal";
+type ShowSection =
+  | "frame"
+  | "keys"
+  | "history"
+  | "queue"
+  | "config"
+  | "tables"
+  | "delta"
+  | "journal";
 
 const SHOW_SECTIONS: readonly ShowSection[] = [
   "frame",
+  "keys",
   "history",
   "queue",
   "config",
@@ -227,6 +236,11 @@ async function main(): Promise<void> {
         case "frame":
           console.log(session.frame());
           break;
+        case "keys": {
+          const keys = advertisedKeys(session.frame());
+          console.log(keys.length > 0 ? keys.join("\n") : "(no advertised keys in frame)");
+          break;
+        }
         case "history":
           console.log(JSON.stringify(inspect.history(), null, 2));
           break;
