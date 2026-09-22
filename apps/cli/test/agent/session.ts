@@ -35,7 +35,7 @@ import {
 function usage(): never {
   console.error(`usage: bun run agent:session -- <command> [opts]
   start [--name N] [--seed onboarded|fresh] [--width C] [--rows R]
-        [--no-fake-mpv] [--command "..."] [--keep-profile]
+        [--no-fake-mpv] [--command "..."] [--keep-profile] [--set-env K=V]...
   see [--name N] [--raw]
   do <key>... [--name N]      keys: text types literally, <enter> <esc> <up> ...
   keys [--name N]             list the [key] hints the current pane advertises
@@ -117,6 +117,14 @@ async function main(): Promise<void> {
   switch (command) {
     case "start": {
       const seed = argValue(rest, "--seed") === "fresh" ? "fresh" : "onboarded";
+      const env: Record<string, string> = {};
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i] !== "--set-env") continue;
+        const kv = rest[i + 1] ?? "";
+        const eq = kv.indexOf("=");
+        if (eq <= 0) usage();
+        env[kv.slice(0, eq)] = kv.slice(eq + 1);
+      }
       const session = await startTmuxSession({
         name,
         seed,
@@ -125,6 +133,7 @@ async function main(): Promise<void> {
         fakeMpv: !rest.includes("--no-fake-mpv"),
         command: argValue(rest, "--command"),
         keepProfile: rest.includes("--keep-profile"),
+        env,
       });
       const sidecar: SessionSidecar = {
         name,
