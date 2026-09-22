@@ -50,7 +50,9 @@ export function buildDarwinExpectScript(command: string, transcript: string): st
     "log_user 0",
     "set timeout -1",
     `spawn /bin/sh -c "${tclCommand}"`,
-    'expect { -re ".+" { puts -nonewline $out $expect_out(buffer); exp_continue } eof {} }',
+    // Patterns must be separate expect arguments — wrapping them in one brace
+    // block makes expect glob-match the whole string, which never fires.
+    'expect -re ".+" { puts -nonewline $out $expect_out(buffer); exp_continue } eof {}',
     "close $out",
     "set w [wait]",
     "set os_error [lindex $w 2]",
