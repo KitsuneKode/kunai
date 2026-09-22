@@ -107,15 +107,24 @@ function readPathEntries(): readonly string[] {
 }
 
 /**
- * PATH does not change under a running process, and this is read from the
- * capability probe as well as from two providers, so the scan is paid once.
- * Injected environments bypass the cache — a test must never see another
- * test's PATH.
+ * The scan is read from the capability probe as well as from two providers,
+ * so it is cached — keyed on the PATH value, because a harness that prepends
+ * shim dirs per session does change it mid-process. Injected environments
+ * bypass the cache — a test must never see another test's PATH.
  */
+let cachedPathRaw: string | null = null;
 let cachedPathEntries: readonly string[] | null = null;
 
 function defaultListPathEntries(): readonly string[] {
-  cachedPathEntries ??= readPathEntries();
+  // Keyed on the PATH that produced it — the "PATH never changes" assumption
+  // is false under a harness that prepends shim dirs per session, and a stale
+  // entry list would resolve a curl_* wrapper that no longer exists (or miss
+  // one that was just added).
+  const pathRaw = process.env.PATH ?? process.env.Path ?? "";
+  if (cachedPathEntries === null || cachedPathRaw !== pathRaw) {
+    cachedPathRaw = pathRaw;
+    cachedPathEntries = readPathEntries();
+  }
   return cachedPathEntries;
 }
 
