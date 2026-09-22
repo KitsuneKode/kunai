@@ -18,7 +18,8 @@ export function frameMatcher(needle: string): (frame: string) => boolean {
 export function advertisedKeys(frame: string): readonly string[] {
   const keys = new Set<string>();
   for (const match of frame.matchAll(/\[([^\]\n]{1,24})\]/g)) {
-    keys.add(match[1]);
+    const key = match[1];
+    if (key !== undefined) keys.add(key);
   }
   return [...keys].sort();
 }
