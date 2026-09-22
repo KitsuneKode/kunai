@@ -29,10 +29,11 @@ const tempRoots: string[] = [];
 const spawnedPids: number[] = [];
 const startupTimeoutMs = 45_000;
 const exitTimeoutMs = 10_000;
-// Must exceed every bounded wait in spawnAndSignal. In particular, a slow
-// macOS cold boot is allowed the full startup deadline before the helper can
-// either signal the CLI or report its transcript.
-const testTimeoutMs = startupTimeoutMs + 1_500 + exitTimeoutMs + 5_000;
+// Must exceed every bounded wait inside spawnAndSignal: startup + pid
+// liveness (10s) + mount transcript (10s) + exit wait + slack. A slow macOS
+// cold boot is allowed the full startup deadline before the helper can either
+// signal the CLI or report its transcript.
+const testTimeoutMs = startupTimeoutMs + 20_000 + exitTimeoutMs + 5_000;
 
 afterEach(() => {
   for (const pid of spawnedPids.splice(0)) {
@@ -149,10 +150,23 @@ async function spawnAndSignal(
   // short grace covers the write→register ordering slack; the old fixed 1.5s
   // either wasted time or flaked under runner load.
   const mountDeadline = Date.now() + 10_000;
+  let mounted = false;
   while (Date.now() < mountDeadline) {
     const rendered = readTranscript();
-    if (rendered !== "<no transcript captured>" && rendered.length > 0) break;
+    if (rendered !== "<no transcript captured>" && rendered.length > 0) {
+      mounted = true;
+      break;
+    }
     await Bun.sleep(50);
+  }
+  if (!mounted) {
+    // Signalling an unmounted shell would test a shutdown path the signal
+    // handler never reached — fail with the transcript instead of producing
+    // a false pass on a hung mount.
+    throw new Error(
+      `CLI produced no transcript within 10s — cannot safely test ${signal} shutdown\n` +
+        `--- transcript ---\n${readTranscript()}`,
+    );
   }
   await Bun.sleep(100);
   try {
