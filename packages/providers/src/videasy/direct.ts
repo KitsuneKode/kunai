@@ -107,8 +107,21 @@ export const WINGS_API_BASE = "https://api.speedracelight.com";
  * this list when one exists rather than reintroducing a second constant.
  */
 export const WINGS_API_BASES: readonly string[] = [WINGS_API_BASE];
-/** TMDB proxy on the old domain (redirects to api.videasy.to/3). */
-export const VIDEASY_DB_BASE = "https://api.videasy.to/3";
+/**
+ * TMDB-format catalog mirrors in live-first order. `api.videasy.to` went
+ * NXDOMAIN — `db.wingsdatabase.com` serves the identical `/3` contract
+ * (verified: /search/multi and /movie/{id}?append_to_response=external_ids).
+ * The dead canonical host stays last so a revival wins without a code change;
+ * ENOTFOUND fails in milliseconds so it costs almost nothing per lookup.
+ * `db.speedracelight.com` answers but 429s every catalog path — deliberately
+ * omitted until it serves them.
+ */
+export const VIDEASY_DB_BASES = [
+  "https://db.wingsdatabase.com/3",
+  "https://api.videasy.to/3",
+] as const;
+/** Primary catalog base — first live mirror. */
+export const VIDEASY_DB_BASE = VIDEASY_DB_BASES[0];
 
 /* ── Wings / SpeedRace endpoint mapping ──
  * Endpoints in the `wings-*` namespace are routed to the active stream API.
@@ -2327,41 +2340,45 @@ async function fetchVideasyDbTitleMetadata(
 ): Promise<VideasyDbTitleMetadata | null> {
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const path = mediaKind === "series" ? `tv/${tmdbId}` : `movie/${tmdbId}`;
-  const url = `${VIDEASY_DB_BASE}/${path}?append_to_response=external_ids&language=en`;
 
-  try {
-    const response = await requester(url, {
-      headers: {
-        accept: "application/json",
-        referer: "https://player.videasy.to/",
-        "user-agent": USER_AGENT,
-      },
-      signal: createVideasyFetchSignal(context.signal, 8_000),
-    });
-    if (!response.ok) return null;
+  for (const base of VIDEASY_DB_BASES) {
+    const url = `${base}/${path}?append_to_response=external_ids&language=en`;
+    try {
+      const response = await requester(url, {
+        headers: {
+          accept: "application/json",
+          referer: "https://player.videasy.to/",
+          "user-agent": USER_AGENT,
+        },
+        signal: createVideasyFetchSignal(context.signal, 8_000),
+      });
+      if (!response.ok) continue;
 
-    const data = (await response.json()) as {
-      readonly name?: string;
-      readonly title?: string;
-      readonly first_air_date?: string;
-      readonly release_date?: string;
-      readonly external_ids?: { readonly imdb_id?: string | null };
-    };
+      const data = (await response.json()) as {
+        readonly name?: string;
+        readonly title?: string;
+        readonly first_air_date?: string;
+        readonly release_date?: string;
+        readonly external_ids?: { readonly imdb_id?: string | null };
+      };
 
-    const releaseDate = data.first_air_date ?? data.release_date;
-    const year =
-      typeof releaseDate === "string" && releaseDate.length >= 4
-        ? Number.parseInt(releaseDate.slice(0, 4), 10)
-        : undefined;
+      const releaseDate = data.first_air_date ?? data.release_date;
+      const year =
+        typeof releaseDate === "string" && releaseDate.length >= 4
+          ? Number.parseInt(releaseDate.slice(0, 4), 10)
+          : undefined;
 
-    return {
-      title: data.name ?? data.title,
-      year: Number.isFinite(year) ? year : undefined,
-      imdbId: data.external_ids?.imdb_id?.trim() || undefined,
-    };
-  } catch {
-    return null;
+      return {
+        title: data.name ?? data.title,
+        year: Number.isFinite(year) ? year : undefined,
+        imdbId: data.external_ids?.imdb_id?.trim() || undefined,
+      };
+    } catch {
+      // Mirror dead or malformed — try the next catalog host.
+      continue;
+    }
   }
+  return null;
 }
 
 async function enrichVideasyResolveInput(

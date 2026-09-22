@@ -5,6 +5,8 @@ import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import type { SearchResult, ProviderMetadata } from "@/domain/types";
 import { AniListSearchService } from "@/services/search/definitions/anilist";
 import { SEARCH_SERVICE_DEFINITIONS } from "@/services/search/definitions/index";
+import { TMDBSearchService } from "@/services/search/definitions/tmdb";
+import { SearchRegistryImpl } from "@/services/search/SearchRegistry";
 import { searchTitles } from "@/services/search/SearchRoutingService";
 
 describe("searchTitles", () => {
@@ -914,10 +916,37 @@ describe("searchTitles", () => {
   test("declares AniDB/AniList catalog compatibility in both authorities", () => {
     const anilistDefinition = SEARCH_SERVICE_DEFINITIONS.find((def) => def.id === "anilist");
     const anilistService = new AniListSearchService({} as never);
-    const expected = ["anidb", "allanime", "allmanga", "miruro", "hianime"];
+    // Provider-native overrides only — anilist-identity providers (miruro)
+    // route via servesCatalog, not this list.
+    const expected = ["anidb", "allanime", "allmanga", "hianime"];
 
+    expect(anilistDefinition?.servesCatalog).toBe("anilist");
     expect(anilistDefinition?.compatibleProviders).toEqual(expected);
+    expect(anilistService.servesCatalog).toBe("anilist");
     expect(anilistService.compatibleProviders).toEqual(expected);
+  });
+
+  test("routes every TMDB-identity provider to the TMDB catalog without list maintenance", () => {
+    const tmdbDefinition = SEARCH_SERVICE_DEFINITIONS.find((def) => def.id === "tmdb");
+    const tmdbService = new TMDBSearchService({} as never);
+
+    expect(tmdbDefinition?.servesCatalog).toBe("tmdb");
+    expect(tmdbService.servesCatalog).toBe("tmdb");
+
+    const registry = new SearchRegistryImpl({} as never, SEARCH_SERVICE_DEFINITIONS);
+    // videasy, vidlink, rivestream — and any future TMDB-id provider — resolve
+    // the TMDB catalog through catalogIdentity alone.
+    for (const providerId of ["videasy", "vidlink", "rivestream"]) {
+      expect(registry.getForProvider(providerId, "tmdb")?.metadata.id).toBe("tmdb");
+    }
+    // AniList-identity providers route through identity without a list entry.
+    expect(registry.getForProvider("miruro", "anilist")?.metadata.id).toBe("anilist");
+    // A provider-native provider with no explicit override stays unrouted —
+    // unknown identities never fall into a foreign catalog.
+    expect(registry.getForProvider("youtube", "provider-native")).toBeUndefined();
+    // The explicit override still routes provider-native adapters that borrow
+    // the AniList catalog.
+    expect(registry.getForProvider("anidb")).toBe(registry.get("anilist"));
   });
 
   test("uses explicitly compatible AniList search for advanced AniDB filters", async () => {
