@@ -166,3 +166,35 @@ describe("agent wiring · offline mode", () => {
     );
   }, 30_000);
 });
+
+describe("agent wiring · playback failure", () => {
+  it("an exhausted startup failover still lets the session shut down", async () => {
+    // Regression for the abort-blind error wait: showPlaybackError parked on a
+    // stateManager.subscribe predicate that only a user dismissal could
+    // satisfy — context.signal was never wired in, so after failover exhausted
+    // its budget the phase outlived the abort and dispose() timed out on run().
+    // withSession's finally disposes the session: pre-fix that threw after the
+    // stop deadline; on the fix the abort releases the wait and it settles.
+    await withSession(
+      "wiring-failover",
+      { mpv: "fake", fakeMpvMode: "fail-pre-loaded" },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        // Assert the failure actually happened from the backend — the frame
+        // text on the failure surface is presentation detail; the committed
+        // diagnostics row is the truth. Failover hops + diagnostic writes can
+        // exceed the 10s budget on a loaded CI runner — the assertion is the
+        // wait, not the speed.
+        await s.waitForBackend(
+          (i) =>
+            i.tableRows("cache.diagnostic_events").some((row) => /failover|exhausted/i.test(row)),
+          "diagnostic_events records failover exhaustion",
+          30_000,
+        );
+      },
+    );
+  }, 45_000);
+});
