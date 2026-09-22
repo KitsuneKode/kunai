@@ -71,6 +71,7 @@ import {
 } from "@/app/playback/playback-profile-context";
 import {
   pickCompatibleFallbackProvider,
+  providerFallbackEligibility,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
 import { resolvePlaybackProviderHandoff } from "@/app/playback/playback-provider-handoff";
@@ -2034,9 +2035,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
 
               if (iterationDirective.reason === "provider-fallback-skip") {
-                const fallback = providerRegistry
-                  .getCompatible(title, stateManager.getState().mode)
-                  .find((candidate) => candidate.metadata.id !== currentProvider.metadata.id);
+                const fallback = pickCompatibleFallbackProvider(
+                  providerRegistry.getCompatible(title, stateManager.getState().mode),
+                  currentProvider.metadata.id,
+                  providerFallbackEligibility(container.providerHealth),
+                );
                 if (fallback) {
                   run.sessionSoftProviderId = null;
                   stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
@@ -2801,6 +2804,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   pickCompatibleFallbackProvider(
                     providerRegistry.getCompatible(title, stateManager.getState().mode),
                     resolvedProviderId,
+                    providerFallbackEligibility(container.providerHealth),
                   ),
                 ),
                 failoverAttempts: run.autoSourceRecoverAttempts,
@@ -2935,6 +2939,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const fallback = pickCompatibleFallbackProvider(
               providerRegistry.getCompatible(title, stateManager.getState().mode),
               resolvedProviderId,
+              providerFallbackEligibility(container.providerHealth),
             );
 
             if (fallback) {
@@ -3546,6 +3551,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             readAutoAdvanceGuards,
             getCompatibleProviders: () =>
               providerRegistry.getCompatible(title, stateManager.getState().mode),
+            providerFallbackEligible: providerFallbackEligibility(container.providerHealth),
             teardownPlaybackForPostPlayExit: () =>
               teardownPlaybackForPostPlayExit(container, episodePrefetch, playbackIterationAbort),
           });

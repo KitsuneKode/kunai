@@ -184,6 +184,8 @@ export type PostPlaybackMenuDeps = {
 
   readonly readAutoAdvanceGuards: () => AutoAdvanceGuards;
   readonly getCompatibleProviders: () => readonly { metadata: { id: string } }[];
+  /** Health-aware eligibility for the advertised fallback target — the pick must match what the engine would choose, down providers excluded. */
+  readonly providerFallbackEligible?: (providerId: string) => boolean;
   readonly switchPlaybackProviderFallback: typeof switchPlaybackProviderFallback;
   readonly teardownPlaybackForPostPlayExit: () => Promise<void>;
   readonly enqueuePostPlaybackRecommendation: typeof enqueuePostPlaybackRecommendation;
@@ -733,6 +735,7 @@ export async function runPostPlaybackMenu(
       const fallback = pickCompatibleFallbackProvider(
         deps.getCompatibleProviders(),
         resolvedProviderId,
+        deps.providerFallbackEligible,
       );
       if (!fallback) {
         continue postPlayback;

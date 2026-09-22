@@ -11,7 +11,10 @@ import {
   latestPlaybackStartupStage,
 } from "@/app/playback/playback-bootstrap-presenter";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
-import { pickCompatibleFallbackProvider } from "@/app/playback/playback-provider-fallback";
+import {
+  pickCompatibleFallbackProvider,
+  providerFallbackEligibility,
+} from "@/app/playback/playback-provider-fallback";
 import { resolveStreamProviderId } from "@/app/playback/playback-provider-switch";
 import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
 import {
@@ -889,6 +892,7 @@ function AppRoot({ container }: { container: Container }) {
       ? pickCompatibleFallbackProvider(
           container.providerRegistry.getCompatible(state.currentTitle, state.mode),
           resolveStreamProviderId(state.stream) ?? state.provider,
+          providerFallbackEligibility(container.providerHealth),
         )
       : undefined;
   const activeProvider = container.providerRegistry.get(state.provider);
