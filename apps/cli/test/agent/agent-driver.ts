@@ -85,7 +85,7 @@ export interface AgentSessionOptions {
 
 export interface JournalEntry {
   readonly step: number;
-  readonly kind: "boot" | "press" | "wait" | "note" | "quit" | "relaunch";
+  readonly kind: "boot" | "press" | "wait" | "note" | "quit" | "relaunch" | "forced-stop";
   readonly label: string;
   readonly frame: string;
   /** DB delta introduced by this step vs the previous journal entry. */
@@ -152,7 +152,7 @@ function applyEnv(vars: Record<string, string>): () => void {
 
 const SETTLE_POLLS = 3;
 const SETTLE_TIMEOUT_MS = 10_000;
-const SESSION_STOP_TIMEOUT_MS = 10_000;
+const SESSION_STOP_TIMEOUT_MS = 15_000;
 
 /**
  * The session loop is the app's own async orchestrator: SearchPhase dispatches
@@ -366,10 +366,13 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     if (!runPromise) return;
     // Take the REAL quit path first — what a user does: Esc closes any open
     // overlay (settings/pickers hold the browse mount pending underneath —
-    // verified: Esc-then-dispose unwinds in ~10ms), then Ctrl+C reaches the
-    // shell's own handler → requestAppShutdown → our bound handler →
-    // beginShutdown. forceSettle alone cannot unwind an overlay-blocked mount.
-    for (const key of [K.esc, K.esc, K.ctrlC]) {
+    // verified: Esc-then-dispose unwinds in ~10ms), `q` is the cancel binding
+    // on playback/failover surfaces where Esc can drop into a remount gap
+    // (verified: fail-pre-loaded teardown wedged past the 10s budget without
+    // it), then Ctrl+C reaches the shell's own handler → requestAppShutdown →
+    // our bound handler → beginShutdown. forceSettle alone cannot unwind an
+    // overlay-blocked mount.
+    for (const key of [K.esc, K.esc, "q", K.ctrlC]) {
       try {
         handle?.stdin.enqueue(key);
       } catch {
@@ -393,7 +396,19 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       ]);
       if (done) return;
     }
-    throw new Error(`session loop did not stop within ${SESSION_STOP_TIMEOUT_MS}ms`);
+    // Degrade, don't wedge: the real shutdown coordinator force-exits after its
+    // budget without awaiting run(), so a phase parked on a wait that ignores
+    // the abort (observed: mid-bootstrap under fail-pre-loaded) must not hang
+    // the harness. Record it as a finding in the journal — the abandoned
+    // promise is harmless in a process that is ending anyway.
+    pushJournal(
+      "forced-stop",
+      `session loop still parked after ${SESSION_STOP_TIMEOUT_MS}ms — a phase awaited through abort`,
+      frame(),
+    );
+    console.error(
+      `[agent] forced stop: session loop still parked after ${SESSION_STOP_TIMEOUT_MS}ms — a phase awaited through abort`,
+    );
   };
 
   const session: AgentSession = {

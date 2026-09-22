@@ -203,6 +203,14 @@ jobs:
         if: github.event_name == 'push'
         run: bunx turbo run test --summarize
 
+      - name: Test agent verification loop
+        # L2 in-process wiring checks — real AppRoot + real SessionController +
+        # real container, no tmux/mpv needed (the real-mpv tier self-gates).
+        # ~3s. Deliberately not folded into `test`: it owns its own timeout
+        # semantics and should stay visibly separate in job output.
+        timeout-minutes: 5
+        run: bun run test:agent
+
   windows-cli:
     name: Windows CLI parity
     needs: changes
