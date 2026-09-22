@@ -56,6 +56,25 @@ function sessionName(argv: string[]): string {
   return argValue(argv, "--name") ?? "kunai-agent";
 }
 
+/** Reject unrecognized `--flags` — a typo'd flag silently ignored has already
+ * burned one debugging session (`--profile fresh` instead of `--seed fresh`).
+ * Flag VALUES (the token after a known flag) are skipped; anything else
+ * starting with `--` that isn't in `known` is a hard error. */
+function rejectUnknownFlags(argv: string[], known: readonly string[]): void {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg?.startsWith("--")) continue;
+    if (!known.includes(arg)) {
+      console.error(`unknown flag: ${arg}`);
+      usage();
+    }
+    const next = argv[i + 1];
+    if (next !== undefined && !next.startsWith("--")) {
+      i += 1; // skip the flag's value
+    }
+  }
+}
+
 /** Positional args with the `--name N` pair removed — `do`/`wait-for`/`inspect`
  * all take their payload positionally. */
 function positionalArgs(argv: string[]): string[] {
@@ -116,6 +135,16 @@ async function main(): Promise<void> {
 
   switch (command) {
     case "start": {
+      rejectUnknownFlags(rest, [
+        "--name",
+        "--seed",
+        "--width",
+        "--rows",
+        "--no-fake-mpv",
+        "--command",
+        "--keep-profile",
+        "--set-env",
+      ]);
       const seed = argValue(rest, "--seed") === "fresh" ? "fresh" : "onboarded";
       const env: Record<string, string> = {};
       for (let i = 0; i < rest.length; i++) {
