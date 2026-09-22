@@ -12,6 +12,7 @@ import { describe, expect, it } from "bun:test";
 
 import { createAgentSession, type AgentSession } from "./agent-driver";
 import { K } from "./keys";
+import { onboardedConfig } from "./seed";
 
 const SETTINGS_KEY = "/";
 
@@ -137,4 +138,31 @@ describe("agent wiring · post-play history", () => {
       );
     });
   }, 45_000);
+});
+
+describe("agent wiring · offline mode", () => {
+  it("offline mode parks on the library instead of starving the session loop", async () => {
+    // Regression for the livelock: offlineMode + empty query used to return a
+    // synchronous `cancelled` from SearchPhase, and SessionController retried
+    // it on pure microtasks — CPU spin, SIGINT undeliverable, dispose() never
+    // resolving (only SIGKILL stopped the process). On the buggy code this
+    // test times out before the first frame; on the fix the library surface
+    // mounts, Esc closes and re-parks it, and shutdown lands through the
+    // parked wait.
+    await withSession(
+      "wiring-offline",
+      { seed: { ...onboardedConfig(), offlineMode: true } },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Library"), "offline library surface");
+
+        s.press(K.esc);
+        await s.waitSettled();
+        await s.waitForFrame((f) => f.includes("Library"), "library re-parked after esc");
+
+        s.press(K.ctrlC);
+        await s.waitSettled();
+        expect(s.quitRequested()).not.toBeNull();
+      },
+    );
+  }, 30_000);
 });

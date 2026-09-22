@@ -99,6 +99,14 @@ export class SessionController {
           }),
         );
         while (true) {
+          // Liveness floor: phases are trusted to block on real input, and the
+          // `continue` paths below assume it. A phase that returns
+          // `cancelled`/`error` without ever yielding would retry on pure
+          // microtasks and starve the event loop entirely — timers dead, signal
+          // handlers undelivered (see the offlineMode+empty-query fix in
+          // SearchPhase). One macrotask yield per iteration keeps any such
+          // retry a quittable busy loop instead of a hard deadlock.
+          await Bun.sleep(0);
           let title: TitleInfo;
           if (pending.initialTitle) {
             title = pending.initialTitle;
