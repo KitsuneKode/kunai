@@ -103,7 +103,10 @@ export async function searchTitles(
   }
 
   if (advanced) {
-    const compatibleSearch = context.searchRegistry.getForProvider(routing.providerId);
+    const compatibleSearch = context.searchRegistry.getForProvider(
+      routing.providerId,
+      provider?.metadata.catalogIdentity,
+    );
     if (compatibleSearch) {
       const evidence = classifySearchEvidence(intent, compatibleSearch.metadata.id, context.mode);
       const results = applyLocalSearchFilters(
@@ -221,7 +224,7 @@ export async function searchTitles(
   }
 
   const searchService =
-    context.searchRegistry.getForProvider(routing.providerId) ??
+    context.searchRegistry.getForProvider(routing.providerId, provider?.metadata.catalogIdentity) ??
     context.searchRegistry.getDefault();
 
   const evidence = classifySearchEvidence(intent, searchService.metadata.id, context.mode);
