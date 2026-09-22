@@ -331,9 +331,33 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       while (true) {
         const currentState = stateManager.getState();
         if (container.config.offlineMode && currentState.searchQuery.trim().length === 0) {
-          container.stateManager.dispatch({
-            type: "OPEN_OVERLAY",
-            overlay: { type: "library", view: "library" },
+          // The library is the offline home surface. Returning `cancelled`
+          // synchronously here livelocks the session loop: it retries cancelled
+          // phases, and a phase that resolves without ever blocking spins on
+          // pure microtasks — starving the event loop (SIGINT undelivered) while
+          // pushing an unbounded library overlay per iteration. Open it once,
+          // then park on a real state change so each retry is gated by the user
+          // closing the surface.
+          if (!currentState.activeModals.some((modal) => modal.type === "library")) {
+            container.stateManager.dispatch({
+              type: "OPEN_OVERLAY",
+              overlay: { type: "library", view: "library" },
+            });
+          }
+          await new Promise<void>((resolve) => {
+            if (context.signal.aborted) {
+              resolve();
+              return;
+            }
+            const unsubscribe = stateManager.subscribe((state) => {
+              if (state.activeModals.some((modal) => modal.type === "library")) return;
+              unsubscribe();
+              resolve();
+            });
+            context.signal.addEventListener("abort", () => {
+              unsubscribe();
+              resolve();
+            });
           });
           return { status: "cancelled" };
         }
