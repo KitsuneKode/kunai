@@ -6,7 +6,7 @@ describe("PTY command", () => {
   test("uses util-linux script syntax on Linux", () => {
     expect(buildPtyCommand("exec bun cli.ts", "/tmp/cli.log", "linux")).toEqual([
       "script",
-      "-qec",
+      "-qefc",
       "exec bun cli.ts",
       "/tmp/cli.log",
     ]);
@@ -18,7 +18,9 @@ describe("PTY command", () => {
     expect(argv[1]).toBe("-c");
     expect(argv[2]).toBe(buildDarwinExpectScript("exec bun cli.ts", "/tmp/cli.log"));
     expect(argv[2]).toContain('spawn /bin/sh -c "exec bun cli.ts"');
-    expect(argv[2]).toContain('log_file "/tmp/cli.log"');
+    // Unbuffered transcript writes — log_file would stay empty until exit.
+    expect(argv[2]).toContain('open "/tmp/cli.log" w');
+    expect(argv[2]).toContain("fconfigure $out -buffering none");
     expect(argv[2]).toContain("CHILDKILLED");
     expect(argv[2]).toContain("SIGINT { exit 130 }");
   });
