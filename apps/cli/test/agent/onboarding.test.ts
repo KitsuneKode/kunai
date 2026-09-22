@@ -27,7 +27,9 @@ describe("agent driver · fresh-profile onboarding", () => {
     async () => {
       const s = await startTmuxSession({ name: "onboarding-proof", seed: "fresh" });
       try {
-        await s.waitFor((f) => f.includes("Let's get you watching"), "setup step 1");
+        // First paint is a cold `bun src/main.ts` boot inside tmux — on a
+        // throttled CI runner that legitimately exceeds the 15s default.
+        await s.waitFor((f) => f.includes("Let's get you watching"), "setup step 1", 45_000);
         // `s` accepts the recommended mode pick on step 2; `S` fast-forwards
         // the remaining preference steps; Enter on the summary commits.
         await s.send("s");

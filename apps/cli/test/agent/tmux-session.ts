@@ -83,7 +83,7 @@ export interface TmuxSession {
   see(): Promise<string>;
   /** Current visible pane with color escapes preserved. */
   seeRaw(): Promise<string>;
-  waitFor(pred: (frame: string) => boolean, label?: string): Promise<void>;
+  waitFor(pred: (frame: string) => boolean, label?: string, timeoutMs?: number): Promise<void>;
   waitSettled(): Promise<void>;
   /** True once the launched process exited (remain-on-exit keeps the pane). */
   isDead(): Promise<boolean>;
@@ -271,6 +271,25 @@ export function attachTmuxSession(input: {
     return out.trim() === "1";
   };
 
+  // What the pane's process is doing when a wait fails — an empty pane with a
+  // live `bun` command means "running but silent", a dead pane or `sh` means
+  // the launch script never exec'd the app. Without this a CI timeout is a
+  // shrug; with it the failure names its own suspect.
+  const paneStatus = async (): Promise<string> => {
+    try {
+      const out = await tmux([
+        "display-message",
+        "-p",
+        "-t",
+        name,
+        "pid=#{pane_pid} dead=#{pane_dead} cmd=#{pane_current_command}",
+      ]);
+      return out.trim();
+    } catch {
+      return "(pane status unavailable)";
+    }
+  };
+
   const session: TmuxSession = {
     name,
     profile,
@@ -301,8 +320,8 @@ export function attachTmuxSession(input: {
       const out = await tmux(["capture-pane", "-p", "-e", "-t", name]);
       return out.replace(/\s+$/, "");
     },
-    async waitFor(pred, label) {
-      const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+    async waitFor(pred, label, timeoutMs) {
+      const deadline = Date.now() + (timeoutMs ?? SETTLE_TIMEOUT_MS);
       let last = "";
       while (Date.now() < deadline) {
         last = await see();
@@ -316,8 +335,9 @@ export function attachTmuxSession(input: {
         await Bun.sleep(120);
       }
       throw new Error(
-        `waitFor(${label ?? "predicate"}) timed out after ${SETTLE_TIMEOUT_MS}ms.\n` +
-          `Final pane:\n${last}`,
+        `waitFor(${label ?? "predicate"}) timed out after ${timeoutMs ?? SETTLE_TIMEOUT_MS}ms ` +
+          `(${await paneStatus()}).\n` +
+          `Final pane:\n${last.length > 0 ? last : "(empty — the process produced no output)"}`,
       );
     },
     async waitSettled() {

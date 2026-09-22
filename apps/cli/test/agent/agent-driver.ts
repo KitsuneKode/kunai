@@ -27,7 +27,7 @@
  *  - dispose order is fixed: settle session loop → unmount Ink → clear
  *    root-content globals → close DBs → undo env → delete profile.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { forceSettleAllRootContent } from "@/app-shell/root-content-state";
@@ -230,6 +230,48 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     const delta = lastSnapshot ? diffSnapshots(lastSnapshot, snap) : new Map();
     lastSnapshot = snap;
     journal.push({ step: journal.length, kind, label, frame, dbDelta: deltaSummary(delta) });
+  };
+
+  // A bare "timed out" leaves CI failures undiagnosable — a wait expiring on a
+  // slower or differently-shaped runner must show what the harness actually
+  // saw: the last rendered frame, the step journal tail, and the fake-mpv
+  // evidence file (absence proves the shim never spawned).
+  const timeoutContext = (): string => {
+    const parts: string[] = [];
+    try {
+      const last = frame();
+      parts.push(`Last frame:\n${last.length > 0 ? last : "(empty — nothing rendered)"}`);
+    } catch {
+      parts.push("Last frame: (unavailable — session not mounted)");
+    }
+    if (journal.length > 0) {
+      const tail = journal
+        .slice(-6)
+        .map((entry) => `  ${entry.step} ${entry.kind} ${entry.label}`)
+        .join("\n");
+      parts.push(`Journal tail:\n${tail}`);
+    }
+    if (options.mpv === "fake" && profile) {
+      const evidencePath = join(profile.rootDir, "fake-mpv-evidence.jsonl");
+      if (existsSync(evidencePath)) {
+        const lines = readFileSync(evidencePath, "utf8").trim().split("\n");
+        parts.push(`fake-mpv evidence tail:\n${lines.slice(-10).join("\n")}`);
+      } else {
+        parts.push("fake-mpv evidence: (missing — the PATH-shimmed mpv never ran)");
+      }
+    }
+    return parts.join("\n");
+  };
+
+  const withTimeoutContext = async (work: () => Promise<void>): Promise<void> => {
+    try {
+      await work();
+    } catch (error) {
+      if (error instanceof Error && /timed out/.test(error.message)) {
+        throw new Error(`${error.message}\n\n${timeoutContext()}`);
+      }
+      throw error;
+    }
   };
 
   const runCleanups = () => {
@@ -439,16 +481,18 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       pushJournal("press", keys.map(keyLabel).join(" "), frame());
     },
     async waitForFrame(pred, label, timeoutMs) {
-      await waitUntil(
-        () => {
-          throwIfLoopFailed();
-          return pred(frame());
-        },
-        {
-          label: label ?? "waitForFrame",
-          timeoutMs: timeoutMs ?? SETTLE_TIMEOUT_MS,
-          tick: pollSleep,
-        },
+      await withTimeoutContext(() =>
+        waitUntil(
+          () => {
+            throwIfLoopFailed();
+            return pred(frame());
+          },
+          {
+            label: label ?? "waitForFrame",
+            timeoutMs: timeoutMs ?? SETTLE_TIMEOUT_MS,
+            tick: pollSleep,
+          },
+        ),
       );
       pushJournal("wait", label ?? "waitForFrame", frame());
     },
@@ -477,11 +521,13 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     frames: () => requireHandle().frames,
     inspect: () => createProfileInspector(sessionProfile.paths),
     async waitForBackend(pred, label, timeoutMs) {
-      await waitUntil(() => pred(createProfileInspector(sessionProfile.paths)), {
-        label: label ?? "waitForBackend",
-        timeoutMs: timeoutMs ?? SETTLE_TIMEOUT_MS,
-        tick: pollSleep,
-      });
+      await withTimeoutContext(() =>
+        waitUntil(() => pred(createProfileInspector(sessionProfile.paths)), {
+          label: label ?? "waitForBackend",
+          timeoutMs: timeoutMs ?? SETTLE_TIMEOUT_MS,
+          tick: pollSleep,
+        }),
+      );
     },
     snapshot: takeSnapshot,
     diffSince: (before) => diffSnapshots(before, takeSnapshot()),
