@@ -284,18 +284,40 @@ export function attachTmuxSession(input: {
         "-p",
         "-t",
         name,
-        "pid=#{pane_pid} dead=#{pane_dead} cmd=#{pane_current_command} tty=#{pane_tty}",
+        "pid=#{pane_pid} dead=#{pane_dead} cmd=#{pane_current_command} tty=#{pane_tty} alt=#{alternate_on} size=#{pane_width}x#{pane_height} cursor=#{cursor_x},#{cursor_y}",
       ]);
       const base = out.trim();
       const pid = /pid=(\d+)/.exec(base)?.[1];
       const tty = /tty=(\S+)/.exec(base)?.[1];
       if (!pid || process.platform !== "linux") return base;
+      const extras: string[] = [];
       try {
         const fd1 = require("node:fs").readlinkSync(`/proc/${pid}/fd/1`);
-        return `${base} fd1=${fd1}${tty && fd1 !== tty ? " (!= pane tty)" : ""}`;
+        extras.push(`fd1=${fd1}${tty && fd1 !== tty ? " (!= pane tty)" : ""}`);
       } catch {
-        return `${base} fd1=(unreadable)`;
+        extras.push("fd1=(unreadable)");
       }
+      // A T-state (stopped) process is alive but frozen — the SIGTTOU/SIGTTIN
+      // family leaves exactly this signature (dead=0, silent pane). SigPnd
+      // confirms which signal is pending against it.
+      try {
+        const status = require("node:fs").readFileSync(`/proc/${pid}/status`, "utf8") as string;
+        const state = /^State:\s*(.+)$/m.exec(status)?.[1]?.trim();
+        const pending = /^SigPnd:\s*(\S+)/m.exec(status)?.[1];
+        const blocked = /^SigBlk:\s*(\S+)/m.exec(status)?.[1];
+        if (state) extras.push(`state=${state}`);
+        if (pending && pending !== "0000000000000000") extras.push(`sigpending=${pending}`);
+        if (blocked && blocked !== "0000000000000000") extras.push(`sigblocked=${blocked}`);
+      } catch {
+        extras.push("procstatus=(unreadable)");
+      }
+      try {
+        const wchan = require("node:fs").readFileSync(`/proc/${pid}/wchan`, "utf8").trim();
+        if (wchan && wchan !== "0") extras.push(`wchan=${wchan}`);
+      } catch {
+        // best effort — kernel may hide wchan
+      }
+      return `${base} ${extras.join(" ")}`;
     } catch {
       return "(pane status unavailable)";
     }
@@ -355,6 +377,24 @@ export function attachTmuxSession(input: {
       } catch {
         scrollback = "(scrollback unavailable)";
       }
+      // The app renders on the alternate screen. If a tmux capture reads the
+      // normal screen while the app sits on the alt one, the "blank pane" is a
+      // capture artifact, not a missing paint — this dump tells them apart.
+      let altScreen = "";
+      try {
+        altScreen = (await tmux(["capture-pane", "-p", "-a", "-t", name])).trimEnd();
+      } catch {
+        altScreen = "(alternate-screen capture unavailable)";
+      }
+      // Raw escape capture of the visible grid: a lone enter-alt-screen code
+      // or partial frame shows the app wrote but the render was empty.
+      let rawTail = "";
+      try {
+        const raw = await tmux(["capture-pane", "-p", "-e", "-t", name]);
+        rawTail = raw.split("\n").slice(-15).join("\n").trimEnd();
+      } catch {
+        rawTail = "(raw capture unavailable)";
+      }
       // A blank pane with a live `bun` means the process is stuck before the
       // first frame. When the session launched with --debug, ./logs.txt (the
       // run script cd's to CLI_ROOT) records how far startup got.
@@ -372,6 +412,8 @@ export function attachTmuxSession(input: {
         `waitFor(${label ?? "predicate"}) timed out after ${timeoutMs ?? SETTLE_TIMEOUT_MS}ms ` +
           `(${await paneStatus()}).\n` +
           `Final pane:\n${last.length > 0 ? last : "(empty — the process produced no output)"}\n` +
+          `Alt screen:\n${altScreen.length > 0 ? altScreen : "(empty)"}\n` +
+          `Raw capture tail:\n${rawTail.length > 0 ? rawTail : "(empty)"}\n` +
           `Scrollback:\n${scrollback.length > 0 ? scrollback : "(empty)"}` +
           debugTail,
       );
