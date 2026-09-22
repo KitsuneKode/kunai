@@ -11,6 +11,7 @@ import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsServi
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import {
   summarizeProviderTraceEvents,
+  type CoreProviderModule,
   type ProviderEngine,
   type ProviderEngineEvent,
   type ProviderPriorityInput,
@@ -50,6 +51,7 @@ export type PlaybackResolveCoordinatorDeps = {
   readonly streamHealthService?: StreamHealthService;
   readonly diagnostics?: DiagnosticsService;
   readonly getProviderPriority?: () => ProviderPriorityInput;
+  readonly getOrderedModules?: () => readonly CoreProviderModule[];
   readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
   readonly titleProviderHealth?: Pick<
     TitleProviderHealthService,
@@ -103,6 +105,7 @@ export class PlaybackResolveCoordinator {
       endpointHealth: this.deps.endpointHealth,
       titlePlaybackSource: this.deps.titlePlaybackSource,
       getProviderPriority: this.deps.getProviderPriority,
+      getOrderedModules: this.deps.getOrderedModules,
       catalogCrosswalk: this.deps.catalogCrosswalk,
     });
   }

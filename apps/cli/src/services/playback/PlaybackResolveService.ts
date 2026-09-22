@@ -27,6 +27,7 @@ import { isVideasyFamilyProvider } from "@kunai/core";
 import {
   resolveProviderCatalogIdentity,
   type ProviderEngine,
+  type CoreProviderModule,
   type ProviderEngineEvent,
   type ProviderEngineResolveAttempt,
   type ProviderPriorityInput,
@@ -213,6 +214,8 @@ export class PlaybackResolveService {
       readonly streamHealthService?: StreamHealthService;
       readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
       readonly getProviderPriority?: () => ProviderPriorityInput;
+      /** Memoized priority ordering — persists across per-resolve service instances. */
+      readonly getOrderedModules?: () => readonly CoreProviderModule[];
       titleProviderHealth?: Pick<
         TitleProviderHealthService,
         "recordFailure" | "recordCleanSuccess"
@@ -748,6 +751,10 @@ export class PlaybackResolveService {
   }
 
   private getPriorityOrderedModules() {
+    // Bootstrap supplies a memoized ordering keyed on the priority lists —
+    // this service is constructed per resolve, so the cache must live in a
+    // dep, not a field. Fall back to computing when the dep is absent.
+    if (this.deps.getOrderedModules) return this.deps.getOrderedModules();
     const priority = this.deps.getProviderPriority?.();
     return priority
       ? orderProviderModulesByPriority(this.deps.engine.modules, priority)
