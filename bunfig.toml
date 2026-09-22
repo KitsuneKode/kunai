@@ -1,0 +1,6 @@
+[install]
+# Isolated linker (already the effective default: workspaces + configVersion=1).
+# globalStore materializes each package once into <cache>/links/ and symlinks
+# node_modules/.bun entries into it — worktrees share one physical copy.
+linker = "isolated"
+globalStore = true

@@ -190,5 +190,16 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.0",
+  "trustedDependencies": [
+    "bun-types",
+    "@types/react",
+    "@types/react-dom",
+    "motion",
+    "framer-motion",
+    "fumadocs-ui",
+    "fumadocs-core",
+    "fumadocs-mdx",
+    "next"
+  ]
 }
