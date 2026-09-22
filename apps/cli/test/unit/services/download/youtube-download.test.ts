@@ -9,6 +9,8 @@ import * as youtubeProviders from "@kunai/providers/youtube";
 import { configureYoutubeProvider, type RunYtDlpProcessOptions } from "@kunai/providers/youtube";
 import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
+import { waitUntil } from "../../../support/wait-until";
+
 describe("DownloadService youtube argv contract", () => {
   let tempDir: string;
   let db: ReturnType<typeof openKunaiDatabase>;
@@ -165,7 +167,7 @@ describe("DownloadService youtube argv contract", () => {
       mode: "youtube",
     });
     const processPromise = service.processQueue();
-    await Bun.sleep(20);
+    await waitUntil(() => runYtDlpSpy.mock.calls.length === 1, { label: "yt-dlp process spawned" });
     await service.abort(job.id);
     resolveCompleted({ exitCode: 1, stderr: "terminated" });
     await processPromise;

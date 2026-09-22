@@ -5,6 +5,7 @@ import React, { act } from "react";
 
 import { CAPTURE_WIDTHS, captureFrame, render } from "../../harness/render-capture";
 import { frameWidth, renderedWidth } from "../../support/rendered-width";
+import { waitUntil } from "../../support/wait-until";
 
 /**
  * Let the petal-fall interval run for real, with its state updates flushed
@@ -60,7 +61,15 @@ describe("ErrorShell", () => {
   test("panel width never changes across the frames of the fall", async () => {
     const handle = render(<ErrorShell {...props} />, { columns: CAPTURE_WIDTHS.medium });
     try {
-      await advance(1300);
+      await waitUntil(
+        () => new Set(handle.frames.filter((frame) => frame.includes("Playback failed"))).size > 1,
+        {
+          label: "petal fall advanced past the mount frame",
+          tick: async (ms) => {
+            await advance(ms);
+          },
+        },
+      );
       const panelFrames = handle.frames.filter((frame) => frame.includes("Playback failed"));
 
       // Guard against the assertion below passing for the wrong reason.
@@ -120,7 +129,7 @@ describe("ErrorShell", () => {
       { columns: CAPTURE_WIDTHS.medium },
     );
     try {
-      await advance(900);
+      await advance(50);
       handle.stdin.enqueue("r");
       expect(retried).toBe(1);
     } finally {

@@ -52,8 +52,9 @@ describe("ConfigService.save debounce", () => {
     await pending;
 
     expect(store.saves).toBe(1);
-    // Well below the 300ms debounce window.
-    expect(Date.now() - startedAt).toBeLessThan(200);
+    // Must stay below the 300ms debounce window to prove flush bypassed it;
+    // 280 leaves scheduler margin on loaded runners without losing the proof.
+    expect(Date.now() - startedAt).toBeLessThan(280);
   });
 
   test("flushPending with nothing pending is a no-op", async () => {

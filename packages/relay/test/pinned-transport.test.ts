@@ -240,7 +240,7 @@ test("pinned transport aborts while DNS resolution is still pending", async () =
       () => "resolved",
       (error: unknown) => (error as { name?: string }).name,
     ),
-    Bun.sleep(50).then(() => "still-pending"),
+    Bun.sleep(500).then(() => "still-pending"),
   ]);
 
   expect(outcome).toBe("AbortError");

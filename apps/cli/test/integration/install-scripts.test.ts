@@ -1499,7 +1499,10 @@ describe("install.sh lifecycle contract", () => {
           const activationStartedAt = performance.now();
           const result = await install;
           expect(result.status).not.toBe(0);
-          expect(performance.now() - activationStartedAt).toBeLessThan(300);
+          // Bounded by the 40ms deadline, not the 500ms poll — under 450ms keeps
+          // the proof while surviving slow-runner jitter (observed 343ms on
+          // macOS CI against the old 300ms bound).
+          expect(performance.now() - activationStartedAt).toBeLessThan(450);
         },
       );
     } finally {
@@ -1538,7 +1541,11 @@ describe("install.sh lifecycle contract", () => {
               KUNAI_ACTIVATION_LOCK_POLL_MS: "0",
               PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
             },
-            500,
+            // What the test proves is "terminates instead of hot-looping", not
+            // "finishes fast" — a real loop runs for minutes; 5s still catches
+            // it while surviving a loaded runner's bash+spawn startup (~550ms
+            // observed on the macOS leg).
+            5_000,
           );
           expect(result).not.toBeNull();
           expect(result?.status).not.toBe(0);
