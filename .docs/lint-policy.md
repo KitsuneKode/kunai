@@ -54,6 +54,18 @@ without turning opinionated design prompts into release blockers.
 Locally, the command compares against `origin/main` by default. Pass a commit or
 branch as its first argument to inspect a different stack boundary.
 
+### The count baseline
+
+The changed-file advisory only sees files a PR touches — a type change in one
+file can create a finding in a file the PR never opens (widening a return type
+widens every call site). `tools/oxlint/anti-slop/baseline.json` closes that gap
+with a checked-in per-rule count of the full scan. `bun run
+lint:anti-slop:baseline` fails when any rule's count rises above the baseline,
+reports decreases as ratchet invitations, and flags zeroed rules as promotable.
+After burning a count down, commit the new numbers with `bun run
+lint:anti-slop:baseline:update` — the baseline only moves down through that
+explicit act.
+
 The findings are real, not false positives — mostly unjustified type
 assertions, `typeof` narrowing at non-boundaries, and `Record<string, unknown>`
 dictionaries. Burn them down the way warnings are handled above: in focused
