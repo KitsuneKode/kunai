@@ -17,7 +17,11 @@ export function buildPtyCommand(
   if (platform === "darwin") {
     return ["expect", "-c", buildDarwinExpectScript(command, transcript)];
   }
-  return ["script", "-qec", command, transcript];
+  // -f flushes the typescript after each write. Without it util-linux `script`
+  // fully buffers the log, so the file reads empty while the process is still
+  // running — which reads exactly like "CLI never mounted" to a caller polling
+  // the transcript for readiness.
+  return ["script", "-qefc", command, transcript];
 }
 
 /** Escape a string for embedding inside a Tcl double-quoted word. */
@@ -38,11 +42,16 @@ export function buildDarwinExpectScript(command: string, transcript: string): st
   // `{pid spawn_id 0 0 CHILDKILLED SIGNAME ...}`. Map those to shell-style
   // 128+signal codes so the shutdown suite matches util-linux `script -e`.
   return [
-    `log_file "${tclTranscript}"`,
+    // log_file's Tcl channel is fully buffered, so the typescript stays empty
+    // until exit — indistinguishable from a hung mount. Write each matched
+    // chunk to a buffering-none channel instead.
+    `set out [open "${tclTranscript}" w]`,
+    "fconfigure $out -buffering none",
     "log_user 0",
     "set timeout -1",
     `spawn /bin/sh -c "${tclCommand}"`,
-    "expect eof",
+    'expect { -re ".+" { puts -nonewline $out $expect_out(buffer); exp_continue } eof {} }',
+    "close $out",
     "set w [wait]",
     "set os_error [lindex $w 2]",
     "set code [lindex $w 3]",
