@@ -98,7 +98,7 @@ export interface AgentSession {
   /** Enqueue keystrokes; each argument is one input chunk (see keys.ts). */
   press(...keys: string[]): void;
   /** Resolve when `pred` holds on the current frame; throws after a budget. */
-  waitForFrame(pred: (frame: string) => boolean, label?: string): Promise<void>;
+  waitForFrame(pred: (frame: string) => boolean, label?: string, timeoutMs?: number): Promise<void>;
   /** Resolve when the frame is unchanged across consecutive polls. */
   waitSettled(): Promise<void>;
   frame(): string;
@@ -110,7 +110,11 @@ export interface AgentSession {
    * writes land on their own schedule; a point read right after a frame settles
    * races them. Poll the committed state instead of sleeping fixed durations.
    */
-  waitForBackend(pred: (inspect: ProfileInspector) => boolean, label?: string): Promise<void>;
+  waitForBackend(
+    pred: (inspect: ProfileInspector) => boolean,
+    label?: string,
+    timeoutMs?: number,
+  ): Promise<void>;
   /** Full-table snapshot for the DB-diff oracle. */
   snapshot(): ProfileSnapshot;
   diffSince(before: ProfileSnapshot): ProfileDelta;
@@ -434,7 +438,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       }
       pushJournal("press", keys.map(keyLabel).join(" "), frame());
     },
-    async waitForFrame(pred, label) {
+    async waitForFrame(pred, label, timeoutMs) {
       await waitUntil(
         () => {
           throwIfLoopFailed();
@@ -442,7 +446,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
         },
         {
           label: label ?? "waitForFrame",
-          timeoutMs: SETTLE_TIMEOUT_MS,
+          timeoutMs: timeoutMs ?? SETTLE_TIMEOUT_MS,
           tick: pollSleep,
         },
       );
@@ -472,10 +476,10 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     frame,
     frames: () => requireHandle().frames,
     inspect: () => createProfileInspector(sessionProfile.paths),
-    async waitForBackend(pred, label) {
+    async waitForBackend(pred, label, timeoutMs) {
       await waitUntil(() => pred(createProfileInspector(sessionProfile.paths)), {
         label: label ?? "waitForBackend",
-        timeoutMs: SETTLE_TIMEOUT_MS,
+        timeoutMs: timeoutMs ?? SETTLE_TIMEOUT_MS,
         tick: pollSleep,
       });
     },

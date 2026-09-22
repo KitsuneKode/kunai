@@ -124,7 +124,9 @@ describe("agent wiring · post-play history", () => {
       s.press("movie", K.enter);
       await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
       s.press(K.enter);
-      await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface");
+      // Fake-mpv playback runs a real process spawn + EOF path — on a loaded
+      // CI runner that exceeds the default 10s frame budget.
+      await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
 
       await s.waitForBackend(
         (i) => i.history().some((row) => row.title_id === "tmdb:smoke-movie-1"),
