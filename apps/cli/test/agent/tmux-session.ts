@@ -274,7 +274,9 @@ export function attachTmuxSession(input: {
   // What the pane's process is doing when a wait fails — an empty pane with a
   // live `bun` command means "running but silent", a dead pane or `sh` means
   // the launch script never exec'd the app. Without this a CI timeout is a
-  // shrug; with it the failure names its own suspect.
+  // shrug; with it the failure names its own suspect. On Linux we can go
+  // further: if bun's fd 1 doesn't point at the pane tty, its frames are going
+  // somewhere the capture will never see (pipe, file, /dev/null).
   const paneStatus = async (): Promise<string> => {
     try {
       const out = await tmux([
@@ -282,9 +284,18 @@ export function attachTmuxSession(input: {
         "-p",
         "-t",
         name,
-        "pid=#{pane_pid} dead=#{pane_dead} cmd=#{pane_current_command}",
+        "pid=#{pane_pid} dead=#{pane_dead} cmd=#{pane_current_command} tty=#{pane_tty}",
       ]);
-      return out.trim();
+      const base = out.trim();
+      const pid = /pid=(\d+)/.exec(base)?.[1];
+      const tty = /tty=(\S+)/.exec(base)?.[1];
+      if (!pid || process.platform !== "linux") return base;
+      try {
+        const fd1 = require("node:fs").readlinkSync(`/proc/${pid}/fd/1`);
+        return `${base} fd1=${fd1}${tty && fd1 !== tty ? " (!= pane tty)" : ""}`;
+      } catch {
+        return `${base} fd1=(unreadable)`;
+      }
     } catch {
       return "(pane status unavailable)";
     }
