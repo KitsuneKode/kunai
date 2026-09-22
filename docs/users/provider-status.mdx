@@ -14,7 +14,7 @@ A scheduled job resolves a known-good title through every production provider on
 - **Degraded** — upstream responds but the resolve exhausted without a clear block reason; usually a scheme rotation or partial outage.
 - **Region-gated** — upstream alive but challenges the sweep network (Cloudflare WAF, captcha). Often works from other regions or through a user-owned relay (`providerRelay.baseUrl`).
 - **Maintenance** — upstream itself reports maintenance (503 pages).
-- **Unreachable** — DNS or connection failure at the upstream front door; the provider cannot resolve for anyone.
+- **Unreachable** — DNS or connection failure from the sweep's network to the upstream front door. A sustained unreachable provider cannot resolve for anyone (the check also runs where the provider's own DNS lives), but a one-off result can be a runner-side network fault — treat a single day's reading with that in mind.
 
 ## How this affects playback
 
