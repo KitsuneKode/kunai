@@ -145,7 +145,9 @@ async function main(): Promise<void> {
         "--keep-profile",
         "--set-env",
       ]);
-      const seed = argValue(rest, "--seed") === "fresh" ? "fresh" : "onboarded";
+      const seedArg = argValue(rest, "--seed");
+      if (seedArg !== undefined && seedArg !== "onboarded" && seedArg !== "fresh") usage();
+      const seed = seedArg === "fresh" ? "fresh" : "onboarded";
       const env: Record<string, string> = {};
       for (let i = 0; i < rest.length; i++) {
         if (rest[i] !== "--set-env") continue;
@@ -155,11 +157,19 @@ async function main(): Promise<void> {
         if (eq <= 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) usage();
         env[key] = kv.slice(eq + 1);
       }
+      const width = Number(argValue(rest, "--width") ?? "");
+      const rows = Number(argValue(rest, "--rows") ?? "");
+      if (
+        (argValue(rest, "--width") !== undefined && !(width > 0)) ||
+        (argValue(rest, "--rows") !== undefined && !(rows > 0))
+      ) {
+        usage();
+      }
       const session = await startTmuxSession({
         name,
         seed,
-        columns: Number(argValue(rest, "--width")) || undefined,
-        rows: Number(argValue(rest, "--rows")) || undefined,
+        columns: argValue(rest, "--width") !== undefined ? width : undefined,
+        rows: argValue(rest, "--rows") !== undefined ? rows : undefined,
         fakeMpv: !rest.includes("--no-fake-mpv"),
         command: argValue(rest, "--command"),
         keepProfile: rest.includes("--keep-profile"),
@@ -181,12 +191,14 @@ async function main(): Promise<void> {
     }
 
     case "see": {
+      rejectUnknownFlags(rest, ["--name", "--raw"]);
       const session = attach(name);
       console.log(rest.includes("--raw") ? await session.seeRaw() : await session.see());
       break;
     }
 
     case "do": {
+      rejectUnknownFlags(rest, ["--name"]);
       const keys = positionalArgs(rest).map(decodeKeyToken);
       if (keys.length === 0) usage();
       const session = attach(name);
@@ -197,6 +209,7 @@ async function main(): Promise<void> {
     }
 
     case "keys": {
+      rejectUnknownFlags(rest, ["--name"]);
       const session = attach(name);
       const keys = advertisedKeys(await session.see());
       console.log(keys.length > 0 ? keys.join("\n") : "(no advertised keys in pane)");
@@ -204,6 +217,7 @@ async function main(): Promise<void> {
     }
 
     case "wait-for": {
+      rejectUnknownFlags(rest, ["--name"]);
       const needle = positionalArgs(rest)[0];
       if (!needle) usage();
       const session = attach(name);
@@ -213,6 +227,7 @@ async function main(): Promise<void> {
     }
 
     case "relaunch": {
+      rejectUnknownFlags(rest, ["--name"]);
       const session = attach(name);
       await session.relaunch();
       await session.waitFor((f) => f.includes("Kunai"), "relaunch boot");
@@ -221,8 +236,14 @@ async function main(): Promise<void> {
     }
 
     case "inspect": {
+      rejectUnknownFlags(rest, ["--name"]);
       const sidecar = loadSidecar(name);
       const what = positionalArgs(rest)[0] ?? "tables";
+      if (!["history", "queue", "config", "tables"].includes(what)) {
+        throw new Error(
+          `unknown inspect target ${JSON.stringify(what)} — history|queue|config|tables`,
+        );
+      }
       const inspect = createProfileInspector(sidecar.profile.paths);
       const section =
         what === "history"
@@ -237,6 +258,7 @@ async function main(): Promise<void> {
     }
 
     case "report": {
+      rejectUnknownFlags(rest, ["--name"]);
       const dir = positionalArgs(rest)[0];
       if (!dir) usage();
       const session = attach(name);
@@ -264,6 +286,7 @@ async function main(): Promise<void> {
     }
 
     case "stop": {
+      rejectUnknownFlags(rest, ["--name"]);
       const sidecar = loadSidecar(name);
       if (!sidecar.profile.rootDir.includes("kunai-integration-")) {
         // Paranoia FIRST: a refusal must not leave a half-cleaned state —
