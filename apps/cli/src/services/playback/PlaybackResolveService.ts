@@ -47,6 +47,7 @@ import type {
   StartupPriority,
 } from "@kunai/types";
 
+import { getBoundNetworkObserver } from "../network/network-observation";
 import { computeProviderHealthUpdate } from "./provider-health-observation";
 import { resolveEffectiveProviderHealth } from "./provider-health-policy";
 import { resolveProviderTotalDeadlineMs } from "./provider-resolve-budget-policy";
@@ -772,6 +773,16 @@ export class PlaybackResolveService {
 
   private persistProviderHealthDelta(delta: ProviderHealthDelta): void {
     if (!this.deps.providerHealth) return;
+    // A provably-shaky uplink makes timeout/failure evidence unreliable — the
+    // provider may be fine while the local network drops packets. Counting
+    // those attempts would degrade a healthy provider (and eventually fire the
+    // default-provider warning) for a problem that is ours, not theirs.
+    // Success and stalled still write: playback reaching the wire is real
+    // evidence either way, and success is how a provider heals back.
+    if (delta.outcome === "failure" || delta.outcome === "timeout") {
+      const networkStatus = getBoundNetworkObserver()?.connectivity.getSnapshot().status;
+      if (networkStatus === "limited" || networkStatus === "offline") return;
+    }
     try {
       const existing = this.deps.providerHealth.get(delta.providerId);
       this.deps.providerHealth.set(computeProviderHealthUpdate(existing, delta));
