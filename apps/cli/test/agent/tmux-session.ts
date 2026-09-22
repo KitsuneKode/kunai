@@ -237,9 +237,14 @@ function writeLaunchScript(profile: IsolatedCliProfile, options: TmuxSessionOpti
     "/usr/bin",
     "/bin",
   ].join(":");
+  // The pane inherits the tmux server's environment — under CI that carries
+  // CI=true, and ink's isInCi check then drops the app to non-interactive:
+  // no alt screen, no frame writes, no input. A real user terminal never has
+  // CI set, so the launch script strips it. The unset precedes envLines so an
+  // explicit --set-env CI=1 still wins for tests that want it.
   writeFileSync(
     runScript,
-    `#!/bin/sh\n${envLines}\nexport PATH=${JSON.stringify(finalPath)}\ncd ${JSON.stringify(CLI_ROOT)}\necho "agent-launch: ${command}"\nexec ${command}\n`,
+    `#!/bin/sh\nunset CI CONTINUOUS_INTEGRATION\n${envLines}\nexport PATH=${JSON.stringify(finalPath)}\ncd ${JSON.stringify(CLI_ROOT)}\necho "agent-launch: ${command}"\nexec ${command}\n`,
     { mode: 0o755 },
   );
   return runScript;
