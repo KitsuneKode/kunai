@@ -22,9 +22,18 @@ const sessionCache = new Map<string, SessionCacheEntry>();
 const inflightRequests = new Map<string, Promise<unknown>>();
 
 function sessionCacheWrite(key: string, entry: SessionCacheEntry): void {
-  if (sessionCache.size >= SESSION_CACHE_MAX) {
-    const oldest = sessionCache.keys().next().value;
-    if (oldest !== undefined) sessionCache.delete(oldest);
+  // Writes land after async fetches, so insertion order is not age order —
+  // evict by earliest expiry, and only when the key is genuinely new.
+  if (!sessionCache.has(key) && sessionCache.size >= SESSION_CACHE_MAX) {
+    let oldestKey: string | undefined;
+    let oldestExpiry = Number.POSITIVE_INFINITY;
+    for (const [entryKey, cached] of sessionCache) {
+      if (cached.expiresAt < oldestExpiry) {
+        oldestExpiry = cached.expiresAt;
+        oldestKey = entryKey;
+      }
+    }
+    if (oldestKey !== undefined) sessionCache.delete(oldestKey);
   }
   sessionCache.set(key, entry);
 }
