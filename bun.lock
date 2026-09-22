@@ -220,6 +220,17 @@
       },
     },
   },
+  "trustedDependencies": [
+    "@types/react",
+    "fumadocs-core",
+    "bun-types",
+    "next",
+    "@types/react-dom",
+    "fumadocs-mdx",
+    "motion",
+    "fumadocs-ui",
+    "framer-motion",
+  ],
   "overrides": {
     "@types/node": "catalog:",
     "fumadocs-core": "catalog:web",
