@@ -241,5 +241,5 @@ captures (`test/__captures__/calendar-*.txt`) are regenerated.
   semantics across surfaces, bare-letter vs ctrl shortcuts, details discoverability
   (`i` / `Shift+Enter`), empty/error-state consistency, and accent discipline.
   Calendar findings are fixed here; the rest is documented for follow-up slices.
-- **Branded README** — presentable, on-brand (fox / kitsune, `kitsunelabs.xyz`),
+- **Branded README** — presentable, on-brand (fox / kitsune, `kitsunekode.in`),
   the single unifying entry doc, via the `create-readme` skill.

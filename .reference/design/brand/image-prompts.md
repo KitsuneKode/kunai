@@ -27,7 +27,7 @@ mark in `kunai-mark.svg`.
 > mascot (as in prompt 1) at ~320px. Right: large wordmark "KUNAI" in a clean geometric
 > monospace, color `#f6eff4`, wide letter-spacing, with a one-line tagline beneath in muted
 > mauve `#968a98`: "Terminal-first streaming. Finds the playable stream." Bottom-right, small
-> dim mono caption `kitsunelabs.xyz`. Three tiny dots in violet `#c98bff`, teal `#4fd1c5`,
+> dim mono caption `kitsunekode.in`. Three tiny dots in violet `#c98bff`, teal `#4fd1c5`,
 > gold `#f4c45c` as a content-kind motif. Lots of negative space, no clutter, no stock
 > imagery, subtle film grain. Feels like a senior identity studio made it.
 
