@@ -161,18 +161,21 @@ export class PersistentMpvPropertyRouter {
 
   private handleTrackChanged(value: unknown): void {
     const v = typeof value === "string" ? value : "";
-    if (v.startsWith("audio:")) {
-      this.deps.getCurrentOptions().onPlaybackEvent?.({
-        type: "track-changed",
-        trackType: "audio",
-        id: parseInt(v.split(":")[1] ?? "0"),
-      });
-    } else if (v.startsWith("sub:")) {
-      this.deps.getCurrentOptions().onPlaybackEvent?.({
-        type: "track-changed",
-        trackType: "sub",
-        id: parseInt(v.split(":")[1] ?? "0"),
-      });
+    // The bridge writes `<type>:<n>` where n is mpv's track id (0 = track off
+    // for subs). The previous `parseInt(v.split(":")[1] ?? "0")` had no radix
+    // and the `?? "0"` never fired for `"audio:"` (that splits to an empty
+    // string, not undefined) — so a malformed value emitted `id: NaN` into the
+    // user-facing "track switched (id NaN)" note.
+    const trackMatch = /^(audio|sub):(\d+)$/.exec(v);
+    if (trackMatch) {
+      const id = Number.parseInt(trackMatch[2] ?? "", 10);
+      if (id >= 0) {
+        this.deps.getCurrentOptions().onPlaybackEvent?.({
+          type: "track-changed",
+          trackType: trackMatch[1] as "audio" | "sub",
+          id,
+        });
+      }
     }
     void this.deps
       .getIpcSession()
