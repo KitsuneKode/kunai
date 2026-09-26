@@ -903,6 +903,36 @@ describe("anidb direct resolve season routing", () => {
     expect(result.externalIds?.malId).toBe("99999");
   });
 
+  /**
+   * A Cloudflare challenge is not a network fault and no retry clears it. The
+   * engine reads `retryable` to decide whether to buy this provider a second
+   * full attempt — 12s each under the `balanced` default — so an unconditional
+   * `true` spent half the resolve budget on a request that cannot succeed
+   * before any fallback was considered. Mirrors the `AllMangaCaptchaError`
+   * policy in allmanga/direct.ts.
+   */
+  test("a Cloudflare challenge is reported as blocked and not retryable", async () => {
+    const challenge = (async () =>
+      new Response("<html><head><title>Just a moment...</title></head></html>", {
+        status: 403,
+      })) as unknown as typeof fetch;
+
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      challenge,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("blocked");
+    expect(result.failures[0]?.retryable).toBe(false);
+  });
+
   test("does not fall back to Japanese when a requested dub is unavailable", async () => {
     const result = await resolveWithStub(
       {

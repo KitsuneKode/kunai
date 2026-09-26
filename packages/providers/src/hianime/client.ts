@@ -64,6 +64,19 @@ const EPISODE_CATALOG_MEMORY_TTL_MS = 1_800_000;
 const EPISODE_CATALOG_PERSIST_TTL_MS = 2 * 60 * 60 * 1000;
 const HIANIME_EPISODES_CACHE_NAMESPACE = "hianime:episodes";
 
+/**
+ * The remediation to suggest, given what actually ran. Suggesting
+ * curl-impersonate to a user who is already running curl-impersonate is advice
+ * they have followed, and repeating it makes a blocked upstream look like a
+ * local misconfiguration. Parity: ani-cli suppresses its own
+ * "try installing curl-impersonate" line when `$curl_exe` is not plain curl.
+ */
+function hianimeBlockedMessage(impersonates: boolean): string {
+  return impersonates
+    ? "hianime blocked by Cloudflare (curl-impersonate was already used)"
+    : "hianime blocked by Cloudflare (try curl-impersonate)";
+}
+
 const episodeCache = new TTLCache<string, readonly HianimeEpisodeEntry[]>(
   EPISODE_CATALOG_MEMORY_TTL_MS,
   { maxEntries: 128 },
@@ -220,7 +233,7 @@ export async function hianimeFetchText(
       headers: { "User-Agent": HIANIME_USER_AGENT, Referer: referer },
       signal: createTimeoutSignal(options.signal, 15_000),
     });
-    if (!response.ok) throw new Error(`hianime fetch HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`hianime fetch HTTP ${response.status} from ${url}`);
     const text = await response.text();
     if (isCloudflareChallengeText(text)) {
       throw new Error("hianime blocked by Cloudflare (install curl)");
@@ -248,14 +261,21 @@ export async function hianimeFetchText(
   const { body, httpCode } = splitCurlHttpTrailer(
     await runHianimeCurlWithRetry(args, options.signal),
   );
+  // Name the leg. A hianime resolve is four network hops (episodes, servers,
+  // embed page, master playlist) and "hianime fetch HTTP 503" says which of
+  // them died to nobody. The layer name and curl exit already ride along on
+  // the transport-failure path; this is the same courtesy for the status path.
+  // Parity: ani-cli's `hianime_curl` names the URL on both exits.
+  const blocked = isCloudflareChallengeText(body);
   if (httpCode !== null && (httpCode < 200 || httpCode > 299)) {
-    if (isCloudflareChallengeText(body)) {
-      throw new Error("hianime blocked by Cloudflare (try curl-impersonate)");
-    }
-    throw new Error(`hianime fetch HTTP ${httpCode}`);
+    throw new Error(
+      blocked
+        ? hianimeBlockedMessage(curl.impersonates)
+        : `hianime fetch HTTP ${httpCode} from ${url}`,
+    );
   }
-  if (isCloudflareChallengeText(body)) {
-    throw new Error("hianime blocked by Cloudflare (try curl-impersonate)");
+  if (blocked) {
+    throw new Error(hianimeBlockedMessage(curl.impersonates));
   }
   return body;
 }

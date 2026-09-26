@@ -149,6 +149,31 @@ export class AnidbHttpStatusError extends Error {
   }
 }
 
+/**
+ * A Cloudflare challenge that every available transport has already failed to
+ * clear. Typed rather than message-matched so the failure classifier can tell
+ * "blocked" from "the network is down" without reading prose: a challenge is
+ * not a network fault, and retrying it cannot succeed.
+ */
+export class AnidbBlockedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AnidbBlockedError";
+  }
+}
+
+/**
+ * The remediation to suggest, given what actually ran. Telling a user on
+ * curl-impersonate to install curl-impersonate is the advice they already
+ * followed, and it is the advice that makes a blocked provider look like a
+ * configuration problem instead of an upstream one.
+ */
+function anidbBlockedMessage(impersonates: boolean): string {
+  return impersonates
+    ? "anidb blocked by Cloudflare (curl-impersonate was already used)"
+    : "anidb blocked by Cloudflare (try curl-impersonate)";
+}
+
 /** curl reports the final status after redirects; the body keeps the rest. */
 const ANIDB_STATUS_WRITE_OUT = ["-w", "\n%{http_code}"] as const;
 
@@ -210,11 +235,22 @@ export async function anidbFetchText(
       signal: createTimeoutSignal(options.signal, 15_000),
     });
     if (!response.ok) {
+      // Read the body before answering with the status. Cloudflare serves its
+      // challenge with a 4xx as often as with a 200, and there is no curl left
+      // to fall through to on this path — so a challenge that arrived as a 403
+      // used to be reported as a plain network error and handed to the retry
+      // budget. The paths that *do* have a curl fallback keep their order: they
+      // let the better transport try first, and only classify a challenge when
+      // it has been asked and failed.
+      const text = await response.text();
+      if (isCloudflareChallengeText(text)) {
+        throw new AnidbBlockedError("anidb blocked by Cloudflare (install curl)");
+      }
       throw new AnidbHttpStatusError(response.status);
     }
     const text = await response.text();
     if (isCloudflareChallengeText(text)) {
-      throw new Error("anidb blocked by Cloudflare (install curl)");
+      throw new AnidbBlockedError("anidb blocked by Cloudflare (install curl)");
     }
     return text;
   }
@@ -242,12 +278,12 @@ export async function anidbFetchText(
     const { body, status } = splitAnidbStatus(stdout);
     if (status >= 400) throw new AnidbHttpStatusError(status);
     if (isCloudflareChallengeText(body)) {
-      throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
+      throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
     }
     return body;
   }
   if (isCloudflareChallengeText(stdout)) {
-    throw new Error("anidb blocked by Cloudflare (try curl-impersonate)");
+    throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
   }
   return stdout;
 }

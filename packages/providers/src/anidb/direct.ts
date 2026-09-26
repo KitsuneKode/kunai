@@ -38,6 +38,7 @@ import { selectReadyStream } from "../shared/startup-selection";
 import {
   ANIDB_REFERER,
   ANIDB_USER_AGENT,
+  AnidbBlockedError,
   anidbNumericId,
   chooseAnidbSearchMatch,
   fetchAnidbEpisodeCatalog,
@@ -605,11 +606,19 @@ export const anidbProviderModule: CoreProviderModule = {
         );
       }
       const message = error instanceof Error ? error.message : String(error);
+      // A Cloudflare challenge is not a network fault, and no retry clears it.
+      // The engine reads `retryable` to decide whether to buy this provider a
+      // second full attempt — 12s each under the `balanced` default — before
+      // any fallback is considered, so an unconditional `true` here spends half
+      // the resolve budget on a request that cannot succeed. The message test
+      // stays as a floor for a challenge that arrives from a path that has not
+      // been converted to the typed error yet.
+      const blocked = error instanceof AnidbBlockedError || /cloudflare/i.test(message);
       const failure: ProviderFailure = {
         providerId: ANIDB_PROVIDER_ID,
-        code: /cloudflare/i.test(message) ? "blocked" : "network-error",
+        code: blocked ? "blocked" : "network-error",
         message,
-        retryable: true,
+        retryable: !blocked,
         at: context.now(),
       };
       failures.push(failure);
