@@ -546,6 +546,13 @@ export interface ProviderCachePort {
 export interface ProviderRuntimePort {
   readonly runtime: ProviderRuntime;
   readonly operations: readonly ProviderOperation[];
+  /**
+   * "Safe to execute inside a browser runtime" — NOT "requires a browser".
+   * `false` means the port relies on Node/Bun-only APIs (raw sockets, crypto,
+   * child processes). Every Kunai production provider is a headless resolver;
+   * none of them need a browser, and a generated table that renders this column
+   * as "browser required" would invert the meaning.
+   */
   readonly browserSafe: boolean;
   readonly relaySafe: boolean;
   readonly localOnly: boolean;

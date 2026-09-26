@@ -1,79 +1,92 @@
 ---
 status: current
-lastReviewed: "2026-04-30"
+lastReviewed: "2026-09-27"
 ---
 
-# Cloudflare Bypass Strategy: The "Harvest & Fetch" Model 🛡️
+# Cloudflare Handling: What Actually Shipped 🛡️
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-This document outlines the exact architecture used to bypass Cloudflare's "Under Attack Mode" (IUAM) and Turnstile challenges for heavily protected providers like **Anikai** and **Miruro**.
+This document describes the Cloudflare strategy **as implemented**. An earlier
+revision described a Playwright "Harvest & Fetch" architecture — a hidden
+browser that solves the IUAM challenge once, harvests `cf_clearance`, and lets
+plain `fetch()` reuse the token. **None of that was ever built**: no Playwright
+dependency exists in any `package.json`, no `cf_clearance` string appears in
+`src/`, and the provider runtime never launches a browser. Do not debug against
+that model.
 
-If a provider suddenly stops working and throws `403 Forbidden` or `503 Service Temporarily Unavailable` errors, use this document to pinpoint where the bypass is failing.
-
----
-
-## 1. Why Pure `fetch()` Fails
-
-Cloudflare does not just check IP addresses. It analyzes the **TLS Fingerprint (JA3)** and the **HTTP/2 Fingerprint** of the incoming request.
-
-- Node.js/Bun `fetch()` generates a different cryptographic handshake than Google Chrome.
-- If a site is on high security, Cloudflare instantly detects the Node.js fingerprint and drops the connection (`ERR_ABORTED` or `ECONNRESET`), regardless of how perfectly you spoof the `User-Agent` header.
-- **The Rule:** You _must_ use a real browser engine (Playwright/Chromium) to solve the initial math/WebGL challenges and establish a trusted fingerprint.
+What shipped instead is cheaper and, for the threat model Kunai faces, the
+better design — Cloudflare on these providers fingerprints the _client_, not
+the session, so a convincing TLS/HTTP-2 fingerprint beats a harvested cookie.
 
 ---
 
-## 2. The "Harvest & Fetch" Architecture
+## 1. Why `fetch()` alone fails
 
-Launching Playwright for every search or episode click is too slow (adding a 2-5 second delay) and hogs RAM. We use the **Harvest & Fetch** model to get Netflix-level speed.
+Cloudflare scores the TLS fingerprint (JA3) and HTTP/2 fingerprint before it
+ever looks at headers. Bun's `fetch()` presents a handshake no browser
+produces, so under elevated security the request is challenged regardless of
+how accurate the `User-Agent` is.
 
-### Phase 1: The Cold Start (Harvesting)
+The shipped answer is not a browser — it is a `curl` whose handshake _is_ a
+browser's.
 
-1.  **Launch JIT Playwright:** Kunai launches a hidden Playwright instance _only_ when a user requests a protected provider (e.g., clicks Anikai).
-2.  **Navigate & Wait:** Playwright navigates to the provider's domain. It waits out the 5-second Cloudflare spinning circle.
-3.  **Harvest the Clearance:** Once the site loads, Cloudflare drops a clearance cookie into the browser. Playwright extracts the `cf_clearance` cookie and the exact `User-Agent` string used by that specific browser context.
-4.  **Save to Local Database:** The `cf_clearance` token and the `User-Agent` are saved to Kunai's local SQLite database (or memory store).
-5.  **Kill Playwright:** The Playwright process is instantly terminated to free up RAM.
+## 2. The shipped model
 
-### Phase 2: The Fast Lane (0-RAM Fetching)
+### PATH-discovered curl-impersonate (`shared/curl-impersonate.ts`)
 
-1.  **Pure Node.js Fetch:** For the next 2 to 12 hours, whenever the user clicks another episode on Anikai, Kunai **does not** launch Playwright.
-2.  **Inject the Token:** Kunai makes a standard, lightning-fast Node.js `fetch()` request, but it explicitly injects the harvested `cf_clearance` cookie and the matching `User-Agent` into the request headers.
-3.  **The Result:** Cloudflare sees the valid clearance token and allows the raw `fetch()` request through. The stream is extracted in milliseconds with 0MB of browser overhead.
+- `resolveCurlCandidate()` scans PATH for `curl_<browser><version>` wrappers
+  (`curl_chrome150`, `curl_firefox147`, `.bat`/`.cmd` accepted for Windows),
+  ranks families chrome → firefox → safari → edge and newest version inside
+  each family, then falls back to plain `curl`. No hardcoded binary list — the
+  previous allowlist rotted the moment upstream renamed a wrapper.
+- `curlCipherArgs()` applies ani-cli's cipher list **only on Darwin and only
+  for plain curl**: Windows `curl.exe` links Schannel and rejects OpenSSL
+  cipher names outright, and an impersonate build already carries the
+  fingerprint the list exists to fake.
+- `isCloudflareChallengeText()` detects the challenge on a **200 OK body** —
+  the "Just a moment" interstitial is an HTML page served with a success
+  status, not a 4xx, so status-code checks alone miss it.
 
----
+### Per-provider fetch → curl fallback
 
-## 3. The Auto-Heal Loop (Handling Expirations)
+Each Cloudflare-fronted provider runs the same shape:
 
-Eventually, the `cf_clearance` cookie will expire, or Cloudflare will rotate their security keys.
+1. Try the injected fetch port first (relay-safe, fast).
+2. If the response fails or is a challenge body, fall back to the discovered
+   curl — impersonate wrapper if present.
+3. Error messages name what actually ran: a Cloudflare block under an
+   impersonate build says "curl-impersonate was already used", not "install
+   curl-impersonate" (see `hianime/client.ts`, `miruro/direct.ts`).
 
-1.  **Detection:** The fast `fetch()` request will suddenly return a `403 Forbidden` or `503 Service Unavailable`.
-2.  **The Catch:** The Provider SDK/runtime boundary catches this specific HTTP status code.
-3.  **The Heal:** It silently deletes the expired token from the local database, launches Playwright (Phase 1), harvests a fresh `cf_clearance` cookie, kills Playwright, and replays the user's original request. The user experiences a one-time 3-second delay, and then the fast lane is restored.
+Miruro additionally uses `curl --http2` with browser-captured headers for its
+pipe API, dossier-proven against `www.miruro.bz`.
 
----
+## 3. Why not Harvest & Fetch
 
-## 4. Troubleshooting Guide (When things break)
+- `cf_clearance` is IP- and often TLS-bound: a token harvested by Chromium
+  frequently rejects the Node.js handshake that reuses it — the doc's own
+  "strict binding" caveat, which forced the Persistent Daemon fallback anyway.
+- A resident browser costs ~hundreds of MB and a child-process lifecycle for a
+  problem that a PATH-local binary solves with zero residency.
+- One more moving part to keep secret-safe: the cookie is a bearer token and
+  would need storage hardening, expiry handling, and redaction.
 
-If an issue is reported ("Anikai is broken!"), follow this exact diagnostic checklist:
+If a provider ever moves to strict token binding, that is the moment to
+revisit — not before.
 
-### A. Is Playwright failing the initial challenge?
+## 4. Troubleshooting a "provider is broken" report
 
-- **Symptom:** The scraper throws `net::ERR_ABORTED` or times out waiting for the DOM.
-- **The Cause:** Cloudflare has updated their Turnstile algorithm and is detecting our headless Chrome fingerprint.
-- **The Fix:**
-  1. Update Playwright to the latest version (`bunx playwright install`).
-  2. Ensure `webdriver: undefined` is being injected via `addInitScript`.
-  3. If Chrome is permanently blocked, switch the Playwright launch config from `chromium` to `firefox`. Firefox's headless fingerprint often bypasses Cloudflare checks that block Chrome.
-
-### B. Is the fast `fetch()` failing immediately after harvesting?
-
-- **Symptom:** Playwright successfully loads the page, but the immediate subsequent `fetch()` using the token returns a `403`.
-- **The Cause:** Cloudflare has implemented strict **IP or TLS-binding** to the token. They are noticing that the token was generated by Chrome (TLS fingerprint A), but is now being used by Node.js (TLS fingerprint B).
-- **The Fix:** We must fall back to the **Persistent Daemon Model**. Instead of killing Playwright, the local daemon must keep the Playwright `BrowserContext` open in the background, and route all network requests through `page.evaluate(() => fetch(...))` so the TLS fingerprint perfectly matches the token.
-
-### C. Are the final video streams (e.g., `.m3u8`) returning 403s?
-
-- **Symptom:** Kunai extracts the `.m3u8` link perfectly, but `mpv` fails to play it.
-- **The Cause:** The CDN hosting the video file requires the exact `Referer` header from the streaming site, or the stream URL has a short TTL (Time-To-Live) that has expired.
-- **The Fix:** Ensure `mpv` is being launched with the `--referrer=https://anikai.to/` flag. Never cache the final `.m3u8` link for longer than 2 hours.
+1. **Which curl ran?** Check `kunai doctor` / the capability snapshot — the
+   curl row distinguishes plain curl from an impersonating build and names the
+   profile (`chrome150`, …).
+2. **2xx challenge vs real 4xx.** A block that reaches the user as "blocked by
+   Cloudflare" came from `isCloudflareChallengeText` on a 200 body or a
+   genuine 403/503; the error text says which arm fired.
+3. **Impersonate still blocked?** Fingerprint drift — install or update a
+   `curl-impersonate` build (the lexiforest fork tracks current browser
+   versions every few weeks), or retry from a different network: at that point
+   the block is IP reputation, not fingerprint.
+4. **Stream URLs 403 in mpv?** That is CDN `Referer` enforcement or an expired
+   signed URL, not Cloudflare on the API host — check the headers Kunai passes
+   to mpv, not this document.
