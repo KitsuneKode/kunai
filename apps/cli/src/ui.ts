@@ -12,6 +12,7 @@ import {
   YT_DLP_INSTALL,
   type PlatformInstall,
 } from "@/infra/os/install-commands";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -75,12 +76,13 @@ type CapabilityNoticeState = {
   readonly fingerprint: string;
 };
 
-// Resolved at call time, not module load — same reason as FileStorage: the
-// storage root can change between containers in one process (test profiles).
-const noticePaths = () => {
+// Resolved per call, never at module load: a module-level `getKunaiPaths()`
+// bakes whatever env happened to be set at import time, which is how this
+// file used to write to the developer's real config dir under test isolation.
+function capabilityNoticePaths(): { readonly dir: string; readonly file: string } {
   const dir = getKunaiPaths().configDir;
   return { dir, file: join(dir, "capability-notice.json") };
-};
+}
 
 function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
   const issueBits = [...snapshot.issues]
@@ -93,7 +95,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
   try {
-    const file = Bun.file(noticePaths().file);
+    const file = Bun.file(capabilityNoticePaths().file);
     if (!(await file.exists())) return null;
     const parsed = (await file.json()) as Partial<CapabilityNoticeState>;
     if (typeof parsed.version !== "string" || typeof parsed.fingerprint !== "string") {
@@ -106,9 +108,27 @@ async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null
 }
 
 async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<void> {
-  const { dir, file } = noticePaths();
-  await mkdir(dir, { recursive: true });
-  await Bun.write(file, JSON.stringify(state, null, 2));
+  const { dir, file } = capabilityNoticePaths();
+  try {
+    await mkdir(dir, { recursive: true });
+    await Bun.write(file, JSON.stringify(state, null, 2));
+  } catch (error) {
+    // The notice is only a "don't nag twice" marker — worst case it reappears
+    // on the next launch. A read-only config dir must not kill the shell with
+    // an unhandled rejection, and the one line it earns gets the same
+    // home-dir redaction the rest of the log surface uses.
+    const homeDir = resolveRedactionHomeDir();
+    const where = String(redactDiagnosticValue(dir, { homeDir }));
+    // The fs error message embeds the raw absolute path — redact it through
+    // the same pass before it reaches the terminal.
+    const detail = String(
+      redactDiagnosticValue(error instanceof Error ? error.message : String(error), { homeDir }),
+    );
+    console.error(
+      `kunai: could not record capability state — ${where} is not writable. ` +
+        `Continuing; the dependency notice will reappear until this succeeds. (${detail})`,
+    );
+  }
 }
 
 /**

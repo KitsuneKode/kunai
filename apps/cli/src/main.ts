@@ -52,7 +52,7 @@ import {
   type ShutdownRuntime,
 } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
-import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
+import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
 import {
   parseKunaiShareUrl,
@@ -642,7 +642,18 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   // Parse CLI arguments before acquiring the versioned lifetime lock so short
   // paths (--help / --version / protocol install) never leave lock residue.
-  const args = parseArgs(argv);
+  let args: CliArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (error) {
+    // Usage errors exit 2 — the code `kunai completion` already uses — so a
+    // wrapper script can tell "I typo'd a flag" apart from a real failure.
+    if (error instanceof CliUsageError) {
+      process.stderr.write(`kunai: ${error.message}\nRun "kunai --help" for usage.\n`);
+      process.exit(2);
+    }
+    throw error;
+  }
   if (args.help) {
     process.stdout.write(buildHelpText());
     return;
