@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { FileStorage } from "@/infra/storage/FileStorage";
 import { getKunaiPaths } from "@kunai/storage";
@@ -12,10 +12,15 @@ import { applyStorageRootEnv } from "../../../helpers/storage-env";
  * Corrupt-config backups are timestamped, so a test asserts on the set of
  * backups that exist rather than on one fixed name. A fixed `.corrupt.bak` was
  * the defect: every launch overwrote the previous one.
+ *
+ * `dirname`/`basename` rather than string surgery: the first version split on
+ * `"/"`, which is right on POSIX and silently wrong on Windows, where the
+ * separator is `\`. It passed on Linux and failed three tests on the Windows
+ * parity leg.
  */
 async function corruptBackups(configPath: string): Promise<string[]> {
-  const dir = configPath.slice(0, configPath.lastIndexOf("/"));
-  const base = configPath.slice(configPath.lastIndexOf("/") + 1);
+  const dir = dirname(configPath);
+  const base = basename(configPath);
   return (await readdir(dir)).filter((name) => name.startsWith(`${base}.corrupt.`)).sort();
 }
 
