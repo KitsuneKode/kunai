@@ -70,15 +70,26 @@ export class FileStorage implements StorageService {
     try {
       return JSON.parse(raw) as T;
     } catch (error) {
-      // Corrupt JSON — back up the bytes we actually read so we don't nuke them
-      // permanently, and say so: a silently reset config used to look exactly
-      // like a fresh install.
-      const corruptPath = `${path}.corrupt.bak`;
+      // Corrupt JSON — preserve the bytes we actually read so a hand-repaired
+      // config is never lost, and say precisely what happened.
+      //
+      // The backup name is timestamped. A fixed `.corrupt.bak` meant every
+      // subsequent launch overwrote the previous one, so a user who hit this
+      // twice lost both the original config and any earlier backup — and since
+      // the corrupt file is never rewritten, the second launch re-detected,
+      // re-warned and re-clobbered it. `packages/storage/src/sqlite.ts:152`
+      // already quarantines this way for the same reason; this path was the
+      // only outlier.
+      const corruptPath = `${path}.corrupt.${corruptBackupStamp()}.bak`;
       const parent = dirname(corruptPath);
       if (parent) await mkdir(parent, { recursive: true }).catch(() => {});
       await writeAtomicSecretText(corruptPath, raw).catch(() => {});
       dbgErr("storage.file", `Corrupt JSON at ${path}; backed up to ${corruptPath}`, error);
-      this.warn?.("Config file was unreadable and has been reset to defaults", {
+      // The claim has to match the behaviour: nothing rewrites `path` here, so
+      // this run uses defaults *in memory* and the unreadable file stays on
+      // disk until something writes over it. Saying "has been reset" sent
+      // people looking for a rewrite that never happened.
+      this.warn?.("Config file was unreadable; defaults are in use for this run", {
         corruptBackup: corruptPath,
       });
       return null;
@@ -125,6 +136,23 @@ export class FileStorage implements StorageService {
     if (!path) return false;
     return Bun.file(path).exists();
   }
+}
+
+/**
+ * A sortable, collision-free stamp for a quarantined file.
+ *
+ * The ISO form matches `packages/storage/src/sqlite.ts:143` so both kinds of
+ * quarantine sort together. The counter is not decoration: a bare millisecond
+ * timestamp collides when two reads land in the same millisecond, and the
+ * second write then clobbers the first — which is the exact defect the
+ * timestamp was introduced to remove. A test performs two corrupt reads back to
+ * back and asserts both sets of bytes survive.
+ */
+let corruptBackupCounter = 0;
+
+function corruptBackupStamp(): string {
+  corruptBackupCounter = (corruptBackupCounter + 1) % 1_000;
+  return `${new Date().toISOString().replace(/[:.]/g, "-")}-${corruptBackupCounter}`;
 }
 
 function errorCode(error: unknown): string | undefined {

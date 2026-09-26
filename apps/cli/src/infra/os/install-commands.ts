@@ -74,16 +74,23 @@ const REMEDIATION_LABELS: readonly (readonly [keyof PlatformInstall, string])[] 
   ["fallback", "Other"],
 ];
 
+/**
+ * Column width for the remediation label, derived rather than hardcoded.
+ * `padEnd(8)` sat next to a label that is exactly 8 characters ("openSUSE"),
+ * so that entry emitted `- openSUSEsudo zypper install mpv` with no separator —
+ * two commands glued into one unrunnable line. Deriving the width from the
+ * table means the next label added cannot reintroduce it.
+ */
+const REMEDIATION_LABEL_WIDTH =
+  Math.max(...REMEDIATION_LABELS.map(([, label]) => label.length)) + 1;
+
 /** Every command, labelled — what `kunai doctor` prints and diagnostics carry. */
 export function buildRemediationLines(install: PlatformInstall): readonly string[] {
   if (install.note) return [install.note];
-  // Pad to the longest label plus one: `openSUSE` is 8 characters, so a fixed
-  // padEnd(8) glued the label onto `sudo zypper …` with no separator.
-  const width = Math.max(...REMEDIATION_LABELS.map(([, label]) => label.length)) + 1;
   const lines: string[] = [];
   for (const [key, label] of REMEDIATION_LABELS) {
     const command = install[key];
-    if (command) lines.push(`${label.padEnd(width)}${command}`);
+    if (command) lines.push(`${label.padEnd(REMEDIATION_LABEL_WIDTH)}${command}`);
   }
   return lines;
 }
