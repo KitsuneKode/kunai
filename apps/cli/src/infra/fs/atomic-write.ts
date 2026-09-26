@@ -159,7 +159,13 @@ async function restrictWindowsSecretAcl(path: string): Promise<void> {
  * umask can only narrow the creation mode, never widen it.
  */
 async function writeAndFlush(path: string, contents: string | Uint8Array, mode?: number) {
-  const handle = await open(path, "w", mode);
+  // Exclusive create + no-follow: the temp name must belong to this write
+  // alone. A pre-existing entry at that path — an attacker-planted symlink or
+  // a colliding same-pid writer — fails with EEXIST instead of being
+  // truncated or written through.
+  const flags =
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW;
+  const handle = await open(path, flags, mode);
   try {
     await handle.writeFile(contents);
     await handle.sync();
@@ -193,6 +199,39 @@ async function flushDirectory(dir: string): Promise<void> {
   }
 }
 
+/**
+ * Write to a fresh temp file beside `targetPath`, retrying on name collision.
+ *
+ * The random suffix makes collisions rare, not impossible — and an entry an
+ * attacker planted at a predicted name must be *skipped*, never unlinked or
+ * written through, which is why the EEXIST branch deliberately does not
+ * unlink.
+ */
+async function createExclusiveTemp(
+  targetPath: string,
+  write: (tmp: string) => Promise<void>,
+  nextTempPath: (targetPath: string) => string = tempPath,
+): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const tmp = nextTempPath(targetPath);
+    try {
+      await write(tmp);
+      return tmp;
+    } catch (error) {
+      lastError = error;
+      if ((error as NodeJS.ErrnoException)?.code === "EEXIST") continue;
+      await unlink(tmp).catch(() => {});
+      throw error;
+    }
+  }
+  throw new Error(
+    `could not create a unique temp file for ${basename(targetPath)}: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
 async function writeAtomicTextWithMode(
   targetPath: string,
   contents: string,
@@ -200,20 +239,22 @@ async function writeAtomicTextWithMode(
 ): Promise<void> {
   const dir = dirname(targetPath);
   await mkdir(dir, { recursive: true });
-  const tmp = tempPath(targetPath);
 
+  let tmp: string | undefined;
   try {
     // Secret-bearing files must be private before they become visible at the
     // destination. Applying the mode after rename leaves a crash window where
     // the process umask may have created a world-readable config.
-    await writeAndFlush(tmp, contents, posixMode);
+    tmp = await createExclusiveTemp(targetPath, (candidate) =>
+      writeAndFlush(candidate, contents, posixMode),
+    );
     if (posixMode !== undefined && process.platform === "win32") {
       await restrictWindowsSecretAcl(tmp);
     }
     await atomicMove(tmp, targetPath);
     await flushDirectory(dir);
   } catch (e) {
-    await unlink(tmp).catch(() => {});
+    if (tmp !== undefined) await unlink(tmp).catch(() => {});
     throw e;
   }
 }
@@ -230,8 +271,8 @@ export async function writeAtomicBytes(
 ): Promise<void> {
   const dir = dirname(targetPath);
   await mkdir(dir, { recursive: true });
-  const tmp = tempPath(targetPath);
 
+  let tmp: string | undefined;
   try {
     const bytes =
       data instanceof Blob
@@ -239,11 +280,11 @@ export async function writeAtomicBytes(
         : data instanceof Uint8Array
           ? data
           : new Uint8Array(data);
-    await writeAndFlush(tmp, bytes);
+    tmp = await createExclusiveTemp(targetPath, (candidate) => writeAndFlush(candidate, bytes));
     await atomicMove(tmp, targetPath);
     await flushDirectory(dir);
   } catch (e) {
-    await unlink(tmp).catch(() => {});
+    if (tmp !== undefined) await unlink(tmp).catch(() => {});
     throw e;
   }
 }
@@ -265,4 +306,10 @@ export async function writeAtomicSecretJson(targetPath: string, value: unknown):
   await writeAtomicSecretText(targetPath, JSON.stringify(value, null, 2));
 }
 
-export const __testing = { atomicMove, flushDirectory, restrictWindowsSecretAcl, writeAndFlush };
+export const __testing = {
+  atomicMove,
+  createExclusiveTemp,
+  flushDirectory,
+  restrictWindowsSecretAcl,
+  writeAndFlush,
+};
