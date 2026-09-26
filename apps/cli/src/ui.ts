@@ -12,6 +12,7 @@ import {
   YT_DLP_INSTALL,
   type PlatformInstall,
 } from "@/infra/os/install-commands";
+import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
@@ -142,12 +143,21 @@ export async function probeCapabilities(
     which?: (command: string) => string | null;
     /** PATH listing seam for curl-impersonate discovery. Injected by tests. */
     listPathEntries?: () => readonly string[];
+    /** Filesystem probe seam for flatpak mpv discovery. Injected by tests. */
+    exists?: (path: string) => boolean;
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
   const which = options.which ?? ((command: string) => whichLive(command));
   const issues: CapabilityIssue[] = [];
-  const mpv = Boolean(which("mpv"));
+  // Flatpak io.mpv.Mpv counts as present — a which-only probe reports
+  // "not installed" on Steam Deck / Flatpak-only hosts that can play fine.
+  const mpv = Boolean(
+    discoverMpvInvocation({
+      which,
+      ...(options.exists ? { exists: options.exists } : {}),
+    }),
+  );
   const ffprobe = Boolean(which("ffprobe"));
   const ytDlp = Boolean(which("yt-dlp"));
   // Ask the provider which binary it would actually drive rather than probing

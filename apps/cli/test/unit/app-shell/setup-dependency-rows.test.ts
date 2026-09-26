@@ -12,7 +12,7 @@ import {
 } from "@/infra/os/install-commands";
 import { probeCapabilities } from "@/ui";
 
-const NOTHING = { which: () => null, listPathEntries: () => [] };
+const NOTHING = { which: () => null, listPathEntries: () => [], exists: () => false };
 
 async function bareSnapshot() {
   return probeCapabilities(NOTHING);

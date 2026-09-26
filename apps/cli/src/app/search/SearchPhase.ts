@@ -60,6 +60,7 @@ import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
+import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
@@ -109,7 +110,6 @@ import {
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 import { warmTopAnimeEpisodeCache } from "@/services/providers/warm-episode-cache";
 
-import { whichLive } from "../../infra/os/which";
 
 export { SEARCH_BROWSE_COMMAND_IDS };
 
@@ -730,11 +730,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             void playTrailer(
               {
                 playUrl: async (target) => {
-                  if (!whichLive("mpv")) return false;
+                  const mpvInvocation = discoverMpvInvocation();
+                  if (!mpvInvocation) return false;
                   // Same scheme gate as every other mpv playback path; a
                   // non-URL target falls back to the browser opener below.
                   if (!isAllowedMpvUrl(target, "remote")) return false;
-                  Bun.spawn(["mpv", target], {
+                  Bun.spawn([...mpvInvocation.argv, target], {
                     stdout: "ignore",
                     stderr: "ignore",
                     stdin: "ignore",

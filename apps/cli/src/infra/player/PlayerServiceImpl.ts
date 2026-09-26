@@ -27,7 +27,6 @@ import type { ConfigService } from "@/services/persistence/ConfigService";
 import { isTerminalHlsHttpStatus } from "@/services/playback/hls-manifest-materializer";
 import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
 
-import { whichLive } from "../os/which";
 import {
   startHlsRelay,
   streamNeedsHlsRelay,
@@ -35,6 +34,7 @@ import {
   type HlsRelayStopReason,
 } from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
+import { discoverMpvInvocation } from "./mpv-discovery";
 import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
@@ -543,7 +543,7 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   async isAvailable(): Promise<boolean> {
-    return Boolean(whichLive("mpv"));
+    return discoverMpvInvocation() !== null;
   }
 
   async playLocal(options: {
