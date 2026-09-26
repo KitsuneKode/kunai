@@ -8,6 +8,7 @@
 // =============================================================================
 
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
+import { wrapText } from "@/domain/text-display";
 
 import type { ErrorDebugExcerpt } from "./error-debug-excerpt";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
@@ -72,9 +73,31 @@ function waterfallRows(model: PlaybackFailureWaterfallModel): readonly ErrorRow[
   return rows;
 }
 
-function debugRows(excerpt: ErrorDebugExcerpt): readonly ErrorRow[] {
-  const rows: ErrorRow[] = [BLANK, row("debug", "dim"), row(excerpt.message, "muted")];
-  if (excerpt.topFrame) rows.push(row(excerpt.topFrame, "dim"));
+/**
+ * A free-text row, wrapped to the panel's text column when the caller knows
+ * it. The renderer clips cells at the panel edge — without wrapping, the one
+ * sentence that says *what failed* was cut mid-word.
+ */
+function textRows(
+  text: string,
+  tone: ErrorRowTone,
+  textWidth: number | undefined,
+  maxLines: number,
+): readonly ErrorRow[] {
+  if (textWidth === undefined || textWidth <= 0) return [row(text, tone)];
+  return wrapText(text, textWidth, maxLines).map((line) => row(line, tone));
+}
+
+const MESSAGE_MAX_LINES = 3;
+const DEBUG_MAX_LINES = 2;
+
+function debugRows(excerpt: ErrorDebugExcerpt, textWidth?: number): readonly ErrorRow[] {
+  const rows: ErrorRow[] = [
+    BLANK,
+    row("debug", "dim"),
+    ...textRows(excerpt.message, "muted", textWidth, DEBUG_MAX_LINES),
+  ];
+  if (excerpt.topFrame) rows.push(...textRows(excerpt.topFrame, "dim", textWidth, DEBUG_MAX_LINES));
   return rows;
 }
 
@@ -84,12 +107,18 @@ export function buildErrorRows(input: {
   readonly waterfall?: PlaybackFailureWaterfallModel | null;
   readonly debugExcerpt?: ErrorDebugExcerpt | null;
   readonly canRetry: boolean;
+  /** Panel text width in columns; free-text rows wrap to it instead of clipping. */
+  readonly textWidth?: number;
 }): readonly ErrorRow[] {
   const rows: ErrorRow[] = [row("Playback failed", "danger-strong")];
 
-  rows.push(...(input.scenario ? scenarioRows(input.scenario) : [row(input.message, "text")]));
+  rows.push(
+    ...(input.scenario
+      ? scenarioRows(input.scenario)
+      : textRows(input.message, "text", input.textWidth, MESSAGE_MAX_LINES)),
+  );
   if (input.waterfall) rows.push(...waterfallRows(input.waterfall));
-  if (input.debugExcerpt) rows.push(...debugRows(input.debugExcerpt));
+  if (input.debugExcerpt) rows.push(...debugRows(input.debugExcerpt, input.textWidth));
 
   rows.push(
     BLANK,
