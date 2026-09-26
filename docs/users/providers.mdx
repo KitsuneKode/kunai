@@ -56,15 +56,15 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="kickassanime" title="KickAssAnime">
 
-**Adapter role:** the anime backup, second in the default order. It has its own catalogue, site and
-video servers, so a Miruro outage does not reach it — and unlike the others it can pick up a show
-Kunai found anywhere, by matching the name and year against its own catalogue.
+**Adapter role:** the anime backup, third in the default order. It has its own catalogue, site and
+video servers, so a HiAnime or Miruro outage does not reach it — and unlike the others it can pick
+up a show Kunai found anywhere, by matching the name and year against its own catalogue.
 
 **Config id:** `kickassanime`.
 
 ```json
 {
-  "animeProvider": "miruro",
+  "animeProvider": "hianime",
   "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
 }
 ```
@@ -79,16 +79,16 @@ show you mean, it steps aside rather than playing the wrong one.
 
 <ProviderDocSection id="animegg" title="AnimeGG">
 
-**Adapter role:** the third anime source, behind Miruro and KickAssAnime. AnimeGG has its own catalogue, its
-own site and its own video servers, so it keeps working when Miruro does not — which is the whole
-reason it is there. It picks up a show Kunai found anywhere by matching its name against AnimeGG's
-own catalogue. Sub and dub both come from AnimeGG's own episode tabs.
+**Adapter role:** the fourth anime source, behind HiAnime, Miruro and KickAssAnime. AnimeGG has its own
+catalogue, its own site and its own video servers, so it keeps working when the earlier providers do
+not — which is the whole reason it is there. It picks up a show Kunai found anywhere by matching its
+name against AnimeGG's own catalogue. Sub and dub both come from AnimeGG's own episode tabs.
 
 **Config id:** `animegg`.
 
 ```json
 {
-  "animeProvider": "miruro",
+  "animeProvider": "hianime",
   "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
 }
 ```
@@ -132,6 +132,29 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 </ProviderDocSection>
 
+<ProviderDocSection id="hianime" title="HiAnime">
+
+**Adapter role:** the default anime provider, first in the order. HiAnime has its own catalogue and
+search, so anime search keeps working when AniList or AniDB are down. It resolves the ZokoAnime
+server for each episode — the same one ani-cli uses — and hands the HLS ladder and subtitle tracks
+to the player.
+
+**Config id:** `hianime`.
+
+```json
+{
+  "animeProvider": "hianime",
+  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
+}
+```
+
+**Caveats:** anime mode must be active. Sub and dub are separate episode fetches; a show without
+English audio plays subbed and says so in the playback trace. Each season is its own entry in
+HiAnime's catalogue, so a season jump is a new title rather than a deeper episode number. On
+networks where Kunai's own HTTP client meets Cloudflare, it falls back to `curl`.
+
+</ProviderDocSection>
+
 <ProviderDocSection id="miruro" title="Miruro">
 
 **Adapter role:** second in the default anime order, behind HiAnime. Miruro fronts roughly a dozen
@@ -144,7 +167,7 @@ working when AniList is down; if Miruro's search finds nothing, Kunai asks AniLi
 ```json
 {
   "animeProvider": "miruro",
-  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
+  "animeProviderPriority": ["hianime", "kickassanime", "animegg", "anidb", "allanime"]
 }
 ```
 

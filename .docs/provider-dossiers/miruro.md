@@ -56,7 +56,7 @@ this change to keep the release-hardening branches independently mergeable.
 
 ## Production status (2026-09-11) — default anime provider
 
-- **Promoted to default** (`animeProvider: "miruro"`, ahead of AniDB and AllAnime;
+- **Promoted to default at revision 1–2, then moved second at revision 3** (`animeProvider: "hianime"`; Miruro now leads the rest of the order, ahead of KickAssAnime, AnimeGG, AniDB and AllAnime;
   provider-defaults revision 1). This supersedes the "keep demoted" disposition
   below.
 - **Why the 2026-07/08 WAF verdicts were wrong:** the pipe classifier read _any_
