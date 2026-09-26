@@ -1,12 +1,28 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { FileStorage } from "@/infra/storage/FileStorage";
 import { getKunaiPaths } from "@kunai/storage";
 
 import { applyStorageRootEnv } from "../../../helpers/storage-env";
+
+/**
+ * Corrupt-config backups are timestamped, so a test asserts on the set of
+ * backups that exist rather than on one fixed name. A fixed `.corrupt.bak` was
+ * the defect: every launch overwrote the previous one.
+ *
+ * `dirname`/`basename` rather than string surgery: the first version split on
+ * `"/"`, which is right on POSIX and silently wrong on Windows, where the
+ * separator is `\`. It passed on Linux and failed three tests on the Windows
+ * parity leg.
+ */
+async function corruptBackups(configPath: string): Promise<string[]> {
+  const dir = dirname(configPath);
+  const base = basename(configPath);
+  return (await readdir(dir)).filter((name) => name.startsWith(`${base}.corrupt.`)).sort();
+}
 
 const tempDirs: string[] = [];
 
@@ -110,7 +126,6 @@ describe("FileStorage", () => {
       const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
       tempDirs.push(dir);
       const configPath = join(dir, "config.json");
-      const backupPath = `${configPath}.corrupt.bak`;
       await writeFile(configPath, '{"providerRelay":{"token":"secret"}');
       await chmod(configPath, 0o644);
 
@@ -118,7 +133,9 @@ describe("FileStorage", () => {
 
       await expect(storage.read("config")).resolves.toBeNull();
       expect((await stat(configPath)).mode & 0o777).toBe(0o600);
-      expect((await stat(backupPath)).mode & 0o777).toBe(0o600);
+      const [backup] = await corruptBackups(configPath);
+      expect(backup).toBeDefined();
+      expect((await stat(join(dir, backup!))).mode & 0o777).toBe(0o600);
     },
   );
 
@@ -133,7 +150,7 @@ describe("FileStorage", () => {
     // after the existence check rejected with ENOENT instead of returning null.
     await expect(storage.read("config")).resolves.toBeNull();
     expect(warnings).toEqual([]);
-    await expect(stat(`${configPath}.corrupt.bak`)).rejects.toThrow();
+    expect(await corruptBackups(configPath)).toEqual([]);
   });
 
   test("backs up the corrupt file's actual bytes, not an empty placeholder", async () => {
@@ -148,8 +165,55 @@ describe("FileStorage", () => {
 
     await expect(storage.read("config")).resolves.toBeNull();
     // The backup exists to preserve the content — an empty one destroys it.
-    await expect(readFile(`${configPath}.corrupt.bak`, "utf8")).resolves.toBe(corrupt);
+    const [backup] = await corruptBackups(configPath);
+    expect(backup).toBeDefined();
+    await expect(readFile(join(dir, backup!), "utf8")).resolves.toBe(corrupt);
     expect(warnings).toHaveLength(1);
+  });
+
+  /**
+   * The defect this naming scheme exists to prevent. A fixed `.corrupt.bak`
+   * meant the second launch overwrote the first launch's only copy — and since
+   * the unreadable config is never rewritten, every later launch re-detected,
+   * re-warned and re-clobbered it. Proven here with two distinct sentinels.
+   */
+  test("two corrupt launches keep both sets of bytes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+
+    await writeFile(configPath, "CORRUPT-SENTINEL-AAA");
+    const first = new FileStorage({ config: configPath });
+    await expect(first.read("config")).resolves.toBeNull();
+
+    await writeFile(configPath, "CORRUPT-SENTINEL-BBB");
+    const second = new FileStorage({ config: configPath });
+    await expect(second.read("config")).resolves.toBeNull();
+
+    const backups = await corruptBackups(configPath);
+    expect(backups).toHaveLength(2);
+    const contents = await Promise.all(
+      backups.map(async (name) => readFile(join(dir, name), "utf8")),
+    );
+    expect(contents.sort()).toEqual(["CORRUPT-SENTINEL-AAA", "CORRUPT-SENTINEL-BBB"]);
+  });
+
+  test("the corrupt-config warning does not claim the file was rewritten", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const corrupt = "{ this is not json";
+    await writeFile(configPath, corrupt);
+
+    const warnings: string[] = [];
+    const storage = new FileStorage({ config: configPath }, (message) => warnings.push(message));
+    await expect(storage.read("config")).resolves.toBeNull();
+
+    // The claim has to match the behaviour: nothing rewrites `configPath`, so
+    // "has been reset to defaults" sent people looking for a rewrite that never
+    // happened, and the bytes are still sitting there.
+    expect(warnings[0]).not.toMatch(/reset/i);
+    await expect(readFile(configPath, "utf8")).resolves.toBe(corrupt);
   });
 
   test("keeps the write queue usable after a failed write", async () => {

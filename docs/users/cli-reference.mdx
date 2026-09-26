@@ -39,6 +39,7 @@ From a repo clone (contributor-oriented), use `bun run dev -- <flags>` so Bun fo
 | `kunai rollback --to <ver>` | Roll back to an explicit verified version        |
 | `kunai doctor`              | Read-only install health (PATH, ownership)       |
 | `kunai doctor --json`       | Same report as JSON                              |
+| `kunai doctor --strict`     | Exit non-zero on any warning, for scripts        |
 | `kunai uninstall`           | Ownership-aware removal                          |
 | `kunai uninstall --purge`   | Also delete config/history/cache                 |
 | `kunai diagnostics recent`  | Print recent redacted diagnostics from the cache DB |

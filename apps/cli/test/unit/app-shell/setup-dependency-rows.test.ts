@@ -62,6 +62,31 @@ describe("resolveInstallCommand", () => {
     expect(YT_DLP_INSTALL.win32).toBe("winget install --id yt-dlp.yt-dlp -e");
     expect(buildRemediationLines(CURL_IMPERSONATE_INSTALL).join("\n")).not.toContain("apt install");
   });
+
+  /**
+   * `padEnd(8)` sat next to a label that is exactly 8 characters, so the suse
+   * entry printed `- openSUSEsudo zypper install mpv` — two commands glued into
+   * one line that cannot be run. The width is now derived from the table, so
+   * this asserts the property rather than the current label set: every emitted
+   * line has whitespace between its label and its command.
+   */
+  test("every remediation line separates its label from its command", () => {
+    for (const install of [
+      MPV_INSTALL,
+      YT_DLP_INSTALL,
+      FFMPEG_INSTALL,
+      CURL_INSTALL,
+      CURL_IMPERSONATE_INSTALL,
+    ]) {
+      const lines = buildRemediationLines(install).filter((line) => !line.startsWith("http"));
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        expect(line).toMatch(/^\S.*?\s{1,}\S/);
+        // No label may run straight into a command with no gap at all.
+        expect(line).not.toMatch(/[A-Za-z](sudo|brew|winget|zypper|pacman|apt|dnf|choco)\b/);
+      }
+    }
+  });
 });
 
 describe("every dependency is installable on every platform we ship to", () => {
