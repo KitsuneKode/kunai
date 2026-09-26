@@ -122,6 +122,7 @@
     "verify:doc-paths": "bun run scripts/verify-doc-paths.ts",
     "verify:doc-coverage": "bun run scripts/verify-doc-coverage.ts",
     "verify:doc-frontmatter": "bun run scripts/verify-doc-frontmatter.ts",
+    "verify:parity-references": "bun run scripts/verify-parity-references.ts",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
     "changeset": "bunx changeset",
     "version:packages": "bunx changeset version && bun run scripts/sync-npm-platform-versions.ts && bun run scripts/sync-root-changelog.ts && bun run release:notes",

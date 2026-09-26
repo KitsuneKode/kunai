@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "references": {
+    "ani-cli": {
+      "version": "5.1.4",
+      "commit": "dc43f32",
+      "upstream": "https://github.com/pystardust/ani-cli",
+      "localCheckout": "~/Projects/osc/ani-cli",
+      "notes": [
+        "Upstream versions its script via `version_number` inside ani-cli itself; git tags (v5.1) lag it.",
+        "Update `version` when upstream lands a hianime/anidb-relevant change, then either port it or record the deliberate skip in the provider dossier."
+      ]
+    }
+  }
+}

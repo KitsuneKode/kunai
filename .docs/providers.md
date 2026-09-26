@@ -496,8 +496,8 @@ rotations — lives in
 `packages/providers/src/allmanga/api-client.ts` contains the crypto/decoder and GraphQL helpers shared by the `allmangaProviderModule`. The module itself (`allmanga/direct.ts`) implements `CoreProviderModule`.
 
 - `packages/providers/src/allmanga/api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired behavior it implements unless Kunai deliberately chooses a different contract
-- when AllAnime or AllManga breaks, compare against ani-cli before guessing at a fix
-- on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli`
+- when AllAnime or AllManga breaks, compare against ani-cli **v4.x** before guessing at a fix — upstream deleted its AllAnime code in v5.0 (2026-08-01) and moved to anidb.app, so `master` and the pinned v5 checkout contain no mkissa logic to compare against; the live AllManga mkissa JS chunk is the current source of truth
+- on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli` (version pinned in `scripts/parity-references.json`)
 - if ani-cli is also broken upstream, Kunai may carry a temporary local fix, but that divergence should be documented and easy to remove when parity can be restored
 - this is a concrete API-client parity policy, not the default contract for every anime source
 - when fixing this family of providers, check:
