@@ -70,8 +70,14 @@ describe("@kunai/config parse boundary", () => {
     expect(DEFAULT_CONFIG.providerPriority).not.toContain("videasy");
   });
 
-  test("anime priority keeps AniDB first without pretending to be an allowlist", () => {
-    expect(DEFAULT_CONFIG.animeProvider).toBe("anidb");
+  test("anime priority leads with a provider that answers, without pretending to be an allowlist", () => {
+    // HiAnime leads because search only queries the configured default, and
+    // anidb.app answers 503 at the origin. AniDB stays second: it still carries
+    // the only verified AID cross-link and XML episode titles.
+    expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
+    // The array holds the rest of the order — `createProviderPrioritySnapshot`
+    // prepends the lane default — so it must not repeat it.
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["anidb"]);
+    expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain(DEFAULT_CONFIG.animeProvider);
   });
 });

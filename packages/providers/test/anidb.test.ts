@@ -493,6 +493,72 @@ describe("chooseAnidbSearchMatch", () => {
   });
 });
 
+describe("anidb search reports an outage instead of an empty result set", () => {
+  /**
+   * A 503 from the origin used to reach the browse parser as an error page, the
+   * parser found no cards, and `search` returned `[]`. The user saw "No results
+   * for …" for a provider that was down, and the release signoff read the empty
+   * `failureCodes` and filed it as provider drift. `null` is the contract's
+   * transport-failure channel; `[]` is a real answer and must mean one.
+   */
+  test("search returns null when the provider answers 503", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    const search = anidbProviderModule.search;
+    if (!search) throw new Error("the anidb module must expose search");
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () =>
+        new Response("<html><body>503 Service Unavailable</body></html>", {
+          status: 503,
+        })) as unknown as typeof fetch;
+
+      const results = await search({ query: "onigiri" }, {
+        signal: undefined,
+      } as unknown as ProviderRuntimeContext);
+
+      expect(results).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  /**
+   * Pins the mechanism, not just the symptom: the browse path now asks for the
+   * HTTP status, so a relay 404 is answered immediately instead of spending a
+   * curl request to be told the same thing. Before `reportStatus` this fell
+   * through to the transport fallback.
+   */
+  test("a relay 404 is answered without falling through to a local transport", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    let transportFallbackUsed = false;
+
+    try {
+      Bun.which = ((_cmd: string) => {
+        transportFallbackUsed = true;
+        return null;
+      }) as typeof Bun.which;
+
+      const context = {
+        fetch: {
+          fetch: async () => new Response("not found", { status: 404 }),
+        },
+      } as unknown as ProviderRuntimeContext;
+
+      await expect(searchAnidb("a title that does not exist", undefined, context)).rejects.toThrow(
+        /404/,
+      );
+      expect(transportFallbackUsed).toBe(false);
+    } finally {
+      Bun.which = originalWhich;
+    }
+  });
+});
+
 describe("anidb search delegation", () => {
   test("searchAnidb returns the shared browse parser contract", async () => {
     clearAnidbCachesForTest();

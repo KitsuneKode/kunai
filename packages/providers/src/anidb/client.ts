@@ -302,9 +302,17 @@ export async function searchAnidb(
 ): Promise<readonly AnidbSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  // `reportStatus` is what separates "this title is not on AniDB" from "AniDB
+  // is down". Without it a 503 hands back an error page, the browse parser
+  // finds no cards, and an origin outage is reported to the user as zero
+  // results for their query — and to the release signoff as provider drift.
+  // The HTML scrape used to opt out of this on the grounds that scrapes are
+  // happier being best-effort; that is exactly backwards for search, where a
+  // silent empty list is the one answer that cannot be acted on.
   const page = await anidbFetchText(`${ANIDB_BASE}/browse?q=${encodeURIComponent(trimmed)}`, {
     signal,
     context,
+    reportStatus: true,
   });
   return parseAnidbBrowseHtml(page);
 }
