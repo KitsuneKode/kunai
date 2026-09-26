@@ -5,6 +5,7 @@ import {
   type CoreProviderModule,
 } from "@kunai/core";
 import type {
+  ProviderArtworkInfo,
   ProviderEpisodeOption,
   ProviderFailure,
   ProviderResolveInput,
@@ -60,9 +61,11 @@ export {
 } from "./parsers";
 export {
   clearHianimeCachesForTest,
+  cloudflareBlockMessage,
   fetchHianimeEpisodeCatalog,
   fetchHianimeServers,
   hianimeCurlFailureMessage,
+  hianimeUrlLabel,
   hianimeEmbedReferer,
   hianimeMalIdFromEmbedUrl,
   HianimeEmbedDecodeError,
@@ -138,6 +141,8 @@ function linksToCandidates(
     readonly subtitleLanguages?: readonly string[];
     readonly hasExternalSubtitles: boolean;
     readonly timing?: Record<string, { readonly start: number; readonly end: number }>;
+    /** Episode poster and scrub-preview sprite from the embed payload. */
+    readonly artwork?: ProviderArtworkInfo;
   },
   cachePolicy: ReturnType<typeof createProviderCachePolicy>,
 ): { readonly streams: StreamCandidate[]; readonly variants: ProviderVariantCandidate[] } {
@@ -190,6 +195,7 @@ function linksToCandidates(
       flavorArchetype: archetype,
       flavorLabel,
       serverName: HIANIME_SUPPORTED_SERVER,
+      ...(input.artwork ? { artwork: input.artwork } : {}),
       confidence: 0.9,
       cachePolicy,
       languageEvidence: [
@@ -233,6 +239,7 @@ function linksToCandidates(
       flavorArchetype: archetype,
       flavorLabel,
       streamIds: [streamId],
+      ...(input.artwork ? { artwork: input.artwork } : {}),
       confidence: 0.9,
     });
   }
@@ -535,6 +542,18 @@ export const hianimeProviderModule: CoreProviderModule = {
         ),
       ];
       const subtitles = toSubtitleCandidates(requested.subtitles, sourceId, cachePolicy);
+      // The embed ships a poster frame and a sprite-sheet VTT (seek-bar
+      // previews). Parsed but previously dropped — surface both via the
+      // standard artwork slot so Tracks/source views can render them.
+      const artwork: ProviderArtworkInfo | undefined =
+        requested.poster || requested.spriteVtt
+          ? {
+              ...(requested.poster
+                ? { posterUrl: requested.poster, thumbnailUrl: requested.poster }
+                : {}),
+              ...(requested.spriteVtt ? { seekBarVttUrl: requested.spriteVtt } : {}),
+            }
+          : undefined;
       const { streams, variants } = linksToCandidates(
         requested.links,
         {
@@ -542,6 +561,7 @@ export const hianimeProviderModule: CoreProviderModule = {
           subtitleLanguages: subtitleLanguages.length > 0 ? subtitleLanguages : undefined,
           hasExternalSubtitles: subtitles.length > 0,
           ...(Object.keys(timing).length > 0 ? { timing } : null),
+          ...(artwork ? { artwork } : null),
         },
         cachePolicy,
       );

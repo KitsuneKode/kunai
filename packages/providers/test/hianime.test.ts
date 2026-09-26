@@ -5,6 +5,7 @@ import type { ProviderRuntimeContext } from "@kunai/types";
 import {
   chooseHianimeSearchMatch,
   clearHianimeCachesForTest,
+  cloudflareBlockMessage,
   decodeHianimeEmbedPage,
   deobfuscateHianimeEmbedBlob,
   obfuscateHianimeEmbedPayload,
@@ -12,6 +13,7 @@ import {
   HianimeEmbedDecodeError,
   hianimeCurlFailureMessage,
   hianimeEmbedReferer,
+  hianimeUrlLabel,
   hianimeMalIdFromEmbedUrl,
   hianimeNumericId,
   hianimeProviderModule,
@@ -52,6 +54,8 @@ const SUB_PAYLOAD = {
   ],
   skip: { intro: null, outro: { start: 1280, end: 1369 } },
   download_url: "/download/mal/20/1/sub",
+  poster: "https://hls2.aniwatchtv.uk/v/demo/sub/poster.jpg",
+  sprite_vtt: "https://hls2.aniwatchtv.uk/v/demo/sub/sprite.vtt",
 };
 
 const DUB_PAYLOAD = {
@@ -357,6 +361,18 @@ describe("hianime module resolve", () => {
       format: "vtt",
       source: "provider",
     });
+    // Embed poster + sprite VTT ride the standard artwork slot — the inventory
+    // projection turns seekBarVttUrl into the "seek thumbnails" capability.
+    for (const stream of result.streams) {
+      expect(stream.artwork).toEqual({
+        posterUrl: "https://hls2.aniwatchtv.uk/v/demo/sub/poster.jpg",
+        thumbnailUrl: "https://hls2.aniwatchtv.uk/v/demo/sub/poster.jpg",
+        seekBarVttUrl: "https://hls2.aniwatchtv.uk/v/demo/sub/sprite.vtt",
+      });
+    }
+    expect(result.variants?.[0]?.artwork?.seekBarVttUrl).toBe(
+      "https://hls2.aniwatchtv.uk/v/demo/sub/sprite.vtt",
+    );
     expect(result.externalIds).toMatchObject({
       malId: "20",
       providerNativeIds: { [HIANIME_PROVIDER_ID]: "naruto-1335" },
@@ -591,6 +607,32 @@ describe("hianime curl http trailer", () => {
     expect(hianimeCurlFailureMessage("", "gnutls handshake failed", 35)).toBe(
       "hianime fetch connection error (no HTTP response; curl exit 35): gnutls handshake failed",
     );
+  });
+
+  test("curl failure names the failed URL without leaking its query", () => {
+    // A /search URL carries the user's title query — errors land in logs.txt,
+    // so the label keeps origin + pathname only (upstream #1902 names the URL).
+    expect(
+      hianimeCurlFailureMessage("", "", 7, "https://hianime.at/search?keyword=oni%20girls&type=1"),
+    ).toBe(
+      "hianime fetch connection error (no HTTP response; curl exit 7) from https://hianime.at/search",
+    );
+  });
+
+  test("cloudflare advice depends on the binary that ran", () => {
+    expect(cloudflareBlockMessage(false)).toBe(
+      "hianime blocked by Cloudflare (try curl-impersonate)",
+    );
+    expect(cloudflareBlockMessage(true)).toBe(
+      "hianime blocked by Cloudflare (curl-impersonate was already used; retry later or from another network)",
+    );
+  });
+
+  test("url labels drop queries and survive malformed input", () => {
+    expect(hianimeUrlLabel("https://hianime.at/ajax/search?q=x&page=2")).toBe(
+      "https://hianime.at/ajax/search",
+    );
+    expect(hianimeUrlLabel("not a url")).toBe("not a url");
   });
 });
 
