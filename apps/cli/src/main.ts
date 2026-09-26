@@ -579,6 +579,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     process.exit(
       await runDoctor({
         json: argv.includes("--json"),
+        strict: argv.includes("--strict"),
         runningExecutable: { path: process.execPath, version: KUNAI_VERSION },
       }),
     );
@@ -1033,6 +1034,27 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
           .map((issue) => issue.message),
       },
     });
+  }
+
+  // Guard here, at the mount site, rather than earlier in the pipeline.
+  //
+  // Ink throws from `useStdin` when the process has no TTY, and that throw
+  // escaped as an unhandled rejection: a react-reconciler stack on stdout, two
+  // more on stderr, and the absolute install path in the output. Every
+  // non-interactive route (`--dry-run`, `doctor`, `diagnostics`, `completion`,
+  // `upgrade --check`, `--support-bundle`, …) has already returned by this
+  // point, so nothing legitimate is refused — but placing the guard *earlier*
+  // would mean maintaining a list of flags to exempt, and that list is exactly
+  // the kind of declaration-without-reader this repo keeps paying for.
+  if (!setupIsInteractive) {
+    process.stderr.write(
+      "kunai: this command needs an interactive terminal.\n" +
+        "Nothing was started. Pipe-aware routes that do work without a TTY:\n" +
+        "  kunai --help | --version | --dry-run\n" +
+        "  kunai doctor | kunai diagnostics | kunai completion | kunai upgrade --check\n",
+    );
+    process.exitCode = 1;
+    return;
   }
 
   const shellLoadStartedAt = args.debug ? performance.now() : 0;

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { MPV_INSTALL, buildRemediationLines } from "@/infra/os/install-commands";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import { runDoctor } from "@/services/update/run-doctor";
 import type { CapabilitySnapshot } from "@/ui";
@@ -30,6 +31,27 @@ function emptyCapabilities(): CapabilitySnapshot {
       reason: "test",
     },
     issues: [],
+  };
+}
+
+/**
+ * Every dependency absent, which is the state that used to exit 0. `mpv` is
+ * `degraded` rather than `fatal` on purpose (the shell still mounts), so this
+ * report is warnings-only.
+ */
+function missingMpvCapabilities(): CapabilitySnapshot {
+  return {
+    ...emptyCapabilities(),
+    mpv: false,
+    issues: [
+      {
+        id: "mpv-missing",
+        severity: "degraded",
+        message: "mpv not found — required for playback (shell still available).",
+        install: MPV_INSTALL,
+        remediation: buildRemediationLines(MPV_INSTALL),
+      },
+    ],
   };
 }
 
@@ -115,6 +137,62 @@ describe("runDoctor", () => {
         probeCapabilities: async () => emptyCapabilities(),
       });
       expect(code).toBe(1);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  /**
+   * Warnings do not fail by default, and that is deliberate — a missing mpv
+   * still leaves setup and the non-playback shell working. The gap it left is
+   * that a script asking "is this install healthy?" got 0 for an install that
+   * cannot play a video. `--strict` is that mode, and this pins both halves:
+   * the same report is 0 by default and 1 under `--strict`.
+   */
+  test("strict mode exits 1 on warnings that the default mode tolerates", async () => {
+    const { layout } = await makeLayout();
+    const originalLog = console.log;
+    console.log = () => {};
+    const base = {
+      json: false,
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.2.3" },
+      pathValue: "",
+      platform: "linux" as const,
+      fileExists: () => false,
+    };
+    const withMissingDeps = {
+      ...base,
+      probeCapabilities: async () => missingMpvCapabilities(),
+    };
+
+    try {
+      expect(await runDoctor(withMissingDeps)).toBe(0);
+      expect(await runDoctor({ ...withMissingDeps, strict: true })).toBe(1);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  test("strict mode still exits 0 when there is nothing to report", async () => {
+    const { layout } = await makeLayout();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      expect(
+        await runDoctor({
+          json: false,
+          strict: true,
+          layout,
+          now: () => FIXED_DATE,
+          runningExecutable: { path: layout.launcherPath, version: "1.2.3" },
+          pathValue: "",
+          platform: "linux",
+          fileExists: () => false,
+          probeCapabilities: async () => emptyCapabilities(),
+        }),
+      ).toBe(0);
     } finally {
       console.log = originalLog;
     }
