@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
-import type { ConfigStore } from "@/services/persistence/ConfigStore";
+import { DEFAULT_CONFIG, type ConfigStore } from "@/services/persistence/ConfigStore";
 
 class MemoryConfigStore implements ConfigStore {
   constructor(private loaded: Partial<KitsuneConfig> = {}) {}
@@ -453,6 +453,82 @@ describe("ConfigServiceImpl", () => {
     await service.save();
     const persisted = await store.load();
     expect(persisted.animeLanguageProfile?.subtitle).toBe("interactive");
+  });
+
+  describe("provider defaults revision", () => {
+    // save() persists the whole merged config, so the shipped anime default sits
+    // on disk looking like a user choice. The revision stamp lets load() move
+    // only configs still carrying a previously shipped pair to the current
+    // defaults — exactly once.
+
+    test("moves an un-stamped config on a shipped anidb pair to the current defaults", async () => {
+      const store = new MemoryConfigStore({
+        animeProvider: "anidb",
+        animeProviderPriority: ["anidb"],
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.animeProvider).toBe(DEFAULT_CONFIG.animeProvider);
+      expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      const persisted = await store.load();
+      expect(persisted.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      expect(persisted.providerDefaultsRevision).toBe(DEFAULT_CONFIG.providerDefaultsRevision);
+    });
+
+    test("migrates every pair shape anidb-era defaults shipped", async () => {
+      for (const priority of [undefined, ["anidb"], ["anidb", "allanime"]]) {
+        const store = new MemoryConfigStore({
+          animeProvider: "anidb",
+          ...(priority ? { animeProviderPriority: priority } : {}),
+        });
+        const service = await ConfigServiceImpl.load(store);
+
+        expect(service.animeProvider).toBe(DEFAULT_CONFIG.animeProvider);
+        expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      }
+    });
+
+    test("leaves a deliberate anime provider pick alone but stamps the revision", async () => {
+      const store = new MemoryConfigStore({
+        animeProvider: "allanime",
+        animeProviderPriority: ["allanime", "miruro", "anidb"],
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.animeProvider).toBe("allanime");
+      expect(service.animeProviderPriority).toEqual(["allanime", "miruro", "anidb"]);
+      expect(service.getRaw().providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
+    });
+
+    test("leaves a reordered list headed by anidb alone", async () => {
+      // A reorder write puts the pick first and the rest of the full list after
+      // it — distinguishable from every pair a default ever wrote.
+      const store = new MemoryConfigStore({
+        animeProvider: "anidb",
+        animeProviderPriority: ["allanime", "miruro"],
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.animeProvider).toBe("anidb");
+      expect(service.animeProviderPriority).toEqual(["allanime", "miruro"]);
+    });
+
+    test("does not re-migrate a stamped config whose user re-picked the old default", async () => {
+      const store = new MemoryConfigStore({
+        animeProvider: "anidb",
+        animeProviderPriority: ["anidb"],
+        providerDefaultsRevision: DEFAULT_CONFIG.providerDefaultsRevision,
+      });
+      await ConfigServiceImpl.load(store);
+
+      // The stamp means load() treats the pair as a user choice: no migration
+      // write fired — the store still holds exactly what it was given.
+      const persisted = await store.load();
+      expect(persisted.animeProvider).toBe("anidb");
+      expect(persisted.animeProviderPriority).toEqual(["anidb"]);
+    });
   });
 });
 
