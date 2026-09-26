@@ -12,13 +12,13 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { isMuslEnvironmentSync } from "../apps/cli/src/services/update/native-installer/musl";
+import { resolveHostReleaseBinaryTarget } from "../apps/cli/src/services/update/platform-assets";
 import {
   allReadmeCommandsPassed,
   verifyReadmeCommands,
   type ReadmeCommandMode,
 } from "../apps/cli/test/integration/helpers/readme-command-harness";
-import { isMuslEnvironmentSync } from "../apps/cli/src/services/update/native-installer/musl";
-import { resolveHostReleaseBinaryTarget } from "../apps/cli/src/services/update/platform-assets";
 
 function usage(): never {
   console.error(`Usage:
@@ -85,8 +85,7 @@ export async function resolveDefaultInvocation(): Promise<{
   if (!cliPackage.version) {
     throw new Error("could not read version from apps/cli/package.json");
   }
-  const hostLibc =
-    process.platform === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu";
+  const hostLibc = process.platform === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu";
   const target = resolveHostReleaseBinaryTarget({ libc: hostLibc });
   return {
     mode: "fixture-assets",
