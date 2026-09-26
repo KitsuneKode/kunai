@@ -283,8 +283,17 @@ export const anidbProviderModule: CoreProviderModule = {
   providerId: ANIDB_PROVIDER_ID,
   manifest: anidbManifest,
 
-  async search(input, context) {
-    const results = await searchAnidb(input.query, context.signal, context);
+  async search(input, context): Promise<readonly ProviderSearchResult[] | null> {
+    let results: Awaited<ReturnType<typeof searchAnidb>>;
+    try {
+      results = await searchAnidb(input.query, context.signal, context);
+    } catch {
+      // Null is the contract's transport-failure channel (mirrors HiAnime and
+      // AllManga): unreachable provider, not "no results". A cancelled caller
+      // lands here too, which is correct — an aborted search is not an empty
+      // result set either.
+      return null;
+    }
     const mapped: ProviderSearchResult[] = [];
     for (const result of results.slice(0, 40)) {
       mapped.push({

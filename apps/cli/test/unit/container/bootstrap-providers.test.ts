@@ -12,7 +12,11 @@ describe("production provider defaults", () => {
     const ids = modules.map((module) => module.providerId);
 
     expect(DEFAULT_CONFIG.provider).toBe("videasy");
-    expect(DEFAULT_CONFIG.animeProvider).toBe("anidb");
+    // The anime lane default must be a provider that answers. AniDB stays
+    // registered and second in `animeProviderPriority`; it is not first,
+    // because search only queries the configured default and anidb.app
+    // answers 503 at the origin.
+    expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
     expect(ids).toContain(DEFAULT_CONFIG.provider);
     expect(ids).toContain(DEFAULT_CONFIG.animeProvider);
     expect(ids).toContain(DEFAULT_CONFIG.youtubeProvider);
