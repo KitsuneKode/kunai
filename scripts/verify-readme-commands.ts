@@ -90,7 +90,9 @@ export async function resolveDefaultInvocation(): Promise<{
   return {
     mode: "fixture-assets",
     version: cliPackage.version,
-    binary: join("apps/cli/dist/bin", target.out),
+    // Repo-relative POSIX form — the value is also a stable contract string
+    // for tests; `resolve`/`existsSync` translate `/` on Windows fine.
+    binary: `apps/cli/dist/bin/${target.out}`,
   };
 }
 

@@ -58,9 +58,12 @@ describe("deferred media materializer", () => {
     expect(mpd).toContain("https://ak-video.example/video.mp4?sig=test-video");
     expect(mpd).toContain("https://ak-audio.example/audio.mp4?sig=test-audio");
 
-    // The MPD embeds signed upstream URLs — owner-only file and dir.
-    expect((await stat(materialized.stream.url)).mode & 0o777).toBe(0o600);
-    expect((await stat(dirname(materialized.stream.url))).mode & 0o777).toBe(0o700);
+    // The MPD embeds signed upstream URLs — owner-only file and dir. POSIX
+    // only: Windows has ACLs, and stat mode bits there don't reflect chmod.
+    if (process.platform !== "win32") {
+      expect((await stat(materialized.stream.url)).mode & 0o777).toBe(0o600);
+      expect((await stat(dirname(materialized.stream.url))).mode & 0o777).toBe(0o700);
+    }
 
     await materialized.cleanup();
     expect(existsSync(materialized.stream.url)).toBe(false);

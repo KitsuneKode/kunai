@@ -100,7 +100,18 @@ describe("playback target ref codec", () => {
   });
 
   it("caps oversized catalog ids instead of keeping them whole", () => {
-    const ref = parsePlaybackTargetRef(`kunai://play?cat=tmdb:${"9".repeat(200)}&kind=movie`);
-    expect(ref?.anchor).toEqual({ by: "catalog", ns: "tmdb", id: "9".repeat(128) });
+    // The bound is generous (512) because the web/query fallback exists for
+    // identities too large for the compact codec — a legitimately long
+    // provider id must survive intact. Anything past the cap is still cut.
+    const ref = parsePlaybackTargetRef(`kunai://play?cat=tmdb:${"9".repeat(600)}&kind=movie`);
+    expect(ref?.anchor).toEqual({ by: "catalog", ns: "tmdb", id: "9".repeat(512) });
+  });
+
+  it("keeps a legitimately long catalog id intact through the cap", () => {
+    const longId = "episode/".repeat(40);
+    const ref = parsePlaybackTargetRef(
+      `kunai://play?cat=youtube:${encodeURIComponent(longId)}&kind=movie`,
+    );
+    expect(ref?.anchor).toEqual({ by: "catalog", ns: "youtube", id: longId });
   });
 });

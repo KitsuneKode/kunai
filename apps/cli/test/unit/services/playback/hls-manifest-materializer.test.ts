@@ -102,11 +102,14 @@ describe("hls manifest materializer", () => {
       expect(materialized!.stream.headers).toEqual(stream.headers);
 
       // The file embeds signed CDN URLs — it and its dir stay owner-only in
-      // the shared tmpdir.
-      const playlistMode = (await stat(materialized!.stream.url)).mode & 0o777;
-      const dirMode = (await stat(dirname(materialized!.stream.url))).mode & 0o777;
-      expect(playlistMode).toBe(0o600);
-      expect(dirMode).toBe(0o700);
+      // the shared tmpdir. POSIX only: Windows uses ACLs and stat mode bits
+      // there don't reflect the chmod.
+      if (process.platform !== "win32") {
+        const playlistMode = (await stat(materialized!.stream.url)).mode & 0o777;
+        const dirMode = (await stat(dirname(materialized!.stream.url))).mode & 0o777;
+        expect(playlistMode).toBe(0o600);
+        expect(dirMode).toBe(0o700);
+      }
     } finally {
       globalThis.fetch = originalFetch;
     }

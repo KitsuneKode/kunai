@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { posix as posixPath } from "node:path";
 
 import { whichLive } from "../os/which";
 
@@ -52,7 +52,10 @@ export function discoverMpvInvocation(deps: MpvDiscoveryDeps = {}): MpvInvocatio
     const home = deps.homeDir ?? homedir();
     const appDirs = [
       `/var/lib/flatpak/app/${FLATPAK_MPV_APP_ID}`,
-      join(home, `.local/share/flatpak/app/${FLATPAK_MPV_APP_ID}`),
+      // `posix.join`, not `join`: the flatpak leg only runs on Linux, but the
+      // injected-platform tests and any POSIX path assembled on a Windows host
+      // get backslashes from plain `join` — meaningless for a flatpak dir.
+      posixPath.join(home, `.local/share/flatpak/app/${FLATPAK_MPV_APP_ID}`),
     ];
     if (appDirs.some((dir) => exists(dir))) {
       return { argv: ["flatpak", "run", FLATPAK_MPV_APP_ID], via: "flatpak" };
