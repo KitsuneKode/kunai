@@ -55,6 +55,15 @@ export function diffBaseline(baseline: RuleCounts, current: RuleCounts): Baselin
   return { increases, decreases, zeroed };
 }
 
+/**
+ * `--update` may only ratchet the baseline down (or seed a first one). Writing a
+ * higher count is the self-serve bypass the gate exists to stop — an increase
+ * has to be a deliberate edit of baseline.json a reviewer can see in the diff.
+ */
+export function baselineUpdateAllowed(hadBaseline: boolean, drift: BaselineDrift): boolean {
+  return !hadBaseline || drift.increases.length === 0;
+}
+
 async function collectRuleCodes(): Promise<readonly string[]> {
   const child = Bun.spawn(
     [
@@ -129,10 +138,17 @@ async function main(): Promise<void> {
   const total = Object.values(current).reduce((sum, count) => sum + count, 0);
 
   if (update) {
-    const previous = await readBaseline().catch(() => ({}));
+    const hadBaseline = await Bun.file(BASELINE_PATH).exists();
+    const previous = hadBaseline ? await readBaseline() : {};
     const drift = diffBaseline(previous, current);
-    await writeBaseline(current);
     reportDrift(drift, total);
+    if (!baselineUpdateAllowed(hadBaseline, drift)) {
+      console.error(
+        `[anti-slop] FAIL: refusing to write a baseline with increases — fix the new findings, or edit ${BASELINE_PATH} by hand so the bump is a visible diff a reviewer can question`,
+      );
+      process.exit(1);
+    }
+    await writeBaseline(current);
     console.log(`[anti-slop] baseline written to ${BASELINE_PATH}`);
     return;
   }

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { countByRule, diffBaseline } from "../../../../../scripts/anti-slop-baseline";
+import {
+  baselineUpdateAllowed,
+  countByRule,
+  diffBaseline,
+} from "../../../../../scripts/anti-slop-baseline";
 
 describe("anti-slop count baseline", () => {
   test("counts only anti-slop diagnostic codes", () => {
@@ -56,5 +60,34 @@ describe("anti-slop count baseline", () => {
     expect(drift.increases).toEqual([]);
     expect(drift.decreases).toEqual([]);
     expect(drift.zeroed).toEqual([]);
+  });
+
+  describe("baselineUpdateAllowed", () => {
+    test("refuses to write a baseline with rule-count increases", () => {
+      const drift = diffBaseline({ "anti-slop(rule-a)": 3 }, { "anti-slop(rule-a)": 4 });
+
+      expect(baselineUpdateAllowed(true, drift)).toBe(false);
+    });
+
+    test("allows a decrease-only rewrite so the ratchet can move down", () => {
+      const drift = diffBaseline(
+        { "anti-slop(rule-a)": 5, "anti-slop(rule-b)": 2 },
+        { "anti-slop(rule-a)": 5, "anti-slop(rule-b)": 0 },
+      );
+
+      expect(baselineUpdateAllowed(true, drift)).toBe(true);
+    });
+
+    test("allows seeding a baseline when none exists yet", () => {
+      const drift = diffBaseline({}, { "anti-slop(rule-a)": 42 });
+
+      expect(baselineUpdateAllowed(false, drift)).toBe(true);
+    });
+
+    test("allows an unchanged rewrite", () => {
+      const drift = diffBaseline({ "anti-slop(rule-a)": 7 }, { "anti-slop(rule-a)": 7 });
+
+      expect(baselineUpdateAllowed(true, drift)).toBe(true);
+    });
   });
 });

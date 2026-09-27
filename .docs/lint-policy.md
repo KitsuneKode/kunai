@@ -64,7 +64,9 @@ lint:anti-slop:baseline` fails when any rule's count rises above the baseline,
 reports decreases as ratchet invitations, and flags zeroed rules as promotable.
 After burning a count down, commit the new numbers with `bun run
 lint:anti-slop:baseline:update` — the baseline only moves down through that
-explicit act.
+explicit act. The updater refuses to write a baseline with rule-count
+increases; raising a count means editing `baseline.json` by hand, where the
+bump is a visible diff a reviewer can question.
 
 The findings are real, not false positives — mostly unjustified type
 assertions, `typeof` narrowing at non-boundaries, and `Record<string, unknown>`
