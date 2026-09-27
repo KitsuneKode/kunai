@@ -24,6 +24,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 
 import {
   miruroInventorySourceId,
@@ -1918,13 +1919,23 @@ async function pipeCall(
       }
       if (candidate.cloudflareHtml) {
         wafHits += 1;
-        lastError = new Error(`HTTP ${candidate.status || 403} (cloudflare html)`);
+        lastError = providerHttpErrorForStatus({
+          status: candidate.status || 403,
+          message: `HTTP ${candidate.status || 403} (cloudflare html)`,
+          providerId: MIRURO_PROVIDER_ID,
+          stage: "pipe-fetch",
+        });
         if (wafHits >= MIRURO_WAF_FAIL_FAST_THRESHOLD) {
           throw new Error(miruroWafBlockMessage(), { cause: lastError });
         }
         continue;
       }
-      lastError = new Error(describeMiruroPipeFailure(candidate.status, candidate.text));
+      lastError = providerHttpErrorForStatus({
+        status: candidate.status,
+        message: describeMiruroPipeFailure(candidate.status, candidate.text),
+        providerId: MIRURO_PROVIDER_ID,
+        stage: "pipe-fetch",
+      });
       // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
     } catch (error) {
       if (error instanceof MiruroPipeDecodeError) throw error;
@@ -1935,7 +1946,21 @@ async function pipeCall(
     }
   }
 
-  const message = lastError?.message ?? "request failed";
+  const message = lastError instanceof Error ? lastError.message : "request failed";
+  // A status-bearing failure keeps its verdict through the wrap — otherwise a
+  // persistent 429/5xx re-enters the engine as an untyped retryable error and
+  // never reaches quarantine (#458).
+  if (lastError instanceof ProviderHttpError) {
+    throw new ProviderHttpError({
+      message: `Miruro pipe network request failed: ${message}`,
+      providerId: MIRURO_PROVIDER_ID,
+      stage: "pipe-fetch",
+      status: lastError.status,
+      code: lastError.code,
+      retryable: lastError.retryable,
+      cause: lastError,
+    });
+  }
   throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
 }
 

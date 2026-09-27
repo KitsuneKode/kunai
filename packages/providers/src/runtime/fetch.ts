@@ -1,47 +1,20 @@
-import type { ProviderId, ProviderRuntimeContext, ResolveErrorCode } from "@kunai/types";
+import {
+  httpStatusIsRetryable,
+  httpStatusToResolveErrorCode,
+  ProviderHttpError,
+  providerHttpErrorForStatus,
+  type ProviderId,
+  type ProviderRuntimeContext,
+} from "@kunai/types";
+
+// The error contract lives in @kunai/types so the cycle engine's classifier
+// can read status/code/retryable instead of string-matching messages (#458).
+// Re-exported here to keep the long-standing import path stable.
+export { ProviderHttpError, providerHttpErrorForStatus };
 
 export interface ProviderHttpRequestContext {
   readonly providerId?: ProviderId | string;
   readonly stage?: string;
-}
-
-export class ProviderHttpError extends Error {
-  override readonly name = "ProviderHttpError";
-
-  readonly providerId?: ProviderId | string;
-
-  readonly stage?: string;
-
-  readonly status?: number;
-
-  readonly code: ResolveErrorCode;
-
-  readonly retryable: boolean;
-
-  constructor({
-    message,
-    providerId,
-    stage,
-    status,
-    code,
-    retryable,
-    cause,
-  }: {
-    readonly message: string;
-    readonly providerId?: ProviderId | string;
-    readonly stage?: string;
-    readonly status?: number;
-    readonly code: ResolveErrorCode;
-    readonly retryable: boolean;
-    readonly cause?: unknown;
-  }) {
-    super(message, { cause });
-    this.providerId = providerId;
-    this.stage = stage;
-    this.status = status;
-    this.code = code;
-    this.retryable = retryable;
-  }
 }
 
 export function providerFetch(
@@ -128,27 +101,8 @@ export function createProviderHttpError(
     stage: requestContext?.stage,
     status: response.status,
     message: `Provider HTTP request failed with ${response.status} ${response.statusText}`.trim(),
-    code: statusToResolveErrorCode(response.status),
-    retryable: isRetryableStatus(response.status),
+    code: httpStatusToResolveErrorCode(response.status),
+    retryable: httpStatusIsRetryable(response.status),
   });
 }
 
-export function statusToResolveErrorCode(status: number): ResolveErrorCode {
-  if (status === 408 || status === 504) return "timeout";
-  if (status === 429) return "rate-limited";
-  if (status === 401 || status === 403) return "blocked";
-  if (status === 404) return "not-found";
-  if (status >= 500) return "provider-unavailable";
-  return "network-error";
-}
-
-export function isRetryableStatus(status: number): boolean {
-  return (
-    status === 408 ||
-    status === 429 ||
-    status === 500 ||
-    status === 502 ||
-    status === 503 ||
-    status === 504
-  );
-}

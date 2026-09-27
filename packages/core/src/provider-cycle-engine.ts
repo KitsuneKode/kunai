@@ -10,6 +10,7 @@ import type {
   ProviderId,
   ProviderTraceEvent,
 } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 import { guardEndpointHealthAgainstCancellation } from "./provider-attempt-cancellation";
 import { isOfflineNetworkFailure } from "./provider-failure-classifier";
@@ -722,6 +723,15 @@ export function classifyEndpointFailureFromCycleFailure(
       // A malformed response is endpoint evidence. ProviderEndpointHealthService
       // still applies its distinct-title guard before escalating it.
       return "server-error";
+    case "candidate-server-error":
+      // A 5xx IS the endpoint answering badly — server-error so the
+      // distinct-title quarantine gate can see it (#458).
+      return "server-error";
+    case "candidate-rate-limited":
+      // A 429 that survives across distinct titles is an endpoint that cannot
+      // serve this session; quarantining it is what stops the provider being
+      // re-probed forever. Same gate, same downstream title guard.
+      return "server-error";
     case "candidate-blocked":
       // "Blocked" is not endpoint-scoped evidence on its own. It includes
       // provider-wide session guards, regional WAF/Cloudflare responses, and
@@ -753,6 +763,17 @@ export function classifyProviderCycleError(error: unknown): {
       failureClass: "candidate-user-cancelled",
       message: "Provider cycle cancelled",
       retryable: false,
+    };
+  }
+  /* A provider that threw with its HTTP status attached gets classified on
+   * that status, not on whatever the message happens to contain — otherwise a
+   * 429 or 503 reads as a generic retryable blip and never reaches the
+   * quarantine gate (#458). */
+  if (error instanceof ProviderHttpError) {
+    return {
+      failureClass: providerHttpCycleFailureClass(error),
+      message: error.message,
+      retryable: error.retryable,
     };
   }
   if (isNetworkOfflineMessage(message)) {
@@ -795,6 +816,22 @@ export function classifyProviderCycleError(error: unknown): {
     message: error instanceof Error ? error.message : String(error),
     retryable: true,
   };
+}
+
+function providerHttpCycleFailureClass(error: ProviderHttpError): ProviderCycleFailureClass {
+  const { code, status } = error;
+  if (code === "rate-limited" || status === 429) return "candidate-rate-limited";
+  if (code === "provider-unavailable" || (typeof status === "number" && status >= 500)) {
+    return "candidate-server-error";
+  }
+  if (code === "blocked" || status === 401 || status === 403) return "candidate-blocked";
+  if (code === "timeout" || status === 408 || status === 504) return "candidate-timeout";
+  if (code === "not-found" || status === 404) return "candidate-empty";
+  if (code === "parse-failed") return "candidate-parse";
+  if (code === "expired") return "candidate-expired";
+  if (code === "unsupported-title") return "candidate-unsupported";
+  if (code === "cancelled") return "candidate-user-cancelled";
+  return "candidate-network";
 }
 
 export function isAbortError(error: unknown): boolean {

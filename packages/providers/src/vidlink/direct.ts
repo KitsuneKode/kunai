@@ -6,12 +6,9 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
-import {
-  isRetryableStatus,
-  ProviderHttpError,
-  providerFetch,
-  statusToResolveErrorCode,
-} from "../runtime/fetch";
+import { httpStatusIsRetryable, httpStatusToResolveErrorCode, ProviderHttpError } from "@kunai/types";
+
+import { providerFetch } from "../runtime/fetch";
 import {
   directStreamFetchSignal,
   resolveDirectStreamSource,
@@ -107,8 +104,8 @@ function vidlinkHttpError(status: number, endpoint: string, stage: string): Prov
     stage,
     status,
     message: `${endpoint} returned HTTP ${status}`,
-    code: statusToResolveErrorCode(status),
-    retryable: isRetryableStatus(status),
+    code: httpStatusToResolveErrorCode(status),
+    retryable: httpStatusIsRetryable(status),
   });
 }
 

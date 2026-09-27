@@ -7,7 +7,7 @@
  * curl/curl-impersonate — the same shape as the AniDB client.
  */
 
-import { isRelayedResponse } from "@kunai/types";
+import { isRelayedResponse, providerHttpErrorForStatus } from "@kunai/types";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { ProviderHttpError } from "../runtime/fetch";
@@ -26,7 +26,7 @@ import {
   HianimeEmbedDecodeError,
   type HianimeEmbedPayload,
 } from "./embed";
-import { HIANIME_SUPPORTED_SERVER } from "./manifest";
+import { HIANIME_PROVIDER_ID, HIANIME_SUPPORTED_SERVER } from "./manifest";
 import {
   chooseHianimeSearchMatch,
   HIANIME_BASE,
@@ -273,7 +273,14 @@ export async function hianimeFetchText(
       signal: createTimeoutSignal(options.signal, 15_000),
     });
     if (!response.ok) {
-      throw new Error(`hianime fetch HTTP ${response.status} from ${hianimeUrlLabel(url)}`);
+      // The status rides the error so classification reads the structure, not
+      // the message string (#458).
+      throw providerHttpErrorForStatus({
+        status: response.status,
+        message: `hianime fetch HTTP ${response.status} from ${hianimeUrlLabel(url)}`,
+        providerId: HIANIME_PROVIDER_ID,
+        stage: "fetch-page",
+      });
     }
     const text = await response.text();
     if (isCloudflareChallengeText(text)) {
@@ -312,7 +319,12 @@ export async function hianimeFetchText(
     if (isCloudflareChallengeText(body)) {
       throw new Error(cloudflareBlockMessage(curl.impersonates));
     }
-    throw new Error(`hianime fetch HTTP ${httpCode} from ${hianimeUrlLabel(url)}`);
+    throw providerHttpErrorForStatus({
+      status: httpCode,
+      message: `hianime fetch HTTP ${httpCode} from ${hianimeUrlLabel(url)}`,
+      providerId: HIANIME_PROVIDER_ID,
+      stage: "fetch-page",
+    });
   }
   if (isCloudflareChallengeText(body)) {
     throw new Error(cloudflareBlockMessage(curl.impersonates));

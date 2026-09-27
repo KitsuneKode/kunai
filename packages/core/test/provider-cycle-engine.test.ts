@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import type { ProviderCycleCandidate } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 import {
   classifyEndpointFailureFromCycleFailure,
@@ -344,6 +345,61 @@ test("classifyProviderCycleError keeps blocked and parse failures non-retryable"
     failureClass: "candidate-network",
     retryable: true,
   });
+});
+
+// #458: a status-bearing ProviderHttpError classifies on the status, not on
+// what the message happens to contain — a 429/503 used to degrade to a
+// retryable "candidate-unknown" and never reached the quarantine gate.
+test("classifyProviderCycleError reads ProviderHttpError structurally", () => {
+  expect(
+    classifyProviderCycleError(
+      new ProviderHttpError({
+        message: "RGShows API returned HTTP 429",
+        status: 429,
+        code: "rate-limited",
+        retryable: true,
+      }),
+    ),
+  ).toMatchObject({ failureClass: "candidate-rate-limited", retryable: true });
+
+  expect(
+    classifyProviderCycleError(
+      new ProviderHttpError({
+        message: "VidRock API returned HTTP 503",
+        status: 503,
+        code: "provider-unavailable",
+        retryable: true,
+      }),
+    ),
+  ).toMatchObject({ failureClass: "candidate-server-error", retryable: true });
+
+  expect(
+    classifyProviderCycleError(
+      new ProviderHttpError({
+        message: "upstream answered 403 without naming cloudflare",
+        status: 403,
+        code: "blocked",
+        retryable: false,
+      }),
+    ),
+  ).toMatchObject({ failureClass: "candidate-blocked", retryable: false });
+});
+
+test("endpoint health sees rate-limited and server-error cycle failures", () => {
+  const base = {
+    providerId: "vidrock",
+    candidateId: "source:vidrock",
+    message: "failed",
+    retryable: true,
+    at: "2026-05-19T00:00:00.000Z",
+  } as const;
+
+  expect(
+    classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-rate-limited" }),
+  ).toBe("server-error");
+  expect(
+    classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-server-error" }),
+  ).toBe("server-error");
 });
 
 test("endpoint health learns from parse failures but not ambiguous provider blocks", () => {

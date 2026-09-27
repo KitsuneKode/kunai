@@ -1,7 +1,7 @@
 import { RELAYED_RESPONSE_HEADER } from "@kunai/types";
 
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
-import { RELAY_ERROR_CODE_HEADER, RELAY_HOP_HEADER, type RelayRpcRequest } from "./types";
+import { RELAY_ERROR_CODE_HEADER, type RelayRpcRequest } from "./types";
 import type { RelayFetchPort, RelayFetchPortOptions } from "./types";
 
 type RelayHeadersInit = ConstructorParameters<typeof Headers>[0];

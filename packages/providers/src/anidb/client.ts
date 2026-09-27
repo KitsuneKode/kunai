@@ -1,11 +1,11 @@
+import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "@kunai/types";
 import {
-  RELAY_HOP_HEADER,
-  type ProviderRuntimeContext,
-  type ResolveErrorCode,
-  type StartupPriority,
+  httpStatusIsRetryable,
+  httpStatusToResolveErrorCode,
+  isRelayedResponse,
+  ProviderHttpError,
 } from "@kunai/types";
 
-import { isRetryableStatus, statusToResolveErrorCode } from "../runtime/fetch";
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import {
   curlCipherArgs,
@@ -153,14 +153,18 @@ export function resolveAnidbCurl(environment: Partial<CurlEnvironment> = {}): Cu
  * Reading that distinction back out of a message string is how it gets lost,
  * so the status rides on the error.
  */
-export class AnidbHttpStatusError extends Error {
-  readonly status: number;
+export class AnidbHttpStatusError extends ProviderHttpError {
+  override readonly name = "AnidbHttpStatusError";
+  declare readonly status: number;
 
   constructor(status: number) {
-    // Message shape preserved from the untyped throw this replaces.
-    super(`anidb fetch HTTP ${status}`);
-    this.name = "AnidbHttpStatusError";
-    this.status = status;
+    super({
+      // Message shape preserved from the untyped throw this replaces.
+      message: `anidb fetch HTTP ${status}`,
+      status,
+      code: httpStatusToResolveErrorCode(status),
+      retryable: httpStatusIsRetryable(status),
+    });
   }
 }
 
@@ -251,7 +255,7 @@ export async function anidbFetchText(
         }
       } else if (
         !isFingerprintRetryableStatus(response.status) &&
-        !(response.status === 404 && response.headers.get(RELAY_HOP_HEADER) !== null)
+        !(response.status === 404 && isRelayedResponse(response))
       ) {
         // Falling through to curl exists so a Cloudflare challenge gets a
         // second chance with a better TLS fingerprint. An upstream outage or
@@ -411,7 +415,6 @@ export async function searchAnidb(
   const page = await anidbFetchText(`${ANIDB_BASE}/browse?q=${encodeURIComponent(trimmed)}`, {
     signal,
     context,
-    reportStatus: true,
   });
   return parseAnidbBrowseHtml(page);
 }
@@ -1022,9 +1025,9 @@ async function settleAnidbLanguage(options: {
       status: "failed",
       links: [],
       failure: {
-        code: statusError ? statusToResolveErrorCode(statusError.status) : "network-error",
+        code: statusError ? httpStatusToResolveErrorCode(statusError.status) : "network-error",
         message: error instanceof Error ? error.message : `AniDB ${options.mode} source failed`,
-        retryable: statusError ? isRetryableStatus(statusError.status) : true,
+        retryable: statusError ? httpStatusIsRetryable(statusError.status) : true,
       },
     };
   }

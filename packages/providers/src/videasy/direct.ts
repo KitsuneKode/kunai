@@ -28,6 +28,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { readJsonObjectBody } from "../shared/json-body";
@@ -1536,7 +1537,14 @@ async function fetchWingsdatabaseSeed(
             ),
             headers: seedHeaders,
           });
-          if (!response.ok) throw new Error(`seed HTTP ${response.status}`);
+          if (!response.ok) {
+            throw providerHttpErrorForStatus({
+              status: response.status,
+              message: `seed HTTP ${response.status}`,
+              providerId: VIDEOSY_PROVIDER_ID,
+              stage: "wings-seed",
+            });
+          }
           const body = await readJsonObjectBody<{ seed?: string; ttlMs?: number }>(response);
           if (!body?.seed) throw new Error("seed payload missing seed");
           return { apiBase, seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };

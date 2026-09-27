@@ -8,6 +8,7 @@ export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
 export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 
 export type * from "./provider-cycle";
+export * from "./provider-http-error";
 export * from "./share";
 
 export type ProviderId = string & { readonly __brand?: "ProviderId" };

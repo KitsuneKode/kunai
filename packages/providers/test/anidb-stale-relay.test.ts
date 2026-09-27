@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { RELAY_HOP_HEADER, type ProviderRuntimeContext } from "@kunai/types";
+import { RELAYED_RESPONSE_HEADER, type ProviderRuntimeContext } from "@kunai/types";
 
 import { clearAnidbCachesForTest, fetchAnidbEpisodeCatalog } from "../src/anidb/direct";
 
@@ -19,7 +19,7 @@ function relayContext(status: number, body: string): ProviderRuntimeContext {
   return {
     fetch: {
       async fetch() {
-        return new Response(body, { status, headers: { [RELAY_HOP_HEADER]: "1" } });
+        return new Response(body, { status, headers: { [RELAYED_RESPONSE_HEADER]: "1" } });
       },
     },
   } as unknown as ProviderRuntimeContext;
