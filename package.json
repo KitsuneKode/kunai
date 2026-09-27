@@ -46,7 +46,7 @@
         "fumadocs-core": "^16.15.15",
         "fumadocs-mdx": "^15.4.5",
         "fumadocs-ui": "^16.15.15",
-        "motion": "^12.43.0",
+        "motion": "^13.4.4",
         "next": "^16.3.6",
         "tailwind-merge": "^3.7.0",
         "tailwindcss": "^4.3.3",
@@ -166,6 +166,7 @@
     "@types/node": "catalog:",
     "fumadocs-core": "catalog:web",
     "fumadocs-ui": "catalog:web",
+    "mdast-util-to-markdown": "2.1.2",
     "ws": "^8.21.0"
   },
   "lint-staged": {
