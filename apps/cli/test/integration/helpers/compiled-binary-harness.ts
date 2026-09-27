@@ -118,6 +118,8 @@ exec ${JSON.stringify(GLIBC_BIN)} "$@"
 
 function readEvidence(path: string): Record<string, unknown>[] {
   if (!existsSync(path)) return [];
+  // SAFETY: this harness writes the evidence file itself — one JSON object
+  // per line — so every non-empty line parses to a plain object.
   return readFileSync(path, "utf8")
     .split("\n")
     .map((line) => line.trim())
