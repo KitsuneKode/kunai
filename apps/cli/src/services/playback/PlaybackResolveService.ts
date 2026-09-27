@@ -631,13 +631,18 @@ export class PlaybackResolveService {
       input.correlation,
     );
 
-    // Persist provider health deltas from all attempts
-    for (const attempt of engineResult.attempts) {
-      if (
-        attempt.result?.healthDelta &&
-        !attempt.result.failures.some((failure) => isOfflineNetworkFailure(failure))
-      ) {
-        this.persistProviderHealthDelta(attempt.result.healthDelta);
+    // Persist provider health deltas from all attempts — except on a cancelled
+    // resolve: a caller abort is a decision, not provider-health evidence, and
+    // an attempt that settled while the abort raced can still carry a stale
+    // healthDelta that would mark a healthy provider down.
+    if (!resolveSignal.aborted) {
+      for (const attempt of engineResult.attempts) {
+        if (
+          attempt.result?.healthDelta &&
+          !attempt.result.failures.some((failure) => isOfflineNetworkFailure(failure))
+        ) {
+          this.persistProviderHealthDelta(attempt.result.healthDelta);
+        }
       }
     }
 
@@ -652,19 +657,23 @@ export class PlaybackResolveService {
           );
         }
         const resolvedProviderId = engineResult.providerId ?? input.providerId;
-        const primaryFailureKind = titleProviderFailureFromAttempts(
-          engineResult.attempts,
-          input.providerId,
-        );
-        if (primaryFailureKind && resolvedProviderId !== input.providerId) {
-          this.deps.titleProviderHealth?.recordFailure(
-            input.title.id,
+        // Title-level provider health is evidence too: a cancelled resolve is
+        // neither a success nor a failure worth remembering.
+        if (!resolveSignal.aborted) {
+          const primaryFailureKind = titleProviderFailureFromAttempts(
+            engineResult.attempts,
             input.providerId,
-            resolvedProviderId,
-            primaryFailureKind,
           );
-        } else if (resolvedProviderId === input.providerId) {
-          this.deps.titleProviderHealth?.recordCleanSuccess(input.title.id, input.providerId);
+          if (primaryFailureKind && resolvedProviderId !== input.providerId) {
+            this.deps.titleProviderHealth?.recordFailure(
+              input.title.id,
+              input.providerId,
+              resolvedProviderId,
+              primaryFailureKind,
+            );
+          } else if (resolvedProviderId === input.providerId) {
+            this.deps.titleProviderHealth?.recordCleanSuccess(input.title.id, input.providerId);
+          }
         }
         const commitDecision = this.resolveCommitDecision(input, resolveSignal);
 
@@ -704,10 +713,9 @@ export class PlaybackResolveService {
       }
     }
 
-    const primaryFailureKind = titleProviderFailureFromAttempts(
-      engineResult.attempts,
-      input.providerId,
-    );
+    const primaryFailureKind = resolveSignal.aborted
+      ? null
+      : titleProviderFailureFromAttempts(engineResult.attempts, input.providerId);
     if (primaryFailureKind) {
       this.deps.titleProviderHealth?.recordFailure(
         input.title.id,

@@ -2000,6 +2000,74 @@ test("PlaybackResolveService still counts provider failures when the uplink is h
   }
 });
 
+test("PlaybackResolveService records no provider health from a cancelled resolve", async () => {
+  // A caller abort is a decision, not evidence. An attempt that settled while
+  // the abort raced can still arrive carrying a stale healthDelta/failure —
+  // without the abort guard this used to mark a healthy provider down.
+  const providerHealth = createMemoryProviderHealth();
+  const titleFailures: string[] = [];
+  const controller = new AbortController();
+  const engine = {
+    modules: [],
+    get: () => undefined,
+    getProviderIds: () => [],
+    getManifest: () => undefined,
+    resolve: async () => ({}) as ProviderResolveResult,
+    resolveWithFallback: async (): Promise<ProviderEngineResolveOutput> => {
+      controller.abort();
+      return {
+        result: null,
+        providerId: null,
+        attempts: [
+          {
+            providerId: "primary" as ProviderId,
+            failure: {
+              providerId: "primary" as ProviderId,
+              code: "timeout",
+              message: "attempt settled while the caller cancelled",
+              retryable: true,
+              at: new Date().toISOString(),
+            },
+            result: {
+              ...createEmptyProviderResult("primary" as ProviderId),
+              healthDelta: {
+                providerId: "primary" as ProviderId,
+                outcome: "failure" as const,
+                resolveMs: 50,
+                at: new Date().toISOString(),
+              },
+            },
+          },
+        ],
+      };
+    },
+  } as unknown as ProviderEngine;
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    providerHealth: providerHealth as never,
+    titleProviderHealth: {
+      recordFailure: (_titleId: string, _providerId: string, _fallbackId: unknown, kind: unknown) =>
+        titleFailures.push(String(kind)),
+      recordCleanSuccess: (_titleId: string, providerId: string) =>
+        titleFailures.push(`clean:${providerId}`),
+    } as never,
+  });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: controller.signal,
+  });
+
+  expect(providerHealth.get("primary" as ProviderId)).toBeUndefined();
+  expect(titleFailures).toEqual([]);
+});
+
 test("PlaybackResolveService passes abort signal into stale cache health checks", async () => {
   const staleStream = {
     ...stream,
