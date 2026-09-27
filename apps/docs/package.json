@@ -51,6 +51,6 @@
     "typescript": "catalog:web"
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.2"
   }
 }
