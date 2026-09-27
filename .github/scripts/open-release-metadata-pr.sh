@@ -33,7 +33,11 @@ else
   fi
   git switch -c "$branch"
   git commit -m "chore(release): mark v${version} published"
-  git push origin "HEAD:refs/heads/${branch}"
+  # The job checks out with persist-credentials: false, so authenticate the
+  # one push this script makes with a per-command header rather than writing
+  # the token into .git/config where every step could read it back.
+  git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${GH_TOKEN:?}" \
+    push origin "HEAD:refs/heads/${branch}"
 fi
 
 body="$(mktemp)"

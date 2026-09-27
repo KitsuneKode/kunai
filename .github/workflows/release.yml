@@ -1000,6 +1000,10 @@ jobs:
         with:
           fetch-depth: 0
           filter: blob:none
+          # The tag push authenticates with a one-shot http.extraheader inside
+          # create-canonical-tag.sh instead of a credential that every `run`
+          # step (including repo code) could read back out of .git/config.
+          persist-credentials: false
 
       - name: Recheck current origin/main SHA before publication
         run: |
@@ -1167,6 +1171,8 @@ jobs:
       # to compare against because it is the commit being tagged, and the
       # recheck step above has already proven it equals origin/main.
       - name: Create canonical tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           .github/scripts/create-canonical-tag.sh \
@@ -1286,8 +1292,11 @@ jobs:
         with:
           fetch-depth: 0
           filter: blob:none
-          # Push a review branch, never bypass main's required checks.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Push a review branch, never bypass main's required checks. The
+          # branch push authenticates with a one-shot http.extraheader inside
+          # open-release-metadata-pr.sh instead of a persisted credential that
+          # the job's `bun run` steps could read back out of .git/config.
+          persist-credentials: false
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release-metadata

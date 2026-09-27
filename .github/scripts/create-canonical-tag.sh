@@ -77,5 +77,9 @@ git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 if [[ -z "$EXISTING_LOCAL" ]]; then
 	git tag -a "$TAG" -m "Release $TAG" "$RELEASE_SHA"
 fi
-git push origin "refs/tags/$TAG"
+# The publish job checks out with persist-credentials: false, so authenticate
+# this one push with a per-command header rather than a credential written
+# into .git/config for every earlier `run` step to read.
+git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${GH_TOKEN:?}" \
+	push origin "refs/tags/$TAG"
 echo "pushed $TAG at $RELEASE_SHA"
