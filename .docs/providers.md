@@ -175,6 +175,18 @@ here. The rule is _what may be persisted_, not whether to cache:
 - Namespace keys `<provider>:<purpose>` (`anidb:external-ids`,
   `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
   sweeps can scope them.
+**Stream verification has two boundaries, and only one is universal.** The
+resolve-gate is opt-in per provider: VidLink enables it through
+`resolveDirectStreamSource`, Videasy runs its own probe as a negative gate only
+(it rejects definitive failures but attests nothing — issue #361 showed a green
+probe can 403 the very next request on signed CDN URLs), and YouTube is attested
+by construction. The playback preflight is the universal boundary: any stream
+that is not provider-attested inside `playbackTrustMs` is probed at handoff, and
+the probe races mpv's `loadfile`, so it adds no wait — a definitive dead URL
+fails fast only when mpv itself also fails. Stream age alone used to waive that
+probe for the first five minutes (`recent-resolve`), which let autoplay
+replacements hand mpv URLs no code had ever fetched; the waiver now requires
+attestation (issue #459).
 
 **VidLink needs the browser playback environment (2026-08-24).** Without an
 `x-playback-environment` header, `vidlink.pro/api/b` answers with

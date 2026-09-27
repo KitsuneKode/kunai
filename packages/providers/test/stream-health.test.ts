@@ -87,6 +87,38 @@ describe("stream health", () => {
     });
   });
 
+  test("playback-preflight probes fresh streams that were never verified", () => {
+    // Resolve age alone must not waive the probe: providers without a
+    // resolve-gate hand streams here that no code has ever fetched, and an
+    // episode-to-episode replacement trusts the same plan.
+    expect(
+      planStreamHealth({
+        phase: "playback-preflight",
+        url: "https://cdn.example/live.m3u8",
+        cachedAt: now - 60_000,
+        now,
+      }),
+    ).toMatchObject({
+      shouldProbe: true,
+      policyReason: "forced-hls",
+    });
+  });
+
+  test("playback-preflight probes verified streams past the trust window", () => {
+    expect(
+      planStreamHealth({
+        phase: "playback-preflight",
+        url: "https://cdn.example/live.m3u8",
+        cachedAt: now - 10 * 60_000,
+        streamReachabilityVerified: true,
+        now,
+      }),
+    ).toMatchObject({
+      shouldProbe: true,
+      policyReason: "forced-hls",
+    });
+  });
+
   test("skips probes for youtube watch URLs and requiresYtdl streams", () => {
     expect(
       planStreamHealth({

@@ -12,7 +12,7 @@ export type StreamHealthPhase = "resolve-gate" | "cache-revalidate" | "playback-
 
 export type StreamHealthStrategy = "none" | "hls-manifest-get" | "head-then-range";
 
-export type StreamHealthSkipReason = "provider-attested" | "fresh-cache" | "recent-resolve";
+export type StreamHealthSkipReason = "provider-attested" | "fresh-cache";
 
 export type StreamHealthPolicyReason =
   | "no-cache"
@@ -21,8 +21,7 @@ export type StreamHealthPolicyReason =
   | "forced-direct"
   | "stale-hls"
   | "stale-direct"
-  | "provider-attested"
-  | "recent-resolve";
+  | "provider-attested";
 
 export const STREAM_HEALTH_DEFAULTS = {
   staleAfterMs: 60_000,
@@ -189,9 +188,9 @@ function planPlaybackPreflightHealth(
   ) {
     return skipPlan(context, "provider-attested", "provider-attested");
   }
-  if (typeof context.ageMs === "number" && context.ageMs <= context.playbackTrustMs) {
-    return skipPlan(context, "recent-resolve", "recent-resolve");
-  }
+  // Resolve age alone is not evidence: providers without a resolve-gate hand
+  // playback URLs no code has fetched, so the trust window only applies to
+  // streams a probe already verified.
   return probePlan(context, "forced");
 }
 
