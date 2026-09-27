@@ -224,6 +224,8 @@ export class PlaybackResolveService {
         Partial<Pick<TitleProviderHealthService, "getSwitchSuggestion">>;
       readonly endpointHealth?: Pick<ProviderEndpointHealthService, "isQuarantined">;
       readonly titlePlaybackSource?: Pick<TitlePlaybackSourceService, "delete">;
+      /** Test seam for compressing the total-resolve deadline; production always
+       *  takes the `resolveProviderTotalDeadlineMs` fallback below. */
       readonly resolveTotalDeadlineMs?: (priority: StartupPriority) => number;
       /** Crosswalk lookup for cross-lane episode maps (ARM tmdb-season). */
       readonly catalogCrosswalk?: Pick<CatalogCrosswalkRepository, "get">;

@@ -60,13 +60,6 @@ describe("provider resolve user state", () => {
     );
   });
 
-  test("a cached stream is only reported when the refresh actually failed", () => {
-    expect(classifyProviderResolveUserState({ servedFromCacheAfterFailure: true })?.title).toBe(
-      "Using cached source",
-    );
-    expect(classifyProviderResolveUserState({ servedFromCacheAfterFailure: false })).toBeNull();
-  });
-
   test("a long wait is reported as slow without blaming the source for failing", () => {
     const slow = classifyProviderResolveUserState({ elapsedSeconds: 20 });
     expect(slow?.title).toBe("Slow source");

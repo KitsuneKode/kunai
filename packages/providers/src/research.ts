@@ -41,7 +41,7 @@ export const providerResearchProfiles = [
     implementationSource: "mixed",
     supportedContent: ["movie", "series"],
     sourceStrategy:
-      "Direct api.videasy.net sources-with-title payload; select highest-ranked source.",
+      "Direct api.speedracelight.com sources-with-title payload; select highest-ranked source.",
     subtitleStrategy:
       "Prefer provider payload subtitle inventory, then use Wyzie only as a fallback when direct subtitles are missing.",
     productionGap: "Move direct resolver and WASM asset ownership behind the Provider SDK package.",
