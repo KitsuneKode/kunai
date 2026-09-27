@@ -341,7 +341,19 @@ export const anidbProviderModule: CoreProviderModule = {
     }
     const showId = baseShow?.id;
     if (!showId) return null;
-    const episodes = await fetchAnidbEpisodes(showId, context.signal, context);
+    let catalog: Awaited<ReturnType<typeof fetchAnidbEpisodeCatalog>>;
+    try {
+      catalog = await fetchAnidbEpisodeCatalog(showId, context.signal, context);
+    } catch (error) {
+      // Same null contract as the resolve leg above: transport failures are
+      // retryable, a cancelled caller keeps propagating.
+      if (context.signal?.aborted === true) throw error;
+      return null;
+    }
+    // A re-searched id that still 404s is gone for this resolve — null keeps
+    // it retryable; a present-but-empty catalog is the real empty list.
+    if (catalog.missing) return null;
+    const episodes = catalog.episodes;
     if (episodes.length === 0) return [];
 
     const suppliedMalId = input.title.externalIds?.malId ?? input.title.malId;
