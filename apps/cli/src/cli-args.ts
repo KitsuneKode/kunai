@@ -65,7 +65,7 @@ LAUNCH
                              (bare = TMDB; or anilist:<id>, mal:<id>,
                              tmdb:<id>, youtube:<id>)
   -t, --type <movie|tv>      Content type for --id (tv = series)
-  -a, --anime                Anime mode (AniDB default with provider fallback)
+  -a, --anime                Anime mode (HiAnime default with provider fallback)
   -y, --youtube              YouTube mode (YouTube provider)
       --continue, --resume   Jump into Continue Watching
       --history              Open watch history

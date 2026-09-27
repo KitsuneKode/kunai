@@ -63,6 +63,7 @@ export { ANIDB_PROVIDER_ID };
 export {
   AnidbHttpStatusError,
   anidbNumericId,
+  AnidbHttpStatusError,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
   collectAnidbAvailableAudioModes,

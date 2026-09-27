@@ -411,6 +411,7 @@ export async function searchAnidb(
   const page = await anidbFetchText(`${ANIDB_BASE}/browse?q=${encodeURIComponent(trimmed)}`, {
     signal,
     context,
+    reportStatus: true,
   });
   return parseAnidbBrowseHtml(page);
 }

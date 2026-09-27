@@ -11,7 +11,10 @@ export const videasyManifest = defineProviderManifest({
   aliases: ["VidKing", "Cineplay", "Cineby", "HDToday", "Bitcine"],
   description: "Registered movies/series adapter; source and subtitle inventory vary by title",
   domain: "videasy.to",
-  recommended: true,
+  // Not recommended while api.videasy.to fails to resolve at DNS — the wings
+  // resolve path (api.speedracelight.com) still answers, so it stays registered
+  // as a fallback rather than removed.
+  recommended: false,
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
   runtimePorts: [

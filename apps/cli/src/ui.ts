@@ -63,9 +63,10 @@ export interface CapabilitySnapshot {
   readonly ffprobe: boolean;
   readonly ytDlp: boolean;
   /**
-   * The curl the AniDB provider can use. AniDB is the default anime provider and
-   * anidb.app sits behind Cloudflare, so this is a real dependency of the
-   * default route, not a nicety — and plain curl frequently is not enough.
+   * The curl the anime-lane providers can use. HiAnime is the default anime
+   * provider and both it and AniDB sit behind Cloudflare, so this is a real
+   * dependency of the default route, not a nicety — and plain curl frequently
+   * is not enough.
    */
   readonly curl: CurlCapability;
   readonly image: ImageCapability;
@@ -222,10 +223,10 @@ export async function probeCapabilities(
       id: "curl-missing",
       // Anime is one mode, so this degrades that route rather than blocking the
       // shell — but it is the *default* anime route, so silence here means the
-      // user sees an empty AniDB search with no explanation.
+      // user sees an empty HiAnime or AniDB search with no explanation.
       severity: "degraded",
       message:
-        "curl not found — AniDB (the default anime provider) sits behind Cloudflare and needs it; anime search may return nothing without it.",
+        "curl not found — the anime providers (HiAnime, AniDB) sit behind Cloudflare and need it; anime search may return nothing without it.",
       install: CURL_INSTALL,
       remediation: [
         ...buildRemediationLines(CURL_INSTALL),
@@ -240,10 +241,10 @@ export async function probeCapabilities(
       // Plain curl is present, so this is not "missing a dependency" — it is a
       // capability gap that only shows up as empty anime search results. It was
       // previously invisible: `curl: true` reported ready and the user had no
-      // way to learn why AniDB returned nothing.
+      // way to learn why the anime providers returned nothing.
       severity: "degraded",
       message:
-        "Only plain curl found — Cloudflare fingerprints the TLS handshake, so AniDB and Miruro may still be challenged. A curl-impersonate build matches a real browser.",
+        "Only plain curl found — Cloudflare fingerprints the TLS handshake, so HiAnime, AniDB, and Miruro may still be challenged. A curl-impersonate build matches a real browser.",
       install: CURL_IMPERSONATE_INSTALL,
       remediation: buildRemediationLines(CURL_IMPERSONATE_INSTALL),
     });

@@ -84,6 +84,19 @@ Deliberately **not** done, and why:
   cleanup and is explicitly not a release blocker; the routes are proven inert by
   contract tests instead.
 
+## Production status (2026-09-27)
+
+- **Split brain:** `videasy.to` and `api.videasy.to` fail DNS resolution
+  (NXDOMAIN on the resolvers tested), but `api.speedracelight.com` and
+  `player.videasy.to` still answer 200. Everything in Phase A is `wings-*`, so
+  resolve still works end-to-end; what died is the TMDB-mirror DB
+  (`VIDEASY_DB_BASE` — now circuit-broken in `tmdb-proxy.ts`), title-metadata
+  enrichment (degrades to `null`), and the non-wings legacy endpoints.
+- **Disposition:** demoted from series default to last in the lane
+  (`provider: "vidlink"`, `providerPriority: ["rivestream", "videasy"]`), and
+  `recommended: false` in the manifest. Registered fallback, not removed — if
+  the domain resurrects the provider is whole again.
+
 ## Production status (2026-07-16)
 
 - **Module:** `packages/providers/src/videasy/direct.ts` + `flavors.ts` + `crypto.ts`

@@ -22,25 +22,40 @@ export const DEFAULT_YOUTUBE_EXTRACTOR_ARGS = "youtube:player_client=visionos,we
 
 export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
-  // Series automatic lane (2026-07-16): Videasy first (fast seed+neon path), then Rivestream, VidLink.
-  provider: "videasy",
-  // Miruro leads the anime lane (2026-09-11). It aggregates roughly a dozen
-  // backends behind one AniList-keyed pipe, so one upstream going dark costs a
-  // server rather than the lane — whereas anidb.app, which ani-cli v5 depends on
-  // alone, has been in maintenance since 2026-09-03. It searches through its own
-  // pipe, which kept answering when AniList's API was disabled on 2026-09-10.
-  animeProvider: "miruro",
+  // Series automatic lane (2026-09-27): VidLink leads. The videasy.to domain
+  // has rotted — api.videasy.to (the provider's TMDB-mirror DB and legacy
+  // endpoint host) no longer resolves at DNS, so title-metadata enrichment
+  // depends on the mirror chain. The wings stream endpoints on
+  // api.speedracelight.com still answer, so Videasy stays registered and last
+  // in the order — a working fallback, not a removal.
+  provider: "vidlink",
+  // HiAnime leads the anime lane. AniDB stays registered and in the priority
+  // tail because it still carries the only verified AID cross-link and XML
+  // episode titles, but it is not first: anidb.app answers 503 at the origin,
+  // and ani-cli itself moved off it (pystardust/ani-cli c99221d "replace anidb
+  // with hianime provider", a `fix:`, not a `revert:`). A lane default that
+  // cannot answer is worse than a slower one that can — search only queries
+  // the configured default.
+  animeProvider: "hianime",
   youtubeProvider: "youtube",
-  providerPriority: ["rivestream", "vidlink"],
+  // `createProviderPrioritySnapshot` prepends `provider` to this array, so it
+  // holds the *rest* of the order — not the lane default. Videasy is named
+  // explicitly to pin it behind Rivestream rather than float among unlisted
+  // providers.
+  providerPriority: ["rivestream", "videasy"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
-  // KickAssAnime and AnimeGG share nothing with Miruro — own catalog, own site,
-  // own CDN — so a Miruro outage does not take them too. KickAssAnime is first
-  // of the two because it can take over a title Miruro found (it matches the
-  // show by name and year); AnimeGG only plays titles found in its own search.
-  // AniDB follows for when it returns, then AllAnime for the ani-cli parity path.
+  // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
+  // holds the *rest* of the order and must not repeat the lane default. Miruro
+  // is first of the rest: it aggregates roughly a dozen backends behind one
+  // AniList-keyed pipe, so one upstream going dark costs a server rather than
+  // the lane. KickAssAnime and AnimeGG share nothing with Miruro — own
+  // catalog, own site, own CDN — and KickAssAnime can take over a title Miruro
+  // found. AniDB follows for when it returns, then AllAnime for the ani-cli
+  // parity path.
   animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
-  providerDefaultsRevision: 2,
+  // Revision 3 leads with VidLink + HiAnime and covers both lanes.
+  providerDefaultsRevision: 3,
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

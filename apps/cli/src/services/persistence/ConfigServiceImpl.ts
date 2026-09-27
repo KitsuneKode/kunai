@@ -187,14 +187,22 @@ export class ConfigServiceImpl implements ConfigService {
     const repairedAnalyticsIdentity =
       loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
+    const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
     service.config = {
       ...DEFAULT_CONFIG,
       ...loaded,
-      provider: normalizeSeriesProvider(loaded.provider),
-      providerPriority: normalizeProviderIdList(
-        loaded.providerPriority,
-        DEFAULT_CONFIG.providerPriority,
-      ),
+      ...(migratedSeriesDefaults
+        ? {
+            provider: DEFAULT_CONFIG.provider,
+            providerPriority: [...DEFAULT_CONFIG.providerPriority],
+          }
+        : {
+            provider: normalizeSeriesProvider(loaded.provider),
+            providerPriority: normalizeProviderIdList(
+              loaded.providerPriority,
+              DEFAULT_CONFIG.providerPriority,
+            ),
+          }),
       ...(migratedAnimeDefaults
         ? {
             animeProvider: DEFAULT_CONFIG.animeProvider,
@@ -300,7 +308,8 @@ export class ConfigServiceImpl implements ConfigService {
       repairedAnalyticsIdentity ||
       migratedVideasyAppId ||
       videasyVaultResave ||
-      migratedAnimeDefaults
+      migratedAnimeDefaults ||
+      migratedSeriesDefaults
     ) {
       await service.persistConfig(service.config);
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
@@ -933,6 +942,9 @@ function readProviderDefaultsRevision(loaded: Partial<KitsuneConfig>): number {
  * there, and is left alone. Tying each pair to its revision is what keeps a
  * choice made after a migration: a user stamped with revision 1 who picks AniDB
  * again holds the revision-0 pair, which is only inherited at revision 0.
+ * anidb.app answering 503 at the origin makes an inherited anidb pair an
+ * outage, not a preference, so moving even a deliberate re-pick to the working
+ * default is the honest outcome.
  */
 const INHERITED_ANIME_DEFAULTS: readonly {
   readonly revision: number;
@@ -941,7 +953,11 @@ const INHERITED_ANIME_DEFAULTS: readonly {
 }[] = [
   // AniDB alone, before revisions existed. A config older than the priority
   // list has none, and inherited the default by definition.
-  { revision: 0, animeProvider: "anidb", priorities: [undefined, ["anidb"]] },
+  {
+    revision: 0,
+    animeProvider: "anidb",
+    priorities: [undefined, ["anidb"], ["anidb", "allanime"]],
+  },
   // Revision 1 moved the lane to Miruro, and the list then grew twice in
   // stacked changes. Either list is on disk if a build shipped between them.
   {
@@ -951,6 +967,13 @@ const INHERITED_ANIME_DEFAULTS: readonly {
       ["miruro", "anidb", "allanime"],
       ["miruro", "animegg", "anidb", "allanime"],
     ],
+  },
+  // Revision 2 kept Miruro and filled in the independent backends. On disk it
+  // is the pair below; revision 3 moves the lane to HiAnime.
+  {
+    revision: 2,
+    animeProvider: "miruro",
+    priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
   },
 ];
 
@@ -975,6 +998,42 @@ function sameProviderList(
     Array.isArray(actual) &&
     actual.length === expected.length &&
     expected.every((id, index) => actual[index] === id)
+  );
+}
+
+/**
+ * The only movie/series priority list a released binary has written next to a
+ * Videasy default.
+ *
+ * `api.videasy.to` no longer resolves at DNS — an inherited Videasy pair sits
+ * on a degraded lane lead, not a preference. As with the anime twin, the
+ * exact-pair match is the closest honest signal that the user never touched
+ * the lane: a picker write
+ * either reorders the priority or sets `provider` alone with the shipped list
+ * intact. The vidking-era `provider` value normalizes to `videasy` here, so a
+ * config old enough to carry the legacy id still counts as inherited.
+ */
+const SHIPPED_VIDEASY_DEFAULT_PRIORITIES: ReadonlyArray<readonly string[]> = [
+  ["rivestream", "vidlink"],
+];
+
+/**
+ * Configs stamped before `CURRENT_PROVIDER_DEFAULTS_REVISION` whose series pair
+ * is exactly a pair a release once shipped are moved to `DEFAULT_CONFIG`'s
+ * series defaults. Anything else — a reordered list, a non-Videasy pick, a
+ * hand-edited file — is left alone. A user who re-picks Videasy after the
+ * migration writes `provider` alone, which this check no longer matches.
+ */
+function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): boolean {
+  if (readProviderDefaultsRevision(loaded) >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
+  const provider = typeof loaded.provider === "string" ? loaded.provider.trim() : "";
+  if (migrateLegacyProviderId(provider) !== "videasy") return false;
+  const priority = loaded.providerPriority;
+  if (priority === undefined) return true;
+  if (!Array.isArray(priority)) return false;
+  return SHIPPED_VIDEASY_DEFAULT_PRIORITIES.some(
+    (shipped) =>
+      shipped.length === priority.length && shipped.every((id, index) => id === priority[index]),
   );
 }
 

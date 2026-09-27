@@ -7,6 +7,7 @@ import {
   COMPILED_SMOKE_SCENARIO_IDS,
   type CompiledSmokeScenarioId,
 } from "@/app/compiled-smoke/scenarios";
+import { DEFAULT_CONFIG } from "@kunai/config";
 import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
 
 import { storageRootEnv } from "../../helpers/storage-env";
@@ -73,6 +74,9 @@ export function createCompiledSmokeProfile(): CompiledSmokeProfile {
     `${JSON.stringify({
       onboardingVersion: 2,
       downloadOnboardingDismissed: true,
+      // Stamped at the current revision so the load-time provider-defaults
+      // migration leaves these ids pinned — the scenarios assert on them.
+      providerDefaultsRevision: DEFAULT_CONFIG.providerDefaultsRevision,
       provider: "videasy",
       animeProvider: "allanime",
     })}\n`,

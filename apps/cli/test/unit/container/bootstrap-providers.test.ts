@@ -11,8 +11,8 @@ describe("production provider defaults", () => {
     );
     const ids = modules.map((module) => module.providerId);
 
-    expect(DEFAULT_CONFIG.provider).toBe("videasy");
-    expect(DEFAULT_CONFIG.animeProvider).toBe("miruro");
+    expect(DEFAULT_CONFIG.provider).toBe("vidlink");
+    expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
     expect(ids).toContain(DEFAULT_CONFIG.provider);
     expect(ids).toContain(DEFAULT_CONFIG.animeProvider);
     expect(ids).toContain(DEFAULT_CONFIG.youtubeProvider);

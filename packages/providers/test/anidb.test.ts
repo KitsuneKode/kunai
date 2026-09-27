@@ -673,6 +673,59 @@ describe("anidb search delegation", () => {
       Bun.which = originalWhich;
     }
   });
+
+  test("an HTTP error status surfaces instead of parsing the error page into []", async () => {
+    // anidb.app answers 503 at the origin; without reportStatus the browse
+    // call used to parse that page and report "no results" — an outage the UI
+    // could not distinguish from a genuine miss.
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      // SAFETY: stub lacks the real which() overloads; returning null for every cmd is all this test needs.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: stub only ever returns one canned Response; the full fetch surface is unused.
+      globalThis.fetch = (async () =>
+        new Response("Service Unavailable", { status: 503 })) as never;
+
+      await expect(searchAnidb("solo leveling")).rejects.toBeInstanceOf(AnidbHttpStatusError);
+      await expect(searchAnidb("solo leveling")).rejects.toMatchObject({ status: 503 });
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("a relay-side 404 is answered without spending a curl fallback", async () => {
+    // If control ever fell through to the fallback, the plain-fetch stub below
+    // serves a parseable page and the search resolves instead of throwing —
+    // the rejection itself proves the status short-circuit ran.
+    clearAnidbCachesForTest();
+    const page = await fixture("browse-current.html");
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      // SAFETY: stub lacks the real which() overloads; returning null for every cmd is all this test needs.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: stub only ever returns one canned Response; the full fetch surface is unused.
+      globalThis.fetch = (async () => new Response(page, { status: 200 })) as never;
+      const context: ProviderRuntimeContext = {
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () => new Response("missing", { status: 404 }),
+        },
+        now: () => new Date().toISOString(),
+      };
+
+      await expect(searchAnidb("solo leveling", undefined, context)).rejects.toMatchObject({
+        name: "AnidbHttpStatusError",
+        status: 404,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
 });
 
 describe("anidb episode stream inventory", () => {
