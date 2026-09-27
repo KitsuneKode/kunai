@@ -1,5 +1,10 @@
 {
   "$schema": "https://v2-10-0.turborepo.dev/schema.json",
+  // Lockfile + root manifest are inputs to every task hash. Without this a
+  // dependency-only change (bun install after a catalog bump, no package file
+  // touched) replays a cached `build` that still embeds the old versions —
+  // same stale-green class as hazard #2, and release jobs use turbo cache.
+  "globalDependencies": ["bun.lock", "package.json"],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]
