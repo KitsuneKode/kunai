@@ -139,9 +139,9 @@ describe("hls manifest materializer", () => {
 
   test("a caller abort cancels the manifest fetch", async () => {
     const originalFetch = globalThis.fetch;
-    let observedSignal: AbortSignal | null = null;
+    let observedSignal: AbortSignal | undefined;
     globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-      observedSignal = (init?.signal as AbortSignal | null) ?? null;
+      observedSignal = init?.signal as AbortSignal | undefined;
       throw new DOMException("The operation was aborted.", "AbortError");
     }) as unknown as typeof fetch;
     const caller = new AbortController();
