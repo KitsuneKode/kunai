@@ -596,6 +596,21 @@ export interface ProviderFetchPort {
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 }
 
+/**
+ * Header a fetch port sets when the response actually came back through the
+ * relay (value "1"). A provider that would otherwise retry the same URL
+ * directly — say, to dodge a Cloudflare challenge — must treat a marked
+ * response as final: re-requesting upstream direct would silently bypass the
+ * relay the user deployed. Absent means the port answered locally (relay off,
+ * unauthorized fallback, or a direct port), so local fall-through stays legal.
+ */
+export const RELAYED_RESPONSE_HEADER = "X-Kunai-Relayed";
+
+/** True when this response was produced by the relay rather than a local fetch. */
+export function isRelayedResponse(response: Response): boolean {
+  return response.headers.get(RELAYED_RESPONSE_HEADER) === "1";
+}
+
 export type RelayMethod = "GET" | "POST" | "HEAD";
 
 export type RelayErrorCode =

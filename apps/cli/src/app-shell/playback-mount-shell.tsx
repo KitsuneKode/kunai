@@ -23,6 +23,7 @@ import {
   type PlaybackStatsSnapshot,
 } from "@/domain/playback/playback-stats-snapshot";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
+import { providerMetadataMatchesLane, shellModeToProviderLane } from "@/domain/provider-lane";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
@@ -440,8 +441,9 @@ function PlaybackShell({
     () =>
       container.providerRegistry
         .getAll()
-        .filter((provider) => provider.metadata.isAnimeProvider === (state.mode === "anime"))
-        .length,
+        .filter((provider) =>
+          providerMetadataMatchesLane(provider.metadata, shellModeToProviderLane(state.mode)),
+        ).length,
     [container, state.mode],
   );
   const footerActions = buildPostPlayFooterActions(postPlayState, {

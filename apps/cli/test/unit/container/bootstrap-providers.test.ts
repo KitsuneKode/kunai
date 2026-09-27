@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { loadProductionProviderModules } from "@/container/bootstrap-providers";
+import { RELAY_CAPABLE_PROVIDER_OPTIONS } from "@/domain/provider-relay-settings";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 import { DEFAULT_CONFIG } from "@kunai/config";
 
@@ -55,6 +56,24 @@ describe("production provider defaults", () => {
       "vidlink",
       "youtube",
     ]);
+  });
+
+  test("the relay settings list covers every production provider that declares relayProfile", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    // A hand-maintained list drifted once: hianime was relay-routed by default
+    // yet missing from Settings, so the user had no way to switch it off and
+    // the "all relay-capable" summary line lied (#460). Derive the expectation
+    // from the roster so a new relay-capable provider fails loudly here.
+    const expected = modules
+      .filter((module) => module.manifest.relayProfile !== undefined)
+      .map((module) => module.providerId as string)
+      .sort();
+
+    expect(RELAY_CAPABLE_PROVIDER_OPTIONS.map((option) => option.value as string).sort()).toEqual(
+      expected,
+    );
   });
 
   test("every declared capability has a runtime operation that implements it", async () => {

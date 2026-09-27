@@ -44,15 +44,19 @@ const NETWORK_ERROR_PATTERNS = [
   "unable to connect",
   "failedtoopensocket",
   "was there a typo in the url or port",
-  // curl: "Could not resolve host: …"
-  "could not resolve host",
-  // glibc resolver: "Name or service not known"
+  // curl: "Could not resolve host: …" — the bare "could not resolve" prefix
+  // covers wget and other transports too.
+  "could not resolve",
+  // glibc resolver: "Name or service not known" / "Temporary failure in name resolution"
   "name or service not known",
+  "temporary failure in name resolution",
   // Windows resolver and Bun: "no such host"
   "no such host",
-  // undici / Node: "dns lookup failed"
+  // undici / Node: "dns lookup failed"; nslookup-flavoured: "dns query"
   "dns lookup",
   "dns query",
+  "getaddrinfo",
+  "nodename nor servname",
 ];
 
 export function classifyNetworkFailure(message: string): NetworkStatus {

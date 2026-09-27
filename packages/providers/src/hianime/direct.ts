@@ -64,6 +64,7 @@ export {
   cloudflareBlockMessage,
   fetchHianimeEpisodeCatalog,
   fetchHianimeServers,
+  hianimeFetchText,
   hianimeCurlFailureMessage,
   hianimeUrlLabel,
   hianimeEmbedReferer,

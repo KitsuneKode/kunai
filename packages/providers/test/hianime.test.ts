@@ -24,6 +24,7 @@ import {
   resolveHianimeEpisodeStreams,
   resolveHianimeShow,
   fetchHianimeEpisodeCatalog,
+  hianimeFetchText,
   splitCurlHttpTrailer,
 } from "../src/hianime/direct";
 import { HIANIME_PROVIDER_ID, hianimeManifest } from "../src/hianime/manifest";
@@ -815,5 +816,104 @@ describe("hianime module search and episodes", () => {
       id: "naruto-1335",
     });
     expect(searchHits).toBe(1);
+  });
+});
+
+describe("hianime relay routing (#460)", () => {
+  test("a relayed response is final — the client must not re-ask upstream direct", async () => {
+    // Without the marker check, a relayed 403 fell through to a direct
+    // fetch/curl — silently bypassing the relay a geo-gated user deployed.
+    const context = {
+      now: () => NOW,
+      fetch: {
+        runtime: "direct-http" as const,
+        fetch: async () =>
+          new Response("upstream says no", {
+            status: 403,
+            headers: { "X-Kunai-Relayed": "1" },
+          }),
+      },
+    } satisfies ProviderRuntimeContext;
+
+    // If the code falls through anyway it reaches plain fetch next; make that
+    // path a loud sentinel instead of a real network call. Bun.which = null
+    // keeps resolveCurlCandidate() empty so fetch is the only fallback.
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    Bun.which = (() => null) as typeof Bun.which;
+    globalThis.fetch = (async () => {
+      throw new Error("SENTINEL: direct upstream request happened");
+    }) as unknown as typeof fetch;
+    try {
+      const thrown = await hianimeFetchText("https://hianime.at/search?keyword=x", {
+        context,
+      }).then(
+        () => null,
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+      expect(thrown).toContain("via relay");
+      expect(thrown).not.toContain("SENTINEL");
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("a relayed Cloudflare challenge reports the block instead of bypassing", async () => {
+    const context = {
+      now: () => NOW,
+      fetch: {
+        runtime: "direct-http" as const,
+        fetch: async () =>
+          new Response("<html>Just a moment...</html>", {
+            headers: { "X-Kunai-Relayed": "1" },
+          }),
+      },
+    } satisfies ProviderRuntimeContext;
+
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    Bun.which = (() => null) as typeof Bun.which;
+    globalThis.fetch = (async () => {
+      throw new Error("SENTINEL: direct upstream request happened");
+    }) as unknown as typeof fetch;
+    try {
+      const thrown = await hianimeFetchText("https://hianime.at/search?keyword=x", {
+        context,
+      }).then(
+        () => null,
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+      expect(thrown).toContain("Cloudflare");
+      expect(thrown).not.toContain("SENTINEL");
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("an unmarked response still falls through to the local transport", async () => {
+    // Relay off / relay-unchecked: the direct-port response may legitimately
+    // fall through to local curl (or plain fetch) — that bypass is the whole
+    // point of the non-relay path.
+    const context = {
+      now: () => NOW,
+      fetch: {
+        runtime: "direct-http" as const,
+        fetch: async () => new Response("nope", { status: 403 }),
+      },
+    } satisfies ProviderRuntimeContext;
+
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    Bun.which = (() => null) as typeof Bun.which;
+    globalThis.fetch = (async () => new Response("direct answer")) as unknown as typeof fetch;
+    try {
+      const text = await hianimeFetchText("https://hianime.at/search?keyword=x", { context });
+      expect(text).toBe("direct answer");
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
   });
 });

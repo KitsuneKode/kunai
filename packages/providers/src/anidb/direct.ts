@@ -669,7 +669,10 @@ export const anidbProviderModule: CoreProviderModule = {
       // any fallback is considered, so an unconditional `true` here spends half
       // the resolve budget on a request that cannot succeed. The message test
       // stays as a floor for a challenge that arrives from a path that has not
-      // been converted to the typed error yet.
+      // been converted to the typed error yet. A blocked verdict is only
+      // produced after the inner Bun/fetch → curl sequence is spent, so a
+      // second engine attempt cannot succeed — the same
+      // "retryable: !captchaBlocked" policy allmanga already states.
       const blocked = error instanceof AnidbBlockedError || /cloudflare/i.test(message);
       const failure: ProviderFailure = {
         providerId: ANIDB_PROVIDER_ID,

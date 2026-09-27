@@ -1,5 +1,6 @@
 import type { Container } from "@/container";
-import type { ProviderMetadata } from "@/domain/types";
+import { providerMetadataMatchesLane } from "@/domain/provider-lane";
+import type { ProviderLane, ProviderMetadata } from "@/domain/types";
 import {
   formatProviderHealthBadge,
   resolveEffectiveProviderHealth,
@@ -139,10 +140,10 @@ export async function applyProviderHealthResetScope(
   let clearedTitle = 0;
   let clearedEndpoints = 0;
 
-  const laneProviderIds = (isAnime: boolean): ProviderId[] =>
+  const laneProviderIds = (lane: ProviderLane): ProviderId[] =>
     container.providerRegistry
       .getAll()
-      .filter((provider) => provider.metadata.isAnimeProvider === isAnime)
+      .filter((provider) => providerMetadataMatchesLane(provider.metadata, lane))
       .map((provider) => provider.metadata.id);
 
   switch (scope) {
@@ -167,15 +168,15 @@ export async function applyProviderHealthResetScope(
       }
       break;
     case "anime-lane":
-      clearedGlobal = container.providerHealth.deleteMany(laneProviderIds(true));
-      clearedEndpoints = laneProviderIds(true).reduce(
+      clearedGlobal = container.providerHealth.deleteMany(laneProviderIds("anime"));
+      clearedEndpoints = laneProviderIds("anime").reduce(
         (count, providerId) => count + container.endpointHealth.deleteByProvider(providerId),
         0,
       );
       break;
     case "series-lane":
-      clearedGlobal = container.providerHealth.deleteMany(laneProviderIds(false));
-      clearedEndpoints = laneProviderIds(false).reduce(
+      clearedGlobal = container.providerHealth.deleteMany(laneProviderIds("series"));
+      clearedEndpoints = laneProviderIds("series").reduce(
         (count, providerId) => count + container.endpointHealth.deleteByProvider(providerId),
         0,
       );

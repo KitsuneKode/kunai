@@ -7,6 +7,7 @@
  * curl/curl-impersonate — the same shape as the AniDB client.
  */
 
+import { isRelayedResponse } from "@kunai/types";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { ProviderHttpError } from "../runtime/fetch";
@@ -218,6 +219,14 @@ function spawnCurlOnce(
   ]).then(([stdout, stderr, exitCode]) => ({ stdout, stderr, exitCode }));
 }
 
+/**
+ * A response the relay port marked as relayed is final: re-asking the same
+ * upstream URL direct would silently bypass the relay the user deployed.
+ * Transport errors and *direct* (unmarked) responses still fall through to
+ * local curl/impersonate — that path is the legitimate Cloudflare bypass.
+ */
+class HianimeRelayedUpstreamError extends Error {}
+
 export async function hianimeFetchText(
   url: string,
   options: {
@@ -234,12 +243,25 @@ export async function hianimeFetchText(
         headers: { "User-Agent": HIANIME_USER_AGENT, Referer: referer },
         signal: createTimeoutSignal(options.signal, 15_000),
       });
+      if (isRelayedResponse(response)) {
+        /* The relay answered for this request — re-asking the same URL direct
+         * would silently bypass the relay the user deployed (#460). Treat the
+         * response as final, including a definitive upstream status. */
+        const text = response.ok ? await response.text() : "";
+        if (response.ok && !isCloudflareChallengeText(text)) return text;
+        throw new HianimeRelayedUpstreamError(
+          isCloudflareChallengeText(text)
+            ? cloudflareBlockMessage(false)
+            : `hianime fetch HTTP ${response.status} from ${hianimeUrlLabel(url)} via relay`,
+        );
+      }
       if (response.ok) {
         const text = await response.text();
         if (!isCloudflareChallengeText(text)) return text;
       }
     } catch (error) {
       if (options.signal?.aborted === true) throw error;
+      if (error instanceof HianimeRelayedUpstreamError) throw error;
       // Fall through to local curl/impersonate.
     }
   }

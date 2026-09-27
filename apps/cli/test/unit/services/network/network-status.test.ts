@@ -11,6 +11,18 @@ describe("NetworkStatus", () => {
   test("classifies OS and DNS failures as offline", () => {
     expect(classifyNetworkFailure("getaddrinfo ENOTFOUND api.example.test")).toBe("offline");
     expect(classifyNetworkFailure("Network is unreachable")).toBe("offline");
+    expect(classifyNetworkFailure("curl: (6) Could not resolve host: anidb.app")).toBe("offline");
+    expect(classifyNetworkFailure("Temporary failure in name resolution")).toBe("offline");
+    expect(classifyNetworkFailure("Name or service not known")).toBe("offline");
+  });
+
+  test("does not classify messages that merely mention dns as offline", () => {
+    // A bare "dns" substring matched titles, URLs and provider copy — two such
+    // false positives used to trip the engine's offline threshold.
+    expect(classifyNetworkFailure('no results for "the dns diaries"')).toBe("unknown");
+    expect(classifyNetworkFailure("HTTP 403 from https://dns.cdn.example/v/1.m3u8")).toBe(
+      "unknown",
+    );
   });
 
   test("classifies Bun unable-to-connect failures as offline", () => {

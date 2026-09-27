@@ -1,3 +1,5 @@
+import { RELAYED_RESPONSE_HEADER } from "@kunai/types";
+
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
 import { RELAY_ERROR_CODE_HEADER, RELAY_HOP_HEADER, type RelayRpcRequest } from "./types";
 import type { RelayFetchPort, RelayFetchPortOptions } from "./types";
@@ -52,7 +54,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
         if (fallbackToDirect && isRelayAuthorizationFailure(response)) {
           return fetchImpl(input, init);
         }
-        return markRelayHop(response);
+        return markRelayedResponse(response);
       } catch (error) {
         if (!fallbackToDirect) throw error;
         return fetchImpl(input, init);
@@ -64,16 +66,14 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
 export { normalizeRelayBaseUrl } from "./normalize-relay-base-url";
 
 /**
- * Stamp a response that travelled over a relay hop.
- *
- * Written after the fact and always overwriting, so an upstream cannot forge or
- * suppress it. A successful body is passed through untouched; only failures
- * need the marker, and rebuilding every 200 would cost a copy for nothing.
+ * Mark responses that really came through the relay so a provider cannot
+ * silently re-request the same URL direct (issue #460). Responses produced by
+ * the port's own direct-fallback branches stay unmarked on purpose — the user
+ * already opted into that bypass via `fallbackToDirect`.
  */
-function markRelayHop(response: Response): Response {
-  if (response.ok) return response;
+function markRelayedResponse(response: Response): Response {
   const headers = new Headers(response.headers);
-  headers.set(RELAY_HOP_HEADER, "1");
+  headers.set(RELAYED_RESPONSE_HEADER, "1");
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

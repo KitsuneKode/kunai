@@ -1195,6 +1195,25 @@ describe("anidb direct resolve season routing", () => {
     expect(result.failures[0]?.retryable).toBe(false);
   });
 
+  test("a Cloudflare block is not retryable once both inner transports are spent", async () => {
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      (async () => {
+        throw new Error("request blocked by Cloudflare challenge");
+      }) as unknown as typeof fetch,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("blocked");
+    expect(result.failures[0]?.retryable).toBe(false);
+  });
+
   test("does not advertise hardcoded English subs without a subtitle track", async () => {
     const result = await resolveWithStub(
       // SAFETY: test stub — supplies only the surface this test exercises.
