@@ -156,9 +156,18 @@ what a Dockerfile or CI step usually wants.
 
 | `install.sh`         | `install.ps1`     | Environment                | Effect                                                                                                                             |
 | -------------------- | ----------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `--method X`         | `-Method X`       | `KUNAI_INSTALL_METHOD`     | `binary` (default), `npm`, `bun`, or `source`.                                                                                       |
+| `--version X.Y.Z`    | `-Version X.Y.Z`  | `KUNAI_INSTALL_VERSION`    | Pin a release instead of `latest`.                                                                                                   |
 | `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages — see below.                                          |
+| `--dry-run`          | `-DryRun`         | `KUNAI_INSTALL_DRY_RUN=1`  | Print the plan; change nothing.                                                                                                      |
 | `--skip-deps`        | `-SkipDeps`       | `KUNAI_SKIP_DEPS=1`        | Skip optional dependencies (`mpv` via your package manager; on Windows also the portable `yt-dlp` and `curl-impersonate` helpers). |
 | `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone — see [PATH](#path).                                                                                              |
+
+Both installers refuse to run **as root / elevated** by default: a `sudo` or
+Administrator install lands Kunai in the wrong profile and the user never gets
+`kunai` on PATH. Run as the account that will use Kunai, or opt in with
+`KUNAI_INSTALL_ALLOW_ROOT=1` (`install.sh`) / `KUNAI_INSTALL_ALLOW_ELEVATED=1`
+(`install.ps1`) for a container or system install.
 
 Without a terminal — `curl … | bash` in CI, a container, or a sandbox — optional
 prompts are **skipped, not accepted**, and the installer says which step it

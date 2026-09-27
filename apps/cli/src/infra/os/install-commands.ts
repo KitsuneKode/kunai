@@ -77,10 +77,13 @@ const REMEDIATION_LABELS: readonly (readonly [keyof PlatformInstall, string])[] 
 /** Every command, labelled — what `kunai doctor` prints and diagnostics carry. */
 export function buildRemediationLines(install: PlatformInstall): readonly string[] {
   if (install.note) return [install.note];
+  // Pad to the longest label plus one: `openSUSE` is 8 characters, so a fixed
+  // padEnd(8) glued the label onto `sudo zypper …` with no separator.
+  const width = Math.max(...REMEDIATION_LABELS.map(([, label]) => label.length)) + 1;
   const lines: string[] = [];
   for (const [key, label] of REMEDIATION_LABELS) {
     const command = install[key];
-    if (command) lines.push(`${label.padEnd(8)}${command}`);
+    if (command) lines.push(`${label.padEnd(width)}${command}`);
   }
   return lines;
 }

@@ -410,8 +410,13 @@ function collectFindings(input: {
   }
 
   for (const issue of report.dependencies.issues) {
+    // `degraded` describes what the shell can still do; doctor's verdict is
+    // install health, and without mpv Kunai cannot play at all — report it as
+    // an error so the exit code is honest for scripts. yt-dlp/ffmpeg/curl stay
+    // warnings: each gates one lane, not the product.
+    const core = issue.id === "mpv-missing";
     findings.push({
-      severity: issue.severity === "fatal" ? "error" : "warning",
+      severity: issue.severity === "fatal" || core ? "error" : "warning",
       code: issue.id,
       message: issue.message,
       remediation: [...issue.remediation],
