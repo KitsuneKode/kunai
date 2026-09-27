@@ -33,6 +33,10 @@ for (const scenario of [
         GIT_COMMITTER_EMAIL: "fixture@example.test",
         GITHUB_RUN_ID: "123",
         GITHUB_REPOSITORY: "fixture/repo",
+        // The script authenticates its push with a per-command header scoped
+        // to github.com — harmless against this fixture's file-path remote,
+        // but the variable must exist for the expansion to run.
+        GH_TOKEN: "fixture-token",
         PATH: `${root}:${process.env.PATH}`,
       };
       function git(...args: string[]) {
