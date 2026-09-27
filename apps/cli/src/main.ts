@@ -742,6 +742,28 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
 
+  // A piped launch can never mount the shell, so reject before the lifetime
+  // lock, terminal probe, dependency check, container, and every queued or
+  // background task that only exists for an interactive session. Two routes do
+  // real work headless past this point and are exempt: `--support-bundle` and
+  // the env-gated compiled-smoke harness — both need the container, which is
+  // why the guard lives here rather than at arg parse. A new headless route
+  // that mounts nothing must add its own exemption.
+  const setupIsInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const compiledSmokeRequested =
+    process.env.KUNAI_COMPILED_SMOKE === "1" && Boolean(process.env.KUNAI_COMPILED_SMOKE_SCENARIO);
+  if (!setupIsInteractive && !args.supportBundle && !compiledSmokeRequested) {
+    process.stderr.write(
+      "kunai: this command needs an interactive terminal.\n" +
+        "Nothing was started. Pipe-aware routes that do work without a TTY:\n" +
+        "  kunai --help | --version | --dry-run\n" +
+        "  kunai doctor | kunai diagnostics | kunai completion | kunai upgrade --check\n" +
+        "  kunai --support-bundle\n",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   // Versioned binary: hold lifetime lock and prune old versions (binary channel).
   // The acquisition promise is tracked so coordinated shutdown can await it
   // before releasing — a late lock must never survive the process.
@@ -778,10 +800,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   })();
   // Interactivity is part of the question: this decides whether `checkDeps`
-  // stays silent because the wizard will show the same information visually. In
-  // a pipe the wizard never mounts, so the console remediation is the only
-  // channel left and must not be suppressed.
-  const setupIsInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  // stays silent because the wizard will show the same information visually.
+  // (Piped launches were already rejected above, so only TTY sessions get here.)
   const onboardingWillRun = shouldRunSetupWizard({
     force: args.setup,
     interactive: setupIsInteractive,
@@ -1148,27 +1168,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
           .map((issue) => issue.message),
       },
     });
-  }
-
-  // Guard here, at the mount site, rather than earlier in the pipeline.
-  //
-  // Ink throws from `useStdin` when the process has no TTY, and that throw
-  // escaped as an unhandled rejection: a react-reconciler stack on stdout, two
-  // more on stderr, and the absolute install path in the output. Every
-  // non-interactive route (`--dry-run`, `doctor`, `diagnostics`, `completion`,
-  // `upgrade --check`, `--support-bundle`, …) has already returned by this
-  // point, so nothing legitimate is refused — but placing the guard *earlier*
-  // would mean maintaining a list of flags to exempt, and that list is exactly
-  // the kind of declaration-without-reader this repo keeps paying for.
-  if (!setupIsInteractive) {
-    process.stderr.write(
-      "kunai: this command needs an interactive terminal.\n" +
-        "Nothing was started. Pipe-aware routes that do work without a TTY:\n" +
-        "  kunai --help | --version | --dry-run\n" +
-        "  kunai doctor | kunai diagnostics | kunai completion | kunai upgrade --check\n",
-    );
-    process.exitCode = 1;
-    return;
   }
 
   const shellLoadStartedAt = args.debug ? performance.now() : 0;

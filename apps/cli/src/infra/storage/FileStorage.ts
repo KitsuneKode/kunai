@@ -152,7 +152,11 @@ let corruptBackupCounter = 0;
 
 function corruptBackupStamp(): string {
   corruptBackupCounter = (corruptBackupCounter + 1) % 1_000;
-  return `${new Date().toISOString().replace(/[:.]/g, "-")}-${corruptBackupCounter}`;
+  // Timestamp + counter disambiguate within one process; the random suffix keeps
+  // two processes that corrupt-read in the same millisecond from picking the
+  // same backup path and clobbering each other's copy.
+  const nonce = Math.random().toString(36).slice(2, 8);
+  return `${new Date().toISOString().replace(/[:.]/g, "-")}-${corruptBackupCounter}-${nonce}`;
 }
 
 function errorCode(error: unknown): string | undefined {
