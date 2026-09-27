@@ -1,8 +1,15 @@
-import { expect, test } from "bun:test";
+import { beforeEach, expect, test } from "bun:test";
 
-import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
+import {
+  __testing as animeMappingTesting,
+  mapAnimeDiscoveryResultToProviderNative,
+} from "@/app/discover/anime-provider-mapping";
 import type { SearchResult } from "@/domain/types";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
+
+// The unmapped-title cache is session-scoped module state — reset it per test
+// so one test's miss cannot short-circuit the next test's mapping.
+beforeEach(() => animeMappingTesting.resetUnmappedCache());
 
 const discovery: SearchResult = {
   id: "151807",
@@ -300,4 +307,96 @@ test("AniDB mapping rejects a non-AniDB native result and retains catalog identi
   expect(mapped.id).toBe("151807");
   expect(mapped.externalIds?.anilistId).toBe("151807");
   expect(mapped.externalIds?.providerNativeIds?.anidb).toBeUndefined();
+});
+
+test("an unmapped title does not re-pay the serial provider search on reselection", async () => {
+  // Numeric AniList-style id + AniList metadataSource — otherwise the mapping
+  // exits before the search tiers and there is nothing to cache.
+  const unmapped: SearchResult = { ...discovery, id: "777777" };
+  let providerSearchCalls = 0;
+  const context = {
+    mode: "anime",
+    providerId: "anidb",
+    animeLanguageProfile: { audio: "original", subtitle: "en" },
+    providerRegistry: {
+      get: () => ({
+        metadata: {
+          id: "anidb",
+          name: "AniDB",
+          description: "",
+          domain: "anidb.app",
+          recommended: true,
+          isAnimeProvider: true,
+          catalogIdentity: "provider-native" as const,
+        },
+        capabilities: {} as never,
+        canHandle: () => true,
+        resolveStream: async () => null,
+        search: async () => {
+          providerSearchCalls += 1;
+          return [];
+        },
+      }),
+      getAll: () => [],
+      getCompatible: () => [],
+    } as never,
+    searchProviderNative: async () => [],
+  } as const;
+
+  const first = await mapAnimeDiscoveryResultToProviderNative(unmapped, context);
+  expect(providerSearchCalls).toBeGreaterThan(0);
+  const paidCalls = providerSearchCalls;
+
+  const second = await mapAnimeDiscoveryResultToProviderNative(unmapped, context);
+  expect(providerSearchCalls).toBe(paidCalls);
+  expect(second.id).toBe(first.id);
+});
+
+test("an aborted mapping does not pin an unmapped marker", async () => {
+  const unmapped: SearchResult = { ...discovery, id: "888888" };
+  let providerSearchCalls = 0;
+  const controller = new AbortController();
+  controller.abort();
+  const context = {
+    mode: "anime",
+    providerId: "anidb",
+    animeLanguageProfile: { audio: "original", subtitle: "en" },
+    signal: controller.signal,
+    providerRegistry: {
+      get: () => ({
+        metadata: {
+          id: "anidb",
+          name: "AniDB",
+          description: "",
+          domain: "anidb.app",
+          recommended: true,
+          isAnimeProvider: true,
+          catalogIdentity: "provider-native" as const,
+        },
+        capabilities: {} as never,
+        canHandle: () => true,
+        resolveStream: async () => null,
+        search: async () => {
+          providerSearchCalls += 1;
+          return [];
+        },
+      }),
+      getAll: () => [],
+      getCompatible: () => [],
+    } as never,
+    searchProviderNative: async () => [],
+  } as const;
+
+  await mapAnimeDiscoveryResultToProviderNative(unmapped, context);
+  const paidCalls = providerSearchCalls;
+  expect(paidCalls).toBeGreaterThan(0);
+
+  // The aborted pass must not have been recorded — a follow-up selection pays
+  // the search again rather than trusting a cancellation as "no mapping".
+  const retry = await mapAnimeDiscoveryResultToProviderNative(unmapped, {
+    ...context,
+    signal: undefined,
+  });
+  expect(providerSearchCalls).toBeGreaterThan(paidCalls);
+  expect(retry.id).toBe("888888");
 });

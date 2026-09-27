@@ -473,6 +473,18 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.downloadPath = options.downloadPath;
   args.openUrl = options.open;
   args.handoffUrl = options.handoffUrl;
+  if (args.openUrl && args.handoffUrl) {
+    // `--open` is the trusted local channel and `--handoff-url` the untrusted
+    // desktop-handler one; accepting both would silently upgrade whichever a
+    // tokenizing launcher smuggled into argv.
+    throw new CliUsageError("--open and --handoff-url are mutually exclusive");
+  }
+  if (args.handoffUrl && /\s/.test(args.handoffUrl)) {
+    // A kunai:// URL never contains whitespace; finding any means something
+    // tokenized extra argv into the value — refuse rather than risk a
+    // smuggled flag.
+    throw new CliUsageError("invalid kunai:// handoff URL");
+  }
   args.installProtocolHandler = Boolean(options.installProtocolHandler);
   args.dryRun = Boolean(options.dryRun);
   args.mpv = {

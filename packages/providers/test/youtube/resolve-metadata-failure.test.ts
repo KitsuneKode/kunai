@@ -87,29 +87,35 @@ describe("youtube resolve on metadata failure", () => {
     expect(result.failures.at(-1)?.message).toContain("private");
   });
 
-  ytdlpTest("a transient failure still resolves, so a flaky probe cannot kill playback", async () => {
-    configureYoutubeProvider({
-      metadataService: failingService("ERROR: unable to download webpage: HTTP Error 503"),
-    });
+  ytdlpTest(
+    "a transient failure still resolves, so a flaky probe cannot kill playback",
+    async () => {
+      configureYoutubeProvider({
+        metadataService: failingService("ERROR: unable to download webpage: HTTP Error 503"),
+      });
 
-    const result = await resolveYoutube(buildInput());
-    expect(result.status).toBe("resolved");
-    expect(result.streams.length).toBeGreaterThan(0);
-    expect(result.failures.at(-1)?.retryable).toBe(true);
-  });
+      const result = await resolveYoutube(buildInput());
+      expect(result.status).toBe("resolved");
+      expect(result.streams.length).toBeGreaterThan(0);
+      expect(result.failures.at(-1)?.retryable).toBe(true);
+    },
+  );
 
-  ytdlpTest("a transient failure keeps the quality ceiling instead of asking for best", async () => {
-    configureYoutubeProvider({
-      metadataService: failingService("ERROR: unable to download webpage: HTTP Error 503"),
-    });
+  ytdlpTest(
+    "a transient failure keeps the quality ceiling instead of asking for best",
+    async () => {
+      configureYoutubeProvider({
+        metadataService: failingService("ERROR: unable to download webpage: HTTP Error 503"),
+      });
 
-    const result = await resolveYoutube(buildInput("720p"));
-    const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
-    expect(selected?.qualityLabel).toBe("720p");
-    // The ceiling has to reach yt-dlp, not just the label.
-    expect(String(selected?.metadata?.ytdlFormat)).toContain("height<=?720");
-    expect(selected?.metadata?.metadataUnavailable).toBe(true);
-  });
+      const result = await resolveYoutube(buildInput("720p"));
+      const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+      expect(selected?.qualityLabel).toBe("720p");
+      // The ceiling has to reach yt-dlp, not just the label.
+      expect(String(selected?.metadata?.ytdlFormat)).toContain("height<=?720");
+      expect(selected?.metadata?.metadataUnavailable).toBe(true);
+    },
+  );
 
   ytdlpTest("a requested quality absent from the ladder rounds down, not up", async () => {
     const seeded = normalizeYtDlpVideoInfo(

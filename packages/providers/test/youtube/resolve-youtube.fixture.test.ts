@@ -51,7 +51,6 @@ describe("resolveYoutube", () => {
   });
 
   test.skipIf(HAS_YTDLP)("returns yt-dlp-missing when yt-dlp is absent", async () => {
-
     const resolve = youtubeProviderModule.resolve;
     if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
 
@@ -61,7 +60,6 @@ describe("resolveYoutube", () => {
   });
 
   ytdlpTest("resolves watch URL candidates with requiresYtdl from metadata cache", async () => {
-
     const cache = new Map<string, unknown>();
     configureYoutubeProvider({
       metadataCache: {
@@ -152,22 +150,25 @@ describe("resolveYoutube", () => {
       expect(args.some((value) => value?.includes(","))).toBe(false);
     });
 
-    ytdlpTest("each quality variant lists every lane so a chosen quality can still fail over", async () => {
-      configureYoutubeProvider({
-        metadataCache: seedMetadataCache(),
-        extractorArgs: "youtube:player_client=mweb,tv_simply",
-      });
+    ytdlpTest(
+      "each quality variant lists every lane so a chosen quality can still fail over",
+      async () => {
+        configureYoutubeProvider({
+          metadataCache: seedMetadataCache(),
+          extractorArgs: "youtube:player_client=mweb,tv_simply",
+        });
 
-      const resolve = youtubeProviderModule.resolve;
-      if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
-      const result = await resolve(buildResolveInput(), TEST_CONTEXT);
+        const resolve = youtubeProviderModule.resolve;
+        if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
+        const result = await resolve(buildResolveInput(), TEST_CONTEXT);
 
-      expect(result.variants?.length).toBeGreaterThan(0);
-      for (const variant of result.variants ?? []) {
-        expect(variant.streamIds).toHaveLength(2);
-        expect(new Set(variant.streamIds).size).toBe(2);
-      }
-    });
+        expect(result.variants?.length).toBeGreaterThan(0);
+        for (const variant of result.variants ?? []) {
+          expect(variant.streamIds).toHaveLength(2);
+          expect(new Set(variant.streamIds).size).toBe(2);
+        }
+      },
+    );
 
     ytdlpTest("a single configured client stays a single source", async () => {
       configureYoutubeProvider({

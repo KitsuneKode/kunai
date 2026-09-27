@@ -140,22 +140,28 @@ export function setMiruroPipeRetrySleepForTest(
   miruroPipeRetrySleepImpl = sleep ?? sleepAbortable;
 }
 
-let curlSupportsHttp2: boolean | null = null;
+// Keyed by binary path — the resolved candidate can change if PATH changes
+// mid-process, and probing bare "curl" could report features of a different
+// binary than the one pipeCall spawns.
+const curlHttp2Probes = new Map<string, Promise<boolean>>();
 
-function detectCurlHttp2Support(): boolean {
-  if (curlSupportsHttp2 !== null) return curlSupportsHttp2;
-  try {
-    const proc = Bun.spawnSync(["curl", "--version"]);
-    if (proc.exitCode === 0) {
-      const features = proc.stdout.toString();
-      curlSupportsHttp2 = /\bHTTP2\b/i.test(features);
-    } else {
-      curlSupportsHttp2 = false;
-    }
-  } catch {
-    curlSupportsHttp2 = false;
+function detectCurlHttp2Support(curlPath: string): Promise<boolean> {
+  let probe = curlHttp2Probes.get(curlPath);
+  if (probe === undefined) {
+    probe = probeCurlHttp2Support(curlPath);
+    curlHttp2Probes.set(curlPath, probe);
   }
-  return curlSupportsHttp2;
+  return probe;
+}
+
+async function probeCurlHttp2Support(curlPath: string): Promise<boolean> {
+  try {
+    const proc = Bun.spawn([curlPath, "--version"], { stdout: "pipe", stderr: "ignore" });
+    const [features, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    return exitCode === 0 && /\bHTTP2\b/i.test(features);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -1761,7 +1767,7 @@ export async function fetchMiruroPipeBody(
     };
   }
 
-  const hasCurlHttp2 = detectCurlHttp2Support();
+  const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
   const args = [
     curl.path,
     ...curlCipherArgs(curl.impersonates),

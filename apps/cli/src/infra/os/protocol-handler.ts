@@ -130,5 +130,7 @@ export async function installKunaiProtocolHandler({
 }
 
 function quoteDesktopExecToken(value: string): string {
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  // `%` must be doubled first: field codes expand even inside quotes, so an
+  // unescaped `%` in the binary path would be read as one.
+  return `"${value.replaceAll("%", "%%").replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }

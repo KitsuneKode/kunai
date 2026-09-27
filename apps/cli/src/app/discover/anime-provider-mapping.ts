@@ -19,6 +19,38 @@ const ALLMANGA_REFERER = "https://youtu-chan.com";
 const ALLMANGA_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
 
+/**
+ * Session-scoped "no mapping" markers. A title that survives both tiers
+ * without a match used to re-pay up to five serial provider searches on every
+ * selection — the catalog does not gain the title mid-session, so a short TTL
+ * is enough to stop the re-pay without pinning a stale miss forever.
+ */
+const UNMAPPED_TTL_MS = 15 * 60 * 1000;
+const unmappedAnimeTitles = new Map<string, number>();
+
+function unmappedKey(context: AnimeProviderMappingContext, result: SearchResult): string {
+  // The search fan-out is preference-scoped: a title unmapped under dub is not
+  // unmapped under sub.
+  return `${context.providerId}|${context.animeLanguageProfile.audio}|${context.animeLanguageProfile.subtitle}|${result.id}`;
+}
+
+function isUnmapped(key: string): boolean {
+  const expiresAt = unmappedAnimeTitles.get(key);
+  if (expiresAt === undefined) return false;
+  if (expiresAt <= Date.now()) {
+    unmappedAnimeTitles.delete(key);
+    return false;
+  }
+  return true;
+}
+
+/** Test-only: drop the session's unmapped-title markers. */
+export const __testing = {
+  resetUnmappedCache(): void {
+    unmappedAnimeTitles.clear();
+  },
+};
+
 export async function mapAnimeDiscoveryResultToProviderNative(
   result: SearchResult,
   context: AnimeProviderMappingContext,
@@ -34,6 +66,11 @@ export async function mapAnimeDiscoveryResultToProviderNative(
   const storedNative = result.externalIds?.providerNativeIds?.[context.providerId];
   if (storedNative) {
     return { ...result, id: storedNative };
+  }
+
+  const negativeKey = unmappedKey(context, result);
+  if (isUnmapped(negativeKey)) {
+    return ensureAniListDiscoveryExternalIds(result);
   }
 
   const provider = context.providerRegistry.get(context.providerId);
@@ -123,6 +160,12 @@ export async function mapAnimeDiscoveryResultToProviderNative(
       return mergeAniListDiscoveryWithProviderResult(result, match, context.providerId, context);
   }
 
+  // Both tiers exhausted without a match — remember it so selecting this title
+  // again does not re-pay the serial search loop. An aborted run is not
+  // evidence: do not mark when the caller cancelled mid-flight.
+  if (!context.signal?.aborted) {
+    unmappedAnimeTitles.set(negativeKey, Date.now() + UNMAPPED_TTL_MS);
+  }
   return ensureAniListDiscoveryExternalIds(result);
 }
 

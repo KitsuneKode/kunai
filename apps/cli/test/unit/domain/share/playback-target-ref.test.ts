@@ -86,4 +86,21 @@ describe("playback target ref codec", () => {
   it("rejects empty search queries", () => {
     expect(parsePlaybackTargetRef("kunai://play?q=&kind=anime")).toBeNull();
   });
+
+  it("caps optional text fields the way the query anchor is capped", () => {
+    const longTitle = "t".repeat(500);
+    const longSource = "s".repeat(300);
+    const longQuality = "4".repeat(300);
+    const ref = parsePlaybackTargetRef(
+      `kunai://play?cat=tmdb:99&kind=movie&n=${longTitle}&src=${longSource}&sq=${longQuality}`,
+    );
+    expect(ref?.title).toBe("t".repeat(256));
+    expect(ref?.hint?.providerId).toBe("s".repeat(64));
+    expect(ref?.hint?.quality).toBe("4".repeat(64));
+  });
+
+  it("caps oversized catalog ids instead of keeping them whole", () => {
+    const ref = parsePlaybackTargetRef(`kunai://play?cat=tmdb:${"9".repeat(200)}&kind=movie`);
+    expect(ref?.anchor).toEqual({ by: "catalog", ns: "tmdb", id: "9".repeat(128) });
+  });
 });

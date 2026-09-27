@@ -266,9 +266,9 @@ function parseKunaiProtocolUrl(value: string): ParsedKunaiShare | null {
   const episode = readInt(url.searchParams.get("e"));
   const absoluteEpisode = readInt(url.searchParams.get("abs"));
   const startSeconds = parseTimestampToSeconds(url.searchParams.get("t"));
-  const src = url.searchParams.get("src")?.trim();
-  const quality = url.searchParams.get("sq")?.trim();
-  const title = url.searchParams.get("n")?.trim();
+  const src = url.searchParams.get("src")?.trim().slice(0, 64);
+  const quality = url.searchParams.get("sq")?.trim().slice(0, 64);
+  const title = url.searchParams.get("n")?.trim().slice(0, 256);
 
   return {
     action,
@@ -345,7 +345,10 @@ function readAnchor(params: URLSearchParams): ShareAnchor | null {
     const colon = cat.indexOf(":");
     if (colon <= 0) return null;
     const ns = cat.slice(0, colon).trim();
-    const id = cat.slice(colon + 1).trim();
+    const id = cat
+      .slice(colon + 1)
+      .trim()
+      .slice(0, 128);
     if (!CATALOG_NS.has(ns) || !id) return null;
     return { by: "catalog", ns: ns as CatalogNs, id };
   }

@@ -78,11 +78,21 @@ export class SourceInventoryRepository {
       .query("UPDATE source_inventory SET last_accessed_at = ? WHERE inventory_key = ?")
       .run(accessedAt, inventoryKey);
 
+    // Same contract as stream-cache reads: a row whose inventory shape is
+    // corrupt is not a hit — throw so the service layer records it as a cache
+    // failure instead of handing garbage downstream. The repository is generic,
+    // so the check is structural: the fields consumers read must be arrays of
+    // objects with string ids when they exist at all.
+    const parsed: unknown = JSON.parse(row.inventory_json);
+    if (!this.isSourceInventoryShape(parsed)) {
+      throw new Error(`invalid source_inventory row for ${row.inventory_key}`);
+    }
+
     return {
       inventoryKey: row.inventory_key,
       providerId: row.provider_id,
       titleId: row.title_id,
-      inventory: JSON.parse(row.inventory_json) as TInventory,
+      inventory: parsed as TInventory,
       expiresAt: row.expires_at,
       createdAt: row.created_at,
       lastAccessedAt: accessedAt,
@@ -91,6 +101,28 @@ export class SourceInventoryRepository {
 
   delete(inventoryKey: string): void {
     this.db.query("DELETE FROM source_inventory WHERE inventory_key = ?").run(inventoryKey);
+  }
+
+  /**
+   * The narrow shape downstream actually reads: an object whose `streams`,
+   * `sources`, `variants`, and `subtitles` — when present — are arrays, and
+   * whose stream urls, when present, are strings. Looser than a schema on
+   * purpose: the repository is generic over the stored payload.
+   */
+  private isSourceInventoryShape(value: unknown): boolean {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+    for (const key of ["streams", "sources", "variants", "subtitles"] as const) {
+      const field = (value as Record<string, unknown>)[key];
+      if (field !== undefined && !Array.isArray(field)) return false;
+      if (key === "streams" && Array.isArray(field)) {
+        for (const stream of field) {
+          if (typeof stream !== "object" || stream === null) return false;
+          const url = (stream as { url?: unknown }).url;
+          if (url !== undefined && typeof url !== "string") return false;
+        }
+      }
+    }
+    return true;
   }
 
   deleteByProvider(providerId: string): number {

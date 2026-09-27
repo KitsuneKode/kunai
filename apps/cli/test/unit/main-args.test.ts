@@ -149,6 +149,31 @@ test("parseArgs accepts a trusted --open share URL", () => {
   expect(args.handoffUrl).toBeUndefined();
 });
 
+test("parseArgs rejects --open combined with --handoff-url", () => {
+  // Accepting both would silently upgrade whichever a tokenizing launcher
+  // smuggled into argv — the untrusted channel must never ride on the trusted
+  // one.
+  expect(() =>
+    parseArgs([
+      "--open",
+      "kunai://play?cat=tmdb%3A1399",
+      "--handoff-url",
+      "kunai://play?cat=tmdb%3A438631",
+    ]),
+  ).toThrow(CliUsageError);
+});
+
+test("parseArgs rejects whitespace inside a handoff URL", () => {
+  // Whitespace in the value means a launcher tokenized extra argv into it —
+  // refuse rather than let a smuggled flag ride in on the URL.
+  expect(() => parseArgs(["--handoff-url", "kunai://play?cat=tmdb%3A1 --jump 2"])).toThrow(
+    CliUsageError,
+  );
+  expect(() => parseArgs(["--handoff-url", "kunai://play?cat=tmdb%3A1\t--debug"])).toThrow(
+    CliUsageError,
+  );
+});
+
 test("parseArgs supports explicit local protocol handler installation", () => {
   const args = parseArgs(["--install-protocol-handler"]);
 

@@ -161,9 +161,12 @@ function randomHex(byteCount: number): string {
   return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Unpredictable id for IPC socket/pipe paths (not `Math.random`). */
+/** Unpredictable id for IPC socket/pipe paths (not `Math.random`). The random
+ * part is 128 bits because Windows pipe names are enumerable by same-session
+ * processes — the only thing between a same-user process and mpv's `run`
+ * command is this id being unguessable. */
 export function newMpvIpcSessionId(): string {
-  return `${process.pid}-${Date.now().toString(36)}-${randomHex(4)}`;
+  return `${process.pid}-${Date.now().toString(36)}-${randomHex(16)}`;
 }
 
 /**

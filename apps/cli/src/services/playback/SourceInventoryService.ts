@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
-import { getDefaultTtlMs, SourceInventoryRepository } from "@kunai/storage";
+import {
+  getDefaultTtlMs,
+  SourceInventoryRepository,
+  type SourceInventoryEntry,
+} from "@kunai/storage";
 import {
   encodeProviderEpisodeIdentity,
   type ProviderEpisodeIdentity,
@@ -40,6 +44,15 @@ export class SourceInventoryService {
     input: SourceInventoryCacheInput,
     now = new Date(),
   ): Promise<ProviderResolveResult | null> {
+    return (await this.getEntry(input, now))?.inventory ?? null;
+  }
+
+  /** Same read as `get`, but keeps the row's timestamps so callers can judge
+   * the entry's real age instead of stamping "now" at read time. */
+  async getEntry(
+    input: SourceInventoryCacheInput,
+    now = new Date(),
+  ): Promise<SourceInventoryEntry<ProviderResolveResult> | null> {
     const key = buildSourceInventoryCacheKey(input);
     try {
       let hit = this.repository.get<ProviderResolveResult>(key, now);
@@ -57,7 +70,7 @@ export class SourceInventoryService {
           reason: hit ? "fresh-entry" : "missing-or-expired",
         },
       );
-      return hit?.inventory ?? null;
+      return hit ?? null;
     } catch (error) {
       this.recordCacheFailure("source-inventory.get", input, error);
       return null;

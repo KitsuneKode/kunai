@@ -207,6 +207,7 @@ export class PlayerServiceImpl implements PlayerService {
           }),
         );
       },
+      options.abortSignal,
     );
     if (terminalHlsFailure !== null) {
       const failure = terminalHlsFailure as {

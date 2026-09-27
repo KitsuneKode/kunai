@@ -567,6 +567,178 @@ test("PlaybackResolveService reuses source inventory before a provider resolve",
   expect(providerCalls).toBe(0);
 });
 
+test("PlaybackResolveService skips the health probe for a fresh inventory entry", async () => {
+  let providerCalls = 0;
+  let probes = 0;
+  const inventory = {
+    get: async () => null,
+    getEntry: async () => ({
+      inventory: {
+        status: "resolved",
+        providerId: "primary" as ProviderId,
+        streams: [
+          {
+            id: "stream:inventory:fresh",
+            providerId: "primary" as ProviderId,
+            url: "https://inventory.example/fresh.m3u8",
+            protocol: "hls" as const,
+            confidence: 0.9,
+            cachePolicy: {
+              ttlClass: "stream-manifest" as const,
+              scope: "local" as const,
+              keyParts: [],
+            },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:inventory",
+          startedAt: new Date().toISOString(),
+          title: { id: "12345", kind: "movie" as const, title: "Test Movie" },
+          cacheHit: true,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      } satisfies ProviderResolveResult,
+      createdAt: new Date().toISOString(),
+    }),
+    set: async () => {},
+    delete: async () => {},
+  };
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    { onCandidateIds: () => (providerCalls += 1) },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    sourceInventory: inventory,
+    streamHealthService: new StreamHealthService({
+      fetchImpl: async () => {
+        probes += 1;
+        return new Response(null, { status: 200 });
+      },
+    }),
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  // The row was just written — the staleness window must apply and the probe
+  // must not fire; this is the pre-fix `force: true` behavior made honest.
+  expect(result.stream?.url).toBe("https://inventory.example/fresh.m3u8");
+  expect(probes).toBe(0);
+  expect(providerCalls).toBe(0);
+});
+
+test("PlaybackResolveService probes a stale inventory entry and a get-only port", async () => {
+  const inventoryResult: ProviderResolveResult = {
+    status: "resolved",
+    providerId: "primary" as ProviderId,
+    streams: [
+      {
+        id: "stream:inventory:stale",
+        providerId: "primary" as ProviderId,
+        url: "https://inventory.example/stale.m3u8",
+        protocol: "hls",
+        confidence: 0.9,
+        cachePolicy: {
+          ttlClass: "stream-manifest" as const,
+          scope: "local" as const,
+          keyParts: [],
+        },
+      },
+    ],
+    subtitles: [],
+    trace: {
+      id: "trace:inventory",
+      startedAt: new Date().toISOString(),
+      title: { id: "12345", kind: "movie" as const, title: "Test Movie" },
+      cacheHit: true,
+      steps: [],
+      failures: [],
+    },
+    failures: [],
+  };
+
+  // Stale row: real age past staleAfterMs → the plan must probe.
+  let staleProbes = 0;
+  const staleService = new PlaybackResolveService({
+    engine: createMockEngine({ result: null, providerId: null, attempts: [] }),
+    cacheStore: createMemoryCache(null),
+    sourceInventory: {
+      get: async () => null,
+      getEntry: async () => ({
+        inventory: inventoryResult,
+        createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      }),
+      set: async () => {},
+      delete: async () => {},
+    },
+    streamHealthService: new StreamHealthService({
+      fetchImpl: async (url) => {
+        staleProbes += 1;
+        if (url.endsWith(".m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:6.0,\nseg-1.ts\n", { status: 200 });
+        }
+        return new Response(new Uint8Array(2048), { status: 200 });
+      },
+    }),
+  });
+  const staleResult = await staleService.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+  expect(staleResult.stream?.url).toBe("https://inventory.example/stale.m3u8");
+  expect(staleProbes).toBeGreaterThan(0);
+
+  // A port without getEntry cannot report the row's age — force stays on and
+  // the probe still fires even though the entry would read as fresh.
+  let legacyProbes = 0;
+  const legacyService = new PlaybackResolveService({
+    engine: createMockEngine({ result: null, providerId: null, attempts: [] }),
+    cacheStore: createMemoryCache(null),
+    sourceInventory: {
+      get: async () => inventoryResult,
+      set: async () => {},
+      delete: async () => {},
+    },
+    streamHealthService: new StreamHealthService({
+      fetchImpl: async (url) => {
+        legacyProbes += 1;
+        if (url.endsWith(".m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:6.0,\nseg-1.ts\n", { status: 200 });
+        }
+        return new Response(new Uint8Array(2048), { status: 200 });
+      },
+    }),
+  });
+  const legacyResult = await legacyService.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+  expect(legacyResult.stream?.url).toBe("https://inventory.example/stale.m3u8");
+  expect(legacyProbes).toBeGreaterThan(0);
+});
+
 test("PlaybackResolveService resolves fresh when cached inventory lacks an explicit source choice", async () => {
   let providerCalls = 0;
   const inventory = {
@@ -2097,7 +2269,11 @@ test("PlaybackResolveService passes abort signal into stale cache health checks"
     signal: controller.signal,
   });
 
-  expect(observedSignal).toBe(controller.signal);
+  // The probe receives the resolve's deadline-wrapped signal, not the raw
+  // caller signal — what must hold is that the caller's abort still reaches it.
+  expect(observedSignal).toBeDefined();
+  controller.abort();
+  expect(observedSignal?.aborted).toBe(true);
 });
 
 test("PlaybackResolveService stops a stalling provider fan-out at its total deadline", async () => {

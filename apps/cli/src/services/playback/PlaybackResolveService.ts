@@ -213,7 +213,8 @@ export class PlaybackResolveService {
       readonly providerHealth?: ProviderHealthRepository;
       readonly streamHealth?: StreamHealthChecker;
       readonly streamHealthService?: StreamHealthService;
-      readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
+      readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete"> &
+        Partial<Pick<SourceInventoryService, "getEntry">>;
       readonly getProviderPriority?: () => ProviderPriorityInput;
       /** Memoized priority ordering — persists across per-resolve service instances. */
       readonly getOrderedModules?: () => readonly CoreProviderModule[];
@@ -302,6 +303,16 @@ export class PlaybackResolveService {
       input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
     }
 
+    // The resolve deadline covers the whole resolve — including the cache and
+    // inventory health probes below — so callers see one bound, not a budget
+    // that starts only once the provider engine runs.
+    const startupPriority = input.startupPriority ?? "balanced";
+    const resolveSignal = withTimeoutSignal(
+      input.signal,
+      this.deps.resolveTotalDeadlineMs?.(startupPriority) ??
+        resolveProviderTotalDeadlineMs(startupPriority),
+    );
+
     const cacheKey = this.buildCacheKey(input, input.providerId);
     // Cache reads are best-effort: a failing store (disk full, corrupt DB) must
     // degrade to a live resolve rather than take the whole playback down.
@@ -324,7 +335,7 @@ export class PlaybackResolveService {
     } else if (cachedStream && input.preferFreshStream !== true) {
       const health = await this.checkCachedStreamHealth(cachedStream, {
         force: input.forceHealthCheck === true,
-        signal: input.signal,
+        signal: resolveSignal,
         phase: "cache-revalidate",
       });
       if (health.checked) {
@@ -388,7 +399,8 @@ export class PlaybackResolveService {
       qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
     };
-    const inventoryResult = await this.readSourceInventory(inventoryInput);
+    const inventoryEntry = await this.readSourceInventory(inventoryInput);
+    const inventoryResult = inventoryEntry?.inventory ?? null;
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
       if (
         isVideasyFamilyProvider(input.providerId) &&
@@ -412,9 +424,20 @@ export class PlaybackResolveService {
         });
         if (inventoryStream) {
           input.onEvent?.({ type: "source-inventory-hit", providerId: input.providerId });
-          const health = await this.checkCachedStreamHealth(inventoryStream, {
-            force: true,
-            signal: input.signal,
+          // Stamp the row's real age so the health plan's staleness window can
+          // skip probing a fresh entry; `force` survives for ports that cannot
+          // report the row's age — and for a corrupt timestamp, so the probe
+          // stays mandatory rather than depending on NaN comparison semantics.
+          const inventoryCreatedMs =
+            inventoryEntry?.createdAt !== undefined
+              ? Date.parse(inventoryEntry.createdAt)
+              : Number.NaN;
+          const agedStream = Number.isFinite(inventoryCreatedMs)
+            ? { ...inventoryStream, timestamp: inventoryCreatedMs }
+            : inventoryStream;
+          const health = await this.checkCachedStreamHealth(agedStream, {
+            force: !Number.isFinite(inventoryCreatedMs),
+            signal: resolveSignal,
             phase: "cache-revalidate",
           });
           if (health.checked) {
@@ -562,13 +585,6 @@ export class PlaybackResolveService {
       providerId: input.providerId,
       candidateCount: compatibleIds.length,
     });
-
-    const startupPriority = input.startupPriority ?? "balanced";
-    const resolveSignal = withTimeoutSignal(
-      input.signal,
-      this.deps.resolveTotalDeadlineMs?.(startupPriority) ??
-        resolveProviderTotalDeadlineMs(startupPriority),
-    );
 
     let engineResult = await this.deps.engine.resolveWithFallback(
       resolveInput,
@@ -920,9 +936,14 @@ export class PlaybackResolveService {
    */
   private async readSourceInventory(
     input: SourceInventoryCacheInput,
-  ): Promise<ProviderResolveResult | null> {
+  ): Promise<{ readonly inventory: ProviderResolveResult; readonly createdAt?: string } | null> {
     try {
-      return (await this.deps.sourceInventory?.get(input)) ?? null;
+      if (this.deps.sourceInventory?.getEntry) {
+        const entry = (await this.deps.sourceInventory.getEntry(input)) ?? null;
+        return entry ? { inventory: entry.inventory, createdAt: entry.createdAt } : null;
+      }
+      const inventory = (await this.deps.sourceInventory?.get(input)) ?? null;
+      return inventory ? { inventory } : null;
     } catch {
       return null;
     }
