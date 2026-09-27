@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import os from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,6 +8,29 @@ import { createMDX } from "fumadocs-mdx/next";
 const appDir = dirname(fileURLToPath(import.meta.url));
 /** Monorepo root. `docs/` MDX is compiled from here at build time. */
 const monorepoRoot = join(appDir, "../..");
+
+// With bun's `install.globalStore`, node_modules symlinks realpath into
+// <bun-cache>/links/ — outside the repo. Turbopack refuses to resolve files
+// outside its root, so the root must cover the nearest common ancestor of the
+// project and the store (the home directory on a normal install).
+const bunGlobalStoreLinks = join(
+  process.env.BUN_INSTALL_CACHE_DIR ?? join(os.homedir(), ".bun", "install", "cache"),
+  "links",
+);
+const turbopackRoot = (() => {
+  if (!existsSync(bunGlobalStoreLinks)) return monorepoRoot;
+  const projectSegments = monorepoRoot.split("/");
+  const storeSegments = bunGlobalStoreLinks.split("/");
+  let i = 0;
+  while (
+    i < projectSegments.length &&
+    i < storeSegments.length &&
+    projectSegments[i] === storeSegments[i]
+  ) {
+    i += 1;
+  }
+  return projectSegments.slice(0, i).join("/") || "/";
+})();
 
 /** @type {import('next').NextConfig} */
 const config = {
@@ -17,7 +42,9 @@ const config = {
   // Vercel project whose Root Directory is `apps/docs` that inference can land
   // on the app instead of the workspace, and the workspace files the build
   // itself reads (docs/ MDX, the `@kunai/design` workspace package) drop out.
-  outputFileTracingRoot: monorepoRoot,
+  // tracing root and turbopack root must agree, or Next ignores turbopack.root.
+  outputFileTracingRoot: turbopackRoot,
+  turbopack: { root: turbopackRoot },
   // No outputFileTracingIncludes: nothing is read at request time any more.
   // `.release/*.json`, `docs/`, and the OG mascot are baked into
   // `lib/generated-*.json` by `scripts/sync-repo-content.ts`, and every route
