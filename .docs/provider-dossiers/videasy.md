@@ -97,6 +97,24 @@ Deliberately **not** done, and why:
   `recommended: false` in the manifest. Registered fallback, not removed — if
   the domain resurrects the provider is whole again.
 
+## Probe attestation (2026-09-12, issue #361)
+
+- **Symptom:** the resolve-gate probe fetched the signed playlist + first
+  segment and got 200, then the next identical request — same URL, same
+  headers, same process — got 403. mpv received the URL and could not open it.
+- **Ruled out by the reporter:** headers, TLS fingerprinting, the ytdl_hook
+  artifact, the gate consuming a one-shot URL (first fetch 403s even with the
+  gate off), and per-resolve tokens (URL is deterministic per title/route).
+- **Shipped fix:** `probeSelectedVidkingPayloadStream` still runs as a
+  _negative_ gate — definitive failures break to the next flavor — but its
+  green no longer sets `streamReachabilityVerified`. Downstream
+  `planResolveGateHealth`/`planCacheRevalidateHealth` then re-probe stale
+  entries instead of replaying a false green for `playbackTrustMs` (5m).
+- **Still open:** a check that represents playback (e.g. requiring the URL to
+  survive a second probe) needs a measurement before it lands; see the issue.
+- **Pin:** `packages/providers/test/videasy-probe-attestation.test.ts` drives a
+  full fixture resolve and asserts the result ships unattested on probe 200.
+
 ## Production status (2026-07-16)
 
 - **Module:** `packages/providers/src/videasy/direct.ts` + `flavors.ts` + `crypto.ts`

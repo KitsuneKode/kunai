@@ -1315,8 +1315,6 @@ function buildEmbedReferer(
 
 type VidkingStreamProbeOutcome = {
   readonly ok: boolean;
-  /** True only when a real HTTP probe returned reachable (never attested on skip/timeout). */
-  readonly verified: boolean;
 };
 
 async function probeSelectedVidkingPayloadStream({
@@ -1362,7 +1360,7 @@ async function probeSelectedVidkingPayloadStream({
     engineOptions,
   });
   if (streams.length === 0) {
-    return { ok: false, verified: false };
+    return { ok: false };
   }
 
   const selection = selectReadyStream(streams, {
@@ -1374,7 +1372,7 @@ async function probeSelectedVidkingPayloadStream({
   });
   const selected = selection.selected;
   if (!selected.url?.trim()) {
-    return { ok: false, verified: false };
+    return { ok: false };
   }
 
   // Always segment-probe before accepting a candidate. Balanced/fast used to
@@ -1387,7 +1385,11 @@ async function probeSelectedVidkingPayloadStream({
   const probeDurationMs = Date.now() - probeStartedAt;
 
   if (verdict.accepted) {
-    return { ok: true, verified: verdict.verified };
+    /* A green probe is not proof the URL serves the player: Videasy CDN URLs
+     * have answered this probe 200 and then 403 to the immediate next identical
+     * request, mpv included (issue #361). Keep the probe as a negative gate —
+     * definitive failures still fail over — but attest nothing downstream. */
+    return { ok: true };
   }
 
   const probe = verdict.probe;
@@ -1407,7 +1409,7 @@ async function probeSelectedVidkingPayloadStream({
       probe: probe?.status ?? "failed",
     },
   });
-  return { ok: false, verified: false };
+  return { ok: false };
 }
 
 /* ── Wings seed transport cache ──
@@ -1811,7 +1813,10 @@ async function tryVidkingServer(opts: {
             streamOrigin,
             sourceQualityFilter: engineOptions.filterQuality,
             engineOptions,
-            streamReachabilityVerified: streamProbe.verified,
+            // The probe's reachable verdict does not survive to the player on
+            // this provider (#361), so the result is shipped unattested and
+            // downstream health checks re-probe instead of trusting it for 5m.
+            streamReachabilityVerified: undefined,
           });
           if (result) {
             endpointHealth.recordSuccess(server);
