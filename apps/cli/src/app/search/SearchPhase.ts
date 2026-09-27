@@ -326,6 +326,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // go through the same honest local-filter pipeline as interactive Enter.
       let pendingSearchEvidence: SearchFilterEvidence | undefined;
       let pendingSearchWarnings: readonly string[] = [];
+      let pendingSearchEmptyMessage: string | undefined;
       let initialSearchError: string | undefined;
 
       while (true) {
@@ -428,6 +429,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           this.warmAnimeEpisodesForResults(context, results);
           pendingSearchEvidence = search.evidence;
           pendingSearchWarnings = searchIntent.warnings;
+          pendingSearchEmptyMessage =
+            search.results.length === 0 ? buildSearchEmptyMessage(search) : undefined;
 
           logger.info("Bootstrap search complete", {
             query: searchIntent.intent.query,
@@ -579,8 +582,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           evidence: pendingSearchEvidence,
         });
         const initialWarnings = pendingSearchWarnings;
+        const initialEmptyMessage = pendingSearchEmptyMessage;
         pendingSearchEvidence = undefined;
         pendingSearchWarnings = [];
+        pendingSearchEmptyMessage = undefined;
 
         const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
@@ -651,6 +656,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               : undefined,
           initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
+          initialEmptyMessage,
           placeholder:
             syncedState.mode === "anime"
               ? "Demon Slayer"
@@ -804,12 +810,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               source: search.sourceId,
               filters: search.evidence,
               diagnosis: search.diagnosis?.code,
+              providerSearchFailures: search.providerSearchFailures?.map((f) => f.providerId),
             });
             diagnosticsService.record(
               buildSearchDiagnosticEvent({
                 operation: "search.query.completed",
                 status: "succeeded",
-                severity: "healthy",
+                severity: search.providerSearchFailures?.length ? "degraded" : "healthy",
                 recommendedAction: "none",
                 message: "Search complete",
                 context: {
@@ -819,6 +826,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   source: search.sourceId,
                   filters: search.evidence,
                   diagnosis: search.diagnosis?.code,
+                  providerSearchFailures: search.providerSearchFailures,
                 },
               }),
             );
@@ -834,7 +842,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               localFilterBadges: search.evidence.local,
               unsupportedFilterBadges: search.evidence.unsupported,
               warnings: searchIntent.warnings,
-              emptyMessage: "No results found. Adjust the query and try again.",
+              emptyMessage: buildSearchEmptyMessage(search),
             };
           },
           onLoadDiscovery: async () => {
@@ -1355,6 +1363,24 @@ function appendSearchFilterChip(query: string, chip: string): string {
   if (!trimmed) return chip;
   if (trimmed.split(/\s+/).includes(chip)) return trimmed;
   return `${trimmed} ${chip}`;
+}
+
+/**
+ * An empty answer must say *why* when we know: providers that threw get named
+ * (the lane failed over and still found nothing), an unsupported advanced
+ * search says the catalog can't answer, and only a real "nothing matches"
+ * keeps the generic copy (#464).
+ */
+function buildSearchEmptyMessage(search: Awaited<ReturnType<typeof searchTitles>>): string {
+  const failures = search.providerSearchFailures;
+  if (failures && failures.length > 0) {
+    const names = [...new Set(failures.map((failure) => failure.providerId))].join(", ");
+    return `Provider search failed (${names}). Check /diagnostics or switch provider with /provider.`;
+  }
+  if (search.diagnosis?.code === "compatible-catalog-unavailable") {
+    return "The active provider can't answer a filtered search like this. Simplify the query or switch provider with /provider.";
+  }
+  return "No results found. Adjust the query and try again.";
 }
 
 type BrowseDisplayContext = {

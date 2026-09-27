@@ -192,6 +192,7 @@ export function BrowseShell<T>({
   initialResults,
   initialResultSubtitle,
   initialErrorMessage,
+  initialEmptyMessage,
   initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
@@ -224,6 +225,8 @@ export function BrowseShell<T>({
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
   initialErrorMessage?: string;
+  /** The cause-named empty copy from a bootstrap search that found nothing. */
+  initialEmptyMessage?: string;
   initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
@@ -313,7 +316,9 @@ export function BrowseShell<T>({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftQuery, setDraftQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(initialErrorMessage ?? null);
-  const [emptyMessage, setEmptyMessage] = useState(() => browseIdleHint(mode));
+  const [emptyMessage, setEmptyMessage] = useState(
+    () => initialEmptyMessage ?? browseIdleHint(mode),
+  );
   const [activeIdleContext, setActiveIdleContext] = useState(idleContext);
   const [idleContextStatus, setIdleContextStatus] = useState<"loading" | "ready" | "error">(
     loadIdleContext ? "loading" : "ready",
@@ -2071,7 +2076,10 @@ export function BrowseShell<T>({
               model={{
                 kind: "empty",
                 title: `No results for "${lastSearchedQuery}"`,
-                detail: "Try a different title, adjust filters, or browse by genre.",
+                // `emptyMessage` names the cause when we know one — a provider
+                // outage and a typo used to render the same copy (#464).
+                detail:
+                  emptyMessage || "Try a different title, adjust filters, or browse by genre.",
               }}
               width={Math.min(innerWidth, 72)}
             />
@@ -2279,6 +2287,7 @@ export function openBrowseShell<T>({
   initialResults,
   initialResultSubtitle,
   initialErrorMessage,
+  initialEmptyMessage,
   initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
@@ -2308,6 +2317,8 @@ export function openBrowseShell<T>({
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
   initialErrorMessage?: string;
+  /** The cause-named empty copy from a bootstrap search that found nothing. */
+  initialEmptyMessage?: string;
   initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
@@ -2351,6 +2362,7 @@ export function openBrowseShell<T>({
         initialResults={initialResults}
         initialResultSubtitle={initialResultSubtitle}
         initialErrorMessage={initialErrorMessage}
+        initialEmptyMessage={initialEmptyMessage}
         initialWarnings={initialWarnings}
         initialSelectedIndex={initialSelectedIndex}
         initialCalendarTypeTab={initialCalendarTypeTab}

@@ -38,6 +38,7 @@ describe("searchTitles", () => {
 
     const providerRegistry: any = {
       get: (id: string) => (id === "allanime" ? provider : undefined),
+      getAll: () => [provider],
     };
 
     const result = await searchTitles("mob", {
@@ -111,7 +112,7 @@ describe("searchTitles", () => {
       providerId: "allanime",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
       searchRegistry: createSearchRegistry({}) as any,
-      providerRegistry: { get: () => provider } as any,
+      providerRegistry: { get: () => provider, getAll: () => [provider] } as any,
       enrichAnimeMetadata: false,
     });
 
@@ -119,6 +120,201 @@ describe("searchTitles", () => {
     expect(result.results[0]?.release?.providerConfirmed).toBe(true);
     expect(result.results[0]?.artwork?.seekBarVttUrl).toContain("seek.vtt");
     expect(result.results[0]?.languageEvidence?.[0]?.nativeLabel).toBe("Hard Sub");
+  });
+
+  test("fails over to the next anime provider when the configured provider's search throws", async () => {
+    const failing: any = {
+      metadata: {
+        id: "anidb",
+        name: "AniDB",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        providerLane: "anime",
+        domain: "anidb.app",
+      } as ProviderMetadata,
+      search: async () => {
+        throw new Error("anidb is unreachable");
+      },
+    };
+    const surviving: any = {
+      metadata: {
+        id: "allanime",
+        name: "AllAnime",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        providerLane: "anime",
+        domain: "allanime.day",
+      } as ProviderMetadata,
+      search: async () => [{ id: "anime-9", title: "Mob Psycho 100", type: "series", epCount: 12 }],
+    };
+
+    const result = await searchTitles("mob", {
+      mode: "anime",
+      providerId: "anidb",
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      searchRegistry: createSearchRegistry({}) as any,
+      providerRegistry: {
+        get: (id: string) => (id === "anidb" ? failing : undefined),
+        getAll: () => [failing, surviving],
+      } as any,
+      enrichAnimeMetadata: false,
+    });
+
+    expect(result.strategy).toBe("provider-native");
+    expect(result.sourceId).toBe("allanime");
+    expect(result.results[0]?.id).toBe("anime-9");
+    expect(result.providerSearchFailures).toEqual([
+      { providerId: "anidb", message: "anidb is unreachable" },
+    ]);
+  });
+
+  test("falls through to the registry catalog when every anime provider fails", async () => {
+    const makeFailing = (id: string): any => ({
+      metadata: {
+        id,
+        name: id,
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        providerLane: "anime",
+        domain: `${id}.test`,
+      } as ProviderMetadata,
+      search: async () => {
+        throw new Error(`${id} is unreachable`);
+      },
+    });
+    const failing = makeFailing("anidb");
+    const alsoFailing = makeFailing("hianime");
+
+    const searchRegistry = createSearchRegistry({
+      animeResults: [
+        {
+          id: "anilist-1",
+          type: "series",
+          title: "Solo Leveling",
+          year: "2024",
+          overview: "",
+          posterPath: null,
+        },
+      ],
+    });
+
+    const result = await searchTitles("solo leveling", {
+      mode: "anime",
+      providerId: "anidb",
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      searchRegistry: searchRegistry as any,
+      providerRegistry: {
+        get: (id: string) => (id === "anidb" ? failing : undefined),
+        getAll: () => [failing, alsoFailing],
+      } as any,
+      enrichAnimeMetadata: false,
+    });
+
+    expect(result.strategy).toBe("registry");
+    expect(result.sourceId).toBe("anilist");
+    expect(result.results[0]?.id).toBe("anilist-1");
+    expect(result.providerSearchFailures).toEqual([
+      { providerId: "anidb", message: "anidb is unreachable" },
+      { providerId: "hianime", message: "hianime is unreachable" },
+    ]);
+  });
+
+  test("an honest empty provider answer keeps the registry verdict instead of shopping the lane", async () => {
+    let survivorCalls = 0;
+    const empty: any = {
+      metadata: {
+        id: "anidb",
+        name: "AniDB",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        providerLane: "anime",
+        domain: "anidb.app",
+      } as ProviderMetadata,
+      search: async () => [],
+    };
+    const surviving: any = {
+      metadata: {
+        id: "allanime",
+        name: "AllAnime",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        providerLane: "anime",
+        domain: "allanime.day",
+      } as ProviderMetadata,
+      search: async () => {
+        survivorCalls += 1;
+        return [{ id: "anime-9", title: "Wrong Catalog", type: "series" }];
+      },
+    };
+
+    const result = await searchTitles("nothing matches this", {
+      mode: "anime",
+      providerId: "anidb",
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      searchRegistry: createSearchRegistry({}) as any,
+      providerRegistry: {
+        get: (id: string) => (id === "anidb" ? empty : undefined),
+        getAll: () => [empty, surviving],
+      } as any,
+      enrichAnimeMetadata: false,
+    });
+
+    expect(survivorCalls).toBe(0);
+    expect(result.strategy).toBe("registry");
+    expect(result.providerSearchFailures).toBeUndefined();
+  });
+
+  test("a cancelled provider search propagates instead of failing over", async () => {
+    const controller = new AbortController();
+    const failing: any = {
+      metadata: {
+        id: "anidb",
+        name: "AniDB",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        providerLane: "anime",
+        domain: "anidb.app",
+      } as ProviderMetadata,
+      search: async (_query: string, _opts: unknown, signal?: AbortSignal) => {
+        controller.abort();
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        throw error;
+      },
+    };
+    const surviving: any = {
+      metadata: {
+        id: "allanime",
+        name: "AllAnime",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        providerLane: "anime",
+        domain: "allanime.day",
+      } as ProviderMetadata,
+      search: async () => [{ id: "anime-9", title: "Mob Psycho 100", type: "series" }],
+    };
+
+    await expect(
+      searchTitles("mob", {
+        mode: "anime",
+        providerId: "anidb",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: createSearchRegistry({}) as any,
+        providerRegistry: {
+          get: (id: string) => (id === "anidb" ? failing : undefined),
+          getAll: () => [failing, surviving],
+        } as any,
+        signal: controller.signal,
+        enrichAnimeMetadata: false,
+      }),
+    ).rejects.toThrow("aborted");
   });
 
   test("uses registry-backed search for non-anime providers", async () => {
