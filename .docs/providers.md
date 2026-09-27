@@ -673,6 +673,7 @@ decides the order. See
 [the Miruro dossier](./provider-dossiers/miruro.md) for their network failure
 modes.
 
+<<<<<<< HEAD
 A saved config holds whatever lane default was current when it was written, as
 though it were a choice, because the whole merged config is written on every
 save. `ConfigServiceImpl.load` keeps a table of every default a build may have
@@ -700,6 +701,30 @@ default to the table — a bump alone stamps configs without changing them.
 | `hianime`      | anime         | direct-http | `packages/providers/src/hianime/direct.ts`      |
 | `miruro`       | anime         | direct-http | `packages/providers/src/miruro/direct.ts`       |
 | `youtube`      | video         | direct-http | `packages/providers/src/youtube/direct.ts`      |
+||||||| parent of 55d79515c (docs(providers): list vidrock in the active-provider module table)
+| ID           | Content Types | Runtime     | Module Location                               |
+| ------------ | ------------- | ----------- | --------------------------------------------- |
+| `vidlink`    | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`    |
+| `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
+| `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
+| `anidb`      | anime         | direct-http | `packages/providers/src/anidb/direct.ts`      |
+| `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
+| `hianime`    | anime         | direct-http | `packages/providers/src/hianime/direct.ts`    |
+| `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
+| `youtube`    | video         | direct-http | `packages/providers/src/youtube/direct.ts`    |
+=======
+| ID           | Content Types | Runtime     | Module Location                               |
+| ------------ | ------------- | ----------- | --------------------------------------------- |
+| `vidlink`    | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`    |
+| `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
+| `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
+| `vidrock`    | movie, series | direct-http | `packages/providers/src/vidrock/direct.ts`    |
+| `anidb`      | anime         | direct-http | `packages/providers/src/anidb/direct.ts`      |
+| `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
+| `hianime`    | anime         | direct-http | `packages/providers/src/hianime/direct.ts`    |
+| `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
+| `youtube`    | video         | direct-http | `packages/providers/src/youtube/direct.ts`    |
+>>>>>>> 55d79515c (docs(providers): list vidrock in the active-provider module table)
 
 ### Anime catalog identity
 
