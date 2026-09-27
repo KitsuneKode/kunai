@@ -15,6 +15,21 @@ const passthroughEndpointHealth: EndpointHealthPort = {
 
 const MEDIA_PLAYLIST = ["#EXTM3U", "#EXT-X-TARGETDURATION:6", "#EXTINF:6.0,", "seg0.ts"].join("\n");
 
+// Hostname check, not substring: the fixture's playlist host is
+// `moon.ironwallnet.net`, and a bare `.includes("ironwallnet.net")` would also
+// match `ironwallnet.net.attacker.example` — the shape CodeQL flags.
+function isIronwallPlaylistUrl(raw: string): boolean {
+  try {
+    const { hostname, pathname } = new URL(raw);
+    return (
+      (hostname === "ironwallnet.net" || hostname.endsWith(".ironwallnet.net")) &&
+      pathname.endsWith(".m3u8")
+    );
+  } catch {
+    return false;
+  }
+}
+
 describe("videasy resolve-gate attestation (#361)", () => {
   /**
    * Live evidence: this provider's signed CDN URLs answered the resolve-gate
@@ -51,7 +66,7 @@ describe("videasy resolve-gate attestation (#361)", () => {
               headers: { "content-type": "video/mp2t" },
             });
           }
-          if (url.includes("ironwallnet.net") && url.includes(".m3u8")) {
+          if (isIronwallPlaylistUrl(url)) {
             probedUrls.push(url);
             return new Response(MEDIA_PLAYLIST, {
               headers: { "content-type": "application/vnd.apple.mpegurl" },

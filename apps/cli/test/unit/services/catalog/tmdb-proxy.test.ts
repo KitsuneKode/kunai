@@ -7,6 +7,18 @@ import {
   isTmdbNetworkError,
 } from "@/services/catalog/tmdb-proxy";
 
+// Hostname comparison, not a substring check: `"api.themoviedb.org"` inside a
+// URL is a substring match that `api.themoviedb.org.attacker.example` also
+// satisfies, which is exactly what CodeQL flags here.
+function isTmdbApiUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" && url.hostname === "api.themoviedb.org";
+  } catch {
+    return false;
+  }
+}
+
 describe("tmdb proxy search errors", () => {
   test("maps socket failures to a friendly search message", () => {
     const error = new Error("Was there a typo in the url or port?");
@@ -88,7 +100,7 @@ describe("fetchTmdbJsonCached", () => {
       async (input: unknown) => {
         const url = String(input);
         urls.push(url);
-        if (url.startsWith("https://api.themoviedb.org")) {
+        if (isTmdbApiUrl(url)) {
           return new Response(JSON.stringify({ ok: true }), {
             status: 200,
             headers: { "content-type": "application/json" },
@@ -102,7 +114,7 @@ describe("fetchTmdbJsonCached", () => {
     await expect(fetchTmdbJsonCached("/movie/1")).resolves.toEqual({ ok: true });
     await expect(fetchTmdbJsonCached("/tv/2")).resolves.toEqual({ ok: true });
 
-    expect(urls.filter((url) => !url.includes("api.themoviedb.org"))).toHaveLength(1);
+    expect(urls.filter((url) => !isTmdbApiUrl(url))).toHaveLength(1);
   });
 
   test("a caller abort does not trip the proxy breaker or fire a fallback request", async () => {
@@ -131,6 +143,6 @@ describe("fetchTmdbJsonCached", () => {
     // The next caller still earns the proxy attempt — aborts are not evidence
     // the proxy is down.
     await expect(fetchTmdbJsonCached("/tv/2")).resolves.toEqual({ ok: true });
-    expect(urls.some((url) => !url.includes("api.themoviedb.org"))).toBe(true);
+    expect(urls.some((url) => !isTmdbApiUrl(url))).toBe(true);
   });
 });

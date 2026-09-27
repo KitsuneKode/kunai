@@ -12,6 +12,18 @@ function ipcPipeSuffix(sessionId: string): string {
 }
 
 /**
+ * Socket file segment for a Unix endpoint. The whole path shares the ~100-byte
+ * `sun_path` budget with its directory, and macOS `TMPDIR` is already deep
+ * (`/var/folders/…/T/`), so the file part stays short. Privacy comes from the
+ * verified 0700 parent, not from the name — the random tail of the session id
+ * is belt on top. Windows pipes instead keep the full session id: pipe names
+ * are enumerable by same-session processes, so their entropy is the boundary.
+ */
+function ipcUnixSocketSuffix(sessionId: string): string {
+  return (sessionId.length > 0 ? sessionId : "kunai").slice(-16);
+}
+
+/**
  * Longest a Unix domain socket path may be.
  *
  * `sun_path` is 108 bytes on Linux and 104 on macOS, including the NUL. Bind
@@ -140,7 +152,7 @@ function resolveUnixSocketPath(
   env: Record<string, string | undefined>,
   directoryOperations: MpvIpcDirectoryOperations,
 ): string {
-  const fileName = `kunai-mpv-${sessionId}.sock`;
+  const fileName = `kunai-mpv-${ipcUnixSocketSuffix(sessionId)}.sock`;
   const candidates = mpvIpcSocketDirCandidates(env);
 
   for (const dir of candidates) {

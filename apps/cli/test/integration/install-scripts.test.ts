@@ -393,10 +393,7 @@ describe("install.sh environment fallbacks", () => {
       mkdirSync(shimDir, { recursive: true });
       installCommandShim(shimDir, "node");
       installCommandShim(shimDir, "npm");
-      const env = withCommandPath(
-        { ...sandbox.env, KUNAI_INSTALL_METHOD: "npm" },
-        shimDir,
-      );
+      const env = withCommandPath({ ...sandbox.env, KUNAI_INSTALL_METHOD: "npm" }, shimDir);
 
       const result = runInstallSh(["--dry-run", "--yes"], env);
       expect(result.status).toBe(0);
@@ -461,15 +458,9 @@ describe("install.sh root and stdin-execution guards", () => {
       const shimDir = join(sandbox.root, "shims");
       mkdirSync(shimDir, { recursive: true });
       installCommandShim(shimDir, "id", "#!/bin/sh\necho 0\n");
-      const env = withCommandPath(
-        { ...sandbox.env, KUNAI_INSTALL_ALLOW_ROOT: "1" },
-        shimDir,
-      );
+      const env = withCommandPath({ ...sandbox.env, KUNAI_INSTALL_ALLOW_ROOT: "1" }, shimDir);
 
-      const result = runInstallSh(
-        ["--yes", "--skip-deps", "--version", "9.8.7", "--dry-run"],
-        env,
-      );
+      const result = runInstallSh(["--yes", "--skip-deps", "--version", "9.8.7", "--dry-run"], env);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("Kunai installer");
     } finally {

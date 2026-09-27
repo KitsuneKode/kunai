@@ -175,6 +175,7 @@ here. The rule is _what may be persisted_, not whether to cache:
 - Namespace keys `<provider>:<purpose>` (`anidb:external-ids`,
   `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
   sweeps can scope them.
+
 **Stream verification has two boundaries, and only one is universal.** The
 resolve-gate is opt-in per provider: VidLink enables it through
 `resolveDirectStreamSource`, Videasy runs its own probe as a negative gate only

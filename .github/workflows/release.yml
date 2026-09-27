@@ -199,7 +199,7 @@ jobs:
       - name: Compiled binary smoke
         run: |
           set -euo pipefail
-          KUNAI_BINARY_SMOKE=1 bun run --cwd apps/cli test:file -- \
+          KUNAI_BINARY_SMOKE=1 KUNAI_BINARY_SMOKE_FULL_SET=1 bun run --cwd apps/cli test:file -- \
             test/integration/compiled-binary-smoke.test.ts \
             2>&1 | tee artifacts/gates/compiledPlayback.log
 

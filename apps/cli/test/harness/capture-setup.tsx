@@ -43,14 +43,27 @@ export const SETUP_SCREENS = [
 ] as const;
 
 export function setupFrameAt(step: number, columns: number): string {
-  const handle = render(
-    <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />,
-    { columns, rows: SETUP_ROWS },
-  );
-  for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
-  const frame = handle.lastFrame();
-  handle.unmount();
-  return frame;
+  // The analytics consent screen prints this machine's `process.platform` and
+  // `process.arch` into the payload preview — true at runtime, but it makes a
+  // committed capture host-dependent. Pin a canonical pair for the render so a
+  // capture written on linux/x64 verifies byte-for-byte on a macOS runner.
+  const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  const archDescriptor = Object.getOwnPropertyDescriptor(process, "arch");
+  Object.defineProperty(process, "platform", { value: "linux" });
+  Object.defineProperty(process, "arch", { value: "x64" });
+  try {
+    const handle = render(
+      <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />,
+      { columns, rows: SETUP_ROWS },
+    );
+    for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
+    const frame = handle.lastFrame();
+    handle.unmount();
+    return frame;
+  } finally {
+    if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
+    if (archDescriptor) Object.defineProperty(process, "arch", archDescriptor);
+  }
 }
 
 if (import.meta.main) {

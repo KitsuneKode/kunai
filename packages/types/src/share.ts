@@ -38,6 +38,11 @@ const MAX_SHORT_CODE_LENGTH = 2_048;
 const MAX_DECODED_PAYLOAD_BYTES = 3_072;
 const MAX_COMPACT_TEXT_BYTES = 256;
 const MAX_POSTER_URL_LENGTH = 2_048;
+// The `cat` anchor carries provider-native path ids that are legitimately long
+// (the query/web fallback exists precisely for identities too big for the
+// compact codec) — bound it for input hygiene, but never tight enough to
+// silently rewrite a share target.
+const MAX_CATALOG_ANCHOR_LENGTH = 512;
 const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const CATALOG_NS: ReadonlySet<string> = new Set(["tmdb", "anilist", "mal", "imdb", "youtube"]);
 const PARAM_ORDER = ["cat", "q", "kind", "s", "e", "abs", "t", "src", "sq", "n"] as const;
@@ -348,7 +353,7 @@ function readAnchor(params: URLSearchParams): ShareAnchor | null {
     const id = cat
       .slice(colon + 1)
       .trim()
-      .slice(0, 128);
+      .slice(0, MAX_CATALOG_ANCHOR_LENGTH);
     if (!CATALOG_NS.has(ns) || !id) return null;
     return { by: "catalog", ns: ns as CatalogNs, id };
   }

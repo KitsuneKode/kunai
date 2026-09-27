@@ -3,13 +3,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { CURL_INSTALL, MPV_INSTALL, YT_DLP_INSTALL } from "@/infra/os/install-commands";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import { runDoctor } from "@/services/update/run-doctor";
-import {
-  CURL_INSTALL,
-  MPV_INSTALL,
-  YT_DLP_INSTALL,
-} from "@/infra/os/install-commands";
 import type { CapabilitySnapshot } from "@/ui";
 
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
