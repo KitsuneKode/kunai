@@ -512,11 +512,17 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     inspect: () => createProfileInspector(sessionProfile.paths),
     async waitForBackend(pred, label, timeoutMs) {
       await withTimeoutContext(() =>
-        waitUntil(() => pred(createProfileInspector(sessionProfile.paths)), {
-          label: label ?? "waitForBackend",
-          timeoutMs: timeoutMs ?? SETTLE_TIMEOUT_MS,
-          tick: pollSleep,
-        }),
+        waitUntil(
+          () => {
+            throwIfLoopFailed();
+            return pred(createProfileInspector(sessionProfile.paths));
+          },
+          {
+            label: label ?? "waitForBackend",
+            timeoutMs: timeoutMs ?? SETTLE_TIMEOUT_MS,
+            tick: pollSleep,
+          },
+        ),
       );
     },
     snapshot: takeSnapshot,
