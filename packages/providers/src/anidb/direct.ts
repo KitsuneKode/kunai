@@ -134,7 +134,16 @@ async function resolveAnidbShow(
     // trade a correct id for whatever the browse page happens to rank first.
     if (!catalog.missing) return direct;
 
-    const searched = await searchAnidb(query, signal, context);
+    let searched: readonly AnidbSearchResult[];
+    try {
+      searched = await searchAnidb(query, signal, context);
+    } catch (error) {
+      // Same rule as the catalog probe above: a caller cancel is a decision,
+      // while a Cloudflare/HTTP fault says nothing about whether the id is
+      // valid — keep it and let the caller surface something retryable.
+      if (signal?.aborted === true) throw error;
+      return direct;
+    }
     return (
       chooseAnidbSearchMatch(query, searched, { requireTitleEvidence: true }) ??
       // No titled match: the dead id is more honest than a guess. Resolve
@@ -319,7 +328,18 @@ export const anidbProviderModule: CoreProviderModule = {
   },
 
   async listEpisodes(input, context) {
-    const showId = (await resolveAnidbShow(input, context.signal, context))?.id;
+    let baseShow: Awaited<ReturnType<typeof resolveAnidbShow>>;
+    try {
+      baseShow = await resolveAnidbShow(input, context.signal, context);
+    } catch (error) {
+      // `searchAnidb` now reports HTTP status, so a browse outage throws here.
+      // Null is the contract's transport-failure channel (same as `search`) —
+      // unreachable provider, not "this title has no episodes". A cancelled
+      // caller is a decision and keeps propagating.
+      if (context.signal?.aborted === true) throw error;
+      return null;
+    }
+    const showId = baseShow?.id;
     if (!showId) return null;
     const episodes = await fetchAnidbEpisodes(showId, context.signal, context);
     if (episodes.length === 0) return [];

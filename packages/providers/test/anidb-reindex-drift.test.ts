@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import type { ProviderEpisodeListInput, ProviderRuntimeContext } from "@kunai/types";
+import type { ProviderRuntimeContext } from "@kunai/types";
 
 import {
   chooseAnidbSearchMatch,
@@ -11,6 +11,7 @@ import {
   type AnidbSearchResult,
   anidbProviderModule,
 } from "../src/anidb/direct";
+import { __testing as curlImpersonateTesting } from "../src/shared/curl-impersonate";
 import { urlHasHostname } from "./helpers/anidb-urls";
 
 /**
@@ -26,6 +27,8 @@ afterEach(() => {
 function contextReturning(
   handler: (url: string) => { status: number; body: string },
 ): ProviderRuntimeContext {
+  // SAFETY: `as never` — the stub supplies only the context fetch used under
+  // test; never is assignable to the return type without a chain.
   return {
     fetch: {
       async fetch(url: string) {
@@ -34,7 +37,7 @@ function contextReturning(
         return new Response(body, { status });
       },
     },
-  } as unknown as ProviderRuntimeContext;
+  } as never;
 }
 
 describe("episode catalogue", () => {
@@ -96,6 +99,8 @@ describe("episode catalogue", () => {
     const controller = new AbortController();
     controller.abort();
     let contextFetches = 0;
+    // SAFETY: `as never` — the stub supplies only the context fetch used under
+    // test.
     const context = {
       fetch: {
         async fetch() {
@@ -103,7 +108,7 @@ describe("episode catalogue", () => {
           throw new Error("anidb-abort-sentinel");
         },
       },
-    } as unknown as ProviderRuntimeContext;
+    } as never;
 
     await expect(
       fetchAnidbEpisodeCatalog("cancelled-5004", controller.signal, context),
@@ -223,10 +228,7 @@ describe("repair must not swap the show", () => {
  * a browse request is the observable side effect of a repair attempt.
  */
 describe("repair triggers only on a missing id", () => {
-  function countingContext(episodesStatus: number): {
-    context: ProviderRuntimeContext;
-    browseCalls: () => number;
-  } {
+  function countingContext(episodesStatus: number) {
     let browse = 0;
     const context = contextReturning((url) => {
       if (url.includes("/browse?q=")) {
@@ -245,13 +247,15 @@ describe("repair triggers only on a missing id", () => {
 
   // Only the fields `resolveAnidbShow` reads; the rest of the contract is not
   // exercised by this path.
+  // SAFETY: `as never` — the input stub carries only the fields
+  // `resolveAnidbShow` reads, per the comment above.
   const input = {
     title: {
       id: "solo-leveling-19413",
       title: "Solo Leveling",
       externalIds: { providerNativeIds: { anidb: "solo-leveling-19413" } },
     },
-  } as unknown as ProviderEpisodeListInput;
+  } as never;
 
   test("an empty catalogue does not trigger a search", async () => {
     // The regression this guards: a season with nothing listed yet is not a
@@ -265,5 +269,78 @@ describe("repair triggers only on a missing id", () => {
     const { context, browseCalls } = countingContext(404);
     await anidbProviderModule.listEpisodes?.(input, context);
     expect(browseCalls()).toBeGreaterThan(0);
+  });
+});
+
+describe("browse outages stay a transport failure", () => {
+  // `searchAnidb` reports HTTP status now, so a Cloudflare/503 browse page
+  // rejects instead of returning an empty card list. `listEpisodes` must map
+  // that rejection to `null` (unreachable provider), not let it reject or
+  // read it as "title has no episodes".
+  // SAFETY: `as never` — same partial-input stub shape as above.
+  const input = {
+    title: { id: "x", title: "Solo Leveling" },
+  } as never;
+
+  // A non-OK non-404 `context.fetch` response falls through to anidbFetchText's
+  // curl/plain-fetch fallback, which would otherwise hit the real anidb.app.
+  // Strip PATH so no curl resolves (the wrapper scan is memoized, so reset it)
+  // and stub global fetch for the no-curl leg.
+  function stubFallbackTransports(
+    fetchImpl: (url: string, init?: { signal?: AbortSignal }) => Promise<Response>,
+  ): () => void {
+    const originalFetch = globalThis.fetch;
+    const originalPath = process.env.PATH;
+    process.env.PATH = "";
+    curlImpersonateTesting.resetPathCache();
+    // SAFETY: `as never` — the stub supplies only the fetch call shape used
+    // under test; the global slot wants the full fetch surface.
+    globalThis.fetch = fetchImpl as never;
+    return () => {
+      globalThis.fetch = originalFetch;
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      curlImpersonateTesting.resetPathCache();
+    };
+  }
+
+  test("listEpisodes returns null when the browse request fails with HTTP status", async () => {
+    const restore = stubFallbackTransports(() =>
+      Promise.resolve(new Response("down", { status: 503 })),
+    );
+    try {
+      const context = contextReturning((url) => {
+        if (url.includes("/browse?q=")) return { status: 503, body: "Just a moment…" };
+        return { status: 404, body: "not found" };
+      });
+      const episodes = await anidbProviderModule.listEpisodes?.(input, context);
+      expect(episodes).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  test("a cancelled caller still propagates instead of returning null", async () => {
+    const restore = stubFallbackTransports(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          const fail = () => reject(new DOMException("aborted", "AbortError"));
+          if (signal?.aborted) return fail();
+          signal?.addEventListener("abort", fail);
+        }),
+    );
+    try {
+      const controller = new AbortController();
+      const context = {
+        ...contextReturning(() => ({ status: 503, body: "down" })),
+        signal: controller.signal,
+      };
+      const pending = anidbProviderModule.listEpisodes?.(input, context);
+      controller.abort();
+      await expect(pending).rejects.toThrow();
+    } finally {
+      restore();
+    }
   });
 });
