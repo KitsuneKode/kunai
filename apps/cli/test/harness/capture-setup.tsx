@@ -15,7 +15,7 @@ import React from "react";
 import { CAPTURE_WIDTHS, render, type CaptureWidth } from "./render-capture";
 
 const CAPTURE_DIR = path.join(import.meta.dir, "..", "__captures__");
-const ROWS = 34;
+export const SETUP_ROWS = 34;
 
 const READY: CapabilitySnapshot = {
   mpv: true,
@@ -32,12 +32,20 @@ const READY: CapabilitySnapshot = {
   issues: [],
 };
 
-const SCREENS = ["deps", "mode", "language", "playback", "library", "analytics", "done"] as const;
+export const SETUP_SCREENS = [
+  "deps",
+  "mode",
+  "language",
+  "playback",
+  "library",
+  "analytics",
+  "done",
+] as const;
 
-function frameAt(step: number, columns: number): string {
+export function setupFrameAt(step: number, columns: number): string {
   const handle = render(
     <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />,
-    { columns, rows: ROWS },
+    { columns, rows: SETUP_ROWS },
   );
   for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
   const frame = handle.lastFrame();
@@ -45,19 +53,21 @@ function frameAt(step: number, columns: number): string {
   return frame;
 }
 
-await mkdir(CAPTURE_DIR, { recursive: true });
-for (const [index, name] of SCREENS.entries()) {
-  for (const width of Object.keys(CAPTURE_WIDTHS) as CaptureWidth[]) {
-    const columns = CAPTURE_WIDTHS[width];
-    const surface = `setup-${index + 1}-${name}`;
-    const header = `# ${surface} · ${width} (${columns}×${ROWS})\n`;
-    await writeFile(
-      path.join(CAPTURE_DIR, `${surface}.${width}.txt`),
-      `${header}${frameAt(index, columns)}\n`,
-      "utf8",
-    );
+if (import.meta.main) {
+  await mkdir(CAPTURE_DIR, { recursive: true });
+  for (const [index, name] of SETUP_SCREENS.entries()) {
+    for (const width of Object.keys(CAPTURE_WIDTHS) as CaptureWidth[]) {
+      const columns = CAPTURE_WIDTHS[width];
+      const surface = `setup-${index + 1}-${name}`;
+      const header = `# ${surface} · ${width} (${columns}×${SETUP_ROWS})\n`;
+      await writeFile(
+        path.join(CAPTURE_DIR, `${surface}.${width}.txt`),
+        `${header}${setupFrameAt(index, columns)}\n`,
+        "utf8",
+      );
+    }
   }
-}
 
-console.log(`captured ${SCREENS.length} setup screens at 3 widths`);
-process.exit(0);
+  console.log(`captured ${SETUP_SCREENS.length} setup screens at 3 widths`);
+  process.exit(0);
+}

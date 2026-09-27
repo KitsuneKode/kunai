@@ -1,23 +1,27 @@
 # post-play.did-not-start · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │  DETAILS
- ▢ playback didn't start                                                                           │
- nothing was recorded for this title                                                               │  season     4
+ S04E07                                                                                            │
                                                                                                    │
- ▌ Try again         retry the same episode [r]                                                    │
-   Fallback          try another provider [f]                                                      │
+ ▢ playback didn't start                                                                           │
+ nothing was recorded for this title                                                               │
+                                                                                                   │
+ ▌ Try again         retry the same episode [r]                                                    │                  ❀
+   Fallback          try another provider [⇧F]                                                     │
    Sources           choose another stream [o]                                                     │
    Search            find another title [s]                                                        │
                                                                                                    │
  ────────────────────────────────────── you might also like ───────────────────────────────────────│
                                                                                                    │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │                             │  │                             │  │                             │ │  ❀ series
+ │              F              │  │             VS              │  │             HD              │ │  DR. STONE
  │                             │  │                             │  │                             │ │
- │              F              │  │             VS              │  │             HD              │ │
- │                             │  │                             │  │                             │ │
- │ 1                           │  │ 2                           │  │ 3                           │ │
+ │ 1                           │  │ 2                           │  │ 3                           │ │  ── up next ──────────────────────
  │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
- │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
- └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
-                                                                                                   │
+ │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │               E32 · Challengers…
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │               autoplay
+                                                                                                   │       ❀
  ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%

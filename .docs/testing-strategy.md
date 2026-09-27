@@ -653,8 +653,10 @@ bun run test:coverage
 ```
 
 Committed layout goldens under `apps/cli/test/__captures__/` are asserted in
-`golden-captures.test.ts`. Refresh captures via harness scripts such as
-`bun run --cwd apps/cli capture:settings`.
+`golden-captures.test.ts` (shape) and re-rendered and diffed byte-for-byte in
+`golden-captures-live.test.tsx` — a committed capture with no producing harness
+fixture is dead weight, so every family must be regenerable. Refresh captures
+via harness scripts such as `bun run --cwd apps/cli capture:settings`.
 
 ### Test quality rules for refactors
 

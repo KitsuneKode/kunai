@@ -281,7 +281,7 @@ describe("searchTitles", () => {
         providerLane: "anime",
         domain: "anidb.app",
       } as ProviderMetadata,
-      search: async (_query: string, _opts: unknown, signal?: AbortSignal) => {
+      search: async (_query: string, _opts: unknown, _signal?: AbortSignal) => {
         controller.abort();
         const error = new Error("aborted");
         error.name = "AbortError";

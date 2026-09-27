@@ -109,23 +109,33 @@ The invariant is enforced two ways:
 
 **Parallel jobs** (`.github/workflows/ci.yml`):
 
-| Job                   | PR                                                                                    | Main         |
-| --------------------- | ------------------------------------------------------------------------------------- | ------------ |
-| `fmt`                 | `turbo run fmt:check --affected`                                                      | full         |
-| `lint`                | `turbo run lint --affected` + changed-file anti-slop advisory                         | full         |
-| `typecheck`           | `turbo run typecheck --affected`                                                      | full         |
-| `test`                | `turbo run test --affected` (CLI splits into cached `test:unit` + `test:integration`) | full         |
-| `windows-cli`         | root typecheck + CLI tests when CLI paths change                                      | same on main |
-| `build-cli`           | `bun run build` + `bun run pkg:check` when CLI paths change                           | same on main |
-| `build-binaries`      | 2 Linux targets via Turbo when CLI/installer paths change                             | same         |
-| `checks-docs`         | docs gate when docs paths change                                                      | same         |
-| `checks-doc-coverage` | `verify:doc-coverage` when a scanned code root or the feature map changes             | same         |
+| Job                   | PR                                                                                         | Main         |
+| --------------------- | ------------------------------------------------------------------------------------------ | ------------ |
+| `fmt`                 | `scripts/turbo-affected.sh fmt:check` + `fmt:root:check` for root-owned files              | full + root  |
+| `lint`                | `scripts/turbo-affected.sh lint` + changed-file anti-slop advisory                         | full         |
+| `typecheck`           | `scripts/turbo-affected.sh typecheck` (task is `cache: false` — always a real run)         | full         |
+| `test`                | `scripts/turbo-affected.sh test` (CLI splits into cached `test:unit` + `test:integration`) | full         |
+| `windows-cli`         | root typecheck + CLI tests when CLI paths change                                           | same on main |
+| `build-cli`           | `bun run build` + `bun run pkg:check` when CLI paths change                                | same on main |
+| `build-binaries`      | 2 Linux targets via Turbo when CLI/installer paths change                                  | same         |
+| `checks-docs`         | docs gate when docs paths change                                                           | same         |
+| `checks-doc-coverage` | `verify:doc-coverage` when a scanned code root or the feature map changes                  | same         |
 
 `checks-doc-coverage` is separate from `checks-docs` on purpose. Its trigger is
 every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
 `packages/**`), because a new unrouted directory arrives as new _code_ files and
 would otherwise skip the check meant to catch it. It runs `setup-bun` without
 `bun install` — the script imports only `node:fs` and `node:path`.
+
+`scripts/turbo-affected.sh` wraps `--affected` because a PR touching only
+non-package files (`.github/`, `install.sh`, `tools/`, `docs/`, `.docs/`) used
+to select zero workspace tasks and exit 0 — four green legs that ran nothing.
+The wrapper dry-runs the selection first and falls back to the full task when
+it is empty. Root-owned files still need their own unconditional step: they are
+not in any workspace, so turbo never sees them regardless of the diff
+(`fmt:root:check` covers `.github/`, `scripts/`, `docs/`, `.changeset/`, and the
+root configs). Locally, `bun run ci` runs the four blocking tasks plus the
+`verify:doc-*` and `verify:parity-references` gates; pre-push calls it.
 
 Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
 `~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).
@@ -233,6 +243,12 @@ are never selected by timestamp.
 bun run verify:build-pipeline       # fast: build + pkg:check + turbo cache
 bun run verify:build-pipeline:pr    # PR parity: + 2 Linux binaries
 KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 8-target build
+
+# README quick-start commands against a real binary. Bare invocation defaults
+# to fixture-assets mode + `bun run build:binary:host` output; CI/release pass
+# the explicit form:
+bun run verify:readme:commands -- \
+  --mode fixture-assets --version 0.3.0 --binary apps/cli/dist/bin/kunai-linux-x64
 ```
 
 ## Release guardrails

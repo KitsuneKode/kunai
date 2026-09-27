@@ -1,16 +1,17 @@
 # post-play.stopped-early · narrow (72×45)
  DR. STONE
+ S04E07
 
  ⏸ stopped early
 
- █████████████████████┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ 7 / 12 · 58%
-
  ╭──────────────────────────────────────────────────────────────────╮
- │ ▶ UP NEXT                                                        │
+ │ ▶ RESUME                                                         │
  │                                                                  │
- │             resume S04E07  ·  18:49                              │
- │     DS      same stream · same position                          │
- │             ↵ resume · e episodes                                │
+ │                   resume S04E07  ·  18:49                        │
+ │                   same stream · same position                    │
+ │        DS         ↵ resume · e episodes                          │
+ │                                                                  │
+ │                                                                  │
  │                                                                  │
  ╰──────────────────────────────────────────────────────────────────╯
 

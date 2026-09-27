@@ -5,7 +5,11 @@ description: Install Kunai, put it on your PATH, install mpv, run setup, and com
 
 Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream on your machine, and hands playback to `mpv`. The shell stays alive so you can recover, continue, or pick something else without restarting.
 
-<KunaiFoxBanner pose="go" eyebrow="Start here" title="Search a title. Resolve a stream. Hand it to mpv.">
+<KunaiFoxBanner
+  pose="go"
+  eyebrow="Start here"
+  title="Search a title. Resolve a stream. Hand it to mpv."
+>
   Setup and browsing work without mpv. Playback is the only step that needs it on PATH.
 </KunaiFoxBanner>
 
@@ -73,14 +77,14 @@ Day-to-day watching uses the installed `kunai` binary. Source launch recipes liv
 
 Press `/` for the command palette. Surfaces that matter:
 
-| Surface | Command | Meaning |
-| --- | --- | --- |
-| Watchlist | `/watchlist` | Built-in watch-later list |
-| Playlists | `/playlists` | Durable named collections |
-| Up Next | `/up-next` | Current playback order (`/queue` is an alias) |
-| Downloads | `/downloads` | Queued / running / failed jobs |
-| Library | `/library` | Completed offline titles |
-| History | `/history` | Resume progress |
+| Surface   | Command      | Meaning                                       |
+| --------- | ------------ | --------------------------------------------- |
+| Watchlist | `/watchlist` | Built-in watch-later list                     |
+| Playlists | `/playlists` | Durable named collections                     |
+| Up Next   | `/up-next`   | Current playback order (`/queue` is an alias) |
+| Downloads | `/downloads` | Queued / running / failed jobs                |
+| Library   | `/library`   | Completed offline titles                      |
+| History   | `/history`   | Resume progress                               |
 
 `Tab` cycles catalog mode (series / anime / YouTube). `Ctrl+F` narrows loaded results. `/filters` opens the public filter surface. During playback, provider fallback is `⇧F` (`Shift+F`), not a bare `f`.
 

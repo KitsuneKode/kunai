@@ -47,16 +47,28 @@ function subdirectories(relativeRoot: string): string[] {
 const featureMap = readFileSync(FEATURE_MAP, "utf8");
 
 /**
- * A directory counts as routed if the map names its path, or names it as a
- * bare segment under a shorthand parent (the map writes `services/youtube/*`
- * as often as the full path).
+ * Code spans only. A bare substring anywhere in the prose used to count —
+ * `infra/player` was "routed" by the flow diagram's `… → infra/player (mpv)`
+ * mention, which names the directory but tells an agent nothing about who
+ * owns it (#470). A real route is a backticked path in a table row.
  */
+const codeSpans = [...featureMap.matchAll(/`([^`\n]+)`/g)].map((match) => match[1] ?? "");
+
 function isRouted(directory: string): boolean {
-  if (featureMap.includes(directory)) return true;
   const shorthand = directory.replace(/^apps\/cli\/src\//, "");
-  if (featureMap.includes(shorthand)) return true;
   const packageName = directory.replace(/^packages\//, "@kunai/");
-  return featureMap.includes(packageName);
+  return codeSpans.some((span) => {
+    // `apps/cli/src/services/search/*` routes `apps/cli/src/services/search`;
+    // `services/search/*` is the same route in the map's shorthand.
+    const bare = span.replace(/\/\*$/, "");
+    return (
+      bare === directory ||
+      bare === shorthand ||
+      bare === packageName ||
+      span.startsWith(`${directory}/`) ||
+      span.startsWith(`${shorthand}/`)
+    );
+  });
 }
 
 const missing = COVERED_ROOTS.flatMap(subdirectories)

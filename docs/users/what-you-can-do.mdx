@@ -6,7 +6,11 @@ status: shipped
 
 Kunai is a terminal-first media shell. You search for a title, Kunai resolves a direct-provider stream on your machine, hands playback to `mpv`, and keeps the shell alive so you can recover, continue, or pick something else without restarting.
 
-<KunaiFoxBanner pose="idle" eyebrow="Daily use" title="Search, play, recover, continue — without leaving the shell.">
+<KunaiFoxBanner
+  pose="idle"
+  eyebrow="Daily use"
+  title="Search, play, recover, continue — without leaving the shell."
+>
   This page is the capability map. Commands stay next to the job they do.
 </KunaiFoxBanner>
 
@@ -33,6 +37,7 @@ kunai -a -S "Attack on Titan"
 ```
 
 `-S` runs search and lands on results. It does not auto-play unless you add `--jump 1` or `-q`.
+
 </Step>
 <Step>
 ### Bootstrap a known title
@@ -42,11 +47,13 @@ kunai -i 438631 -t movie
 ```
 
 Use TMDB ids for movies and series. Anime mode uses provider-native ids through the anime flow.
+
 </Step>
 <Step>
 ### Inspect before you commit
 
 Browse results support filters, details sheets, and provider hints before playback starts. Episode numbers in the UI are **1-based**.
+
 </Step>
 </Steps>
 
@@ -62,16 +69,16 @@ Playback always goes through `mpv`. Kunai resolves stream URLs, headers, and sub
 
 During playback, hotkeys and commands stay available:
 
-| Action | Keys / command |
-| --- | --- |
-| Recover current stream | `r` or `/recover` |
-| Next compatible provider | `⇧F` or `/fallback` |
-| Source | `o` or `/source` |
-| Quality | `k` |
-| Next / previous episode | `n` / `p` |
-| Queue for offline | `/download` or `Ctrl+D` while browsing |
-| Copy share link | `/share` or mpv **Ctrl+Shift+S** |
-| Open shared link | `/watch` or `kunai --open <url>` |
+| Action                   | Keys / command                         |
+| ------------------------ | -------------------------------------- |
+| Recover current stream   | `r` or `/recover`                      |
+| Next compatible provider | `⇧F` or `/fallback`                    |
+| Source                   | `o` or `/source`                       |
+| Quality                  | `k`                                    |
+| Next / previous episode  | `n` / `p`                              |
+| Queue for offline        | `/download` or `Ctrl+D` while browsing |
+| Copy share link          | `/share` or mpv **Ctrl+Shift+S**       |
+| Open shared link         | `/watch` or `kunai --open <url>`       |
 
 More: [Share links](/docs/users/share-links), [Playback and recovery](/docs/users/playback-and-recovery), [Commands and shortcuts](/docs/users/commands-and-shortcuts).
 
@@ -124,12 +131,12 @@ kunai --calendar
 kunai --random
 ```
 
-| Surface | Purpose |
-| --- | --- |
-| `/discover` | Personalized recommendations from local history and catalog signals |
-| `/calendar` | Releases airing today with cached schedule data |
-| `/random` | Small explained surprise tray — rerollable, never auto-plays |
-| `/recommendation` | Same family as discover from the command palette |
+| Surface           | Purpose                                                             |
+| ----------------- | ------------------------------------------------------------------- |
+| `/discover`       | Personalized recommendations from local history and catalog signals |
+| `/calendar`       | Releases airing today with cached schedule data                     |
+| `/random`         | Small explained surprise tray — rerollable, never auto-plays        |
+| `/recommendation` | Same family as discover from the command palette                    |
 
 Discover mode policy (`auto`, unified, anime-only, series-only) is configurable. See [Customization](/docs/users/customization).
 
@@ -176,10 +183,10 @@ See [Supported and unsupported](/docs/users/supported-and-unsupported) for the f
 
 ## Related guides
 
-| I want to… | Start here |
-| --- | --- |
-| Install and verify dependencies | [Getting started](/docs/users/getting-started) |
-| Tune providers and mpv | [Customization](/docs/users/customization) |
-| Fix a specific failure | [Troubleshooting](/docs/users/troubleshooting) |
-| Understand provider fallback | [Providers](/docs/users/providers) |
-| Know beta boundaries | [Supported and unsupported](/docs/users/supported-and-unsupported) |
+| I want to…                      | Start here                                                         |
+| ------------------------------- | ------------------------------------------------------------------ |
+| Install and verify dependencies | [Getting started](/docs/users/getting-started)                     |
+| Tune providers and mpv          | [Customization](/docs/users/customization)                         |
+| Fix a specific failure          | [Troubleshooting](/docs/users/troubleshooting)                     |
+| Understand provider fallback    | [Providers](/docs/users/providers)                                 |
+| Know beta boundaries            | [Supported and unsupported](/docs/users/supported-and-unsupported) |

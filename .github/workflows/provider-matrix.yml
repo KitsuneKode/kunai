@@ -74,6 +74,16 @@ jobs:
           # Always succeed the step so the artifact uploads; matrix volatility is evidence, not a gate.
           exit 0
 
+      # The only anime discovery→resolve end-to-end test. It is
+      # KUNAI_LIVE_PROVIDER_TESTS-gated, so it belongs on this leg — without it
+      # no job ever runs it (#468). Evidence, not a gate, same as the matrix.
+      - name: Anime discovery → resolve handoff (live)
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.mode != 'release-signoff' }}
+        working-directory: apps/cli
+        env:
+          KUNAI_LIVE_PROVIDER_TESTS: "1"
+        run: bun test test/integration/anime-discovery-resolve-handoff.test.ts
+
       - name: Run default-route release signoff
         id: release_signoff
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release-signoff' }}

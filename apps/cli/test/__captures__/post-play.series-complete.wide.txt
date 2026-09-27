@@ -1,10 +1,11 @@
 # post-play.series-complete · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │  DETAILS
+ S04E07                                                                                            │
+                                                                                                   │
  ✦ SERIES COMPLETE                                                                                 │
- 12 episodes · 4 seasons                                                                           │  episodes   12
-                                                                                                   │  seasons    4
- ▌ Search            find something new to watch [s]                                               │
+ 12 episodes · 4 seasons                                                                           │
+                                                                                                   │
+ ▌ Search            find something new to watch [s]                                               │                  ❀
    Share link        copy a kunai:// link for this title [/share]                                  │
    Replay            rewatch from the beginning [r]                                                │
                                                                                                    │
@@ -12,11 +13,15 @@
                                                                                                    │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
  │                             │  │                             │  │                             │ │
- │              F              │  │             VS              │  │             HD              │ │
- │                             │  │                             │  │                             │ │
+ │              F              │  │             VS              │  │             HD              │ │  ❀ series
+ │                             │  │                             │  │                             │ │  DR. STONE
  │ 1                           │  │ 2                           │  │ 3                           │ │
- │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │  ── up next ──────────────────────
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
- └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │               E32 · Challengers…
+                                                                                                   │               autoplay
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │       ❀
                                                                                                    │
- ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%

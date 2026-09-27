@@ -12,11 +12,11 @@ This guide explains what each picker means and when Kunai shows it.
 
 Anime, series, and movie playback each has its own media profile in `config.json`:
 
-| Mode | Config key | Typical fields |
-| --- | --- | --- |
-| Anime | `animeLanguageProfile` | audio, subtitle, quality |
+| Mode   | Config key              | Typical fields           |
+| ------ | ----------------------- | ------------------------ |
+| Anime  | `animeLanguageProfile`  | audio, subtitle, quality |
 | Series | `seriesLanguageProfile` | audio, subtitle, quality |
-| Movies | `movieLanguageProfile` | audio, subtitle, quality |
+| Movies | `movieLanguageProfile`  | audio, subtitle, quality |
 
 Example:
 
@@ -41,14 +41,14 @@ Configure in `/settings`. See [Customization](/docs/users/customization).
 
 Kunai only shows controls when inventory has more than one useful choice. A title with one stream and one subtitle should not grow a noisy menu.
 
-| Picker | What it chooses |
-| --- | --- |
-| **Provider** | Which registered provider resolves the title (before or during playback) |
-| **Source** | Provider source or mirror family when multiple exist |
-| **Stream** | Full playable stream inventory for the current episode |
-| **Quality** | Narrow streams by quality label or rank |
-| **Subtitle** | Soft subtitle track when already known; may trigger lookup if not |
-| **Audio / hardsub** | Language or hardsub variant within cached inventory |
+| Picker              | What it chooses                                                          |
+| ------------------- | ------------------------------------------------------------------------ |
+| **Provider**        | Which registered provider resolves the title (before or during playback) |
+| **Source**          | Provider source or mirror family when multiple exist                     |
+| **Stream**          | Full playable stream inventory for the current episode                   |
+| **Quality**         | Narrow streams by quality label or rank                                  |
+| **Subtitle**        | Soft subtitle track when already known; may trigger lookup if not        |
+| **Audio / hardsub** | Language or hardsub variant within cached inventory                      |
 
 Open the grouped panel during playback:
 
@@ -126,16 +126,17 @@ You can always override before or during playback.
 
 ## Switching during playback
 
-| Situation | Best action |
-| --- | --- |
-| Wrong subtitle language | `/source` → subtitle section |
-| Want higher quality | `/quality` if alternatives exist in inventory |
-| Stream stalled | `r` recover first; then `/source` if inventory has alternates |
-| Provider exhausted | `⇧F` fallback — see [Providers](/docs/users/providers) |
-| Inventory looks stale | `/recompute` bypasses cache for current episode |
+| Situation               | Best action                                                   |
+| ----------------------- | ------------------------------------------------------------- |
+| Wrong subtitle language | `/source` → subtitle section                                  |
+| Want higher quality     | `/quality` if alternatives exist in inventory                 |
+| Stream stalled          | `r` recover first; then `/source` if inventory has alternates |
+| Provider exhausted      | `⇧F` fallback — see [Providers](/docs/users/providers)        |
+| Inventory looks stale   | `/recompute` bypasses cache for current episode               |
 
 <Callout type="info" title="Inventory-bound switching">
-Switching source/quality/subtitle from pickers avoids full re-resolve when the provider already reported those candidates. If nothing matches, Kunai fetches fresh inventory.
+  Switching source/quality/subtitle from pickers avoids full re-resolve when the provider already
+  reported those candidates. If nothing matches, Kunai fetches fresh inventory.
 </Callout>
 
 ## Provider priority and per-title overrides

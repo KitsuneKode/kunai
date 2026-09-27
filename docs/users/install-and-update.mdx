@@ -154,11 +154,11 @@ to add and changes nothing.
 PowerShell form. Either can be set by environment variable instead, which is
 what a Dockerfile or CI step usually wants.
 
-| `install.sh`         | `install.ps1`     | Environment                | Effect                                                                                    |
-| -------------------- | ----------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
-| `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages — see below. |
+| `install.sh`         | `install.ps1`     | Environment                | Effect                                                                                                                             |
+| -------------------- | ----------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages — see below.                                          |
 | `--skip-deps`        | `-SkipDeps`       | `KUNAI_SKIP_DEPS=1`        | Skip optional dependencies (`mpv` via your package manager; on Windows also the portable `yt-dlp` and `curl-impersonate` helpers). |
-| `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone — see [PATH](#path).                                                     |
+| `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone — see [PATH](#path).                                                                                              |
 
 Without a terminal — `curl … | bash` in CI, a container, or a sandbox — optional
 prompts are **skipped, not accepted**, and the installer says which step it

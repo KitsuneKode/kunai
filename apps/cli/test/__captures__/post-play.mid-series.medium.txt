@@ -1,14 +1,17 @@
 # post-play.mid-series · medium (100×45)
  DR. STONE
+ S04E07
 
  ✓ episode complete
 
  ╭──────────────────────────────────────────────────────────────────────────╮
  │ ▶ UP NEXT                                                                │
  │                                                                          │
- │             E32 · Challengers of Science                                 │
- │     DS      Status available · autoplay on                               │
- │             ↵ play · e episodes                                          │
+ │                   E32 · Challengers of Science                           │
+ │                   Status available · autoplay on                         │
+ │        DS         ↵ play · e episodes                                    │
+ │                                                                          │
+ │                                                                          │
  │                                                                          │
  ╰──────────────────────────────────────────────────────────────────────────╯
 

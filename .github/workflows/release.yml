@@ -861,7 +861,14 @@ jobs:
   confirmation:
     name: Release confirmation gate
     needs:
-      [candidate, installer-gate, readme-commands-gate, live-providers-gate, native-platforms-gate, native-provenance-gate]
+      [
+        candidate,
+        installer-gate,
+        readme-commands-gate,
+        live-providers-gate,
+        native-platforms-gate,
+        native-provenance-gate,
+      ]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15

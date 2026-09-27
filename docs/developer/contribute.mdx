@@ -21,7 +21,10 @@ Read the repo entry points:
 - [Debugging workflow](/docs/developer/debugging-workflow) — traces and diagnostics for bug reports
 
 <Callout type="info" title="Provider changes need extra care">
-Before changing provider crypto, decoder constants, or AllManga/AllAnime parity logic, compare against the local ani-cli reference checkout documented in `CLAUDE.md`. Provider modules live in `packages/providers/src/*/direct.ts`; the production registry is wired in `apps/cli/src/container/bootstrap-providers.ts`.
+  Before changing provider crypto, decoder constants, or AllManga/AllAnime parity logic, compare
+  against the local ani-cli reference checkout documented in `CLAUDE.md`. Provider modules live in
+  `packages/providers/src/*/direct.ts`; the production registry is wired in
+  `apps/cli/src/container/bootstrap-providers.ts`.
 </Callout>
 
 ## Fork and setup
@@ -71,17 +74,17 @@ All three should pass before you open a PR. Run `bun run fmt` if formatting fail
 
 ## Project layout (quick map)
 
-| Path | Purpose |
-| --- | --- |
-| `apps/cli/src/main.ts` | Canonical CLI entrypoint |
-| `apps/cli/src/app-shell/` | Ink shell, command bar, overlays |
-| `apps/cli/src/container/bootstrap-providers.ts` | Production provider registry |
-| `packages/providers/` | Direct provider modules |
-| `packages/storage/` | SQLite history, cache, downloads |
-| `apps/cli/test/unit/` | Unit tests |
-| `apps/cli/test/integration/` | Integration tests |
-| `apps/cli/test/live/` | Opt-in live provider smokes |
-| `docs/` | User and developer documentation (this site) |
+| Path                                            | Purpose                                      |
+| ----------------------------------------------- | -------------------------------------------- |
+| `apps/cli/src/main.ts`                          | Canonical CLI entrypoint                     |
+| `apps/cli/src/app-shell/`                       | Ink shell, command bar, overlays             |
+| `apps/cli/src/container/bootstrap-providers.ts` | Production provider registry                 |
+| `packages/providers/`                           | Direct provider modules                      |
+| `packages/storage/`                             | SQLite history, cache, downloads             |
+| `apps/cli/test/unit/`                           | Unit tests                                   |
+| `apps/cli/test/integration/`                    | Integration tests                            |
+| `apps/cli/test/live/`                           | Opt-in live provider smokes                  |
+| `docs/`                                         | User and developer documentation (this site) |
 
 ## Running tests
 

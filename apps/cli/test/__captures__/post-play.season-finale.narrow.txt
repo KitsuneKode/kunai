@@ -1,16 +1,19 @@
 # post-play.season-finale · narrow (72×45)
  DR. STONE
+ S04E07
 
  ✦ Season 4 complete
 
  █████████████████████┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ 7 / 12 this season · 58%
 
  ╭──────────────────────────────────────────────────────────────────╮
- │ ▶ UP NEXT                                                        │
+ │ ▶ NEXT SEASON                                                    │
  │                                                                  │
- │             E32 · Challengers of Science                         │
- │     DS      Status available · autoplay on                       │
- │             ↵ play · e episodes                                  │
+ │                   E32 · Challengers of Science                   │
+ │                   Status available · autoplay on                 │
+ │        DS         ↵ play · e episodes                            │
+ │                                                                  │
+ │                                                                  │
  │                                                                  │
  ╰──────────────────────────────────────────────────────────────────╯
 

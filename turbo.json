@@ -7,6 +7,10 @@
     "typecheck": {
       "cache": false,
       "dependsOn": ["transit"],
+      // The one blocking-chain task that was cacheable: a green typecheck
+      // could be a .turbo/TURBO_TOKEN replay instead of a run (AGENTS.md
+      // hazard #2). lint/fmt/test are already cache:false — this joins them.
+      "cache": false,
       "outputs": []
     },
     "lint": {
@@ -56,6 +60,7 @@
       "outputs": []
     },
     "typecheck:app": {
+      "cache": false,
       "outputs": []
     },
     "build": {

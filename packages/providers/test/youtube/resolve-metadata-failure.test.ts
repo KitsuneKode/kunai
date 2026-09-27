@@ -15,6 +15,12 @@ const TEST_CONTEXT: ProviderRuntimeContext = {
 
 const VIDEO_ID = "jNQXAC9IVRw";
 
+// The resolve path requires the binary even though every test injects its
+// metadata service — presence is the whole contract. skipIf keeps absence a
+// visible skip instead of a vacuous pass (#468).
+const HAS_YTDLP = Boolean(Bun.which("yt-dlp"));
+const ytdlpTest = test.skipIf(!HAS_YTDLP);
+
 function buildInput(qualityPreference = "best"): ProviderResolveInput {
   return {
     title: {
@@ -52,8 +58,7 @@ afterEach(() => {
 });
 
 describe("youtube resolve on metadata failure", () => {
-  test("a members-only video fails closed instead of resolving into mpv", async () => {
-    if (!Bun.which("yt-dlp")) return;
+  ytdlpTest("a members-only video fails closed instead of resolving into mpv", async () => {
     configureYoutubeProvider({
       metadataService: failingService(
         "ERROR: [youtube] abc: Join this channel to get access to members-only content",
@@ -70,8 +75,7 @@ describe("youtube resolve on metadata failure", () => {
     expect(failure?.message).toContain("members-only");
   });
 
-  test("a private video reports why, not a generic parse failure", async () => {
-    if (!Bun.which("yt-dlp")) return;
+  ytdlpTest("a private video reports why, not a generic parse failure", async () => {
     configureYoutubeProvider({
       metadataService: failingService(
         "ERROR: [youtube] abc: Private video. Sign in if you've been granted access",
@@ -83,8 +87,7 @@ describe("youtube resolve on metadata failure", () => {
     expect(result.failures.at(-1)?.message).toContain("private");
   });
 
-  test("a transient failure still resolves, so a flaky probe cannot kill playback", async () => {
-    if (!Bun.which("yt-dlp")) return;
+  ytdlpTest("a transient failure still resolves, so a flaky probe cannot kill playback", async () => {
     configureYoutubeProvider({
       metadataService: failingService("ERROR: unable to download webpage: HTTP Error 503"),
     });
@@ -95,8 +98,7 @@ describe("youtube resolve on metadata failure", () => {
     expect(result.failures.at(-1)?.retryable).toBe(true);
   });
 
-  test("a transient failure keeps the quality ceiling instead of asking for best", async () => {
-    if (!Bun.which("yt-dlp")) return;
+  ytdlpTest("a transient failure keeps the quality ceiling instead of asking for best", async () => {
     configureYoutubeProvider({
       metadataService: failingService("ERROR: unable to download webpage: HTTP Error 503"),
     });
@@ -109,8 +111,7 @@ describe("youtube resolve on metadata failure", () => {
     expect(selected?.metadata?.metadataUnavailable).toBe(true);
   });
 
-  test("a requested quality absent from the ladder rounds down, not up", async () => {
-    if (!Bun.which("yt-dlp")) return;
+  ytdlpTest("a requested quality absent from the ladder rounds down, not up", async () => {
     const seeded = normalizeYtDlpVideoInfo(
       {
         id: VIDEO_ID,
@@ -133,8 +134,7 @@ describe("youtube resolve on metadata failure", () => {
   });
 });
 
-test("resolving without any metadata service flags the streams as unverified", async () => {
-  if (!Bun.which("yt-dlp")) return;
+ytdlpTest("resolving without any metadata service flags the streams as unverified", async () => {
   // No metadataService configured: loadYtDlpVideoInfo returns null without
   // throwing, so nothing else would mark the ladder unverified.
   configureYoutubeProvider({});

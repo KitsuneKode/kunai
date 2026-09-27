@@ -1,27 +1,30 @@
 # post-play.mid-series · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │  UP NEXT
+ S04E07                                                                                            │
+                                                                                                   │
  ✓ episode complete                                                                                │
-                                                                                                   │  ┌───────────────────────────────┐
- ╭────────────────────────────────────────────────────────────────────────────────────────────────╮│  │ E32 · Challengers of Science  │
- │ ▶ UP NEXT                                                                                      ││  │ Status available · autoplay   │
- │                                                                                                ││  │ on                            │
- │             E32 · Challengers of Science                                                       ││  └───────────────────────────────┘
- │     DS      Status available · autoplay on                                                     ││
- │             ↵ play · e episodes                                                                ││  DETAILS
+                                                                                                   │
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────╮│
+ │ ▶ UP NEXT                                                                                      ││                  ❀
  │                                                                                                ││
- ╰────────────────────────────────────────────────────────────────────────────────────────────────╯│  progress   7 / 12 · 58%
-                                                                                                   │
+ │                   E32 · Challengers of Science                                                 ││
+ │                   Status available · autoplay on                                               ││
+ │        DS         ↵ play · e episodes                                                          ││
+ │                                                                                                ││
+ │                                                                                                ││
+ │                                                                                                ││
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────╯│  ❀ series
+                                                                                                   │  DR. STONE
  ▌ Next episode      E32 · Challengers of Science · autoplay on [↵ n]                              │
-   Episodes          open season list, current stays marked [e]                                    │
+   Episodes          open season list, current stays marked [e]                                    │  ── up next ──────────────────────
    Session           autoskip on · chain continues [a · u · x]                                     │
-   Share link        copy a kunai:// link at the last position [/share]                            │
-   Replay / Tracks   rewatch, or change source · quality · audio [r · o]                           │
-                                                                                                   │
+   Share link        copy a kunai:// link at the last position [/share]                            │               E32 · Challengers…
+   Replay / Tracks   rewatch, or change source · quality · audio [r · o]                           │               autoplay
+                                                                                                   │       ❀
  ──────────────────────────────────── because you watched this ────────────────────────────────────│
                                                                                                    │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
- │                             │  │                             │  │                             │ │
+ │                             │  │                             │  │                             │ │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%
  │              F              │  │             VS              │  │             HD              │ │
  │                             │  │                             │  │                             │ │
  │ 1                           │  │ 2                           │  │ 3                           │ │

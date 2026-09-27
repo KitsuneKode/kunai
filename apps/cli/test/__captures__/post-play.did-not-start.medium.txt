@@ -1,11 +1,12 @@
 # post-play.did-not-start · medium (100×45)
  DR. STONE
+ S04E07
 
  ▢ playback didn't start
  nothing was recorded for this title
 
  ▌ Try again         retry the same episode [r]
-   Fallback          try another provider [f]
+   Fallback          try another provider [⇧F]
    Sources           choose another stream [o]
    Search            find another title [s]
 
