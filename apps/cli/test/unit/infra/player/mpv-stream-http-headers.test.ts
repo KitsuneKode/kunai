@@ -85,6 +85,14 @@ describe("normalizeStreamHttpHeaders", () => {
   test("drops empty header values", () => {
     expect(normalizeStreamHttpHeaders({ referer: "  ", origin: "" })).toEqual({ extraFields: [] });
   });
+
+  test("preserves a whitespace-only user-agent — it is load-bearing for vidrock ngcorp hosts", () => {
+    // " " is the only ffmpeg-expressible spelling of an effectively-empty UA.
+    // Trimming it away leaves mpv sending its default Lavf UA, which the
+    // segment hosts drop — so this normalization must keep the value.
+    expect(normalizeStreamHttpHeaders({ "user-agent": " " }).userAgent).toBe(" ");
+    expect(normalizeStreamHttpHeaders({ "user-agent": "\n" }).userAgent).toBeUndefined();
+  });
 });
 
 describe("shouldDisableMpvTlsVerify", () => {

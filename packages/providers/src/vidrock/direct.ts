@@ -5,7 +5,7 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
-import { providerHttpErrorForStatus } from "../runtime/fetch";
+import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import {
   directStreamFetchSignal,
   resolveDirectStreamSource,
@@ -43,9 +43,7 @@ const STREAM_USER_AGENT = " ";
 
 interface VidrockServerEntry {
   readonly url?: string | null;
-  readonly type?: string | null;
   readonly language?: string | null;
-  readonly flag?: string | null;
 }
 
 export const vidrockProviderModule: CoreProviderModule = {
@@ -70,16 +68,20 @@ export function resolveVidrockDirect(
         resolveInput.mediaKind === "movie"
           ? `movie/${tmdbId}`
           : `tv/${tmdbId}/${season}/${episode}`;
-      const response = await fetch(`${BASE_URL}/${path}`, {
+      const response = await providerFetch(ctx, `${BASE_URL}/${path}`, {
         headers: { Origin: ORIGIN, Referer: REFERER, "User-Agent": USER_AGENT },
         signal: directStreamFetchSignal(ctx.signal, VIDROCK_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
-        throw providerHttpErrorForStatus({
-          status: response.status,
+        throw new ProviderHttpError({
           message: `VidRock API returned HTTP ${response.status}`,
           providerId: VIDROCK_PROVIDER_ID,
-          stage: "direct-stream",
+          stage: "api",
+          status: response.status,
+          // A 404/410 means the title is not on this upstream — a definitive
+          // catalog answer, not a retryable outage.
+          code: response.status === 404 || response.status === 410 ? "not-found" : "network-error",
+          retryable: response.status >= 500 || response.status === 429,
         });
       }
 
@@ -88,11 +90,14 @@ export function resolveVidrockDirect(
 
       const key = await vidrockGcmKey();
       const streams: DirectStreamInput[] = [];
+      let ciphertextLanes = 0;
+      let decryptFailures = 0;
       for (const [name, server] of Object.entries(
         data as Record<string, VidrockServerEntry | undefined>,
       )) {
         const ciphertext = server?.url;
         if (!ciphertext) continue;
+        ciphertextLanes += 1;
 
         let url: string;
         try {
@@ -101,6 +106,7 @@ export function resolveVidrockDirect(
           // A lane whose ciphertext no longer verifies is skipped rather than
           // failing the whole resolve — the scheme rotates per deploy and the
           // remaining lanes still play.
+          decryptFailures += 1;
           continue;
         }
 
@@ -132,7 +138,21 @@ export function resolveVidrockDirect(
 
         streams.push({ url, serverLabel: name, audioLanguages });
       }
-      if (streams.length === 0) return null;
+      if (streams.length === 0) {
+        // Every lane carried ciphertext and every decrypt failed: the blob
+        // shape parsed, so this is almost certainly a rotated scheme or key —
+        // a diagnosable provider outage, not an honest "title not listed".
+        if (ciphertextLanes > 0 && decryptFailures === ciphertextLanes) {
+          throw new ProviderHttpError({
+            message: `all ${ciphertextLanes} VidRock lanes failed GCM decrypt — upstream scheme likely rotated`,
+            providerId: VIDROCK_PROVIDER_ID,
+            stage: "decrypt",
+            code: "parse-failed",
+            retryable: false,
+          });
+        }
+        return null;
+      }
 
       const payload: DirectStreamPayload = {
         streams,
@@ -151,7 +171,7 @@ async function vidrockGcmKey(): Promise<CryptoKey> {
   if (cachedKey) return cachedKey;
   const bytes = new Uint8Array(VIDROCK_KEY_HEX.length / 2);
   for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(VIDROCK_KEY_HEX.substr(i * 2, 2), 16);
+    bytes[i] = parseInt(VIDROCK_KEY_HEX.slice(i * 2, i * 2 + 2), 16);
   }
   cachedKey = await crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["decrypt"]);
   return cachedKey;
