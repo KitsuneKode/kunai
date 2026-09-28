@@ -1965,11 +1965,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               streamSwitchAction === "pick-quality"
                 ? playerControl.consumePendingStreamSelection()
                 : null;
+            // The same eligibility gate the fallback picker applies — counting
+            // a `down` provider here advertises a hop target the picker would
+            // then refuse, so the directive would promise a retry that lands
+            // nowhere.
+            const fallbackEligible = providerFallbackEligibility(container.providerHealth);
             const hasCompatibleFallbackProvider =
               resolveAborted && resolveAbortIntent === "fallback"
                 ? providerRegistry
                     .getCompatible(title, stateManager.getState().mode)
-                    .some((candidate) => candidate.metadata.id !== currentProvider.metadata.id)
+                    .some(
+                      (candidate) =>
+                        candidate.metadata.id !== currentProvider.metadata.id &&
+                        fallbackEligible(candidate.metadata.id),
+                    )
                 : false;
 
             let problemAction: "dismiss" | "retry" | null = null;
