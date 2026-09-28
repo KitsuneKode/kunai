@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import os from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, parse, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createMDX } from "fumadocs-mdx/next";
@@ -19,17 +19,30 @@ const bunGlobalStoreLinks = join(
 );
 const turbopackRoot = (() => {
   if (!existsSync(bunGlobalStoreLinks)) return monorepoRoot;
-  const projectSegments = monorepoRoot.split("/");
-  const storeSegments = bunGlobalStoreLinks.split("/");
+  // join() emits platform separators — on Windows these are `C:\...` paths, so
+  // a `split("/")` would produce one segment and the walk below would collapse
+  // the root to "/". Split on both separators; Windows compares drive segments
+  // case-insensitively, POSIX byte-exact.
+  const toSegments = (p) => p.split(/[\\/]+/).filter(Boolean);
+  const sameSegment = (a, b) =>
+    process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  const projectSegments = toSegments(monorepoRoot);
+  const storeSegments = toSegments(bunGlobalStoreLinks);
   let i = 0;
   while (
     i < projectSegments.length &&
     i < storeSegments.length &&
-    projectSegments[i] === storeSegments[i]
+    sameSegment(projectSegments[i], storeSegments[i])
   ) {
     i += 1;
   }
-  return projectSegments.slice(0, i).join("/") || "/";
+  // Reattach the root: POSIX's leading "/" was filtered out, and on Windows
+  // the drive "C:" arrives as a segment but its root already carries it.
+  const root = parse(monorepoRoot).root;
+  const segments = projectSegments.slice(0, i);
+  if (segments.length > 0 && segments[0] + sep === root) segments.shift();
+  const tail = segments.join(sep);
+  return tail ? root + tail : root;
 })();
 
 /** @type {import('next').NextConfig} */
