@@ -1493,13 +1493,17 @@ describe("install.sh lifecycle contract", () => {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "40",
-            KUNAI_ACTIVATION_LOCK_POLL_MS: "500",
+            KUNAI_ACTIVATION_LOCK_POLL_MS: "2000",
           });
           await waitForPaths([join(sandbox.dataDir, "versions", "9.8.7", "version.json")]);
           const activationStartedAt = performance.now();
           const result = await install;
           expect(result.status).not.toBe(0);
-          expect(performance.now() - activationStartedAt).toBeLessThan(300);
+          // Discriminates "observed the 40ms deadline" (~100ms) from "slept a
+          // full poll" (>=2000ms) with 10x headroom on both sides — the earlier
+          // 300ms bound against a 500ms poll flaked at 312ms on a loaded macOS
+          // runner.
+          expect(performance.now() - activationStartedAt).toBeLessThan(1000);
         },
       );
     } finally {
@@ -1538,7 +1542,10 @@ describe("install.sh lifecycle contract", () => {
               KUNAI_ACTIVATION_LOCK_POLL_MS: "0",
               PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
             },
-            500,
+            // A deadline-observing script exits in ~40ms; a hot-looping one
+            // never does, so a generous bound loses nothing and stops flaking
+            // on loaded runners.
+            2000,
           );
           expect(result).not.toBeNull();
           expect(result?.status).not.toBe(0);
