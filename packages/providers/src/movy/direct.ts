@@ -21,6 +21,7 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import {
   findLastCycleFailure,
@@ -55,6 +56,9 @@ export { MOVY_PROVIDER_ID };
  */
 export const MOVY_API_BASE = "https://api.wecollege.net";
 export const MOVY_REFERER = "https://www.movy.sx/";
+// Origin carries no path and no trailing slash — a real browser sends
+// `Origin: https://www.movy.sx`.
+const MOVY_ORIGIN = "https://www.movy.sx";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -118,13 +122,19 @@ async function fetchMovySeed(
   const cached = seedCache.get(cacheKey);
   if (cached && cached.expiresAt - SEED_EXPIRY_HEADROOM_MS > now) return cached.seed;
 
-  const fetchImpl = context.fetch?.fetch.bind(context.fetch) ?? fetch;
-  const response = await fetchImpl(`${MOVY_API_BASE}/seed?mediaId=${mediaId}`, {
-    headers: { "User-Agent": USER_AGENT, Referer: MOVY_REFERER, Origin: MOVY_REFERER },
+  const response = await providerFetch(context, `${MOVY_API_BASE}/seed?mediaId=${mediaId}`, {
+    headers: { "User-Agent": USER_AGENT, Referer: MOVY_REFERER, Origin: MOVY_ORIGIN },
     signal,
   });
   if (!response.ok) {
-    throw new MovyDecryptError(`seed request failed: HTTP ${response.status}`);
+    throw new ProviderHttpError({
+      message: `seed request failed: HTTP ${response.status}`,
+      providerId: MOVY_PROVIDER_ID,
+      stage: "seed",
+      status: response.status,
+      code: "network-error",
+      retryable: response.status >= 500 || response.status === 429,
+    });
   }
   const body = (await response.json()) as { seed?: string; ttlMs?: number };
   if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
@@ -146,6 +156,11 @@ function invalidateMovySeed(mediaId: number): void {
   seedCache.delete(`${MOVY_API_BASE}|${mediaId}`);
 }
 
+/** Test seam — the seed cache is module state and must not leak between cases. */
+export function clearMovySeedCacheForTest(): void {
+  seedCache.clear();
+}
+
 async function fetchMovyLaneSources(
   context: ProviderRuntimeContext,
   lane: MovyLane,
@@ -153,18 +168,16 @@ async function fetchMovyLaneSources(
   mediaId: number,
   signal?: AbortSignal,
 ): Promise<MovySourcesPayload> {
-  const fetchImpl = context.fetch?.fetch.bind(context.fetch) ?? fetch;
-
   // One seed retry on STREAMCRYPTO_SEED_INVALID — matches the site's own
   // "401 → drop cached seed, refetch, retry once" recovery.
   for (let attempt = 0; attempt < 2; attempt++) {
     const seed = await fetchMovySeed(context, mediaId, signal);
     const query = new URLSearchParams({ ...params, enc: "2", seed });
-    const response = await fetchImpl(`${MOVY_API_BASE}/${lane}/sources?${query}`, {
+    const response = await providerFetch(context, `${MOVY_API_BASE}/${lane}/sources?${query}`, {
       headers: {
         "User-Agent": USER_AGENT,
         Referer: MOVY_REFERER,
-        Origin: MOVY_REFERER,
+        Origin: MOVY_ORIGIN,
         Accept: "*/*",
       },
       signal,
@@ -176,13 +189,22 @@ async function fetchMovyLaneSources(
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       const detail = /"message"\s*:\s*"([^"]{3,120})"/.exec(body)?.[1];
-      throw new MovyDecryptError(
-        detail ? `${lane}: ${detail}` : `${lane} sources failed: HTTP ${response.status}`,
-      );
+      throw new ProviderHttpError({
+        message: detail ? `${lane}: ${detail}` : `${lane} sources failed: HTTP ${response.status}`,
+        providerId: MOVY_PROVIDER_ID,
+        stage: "sources",
+        status: response.status,
+        code: "network-error",
+        retryable: response.status >= 500 || response.status === 429,
+      });
     }
     const ciphertext = await response.text();
     const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
-    return JSON.parse(plaintext) as MovySourcesPayload;
+    try {
+      return JSON.parse(plaintext) as MovySourcesPayload;
+    } catch (error) {
+      throw new MovyDecryptError(`${lane}: decrypted payload was not JSON`, { cause: error });
+    }
   }
   throw new MovyDecryptError(`${lane}: seed rejected after retry`);
 }
@@ -228,6 +250,7 @@ async function resolveMovyLaneCandidate({
   cachePolicy,
   laneParams,
   tmdbId,
+  signal,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly lane: MovyLane;
@@ -235,10 +258,11 @@ async function resolveMovyLaneCandidate({
   readonly cachePolicy: CachePolicy;
   readonly laneParams: Record<string, string>;
   readonly tmdbId: number;
+  readonly signal?: AbortSignal;
 }): Promise<MovyResolvedCandidate> {
   const sourceId = candidate.sourceId ?? providerInventorySourceId(MOVY_PROVIDER_ID, lane);
   const displayLabel = `Movy ${lane}`;
-  const payload = await fetchMovyLaneSources(context, lane, laneParams, tmdbId, context.signal);
+  const payload = await fetchMovyLaneSources(context, lane, laneParams, tmdbId, signal);
 
   const rawSources = (payload.sources ?? []).filter(
     (source) => typeof source.url === "string" && source.url.startsWith("http"),
@@ -262,7 +286,12 @@ async function resolveMovyLaneCandidate({
     const laneAudio = movyLaneAudioLanguage(source.quality);
     const qualityStr = laneAudio ? "auto" : String(source.quality || "auto");
     const qualityLabel = normalizeQualityLabel(qualityStr);
-    const qualityRank = qualityRankFromLabel(qualityStr) ?? 0;
+    // Lane labels like "Auto HLS" / "Auto - Vidara" are adaptive ladders, not
+    // a fixed tier — rank them as `auto` or they'd sort below an explicit 360p.
+    const qualityRank =
+      qualityRankFromLabel(qualityStr) ??
+      (/^auto\b/i.test(qualityStr) ? qualityRankFromLabel("auto") : undefined) ??
+      0;
     const protocol = movySourceProtocol(source);
     const streamId = createStreamId(MOVY_PROVIDER_ID, [url]);
     const variantId = createVariantId(MOVY_PROVIDER_ID, [sourceId, qualityLabel, url]);
@@ -439,9 +468,16 @@ export async function resolveMovyDirect(
   const season = input.episode?.season ?? 1;
   const episode = input.episode?.episode ?? 1;
   const laneParams: Record<string, string> = {
+    // The site's own bundle pre-encodes the title before the query layer
+    // encodes again — lanes receive a still-encoded title on the wire.
+    // Live-verified: a space-containing title resolved on 11/16 lanes only
+    // with this double-encoding.
     title: encodeURIComponent(input.title.title ?? ""),
     mediaType: input.mediaKind === "movie" ? "movie" : "tv",
     year: String(input.title.year ?? ""),
+    // ProviderResolveInput carries no season count, and the lanes don't
+    // validate seasonId ≤ totalSeasons — "1" is what the site sends for
+    // single-season lookups and resolves S2+ fine.
     totalSeasons: "1",
     seasonId: String(season),
     episodeId: String(episode),
@@ -466,7 +502,7 @@ export async function resolveMovyDirect(
     emit: context.emit,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs: 15_000,
-    resolveCandidate: async (candidate) => {
+    resolveCandidate: async (candidate, candidateContext) => {
       const lane = String(candidate.serverId ?? candidate.metadata?.lane ?? "") as MovyLane;
       try {
         return await resolveMovyLaneCandidate({
@@ -476,6 +512,10 @@ export async function resolveMovyDirect(
           cachePolicy,
           laneParams,
           tmdbId,
+          // The per-candidate controller aborts at candidateTimeoutMs — without
+          // it the fetch is never cancelled and a stalled lane leaks its
+          // socket until TCP timeout.
+          signal: candidateContext.signal,
         });
       } catch (error) {
         // resolveMovyLaneCandidate already classifies its own failures (e.g.
@@ -483,19 +523,49 @@ export async function resolveMovyDirect(
         // into not-found and hide transient/server evidence from provider
         // health and offline detection.
         if (error instanceof ProviderCycleFailureError) throw error;
+        // A caller abort is not lane evidence — record nothing, spend nothing.
+        if (context.signal?.aborted) throw error;
         const message = error instanceof Error ? error.message : `Movy lane ${lane} failed`;
-        const isParse = error instanceof MovyDecryptError;
+        const failure =
+          error instanceof ProviderHttpError
+            ? {
+                // An HTTP answer is upstream evidence: 5xx/429 retryable
+                // outage, 404/410 a definitive miss. Not a decrypt/parse bug.
+                code: error.code,
+                retryable: error.retryable,
+                failureClass:
+                  error.status === 404 || error.status === 410
+                    ? ("candidate-empty" as const)
+                    : ("candidate-network" as const),
+              }
+            : error instanceof MovyDecryptError
+              ? {
+                  code: "parse-failed" as const,
+                  retryable: false,
+                  failureClass: "candidate-parse" as const,
+                }
+              : {
+                  // Raw transport errors (ENOTFOUND, ECONNRESET, fetch failed)
+                  // are offline-class evidence — non-retryable so the cycle's
+                  // offline early-exit can still trigger.
+                  code: "network-error" as const,
+                  retryable:
+                    !/enotfound|eai_again|enetunreach|econnrefused|econnreset|fetch failed|socket/i.test(
+                      message,
+                    ),
+                  failureClass: "candidate-network" as const,
+                };
         failures.push({
           providerId: MOVY_PROVIDER_ID,
-          code: isParse ? "not-found" : "network-error",
+          code: failure.code,
           message,
-          retryable: true,
+          retryable: failure.retryable,
           at: context.now(),
         });
         throw createProviderCycleFailureError(candidate, {
-          failureClass: isParse ? "candidate-parse" : "candidate-network",
+          failureClass: failure.failureClass,
           message,
-          retryable: true,
+          retryable: failure.retryable,
           at: context.now(),
         });
       }

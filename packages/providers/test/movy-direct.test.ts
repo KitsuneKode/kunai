@@ -1,8 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
-import { buildMovyCycleCandidates, MOVY_LANES, movyProviderModule } from "../src/movy/direct";
+import {
+  buildMovyCycleCandidates,
+  clearMovySeedCacheForTest,
+  MOVY_LANES,
+  movyProviderModule,
+} from "../src/movy/direct";
 import { decryptMovyPayload, MovyDecryptError } from "../src/movy/streamcrypto";
 
 /**
@@ -68,6 +73,12 @@ describe("decryptMovyPayload", () => {
   });
 });
 
+afterEach(() => {
+  // The seed cache is module state — a cached seed from one resolve would
+  // shadow the next test's seeded response.
+  clearMovySeedCacheForTest();
+});
+
 describe("resolveMovyDirect", () => {
   test("rejects non-movie/series titles", async () => {
     const result = await movyProviderModule.resolve(
@@ -123,6 +134,29 @@ describe("resolveMovyDirect", () => {
     const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
     expect(result.status).toBe("exhausted");
     expect(result.failures?.length).toBeGreaterThan(0);
+    // A lane 500 is upstream evidence, not a parse bug: network-error and
+    // retryable, so provider health and the offline gate read it correctly.
+    expect(result.failures?.every((f) => f.code === "network-error" && f.retryable === true)).toBe(
+      true,
+    );
+  });
+
+  test("a decrypt failure classifies as parse-failed and non-retryable, not a network error", async () => {
+    const ctx = contextReturning((url) => {
+      if (url.includes("/seed")) {
+        return new Response(JSON.stringify({ seed: "0.bogus-seed", ttlMs: 30000 }), {
+          status: 200,
+        });
+      }
+      // Validly-encrypted-looking body under the wrong seed → mvm1 check fails.
+      return new Response(FIXTURE.body, { status: 200 });
+    });
+
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(result.status).toBe("exhausted");
+    expect(result.failures?.every((f) => f.code === "parse-failed" && f.retryable === false)).toBe(
+      true,
+    );
   });
 
   test("a pinned preferredSourceId wins the cycle", async () => {

@@ -147,8 +147,8 @@ function decodeBase64Url(payload: string): Uint8Array {
 }
 
 export class MovyDecryptError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "MovyDecryptError";
   }
 }
