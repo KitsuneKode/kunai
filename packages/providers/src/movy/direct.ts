@@ -4,6 +4,7 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -111,6 +112,7 @@ type MovySourcesPayload = {
 const seedCache = new Map<string, { seed: string; expiresAt: number }>();
 const SEED_CACHE_MAX = 64;
 const SEED_EXPIRY_HEADROOM_MS = 5_000;
+const MOVY_CANDIDATE_TIMEOUT_MS = 15_000;
 
 async function fetchMovySeed(
   context: ProviderRuntimeContext,
@@ -501,7 +503,10 @@ export async function resolveMovyDirect(
     now: context.now,
     emit: context.emit,
     maxAttemptsPerCandidate: 1,
-    candidateTimeoutMs: 15_000,
+    candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+      input.startupPriority ?? "balanced",
+      MOVY_CANDIDATE_TIMEOUT_MS,
+    ),
     resolveCandidate: async (candidate, candidateContext) => {
       const lane = String(candidate.serverId ?? candidate.metadata?.lane ?? "") as MovyLane;
       try {
