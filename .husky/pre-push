@@ -21,6 +21,12 @@ while read -r _local_ref _local_oid remote_ref _remote_oid; do
   esac
 done
 
+# The turbo path needs the same headroom the CI legs set — without it the
+# suite runs Bun's 20s-ish cap and a scheduling-heavy test (the install.sh
+# lifecycle contracts) flakes under parallel load. A developer's own value
+# wins; this only supplies the default.
+export KUNAI_TEST_TIMEOUT_MS="${KUNAI_TEST_TIMEOUT_MS:-60000}"
+
 if [ "$targets_main" -eq 1 ]; then
   bunx turbo run test --summarize
 else

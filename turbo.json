@@ -24,16 +24,19 @@
     "test": {
       "dependsOn": ["transit"],
       "cache": false,
+      "env": ["KUNAI_TEST_TIMEOUT_MS"],
       "outputs": []
     },
     "test:unit": {
       "dependsOn": ["transit"],
       "cache": false,
+      "env": ["KUNAI_TEST_TIMEOUT_MS"],
       "outputs": []
     },
     "test:integration": {
       "dependsOn": ["transit"],
       "cache": false,
+      "env": ["KUNAI_TEST_TIMEOUT_MS"],
       "outputs": []
     },
     "generate": {
