@@ -1,8 +1,9 @@
 import { createDecipheriv } from "node:crypto";
 
+import { isOfflineNetworkFailure } from "@kunai/core";
 import type { ProviderEpisodeIdentity, ProviderRuntimeContext } from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
+import { createProviderHttpError, ProviderHttpError, providerFetch } from "../runtime/fetch";
 import {
   allMangaEpisodeMetadataCacheKey,
   enrichEpisodeOptionsWithAnimeMetadata,
@@ -772,9 +773,29 @@ export async function resolveEpisodeSources(opts: {
           "x-build-id": material.buildId || ALLMANGA_BUILD_ID,
         },
       });
-      rawText = getRes.ok ? await getRes.text() : null;
-    } catch {
-      rawText = null;
+      if (!getRes.ok) {
+        throw createProviderHttpError(getRes, {
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+        });
+      }
+      rawText = await getRes.text();
+    } catch (error) {
+      if (error instanceof ProviderHttpError) throw error;
+      const message = error instanceof Error ? error.message : "AllManga source request failed";
+      const timedOut =
+        error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      // A dead connection must not read as an empty source list: offline
+      // signatures are non-retryable so the engine's offline budget caps the
+      // provider early instead of counting it as a catalog miss.
+      throw new ProviderHttpError({
+        providerId: ALLANIME_PROVIDER_ID,
+        stage: "episode-sources",
+        code: timedOut ? "timeout" : "network-error",
+        message,
+        retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
+        cause: error,
+      });
     }
 
     if (!rawText) return [];
@@ -788,7 +809,16 @@ export async function resolveEpisodeSources(opts: {
 
     if (rawText.includes("Too many requests")) {
       rateLimitRetries += 1;
-      if (rateLimitRetries > 2) return [];
+      if (rateLimitRetries > 2) {
+        throw new ProviderHttpError({
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+          status: 429,
+          code: "rate-limited",
+          message: "AllManga rate-limited the source request",
+          retryable: true,
+        });
+      }
       rawText = null;
       await retrySleep(3_200, signal);
       continue;
@@ -796,7 +826,15 @@ export async function resolveEpisodeSources(opts: {
 
     if (/AA_CRYPTO_(STALE|INVALID|MISSING)/.test(rawText)) {
       staleRefreshes += 1;
-      if (staleRefreshes > 2) return [];
+      if (staleRefreshes > 2) {
+        throw new ProviderHttpError({
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+          code: "provider-unavailable",
+          message: "AllManga crypto bootstrap stayed stale after refresh",
+          retryable: true,
+        });
+      }
       rawText = null;
       material = await refreshAllMangaCryptoMaterial(context, ua, signal);
       await retrySleep(400, signal);

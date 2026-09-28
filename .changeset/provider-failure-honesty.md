@@ -29,3 +29,27 @@ hops; `hianime fetch HTTP 503` did not say which one died. Both providers also
 suggested installing curl-impersonate to users already running
 curl-impersonate — advice the reader has already followed, which makes a blocked
 upstream look like a local misconfiguration.
+||||||| parent of 757e29a79 (fix(providers): stop flattening transport and HTTP failures into "empty")
+
+Raise the provider failure floor: classified HTTP and transport errors no
+longer degrade to generic network noise or fake "empty" results.
+
+- `resolveDirectStreamSource` unwraps `ProviderHttpError` instead of flattening
+  every error to `network-error`/`retryable: true` — a 404, a 429, and a dead
+  host now report what they are (helps vidlink today; vidrock/rgshows inherit
+  it via the shared engine).
+- Rivestream: raw transport failures report `network-error` (was `not-found`),
+  offline signatures are non-retryable so the cycle's network-offline
+  early-exit fires, the 10s candidate timeout is clamped to the attempt
+  budget (it was dead code under `fast`), and a block on the shared
+  rivestream.app front door stops the cycle instead of failing every service
+  identically.
+- AllManga: HTTP statuses and fetch failures throw classified
+  `ProviderHttpError` instead of returning an empty source list — a dead
+  connection or a 503 no longer reads as "episode has no sources"; rate-limit
+  and crypto-refresh exhaustion report `rate-limited`/`provider-unavailable`
+  instead of empty.
+- VidLink: `HTTP ${status}` strings become `ProviderHttpError` so status
+  fidelity survives to the failure record.
+- New conformance test bans raw `candidateTimeoutMs` literals — the clamp bug
+  has shipped three times.
