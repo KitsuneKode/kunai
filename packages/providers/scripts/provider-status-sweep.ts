@@ -134,7 +134,9 @@ const PROBES: readonly ProbeSpec[] = [
     input: MOVIE_INPUT,
   },
   {
-    id: "allmanga",
+    // The provider id is "allanime" (AllAnime upstream); "allmanga" is the
+    // module's internal directory name, not the id rows carry.
+    id: "allanime",
     module: allmangaProviderModule,
     frontDoor: "https://api.allanime.day",
     input: ALLMANGA_ONE_PIECE,

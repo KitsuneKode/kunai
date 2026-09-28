@@ -45,7 +45,7 @@
       "note": "Rivestream apex did not return sources"
     },
     {
-      "id": "allmanga",
+      "id": "allanime",
       "upstreamHttp": 404,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",

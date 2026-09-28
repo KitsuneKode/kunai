@@ -35,13 +35,25 @@ jobs:
         with:
           turbo-cache-prefix: provider-status
 
+      # The anime lane is mismeasured without this: anidb/miruro sit behind
+      # Cloudflare, which 403s a bare runner handshake in <100ms, so every row
+      # would read "blocked" no matter how healthy the upstream is.
+      - uses: ./.github/actions/setup-curl-impersonate
+
       - name: Run the provider sweep
         working-directory: packages/providers
         run: bun run scripts/provider-status-sweep.ts
 
       - name: Commit the status file if it changed
         run: |
-          if git diff --quiet -- apps/docs/lib/generated-provider-status.json; then
+          # generatedAt and resolveMs jitter every run — a raw git diff can never
+          # be quiet, which would turn this into ~365 empty [skip ci] commits a
+          # year. Compare the semantic payload instead.
+          strip_volatile() {
+            jq 'del(.generatedAt) | .providers |= map(del(.resolveMs))' "$1"
+          }
+          git show HEAD:apps/docs/lib/generated-provider-status.json > /tmp/status-old.json 2>/dev/null || echo '{"providers":[]}' > /tmp/status-old.json
+          if diff -q <(strip_volatile /tmp/status-old.json) <(strip_volatile apps/docs/lib/generated-provider-status.json) > /dev/null; then
             echo "status unchanged"
             exit 0
           fi
