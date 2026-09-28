@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "3e24251ad6407cfe50c5bf8a9eb89adce1687e68f3c94a2146613f9ce133f36a",
+  "cliSourceFingerprint": "c5734981e5f687f52380c0e675c5fe89712dd510186b5f93edc886ab47c11409",
   "docsContentFingerprint": "2bd16a131cad5d1ad8a297bcf11177e5aaa62ae002e247279a068449b9463dcf",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
@@ -30,6 +30,7 @@
       "notes": [
         "2026-07-16: active stream API is api.speedracelight.com (player.videasy.to / cineby.at).",
         "2026-08-26: the api.wingsdatabase.com seed mirror was removed — NXDOMAIN on public resolvers; the surviving apex does not serve /seed. db.wingsdatabase.com still resolves and stays listed.",
+        "2026-11: api.videasy.to / db.videasy.to went NXDOMAIN — the TMDB-format catalog moved to db.wingsdatabase.com/3 (verified /search/multi + /movie external_ids). VIDEASY_DB_BASES walks live-first.",
         "2026-07-16: Cineby server catalog labels (Yoru/Neon/Sage/Jett/…) map to /cdn /neon2 /ym /jett /… routes.",
         "2026-07-18: Inventory UI order matches cineby Servers (Yoru first). Resolve Phase A is Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse; localized servers stay Phase B.",
         "2026-07-18: Resolve-gate always segment-probes HLS before attesting streamReachabilityVerified; dead CDNs fail over instead of hanging.",

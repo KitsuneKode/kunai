@@ -929,11 +929,13 @@ describe("searchTitles", () => {
 
   test("routes every TMDB-identity provider to the TMDB catalog without list maintenance", () => {
     const tmdbDefinition = SEARCH_SERVICE_DEFINITIONS.find((def) => def.id === "tmdb");
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const tmdbService = new TMDBSearchService({} as never);
 
     expect(tmdbDefinition?.servesCatalog).toBe("tmdb");
     expect(tmdbService.servesCatalog).toBe("tmdb");
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const registry = new SearchRegistryImpl({} as never, SEARCH_SERVICE_DEFINITIONS);
     // videasy, vidlink, rivestream — and any future TMDB-id provider — resolve
     // the TMDB catalog through catalogIdentity alone.
