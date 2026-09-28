@@ -41,6 +41,16 @@ function formatUpdatedAt(iso: string): string {
     .replace(/\.\d{3}Z$/, " UTC");
 }
 
+/**
+ * How old a snapshot may be before the page says so.
+ *
+ * The ingest cron computes daily, so one missed run is normal and should not
+ * alarm; two missed runs means the page is masquerading a stale snapshot as
+ * current — on a page whose pitch is trust, that is worth a badge. Not an
+ * error state: the last honest snapshot is still the right thing to show.
+ */
+export const SNAPSHOT_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
+
 const BREAKDOWNS = [
   {
     key: "byVersion",
@@ -258,6 +268,15 @@ export function UsagePanel({
   readonly metrics: DocsAnalyticsMetrics | null;
   readonly series: DocsAnalyticsSeries | null;
 }) {
+  /*
+    ISR keeps serving the last good snapshot even if the ingest cron dies,
+    so "updated" can drift quietly forever. Stale is judged from the
+    snapshot's own updatedAt, rendered at revalidate time.
+  */
+  const stale = metrics
+    ? Date.now() - Date.parse(metrics.updatedAt) > SNAPSHOT_STALE_AFTER_MS
+    : false;
+
   return (
     <div className="flex flex-col gap-6">
       <Alert className="border-border/80 bg-card/60">
@@ -280,6 +299,7 @@ export function UsagePanel({
               updated {formatUpdatedAt(metrics.updatedAt)}
             </p>
             <div className="flex flex-wrap items-center gap-2">
+              {stale ? <Badge variant="outline">data may be stale</Badge> : null}
               <Badge variant="outline">schema v{metrics.schemaVersion}</Badge>
               <Badge variant="secondary">opt out with /analytics</Badge>
             </div>

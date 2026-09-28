@@ -1,5 +1,7 @@
 import { residualShare } from "@/lib/analytics-derive";
 import { rankShareBuckets, type ShareBucket } from "@/lib/analytics-metrics";
+import { getReleaseByTag, releasePath } from "@/lib/release-notes";
+import Link from "next/link";
 
 /**
  * A ranked horizontal bar chart for one breakdown of the usage snapshot.
@@ -20,6 +22,13 @@ function formatShare(share: number): string {
 }
 
 function ShareRow({ bucket }: { readonly bucket: ShareBucket }) {
+  /*
+    A bucket that names a real release deep-links to its notes — "what is
+    everyone on" naturally asks "what changed in it". The lookup is the
+    gate: residual buckets and labels with no release artifact (an OS or
+    arch name can never match a tag) stay plain text, never a 404 link.
+  */
+  const release = bucket.residual ? null : getReleaseByTag(bucket.label);
   return (
     <tr className="kunai-chart-row">
       <th
@@ -28,7 +37,13 @@ function ShareRow({ bucket }: { readonly bucket: ShareBucket }) {
           bucket.residual ? "text-muted-foreground" : "text-foreground font-medium"
         }`}
       >
-        {bucket.label}
+        {release ? (
+          <Link href={releasePath(bucket.label)} className="underline-offset-4 hover:underline">
+            {bucket.label}
+          </Link>
+        ) : (
+          bucket.label
+        )}
       </th>
       {/*
         Decorative: the bar restates the count and percentage cells that follow,
