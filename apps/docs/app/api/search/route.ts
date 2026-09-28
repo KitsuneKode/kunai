@@ -20,11 +20,25 @@ export const revalidate = false;
  */
 export const { staticGET: GET } = createSearchAPI("advanced", {
   language: "english",
-  indexes: source.getPages().map((page) => ({
-    title: page.data.title,
-    description: page.data.description,
-    url: page.url,
-    id: page.url,
-    structuredData: page.data.structuredData,
-  })),
+  indexes: source.getPages().map((page) => {
+    const data = page.data.structuredData;
+    // MDX tables and inline-code-only blocks emit identical `contents` entries —
+    // 13 rows that all say just "mpv". Each becomes its own search result, so a
+    // query for the term floods the dialog with duplicates that carry no
+    // context. Dedupe by content within the page; the first occurrence keeps
+    // its heading association, which is the best anchor anyway.
+    const seen = new Set<string>();
+    const contents = data.contents.filter((entry) => {
+      if (seen.has(entry.content)) return false;
+      seen.add(entry.content);
+      return true;
+    });
+    return {
+      title: page.data.title,
+      description: page.data.description,
+      url: page.url,
+      id: page.url,
+      structuredData: { ...data, contents },
+    };
+  }),
 });

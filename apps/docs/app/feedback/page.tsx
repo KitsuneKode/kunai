@@ -65,8 +65,8 @@ export default function FeedbackPage() {
       <header className="border-fd-border flex flex-col gap-4 border-b pb-8">
         <h1 className="kunai-display-title max-w-none text-4xl md:text-5xl">Feedback</h1>
         <p className="text-fd-muted-foreground max-w-3xl text-base leading-7">
-          Kunai does not collect in-app telemetry forms here. File issues on GitHub with the
-          templates maintainers already triage. Attach redacted diagnostics when playback fails.
+          There is no feedback form or tracker here — issues live on GitHub, in the templates
+          maintainers already triage. Attach redacted diagnostics when playback fails.
         </p>
       </header>
 
