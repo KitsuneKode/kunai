@@ -17,7 +17,21 @@ export function resolveAndroidStateRoot(
   return join(home, ".local", "share", "kunai-mobile");
 }
 
+const MIN_NODE_MAJOR = 18;
+
+function assertNodeRuntime(): void {
+  const major = Number(process.versions.node.split(".")[0]);
+  if (Number.isInteger(major) && major >= MIN_NODE_MAJOR && typeof fetch === "function") {
+    return;
+  }
+  process.stderr.write(
+    `Kunai mobile requires Node ${MIN_NODE_MAJOR} or newer (found ${process.versions.node}).\n`,
+  );
+  throw new Error("unsupported Node runtime");
+}
+
 export function createMobileEnvironment(): MobileEnvironment {
+  assertNodeRuntime();
   const root = resolveAndroidStateRoot(process.env);
   const state = createNodeStateStore({ root });
   const terminal = createNodeTerminalPort();
