@@ -66,6 +66,7 @@
         "dist/assets/**",
         "dist/build-meta.json",
         "dist/kunai-mobile-*",
+        "dist/android/**",
         "dist/ios/**",
         "dist/mobile-build-meta.json",
         ".next/**",
