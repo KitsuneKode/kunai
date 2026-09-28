@@ -1,9 +1,9 @@
 ---
-title: Install And Update
-description: Install Kunai on Linux, macOS, or Windows via the native binary or npm, then keep it current — with upgrade, rollback, and uninstall behaviour explained.
+title: Install and Update
+description: Install Kunai on Linux, macOS, or Windows via the native binary or npm, then keep it current, with upgrade, rollback, and uninstall behaviour explained.
 ---
 
-Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime — you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
+Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime, so you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
 
 <KunaiFoxBanner pose="wait" eyebrow="Install" title="One command, then keep it current.">
   Native binaries are the default. npm is a launcher around the same platform binary.
@@ -16,7 +16,7 @@ Kunai supports **zero-prerequisite compiled binaries** (default), global package
 <Tabs items={["Linux / macOS", "Windows", "Bun global", "npm global", "Source"]}>
 <Tab value="Linux / macOS">
 
-Default — downloads a verified release binary into a versioned store and links `~/.local/bin/kunai`:
+Default: downloads a verified release binary into a versioned store and links `~/.local/bin/kunai`:
 
 ```sh
 curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
@@ -72,11 +72,11 @@ separate zip utility is required. The same HTTP 404/410-only legacy fallback
 rule applies. On a terminal the download shows one updating progress line
 (size, rate, bar); a pipe or CI log stays on the single quiet line.
 
-Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`. After the binary is in place it also drops portable `yt-dlp` and (on x64) curl-impersonate into `%LOCALAPPDATA%\kunai\deps\` — see [Optional dependencies](#optional-dependencies). `mpv` remains a package-manager prompt.
+Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`. After the binary is in place it also drops portable `yt-dlp` and (on x64) curl-impersonate into `%LOCALAPPDATA%\kunai\deps\`; see [Optional dependencies](#optional-dependencies). `mpv` remains a package-manager prompt.
 
 Open a new terminal after installation if `kunai` is not visible yet. The
-installer prints the PATH winner. If another `kunai` is still earlier — npm,
-Bun, pnpm, Yarn, Scoop, Chocolatey, or WinGet — it lists each competing path
+installer prints the PATH winner. If another `kunai` is still earlier (npm,
+Bun, pnpm, Yarn, Scoop, Chocolatey, or WinGet), it lists each competing path
 and the command that removes it, and does not delete those installs itself.
 
 Supported binary targets: `windows-x64`, `windows-arm64`.
@@ -92,7 +92,7 @@ kunai --setup
 </Tab>
 <Tab value="npm global">
 
-Requires Node on your `PATH` (the published bin is a Node launcher that spawns a platform binary — you do not need Bun for npm):
+Requires Node on your `PATH` (the published bin is a Node launcher that spawns a platform binary, so you do not need Bun for npm):
 
 ```sh
 npm install -g @kitsunekode/kunai
@@ -104,7 +104,7 @@ Diagnose PATH shadows with `kunai doctor`. `kunai upgrade` / `kunai uninstall` f
 </Tab>
 <Tab value="Source">
 
-Contributor-oriented — not the preferred end-user path:
+Contributor-oriented, and not the preferred end-user path:
 
 ```sh
 git clone https://github.com/KitsuneKode/kunai.git
@@ -120,8 +120,8 @@ kunai
 ## PATH
 
 The installer puts `kunai` on your PATH for you. A script cannot change the
-shell that launched it, so it writes your shell startup file instead — the same
-thing rustup, bun, and Homebrew do — and prints one `source` line if you want
+shell that launched it, so it writes your shell startup file instead, the same
+thing rustup, bun, and Homebrew do, and prints one `source` line if you want
 the current terminal to pick it up without reopening.
 
 | Shell         | File written                                                                                      |
@@ -144,8 +144,8 @@ stack duplicates:
 # <<< kunai installer <<<
 ```
 
-**To opt out** — for managed environments, images, or a dotfile setup that owns
-PATH itself — use `--skip-path-update`. The installer then prints the directory
+**To opt out** (managed environments, images, or a dotfile setup that owns
+PATH itself): use `--skip-path-update`. The installer then prints the directory
 to add and changes nothing.
 
 ## Installer flags
@@ -158,10 +158,10 @@ what a Dockerfile or CI step usually wants.
 | -------------------- | ----------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `--method X`         | `-Method X`       | `KUNAI_INSTALL_METHOD`     | `binary` (default), `npm`, `bun`, or `source`.                                                                                       |
 | `--version X.Y.Z`    | `-Version X.Y.Z`  | `KUNAI_INSTALL_VERSION`    | Pin a release instead of `latest`.                                                                                                   |
-| `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages — see below.                                          |
+| `--yes`              | `-Yes`            | `KUNAI_INSTALL_YES=1`      | Accept Kunai's own optional prompts. It does **not** install system packages; see below.                                          |
 | `--dry-run`          | `-DryRun`         | `KUNAI_INSTALL_DRY_RUN=1`  | Print the plan; change nothing.                                                                                                      |
 | `--skip-deps`        | `-SkipDeps`       | `KUNAI_SKIP_DEPS=1`        | Skip optional dependencies (`mpv` via your package manager; on Windows also the portable `yt-dlp` and `curl-impersonate` helpers). |
-| `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone — see [PATH](#path).                                                                                              |
+| `--skip-path-update` | `-SkipPathUpdate` | `KUNAI_SKIP_PATH_UPDATE=1` | Leave PATH alone; see [PATH](#path).                                                                                              |
 
 Both installers refuse to run **as root / elevated** by default: a `sudo` or
 Administrator install lands Kunai in the wrong profile and the user never gets
@@ -169,7 +169,7 @@ Administrator install lands Kunai in the wrong profile and the user never gets
 `KUNAI_INSTALL_ALLOW_ROOT=1` (`install.sh`) / `KUNAI_INSTALL_ALLOW_ELEVATED=1`
 (`install.ps1`) for a container or system install.
 
-Without a terminal — `curl … | bash` in CI, a container, or a sandbox — optional
+Without a terminal (`curl … | bash` in CI, a container, or a sandbox), optional
 prompts are **skipped, not accepted**, and the installer says which step it
 skipped. Before 0.3.0 a missing terminal defaulted to yes and could run
 `sudo apt-get`/`pacman`/`dnf install` unattended.
@@ -200,23 +200,23 @@ Three rules hold for every package-manager prompt:
   with no terminal prints the command instead of running it.
 
 Saying yes runs the command as shown, without `--noconfirm`, `-y`, or
-`--accept-package-agreements` — so your package manager still confirms too.
+`--accept-package-agreements`, so your package manager still confirms too.
 
 On **Windows**, the native installer also drops **portable** `yt-dlp` and, on
 x64, curl-impersonate into Kunai's own data directory
 (`%LOCALAPPDATA%\kunai\deps\`) and puts those folders on your User PATH. These
-are GitHub release binaries, verified by checksum — not winget packages — so a
+are GitHub release binaries, verified by checksum (not winget packages), so a
 one-line `irm … | iex` actually leaves YouTube and anime search working:
 
 Kunai records the verified digests beside helpers it manages. A later install
 rechecks those bytes and repairs missing, partial, or modified helper files
 instead of trusting a matching filename.
 
-- `yt-dlp` — YouTube playback and downloads. The winget query `yt-dlp` matches
+- `yt-dlp`: YouTube playback and downloads. The winget query `yt-dlp` matches
   both `yt-dlp.yt-dlp` and a Microsoft Store listing, so the installer never
   runs that command; it fetches `yt-dlp.exe` (or `yt-dlp_arm64.exe`) instead.
   The copy-pasteable fallback is `winget install --id yt-dlp.yt-dlp -e`.
-- `curl-impersonate` — Cloudflare TLS bypass for anime search (x64). There is
+- `curl-impersonate`: Cloudflare TLS bypass for anime search (x64). There is
   no winget/scoop/choco package; the installer uses the same Windows archive CI
   pins. Windows ARM64 has no upstream build, so that host is pointed at the
   [releases page](https://github.com/lexiforest/curl-impersonate/releases).
@@ -239,7 +239,7 @@ Recognised managers for `mpv` (and for `yt-dlp` on Linux/macOS): `pacman`,
 Release binaries are **not code-signed or notarized** today. That is intentional for beta:
 
 - **Windows:** SmartScreen may warn on first run. After download, `install.ps1` runs `Unblock-File` on the staged binary. You can also run `Unblock-File` manually on `kunai.exe`, or right-click → Properties → Unblock.
-- **macOS (Apple Silicon):** release binaries are cross-compiled on Linux, so they arrive **unsigned**, and arm64 macOS refuses to execute an unsigned Mach-O outright. The shell reports only `killed: 9` — no Gatekeeper dialog, and `xattr` does not help, because quarantine is not what failed. `install.sh` now ad-hoc signs the binary on your Mac (`codesign --force --sign -`); if `codesign` is unavailable it prints the exact command to run.
+- **macOS (Apple Silicon):** release binaries are cross-compiled on Linux, so they arrive **unsigned**, and arm64 macOS refuses to execute an unsigned Mach-O outright. The shell reports only `killed: 9`: no Gatekeeper dialog, and `xattr` does not help, because quarantine is not what failed. `install.sh` now ad-hoc signs the binary on your Mac (`codesign --force --sign -`); if `codesign` is unavailable it prints the exact command to run.
 - **macOS (Intel, or downloads outside the installer):** Gatekeeper quarantine can still block a manually downloaded binary. Clear it with `xattr -dr com.apple.quarantine ~/.local/bin/kunai` (or your install path).
 - **Linux:** No signing step. Archives are covered by `SHA256SUMS.archives`; the extracted executable is independently covered by `SHA256SUMS`.
 
@@ -262,7 +262,7 @@ kunai uninstall            # ownership-aware removal
 kunai uninstall --purge    # also delete config/history/cache
 ```
 
-Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall — lifecycle logic stays inside the binary.
+Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall; lifecycle logic stays inside the binary.
 
 `kunai --version` shows the active install channel when `install.json` is present.
 
@@ -273,8 +273,8 @@ Release-metadata requests stop after 15 seconds, so an unavailable GitHub or npm
 endpoint cannot leave startup checks or `kunai upgrade` waiting indefinitely.
 
 - **Binary installs:** when `autoApplyBinaryUpdates` is enabled (default), Kunai downloads and stages the new version under `versions/` automatically. Restart Kunai to run the new binary. Toggle this from `/update`.
-- **npm/bun/source:** notify-only — run `kunai upgrade` or your package manager manually.
-- **Turning it off:** set `updateChecksEnabled` to `false` in `config.json` (default `true`) and Kunai stops checking entirely — no background request, and no update notice.
+- **npm/bun/source:** notify-only; run `kunai upgrade` or your package manager manually.
+- **Turning it off:** set `updateChecksEnabled` to `false` in `config.json` (default `true`) and Kunai stops checking entirely: no background request, and no update notice.
 
 Manual check from the shell:
 
@@ -302,9 +302,9 @@ You can snooze automatic checks for seven days or disable them from the update p
 | `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                   |
 | `windows-x64`                                 | **Beta**                                                                   |
 | `windows-arm64`                               | **Experimental**                                                           |
-| WSL                                           | Linux binary + Linux mpv/PATH/data — not Windows-native                    |
-| FreeBSD / other BSD                           | **Unsupported** binary — npm/bun/source only                               |
-| Code signing / notarization                   | Not in beta scope — see [Unsigned binaries](#unsigned-binaries-beta) above |
+| WSL                                           | Linux binary + Linux mpv/PATH/data, not Windows-native                    |
+| FreeBSD / other BSD                           | **Unsupported** binary; npm/bun/source only                               |
+| Code signing / notarization                   | Not in beta scope; see [Unsigned binaries](#unsigned-binaries-beta) above |
 
 ### Alpine / musl quick start
 
@@ -323,11 +323,11 @@ kunai --setup
 | Binary           | `kunai.exe` under `%LOCALAPPDATA%\kunai\bin` | `~/.local/bin/kunai` (Linux)              |
 | Player           | Windows `mpv.exe` on User PATH               | Linux `mpv` on WSL PATH                   |
 | Config / data    | `%APPDATA%\kunai`, `%LOCALAPPDATA%\kunai`    | `~/.config/kunai`, `~/.local/share/kunai` |
-| Protocol handler | Not registered — use `kunai --open`          | Linux-only registration available         |
+| Protocol handler | Not registered; use `kunai --open`          | Linux-only registration available         |
 
 Do not point a Windows-native Kunai at WSL `mpv`, or a WSL Kunai at Windows PATH entries.
 
-When install, PATH, ownership, checksum, or rollback fails, see [Installer troubleshooting](/docs/users/troubleshooting#installer-and-path-issues). Isolated Docker installer smokes are contributor-only — see [Contribute](/docs/developer/contribute).
+When install, PATH, ownership, checksum, or rollback fails, see [Installer troubleshooting](/docs/users/troubleshooting#installer-and-path-issues). Isolated Docker installer smokes are contributor-only; see [Contribute](/docs/developer/contribute).
 
 Override the download mirror for air-gapped or future CDN hosting:
 
@@ -346,4 +346,4 @@ For support after an update:
 
 Contributor release steps: [Docs maintenance](/docs/developer/docs-maintenance).
 
-More flag detail: [CLI reference](/docs/users/cli-reference).
+More flag detail: [CLI Reference](/docs/users/cli-reference).

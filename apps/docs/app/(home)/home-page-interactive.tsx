@@ -53,7 +53,7 @@ export default function HomePageInteractive() {
       <SectionHeading
         eyebrow="Install"
         title="Install in three steps."
-        description="The preferred path is a self-contained binary — no Bun or Node required. Pick your OS for the exact bootstrap and mpv commands."
+        description="The preferred path is a self-contained binary, no Bun or Node required. Pick your OS for the exact bootstrap and mpv commands."
       />
 
       <div className="install-section kunai-surface-shell">

@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
   const title = titleFor(shared.ref);
   return {
     ...buildPageMetadata({
-      title: `${title} — shared with Kunai`,
+      title: `${title} · shared with Kunai`,
       description: `${positionFor(shared.ref)}. Open this catalog-anchored link in Kunai or install the terminal client.`,
       path: `/w/${code}`,
       socialImage: "segment",

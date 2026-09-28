@@ -8,12 +8,12 @@ import type { Metadata } from "next";
 export const revalidate = 3600;
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Kunai usage analytics — public install pulse by version and OS",
+  title: "Kunai usage analytics: public install pulse by version and OS",
   absoluteTitle: true,
   description:
     "Kunai’s public usage pulse: aggregate install counts by version, OS, and architecture, the exact opt-in ping payload, and the privacy limits that bound it.",
   socialDescription:
-    "Public aggregate counts only — never titles, queries, or install UUIDs on this page.",
+    "Public aggregate counts only: never titles, queries, or install UUIDs on this page.",
   path: "/analytics",
 });
 
@@ -39,7 +39,7 @@ export default async function AnalyticsPage() {
         </p>
         <h1 className="kunai-display-title max-w-none text-4xl md:text-5xl">Usage analytics</h1>
         <p className="text-muted-foreground max-w-3xl text-base leading-7 text-pretty">
-          A quiet public pulse for installs running Kunai — not a growth dashboard. Analytics is
+          A quiet public pulse for installs running Kunai, not a growth dashboard. Analytics is
           optional; enable or disable it in Settings.
         </p>
       </header>

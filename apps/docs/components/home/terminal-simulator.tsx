@@ -204,7 +204,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
         addLog(`  /${cmd.id.padEnd(12)} - ${cmd.description}`, accDelay);
         accDelay += 50;
       });
-      addLog("Type '/' for more commands or open the CLI reference.", accDelay);
+      addLog("Type '/' for more commands or open the CLI Reference.", accDelay);
     } else {
       addLog(`Evaluating unknown command: "${cmdText}"`, accDelay);
       accDelay += 300;

@@ -10,8 +10,7 @@ Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `
 **You will learn:** recommended installers per platform, optional dependencies, and platform-specific handoff behavior.
 
 <Callout type="info" title="Optional tools stay optional">
-  Missing `yt-dlp` or `ffprobe` should degrade gracefully — setup and diagnostics explain the gap
-  instead of breaking unrelated playback paths. Posters have no external dependency at all.
+Missing `yt-dlp` or `ffprobe` should degrade gracefully; setup and diagnostics explain the gap instead of breaking unrelated playback paths. Posters have no external dependency at all.
 </Callout>
 
 ## Support posture (0.3.0)
@@ -24,14 +23,14 @@ Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `
 | Windows `windows-x64`                                    | **Beta**                                                 |
 | Windows `windows-arm64`                                  | **Experimental**                                         |
 | WSL                                                      | Linux install + Linux mpv/PATH/data (not Windows-native) |
-| FreeBSD / other BSD                                      | **Unsupported** binary — npm/bun/source only             |
+| FreeBSD / other BSD                                      | **Unsupported** binary; npm/bun/source only             |
 
 `kunai://` protocol registration is **Linux-only** in 0.3.0 (including WSL). macOS/Windows can still use `kunai --open` without OS handler registration.
 
 <Tabs items={["Linux", "Alpine / musl", "macOS", "Windows", "WSL", "Source checkout"]}>
 <Tab value="Linux">
 
-Recommended install (self-contained binary — Bun runtime embedded; you do not need Bun installed):
+Recommended install (self-contained binary; Bun runtime embedded, you do not need Bun installed):
 
 ```sh
 curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
@@ -52,11 +51,11 @@ kunai --setup
 
 Recommended optional tools:
 
-- `mpv` — playback engine (required for watching; setup/browsing work without it). Arch: `sudo pacman -S mpv`. Debian/Ubuntu: `sudo apt install mpv`. Fedora: `sudo dnf install mpv`.
-- `yt-dlp` — offline download jobs and YouTube playback
-- `ffprobe` — optional validation of completed artifacts
-- `xdg-open` — `/docs`, `/report-issue`, folder reveal, and account auth handoffs
-- `curl` — used by the anime providers (HiAnime, Miruro, AniDB), which sit behind Cloudflare
+- `mpv`: playback engine (required for watching; setup/browsing work without it). Arch: `sudo pacman -S mpv`. Debian/Ubuntu: `sudo apt install mpv`. Fedora: `sudo dnf install mpv`.
+- `yt-dlp`: offline download jobs and YouTube playback
+- `ffprobe`: optional validation of completed artifacts
+- `xdg-open`: `/docs`, `/report-issue`, folder reveal, and account auth handoffs
+- `curl`: used by the anime providers (HiAnime, Miruro, AniDB), which sit behind Cloudflare
 
 </Tab>
 <Tab value="Alpine / musl">
@@ -70,7 +69,7 @@ kunai --version
 kunai --setup
 ```
 
-Ensure `~/.local/bin` is on your shell `PATH` after install. Treat this as a normal Linux environment — not a Windows PATH.
+Ensure `~/.local/bin` is on your shell `PATH` after install. Treat this as a normal Linux environment, not a Windows PATH.
 
 </Tab>
 <Tab value="macOS">
@@ -95,7 +94,7 @@ Install `mpv` and optional download tools through Homebrew:
 brew install mpv yt-dlp ffmpeg
 ```
 
-Kunai uses `open` for browser and folder handoffs. Protocol registration is Linux-only — use `kunai --open` for share links. Unsigned binaries may need quarantine cleared — see [Install and update](/docs/users/install-and-update#unsigned-binaries-beta).
+Kunai uses `open` for browser and folder handoffs. Protocol registration is Linux-only; use `kunai --open` for share links. Unsigned binaries may need quarantine cleared; see [Install and update](/docs/users/install-and-update#unsigned-binaries-beta).
 
 </Tab>
 <Tab value="Windows">
@@ -107,7 +106,7 @@ irm https://kunai.kitsunekode.in/install.ps1 | iex
 kunai --setup
 ```
 
-Kunai runs where a capable terminal and **native Windows `mpv.exe`** are available on the **same** PATH as Kunai. Windows Terminal is the most predictable surface. Kunai looks for `mpv.exe`, not `mpvnet.exe` — after install, `where.exe mpv` must resolve.
+Kunai runs where a capable terminal and **native Windows `mpv.exe`** are available on the **same** PATH as Kunai. Windows Terminal is the most predictable surface. Kunai looks for `mpv.exe`, not `mpvnet.exe`; after install, `where.exe mpv` must resolve.
 
 ```powershell
 winget install --id mpv-player.mpv-CI.MSVC -e
@@ -115,14 +114,14 @@ where.exe mpv
 kunai doctor
 ```
 
-Kunai uses `cmd /c start` for browser handoffs such as `/docs` and `/report-issue`. If an opener is missing, the shell should keep running and explain the limitation. Protocol registration is Linux-only — use `kunai --open` for share links.
+Kunai uses `cmd /c start` for browser handoffs such as `/docs` and `/report-issue`. If an opener is missing, the shell should keep running and explain the limitation. Protocol registration is Linux-only; use `kunai --open` for share links.
 
 Do **not** mix this with a WSL install: Windows-native Kunai cannot use WSL `mpv`, WSL PATH entries, or Linux config/data directories.
 
 </Tab>
 <Tab value="WSL">
 
-WSL is a **Linux** environment. Install the Linux binary and Linux tools inside the distro — do not expect Windows-native `kunai.exe` / `mpv.exe` / `%APPDATA%` to apply.
+WSL is a **Linux** environment. Install the Linux binary and Linux tools inside the distro; do not expect Windows-native `kunai.exe` / `mpv.exe` / `%APPDATA%` to apply.
 
 ```sh
 # Inside WSL (Ubuntu/Debian example)
@@ -146,7 +145,7 @@ bun run dev -- -S "Dune"
 bun run dev -- -a -S "Attack on Titan"
 ```
 
-Source checkouts are the best path for debugging provider changes, playback recovery, and documentation contributions — not the preferred end-user install. BSD hosts without a published binary should use this path (or npm/bun global), not `install.sh`.
+Source checkouts are the best path for debugging provider changes, playback recovery, and documentation contributions, not the preferred end-user install. BSD hosts without a published binary should use this path (or npm/bun global), not `install.sh`.
 
 </Tab>
 </Tabs>
@@ -155,7 +154,7 @@ Source checkouts are the best path for debugging provider changes, playback reco
 
 The anime providers sit behind Cloudflare. Kunai
 tries its own HTTP client first and falls back to `curl` when Cloudflare refuses
-it — which, at Miruro's API, is every time, and at AniDB's, often. A provider
+it, which, at Miruro's API, is every time, and at AniDB's, often. A provider
 relay, if you run one, answers on Kunai's behalf and needs no `curl`. Cloudflare
 scores the TLS handshake, not just the `User-Agent`, so a plain `curl` is
 sometimes refused too even though the site is up. Either way anime search can come back with **no results** rather than an
@@ -163,7 +162,7 @@ error, because the refusal arrives as an ordinary-looking web page; with Miruro,
 Kunai then falls back to searching AniList, so episodes are more likely to be the
 part that fails.
 
-Most people never see this — a normal home connection is usually let through. It
+Most people never see this; a normal home connection is usually let through. It
 shows up on VPNs, corporate networks, cloud shells, and CI runners.
 
 Run `kunai doctor` to see which of the three states you are in:
@@ -171,8 +170,8 @@ Run `kunai doctor` to see which of the three states you are in:
 | `doctor` reports            | Meaning                                              |
 | --------------------------- | ---------------------------------------------------- |
 | `curl=ok (chrome150)`       | An impersonating build is on `PATH`. Nothing to do   |
-| `curl=plain (no CF bypass)` | Plain `curl` only — anime search may come back empty |
-| `curl=missing`              | No `curl` at all — install one first                 |
+| `curl=plain (no CF bypass)` | Plain `curl` only; anime search may come back empty |
+| `curl=missing`              | No `curl` at all; install one first                 |
 
 To move from `plain` to `ok`, install curl-impersonate:
 
@@ -186,14 +185,14 @@ sudo pacman -S curl-impersonate
 
 There is no Debian, Fedora, or Windows package. Download a prebuilt build from
 [curl-impersonate releases](https://github.com/lexiforest/curl-impersonate/releases)
-— `x86_64-macos`, `arm64-macos`, `x86_64-win32`, `arm64-win32`, and the Linux
-gnu/musl builds are all published — and put its `curl_<browser><version>`
+(`x86_64-macos`, `arm64-macos`, `x86_64-win32`, `arm64-win32`, and the Linux
+gnu/musl builds are all published) and put its `curl_<browser><version>`
 wrappers on your `PATH`. Kunai picks the newest desktop wrapper automatically;
 you do not configure which one.
 
 On Windows those wrappers are `.bat` files around `curl-impersonate.exe`, which
 is what the archive ships and what Kunai looks for. Extract the whole folder and
-add it to `PATH` rather than copying the `.exe` out on its own — the `.exe`
+add it to `PATH` rather than copying the `.exe` out on its own; the `.exe`
 alone is not a wrapper and `doctor` will keep reporting `plain`.
 
 This is optional. Without it Kunai still runs and still falls back to plain
@@ -202,7 +201,7 @@ This is optional. Without it Kunai still runs and still falls back to plain
 ## Platform guardrails
 
 - If an opener is missing, Kunai keeps running and leaves you in the current shell context.
-- Provider and Discord live smokes are **manual** release checks — not background activity triggered by normal use.
+- Provider and Discord live smokes are **manual** release checks, not background activity triggered by normal use.
 - Episode numbers are **1-based** in the UI; providers adapt internally.
 - Discord Rich Presence uses local Unix-socket IPC on Linux/macOS (and WSL) and a named pipe on Windows-native.
 - Windows-native and WSL installs are separate worlds: separate PATH, separate mpv, separate config/data.

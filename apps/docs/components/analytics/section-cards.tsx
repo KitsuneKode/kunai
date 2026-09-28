@@ -136,7 +136,7 @@ export function SectionCards({
             : undefined
         }
         headline={lifetimeHeadline(lifetimeDelta)}
-        detail="Exact — one hashed row per install"
+        detail="Exact: one hashed row per install"
       />
       <StatCard
         label="Active yesterday"

@@ -17,7 +17,7 @@ import Link from "next/link";
 export const dynamic = "force-static";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Kunai feedback — report a bug, provider issue, or idea",
+  title: "Kunai feedback: report a bug, provider issue, or idea",
   absoluteTitle: true,
   description:
     "Report a Kunai bug, a broken third-party provider, or a feature idea through the GitHub issue templates, and see what to attach so the report can be acted on.",
@@ -65,8 +65,8 @@ export default function FeedbackPage() {
       <header className="border-fd-border flex flex-col gap-4 border-b pb-8">
         <h1 className="kunai-display-title max-w-none text-4xl md:text-5xl">Feedback</h1>
         <p className="text-fd-muted-foreground max-w-3xl text-base leading-7">
-          There is no feedback form or tracker here — issues live on GitHub, in the templates
-          maintainers already triage. Attach redacted diagnostics when playback fails.
+          There is no feedback form or separate tracker here. File issues on GitHub using the
+          templates maintainers already triage, and attach redacted diagnostics when playback fails.
         </p>
       </header>
 

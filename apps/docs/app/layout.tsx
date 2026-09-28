@@ -16,10 +16,19 @@ export const metadata: Metadata = {
   metadataBase: new URL(docsSiteUrl),
   title: {
     default: "Kunai Docs",
-    template: "%s | Kunai — terminal streaming client",
+    template: "%s | Kunai · terminal streaming client",
   },
   description:
     "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
+  keywords: [
+    "kunai",
+    "terminal streaming",
+    "anime cli",
+    "movie cli",
+    "mpv",
+    "media cli",
+    "command line streaming",
+  ],
 };
 
 export const viewport: Viewport = {
@@ -39,7 +48,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             links: [
               ["Getting started", "/docs/users/getting-started"],
               ["Troubleshooting", "/docs/users/troubleshooting"],
-              ["CLI reference", "/docs/users/cli-reference"],
+              ["CLI Reference", "/docs/users/cli-reference"],
               ["Documentation index", "/docs"],
             ],
             options: {

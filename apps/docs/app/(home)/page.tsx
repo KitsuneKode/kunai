@@ -22,11 +22,11 @@ const HOME_DESCRIPTION =
   "Kunai is a terminal client that searches anime, series, movies, and YouTube, resolves a stream a direct provider already serves, and plays it in mpv.";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Kunai — watch anime, series and movies in your terminal",
+  title: "Kunai: stream anime, movies & series in mpv from your terminal",
   absoluteTitle: true,
   description: HOME_DESCRIPTION,
   socialDescription:
-    "Search anime, series, movies, and YouTube from your terminal — resolved by direct providers, played in mpv.",
+    "Search anime, series, movies, and YouTube from your terminal; resolved by direct providers, played in mpv.",
   path: "/",
 });
 
@@ -47,6 +47,10 @@ export default function HomePage() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(appJsonLd) }}
       />
       <HomePageShell
         providers={codeMetadata.providers}

@@ -1,12 +1,12 @@
 ---
-title: CLI reference
+title: CLI Reference
 description: Every Kunai launch flag, bootstrap flow, and mpv option, synced directly from the CLI help text so the table never drifts from the binary you actually run.
 ---
 
 <ScopeCallout variant="beta" />
 
 Kunai is a terminal-first CLI. Most day-to-day work happens inside the interactive shell
-after launch — history, provider pickers, recovery, and diagnostics are shell commands,
+after launch: history, provider pickers, recovery, and diagnostics are shell commands,
 not separate argv flags.
 
 This page lists **process flags** parsed from `kunai --help`. For shell commands, see
@@ -82,21 +82,21 @@ maintenance subcommand.
 | fish       | `kunai completion fish > ~/.config/fish/completions/kunai.fish` |
 | PowerShell | `kunai completion powershell >> $PROFILE`                       |
 
-For a quick trial without installing, evaluate it in the current session —
+For a quick trial without installing, evaluate it in the current session;
 `eval "$(kunai completion bash)"` (bash/zsh), or
 `kunai completion powershell | Out-String | Invoke-Expression`.
 
 ## Launch flows
 
-1. **Interactive** — no bootstrap flags: the Ink shell opens and you search or pick from history.
-2. **Bootstrap search** — `-S` / `--search`: runs the first search and lands on results. Does not auto-play unless you add `--jump` or `--quick`.
-3. **Bootstrap a known id** — `-i` / `--id` skips the initial title search for that id. A bare or `tmdb:<id>` id needs `-t movie` or `-t tv` (tv = series) and is not supported together with anime mode (`-a`). Namespaced ids reuse the share-link grammar — `anilist:<id>` and `mal:<id>` imply anime mode, `youtube:<id>` implies YouTube mode; `imdb:` is rejected.
-4. **Anime mode** — `-a` / `--anime`: anime discovery and providers.
-5. **Continue watching** — `--continue` / `--resume`: newest unfinished local history entry.
-6. **History first** — `--history`: watch history picker at startup.
-7. **Offline library first** — `--offline`: completed downloads only (same intent as `/library`).
-8. **Discover / calendar / random** — `--discover`, `--calendar`, `--random`: open those trays first without auto-play.
-9. **Share link handoff** — `--open <kunai://url>`: trusted launch without protocol confirmation; `--install-protocol-handler` registers the **Linux-only** OS handler.
+1. **Interactive:** no bootstrap flags: the Ink shell opens and you search or pick from history.
+2. **Bootstrap search:** `-S` / `--search`: runs the first search and lands on results. Does not auto-play unless you add `--jump` or `--quick`.
+3. **Bootstrap a known id:** `-i` / `--id` skips the initial title search for that id. A bare or `tmdb:<id>` id needs `-t movie` or `-t tv` (tv = series) and is not supported together with anime mode (`-a`). Namespaced ids reuse the share-link grammar: `anilist:<id>` and `mal:<id>` imply anime mode, `youtube:<id>` implies YouTube mode; `imdb:` is rejected.
+4. **Anime mode:** `-a` / `--anime`: anime discovery and providers.
+5. **Continue watching:** `--continue` / `--resume`: newest unfinished local history entry.
+6. **History first:** `--history`: watch history picker at startup.
+7. **Offline library first:** `--offline`: completed downloads only (same intent as `/library`).
+8. **Discover / calendar / random:** `--discover`, `--calendar`, `--random`: open those trays first without auto-play.
+9. **Share link handoff:** `--open <kunai://url>`: trusted launch without protocol confirmation; `--install-protocol-handler` registers the **Linux-only** OS handler.
 
 ## Share links
 
@@ -117,9 +117,9 @@ More: [Share links](/docs/users/share-links).
 
 | Entry                                 | What it does                                                                                                                                             |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kunai --download -S "Title"`         | **Download-only launch flag.** Resolves a title, then runs the download flow and exits — no interactive shell queue UI. Requires `-S` or `-i` bootstrap. |
+| `kunai --download -S "Title"`         | **Download-only launch flag.** Resolves a title, then runs the download flow and exits; no interactive shell queue UI. Requires `-S` or `-i` bootstrap. |
 | `kunai --download -i 438631 -t movie` | Same download-only path with a fixed TMDB id.                                                                                                            |
-| `/downloads` in the shell             | **Queue overlay** while the shell is running — queued, running, and failed jobs.                                                                         |
+| `/downloads` in the shell             | **Queue overlay** while the shell is running; queued, running, and failed jobs.                                                                         |
 | `/download` during playback           | Queue the **current** item for offline from inside a session.                                                                                            |
 
 ## Launch flags

@@ -9,7 +9,7 @@ export function QuickStartSteps() {
       <Step>
         <h3 className="text-fd-foreground m-0 text-lg font-medium">Install the binary</h3>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
-          Preferred path (self-contained binary — no Bun or Node required). Bootstrap script differs
+          Preferred path (self-contained binary, no Bun or Node required). Bootstrap script differs
           by OS:
         </p>
         <div className="mt-2">
@@ -26,7 +26,7 @@ kunai --version`}
         </div>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
           The Unix installer links <code>~/.local/bin/kunai</code>. If that directory is not on{" "}
-          <code>PATH</code>, the script prints the export to add — it does not rewrite your shell
+          <code>PATH</code>, the script prints the export to add; it does not rewrite your shell
           profile. Windows places the launcher under <code>%LOCALAPPDATA%\kunai\bin</code>. Then run{" "}
           <code>kunai doctor</code>. Bun/npm globals and source checkouts are secondary. See{" "}
           <Link href="/docs/users/install-and-update">Install and update</Link>.
@@ -36,7 +36,7 @@ kunai --version`}
         <h3 className="text-fd-foreground m-0 text-lg font-medium">Install mpv, then run setup</h3>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
           Playback needs an <code>mpv</code> binary on the same <code>PATH</code> as Kunai. Setup
-          and browsing still work when mpv is missing — only committed playback startup requires it.
+          and browsing still work when mpv is missing; only committed playback startup requires it.
           Kunai looks for <code>mpv</code> / <code>mpv.exe</code>, not <code>mpvnet.exe</code>.
         </p>
         <div className="mt-2">
@@ -50,7 +50,7 @@ sudo dnf install mpv      # Fedora
 # macOS
 brew install mpv
 
-# Windows — binary on PATH must be named mpv.exe
+# Windows: binary on PATH must be named mpv.exe
 winget install mpv
 
 mpv --version
@@ -64,7 +64,7 @@ kunai --setup`}
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
           Start with <code>kunai -S &quot;Dune&quot;</code>. Select a result, choose an episode when
           needed, let Kunai resolve a provider stream, then confirm mpv startup. Search shows
-          results — it does not auto-play unless you add <code>--jump</code> or <code>-q</code>.
+          results; it does not auto-play unless you add <code>--jump</code> or <code>-q</code>.
         </p>
       </Step>
       <Step>

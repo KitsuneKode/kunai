@@ -14,14 +14,14 @@ in the same session.
 ## Launch entry points
 
 Common launch patterns. For the full flag list synced from `kunai --help`, see
-[CLI reference](/docs/users/cli-reference).
+[CLI Reference](/docs/users/cli-reference).
 
 | Invocation                    | What it does                                          |
 | ----------------------------- | ----------------------------------------------------- |
-| `kunai`                       | Open the shell — search, browse, or pick from history |
+| `kunai`                       | Open the shell; search, browse, or pick from history |
 | `kunai -S "Title"`            | Search and show results                               |
 | `kunai -S "Title" --jump 1`   | Search, auto-select first result                      |
-| `kunai -S "Title" -q`         | Quick mode — same as `--jump 1` with search           |
+| `kunai -S "Title" -q`         | Quick mode; same as `--jump 1` with search           |
 | `kunai -a -S "Anime"`         | Anime mode (anime providers)                          |
 | `kunai -i 438631 -t movie`    | Open a specific TMDB ID directly                      |
 | `kunai --continue`            | Jump to the newest unfinished history entry           |
@@ -38,9 +38,9 @@ Common launch patterns. For the full flag list synced from `kunai --help`, see
 
 ### Download vs queue
 
-- **`kunai --download`** (with `-S` or `-i`) — bootstrap a title, run downloads, exit.
-- **`/downloads`** in the shell — manage the download queue while the shell is open.
-- **`/download`** during playback — queue the current item for offline.
+- **`kunai --download`** (with `-S` or `-i`): bootstrap a title, run downloads, exit.
+- **`/downloads`** in the shell: manage the download queue while the shell is open.
+- **`/download`** during playback: queue the current item for offline.
 
 ## Shell commands
 
@@ -50,14 +50,14 @@ table of every registered shell command lives on
 
 ## Active providers
 
-Live registry — same table as [Providers](/docs/users/providers#active-providers). Provider names link to per-provider notes.
+Live registry; same table as [Providers](/docs/users/providers#active-providers). Provider names link to per-provider notes.
 
 <ProviderTable />
 
 ### Providers not in the production engine
 
-- **Cineby** — Videasy flavor research module; not registered in the CLI container.
-- **VidKing** — legacy config/cache alias for Videasy. Do not use in new code.
+- **Cineby:** Videasy flavor research module; not registered in the CLI container.
+- **VidKing:** legacy config/cache alias for Videasy. Do not use in new code.
 
 ## What works well
 
@@ -79,14 +79,14 @@ Live registry — same table as [Providers](/docs/users/providers#active-provide
 
 ## What is experimental / candidate
 
-- Rivestream and Miruro — candidate status in manifests; quality varies by title
-- Zen mode (`--zen`) — minimal chrome, still settling
-- Notifications inbox — active, alert delivery maturing
-- Playlist queue — durable service active, multi-session recovery being validated
+- Rivestream and Miruro: candidate status in manifests; quality varies by title
+- Zen mode (`--zen`): minimal chrome, still settling
+- Notifications inbox: active, alert delivery maturing
+- Playlist queue: durable service active, multi-session recovery being validated
 
 ## What is not supported
 
-- Browser-based scraping (Playwright) — archive-only reference
+- Browser-based scraping (Playwright): archive-only reference
 - Kunai-hosted cloud proxy infrastructure for video streams
 - First-party streaming service authentication
 - Content hosting or redistribution
@@ -130,7 +130,7 @@ See [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) for the u
 
 ## Platform support
 
-Release binaries via `install.sh` (Linux/macOS) and `install.ps1` (Windows) embed the Bun runtime — you do not need Bun installed to run them. **Linux is supported**; macOS and Windows x64 are **beta**; Windows ARM64 is **experimental**. Unsigned binaries may trigger SmartScreen or Gatekeeper on first run; see [Install and update](/docs/users/install-and-update). Keep installs current with `kunai upgrade`.
+Release binaries via `install.sh` (Linux/macOS) and `install.ps1` (Windows) embed the Bun runtime, so you do not need Bun installed to run them. **Linux is supported**; macOS and Windows x64 are **beta**; Windows ARM64 is **experimental**. Unsigned binaries may trigger SmartScreen or Gatekeeper on first run; see [Install and update](/docs/users/install-and-update). Keep installs current with `kunai upgrade`.
 
 | Platform                     | Install                         | Playback | Downloads        | Poster previews                                  |
 | ---------------------------- | ------------------------------- | -------- | ---------------- | ------------------------------------------------ |

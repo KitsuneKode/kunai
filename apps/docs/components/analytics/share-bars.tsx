@@ -104,7 +104,7 @@ export function ShareBars({
       ) : (
         <table className="kunai-chart">
           <caption className="sr-only">
-            {label} — installs and share of the snapshot day, largest first.
+            {label}: installs and share of the snapshot day, largest first.
           </caption>
           <colgroup>
             <col className="kunai-chart-col-label" />
