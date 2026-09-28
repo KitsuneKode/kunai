@@ -40,6 +40,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const terminalInputRef = useRef<HTMLInputElement>(null);
   const paletteInputRef = useRef<HTMLInputElement>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
+  const scriptTimersRef = useRef<number[]>([]);
 
   const filteredCommands = useMemo(
     () => commandsForPalette(paletteCommands, allCommands, searchQuery),
@@ -68,6 +69,14 @@ const TerminalSimulator = memo(function TerminalSimulator({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const timers = scriptTimersRef.current;
+    return () => {
+      for (const id of timers) window.clearTimeout(id);
+      timers.length = 0;
+    };
+  }, []);
+
   // Clamp at read time instead of syncing state in an effect: a stale index
   // past the filtered list end simply reads as the last row.
   const selectedIndex =
@@ -92,16 +101,20 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
     const script = simulatedCommandScript(cmdText, providers, paletteCommands);
     for (const step of script.steps) {
-      setTimeout(() => {
-        setTerminalLogs((prev) => [
-          ...prev,
-          { id: `${Date.now()}-${Math.random()}`, text: step.line },
-        ]);
-      }, step.at);
+      scriptTimersRef.current.push(
+        window.setTimeout(() => {
+          setTerminalLogs((prev) => [
+            ...prev,
+            { id: `${Date.now()}-${Math.random()}`, text: step.line },
+          ]);
+        }, step.at),
+      );
     }
-    setTimeout(() => {
-      setTerminalState("idle");
-    }, script.doneAt);
+    scriptTimersRef.current.push(
+      window.setTimeout(() => {
+        setTerminalState("idle");
+      }, script.doneAt),
+    );
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

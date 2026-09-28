@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { copyAndAnnounce } from "@/lib/clipboard-copy";
 import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { AnimatePresence, domAnimation, LazyMotion, m } from "motion/react";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 type CopyButtonProps = {
   readonly text: string;
@@ -16,6 +16,13 @@ type CopyButtonProps = {
 
 export function CopyButton({ text, label = "copy", className, children }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
+  const revertTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (revertTimerRef.current !== null) window.clearTimeout(revertTimerRef.current);
+    };
+  }, []);
 
   const handleCopy = useCallback(
     () =>
@@ -23,7 +30,8 @@ export function CopyButton({ text, label = "copy", className, children }: CopyBu
         writeText: (value) => navigator.clipboard.writeText(value),
         onCopied: () => {
           setCopied(true);
-          window.setTimeout(() => setCopied(false), 1800);
+          if (revertTimerRef.current !== null) window.clearTimeout(revertTimerRef.current);
+          revertTimerRef.current = window.setTimeout(() => setCopied(false), 1800);
         },
         // Announced rather than wired: the fox reacts to a successful copy, and
         // this button should not have to know that a fox exists.
