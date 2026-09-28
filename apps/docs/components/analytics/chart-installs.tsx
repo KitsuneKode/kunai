@@ -76,10 +76,17 @@ export function ChartInstalls({
   points,
   from,
   to,
+  onDayHover,
 }: {
   readonly points: readonly SeriesPoint[];
   readonly from: string;
   readonly to: string;
+  /**
+   * Optional chart → table sync. Called with the hovered rollup day, or null
+   * when the pointer leaves. Only the *drawn* range is reported — days the
+   * range toggle cut are not on the axis, so they cannot be hovered.
+   */
+  readonly onDayHover?: (day: string | null) => void;
 }) {
   const ranges = availableRanges(points);
   const [range, setRange] = React.useState<RangeKey>("all");
@@ -90,6 +97,20 @@ export function ChartInstalls({
     activeInstalls: point.activeInstalls,
     lifetimeInstalls: point.lifetimeInstalls,
   }));
+
+  // The axis reports `activeLabel` as the plotted epoch `t`; this inverts
+  // `dayToEpoch` for the drawn range so the caller gets the rollup day back.
+  const dayByEpoch = React.useMemo(
+    () => new Map(visible.map((point) => [dayToEpoch(point.day), point.day])),
+    [visible],
+  );
+
+  const reportHover = React.useCallback(
+    (label: unknown) => {
+      onDayHover?.(typeof label === "number" ? (dayByEpoch.get(label) ?? null) : null);
+    },
+    [dayByEpoch, onDayHover],
+  );
 
   const spanLabel =
     range === "all"
@@ -178,7 +199,19 @@ export function ChartInstalls({
           className="aspect-auto h-[260px] w-full"
           initialDimension={{ width: 0, height: 260 }}
         >
-          <AreaChart data={data} margin={{ left: 4, right: 20, top: 4 }}>
+          {/*
+            Recharts 3 hands these handlers a state object carrying
+            `activeLabel` — the x value under the pointer (our epoch `t`).
+            `onClick` rides the same extraction so a tap on touch devices,
+            which have no hover, pins the day in the table the same way.
+          */}
+          <AreaChart
+            data={data}
+            margin={{ left: 4, right: 20, top: 4 }}
+            onMouseMove={(state) => reportHover(state?.activeLabel)}
+            onMouseLeave={() => onDayHover?.(null)}
+            onClick={(state) => reportHover(state?.activeLabel)}
+          >
             <defs>
               <linearGradient id="kunai-fill-lifetime" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--color-lifetimeInstalls)" stopOpacity={0.7} />
