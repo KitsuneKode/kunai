@@ -21,7 +21,9 @@ export function storageRootEnv(dir: string): Record<string, string> {
     // Windows.
     LOCALAPPDATA: dir,
     APPDATA: dir,
-    // macOS and the `homedir()` fallbacks both derive from HOME/USERPROFILE.
+    // macOS derives every root from home, and so do the non-XDG fallbacks.
+    // `getKunaiPaths` reads these before `homedir()` precisely so this works;
+    // `homedir()` itself does not honour HOME on macOS.
     HOME: dir,
     USERPROFILE: dir,
   };
@@ -30,9 +32,11 @@ export function storageRootEnv(dir: string): Record<string, string> {
 /**
  * Point this process's storage roots at `dir` and return the undo.
  *
- * `getKunaiPaths` reads `process.env` (and `homedir()`, which reads `HOME`) on
- * every call rather than memoizing, so an in-process swap is enough for a test
- * that drives real code writing real files — no subprocess needed. Restoring
+ * `getKunaiPaths` reads `process.env` on every call rather than memoizing, so an
+ * in-process swap is enough for a test that drives real code writing real files —
+ * no subprocess needed. It prefers `HOME`/`USERPROFILE` over `homedir()` for the
+ * same reason: `homedir()` does not follow `HOME` on macOS, so without that
+ * preference this helper isolated nothing there. Restoring
  * exactly what was there, including keys that were unset, keeps one test file
  * from leaking a storage root into the next one in the same worker.
  */

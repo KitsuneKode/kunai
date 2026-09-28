@@ -404,7 +404,12 @@ export type ProviderTraceEventType =
   // requested (e.g. a dub was asked for but only a sub server answered). The
   // downgrade is otherwise silent, so the shell cannot tell the user their
   // language intent was not honoured.
-  | "audio:fallback";
+  | "audio:fallback"
+  // Emitted when HLS ladder expansion collapsed to the single `auto` row
+  // (master unreachable, unparseable, or variant-less). Playback proceeds on
+  // the master URL, but the quality picker has no rungs — without this the
+  // auto row is indistinguishable from a genuine single-variant master.
+  | "ladder:fallback";
 
 export interface ProviderTraceEvent {
   readonly type: ProviderTraceEventType;

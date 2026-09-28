@@ -85,7 +85,9 @@ function hasHistoryEpisodeIdentity(
  * theatrical films persist as `mediaKind: "anime"` with no episode identity;
  * collapsing every anime row to `"series"` relaunches them as S01E01.
  */
-export function historyContentType(progress: HistoryProgress): ContentType {
+export function historyContentType(
+  progress: Pick<HistoryProgress, "mediaKind" | "episode" | "absoluteEpisode">,
+): ContentType {
   if (progress.mediaKind === "video") {
     return hasHistoryEpisodeIdentity(progress) ? "series" : "movie";
   }

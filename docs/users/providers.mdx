@@ -19,7 +19,7 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 Mode defaults at a glance:
 
 - **Movies / series** — Videasy first, then Rivestream, then VidLink (from `providerPriority`)
-- **Anime** — AniDB only in the automatic lane. AllManga (`allanime`) and Miruro stay registered and are manually selectable
+- **Anime** — AniDB only in the automatic lane. AllManga (`allanime`), HiAnime (`hianime`), and Miruro stay registered and are manually selectable
 - **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
@@ -96,6 +96,16 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 **Config id:** `miruro`. Candidate status.
 
 **Caveats:** quality and catalog coverage vary. Select it manually when you want to try it.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="hianime" title="HiAnime">
+
+**Adapter role:** registered anime adapter, not in the automatic lane. Sub and dub resolve through the ZokoAnime server with soft English subtitles; each season is a separate catalog title.
+
+**Config id:** `hianime`. Candidate status.
+
+**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks need `curl` installed for HiAnime requests to get past Cloudflare. Only the ZokoAnime server is resolved — other servers the catalog lists are observed but unsupported.
 
 </ProviderDocSection>
 

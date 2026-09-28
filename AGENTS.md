@@ -204,6 +204,10 @@ legacy implementation details.
 Issues are GitHub Issues on `KitsuneKode/kunai` — workflow in
 [.docs/agents/issue-tracker.md](.docs/agents/issue-tracker.md), labels in
 [.docs/agents/triage-labels.md](.docs/agents/triage-labels.md). Domain language
-is [.docs/agents/domain.md](.docs/agents/domain.md). Kunai is single-context:
+is [.docs/agents/domain.md](.docs/agents/domain.md). Before filing an audit
+finding — or acting on one someone else filed — read
+[.docs/agents/audit-findings-bar.md](.docs/agents/audit-findings-bar.md): about a
+third of the findings this repo has received were true about a line and wrong
+about what it does. Kunai is single-context:
 one system-wide ADR set in `.docs/adr/`, no per-package context files, and new
 ADRs take the next sequential number.

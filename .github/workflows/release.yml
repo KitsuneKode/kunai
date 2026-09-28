@@ -58,6 +58,12 @@ env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_SCM_BASE: ""
+  # Git hooks are a developer convenience; CI has already run these suites as
+  # dedicated jobs. Leaving them armed made every `git push` in this workflow —
+  # the canonical tag and the metadata commit — re-run the entire monorepo test
+  # suite from inside a release job, where a failure is discovered after npm and
+  # the GitHub release are already public.
+  HUSKY: "0"
   CANDIDATE_ARTIFACT: kunai-release-candidate
   NPM_TARBALL_NAME: kunai-npm.tgz
   RELEASE_NODE_VERSION: "22.14.0"
@@ -277,6 +283,12 @@ jobs:
             --artifact-path .candidate-upload/native/SHA256SUMS \
             --output artifacts/gates/releaseAssets.json
 
+          # The manifest is hashed above from its staged location, then copied
+          # beside the document that references it so the upload spans a single
+          # non-hidden root. Copied rather than moved: the candidate artifact
+          # and the exact-directory verifier both still read the original.
+          cp .candidate-upload/native/SHA256SUMS artifacts/gates/SHA256SUMS
+
       - name: Reverify exact staged native candidate
         run: |
           set -euo pipefail
@@ -291,15 +303,21 @@ jobs:
 
       - name: Upload candidate artifacts
         id: upload-candidate
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}-${{ github.sha }}
           retention-days: 14
           if-no-files-found: error
+          # upload-artifact excludes hidden paths by default from v4.4 onward,
+          # and every candidate file lives under the dot-prefixed staging
+          # directory. Without this the action reports "No files were found"
+          # and fails the release *after* staging, reverification, and
+          # attestation have all already passed against those same bytes.
+          include-hidden-files: true
           path: .candidate-upload/
 
       - name: Upload repository gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-repository-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -308,7 +326,7 @@ jobs:
             artifacts/gates/repository.log
 
       - name: Upload package gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-package-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -317,7 +335,7 @@ jobs:
             artifacts/gates/package.log
 
       - name: Upload npm global install gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-npmGlobalInstall-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -326,7 +344,7 @@ jobs:
             artifacts/gates/npmGlobalInstall.log
 
       - name: Upload compiled playback gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-compiledPlayback-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -335,13 +353,26 @@ jobs:
             artifacts/gates/compiledPlayback.log
 
       - name: Upload release assets gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-releaseAssets-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
+          # Both paths deliberately sit under `artifacts/gates`, and neither is
+          # hidden. upload-artifact roots an artifact at the least common
+          # ancestor of its paths, so pairing this document with the manifest
+          # at `.candidate-upload/native/SHA256SUMS` moved that root to the
+          # workspace and nested both a level deeper. The confirmation gate
+          # downloads every `gate-*` artifact with `merge-multiple` into
+          # `artifacts/gates`, so it then looked for `releaseAssets.json` and
+          # found `artifacts/gates/releaseAssets.json` instead.
+          #
+          # `include-hidden-files` on the candidate upload is still required —
+          # that whole tree is dot-prefixed. Here the fix is to not span two
+          # roots in the first place, which is sturdier than depending on where
+          # the LCA happens to land.
           path: |
             artifacts/gates/releaseAssets.json
-            .candidate-upload/native/SHA256SUMS
+            artifacts/gates/SHA256SUMS
 
   # ---------------------------------------------------------------------------
   # Verify the preserved candidate's bytes and provenance before any downstream
@@ -365,7 +396,7 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download preserved native candidate
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
@@ -448,7 +479,7 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download exact preserved candidate
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
@@ -559,7 +590,7 @@ jobs:
           $help | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
 
       - name: Upload native smoke log
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: native-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-${{ matrix.id }}
           retention-days: 14
@@ -583,7 +614,7 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download every native smoke log
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           pattern: native-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-*
           path: artifacts/native-logs
@@ -610,7 +641,7 @@ jobs:
             --output artifacts/nativePlatforms.json
 
       - name: Upload native platform gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-nativePlatforms-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           retention-days: 14
@@ -662,7 +693,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload installer harness log
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: installer-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-${{ matrix.id }}
           if-no-files-found: error
@@ -683,7 +714,7 @@ jobs:
         with:
           turbo-cache-prefix: release-installer-aggregate
           skip-turbo-cache: "true"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           pattern: installer-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-*
           path: artifacts/installer-logs
@@ -708,7 +739,7 @@ jobs:
             --output artifacts/installer.json
 
       - name: Upload installer gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-installer-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -731,7 +762,7 @@ jobs:
         with:
           turbo-cache-prefix: release-readme-commands
           skip-turbo-cache: "true"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
@@ -763,7 +794,7 @@ jobs:
             --output artifacts/readmeCommands.json
 
       - name: Upload README commands gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-readmeCommands-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -815,7 +846,7 @@ jobs:
             --output artifacts/liveProviders.json
 
       - name: Upload live provider gate evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: gate-liveProviders-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -854,14 +885,14 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download candidate artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.candidate_artifact_id }}
           path: .release-download
           merge-multiple: "true"
 
       - name: Download every gate evidence document and hashed artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           pattern: gate-*-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: artifacts/gates
@@ -924,7 +955,7 @@ jobs:
           echo "binary_artifact=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload confirmation evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
           name: release-confirmation-${{ needs.candidate.outputs.version }}
           retention-days: 14
@@ -940,7 +971,14 @@ jobs:
     needs: confirmation
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The publisher writes all eight platform packages back to back, waits out
+    # one shared visibility window (about ten minutes) for the set, then writes
+    # the launcher and waits once more. Setup, the registry smoke, tagging, and
+    # the draft/promote/verify tail add roughly ten minutes; 0.3.0's worst
+    # observed apply lag was seven minutes. A timeout can only land inside a
+    # wait, which leaves nothing half-written: no launcher before its platform
+    # packages, and a rerun skips whatever already matches.
+    timeout-minutes: 45
     environment: release-production
     permissions:
       contents: write
@@ -984,7 +1022,7 @@ jobs:
           npm --version
 
       - name: Download candidate artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.confirmation.outputs.candidate_artifact_id }}
           path: .release-download
@@ -1086,9 +1124,22 @@ jobs:
 
           # The host platform package must be physically present: if npm skipped
           # it, the launcher would still install and only fail at runtime.
-          HOST_PACKAGE="${PREFIX}/lib/node_modules/@kitsunekode/kunai-linux-x64"
-          test -x "${HOST_PACKAGE}/bin/kunai" \
-            || { echo "::error::host platform package missing at ${HOST_PACKAGE}"; exit 1; }
+          # Resolve it exactly as the launcher does, with createRequire from the
+          # installed launcher module, rather than assuming a tree shape. npm
+          # nests an optional dependency under the launcher for a global install
+          # and hoists it in other layouts; both are correct as long as Node can
+          # resolve it, and only Node's own resolution answers that question.
+          LAUNCHER_MODULE="${PREFIX}/lib/node_modules/@kitsunekode/kunai/dist/npm-launcher.mjs"
+          HOST_BINARY="$(node -e '
+            const { createRequire } = require("node:module");
+            const { dirname, join } = require("node:path");
+            const req = createRequire(process.argv[1]);
+            const manifest = req.resolve("@kitsunekode/kunai-linux-x64/package.json");
+            console.log(join(dirname(manifest), "bin", "kunai"));
+          ' "${LAUNCHER_MODULE}" 2>/dev/null)" \
+            || { echo "::error::host platform package @kitsunekode/kunai-linux-x64 is not resolvable from the installed launcher"; exit 1; }
+          test -x "${HOST_BINARY}" \
+            || { echo "::error::host platform binary missing at ${HOST_BINARY}"; exit 1; }
 
           LAUNCHER="${PREFIX}/bin/kunai"
           test -x "${LAUNCHER}"
@@ -1100,12 +1151,20 @@ jobs:
           esac
           "${LAUNCHER}" --help >/dev/null
 
+      # Idempotent by necessity: everything below this step is reached only once
+      # the tag exists, so a failure below is exactly the case RELEASING.md's
+      # recovery path covers — re-dispatch the same version. Bare `git tag -a`
+      # exits 128 on an existing tag, which made that re-dispatch fail here
+      # every time. The script skips a tag already on the released commit and
+      # refuses one on any other commit; it never moves a ref. HEAD is the SHA
+      # to compare against because it is the commit being tagged, and the
+      # recheck step above has already proven it equals origin/main.
       - name: Create canonical tag
         run: |
           set -euo pipefail
-          TAG="${{ needs.confirmation.outputs.tag }}"
-          git tag -a "${TAG}" -m "Release ${TAG}"
-          git push origin "refs/tags/${TAG}"
+          .github/scripts/create-canonical-tag.sh \
+            "${{ needs.confirmation.outputs.tag }}" \
+            "$(git rev-parse HEAD)"
 
       - name: Reverify exact native payload before draft upload
         run: |
@@ -1181,6 +1240,26 @@ jobs:
             --attestation-source-digest "${GITHUB_SHA}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The README's recommended route, proven against the real release.
+      #
+      # The `installer-smoke` jobs run `needs: candidate`, against artifacts that
+      # are not published yet, and the registry smoke above covers only npm.
+      # Neither can reach the step that actually breaks: install.sh resolves the
+      # version from api.github.com/…/releases/latest, and that endpoint excludes
+      # drafts — before promotion it names the *previous* release. So this runs
+      # after promotion, and lets install.sh resolve `latest` itself rather than
+      # pinning --version, which would skip the one thing only a post-promote run
+      # can prove.
+      #
+      # Placed after asset verification on purpose: that check is fast and reads
+      # metadata, so a malformed release fails there rather than after this step
+      # has spent a 38MB download reaching the same conclusion.
+      - name: Smoke the published install.sh route
+        timeout-minutes: 10
+        run: |
+          .github/scripts/smoke-published-installer.sh \
+            "${{ needs.confirmation.outputs.version }}"
 
   # ---------------------------------------------------------------------------
   # Post-release: mark .release metadata published after public verification.

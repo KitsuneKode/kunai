@@ -129,6 +129,69 @@ describe("download cleanup policy", () => {
     expect(candidates.map((candidate) => candidate.job.id)).toEqual(["older"]);
   });
 
+  test("keeps the last watched absolute-numbered anime episode", () => {
+    // Absolute numbering: the job has no season and carries the number in
+    // `episode`; history carries it in `absoluteEpisode`. The keep set used to
+    // compare `1 === undefined`, retained nothing, and every episode came back
+    // as a deletion candidate — a delete/re-download loop.
+    const older = job({ id: "older", season: undefined, episode: 12, mode: "anime" });
+    const newest = job({ id: "newest", season: undefined, episode: 13, mode: "anime" });
+    const candidates = selectDownloadCleanupCandidates({
+      jobs: [older, newest],
+      historyByTitle: new Map([
+        [
+          "title-1",
+          [
+            watched({
+              season: undefined,
+              episode: undefined,
+              absoluteEpisode: 12,
+              updatedAt: "2026-05-08T00:00:00.000Z",
+            }),
+            watched({
+              season: undefined,
+              episode: undefined,
+              absoluteEpisode: 13,
+              updatedAt: "2026-05-10T00:00:00.000Z",
+            }),
+          ],
+        ],
+      ]),
+      nowMs: Date.parse("2026-05-14T00:00:00.000Z"),
+      graceDays: 2,
+      titlePolicies: new Map([["title-1", { mode: "keep-last-watched", count: 1 }]]),
+    });
+
+    expect(candidates.map((candidate) => candidate.job.id)).toEqual(["older"]);
+  });
+
+  test("keep-last-watched retains every absolute-numbered episode it was asked to", () => {
+    const jobs = [12, 13, 14].map((episode) =>
+      job({ id: `ep-${episode}`, season: undefined, episode, mode: "anime" }),
+    );
+    const candidates = selectDownloadCleanupCandidates({
+      jobs,
+      historyByTitle: new Map([
+        [
+          "title-1",
+          [12, 13, 14].map((absoluteEpisode) =>
+            watched({
+              season: undefined,
+              episode: undefined,
+              absoluteEpisode,
+              updatedAt: `2026-05-${String(absoluteEpisode - 2).padStart(2, "0")}T00:00:00.000Z`,
+            }),
+          ),
+        ],
+      ]),
+      nowMs: Date.parse("2026-05-20T00:00:00.000Z"),
+      graceDays: 2,
+      titlePolicies: new Map([["title-1", { mode: "keep-last-watched", count: 3 }]]),
+    });
+
+    expect(candidates).toEqual([]);
+  });
+
   test("title policy cleanup grace overrides the global cleanup suggestion window", () => {
     const record = job();
     const candidates = selectDownloadCleanupCandidates({

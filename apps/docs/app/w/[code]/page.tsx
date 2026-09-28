@@ -25,6 +25,7 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
       title: `${title} — shared with Kunai`,
       description: `${positionFor(shared.ref)}. Open this catalog-anchored link in Kunai or install the terminal client.`,
       path: `/w/${code}`,
+      socialImage: "segment",
     }),
     robots: { index: false, follow: false },
   };

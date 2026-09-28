@@ -14,7 +14,20 @@ import {
 } from "@/services/update/native-installer/install-layout";
 
 const made: string[] = [];
-const RECLAIM_TEST_TIMEOUT_MS = process.platform === "win32" ? 1_000 : 100;
+/**
+ * Acquisition budget for tests that assert the lock IS acquired.
+ *
+ * The mirror image of `RETAIN_TEST_TIMEOUT_MS` below, and it has to be read the
+ * other way round: there the deadline firing is the assertion, here it is the
+ * failure. Reclaiming a corrupt lock costs a poll interval plus the corrupt
+ * grace period plus however long the runner takes to stat and read the file,
+ * and `tryAcquireActivationLock` measures that against a real `Date.now()`.
+ * A 100ms budget was therefore an assertion about disk and scheduler speed:
+ * CI failed `reclaims persistently corrupt metadata after the partial-write
+ * grace period` at 285.92ms on a runner where the logic was entirely correct.
+ * This bound only has to catch a lock that never resolves.
+ */
+const RECLAIM_TEST_TIMEOUT_MS = process.platform === "win32" ? 10_000 : 5_000;
 
 /**
  * Acquisition budget for tests that assert the lock is *retained*.

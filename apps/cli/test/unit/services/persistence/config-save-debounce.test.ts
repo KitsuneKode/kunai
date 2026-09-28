@@ -65,6 +65,47 @@ describe("ConfigService.save debounce", () => {
     expect(store.saves).toBe(0);
   });
 
+  test("flushPending awaits a store write that is already in flight", async () => {
+    // The shutdown race: once the debounce fires, `savePending` is null while
+    // the store write is still running. `flushPending()` used to return there,
+    // letting `process.exit()` truncate the write.
+    let releaseSave!: () => void;
+    let saves = 0;
+    const store = {
+      load: async () => ({ ...DEFAULT_CONFIG }),
+      save: () => {
+        saves += 1;
+        return new Promise<void>((resolve) => {
+          releaseSave = resolve;
+        });
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    const pending = service.save();
+    // Stands in for the debounce timer firing: the write starts and
+    // `savePending` is cleared.
+    const started = service.flushPending();
+    expect(saves).toBe(1);
+
+    let lateFlushSettled = false;
+    const lateFlush = service.flushPending().then(() => {
+      lateFlushSettled = true;
+      return null;
+    });
+    await drainMicrotasks();
+
+    // Without the in-flight handle this is already true — shutdown would have
+    // continued under a half-written config.json.
+    expect(lateFlushSettled).toBe(false);
+
+    releaseSave();
+    await Promise.all([pending, started, lateFlush]);
+    expect(lateFlushSettled).toBe(true);
+    expect(saves).toBe(1);
+  });
+
   test("store rejection rejects both save() and flushPending()", async () => {
     let rejectSave!: (reason: unknown) => void;
     const store = {
@@ -90,4 +131,44 @@ describe("ConfigService.save debounce", () => {
     expect((await saved)?.message).toBe("disk full");
     expect((await flushed)?.message).toBe("disk full");
   });
+
+  test("a synchronous store throw does not strand the in-flight handle", async () => {
+    // `store.save()` throwing synchronously runs the catch and the finally before
+    // `saveInFlight` was assigned, so assigning afterwards parked an
+    // already-rejected promise there and every later flushPending() awaited it.
+    let mode: "throw" | "ok" = "throw";
+    let saves = 0;
+    const store = {
+      load: async () => ({ ...DEFAULT_CONFIG }),
+      save: () => {
+        if (mode === "throw") throw new Error("disk full");
+        saves += 1;
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    await service.save().then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    // The failed write must not be left behind as a permanent flush target.
+    mode = "ok";
+    await service.flushPending();
+
+    await service.save();
+    expect(saves).toBe(1);
+    await service.flushPending();
+  });
 });
+
+/**
+ * Drains the microtask queue. Not a timer: a `flushPending()` that returned
+ * early settles within a microtask or two, so this makes the wrong behaviour
+ * observable without waiting on the clock.
+ */
+async function drainMicrotasks(): Promise<void> {
+  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+}

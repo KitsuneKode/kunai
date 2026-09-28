@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-13"
+lastReviewed: "2026-09-02"
 ---
 
 # Kunai Debugging Map
@@ -199,7 +199,26 @@ browse and post-play should still use sharp Sixel output.
 **Providers behave differently than on Linux.** The `curl.exe` Windows ships in
 System32 is a Schannel build with no HTTP/2 (`curl --version` lists no `HTTP2`
 feature). Provider paths that negotiate HTTP/2 degrade against it; the winget
-`cURL.cURL` build has it.
+`cURL.cURL` build has it. Cloudflare also fingerprints the TLS handshake, so
+plain curl (HTTP/2 or not) is often not enough for AniDB/Miruro. The native
+installer drops a portable curl-impersonate under
+`%LOCALAPPDATA%\kunai\deps\curl-impersonate` (x64, same archive CI pins) and
+puts that directory on the User PATH so `kunai doctor` reports `curl=ok
+(chrome…)` instead of `plain (no CF bypass)`.
+
+**curl-impersonate is not an HTTP/2 curl.** The two are separate binaries and
+separate problems, and conflating them has bitten this repo once already. The
+release archive ships `curl-impersonate.exe` plus `curl_*.bat` wrappers and no
+`curl.exe`, and only `resolveCurlCandidate` (AniDB, Miruro) ever selects those.
+Anything spawning the literal `curl` still gets System32's Schannel build:
+[`hls-relay.ts`](../apps/cli/src/infra/player/hls-relay.ts) for the CDNs that
+block mpv's TLS fingerprint, and Miruro's own `detectCurlHttp2Support` probe.
+That build does not negotiate `--http2` down — it refuses the flag with
+`the installed libcurl version doesn't support this` and exits 4 before
+connecting — so the relay asks
+[`infra/os/curl-features`](../apps/cli/src/infra/os/curl-features.ts) first and
+drops the flag rather than failing the stream. The installer still offers the
+`cURL.cURL` upgrade even when it just installed curl-impersonate.
 
 **Tests fail in teardown after passing.** `rmSync` on a directory holding an open
 SQLite handle raises EBUSY on Windows — POSIX unlinks open files, Windows does

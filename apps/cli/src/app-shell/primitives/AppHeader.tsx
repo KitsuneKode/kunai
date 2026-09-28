@@ -3,7 +3,7 @@ import React from "react";
 
 import { composeHeader } from "../format/header";
 import { measureColumns, truncateLine } from "../shell-text";
-import { palette } from "../shell-theme";
+import { APP_LABEL, palette } from "../shell-theme";
 
 /**
  * The single canonical header. Owns brand · destination pill · context · status
@@ -15,7 +15,7 @@ import { palette } from "../shell-theme";
  * the crumb absorbs the squeeze and drops out entirely when there is no room.
  */
 export const AppHeader = React.memo(function AppHeader({
-  brand = "🦊 Kunai",
+  brand = APP_LABEL,
   destination,
   context,
   status,

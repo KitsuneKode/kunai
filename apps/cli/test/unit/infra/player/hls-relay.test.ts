@@ -26,6 +26,7 @@ describe("hls-relay gating", () => {
         curlTimeoutMs: 25_000,
         watchdogTimeoutMs: 30_000,
       },
+      true,
     );
 
     expect(args[0]).toBe("-q");
@@ -33,6 +34,46 @@ describe("hls-relay gating", () => {
     expect(args).not.toContain("-L");
     expect(args).not.toContain("--location");
     expect(args.at(-1)).toBe("https://vault-06.uwucdn.top/start.m3u8");
+  });
+
+  /**
+   * The Windows Schannel curl refuses `--http2` outright ("the installed
+   * libcurl version doesn't support this", exit 4) rather than negotiating
+   * down, so hardcoding the flag turned every relayed stream into a hard
+   * failure on a stock Windows host. Everything else about the argument list
+   * — the `-q` guard first, no redirect following — has to survive the drop.
+   */
+  test("omits --http2 when curl cannot do HTTP/2, keeping the safety flags", () => {
+    const budget = {
+      maxResponseBytes: 1024,
+      bodyLimitBytes: 1024,
+      curlTimeoutMs: 25_000,
+      watchdogTimeoutMs: 30_000,
+    };
+    const url = "https://vault-06.uwucdn.top/start.m3u8";
+
+    const withHttp2 = buildHlsRelayCurlArgs(
+      url,
+      "https://kwik.cx/",
+      "https://kwik.cx",
+      budget,
+      true,
+    );
+    const withoutHttp2 = buildHlsRelayCurlArgs(
+      url,
+      "https://kwik.cx/",
+      "https://kwik.cx",
+      budget,
+      false,
+    );
+
+    expect(withHttp2).toContain("--http2");
+    expect(withoutHttp2).not.toContain("--http2");
+    expect(withoutHttp2[0]).toBe("-q");
+    expect(withoutHttp2).toContain("--no-location");
+    expect(withoutHttp2.at(-1)).toBe(url);
+    // Only the one flag differs; nothing else is conditional on HTTP/2.
+    expect(withHttp2.filter((arg) => arg !== "--http2")).toEqual(withoutHttp2);
   });
 
   test("rejects a redirect before requesting a non-allowlisted target", async () => {

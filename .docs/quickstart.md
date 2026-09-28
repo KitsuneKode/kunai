@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-09-02"
 ---
 
 # Kunai — Quickstart
@@ -51,8 +51,14 @@ brew install mpv yt-dlp curl
 
 Windows options:
 
+- The native installer (`install.ps1`) places portable `yt-dlp` and (x64)
+  curl-impersonate under `%LOCALAPPDATA%\kunai\deps\` so `irm … | iex` is enough
+  for YouTube and anime search. `mpv` is still a package-manager prompt.
 - Scoop: `scoop install mpv yt-dlp`; add `ffmpeg` only if you want optional `ffprobe` validation.
-- `winget`: install `mpv` and `yt-dlp`; add `ffmpeg` only if you want optional `ffprobe` validation.
+- `winget`: `winget install --id mpv-player.mpv-CI.MSVC -e` and
+  `winget install --id yt-dlp.yt-dlp -e`. A bare `winget install yt-dlp` is
+  ambiguous against a Microsoft Store listing. Add `ffmpeg` only if you want
+  optional `ffprobe` validation. curl-impersonate has no winget package.
 - Chocolatey: `choco install mpv yt-dlp` remains an alternative when Chocolatey is already managed on the machine.
 
 Posters need nothing installed. Kunai's Windows CI provisions mpv from the

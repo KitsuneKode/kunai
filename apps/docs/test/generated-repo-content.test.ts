@@ -29,6 +29,11 @@ describe("generated repo content", () => {
   test("OG mascot matches the tracked PNG", () => {
     expect(generatedMascot.mascotDataUrl).toBe(fresh.mascot.mascotDataUrl);
     expect(generatedMascot.mascotDataUrl.startsWith("data:image/png;base64,")).toBe(true);
-    expect(generatedMascot.mascotDataUrl.length).toBeGreaterThan(200);
+    // Bounded on both sides. The lower bound proves the illustrated still baked
+    // rather than an empty read; the upper bound is the point of the exercise —
+    // this string is inlined into two OG route bundles, and the previous guard
+    // asserted it was *large*, which locked a 137 KB inline in place.
+    expect(generatedMascot.mascotDataUrl.length).toBeGreaterThan(2_000);
+    expect(generatedMascot.mascotDataUrl.length).toBeLessThan(40_000);
   });
 });

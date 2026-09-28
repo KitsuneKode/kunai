@@ -1,3 +1,4 @@
+import { CELL_ASPECT } from "@/image/renderers/sixel";
 import { Text } from "ink";
 import React from "react";
 
@@ -54,8 +55,12 @@ export function MiniPosterTile({
   /** Prefer square aspect (channel avatars): cols ≈ rows. */
   readonly square?: boolean;
 }) {
-  const tileCols = square ? Math.max(2, Math.min(cols, rows + 1)) : cols;
-  const tileRows = square ? Math.max(2, Math.min(rows, tileCols)) : rows;
+  // `square` means square on screen, not equal row and column counts. A cell is
+  // about twice as tall as it is wide, so matching the numbers reserves a tall
+  // box, the image fits to its width, and the leftover rows sit empty below it
+  // as a visible slab. Widening to the cell aspect makes the slot match the art.
+  const tileRows = square ? Math.max(2, rows) : rows;
+  const tileCols = square ? Math.max(2, Math.round(tileRows * CELL_ASPECT)) : cols;
   // allowKitty gates the framebuffer path (Kitty *or* Sixel) in renderPoster.
   const useGraphics = allowKitty && Boolean(placementSlot);
   const { poster } = usePosterPreview(url, {

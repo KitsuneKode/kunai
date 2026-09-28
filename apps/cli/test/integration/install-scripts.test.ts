@@ -125,8 +125,14 @@ function invalidTarArchive(
   });
 }
 
+/**
+ * A hang guard for real installer subprocesses, not a timing assertion: the
+ * release-gate runner took over five seconds to get two concurrent installers
+ * through download and verification, and the guard failed the release. Only a
+ * genuinely stuck installer should ever reach this.
+ */
 async function waitForPaths(paths: readonly string[]): Promise<void> {
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 60_000;
   while (paths.some((path) => !existsSync(path))) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${paths.join(", ")}`);
     await Bun.sleep(10);
@@ -1277,10 +1283,15 @@ describe("install.sh lifecycle contract", () => {
         }),
       );
       await withReleaseFixture(routes, async (baseUrl) => {
+        // The installer that finishes downloading first holds for the lock
+        // while its sibling is still downloading; on a slow runner that gap
+        // must not exhaust the installer's own lock timeout before the harness
+        // has seen both and released the lock.
         const installs = versions.map((version) =>
           runInstallShAsync(["--yes", "--skip-deps", "--version", version], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
+            KUNAI_ACTIVATION_LOCK_TIMEOUT_MS: "60000",
           }),
         );
         await waitForPaths(
@@ -1902,7 +1913,8 @@ describe("install.sh package activeVersion", () => {
 /**
  * `ask` gates `sudo apt-get/pacman/dnf install`, so what it does with no
  * terminal is a privilege decision, not a UX one. Exercised directly because
- * `--dry-run` returns before `install_optional_deps` ever prompts.
+ * `--dry-run` no longer skips this function — it prints the command —
+ * so the no-terminal case is still exercised by extracting `ask` itself.
  *
  * Two separate traps, both of which defaulted to yes:
  *   - `-r /dev/tty` tests permission bits. The node is crw-rw-rw-, so it passes
@@ -2128,6 +2140,153 @@ describe("install.sh PATH persistence", () => {
       expect(readFileSync(conf, "utf8")).toContain("fish_add_path");
     } finally {
       sandbox.cleanup();
+    }
+  });
+});
+
+/**
+ * A PATH conflict is reported by shelling out to the manager that owns the
+ * competing install. The mapping used to test only the winner against npm and
+ * bun, so a winner from any other manager — fnm shims one under
+ * /run/user/…/fnm_multishells — printed a "fix it" header with nothing under
+ * it. These pin that every recognised layout yields a runnable line and that an
+ * unrecognised one still names the path.
+ */
+describe("install.sh PATH conflict remediation", () => {
+  function remedyFor(entry: string): string {
+    const script = [
+      'KUNAI_PACKAGE="@kitsunekode/kunai"',
+      `eval "$(sed -n '/^path_conflict_remedy() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      `path_conflict_remedy ${JSON.stringify(entry)}`,
+    ].join("\n");
+    const result = spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    return result.stdout.trim();
+  }
+
+  test("a node version manager shim maps to the npm removal", () => {
+    // The exact path shape that produced an empty remediation list.
+    expect(remedyFor("/run/user/1000/fnm_multishells/697191_1788348965165/bin/kunai")).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+    expect(remedyFor("/home/u/.nvm/versions/node/v22.0.0/bin/kunai")).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+  });
+
+  test("each supported manager maps to its own removal command", () => {
+    expect(remedyFor("/home/u/.bun/bin/kunai")).toBe("bun remove --global @kitsunekode/kunai");
+    expect(remedyFor("/usr/lib/node_modules/@kitsunekode/kunai/bin/kunai")).toBe(
+      "npm uninstall -g @kitsunekode/kunai",
+    );
+    expect(remedyFor("/home/u/.local/share/pnpm/kunai")).toBe(
+      "pnpm remove --global @kitsunekode/kunai",
+    );
+    expect(remedyFor("/home/u/.yarn/bin/kunai")).toBe("yarn global remove @kitsunekode/kunai");
+    expect(remedyFor("/opt/homebrew/bin/kunai")).toBe("brew uninstall kunai");
+  });
+
+  test("an unrecognised install still yields an actionable line naming its path", () => {
+    // The fallback is what keeps the header from standing alone: every entry
+    // produces something, so the list is never empty.
+    expect(remedyFor("/usr/local/bin/kunai")).toBe("# remove or rename /usr/local/bin/kunai");
+    expect(remedyFor("/some/unknown/place/kunai")).not.toBe("");
+  });
+});
+
+/**
+ * Optional dependencies are offered, never imposed. The previous flow ran
+ * `sudo pacman -S --noconfirm` / `sudo apt-get install -y` from a prompt that
+ * defaulted to yes, so a script piped from the internet became root and
+ * installed packages without the user or the package manager confirming
+ * anything. These pin the three properties that replaced it.
+ */
+describe("install.sh optional dependency consent", () => {
+  function evalInstallSh(body: string, extraDefs = ""): string {
+    const script = [
+      "set -euo pipefail",
+      "info() { printf '> %s\\n' \"$*\"; }",
+      "warn() { printf '! %s\\n' \"$*\"; }",
+      "run() { printf '[RAN] %s\\n' \"$*\"; }",
+      `eval "$(sed -n '/^dependency_install_command() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      `eval "$(sed -n '/^missing_dependencies() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      `eval "$(sed -n '/^install_optional_deps() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      extraDefs,
+      body,
+    ].join("\n");
+    const result = spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    expect(result.stderr, result.stderr).not.toContain("syntax error");
+    return `${result.stdout}${result.stderr}`;
+  }
+
+  test("each supported package manager maps to its own install command", () => {
+    const seen: Record<string, string> = {};
+    for (const manager of ["brew", "port", "pacman", "apt-get", "dnf", "zypper", "apk"]) {
+      seen[manager] = evalInstallSh(
+        "dependency_install_command mpv yt-dlp",
+        `have() { [[ "$1" == ${JSON.stringify(manager)} ]]; }`,
+      ).trim();
+    }
+
+    expect(seen["brew"]).toBe("brew install mpv yt-dlp");
+    expect(seen["port"]).toBe("sudo port install mpv yt-dlp");
+    expect(seen["pacman"]).toBe("sudo pacman -S --needed mpv yt-dlp");
+    expect(seen["apt-get"]).toBe("sudo apt-get install mpv yt-dlp");
+    expect(seen["dnf"]).toBe("sudo dnf install mpv yt-dlp");
+    expect(seen["zypper"]).toBe("sudo zypper install mpv yt-dlp");
+    expect(seen["apk"]).toBe("sudo apk add mpv yt-dlp");
+  });
+
+  test("no command silences the package manager's own confirmation", () => {
+    // `--noconfirm` / `-y` are what turned one keystroke into an unattended
+    // root install. The accepted path must still be gated by the manager.
+    for (const manager of ["pacman", "apt-get", "dnf", "zypper"]) {
+      const command = evalInstallSh(
+        "dependency_install_command mpv",
+        `have() { [[ "$1" == ${JSON.stringify(manager)} ]]; }`,
+      );
+      expect(command).not.toContain("--noconfirm");
+      expect(command).not.toMatch(/\s-y(\s|$)/);
+    }
+  });
+
+  test("install_optional_deps does not use bash 4+ builtins (macOS /bin/bash is 3.2)", () => {
+    // macOS CLI parity failed these consent tests with:
+    //   bash: line 10: mapfile: command not found
+    // The mapping tests above extract functions and run them under `bash -c`,
+    // which on macos-14 is /bin/bash 3.2. Linux CI cannot see that unless
+    // the source itself is gated.
+    const source = readFileSync(INSTALL_SH, "utf8");
+    const fn = /^install_optional_deps\(\) \{[\s\S]*?^\}$/m.exec(source)?.[0];
+    expect(fn, "could not extract install_optional_deps").toBeTruthy();
+    const executable = fn!
+      .split("\n")
+      .filter((line) => !/^\s*#/.test(line))
+      .join("\n");
+    expect(executable).not.toMatch(/\bmapfile\b/);
+    expect(executable).not.toMatch(/\breadarray\b/);
+  });
+
+  test("an already-installed dependency is neither offered nor reported missing", () => {
+    const output = evalInstallSh(
+      "SKIP_DEPS=0; DRY=0; YES=0; install_optional_deps",
+      'have() { case "$1" in mpv|yt-dlp|pacman) return 0;; *) return 1;; esac; }',
+    );
+    expect(output).toContain("already installed");
+    expect(output).not.toContain("This will run");
+    expect(output).not.toContain("[RAN]");
+  });
+
+  test("--yes, --dry-run, and a run with no terminal print the command instead of escalating", () => {
+    for (const setup of ["YES=1; DRY=0", "YES=0; DRY=0", "YES=0; DRY=1"]) {
+      const output = evalInstallSh(
+        `SKIP_DEPS=0; ${setup}; install_optional_deps </dev/null`,
+        'have() { [[ "$1" == pacman ]]; }',
+      );
+      // Consent to install Kunai is not consent to become root, and a dry-run
+      // must still show the planned command — same branch as install.ps1.
+      expect(output).not.toContain("[RAN]");
+      expect(output).toContain("sudo pacman -S --needed mpv yt-dlp");
     }
   });
 });

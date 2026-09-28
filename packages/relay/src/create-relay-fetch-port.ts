@@ -29,7 +29,12 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
         return fetchImpl(input, init);
       }
 
-      const relayUrl = new URL(`/rpc/${entry.providerId}`, baseUrl);
+      // Appended, not resolved against the base: `new URL("/rpc/x", base)`
+      // treats a leading slash as absolute and drops the base's own path, so a
+      // relay hosted under a sub-path (`https://host/prod`) was called at
+      // `/rpc/x` and 404ed into permanent direct fallback. `normalizeRelayBaseUrl`
+      // deliberately preserves that path, so it is a supported deployment.
+      const relayUrl = new URL(`${baseUrl}/rpc/${encodeURIComponent(entry.providerId)}`);
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };

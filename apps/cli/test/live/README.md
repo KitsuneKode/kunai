@@ -111,6 +111,26 @@ Each matrix row includes a `healthClass`:
 | `environment-network` | Timeout, connect/DNS/TLS, or WAF-shaped block                        |
 | `harness-failure`     | Unparseable smoke JSON or matrix deadline without provider evidence  |
 
+### Cloudflare-fronted providers need an impersonating curl
+
+`anidb` is behind Cloudflare, which scores the TLS handshake as well as the
+source IP. A developer machine on a residential IP gets the real page from a
+plain `curl`, so these smokes pass locally with nothing installed. A
+GitHub-hosted runner making the identical request is answered with
+`403 Just a moment...` in under 100ms.
+
+The client prefers a `curl_<family><version>` wrapper when one is on `PATH`
+(`resolveCurlCandidate` in
+[curl-impersonate.ts](../../../../packages/providers/src/shared/curl-impersonate.ts))
+and falls back to plain curl otherwise, so a missing wrapper is silent: the
+challenge page parses as **zero results**, and release signoff reports
+`provider-drift` when the truth is `environment-network`. Measured on a runner:
+plain curl `403`, `curl_chrome150` `200` with results.
+
+CI installs the wrappers through `.github/actions/setup-curl-impersonate`.
+Locally, install any `curl-impersonate` build that provides those wrappers; a
+run without one is not evidence that a provider is down.
+
 Optional artifact write (redacts URLs and `/tmp` paths):
 
 ```sh

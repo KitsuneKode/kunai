@@ -240,13 +240,23 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 2. Reverifies the exact native directory and all 18 attestations, before npm
    publication, against the
    expected version, release workflow, main-branch ref, and candidate commit
-3. Runs `bun run release`, whose npm publisher reconciles all eight preserved
-   platform-package tarballs first and the exact-version launcher tarball last,
-   refusing integrity or version skew and publishing with npm provenance
+3. Runs `bun run release`, whose npm publisher works in three phases: it
+   decides every preserved platform-package tarball against the registry
+   before writing any (a conflicting version anywhere halts with nothing new
+   published), writes every missing platform package back to back and waits
+   out one shared visibility window for the set, and only once all eight are
+   read back with the expected integrity writes the exact-version launcher and
+   waits for it. Every write uses npm provenance. npm applies a publish
+   asynchronously — 0.3.0 saw one package take seven minutes to become
+   visible — so the window backs off from 3s to 30s for about ten minutes, and
+   a write is reissued only after a whole window still shows nothing (npm's
+   refusal to overwrite then counts as confirmation)
 4. Retries `npm view` for the launcher and all eight platform packages until
    every exact version is visible, then performs a clean registry install and
    launcher smoke
-5. Creates annotated tag `v<version>` and pushes it
+5. Creates annotated tag `v<version>` and pushes it, via
+   `.github/scripts/create-canonical-tag.sh` — idempotent for a re-dispatch of
+   the same version, and refusing to move a tag that points elsewhere
 6. Reverifies the same downloaded native directory and provenance again,
    immediately before creating a **draft** GitHub release (`make_latest: false`)
    with its 18 files
@@ -256,6 +266,11 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
    `gh release edit <tag> --draft=false --latest`
 9. Proves the release is public, then downloads and verifies its bytes and
    attestations again
+10. Installs through the published `install.sh` in a sandboxed profile and
+    asserts the activated binary reports `<version>`. This runs last because
+    `install.sh` resolves the version from `releases/latest`, which excludes
+    drafts — before promotion it would install the _previous_ release, so no
+    earlier job can cover the recommended route
 
 ### 5. Metadata after public verification
 
@@ -278,10 +293,55 @@ preserved candidate against npm in canonical order:
 - an existing version with different integrity halts the release;
 - all eight platform packages are reconciled before `@kitsunekode/kunai`.
 
-Do not unpublish, overwrite, hand-increment, or rebuild a partial candidate.
-The launcher stays last so users can never resolve it before its exact-version
-platform packages exist. A rerun is safe only with the preserved artifacts from
-the original candidate job.
+Do not unpublish, overwrite, or hand-increment a partial candidate. The launcher
+stays last so users can never resolve it before its exact-version platform
+packages exist.
+
+Recovery works past the tag, too. Everything after the canonical tag — draft
+creation, draft asset verification, promotion, public verification, the
+published `install.sh` smoke — is reached only once `v<version>` exists, so a
+failure there is exactly what this path is for. `.github/scripts/create-canonical-tag.sh`
+skips a tag already on the released commit and refuses one pointing anywhere
+else; it never moves a ref, because a published tag's commit is already baked
+into checksums, attestations, and `releases/download/v<version>/…` URLs. A
+conflict there means the tag shipped from a different commit: investigate, then
+release the fix as the next version.
+
+Rerunning the failed job reuses the preserved candidate and is always safe. A
+fresh dispatch rebuilds the candidate, which is also safe **provided nothing
+that lands inside a published tarball changed** — the platform packages contain
+only `package.json`, `README.md`, and `bin/kunai`, and the launcher only
+`package.json`, `LICENSE`, `README.md`, and `dist/npm-launcher.mjs`. The binary
+build is reproducible: during the 0.3.0 recovery a rebuild on a different
+machine at a different commit produced
+`sha512-WLWicFJHn7Hpt…HQS2dw==` for `kunai-linux-x64@0.3.0`, byte-identical to
+what was already published, so it reconciled as a skip.
+
+Fixing the release machinery — a workflow file, `scripts/publish-npm-release.ts`,
+a gate script — does not touch those tarballs, so a dispatch carrying only such
+a fix reconciles cleanly against whatever is already live. Changing anything the
+tarball carries does not: a new `homepage` in `apps/cli/package.json` propagates
+into all nine manifests, and a version already on npm would then halt the
+release on the integrity rule above. Land that kind of change in the next
+version instead.
+
+Verify before dispatching rather than discovering it at the publish step:
+
+```sh
+npm view @kitsunekode/kunai-linux-x64@<version> dist.integrity
+npm pack --json --dry-run --ignore-scripts apps/cli/dist/npm-platform/linux-x64
+```
+
+Do not cancel the publish job while it is waiting on npm. "Not visible yet"
+lines are the registry applying a write it has already accepted, and the
+publisher will wait about ten minutes for the set before it gives up on its
+own. Cancelling mid-wait costs another candidate build, another
+`release-production` approval, and — because the publish job pins
+`origin/main` — is invalidated anyway by the next merge.
+
+Because the publish job pins `HEAD == origin/main`, merging anything to main
+while a Release run is waiting for approval invalidates that run. Dispatch the
+release when main is quiet, approve once, and let it finish.
 
 ## Metadata push recovery
 

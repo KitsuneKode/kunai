@@ -1,4 +1,7 @@
-import { shouldAutoCleanupOfflineJob } from "@/services/offline/offline-sync-policy";
+import {
+  historyMatchesDownloadJob,
+  shouldAutoCleanupOfflineJob,
+} from "@/services/offline/offline-sync-policy";
 import type { DownloadJobRecord, HistoryProgress } from "@kunai/storage";
 
 export type ProtectedDownloadEpisode = {
@@ -93,12 +96,10 @@ function selectRetainedWatchedJobs(input: {
       .map((job) => ({
         job,
         history: historyEntries
-          .filter(
-            (entry) =>
-              entry.completed &&
-              (entry.season ?? 1) === job.season &&
-              (entry.episode ?? entry.absoluteEpisode) === job.episode,
-          )
+          // Same rule the delete side uses, so the keep set can never disagree
+          // with it: an absolute-numbered anime episode matched nothing here,
+          // and "keep the last 3 watched" retained zero of them.
+          .filter((entry) => entry.completed && historyMatchesDownloadJob(entry, job))
           .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0],
       }))
       .filter((item): item is { job: DownloadJobRecord; history: HistoryProgress } =>
@@ -107,7 +108,7 @@ function selectRetainedWatchedJobs(input: {
       .sort(
         (left, right) =>
           Date.parse(right.history.updatedAt) - Date.parse(left.history.updatedAt) ||
-          (right.job.season ?? 0) - (left.job.season ?? 0) ||
+          (right.job.season ?? 1) - (left.job.season ?? 1) ||
           (right.job.episode ?? 0) - (left.job.episode ?? 0),
       )
       .slice(0, policy.count)
@@ -122,7 +123,9 @@ function isProtectedEpisode(
 ): boolean {
   return protectedEpisodes.some((episode) => {
     if (episode.titleId !== job.titleId) return false;
-    if (episode.season !== undefined && episode.season !== job.season) return false;
+    // `?? 1` on the job side for the same reason the keep set needs it: an
+    // absolute-numbered anime job carries no season.
+    if (episode.season !== undefined && episode.season !== (job.season ?? 1)) return false;
     if (episode.episode !== undefined && episode.episode !== job.episode) return false;
     return true;
   });

@@ -72,6 +72,7 @@
     "fmt:check": "turbo run fmt:check",
     "test": "turbo run test",
     "test:coverage": "bun run --cwd apps/cli test:coverage",
+    "sandbox": "scripts/dev-sandbox.sh",
     "test:cli:file": "bun run --cwd apps/cli test:file",
     "test:npm-global-install": "bun run --cwd apps/cli test:npm-global-install",
     "test:installer:pwsh": "bun run --cwd apps/cli test:installer:pwsh",

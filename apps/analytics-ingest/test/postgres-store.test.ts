@@ -3,13 +3,16 @@ import { beforeAll, describe, expect, test } from "bun:test";
 // Side-effecting: honours NEON_FETCH_ENDPOINT. Must precede store construction.
 // oxlint-disable-next-line import/no-unassigned-import -- the side effect is the point
 import "../src/neon-fetch-endpoint";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   createPostgresAnalyticsStore,
   PRUNE_LIFETIME_SQL,
   RECORD_PING_SQL,
   ROLL_UP_DAY_SQL,
 } from "../src/postgres-store";
-import { resetAnalyticsTables, TEST_DATABASE_URL } from "./support/pg";
+import { resetAnalyticsTables, TEST_DATABASE_URL, testInstallId } from "./support/pg";
 
 test("recordPing charges the budget and writes both tables in one SQL statement", () => {
   expect(RECORD_PING_SQL).toContain("with budget as");
@@ -44,6 +47,29 @@ test("the rollup is a single statement so its parts share one snapshot", () => {
 test("lifetime pruning and the retired counter move in one statement", () => {
   expect(PRUNE_LIFETIME_SQL).toContain("delete from install_lifetime where last_seen < $1::date");
   expect(PRUNE_LIFETIME_SQL).toContain("update lifetime_retired set retired_installs");
+});
+
+test("postgres suites mint disjoint install ids at the same n", () => {
+  // Main failed after #325 with Expected: 8, Received: 5 on lifetimeInstalls.
+  // Hardening pings installs 1-3 on May; lifecycle pings 1-8 on February.
+  // first_seen is write-once, so 1-3 kept May and dropped out of February's
+  // count: 8 - 3 = 5. The ids must not be the same UUID.
+  const ids = (["lifecycle", "hardening", "store"] as const).map((suite) =>
+    testInstallId(1, suite),
+  );
+  expect(new Set(ids).size).toBe(3);
+});
+
+test("postgres tests mint install ids only through the namespaced helper", () => {
+  const dir = join(import.meta.dir);
+  // Skip this file: it is the assertion, not a minter.
+  const files = readdirSync(dir).filter(
+    (name) => name.endsWith(".test.ts") && name !== "postgres-store.test.ts",
+  );
+  for (const name of files) {
+    const source = readFileSync(join(dir, name), "utf8");
+    expect(source.includes("function installId("), name).toBe(false);
+  }
 });
 
 /**

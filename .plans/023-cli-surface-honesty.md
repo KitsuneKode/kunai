@@ -83,6 +83,25 @@ that installs with **no Bun on PATH** and asserts the install succeeds and
 - **Dropped values warn nowhere.** `--jump abc` / `--jump 0` fail validation and are
   discarded silently (`cli-args.ts:341-344`) while every other malformed input pushes
   to `warnings`.
+- **`--jump` is not scoped to `-S`.** Help states "Auto-pick the n-th search result
+  (1-based, with -S)" (`cli-args.ts:66`), but `resolveAutoPickIndex`
+  (`app/bootstrap/bootstrap-intent.ts:49-55`) returns `args.jump` unconditionally,
+  while the sibling `quick` branch on the next line does require
+  `args.search?.trim()`. So `kunai --jump 2 --discover` silently plays discover
+  result #2, and the index is not cleared until `SearchPhase` returns, so typing
+  `/discover` after launching with `--jump 2` does the same. **Fix:** decide whether
+  `--jump` means "auto-pick from whatever list opens" or "auto-pick from a search",
+  then make the help and the code agree. If it stays search-scoped, gate it on a
+  query the way `quick` already is; if it widens, the help line is the bug.
+  (Canvas audit A-10, verified at `ec2e90e6`.)
+- **`--download` outranks `--history`, opposite to what the dry-run announces.**
+  `resolveLaunchSurfaceName` (`bootstrap-intent.ts:67-72`) ranks `history` above
+  `download`, but `runCli` runs `maybeRunDownloadMode` and returns
+  (`main.ts:1143-1148`) before the history branch at `:1152`. `kunai --history
+--download` therefore prints "watch history" and opens download mode. **Fix:**
+  one precedence order, applied in both places — the announced surface and the
+  executed surface must come from the same list, not two hand-maintained ones.
+  (Canvas audit A-11, verified at `ec2e90e6`.)
 
 ---
 

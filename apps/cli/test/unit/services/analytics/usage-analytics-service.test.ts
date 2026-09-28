@@ -9,6 +9,7 @@ import {
 import {
   ANALYTICS_PAYLOAD_KEYS,
   DEFAULT_ANALYTICS_ENDPOINT,
+  isTransportSafeAnalyticsEndpoint,
   resolveAnalyticsEndpoint,
   UNSET_INSTALL_ID_PLACEHOLDER,
   UsageAnalyticsService,
@@ -42,12 +43,16 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
 
 function makeService(
   config: ReturnType<typeof makeConfig>,
-  options: { fetchImpl?: AnalyticsFetch; env?: { DO_NOT_TRACK?: string; CI?: string } } = {},
+  options: {
+    fetchImpl?: AnalyticsFetch;
+    env?: { DO_NOT_TRACK?: string; CI?: string };
+    endpoint?: string;
+  } = {},
 ) {
   return new UsageAnalyticsService({
     config,
     currentVersion: "0.3.0",
-    endpoint: TEST_ENDPOINT,
+    endpoint: options.endpoint ?? TEST_ENDPOINT,
     fetchImpl:
       options.fetchImpl ??
       (async () => {
@@ -230,6 +235,47 @@ describe("endpoint configuration", () => {
     expect(resolveAnalyticsEndpoint({}, "https://config.test/ping")).toBe(
       "https://config.test/ping",
     );
+  });
+
+  test("a cleartext http override is refused rather than redirected to the default", async () => {
+    // The payload carries sha256(installId) with version/os/arch. Over http it
+    // is readable on the path, and an install is followable day to day.
+    expect(resolveAnalyticsEndpoint({ KUNAI_ANALYTICS_URL: "http://ingest.test/ping" })).toBe("");
+    expect(resolveAnalyticsEndpoint({}, "http://ingest.test/ping")).toBe("");
+    expect(resolveAnalyticsEndpoint({ KUNAI_ANALYTICS_URL: "not a url" })).toBe("");
+    // Never silently redirected to Kunai's ingest: somebody who pointed their
+    // installs elsewhere did not consent to sending here instead.
+    expect(resolveAnalyticsEndpoint({}, "http://ingest.test/ping")).not.toBe(
+      DEFAULT_ANALYTICS_ENDPOINT,
+    );
+  });
+
+  test("loopback http stays allowed for local ingest development", () => {
+    expect(
+      resolveAnalyticsEndpoint({ KUNAI_ANALYTICS_URL: "http://localhost:3000/api/ping" }),
+    ).toBe("http://localhost:3000/api/ping");
+    expect(resolveAnalyticsEndpoint({}, "http://127.0.0.1:3000/api/ping")).toBe(
+      "http://127.0.0.1:3000/api/ping",
+    );
+    expect(isTransportSafeAnalyticsEndpoint("http://[::1]:3000/api/ping")).toBe(true);
+    expect(isTransportSafeAnalyticsEndpoint("http://ingest.test/ping")).toBe(false);
+  });
+
+  test("an opted-in install sends nothing to a non-https endpoint", async () => {
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    let calls = 0;
+    const service = makeService(config, {
+      endpoint: "http://ingest.test/ping",
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await service.maybePing();
+
+    expect(calls).toBe(0);
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(0);
   });
 
   test("a default endpoint is not consent: the gates are unchanged by it", () => {

@@ -1,3 +1,4 @@
+import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import type { PresenceSnapshot, PresenceStatus } from "@/services/presence/PresenceService";
 
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
@@ -137,7 +138,7 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
         const currentSnapshot = actionCtx.container.presence.getSnapshot();
         if (currentSnapshot.status === "ready") {
           const snapshot = await actionCtx.container.presence.disconnect("settings-disconnect");
-          return `Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`;
+          return `Discord presence: ${presenceStatusDetail(snapshot.status, snapshot.detail)}`;
         }
 
         const { applySettingsToRuntime } =
@@ -148,7 +149,7 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
           previous: actionCtx.container.config.getRaw(),
         });
         const snapshot = await actionCtx.container.presence.connect();
-        return `Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`;
+        return `Discord presence: ${presenceStatusDetail(snapshot.status, snapshot.detail)}`;
       },
     },
     {

@@ -19,14 +19,7 @@ import { hashInstallId, ingestAnalyticsPing, RAW_RETENTION_DAYS } from "../src/i
 import { createPostgresAnalyticsStore } from "../src/postgres-store";
 import { buildPublicMetrics, SMALL_CELL_FLOOR } from "../src/public-metrics";
 import type { AnalyticsStore } from "../src/store";
-
-/**
- * Deliberately NOT `DATABASE_URL`. These tests write and prune, and
- * `DATABASE_URL` is set in far too many shells for something destructive to
- * key off it — a stray one must never let `bun run test` mutate a real
- * database. Opting in has to be explicit.
- */
-const TEST_DATABASE_URL = process.env.ANALYTICS_TEST_DATABASE_URL?.trim();
+import { resetAnalyticsTables, TEST_DATABASE_URL, testInstallId } from "./support/pg";
 
 /** Far enough back that no real rollup could occupy these days. */
 const DAY = "1999-02-01";
@@ -35,14 +28,10 @@ const OLD_DAY = "1999-01-01";
 const OTHER_DAY = "1999-02-02";
 const HASH_SECRET = "local-test-secret";
 
-function installId(n: number): string {
-  return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-}
-
 async function ping(store: AnalyticsStore, n: number, version: string, now: number) {
   return ingestAnalyticsPing({
     method: "POST",
-    body: { installId: installId(n), version, os: "linux", arch: "x64", ts: now },
+    body: { installId: testInstallId(n, "lifecycle"), version, os: "linux", arch: "x64", ts: now },
     hashSecret: HASH_SECRET,
     store,
     now,
@@ -54,8 +43,9 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres ingest lifecycle", () => {
 
   beforeAll(async () => {
     store = createPostgresAnalyticsStore(TEST_DATABASE_URL as string);
-    // These tests own the two scratch days outright.
-    await store.pruneRawBefore("1999-03-01");
+    // Truncate lifetime too: pruneRawBefore leaves install_lifetime, which is
+    // how a prior file's May pings of n=1,2,3 used to shrink February's count.
+    await resetAnalyticsTables();
   });
 
   test("a real payload lands as one row and one lifetime install", async () => {
@@ -75,7 +65,10 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres ingest lifecycle", () => {
 
   test("dimensions group and round-trip through jsonb", async () => {
     const now = Date.parse(`${DAY}T12:00:00Z`);
-    for (let n = 2; n <= 7; n += 1) await ping(store, n, "0.3.0", now);
+    // Install 1 included deliberately: this asserts a total of 8, so it seeds
+    // all 8 rather than inheriting one from the test above. Re-pinging a day an
+    // install already has is a no-op by the (day, install_hash) primary key.
+    for (let n = 1; n <= 7; n += 1) await ping(store, n, "0.3.0", now);
     // One straggler on an older version: below the floor on its own.
     await ping(store, 8, "0.2.9", now);
 
@@ -112,6 +105,17 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres ingest lifecycle", () => {
 
   test("the same install on a second day is active twice but lifetime once", async () => {
     const oldNow = Date.parse(`${OLD_DAY}T12:00:00Z`);
+    const now = Date.parse(`${DAY}T12:00:00Z`);
+
+    // Seed every install this asserts on, rather than inheriting 2..8 from the
+    // two tests above. Reading counts that earlier tests happened to leave
+    // behind made this fail on main with `Expected: 8, Received: 5` whenever
+    // the file's tests did not all land first -- a property of the run order,
+    // not of the SQL. Re-pinging an install on a day it already has is a no-op
+    // by the (day, install_hash) primary key, so this is safe to repeat.
+    for (let n = 1; n <= 8; n += 1) {
+      await ping(store, n, n === 8 ? "0.2.9" : "0.3.0", now);
+    }
     await ping(store, 1, "0.3.0", oldNow);
 
     const older = await store.rollUpDay(OLD_DAY);
@@ -151,7 +155,13 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres ingest lifecycle", () => {
     });
     const forged = await ingestAnalyticsPing({
       method: "POST",
-      body: { installId: installId(99), version: "9.9.9-evil", os: "plan9", arch: "x64", ts: now },
+      body: {
+        installId: testInstallId(99, "lifecycle"),
+        version: "9.9.9-evil",
+        os: "plan9",
+        arch: "x64",
+        ts: now,
+      },
       hashSecret: HASH_SECRET,
       store,
       now,
@@ -166,7 +176,7 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres ingest lifecycle", () => {
   });
 
   test("the stored hash is the HMAC, never the raw install id", async () => {
-    const raw = installId(1);
+    const raw = testInstallId(1, "lifecycle");
     const hash = hashInstallId(HASH_SECRET, raw);
 
     expect(hash).toHaveLength(64);

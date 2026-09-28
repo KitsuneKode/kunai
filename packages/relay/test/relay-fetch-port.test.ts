@@ -57,6 +57,29 @@ test("createRelayFetchPort routes allowlisted provider requests through RPC", as
   });
 });
 
+test("createRelayFetchPort keeps a relay base URL's sub-path", async () => {
+  // `new URL("/rpc/x", base)` read the leading slash as absolute and dropped
+  // `/prod`, so a self-hosted relay behind a path prefix 404ed and every request
+  // fell back to direct — silently, and for as long as the relay stayed configured.
+  let called = "";
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example/prod" },
+    registry,
+    async fetch(input) {
+      called = String(input);
+      return Response.json({ ok: true });
+    },
+  });
+
+  await port.fetch("https://api.allanime.day/api", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: '{"query":"x"}',
+  });
+
+  expect(called).toBe("https://relay.example/prod/rpc/allanime");
+});
+
 test("createRelayFetchPort uses direct fetch when relay is not configured", async () => {
   let direct = false;
   const port = createRelayFetchPort({

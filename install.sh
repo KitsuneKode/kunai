@@ -43,6 +43,14 @@ ARCHIVE_TAR_COMMAND="${KUNAI_ARCHIVE_TAR_COMMAND:-tar}"
 DOWNLOAD_CHECKSUM_MAX_BYTES="${KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES:-1048576}"
 DOWNLOAD_MAX_ATTEMPTS="${KUNAI_DOWNLOAD_MAX_ATTEMPTS:-3}"
 DOWNLOAD_RETRY_BASE_MS="${KUNAI_DOWNLOAD_RETRY_BASE_MS:-1000}"
+# Only the platform binary and its archive are worth a progress line; the two
+# checksum manifests are a few hundred bytes and finish before a bar could
+# render. Their cap is the natural boundary, so anything allowed to exceed it
+# is a payload download.
+DOWNLOAD_PROGRESS_MIN_BYTES="${KUNAI_DOWNLOAD_PROGRESS_MIN_BYTES:-1048576}"
+# Set once report_path_winner has named a conflicting install, so the PATH
+# success line does not immediately contradict the warning above it.
+PATH_CONFLICT_REPORTED=0
 ACTIVATION_LOCK_TIMEOUT_MS="${KUNAI_ACTIVATION_LOCK_TIMEOUT_MS:-10000}"
 ACTIVATION_LOCK_POLL_MS="${KUNAI_ACTIVATION_LOCK_POLL_MS:-50}"
 ACTIVATION_LOCK_CORRUPT_GRACE_MS="${KUNAI_ACTIVATION_LOCK_CORRUPT_GRACE_MS:-250}"
@@ -327,13 +335,133 @@ is_retryable_http_status() {
 	[[ "$status" == 408 || "$status" == 429 || "$status" -ge 500 ]]
 }
 
+# Render a byte count the way a person reads it. Integer-only: `awk` is the one
+# tool guaranteed present that does float formatting, and shelling out to it
+# five times a second for a progress line is not worth it.
+human_bytes() {
+	local bytes="$1" whole frac
+	if [[ "$bytes" -ge 1048576 ]]; then
+		whole=$((bytes / 1048576))
+		frac=$(((bytes % 1048576) * 10 / 1048576))
+		printf '%d.%d MiB' "$whole" "$frac"
+	elif [[ "$bytes" -ge 1024 ]]; then
+		whole=$((bytes / 1024))
+		frac=$(((bytes % 1024) * 10 / 1024))
+		printf '%d.%d KiB' "$whole" "$frac"
+	else
+		printf '%d B' "$bytes"
+	fi
+}
+
+# Total size for the progress bar, or empty when the server will not say.
+# A HEAD costs one fast round trip and buys the percentage; when it fails —
+# a mirror that rejects HEAD, a proxy that strips Content-Length — progress
+# still renders, just without a bar. Never fatal: this is decoration.
+probe_content_length() {
+	local url="$1" length
+	length="$(
+		curl -sIL \
+			--connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
+			--max-time 15 \
+			-A "kunai-installer" \
+			"$url" 2>/dev/null |
+			tr -d '\r' |
+			awk 'tolower($1) == "content-length:" { value = $2 } END { if (value) print value }'
+	)" || return 0
+	[[ "$length" =~ ^[0-9]+$ ]] && printf '%s' "$length"
+}
+
+# Wipe the progress line without leaving a frame behind, so the error that
+# follows starts on a clean row.
+clear_download_progress() {
+	local columns
+	columns="${COLUMNS:-0}"
+	[[ "$columns" -lt 40 ]] && columns="$(tput cols 2>/dev/null || printf 80)"
+	[[ "$columns" -lt 40 ]] && columns=80
+	[[ "$columns" -gt 100 ]] && columns=100
+	printf '\r%*s\r' "$columns" ""
+}
+
+# Sleep between progress frames.
+#
+# POSIX `sleep` takes an integer, and this script already refuses to trust a
+# fractional one — the download retry path routes it through python3 with a
+# whole-second fallback. Under `set -e` a `sleep 0.2` that errors would not just
+# spin, it would abort the installer mid-download, so the capability is probed
+# once and the fallback is a coarser frame rate rather than a failure.
+PROGRESS_TICK=""
+progress_tick() {
+	if [[ -z "$PROGRESS_TICK" ]]; then
+		if sleep 0.2 2>/dev/null; then
+			PROGRESS_TICK="0.2"
+			return 0
+		fi
+		PROGRESS_TICK="1"
+	fi
+	sleep "$PROGRESS_TICK" 2>/dev/null || sleep 1
+}
+
+# One \r-updated line: name, size, rate, elapsed, bar, percent.
+#
+#   kunai-linux-x64   85.9 MiB   10.5 MiB/s  00:08 [####################] 100%
+#
+# Only ever drawn to a terminal. Under `curl … | bash` stdin is the script, so
+# stdout is still the tty and `-t 1` is the honest test; in CI it is a pipe and
+# the caller falls back to the single quiet line rather than writing thousands
+# of \r frames into a log.
+render_download_progress() {
+	local label="$1" got="$2" total="$3" seconds="$4"
+	local rate=0 percent bar width filled i line mins secs columns
+
+	[[ "$seconds" -gt 0 ]] && rate=$((got / seconds))
+	mins=$((seconds / 60))
+	secs=$((seconds % 60))
+
+	# Fields are sized so label + size + rate + clock + bar + percent lands in 79
+	# columns: an 80-column terminal is the floor worth designing to, and the
+	# label field holds the longest real asset name ("kunai-linux-x64.tar.gz")
+	# rather than clipping it to something that reads like a typo.
+	line="$(printf ' %-22.22s %9s %9s/s %02d:%02d' \
+		"$label" "$(human_bytes "$got")" "$(human_bytes "$rate")" "$mins" "$secs")"
+
+	if [[ -n "$total" && "$total" -gt 0 ]]; then
+		percent=$((got * 100 / total))
+		[[ "$percent" -gt 100 ]] && percent=100
+		width=20
+		filled=$((percent * width / 100))
+		bar=""
+		for ((i = 0; i < width; i++)); do
+			if [[ "$i" -lt "$filled" ]]; then bar+="#"; else bar+="-"; fi
+		done
+		line+="$(printf ' [%s] %3d%%' "$bar" "$percent")"
+	fi
+
+	# Pad to clear a previously longer frame, then return to column 0. Truncating
+	# at the real terminal width keeps a narrow window from wrapping, which would
+	# leave every frame on its own line instead of overwriting in place.
+	columns="${COLUMNS:-0}"
+	[[ "$columns" -lt 40 ]] && columns="$(tput cols 2>/dev/null || printf 80)"
+	[[ "$columns" -lt 40 ]] && columns=80
+	[[ "$columns" -gt 100 ]] && columns=100
+	printf '\r%-*.*s' "$columns" "$columns" "$line"
+}
+
 # Bounded curl download with retries for transient HTTP errors.
 # Uses --connect-timeout, remaining --max-time, --speed-time/--speed-limit, --max-filesize.
 bounded_download() {
 	local url="$1" dest="$2" max_bytes="$3" label="${4:-download}"
 	local attempt=1 code curl_rc remaining started elapsed delay_ms
+	local show_progress=0 total_bytes="" status_file curl_pid progress_started got
 	started="$(date +%s)"
 	BOUNDED_DOWNLOAD_HTTP_STATUS=""
+
+	# A progress line is for a payload on a terminal. Everywhere else — CI, a
+	# pipe, the two tiny checksum manifests — keep the single quiet line the
+	# installer has always printed.
+	if [[ -t 1 && "$max_bytes" -gt "$DOWNLOAD_PROGRESS_MIN_BYTES" ]]; then
+		show_progress=1
+		total_bytes="$(probe_content_length "$url")"
+	fi
 
 	while [[ "$attempt" -le "$DOWNLOAD_MAX_ATTEMPTS" ]]; do
 		elapsed=$(($(date +%s) - started))
@@ -347,7 +475,12 @@ bounded_download() {
 		curl_rc=0
 		# Capture curl exit: --max-filesize (63) can leave a partial with HTTP 200
 		# when Transfer-Encoding is chunked / Content-Length is absent.
-		code="$(
+		if [[ "$show_progress" == 1 ]]; then
+			# curl runs in the background so this shell can watch the staging
+			# file grow. Its status code goes to a file rather than a command
+			# substitution, which would otherwise block until curl exited and
+			# leave nothing to render meanwhile.
+			status_file="$(mktemp)"
 			curl -sS -L \
 				--connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
 				--max-time "$remaining" \
@@ -357,8 +490,52 @@ bounded_download() {
 				-A "kunai-installer" \
 				-o "$dest" \
 				-w "%{http_code}" \
-				"$url"
-		)" || curl_rc=$?
+				"$url" >"$status_file" &
+			curl_pid=$!
+			progress_started="$(date +%s)"
+			# `kill -0` is the liveness test; `wait` below is what reaps it and
+			# yields the real exit status.
+			while kill -0 "$curl_pid" 2>/dev/null; do
+				got=0
+				[[ -f "$dest" ]] && got="$(wc -c <"$dest" 2>/dev/null | tr -d ' ')"
+				render_download_progress "$label" "${got:-0}" "$total_bytes" \
+					"$(($(date +%s) - progress_started))"
+				progress_tick
+			done
+			curl_rc=0
+			wait "$curl_pid" || curl_rc=$?
+			code="$(cat "$status_file" 2>/dev/null || true)"
+			rm -f "$status_file"
+			[[ -n "$code" ]] || code="000"
+			# Only a download that actually finished earns a final frame. An
+			# error response has a body and a Content-Length of its own, so
+			# drawing one anyway rendered a full bar for a failed transfer --
+			# a 503 whose four-byte body filled the width and printed 100%
+			# immediately above "Download failed". Clear the line instead and
+			# let the error speak.
+			if [[ "$curl_rc" -eq 0 && "$code" =~ ^2[0-9][0-9]$ ]]; then
+				got=0
+				[[ -f "$dest" ]] && got="$(wc -c <"$dest" 2>/dev/null | tr -d ' ')"
+				render_download_progress "$label" "${got:-0}" "$total_bytes" \
+					"$(($(date +%s) - progress_started))"
+				printf '\n'
+			else
+				clear_download_progress
+			fi
+		else
+			code="$(
+				curl -sS -L \
+					--connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
+					--max-time "$remaining" \
+					--speed-time "$DOWNLOAD_SPEED_TIME" \
+					--speed-limit "$DOWNLOAD_SPEED_LIMIT" \
+					--max-filesize "$max_bytes" \
+					-A "kunai-installer" \
+					-o "$dest" \
+					-w "%{http_code}" \
+					"$url"
+			)" || curl_rc=$?
+		fi
 		BOUNDED_DOWNLOAD_HTTP_STATUS="$code"
 		if [[ "$curl_rc" -ne 0 ]]; then
 			rm -f "$dest"
@@ -1120,6 +1297,54 @@ finish_transaction() {
 	rm -f "$path"
 }
 
+# Does this path genuinely live under our staging root?
+#
+# The value comes out of a transaction JSON file, and what happens next is
+# `rm -rf`, so it is attacker-shaped input even though only the same user can
+# write it. The previous test was a bare string prefix, which accepted two
+# things it should not have:
+#
+#   - traversal — `$CACHE_DIR/staging/../../../.ssh` starts with the prefix and
+#     resolves somewhere else entirely;
+#   - siblings — with no `/` boundary, `$CACHE_DIR/staging-old` matched too.
+#
+# `realpath` is not portable enough to rely on here (BSD and GNU differ, and it
+# is absent on some minimal images), but `cd` + `pwd -P` resolves symlinks in any
+# POSIX shell, which covers the case a textual check cannot: a staging directory
+# that *is* a symlink pointing out of the cache passes every string test and then
+# takes the `rm -rf` somewhere else entirely.
+#
+# The textual checks stay in front of it, because resolution needs the directory
+# to exist and a path that never existed is not ours to delete either way. This
+# mirrors `isInsideStagingRoot` in
+# `apps/cli/src/services/update/native-installer/install-layout.ts`, which
+# resolves both paths and refuses anything that escapes the root.
+is_inside_staging_root() {
+	local candidate="$1"
+	local root="$CACHE_DIR/staging"
+	[[ -n "$candidate" ]] || return 1
+	case "$candidate" in
+	.. | ../* | */../* | */..) return 1 ;;
+	esac
+	case "$candidate" in
+	"$root"/?*) ;;
+	*) return 1 ;;
+	esac
+
+	# Not a directory: nothing to recurse into, and the textual checks already
+	# proved the name is inside the root.
+	[[ -d "$candidate" ]] || return 0
+
+	local resolved resolved_root
+	resolved="$(cd -- "$candidate" 2>/dev/null && pwd -P)" || return 1
+	resolved_root="$(cd -- "$root" 2>/dev/null && pwd -P)" || return 1
+	# Re-test after resolution: a symlinked staging dir now shows its real path.
+	case "$resolved" in
+	"$resolved_root"/?*) return 0 ;;
+	esac
+	return 1
+}
+
 # Remove transaction records whose owning PID is dead, and delete any staging
 # directories those records still point at. Safe to call under a version lock.
 cleanup_abandoned_transactions() {
@@ -1133,7 +1358,7 @@ cleanup_abandoned_transactions() {
 			continue
 		fi
 		staging_dir="$(sed -n 's/.*"stagingDir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$path" | head -1)"
-		if [[ -n "$staging_dir" && "$staging_dir" == "$CACHE_DIR/staging"* ]]; then
+		if is_inside_staging_root "$staging_dir"; then
 			rm -rf "$staging_dir" 2>/dev/null || true
 			rmdir "$(dirname "$staging_dir")" 2>/dev/null || true
 		fi
@@ -1299,6 +1524,10 @@ path_hint() {
 	local dir="$1" rc_file
 	case ":$PATH:" in
 	*":$dir:"*)
+		# The directory is on PATH, but saying so right after reporting that a
+		# different kunai wins reads as a contradiction and buries the warning.
+		# The conflict block has already said everything true about this case.
+		[[ "$PATH_CONFLICT_REPORTED" == 1 ]] && return 0
 		info "kunai is on PATH ($dir)."
 		return 0
 		;;
@@ -1626,8 +1855,43 @@ list_path_kunai() {
 # bookkeeping, and silently deleting software a user installed deliberately is
 # a surprise no installer should spring. Naming the conflict and the exact
 # remediation leaves them in control.
+# Map one conflicting `kunai` on PATH to the command that removes it.
+#
+# This used to test only the PATH winner against npm and bun. A winner from any
+# other manager — fnm shims a node install under /run/user/…/fnm_multishells,
+# volta, asdf, pnpm, a plain copy in /usr/local/bin — matched nothing, so the
+# installer printed a "fix it" header with no fix under it. Every branch here
+# ends in a line the user can run, and the fallback names the path so an
+# unrecognised manager is still actionable.
+path_conflict_remedy() {
+	local entry="$1"
+	case "$entry" in
+	*/.bun/*)
+		printf 'bun remove --global %s' "$KUNAI_PACKAGE"
+		;;
+	*node_modules* | */npm/* | */.npm-global/* | */fnm_multishells/* | */.nvm/* | */.volta/* | */.asdf/*)
+		# Node version managers shim whatever npm installed into the active
+		# runtime, so the removal is still npm's — run it under that runtime.
+		printf 'npm uninstall -g %s' "$KUNAI_PACKAGE"
+		;;
+	*/pnpm/*)
+		printf 'pnpm remove --global %s' "$KUNAI_PACKAGE"
+		;;
+	*/.yarn/* | */yarn/global/*)
+		printf 'yarn global remove %s' "$KUNAI_PACKAGE"
+		;;
+	*/homebrew/* | */Cellar/*)
+		printf 'brew uninstall kunai'
+		;;
+	*)
+		printf '# remove or rename %s' "$entry"
+		;;
+	esac
+}
+
 report_path_winner() {
-	local launcher="$BIN_DIR/kunai" found others=() entry winner
+	local launcher="$BIN_DIR/kunai" found others=() entry winner remedy seen
+	local remedies=()
 	[[ "$DRY" == 1 ]] && return 0
 
 	winner="$(command -v kunai 2>/dev/null || true)"
@@ -1648,16 +1912,27 @@ report_path_winner() {
 	done
 	printf '\n'
 	warn "This install is at $launcher, but 'kunai' currently resolves to $winner."
-	printf '  Fix it either way:\n'
-	if [[ "$winner" == *node_modules* || "$winner" == *npm* ]]; then
-		printf '    npm uninstall -g %s      # remove the old npm install\n' "$KUNAI_PACKAGE"
-	fi
-	if [[ "$winner" == *".bun"* ]]; then
-		printf '    bun remove --global %s   # remove the old bun install\n' "$KUNAI_PACKAGE"
-	fi
+	printf '  Fix it any of these ways:\n'
+	# Every conflicting entry gets its own line, not just the winner: removing
+	# the winner only promotes the next one, so a user told about one of three
+	# installs runs this three times. Deduplicated because two entries can share
+	# a manager.
+	remedies=()
+	for entry in "${others[@]}"; do
+		remedy="$(path_conflict_remedy "$entry")"
+		[[ -z "$remedy" ]] && continue
+		for seen in ${remedies[@]+"${remedies[@]}"}; do
+			[[ "$seen" == "$remedy" ]] && continue 2
+		done
+		remedies+=("$remedy")
+	done
+	for remedy in ${remedies[@]+"${remedies[@]}"}; do
+		printf '    %s\n' "$remedy"
+	done
 	printf '    # …or put %s earlier in your PATH\n' "$BIN_DIR"
 	printf '\n'
 	printf '  Then open a new shell and confirm with: command -v kunai\n'
+	PATH_CONFLICT_REPORTED=1
 }
 
 ensure_bun() {
@@ -1800,27 +2075,118 @@ install_source() {
 	[[ "$DRY" == 1 ]] || trap - EXIT
 }
 
-install_optional_deps() {
-	[[ "$SKIP_DEPS" == 1 || "$DRY" == 1 ]] && return
-	local pkgs=()
-	ask "Install mpv (required for playback)?" y && pkgs+=(mpv)
-	ask "Install yt-dlp (YouTube playback and downloads)?" y && pkgs+=(yt-dlp)
-	# No poster dependency to offer: every renderer consumes one natively
-	# prepared image, and half-block is the universal in-process floor.
-	((${#pkgs[@]} == 0)) && return
-
+# The exact command that installs the named packages on this machine.
+#
+# Returns a string rather than running anything, so the prompt can show the user
+# precisely what they are agreeing to and the decline path can print the same
+# text. Empty means no supported manager was found.
+dependency_install_command() {
+	local pkgs="$*"
 	if have brew; then
-		run brew install "${pkgs[@]}"
+		printf 'brew install %s' "$pkgs"
+	elif have port; then
+		printf 'sudo port install %s' "$pkgs"
 	elif have pacman; then
-		run sudo pacman -S --needed --noconfirm "${pkgs[@]}"
+		printf 'sudo pacman -S --needed %s' "$pkgs"
 	elif have apt-get; then
-		run sudo apt-get update
-		run sudo apt-get install -y "${pkgs[@]}"
+		printf 'sudo apt-get install %s' "$pkgs"
 	elif have dnf; then
-		run sudo dnf install -y "${pkgs[@]}"
-	else
-		warn "No supported package manager found. Install manually: ${pkgs[*]}"
+		printf 'sudo dnf install %s' "$pkgs"
+	elif have zypper; then
+		printf 'sudo zypper install %s' "$pkgs"
+	elif have apk; then
+		printf 'sudo apk add %s' "$pkgs"
 	fi
+}
+
+# Which of the optional dependencies this machine is actually missing.
+#
+# Checked before anything is offered: the previous flow prompted — and
+# sudo-installed — even when mpv was already present.
+missing_dependencies() {
+	local missing=()
+	have mpv || missing+=(mpv)
+	have yt-dlp || missing+=(yt-dlp)
+	# `printf '%s\n'` with no arguments still emits one empty line, which a
+	# line-reader would treat as a single blank dependency.
+	[[ "${#missing[@]}" -eq 0 ]] && return 0
+	printf '%s\n' "${missing[@]}"
+}
+
+# Offer the missing dependencies, and never escalate without a deliberate yes.
+#
+# This used to run `sudo pacman -S --noconfirm` / `sudo apt-get install -y` off a
+# prompt that defaulted to yes. A script piped from the internet became root and
+# installed packages without the user, or the package manager, confirming
+# anything. Three rules now hold:
+#
+#   - the exact command is shown before it is offered, and printed again if
+#     declined, so nothing is hidden either way;
+#   - the prompt defaults to no, because Enter must never escalate;
+#   - `--yes` covers this installer, not a system package manager, and a run
+#     with no terminal prints instead of installing.
+#
+# `--noconfirm` / `-y` are gone from the commands as well: on the accepted path
+# the package manager gets to confirm too, so there are two gates rather than
+# none.
+install_optional_deps() {
+	[[ "$SKIP_DEPS" == 1 ]] && return 0
+
+	local command line
+	# `local -a missing=()` is the bash 3.2 + `set -u` form: a bare
+	# `local -a missing` stays unbound, so `${#missing[@]}` aborts when
+	# nothing is missing — the already-installed path macOS would hit next.
+	local -a missing=()
+	# `mapfile` is bash 4+; macOS ships 3.2 as /bin/bash. Read line-by-line.
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		[[ -n "$line" ]] && missing+=("$line")
+	done < <(missing_dependencies)
+	if [[ "${#missing[@]}" -eq 0 ]]; then
+		info "mpv and yt-dlp are already installed."
+		return 0
+	fi
+
+	printf '\n'
+	if [[ " ${missing[*]} " == *" mpv "* ]]; then
+		warn "mpv is not installed — Kunai needs it to play anything."
+	fi
+	if [[ " ${missing[*]} " == *" yt-dlp "* ]]; then
+		warn "yt-dlp is not installed — YouTube playback and downloads need it."
+	fi
+
+	command="$(dependency_install_command "${missing[@]}")"
+	if [[ -z "$command" ]]; then
+		info "No supported package manager found. Install manually: ${missing[*]}"
+		info "mpv: https://mpv.io/installation/"
+		return 0
+	fi
+
+	printf '\n  This will run:\n    %s\n\n' "$command"
+
+	# `--yes` is consent to install Kunai, not consent to become root. A
+	# non-interactive run takes the same path, so `curl … | bash` in a container
+	# reports what is missing instead of quietly acquiring system packages.
+	# `--dry-run` prints the same way, matching install.ps1's -DryRun path.
+	if [[ "$YES" == 1 || "$DRY" == 1 ]] || ! : 2>/dev/null </dev/tty; then
+		info "Install them with:"
+		printf '    %s\n' "$command"
+		return 0
+	fi
+
+	local reply=""
+	if ! read -r -p "Run it now? [y/N] " reply </dev/tty; then
+		reply=""
+	fi
+	if [[ "$reply" =~ ^([yY]|[yY][eE][sS])$ ]]; then
+		# Word splitting is deliberate: the command is built from this script's
+		# own literals, never from anything a user or a server supplied.
+		# shellcheck disable=SC2086
+		run $command
+		return 0
+	fi
+
+	info "Skipped. Install them later with:"
+	printf '    %s\n' "$command"
 }
 
 usage() {

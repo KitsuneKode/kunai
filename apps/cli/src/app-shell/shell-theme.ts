@@ -51,6 +51,19 @@ export const palette = {
   dim: tokens.dim,
 } as const;
 
+/**
+ * The brand as it appears in chrome.
+ *
+ * The emoji, not a drawn kaomoji. A face built from Canadian syllabics reads
+ * better in a font that has them and measures cleanly at 5 columns — but
+ * coverage is not universal, and where the glyphs are missing the ears fall
+ * back to backticks and the whole mark turns to noise. The emoji is the only
+ * option that renders the same everywhere, which is what chrome needs.
+ *
+ * Kanna herself belongs in the surfaces that can host a real image — setup, the
+ * summary, goodbye — not in a label that has to survive every font on every
+ * platform. See `CompanionPet`.
+ */
 export const APP_LABEL = "🦊 Kunai";
 
 export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {

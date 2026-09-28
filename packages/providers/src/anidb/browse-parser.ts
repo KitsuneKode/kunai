@@ -102,10 +102,23 @@ export function parseAnidbBrowseHtml(html: string): readonly AnidbSearchResult[]
 export function chooseAnidbSearchMatch(
   query: string,
   results: readonly AnidbSearchResult[],
+  options: {
+    /**
+     * Drop the "best guess is the first card" fallback and return `null` when
+     * no title actually matches.
+     *
+     * A user who typed a query is well served by the top card even on a weak
+     * match — they can see what they got. Code repairing a *persisted* id has
+     * no such reader: substituting the first search result there swaps the show
+     * the user previously chose for an unrelated one, silently.
+     */
+    readonly requireTitleEvidence?: boolean;
+  } = {},
 ): AnidbSearchResult | null {
-  const first = results[0] ?? null;
+  const strict = options.requireTitleEvidence === true;
+  const fallback = strict ? null : (results[0] ?? null);
   const normalizedQuery = normalizeTitle(query);
-  if (!first || !normalizedQuery) return first;
+  if (results.length === 0 || !normalizedQuery) return fallback;
 
   const exact = results.find((result) => normalizeTitle(result.title) === normalizedQuery);
   if (exact) return exact;
@@ -117,7 +130,7 @@ export function chooseAnidbSearchMatch(
       normalizedQuery.startsWith(`${normalizedTitle} `)
     );
   });
-  return prefixed ?? first;
+  return prefixed ?? fallback;
 }
 
 /**

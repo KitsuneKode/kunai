@@ -7,7 +7,7 @@ animated README banner. Keep the palette **exact**.
 
 **Locked palette:** background `#100b0f` · fur/brand rose `#ff8fb0` · deep rose `#d85f86`
 · cream `#ffc6d8` · eyes/ink `#140d11` · accents: violet `#c98bff`, teal `#4fd1c5`,
-gold `#f4c45c`, blue `#5fb6ff`. Reference shape: the fox in `kunai-mascot.svg` and the
+gold `#f4c45c`, blue `#5fb6ff`. Reference shape: the fox in `kanna-bust.svg` and the
 mark in `kunai-mark.svg`.
 
 ---
@@ -19,7 +19,7 @@ mark in `kunai-mark.svg`.
 > Body fur in warm rose `#ff8fb0` with deep-rose `#d85f86` outline; cream `#ffc6d8` accents.
 > Clean 16-bit pixel-art, crisp hard edges, no anti-aliasing, no gradient, no outline glow.
 > Transparent background. Centered, generous padding. Cute but sharp — confident, not babyish.
-> Matches the pixel grid of `kunai-mascot.svg`. Single character, no text.
+> Matches the silhouette of `kanna-bust.svg`. Single character, no text.
 
 ## 2. Social / OG card — PNG, 1200×630
 
@@ -27,7 +27,7 @@ mark in `kunai-mark.svg`.
 > mascot (as in prompt 1) at ~320px. Right: large wordmark "KUNAI" in a clean geometric
 > monospace, color `#f6eff4`, wide letter-spacing, with a one-line tagline beneath in muted
 > mauve `#968a98`: "Terminal-first streaming. Finds the playable stream." Bottom-right, small
-> dim mono caption `kitsunelabs.xyz`. Three tiny dots in violet `#c98bff`, teal `#4fd1c5`,
+> dim mono caption `kitsunekode.in`. Three tiny dots in violet `#c98bff`, teal `#4fd1c5`,
 > gold `#f4c45c` as a content-kind motif. Lots of negative space, no clutter, no stock
 > imagery, subtle film grain. Feels like a senior identity studio made it.
 

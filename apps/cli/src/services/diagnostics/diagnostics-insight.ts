@@ -3,13 +3,14 @@ import { formatPlaybackGeneration } from "@/domain/playback/playback-generation"
 import type { PlaybackProblemAction } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
+import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import type { ReleaseProgressDiagnosticsSummary } from "@/services/storage/storage-read-models";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 import type { DiagnosticEvent } from "./diagnostic-event";
 import { buildRuntimeHealthSnapshot } from "./runtime-health";
-import type { RuntimeMemorySample } from "./runtime-memory";
+import type { RuntimeMemorySample, RuntimeMemorySnapshot } from "./runtime-memory";
 
 // ---------------------------------------------------------------------------
 // Shared taxonomy
@@ -117,6 +118,8 @@ export type BuildDiagnosticsInsightInput = {
   readonly releaseSummary?: { titleCount: number; episodeCount: number } | null;
   readonly releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   readonly presenceSnapshot?: PresenceSnapshot | null;
+  /** Defaults to the live process; injected so a verdict can be computed without reading host memory. */
+  readonly memorySnapshot?: RuntimeMemorySnapshot;
   readonly memorySamples?: readonly RuntimeMemorySample[];
   readonly getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
 };
@@ -215,6 +218,7 @@ export function buildDiagnosticsInsight(input: BuildDiagnosticsInsightInput): Di
   const runtimeHealth = buildRuntimeHealthSnapshot({
     recentEvents: input.recentEvents,
     currentProvider: input.state.provider,
+    memorySnapshot: input.memorySnapshot,
     memorySamples: input.memorySamples,
     persistedProviderHealth: input.getProviderHealth?.(input.state.provider as ProviderId),
   });
@@ -752,7 +756,7 @@ function resolveProviderReason(
 
 function resolveDiscordReason(presenceSnapshot: PresenceSnapshot | null | undefined): string {
   if (!presenceSnapshot) return "Disabled or not used this session";
-  return `${presenceSnapshot.status} · ${presenceSnapshot.detail}`;
+  return presenceStatusDetail(presenceSnapshot.status, presenceSnapshot.detail, " · ");
 }
 
 function resolveProviderAction(

@@ -18,6 +18,24 @@ function pathWith(...commands: readonly string[]) {
   };
 }
 
+/**
+ * The same synthetic PATH, resolved the way Windows resolves one.
+ *
+ * `Bun.which("curl")` finds `curl.exe` there because PATHEXT is applied, so a
+ * stub that only matched the literal name would fail a case the real runtime
+ * passes — testing the stub rather than the code.
+ */
+function windowsPathWith(...commands: readonly string[]) {
+  const PATHEXT = ["", ".exe", ".bat", ".cmd"];
+  return {
+    which: (command: string) => {
+      const hit = PATHEXT.map((ext) => `${command}${ext}`).find((name) => commands.includes(name));
+      return hit ? `C:\\tools\\${hit}` : null;
+    },
+    listPathEntries: () => commands,
+  };
+}
+
 describe("probeCapabilities — curl for the default anime provider", () => {
   test("reports plain curl as present but not impersonating", async () => {
     const snapshot = await probeCapabilities(pathWith("curl"));
@@ -109,5 +127,39 @@ describe("probeCapabilities — curl for the default anime provider", () => {
     expect(__testing.capabilityFingerprint(plain)).not.toBe(
       __testing.capabilityFingerprint(impersonating),
     );
+  });
+
+  // The Windows archive contains `.bat` wrappers around curl-impersonate.exe and
+  // no extensionless ones, so a discovery pattern that accepted only `.exe`
+  // could never see a correctly installed Windows setup — it reported "plain
+  // curl, no CF bypass" forever and the user had nothing left to try.
+  test("discovers the .bat wrappers the Windows release actually ships", async () => {
+    const snapshot = await probeCapabilities(
+      pathWith("curl.exe", "curl_chrome150.bat", "curl_chrome116.bat"),
+    );
+
+    expect(snapshot.curl).toMatchObject({
+      present: true,
+      impersonates: true,
+      profile: "chrome150",
+    });
+    expect(snapshot.issues.map((issue) => issue.id)).not.toContain("curl-impersonate-missing");
+  });
+
+  test("ranks .cmd and extensionless wrappers by build, not by extension", async () => {
+    const snapshot = await probeCapabilities(
+      pathWith("curl", "curl_chrome116", "curl_chrome150.cmd"),
+    );
+
+    expect(snapshot.curl.profile).toBe("chrome150");
+  });
+
+  // `curl.exe` is still plain curl. Treating any `.exe` as an impersonate build
+  // would report a CF bypass that does not exist.
+  test("plain curl.exe is not mistaken for an impersonate build", async () => {
+    const snapshot = await probeCapabilities(windowsPathWith("curl.exe"));
+
+    expect(snapshot.curl.present).toBe(true);
+    expect(snapshot.curl.impersonates).toBe(false);
   });
 });
