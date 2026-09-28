@@ -1,5 +1,14 @@
 import { docsSiteUrl } from "./site";
 
+/**
+ * JSON-LD is authored text inside a raw script sink: `JSON.stringify` alone
+ * lets a `</script>` inside any string close the tag early. Escape `<` so the
+ * payload can never leave the script element.
+ */
+export function serializeJsonLd(data: unknown): string {
+  return JSON.stringify(data).replace(/</g, "\\u003c");
+}
+
 export function websiteJsonLd() {
   return {
     "@context": "https://schema.org",

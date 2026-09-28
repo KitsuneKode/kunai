@@ -2,7 +2,12 @@ import { DocsStatusBadge } from "@/components/docs/docs-status-badge";
 import { RelatedDocLinks } from "@/components/docs/related-doc-links";
 import { navGroupForHref } from "@/lib/doc-page-nav";
 import { docsEditUrl } from "@/lib/docs-github";
-import { breadcrumbListJsonLd, faqPageJsonLd, techArticleJsonLd } from "@/lib/json-ld";
+import {
+  breadcrumbListJsonLd,
+  faqPageJsonLd,
+  serializeJsonLd,
+  techArticleJsonLd,
+} from "@/lib/json-ld";
 import { buildPageMetadata } from "@/lib/page-metadata";
 import { docsCanonicalUrl } from "@/lib/site";
 import { source } from "@/lib/source";
@@ -79,16 +84,16 @@ export default async function Page({ params }: PageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(articleJsonLd) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }}
       />
       {faqJsonLd ? (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqJsonLd) }}
         />
       ) : null}
       <DocsPage

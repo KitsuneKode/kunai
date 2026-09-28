@@ -134,7 +134,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   // Her whole movement state lives in a ref, not React state: it advances every
   // frame and must never queue a render to move her. What React does hold is
   // `phase` and `facing`, which change rarely and drive what is drawn.
-  const machine = useRef(createRoamerState({ x: -400, y: -400 }));
+  const machine = useState(() => ({ current: createRoamerState({ x: -400, y: -400 }) }))[0];
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const stepFlag = useRef(false);
   const stepMs = useRef(0);
@@ -286,14 +286,16 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     };
-  }, [enabled, size]);
+  }, [enabled, size, machine]);
 
   // Unprompted chatter. `phase` is read through a ref rather than a dependency
   // on purpose: as a dependency it re-ran this effect every time she started or
   // stopped walking, which cleared the pending timer, so the delay almost never
   // elapsed and she was close to silent.
   const phaseRef = useRef<RoamerPhase>(phase);
-  phaseRef.current = phase;
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   useEffect(() => {
     if (!enabled) return undefined;

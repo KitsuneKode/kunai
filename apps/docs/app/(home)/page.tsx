@@ -2,7 +2,7 @@ import HomePageShell from "@/app/(home)/home-page-shell";
 import { UsageLine } from "@/components/home/usage-line";
 import { codeMetadata } from "@/lib/code-metadata";
 import { featuredCommands, summarizeProviders } from "@/lib/home-presenters";
-import { softwareApplicationJsonLd, websiteJsonLd } from "@/lib/json-ld";
+import { serializeJsonLd, softwareApplicationJsonLd, websiteJsonLd } from "@/lib/json-ld";
 import { buildPageMetadata } from "@/lib/page-metadata";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -46,11 +46,11 @@ export default function HomePage() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(appJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(appJsonLd) }}
       />
       <HomePageShell
         providers={codeMetadata.providers}
