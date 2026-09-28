@@ -410,7 +410,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs: 10_000,
-        resolveCandidate: async (candidate) => {
+        resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           const sourceDataPromise = prefetchedSources.get(provider);
           if (!provider || !sourceDataPromise) {
@@ -430,6 +430,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
               context,
               cachePolicy,
               sourceDataPromise,
+              signal: candidateContext.signal,
             });
           } catch (error) {
             const providerError =
@@ -837,6 +838,7 @@ async function resolveRivestreamProviderCandidate({
   context,
   cachePolicy,
   sourceDataPromise,
+  signal,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly provider: string;
@@ -844,6 +846,7 @@ async function resolveRivestreamProviderCandidate({
   readonly context: ProviderRuntimeContext;
   readonly cachePolicy: CachePolicy;
   readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
+  readonly signal?: AbortSignal;
 }): Promise<RivestreamResolvedCandidate> {
   const displayLabel = displayRivestreamSourceLabel(provider);
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
@@ -876,7 +879,10 @@ async function resolveRivestreamProviderCandidate({
         fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
         masterUrl: source.url,
         headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
-        signal: context.signal,
+        // The per-candidate controller aborts at candidateTimeoutMs — ladder
+        // expansion runs after the prefetch, so a hung master must die with
+        // the attempt instead of lingering as an orphan fetch.
+        signal: signal ?? context.signal,
       });
       if (isHlsDeadHostStatus(inventory.probe.httpStatus)) {
         return { source, variants: [] as readonly HlsLadderVariant[] };

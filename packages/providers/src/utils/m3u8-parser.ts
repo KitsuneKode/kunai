@@ -6,6 +6,9 @@ import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-lad
  * A lightweight utility to fetch a master HLS playlist and split it into explicitly
  * ranked StreamCandidate variants based on resolution. This pushes quality
  * selection to the CLI/UI rather than leaving it to the video player's default behavior.
+ *
+ * Returns an empty list when the master host is definitively dead (5xx/404/410)
+ * — the caller must surface its own failure rather than emit a corpse row.
  */
 export async function extractQualitiesFromMaster(
   fetchPort: ProviderFetchPort,

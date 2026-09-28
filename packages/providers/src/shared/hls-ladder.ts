@@ -46,6 +46,10 @@ export type HlsMasterProbe = {
  * ambiguous on purpose — WAF-fronted CDNs reject expansion fetches yet still
  * play once the player carries the provider's headers.
  */
+// Invariant the terse `isHlsDeadHostStatus(probe.httpStatus)` idiom leans on:
+// only `http-error` probes carry a status ≥ 400 (`ok`/`not-master` are 200,
+// `network` has none) — so checking the status alone is equivalent to
+// `probe.kind === "http-error" && isHlsDeadHostStatus(probe.httpStatus)`.
 export function isHlsDeadHostStatus(status: number | undefined): boolean {
   return status !== undefined && (status >= 500 || status === 404 || status === 410);
 }

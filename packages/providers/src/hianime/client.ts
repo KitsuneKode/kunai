@@ -475,6 +475,11 @@ export async function resolveHianimeEpisodeStreams({
       referer: embedReferer,
     }));
     if (links.length === 0) {
+      // A definitive dead-host answer is upstream evidence, not a transient
+      // transport failure — label it so the caller's outage summary is honest.
+      const deadHostStatus = isHlsDeadHostStatus(inventory.probe.httpStatus)
+        ? inventory.probe.httpStatus
+        : undefined;
       return {
         availableModes,
         observedServers,
@@ -482,8 +487,11 @@ export async function resolveHianimeEpisodeStreams({
           mode: requestedMode,
           status: "failed",
           failure: {
-            code: "network-error",
-            message: "hianime ladder expansion returned no variants",
+            code: deadHostStatus !== undefined ? "not-found" : "network-error",
+            message:
+              deadHostStatus !== undefined
+                ? `hianime master host answered HTTP ${deadHostStatus} — dead upstream`
+                : "hianime ladder expansion returned no variants",
           },
         },
       };

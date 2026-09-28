@@ -891,7 +891,10 @@ async function settleAnidbLanguage(options: {
       status: "failed",
       links: [],
       failure: {
-        code: "parse-failed",
+        // `not-found`, not `parse-failed`: an empty link list means the source
+        // exposed nothing playable (dead-host drop included) — nothing failed
+        // to decode.
+        code: "not-found",
         message: `AniDB ${options.mode} source did not expose a playable HLS stream`,
         retryable: true,
       },
