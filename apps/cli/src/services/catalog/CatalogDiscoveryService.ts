@@ -191,7 +191,10 @@ async function loadYoutubeSurpriseList(
       .slice(0, 20)
       .map(providerResultToSearchResult);
     if (videos.length > 0) return videos;
-  } catch {
+  } catch (error) {
+    // A caller abort is not a search miss — don't spend a trending fetch
+    // on a signal that is already dead.
+    if (signal?.aborted) throw error;
     // A search miss is not a tray-killer — trending still spins.
   }
   return loadYoutubeDiscoveryList(signal);
