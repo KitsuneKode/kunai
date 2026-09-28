@@ -346,19 +346,6 @@ Kunai remembers provider health locally to avoid hammering known-bad paths. Heal
 `/diagnostics` shows cache provenance and health deltas without exposing signed URLs.
 
 Network-unavailable failures stop cycling early. Kunai does not mark unrelated providers as unhealthy because your Wi-Fi dropped.
-
-## Domain overrides
-
-Advanced users can point providers at alternate base domains via `~/.config/kunai/providers.json`:
-
-```json
-{
-  "videasy": "https://mirror.example"
-}
-```
-
-Overrides affect URL construction only. They do not register new providers or bypass site authentication.
-
 ## Provider geo relay
 
 Some provider metadata APIs are geo-blocked from some countries while the final
@@ -446,10 +433,3 @@ Before playback starts:
 - `/source` or `/tracks` during playback when inventory supports switching without full re-resolve.
 
 After explicit pick, Kunai stores per-title preference for future resume.
-
-## Related
-
-- [Playback and recovery](/docs/users/playback-and-recovery) — resume, replay, hotkeys
-- [Troubleshooting](/docs/users/troubleshooting) — provider resolve failed
-- [Customization](/docs/users/customization) — priority lists and overrides
-- [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) — attempt timelines

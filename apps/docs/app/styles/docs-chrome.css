@@ -209,17 +209,27 @@
 
 /* Fumadocs code figure — keep one-line fences compact */
 #nd-docs-layout .fd-codeblock,
+#nd-docs-layout figure.shiki,
 #nd-docs-layout figure:has(> pre),
 #nd-docs-layout [data-rehype-pretty-code-figure] {
   margin-block: 0.85rem;
   min-height: 0;
 }
 
+/* Inside a code figure the figure owns the frame. `pre` sits two wrappers deep
+   (copy bar + scroll region), so the old `figure:has(> pre) > pre` reset matched
+   nothing and the generic `pre` rule above painted a second bezel inside the
+   frame — the "box inside a box" gap around every fenced block. */
 #nd-docs-layout .fd-codeblock pre,
+#nd-docs-layout figure.shiki pre,
 #nd-docs-layout figure:has(> pre) > pre,
-#nd-docs-layout [data-rehype-pretty-code-figure] > pre {
+#nd-docs-layout [data-rehype-pretty-code-figure] pre {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
   margin: 0;
-  padding: 0.75rem 1rem;
+  padding: 0;
   min-height: 0;
 }
 

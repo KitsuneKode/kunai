@@ -1,5 +1,7 @@
 # Kunai 0.3.0
 
+Released 2026-09-02
+
 Give Kunai a mascot, and one of her rather than two.
 
 Kanna is a rose kitsune. A **kanna** (鉋) is a Japanese hand plane — you run it

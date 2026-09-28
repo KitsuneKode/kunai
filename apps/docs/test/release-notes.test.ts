@@ -100,6 +100,20 @@ describe("release notes artifacts", () => {
     }
   });
 
+  test("published releases carry a display date derived from publishedAt", () => {
+    // `date` is rendered verbatim on the detail page. Both shipped artifacts once
+    // carried `date: null` because the notes generator never authors it — the
+    // publish transition now derives it, and this pins that invariant.
+    const published = publishedReleaseNotesArtifacts();
+    expect(published.length).toBeGreaterThan(0);
+
+    for (const release of published) {
+      expect(release.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(release.publishedAt).not.toBeNull();
+      expect(release.date).toBe(release.publishedAt!.slice(0, 10));
+    }
+  });
+
   test("looks up releases by tag and builds detail paths", () => {
     const releases = releaseNotesArtifacts;
     const sample = releases[0];
@@ -165,8 +179,9 @@ describe("release notes artifacts", () => {
 
 test("an artifact whose only heading is trailing still shows the text above it", () => {
   // 0.3.0 carries a single `### Privacy` at the end, so everything else lives in
-  // `summary`. Returning explicit sections alone rendered the release page as the
-  // Privacy list and nothing else.
+  // `summary`. `SummaryBlocks` renders `summary` above the section list, so the
+  // display function must NOT synthesize an "Overview" section — that would print
+  // the summary twice.
   const sections = displaySectionsForRelease({
     version: "0.3.0",
     tag: "v0.3.0",
@@ -177,8 +192,7 @@ test("an artifact whose only heading is trailing still shows the text above it",
     sections: [{ title: "Privacy", body: "- privacy bullet", items: ["privacy bullet"] }],
   } as never);
 
-  expect(sections.map((section) => section.title)).toEqual(["Overview", "Privacy"]);
-  expect(sections[0]?.items).toContain("first bullet");
+  expect(sections.map((section) => section.title)).toEqual(["Privacy"]);
 });
 
 test("a summary already represented by a section is not duplicated", () => {

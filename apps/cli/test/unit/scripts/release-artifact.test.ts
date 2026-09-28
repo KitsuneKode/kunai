@@ -44,6 +44,21 @@ describe("transitionReleaseStatus", () => {
     });
   });
 
+  test("publishing derives the display date from publishedAt when unset", () => {
+    // The docs site renders `date` verbatim. Generators never author it, so the
+    // transition must fill it — a published release with `date: null` ships a
+    // bare header.
+    const result = transitionReleaseStatus(STAGED_WITH_ASSETS, "published", "2026-07-20T12:00:00Z");
+    expect(result.date).toBe("2026-07-20");
+
+    const kept = transitionReleaseStatus(
+      { ...STAGED_WITH_ASSETS, date: "2026-07-04" },
+      "published",
+      "2026-07-20T12:00:00Z",
+    );
+    expect(kept.date).toBe("2026-07-04");
+  });
+
   test("published artifacts cannot regress to staged", () => {
     expect(() => transitionReleaseStatus(PUBLISHED, "staged")).toThrow(
       "published release cannot return to staged",

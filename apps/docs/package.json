@@ -35,7 +35,9 @@
     "next": "catalog:web",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "react-markdown": "catalog:web",
     "recharts": "3.8.0",
+    "remark-gfm": "catalog:web",
     "tailwind-merge": "catalog:web",
     "tw-animate-css": "catalog:web"
   },

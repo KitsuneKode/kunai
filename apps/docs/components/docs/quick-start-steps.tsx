@@ -1,4 +1,5 @@
 import { NATIVE_INSTALL_PS1, NATIVE_INSTALL_SH } from "@/lib/install-commands";
+import { DynamicCodeBlock } from "fumadocs-ui/components/dynamic-codeblock";
 import { Step, Steps } from "fumadocs-ui/components/steps";
 import Link from "next/link";
 
@@ -11,17 +12,18 @@ export function QuickStartSteps() {
           Preferred path (self-contained binary — no Bun or Node required). Bootstrap script differs
           by OS:
         </p>
-        <pre className="bg-fd-secondary text-fd-foreground mt-2 overflow-x-auto rounded-lg p-3 text-sm">
-          <code>
-            {`# Linux / macOS
+        <div className="mt-2">
+          <DynamicCodeBlock
+            lang="bash"
+            code={`# Linux / macOS
 ${NATIVE_INSTALL_SH}
 
 # Windows (PowerShell)
 ${NATIVE_INSTALL_PS1}
 
 kunai --version`}
-          </code>
-        </pre>
+          />
+        </div>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
           The Unix installer links <code>~/.local/bin/kunai</code>. If that directory is not on{" "}
           <code>PATH</code>, the script prints the export to add — it does not rewrite your shell
@@ -37,9 +39,10 @@ kunai --version`}
           and browsing still work when mpv is missing — only committed playback startup requires it.
           Kunai looks for <code>mpv</code> / <code>mpv.exe</code>, not <code>mpvnet.exe</code>.
         </p>
-        <pre className="bg-fd-secondary text-fd-foreground mt-2 overflow-x-auto rounded-lg p-3 text-sm">
-          <code>
-            {`# Linux
+        <div className="mt-2">
+          <DynamicCodeBlock
+            lang="bash"
+            code={`# Linux
 sudo pacman -S mpv        # Arch
 sudo apt install mpv      # Debian/Ubuntu
 sudo dnf install mpv      # Fedora
@@ -53,8 +56,8 @@ winget install mpv
 mpv --version
 kunai doctor
 kunai --setup`}
-          </code>
-        </pre>
+          />
+        </div>
       </Step>
       <Step>
         <h3 className="text-fd-foreground m-0 text-lg font-medium">Search and pick a title</h3>

@@ -10,7 +10,6 @@ Kunai stores preferences locally. Most settings are editable from `/settings` or
 | File | Purpose |
 | --- | --- |
 | `~/.config/kunai/config.json` | User preferences, provider priority, language profiles, presence, downloads |
-| `~/.config/kunai/providers.json` | Optional per-provider base domain overrides |
 | `~/.config/kunai/install.json` | Install channel metadata (binary / npm / bun) |
 </Callout>
 
@@ -147,8 +146,6 @@ Kunai ships with the Sakura design system baked into the terminal UI. There is n
 | `offlineMode` | Persistent local-only shell posture (separate from `--offline` launch) |
 | `autoCleanupWatched` | Surface watched downloads as cleanup candidates |
 | `autoCleanupGraceDays` | Days a watched download is kept before it becomes a cleanup candidate (default `7`) |
-| `autoDownload` | Download ahead automatically: `off` (default), `next`, or `season` |
-| `autoDownloadNextCount` | How many episodes ahead `autoDownload: "next"` fetches (default `1`) |
 | `offlineArtworkCacheEnabled` | Cache poster artwork alongside downloads for offline browsing (default `true`) |
 
 See [Downloads and offline](/docs/users/downloads-and-offline).
@@ -165,27 +162,6 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 ```
 
 Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
-
-## providers.json overrides
-
-Advanced users can override provider base domains without editing code:
-
-```json
-{
-  "videasy": "https://mirror.example",
-  "vidlink": "https://alt.example"
-}
-```
-
-- File path: `~/.config/kunai/providers.json`
-- Keys match provider ids from the production registry.
-- `vidking` remains accepted as a legacy alias for `videasy`.
-- Overrides affect URL construction only — they do not add new providers.
-
-<Callout type="warning" title="Overrides do not fix broken providers">
-Domain overrides help when a provider moves mirrors. They do not bypass DRM, add authentication, or guarantee stream availability.
-</Callout>
-
 ## mpv flags and bridge options
 
 Kunai always launches `mpv` for playback. You can forward diagnostic flags for a single run:
@@ -281,9 +257,3 @@ Use `/settings` or `/setup` for guided changes. Settings persist immediately to 
 <Callout type="idea" title="Reset without uninstall">
 Delete `config.json` to reset preferences. Use `kunai uninstall --purge` only when you want config, history, and cache removed together.
 </Callout>
-
-## Related
-
-- [Providers](/docs/users/providers) — fallback chains and priority
-- [Media selection](/docs/users/media-selection) — language profiles in practice
-- [Troubleshooting](/docs/users/troubleshooting) — when config changes do not fix playback

@@ -18,6 +18,7 @@ import {
   ViewOptionsPopover,
 } from "fumadocs-ui/layouts/docs/page";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 type PageProps = {
@@ -112,7 +113,15 @@ export default async function Page({ params }: PageProps) {
         {navGroup ? <RelatedDocLinks group={navGroup} currentHref={page.url} /> : null}
         <div className="not-prose border-fd-border mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6">
           <EditOnGitHub href={editUrl} />
-          {lastModified ? <PageLastUpdate date={lastModified} /> : null}
+          <div className="flex items-center gap-4">
+            <Link
+              href="/feedback"
+              className="text-fd-muted-foreground hover:text-fd-foreground text-sm transition-colors"
+            >
+              Report an issue or give feedback
+            </Link>
+            {lastModified ? <PageLastUpdate date={lastModified} /> : null}
+          </div>
         </div>
       </DocsPage>
     </>

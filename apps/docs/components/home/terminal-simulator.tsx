@@ -334,63 +334,66 @@ const TerminalSimulator = memo(function TerminalSimulator({
             />
             <span className="kunai-cursor shrink-0" />
           </span>
-
-          <AnimatePresence initial={false}>
-            {commandPaletteOpen && filteredCommands.length > 0 && (
-              <motion.span
-                initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-                className="kunai-command-palette"
-                onClick={(e) => e.stopPropagation()}
-                role="presentation"
-              >
-                <span className="palette-search-wrapper">
-                  <span className="kunai-text-accent mr-2 font-bold">/</span>
-                  <input
-                    ref={paletteInputRef}
-                    type="text"
-                    className="palette-search-input text-fd-foreground w-full border-none bg-transparent text-xs outline-none"
-                    value={searchQuery.replace(/^\//, "")}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search commands..."
-                    aria-label="CLI commands query filter"
-                  />
-                </span>
-                <span className="palette-list flex max-h-[180px] flex-col gap-0.5 overflow-y-auto p-1.5">
-                  {filteredCommands.map((cmd, index) => (
-                    <button
-                      type="button"
-                      key={cmd.id}
-                      className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                        index === selectedPaletteIndex
-                          ? "is-selected"
-                          : "text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const runCmd = `/${cmd.id}`;
-                        setTerminalInput(runCmd);
-                        runSimulatedCommand(runCmd);
-                      }}
-                      onMouseEnter={() => setSelectedPaletteIndex(index)}
-                    >
-                      <span>
-                        <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
-                        <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
-                          ({cmd.label})
-                        </span>
-                        <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
-                      </span>
-                      <span className="palette-shortcut">Enter</span>
-                    </button>
-                  ))}
-                </span>
-              </motion.span>
-            )}
-          </AnimatePresence>
         </div>
+
+        {/* The palette hangs off the stage, not the scrolling body: inside
+            `.kunai-terminal-body` its `top` resolves against scrolled content,
+            so once logs overflow she renders above the visible region. */}
+        <AnimatePresence initial={false}>
+          {commandPaletteOpen && filteredCommands.length > 0 && (
+            <motion.span
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.98 }}
+              transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+              className="kunai-command-palette"
+              onClick={(e) => e.stopPropagation()}
+              role="presentation"
+            >
+              <span className="palette-search-wrapper">
+                <span className="kunai-text-accent mr-2 font-bold">/</span>
+                <input
+                  ref={paletteInputRef}
+                  type="text"
+                  className="palette-search-input text-fd-foreground w-full border-none bg-transparent text-xs outline-none"
+                  value={searchQuery.replace(/^\//, "")}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search commands..."
+                  aria-label="CLI commands query filter"
+                />
+              </span>
+              <span className="palette-list flex max-h-[180px] flex-col gap-0.5 overflow-y-auto p-1.5">
+                {filteredCommands.map((cmd, index) => (
+                  <button
+                    type="button"
+                    key={cmd.id}
+                    className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                      index === selectedPaletteIndex
+                        ? "is-selected"
+                        : "text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const runCmd = `/${cmd.id}`;
+                      setTerminalInput(runCmd);
+                      runSimulatedCommand(runCmd);
+                    }}
+                    onMouseEnter={() => setSelectedPaletteIndex(index)}
+                  >
+                    <span>
+                      <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
+                      <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
+                        ({cmd.label})
+                      </span>
+                      <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
+                    </span>
+                    <span className="palette-shortcut">Enter</span>
+                  </button>
+                ))}
+              </span>
+            </motion.span>
+          )}
+        </AnimatePresence>
 
         <div className="kunai-terminal-presets mt-4">
           <span className="kunai-step-meta shrink-0">Try one</span>

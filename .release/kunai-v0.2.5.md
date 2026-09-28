@@ -1,5 +1,7 @@
 # Kunai 0.2.5
 
+Released 2026-06-07
+
 A large reliability + experience pass: continuous play, offline parity, smarter
 anime classification, a rebuilt calendar, downloads that don't eat your RAM, and
 a long tail of UX fixes.

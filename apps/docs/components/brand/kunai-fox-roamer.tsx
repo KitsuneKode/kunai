@@ -145,18 +145,40 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
   const [facing, setFacing] = useState<"left" | "right">("right");
   const [line, setLine] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(false);
+  // Docs chrome exclusion band: `#nd-sidebar` on the left, `#nd-toc` on the
+  // right. She must never sit on clickable navigation — a TOC link that hits
+  // her quip button reads as a dead link. Rects are cached and re-read on a
+  // cadence because getBoundingClientRect every frame is a layout read.
+  const exclusionBand = useRef<{ left: number; right: number } | null>(null);
+  const exclusionStamp = useRef(0);
 
   // Resolved after mount so server and client agree on the first render, and so
   // a dismissal from a previous visit is honoured before she is ever painted.
   useEffect(() => {
-    if (!window.matchMedia("(pointer: fine)").matches) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    try {
-      if (window.localStorage.getItem(STORAGE_KEY) === "1") return;
-    } catch {
-      // A blocked or unavailable store is not a reason to refuse to render.
-    }
-    setEnabled(true);
+    const eligible = () =>
+      window.matchMedia("(pointer: fine)").matches &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const isDismissed = () => {
+      try {
+        return window.localStorage.getItem(STORAGE_KEY) === "1";
+      } catch {
+        return false;
+      }
+    };
+    if (eligible() && !isDismissed()) setEnabled(true);
+    // "Bring Kanna back" — the reverse of dismiss. Anything on the page can
+    // dispatch this; she clears the flag and walks again without a reload.
+    const restore = () => {
+      if (!eligible()) return;
+      try {
+        window.localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // An unavailable store just means the restore is session-scoped.
+      }
+      setEnabled(true);
+    };
+    window.addEventListener("kunai:roamer-restore", restore);
+    return () => window.removeEventListener("kunai:roamer-restore", restore);
   }, []);
 
   const say = useCallback((pool: readonly string[]) => {
@@ -210,6 +232,30 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       const next = stepRoamer(before, { pointer: pointer.current, dt });
       machine.current = next;
 
+      // Keep her out of the docs chrome columns — sidebar on the left, TOC on
+      // the right. A TOC link that lands on her quip button reads as a dead
+      // link. Rects re-read on a ~500ms cadence because getBoundingClientRect
+      // every frame is a layout read.
+      if (timestamp - exclusionStamp.current > 500) {
+        exclusionStamp.current = timestamp;
+        const sidebar = document.getElementById("nd-sidebar")?.getBoundingClientRect();
+        const toc = document.getElementById("nd-toc")?.getBoundingClientRect();
+        const left = sidebar && sidebar.width > 1 ? sidebar.right : null;
+        const right = toc && toc.width > 1 ? toc.left : null;
+        exclusionBand.current =
+          left !== null || right !== null
+            ? { left: left ?? 0, right: right ?? Number.POSITIVE_INFINITY }
+            : null;
+      }
+      const band = exclusionBand.current;
+      if (band) {
+        const margin = size / 2 + 12;
+        const clampedX = Math.min(Math.max(next.pos.x, band.left + margin), band.right - margin);
+        if (clampedX !== next.pos.x) {
+          machine.current = { ...next, pos: { ...next.pos, x: clampedX } };
+        }
+      }
+
       // The gait runs on its own clock so footfalls stay even whatever the
       // frame rate is doing.
       if (next.phase === "walking") {
@@ -226,8 +272,9 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
       if (next.phase !== before.phase) setPhase(next.phase);
       if (next.facing !== before.facing) setFacing(next.facing);
 
-      host.style.transform = `translate3d(${(next.pos.x - size / 2).toFixed(1)}px, ${(
-        next.pos.y -
+      const pos = machine.current.pos;
+      host.style.transform = `translate3d(${(pos.x - size / 2).toFixed(1)}px, ${(
+        pos.y -
         size / 2
       ).toFixed(1)}px, 0)`;
     }
@@ -281,6 +328,8 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     } catch {
       // Dismissal still holds for this page view even if it cannot be stored.
     }
+    // Let the restore chip in the sidebar footer appear without a reload.
+    window.dispatchEvent(new Event("kunai:roamer-dismissed"));
   }, []);
 
   if (!enabled) return null;

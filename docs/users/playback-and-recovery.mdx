@@ -63,14 +63,16 @@ More: [Continue watching and new episodes](/docs/users/continue-watching-and-new
 
 Provider catalogs drift. Recovery is normal usage.
 
-| Action                | Keys / command           | Effect                                                 |
-| --------------------- | ------------------------ | ------------------------------------------------------ |
-| Recover stream        | `r`, `/recover`          | Refresh current provider intent                        |
-| Fallback provider     | `⇧F`, `/fallback`        | Next compatible provider                               |
-| Recompute             | `/recompute`             | Bypass stale cache for current episode                 |
-| Replay                | `/replay`                | Start current episode from beginning                   |
-| Source                | `o`, `/source`           | Switch source / mirror                                 |
-| Quality               | `k`, `/quality`          | Switch quality                                         |
+| Action                   | Keys / command                                             | Effect                                            |
+| ------------------------ | ---------------------------------------------------------- | ------------------------------------------------- |
+| Recover stream           | `r` in the recovery prompt or during playback, `/recover`  | Refresh current provider intent                   |
+| Refresh stream (in mpv)  | `Ctrl+R`                                                   | Re-resolve the same episode without leaving playback |
+| Resume saved position    | `Alt+R`                                                    | Jump back to your last position after refresh     |
+| Fallback provider        | `⇧F`, `/fallback`                                          | Next compatible provider                          |
+| Recompute                | `/recompute`                                               | Bypass stale cache for current episode            |
+| Replay                   | `/replay`                                                  | Start current episode from beginning              |
+| Source                   | `o`, `/source`                                             | Switch source / mirror                            |
+| Quality                  | `k`, `/quality`                                            | Switch quality                                    |
 | Reset provider health | `/reset-provider-health` | Forget down-provider memory so auto-fallback can retry |
 | Clear cache           | `/clear-cache`           | Drop cached stream URLs                                |
 | Diagnostics           | `/diagnostics`           | Runtime panel with attempt timeline                    |
@@ -181,10 +183,3 @@ kunai --offline
 Offline playback writes history with the same shape as online. Opening the offline library never calls providers.
 
 More: [Downloads and offline](/docs/users/downloads-and-offline).
-
-## Related
-
-- [Providers](/docs/users/providers) — fallback chains and retry semantics
-- [Media selection](/docs/users/media-selection) — pickers and inventory model
-- [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) — evidence collection
-- [Commands and shortcuts](/docs/users/commands-and-shortcuts) — full command list

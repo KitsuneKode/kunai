@@ -25,6 +25,9 @@ html {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
+  /* Custom anchors (`#install`, release sections, TOC landings) must clear the
+     sticky chrome; fumadocs headings carry scroll-m-28 but hand-rolled ids don't. */
+  scroll-padding-top: 6rem;
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 

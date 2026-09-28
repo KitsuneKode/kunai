@@ -125,25 +125,10 @@ export function displaySectionsForRelease(
   release: ReleaseNotesArtifact,
 ): readonly ReleaseNotesSection[] {
   if (release.sections.length > 0) {
-    // Explicit sections only cover text under a `###` heading. A body whose only
-    // heading is trailing -- 0.3.0 carries one `### Privacy` at the end -- puts the
-    // whole release above it into `summary`, and returning sections alone dropped it.
-    const summary = release.summary?.trim();
-    const summaryAlreadyShown =
-      !summary ||
-      release.sections.some(
-        (section) => section.title === "Overview" || section.body.trim() === summary,
-      );
-    if (summaryAlreadyShown) return release.sections;
-    const items = sectionItemsFromMarkdownBody(summary);
-    return [
-      {
-        title: "Overview",
-        body: summary,
-        items: items.length > 0 ? items : [summary.split(/\n{2,}/)[0]?.trim() ?? summary],
-      },
-      ...release.sections,
-    ];
+    // Intro prose that isn't under a `###` heading lands in `summary`, which
+    // `SummaryBlocks` renders above the section list — so returning an extra
+    // synthesized "Overview" section here would print the summary twice.
+    return release.sections;
   }
 
   const source = (release.changelogBody ?? release.summary).trim();
@@ -193,13 +178,24 @@ export function displaySectionsForRelease(
   ];
 }
 
+/** Strip inline markdown markers for contexts that want a plain teaser. */
+function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\b_([^_]+)_\b/g, "$1")
+    .replace(/`([^`]+)`/g, "$1");
+}
+
 export function releaseOneLineSummary(release: ReleaseNotesArtifact): string {
   const first = release.summary
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .find(Boolean);
   if (!first) return release.title;
-  const compact = first.replace(/\s+/g, " ").trim();
+  const compact = stripInlineMarkdown(first).replace(/\s+/g, " ").trim();
   if (compact.length <= 180) return compact;
   return `${compact.slice(0, 177).trimEnd()}…`;
 }
