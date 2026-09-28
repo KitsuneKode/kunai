@@ -970,14 +970,32 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // network probe — and deletes the stale row when the provider heals.
   try {
     const { providerHealthNotice } = await import("./services/playback/provider-health-notice");
-    const laneDefaults = new Set([config.provider, config.animeProvider, config.youtubeProvider]);
+    const { providerPriorityForLane } = await import("./domain/provider-lane");
+    const { resolveProviderLaneFromModule } = await import("@kunai/core");
+    const laneDefaults: ReadonlyArray<{ id: string; lane: "series" | "anime" | "youtube" }> = [
+      { id: config.provider, lane: "series" },
+      { id: config.animeProvider, lane: "anime" },
+      { id: config.youtubeProvider, lane: "youtube" },
+    ];
     const healthRows = container.providerHealth.list();
-    const loadedProviders = container.engine.modules.map((module) => module.providerId);
-    for (const laneDefault of laneDefaults) {
+    // Suggestions must stay inside the lane — a movie provider can't resolve
+    // anime, so recommending rivestream when the anime default is down would
+    // be a notice that points at a provider the lane will reject.
+    const loadedByLane = new Map<string, string[]>();
+    for (const module of container.engine.modules) {
+      const lane = resolveProviderLaneFromModule(module);
+      const list = loadedByLane.get(lane) ?? [];
+      list.push(module.providerId);
+      loadedByLane.set(lane, list);
+    }
+    const seen = new Set<string>();
+    for (const { id: laneDefault, lane } of laneDefaults) {
+      if (seen.has(laneDefault)) continue;
+      seen.add(laneDefault);
       const notice = providerHealthNotice({
         configuredProvider: laneDefault,
-        providerPriority: config.providerPriority,
-        loadedProviders,
+        providerPriority: providerPriorityForLane(config, lane),
+        loadedProviders: loadedByLane.get(lane) ?? [],
         healthRows,
       });
       if (notice) {
