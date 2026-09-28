@@ -1,11 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import type { SearchResult } from "@/domain/types";
+import { clearTmdbSessionCache } from "@/services/catalog/tmdb-proxy";
 import {
   buildRecommendCacheKey,
   isCacheExpired,
   RecommendationServiceImpl,
 } from "@/services/recommendations/RecommendationServiceImpl";
+
+// The host-breaker chain in tmdb-proxy keeps per-host failure state across
+// tests in this file — a 503 stub would otherwise poison every later case.
+afterEach(() => {
+  clearTmdbSessionCache();
+});
 
 describe("recommendation cache", () => {
   test("buildRecommendCacheKey includes id and type", () => {

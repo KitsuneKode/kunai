@@ -1,9 +1,16 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 
 import {
   CatalogDiscoveryService,
   DiscoveryUnavailableError,
+  loadAnimeRecommendationsForMedia,
 } from "@/services/catalog/CatalogDiscoveryService";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 test("CatalogDiscoveryService reuses cached trending results until ttl expires", async () => {
   let now = 1_000;
@@ -194,3 +201,79 @@ function captureRejection(promise: Promise<unknown>): Promise<unknown> {
     (error: unknown) => error,
   );
 }
+
+test("loadAnimeRecommendationsForMedia maps the Media.recommendations edge", async () => {
+  let seenBody = "";
+  globalThis.fetch = Object.assign(
+    async (_input: unknown, init?: RequestInit) => {
+      seenBody = String(init?.body ?? "");
+      return new Response(
+        JSON.stringify({
+          data: {
+            Media: {
+              recommendations: {
+                nodes: [
+                  {
+                    mediaRecommendation: {
+                      id: 99,
+                      title: { romaji: "Frieren", english: "Frieren: Beyond Journey's End" },
+                      coverImage: { extraLarge: "https://img/frieren.jpg", large: null },
+                      description: "Elves outlive everyone.",
+                      episodes: 28,
+                      format: "TV",
+                      duration: 24,
+                      averageScore: 91,
+                      popularity: 5000,
+                      startDate: { year: 2023 },
+                      synonyms: [],
+                    },
+                  },
+                  { mediaRecommendation: null },
+                ],
+              },
+            },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  const results = await loadAnimeRecommendationsForMedia("21");
+  expect(seenBody).toContain("recommendations");
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({
+    id: "99",
+    title: "Frieren: Beyond Journey's End",
+    isAnime: true,
+    metadataSource: "AniList similar titles",
+  });
+});
+
+test("loadAnimeRecommendationsForMedia refuses non-numeric ids without a request", async () => {
+  let calls = 0;
+  globalThis.fetch = Object.assign(
+    async () => {
+      calls += 1;
+      return new Response("{}", { status: 200 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+
+  expect(await loadAnimeRecommendationsForMedia("tmdb:550")).toEqual([]);
+  expect(calls).toBe(0);
+});
+
+test("loadAnimeRecommendationsForMedia resolves empty when the title has no recs", async () => {
+  globalThis.fetch = Object.assign(
+    async () =>
+      new Response(JSON.stringify({ data: { Media: { recommendations: { nodes: [] } } } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    { preconnect: originalFetch.preconnect },
+  );
+
+  expect(await loadAnimeRecommendationsForMedia("99999999")).toEqual([]);
+});

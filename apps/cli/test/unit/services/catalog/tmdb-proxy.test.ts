@@ -19,6 +19,15 @@ function isTmdbApiUrl(raw: string): boolean {
   }
 }
 
+function isTmdbAltUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" && url.hostname === "api.tmdb.org";
+  } catch {
+    return false;
+  }
+}
+
 describe("tmdb proxy search errors", () => {
   test("maps socket failures to a friendly search message", () => {
     const error = new Error("Was there a typo in the url or port?");
@@ -94,7 +103,8 @@ describe("fetchTmdbJsonCached", () => {
   test("skips the proxy after one failure instead of paying a dead request per call", async () => {
     // api.videasy.to has gone NXDOMAIN before — while it is dead every
     // proxied attempt is a stalled DNS/TCP miss in front of the real call.
-    // The breaker sends the second call straight to TMDB.
+    // Each mirror gets exactly one attempt, then the breaker sends later
+    // calls straight to TMDB.
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
       async (input: unknown) => {
@@ -114,7 +124,79 @@ describe("fetchTmdbJsonCached", () => {
     await expect(fetchTmdbJsonCached("/movie/1")).resolves.toEqual({ ok: true });
     await expect(fetchTmdbJsonCached("/tv/2")).resolves.toEqual({ ok: true });
 
-    expect(urls.filter((url) => !isTmdbApiUrl(url))).toHaveLength(1);
+    // Two proxy mirrors, each paid exactly once.
+    expect(urls.filter((url) => !isTmdbApiUrl(url))).toHaveLength(2);
+  });
+
+  test("falls through to the tmdb.org alias when all earlier hosts fail", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: unknown) => {
+        const url = String(input);
+        urls.push(url);
+        if (isTmdbAltUrl(url)) {
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        throw new Error("getaddrinfo ENOTFOUND");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await expect(fetchTmdbJsonCached("/movie/1")).resolves.toEqual({ ok: true });
+    // both proxy mirrors + the canonical host dead → the alias answered.
+    expect(urls).toHaveLength(4);
+    expect(isTmdbAltUrl(urls[3]!)).toBe(true);
+
+    // Breakers stick: the next call goes straight to the surviving host.
+    urls.length = 0;
+    await expect(fetchTmdbJsonCached("/tv/2")).resolves.toEqual({ ok: true });
+    expect(urls).toHaveLength(1);
+    expect(isTmdbAltUrl(urls[0]!)).toBe(true);
+  });
+
+  test("a 4xx is a definitive answer — no mirror hop, no breaker", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: unknown) => {
+        const url = String(input);
+        urls.push(url);
+        return new Response("{}", {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await expect(fetchTmdbJsonCached("/movie/1")).rejects.toThrow("404");
+    // Same upstream data on every host — a 404 resolves identically
+    // everywhere, so only the first host was asked.
+    expect(urls).toHaveLength(1);
+  });
+
+  test("a 5xx is an availability failure and advances the chain", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: unknown) => {
+        const url = String(input);
+        urls.push(url);
+        if (isTmdbAltUrl(url)) {
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return new Response("{}", { status: 503 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await expect(fetchTmdbJsonCached("/movie/1")).resolves.toEqual({ ok: true });
+    expect(urls).toHaveLength(4);
+    expect(isTmdbAltUrl(urls[3]!)).toBe(true);
   });
 
   test("a caller abort does not trip the proxy breaker or fire a fallback request", async () => {

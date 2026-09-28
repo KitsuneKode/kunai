@@ -31,7 +31,7 @@ export type YoutubeRecommendationHistorySeed = {
   readonly completed?: boolean;
 };
 
-function providerResultToSearchResult(result: ProviderSearchResult): SearchResult {
+export function providerResultToSearchResult(result: ProviderSearchResult): SearchResult {
   return {
     id: result.id,
     type: result.type,
