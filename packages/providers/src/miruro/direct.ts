@@ -1593,6 +1593,13 @@ export async function fetchMiruroPipeBody(
     await miruroPipeRetrySleep(400 + Math.floor(Math.random() * 400), requestSignal);
     if (requestSignal.aborted) break;
   }
+  // An abort landing inside the retry sleep resolves it rather than rejecting
+  // — without this check the challenged response would fall through to the
+  // curl fallback, whose abort listener on an already-dead signal never fires
+  // and the subprocess would run to --max-time after the caller walked away.
+  if (requestSignal.aborted) {
+    throw signal?.reason instanceof Error ? signal.reason : new Error("aborted");
+  }
   if (response === undefined) {
     throw new Error("Miruro pipe fetch did not produce a response");
   }

@@ -693,4 +693,35 @@ describe("fetchMiruroPipeBody CF-challenge retry", () => {
       setMiruroPipeRetrySleepForTest(null);
     }
   });
+
+  test("an abort inside the retry wait stops the leg — no curl subprocess is spawned", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    // The abort lands while the retry wait is in flight — the challenged
+    // response must not fall through to the curl fallback (whose listener on
+    // an already-dead signal never fires).
+    setMiruroPipeRetrySleepForTest(() => {
+      controller.abort();
+      return Promise.resolve();
+    });
+    try {
+      const fetchPort = {
+        fetch: async () => {
+          calls += 1;
+          return new Response("<html>just a moment</html>", { status: 403 });
+        },
+      };
+      await expect(
+        fetchMiruroPipeBody(
+          "https://www.miruro.bz/api/secure/pipe?x=1",
+          {},
+          controller.signal,
+          fetchPort as never,
+        ),
+      ).rejects.toThrow();
+      expect(calls).toBe(1);
+    } finally {
+      setMiruroPipeRetrySleepForTest(null);
+    }
+  });
 });
