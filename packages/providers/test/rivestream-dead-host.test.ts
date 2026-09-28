@@ -38,7 +38,7 @@ describe("rivestream dead master host", () => {
       now: () => "2026-05-19T00:00:00.000Z",
       fetch: {
         runtime: "direct-http",
-        fetch: async (input) => {
+        fetch: async (input: unknown) => {
           const url = String(input);
           if (url.includes(".m3u8")) return new Response("gone", { status: 503 });
           return jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture);
@@ -62,7 +62,7 @@ describe("rivestream dead master host", () => {
       now: () => "2026-05-19T00:00:00.000Z",
       fetch: {
         runtime: "direct-http",
-        fetch: async (input) => {
+        fetch: async (input: unknown) => {
           const url = String(input);
           if (url.includes(".m3u8")) return new Response("Forbidden", { status: 403 });
           return jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture);
