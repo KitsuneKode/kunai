@@ -64,3 +64,7 @@ features:
     label: install.sh / install.ps1
     status: beta
     description: Preferred native binary installers; Bun/npm secondary; source contributor-oriented.
+  - id: mobile-terminal-preview
+    label: Mobile terminal preview
+    status: beta
+    description: Opt-in host-proof slice for Termux (Android) and a-Shell (iOS); no catalog or supported playback — pending physical-device qualification.

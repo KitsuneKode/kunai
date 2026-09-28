@@ -91,6 +91,13 @@ export const docNavEntries: readonly DocNavEntry[] = [
     group: "setup",
     surfaces: ["hub"],
   },
+  {
+    title: "Mobile Preview",
+    href: "/docs/users/mobile-preview",
+    description: "Experimental Termux and a-Shell host proof — not a supported app.",
+    group: "setup",
+    surfaces: ["hub"],
+  },
   // Daily
   {
     title: "Share Links",

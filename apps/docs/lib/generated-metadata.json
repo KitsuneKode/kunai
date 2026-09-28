@@ -2,8 +2,8 @@
   "version": "0.3.0",
   "cliVersion": "0.3.0",
   "cliSourceFingerprint": "9399f4e19c122a598078ee554d5ef0659a4c62985eef9ea2a9a7b0aa8ac691de",
-  "docsContentFingerprint": "6cf519d315982a3c8c0617891325b79a3179587b3761e6097f012d298ee5dfc7",
-  "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
+  "docsContentFingerprint": "42f6484bc3a0c2c003e8d4bc9676519bff6a645759aa48eed8219b8dab15e403",
+  "featureStatusRevision": "c6ee58df530c8cc1daca6c4a5294ebc2b8c4af16b29860025c423c76817a800b",
   "commandCount": 82,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
   "providers": [
@@ -884,6 +884,12 @@
       "label": "install.sh / install.ps1",
       "status": "beta",
       "description": "Preferred native binary installers; Bun/npm secondary; source contributor-oriented."
+    },
+    {
+      "id": "mobile-terminal-preview",
+      "label": "Mobile terminal preview",
+      "status": "beta",
+      "description": "Opt-in host-proof slice for Termux (Android) and a-Shell (iOS); no catalog or supported playback — pending physical-device qualification."
     }
   ],
   "runtimeBaseline": {
