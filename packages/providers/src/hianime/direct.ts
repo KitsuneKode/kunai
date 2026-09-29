@@ -290,7 +290,12 @@ async function resolveShowId(
  * upstream 5xx maintenance windows might.
  */
 function isRetryableHianimeStreamFailure(code: HianimeStreamFailureCode): boolean {
-  return code === "blocked" || code === "network-error" || code === "provider-unavailable";
+  return (
+    code === "blocked" ||
+    code === "network-error" ||
+    code === "provider-unavailable" ||
+    code === "timeout"
+  );
 }
 
 export const hianimeProviderModule: CoreProviderModule = {

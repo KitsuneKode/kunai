@@ -47,6 +47,7 @@ import {
   setAllMangaProviderCacheClockForTest,
   setAllMangaRetrySleepForTest,
 } from "../src/index";
+import { ProviderHttpError } from "../src/runtime/fetch";
 
 const TEST_KEY_HEX = ALLMANGA_KEY_HEX;
 const FIXTURE_BASE = new URL("./fixtures/allmanga/", import.meta.url);
@@ -1156,6 +1157,56 @@ describe("AllManga provider evidence fixtures", () => {
     expect(fetchMock.abortedBaselineRequests).toBe(1);
   });
 
+  /**
+   * A typed refusal survives lanes that merely fulfilled empty: the refused
+   * lane may have been the only one holding the real source, so flattening
+   * it into [] would record an upstream outage as a catalog miss.
+   */
+  test("a refused adapter lane propagates even when another lane fulfilled empty", async () => {
+    await using _fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "baseline-dead-and-empty",
+    });
+
+    const attempt = resolveEpisodeSources({
+      context: TEST_CONTEXT,
+      apiUrl: "https://api.allanime.day/api",
+      referer: "https://youtu-chan.com",
+      ua: "ua",
+      showId: "show-allmanga-evidence",
+      epStr: "1",
+      mode: "sub",
+      sourceLane: "baseline",
+      signal: new AbortController().signal,
+    } as Parameters<typeof resolveEpisodeSources>[0]);
+
+    await expect(attempt).rejects.toBeInstanceOf(ProviderHttpError);
+    await expect(attempt).rejects.toMatchObject({ status: 503 });
+  });
+
+  /**
+   * A 404 is scoped to that source's URL — exactly how a real lane empties —
+   * so a gone-only settle keeps the empty result for the next lane to win.
+   */
+  test("a gone adapter lane with an empty sibling still resolves empty", async () => {
+    await using _fetchMock = await mockAllMangaFetch({
+      subSourceFixture: "baseline-gone-and-empty",
+    });
+
+    const links = await resolveEpisodeSources({
+      context: TEST_CONTEXT,
+      apiUrl: "https://api.allanime.day/api",
+      referer: "https://youtu-chan.com",
+      ua: "ua",
+      showId: "show-allmanga-evidence",
+      epStr: "1",
+      mode: "sub",
+      sourceLane: "baseline",
+      signal: new AbortController().signal,
+    } as Parameters<typeof resolveEpisodeSources>[0]);
+
+    expect(links).toEqual([]);
+  });
+
   test("quality-first startup includes prompt Ak response", async () => {
     using fetchMock = await mockAllMangaFetch({
       subSourceFixture: "baseline-ak",
@@ -1668,6 +1719,8 @@ async function mockAllMangaFetch(
       | "mixed-unselectable-baseline-ak"
       | "baseline-ak"
       | "fast-and-slow-baseline"
+      | "baseline-dead-and-empty"
+      | "baseline-gone-and-empty"
       | "cycle-hls-720-mp4-1080";
     readonly akDelayMs?: number;
     readonly fastBaselineDelayMs?: number;
@@ -1701,45 +1754,59 @@ async function mockAllMangaFetch(
     options.subSourceFixture === "mixed-unselectable-baseline-ak" ||
     options.subSourceFixture === "baseline-ak" ||
     options.subSourceFixture === "cycle-hls-720-mp4-1080" ||
+    options.subSourceFixture === "baseline-dead-and-empty" ||
+    options.subSourceFixture === "baseline-gone-and-empty" ||
     options.subSourceFixture === "fast-and-slow-baseline"
       ? {
           data: {
             episode: {
               episodeString: "1",
               sourceUrls:
-                options.subSourceFixture === "cycle-hls-720-mp4-1080"
+                options.subSourceFixture === "baseline-dead-and-empty" ||
+                options.subSourceFixture === "baseline-gone-and-empty"
                   ? [
                       {
-                        sourceName: "1080p",
-                        sourceUrl: "--https://cdn.allmanga.example/sub/1080/video.mp4?token=x",
+                        sourceName: "Default",
+                        sourceUrl:
+                          options.subSourceFixture === "baseline-dead-and-empty"
+                            ? "--/baseline-dead"
+                            : "--/baseline-gone",
                       },
-                      {
-                        sourceName: "720p",
-                        sourceUrl: "--https://cdn.allmanga.example/sub/720/master.m3u8",
-                      },
+                      { sourceName: "Luf-Mp4", sourceUrl: "--/baseline-empty" },
                     ]
-                  : options.subSourceFixture === "fast-and-slow-baseline"
+                  : options.subSourceFixture === "cycle-hls-720-mp4-1080"
                     ? [
                         {
-                          sourceName: "Yt-mp4",
-                          sourceUrl: "--https://direct.example/video.mp4",
+                          sourceName: "1080p",
+                          sourceUrl: "--https://cdn.allmanga.example/sub/1080/video.mp4?token=x",
                         },
-                        { sourceName: "Default", sourceUrl: "--/baseline-fast" },
-                        { sourceName: "Luf-Mp4", sourceUrl: "--/baseline-slow" },
+                        {
+                          sourceName: "720p",
+                          sourceUrl: "--https://cdn.allmanga.example/sub/720/master.m3u8",
+                        },
                       ]
-                    : [
-                        {
-                          sourceName: "Default",
-                          sourceUrl:
-                            options.subSourceFixture === "baseline-ak"
-                              ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
-                              : "--/broken-source",
-                        },
-                        {
-                          sourceName: "Ak",
-                          sourceUrl: "--/ak-source",
-                        },
-                      ],
+                    : options.subSourceFixture === "fast-and-slow-baseline"
+                      ? [
+                          {
+                            sourceName: "Yt-mp4",
+                            sourceUrl: "--https://direct.example/video.mp4",
+                          },
+                          { sourceName: "Default", sourceUrl: "--/baseline-fast" },
+                          { sourceName: "Luf-Mp4", sourceUrl: "--/baseline-slow" },
+                        ]
+                      : [
+                          {
+                            sourceName: "Default",
+                            sourceUrl:
+                              options.subSourceFixture === "baseline-ak"
+                                ? "--https://cdn.allmanga.example/sub//1080/master.m3u8"
+                                : "--/broken-source",
+                          },
+                          {
+                            sourceName: "Ak",
+                            sourceUrl: "--/ak-source",
+                          },
+                        ],
             },
           },
         }
@@ -1823,6 +1890,15 @@ async function mockAllMangaFetch(
         }, options.slowBaselineDelayMs ?? 100);
         init?.signal?.addEventListener("abort", onAbort, { once: true });
       });
+      return jsonResponse({ links: [] });
+    }
+    if (url.includes("/baseline-dead")) {
+      return new Response("upstream unavailable", { status: 503 });
+    }
+    if (url.includes("/baseline-gone")) {
+      return new Response("gone", { status: 404 });
+    }
+    if (url.includes("/baseline-empty")) {
       return jsonResponse({ links: [] });
     }
     const bodyText = typeof init?.body === "string" ? init.body : "";

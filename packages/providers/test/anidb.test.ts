@@ -958,6 +958,76 @@ describe("anidb direct resolve season routing", () => {
     expect(result.failures[0]?.retryable).toBe(false);
   });
 
+  /**
+   * A 404 on the stream playlist is a definitive miss — the upstream said the
+   * source is gone. Marking it retryable would spend a second 12s resolve
+   * budget re-fetching a route that cannot come back within the attempt.
+   */
+  test("a missing stream playlist is not-found and not retryable", async () => {
+    const inner = anidbFetchStub({
+      episodesByNumericId: { "700": [{ id: 70001, number: 1 }] },
+    });
+    const gonePlaylist = (async (input: unknown) => {
+      const url = String(
+        typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
+      );
+      if (url.includes("stream.m3u8")) {
+        return new Response("gone", { status: 404 });
+      }
+      return inner(input as Parameters<typeof fetch>[0]);
+    }) as typeof fetch;
+
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      gonePlaylist,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("not-found");
+    expect(result.failures[0]?.retryable).toBe(false);
+  });
+
+  /**
+   * A 5xx on the playlist is an upstream outage, not a missing source — it
+   * may heal, so the failure stays retryable and labeled
+   * `provider-unavailable` instead of conflating it with a gone route.
+   */
+  test("an upstream-down playlist is provider-unavailable and retryable", async () => {
+    const inner = anidbFetchStub({
+      episodesByNumericId: { "700": [{ id: 70001, number: 1 }] },
+    });
+    const maintenance = (async (input: unknown) => {
+      const url = String(
+        typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
+      );
+      if (url.includes("stream.m3u8")) {
+        return new Response("under maintenance", { status: 503 });
+      }
+      return inner(input as Parameters<typeof fetch>[0]);
+    }) as typeof fetch;
+
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      maintenance,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("provider-unavailable");
+    expect(result.failures[0]?.retryable).toBe(true);
+  });
+
   test("does not fall back to Japanese when a requested dub is unavailable", async () => {
     const result = await resolveWithStub(
       {

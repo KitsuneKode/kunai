@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import { ProviderHttpError } from "../src/runtime/fetch";
 import {
   expandHlsMasterInventory,
   expandHlsMasterPlaylist,
@@ -56,35 +55,25 @@ describe("hls ladder", () => {
     ]);
   });
 
-  test("expandHlsMasterPlaylist propagates transport failures instead of faking auto", async () => {
+  test("expandHlsMasterInventory reports transport failures in probe instead of throwing", async () => {
     // A TLS failure collapsing into an "auto" ladder is how a dead CDN came
-    // back attested as a resolved stream (hls.aniwatch.al, 2026-10).
-    const tlsError = new TypeError("unable to verify the first certificate");
-    await expect(
-      expandHlsMasterPlaylist({
-        masterUrl: "https://cdn.example/master.m3u8",
-        fetch: (async () => {
-          throw tlsError;
-        }) as ExpandHlsMasterPlaylistOptions["fetch"],
-      }),
-    ).rejects.toBe(tlsError);
-  });
-
-  test("expandHlsMasterPlaylist throws ProviderHttpError on non-OK status", async () => {
-    const attempt = expandHlsMasterPlaylist({
+    // back attested as a resolved stream (hls.aniwatch.al, 2026-10). The
+    // inventory API surfaces the failure in `probe` so callers can gate the
+    // fallback row on it instead of trusting a silent auto.
+    const inventory = await expandHlsMasterInventory({
       masterUrl: "https://cdn.example/master.m3u8",
-      fetch: (async () =>
-        new Response("Under Maintenance", {
-          status: 503,
-          statusText: "Service Unavailable",
-        })) as ExpandHlsMasterPlaylistOptions["fetch"],
+      fetch: (async () => {
+        throw new TypeError("unable to verify the first certificate");
+      }) as ExpandHlsMasterPlaylistOptions["fetch"],
     });
-    await expect(attempt).rejects.toBeInstanceOf(ProviderHttpError);
-    await expect(attempt).rejects.toMatchObject({
-      status: 503,
-      code: "provider-unavailable",
-      stage: "hls-ladder",
-    });
+    expect(inventory.probe).toEqual({ kind: "network" });
+    // The corpse row still exists — the probe is what tells callers not to
+    // attest it. `network` stays ambiguous on purpose: gatekept CDNs reject
+    // expansion fetches yet still play in mpv.
+    expect(inventory.variants).toEqual([
+      { url: "https://cdn.example/master.m3u8", qualityLabel: "auto", qualityRank: 0 },
+    ]);
+    expect(isHlsDeadHostStatus(inventory.probe.httpStatus)).toBe(false);
   });
 
   test("looksLikeHlsMasterUrl detects master leaf names", () => {

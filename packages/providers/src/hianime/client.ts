@@ -405,6 +405,7 @@ export type HianimeStreamFailureCode =
   | "network-error"
   | "parse-failed"
   | "provider-unavailable"
+  | "timeout"
   | "not-found";
 
 type HianimeStreamFailure = {
@@ -435,6 +436,9 @@ function failureOf(error: unknown): HianimeStreamFailure {
       error.code === "rate-limited"
     ) {
       return { code: "blocked", message };
+    }
+    if (error.code === "timeout") {
+      return { code: "timeout", message };
     }
     if (error.code === "provider-unavailable" || (status !== undefined && status >= 500)) {
       return { code: "provider-unavailable", message };
@@ -526,7 +530,8 @@ export async function resolveHianimeEpisodeStreams({
     }));
     if (links.length === 0) {
       // A definitive dead-host answer is upstream evidence, not a transient
-      // transport failure — label it so the caller's outage summary is honest.
+      // transport failure — but keep the status fidelity: a gone route
+      // (404/410) is terminal while a 5xx maintenance window may heal.
       const deadHostStatus = isHlsDeadHostStatus(inventory.probe.httpStatus)
         ? inventory.probe.httpStatus
         : undefined;
@@ -537,7 +542,12 @@ export async function resolveHianimeEpisodeStreams({
           mode: requestedMode,
           status: "failed",
           failure: {
-            code: deadHostStatus !== undefined ? "not-found" : "network-error",
+            code:
+              deadHostStatus !== undefined
+                ? deadHostStatus >= 500
+                  ? "provider-unavailable"
+                  : "not-found"
+                : "network-error",
             message:
               deadHostStatus !== undefined
                 ? `hianime master host answered HTTP ${deadHostStatus} — dead upstream`

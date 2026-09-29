@@ -942,27 +942,26 @@ export async function resolveEpisodeSources(opts: {
   signal?.removeEventListener("abort", abortAdapters);
   const apiLinks = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
   /*
-    Every adapter lane refusing is an upstream outage, not an empty source
-    list — a single dead lane still resolves through the others, but when no
-    lane produced links and none produced direct sources, the refusal must
-    reach the cycle so blocked/unavailable is not recorded as a catalog miss.
-    A 404 is different: it is scoped to that source's URL and is exactly how a
-    real lane empties, which is what the next lane (e.g. required Ak) exists
-    to catch — so 404-only rejections keep the empty result. Untyped
-    rejections stay flattened too: a generic error cannot classify the failure
-    any better than an empty list can.
+    An adapter lane refusing is an upstream outage, not an empty source list.
+    When no lane produced links and none produced direct sources, a typed
+    refusal must reach the cycle even if other lanes merely fulfilled empty —
+    the refused lane may have been the only one holding the real source, and
+    blocked/unavailable must not be recorded as a catalog miss. A 404 is
+    different: it is scoped to that source's URL and is exactly how a real
+    lane empties, which is what the next lane (e.g. required Ak) exists to
+    catch — so 404-only rejections keep the empty result. Untyped rejections
+    stay flattened too: a generic error cannot classify the failure any
+    better than an empty list can.
   */
   if (settled.length > 0 && apiLinks.length === 0 && direct.length === 0) {
-    const rejections = settled.filter(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
-    const refusal = rejections
+    const refusal = settled
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
       .map((result) => result.reason)
       .find(
         (reason): reason is ProviderHttpError =>
           reason instanceof ProviderHttpError && reason.status !== 404,
       );
-    if (rejections.length === settled.length && refusal) {
+    if (refusal) {
       throw refusal;
     }
   }
