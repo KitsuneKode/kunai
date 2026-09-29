@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 
 import { createProviderEngine } from "@kunai/core";
 
@@ -39,7 +39,18 @@ import {
   getProviderResearchProfile,
   providerResearchProfiles,
 } from "../src/research";
+import { clearRivestreamCachesForTest } from "../src/rivestream/direct";
 import { encryptOpensslSalted, sha256Hex } from "../src/shared/openssl-evp";
+
+// Resolving through rivestream caches service discovery in module state, which
+// outlives this file and leaks across sibling suites. Clear around every test
+// so discovery-call assertions see the requests their own resolve issued.
+beforeEach(() => {
+  clearRivestreamCachesForTest();
+});
+afterEach(() => {
+  clearRivestreamCachesForTest();
+});
 
 /** Route policies are built by the provider's one owner, never hand-rolled here. */
 const TEST_ROUTE_POLICY = (apiRoute: string) =>

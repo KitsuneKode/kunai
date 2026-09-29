@@ -149,15 +149,17 @@ describe("DownloadService youtube argv contract", () => {
         resolveDownloadStream: async () => {
           resolving.resolve();
           await releaseResolution.promise;
+          // SAFETY: `resolved` already is a DownloadResolveResult; only the stream url is swapped for the probe.
           return {
             ...resolved,
             stream: { ...resolved.stream, url: freshStreamUrl },
-          } as unknown as DownloadResolveResult;
+          } as never;
         },
       });
       // If the regression starts a child, it exits immediately so the test
       // reports the forbidden launch rather than hanging behind its lifetime.
       runYtDlpSpy.mockImplementation(() => ({
+        // SAFETY: a stubbed child process — only `kill`/`exited` are read, the rest of ChildProcess is unused.
         process: { kill: mock(() => {}), exited: Promise.resolve(1) } as never,
         completed: Promise.resolve({ exitCode: 1, stderr: "unexpected late launch" }),
         cancel: mock(() => {}),

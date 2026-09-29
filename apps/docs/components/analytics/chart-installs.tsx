@@ -106,8 +106,13 @@ export function ChartInstalls({
   );
 
   const reportHover = React.useCallback(
-    (label: unknown) => {
-      onDayHover?.(typeof label === "number" ? (dayByEpoch.get(label) ?? null) : null);
+    // Recharts hands `activeLabel` back as `string | number`; the plotted axis
+    // value is always the epoch, so anything that is not a finite number is a
+    // no-op rather than a lookup miss.
+    (label: number | string | undefined) => {
+      // SAFETY: `Number.isFinite` verified a real number here; the union-member check does not narrow for `.get`.
+      const epoch = Number.isFinite(label) ? (label as number) : null;
+      onDayHover?.(epoch === null ? null : (dayByEpoch.get(epoch) ?? null));
     },
     [dayByEpoch, onDayHover],
   );
