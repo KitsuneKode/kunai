@@ -27,9 +27,11 @@ runs:
       uses: actions/cache@v5
       with:
         path: ~/.bun/install/cache
-        key: ${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}
+        # v2: the v1 windows store captured a truncated oxfmt@0.59.0 link entry
+        # (missing tinypool) and the loose restore-key kept re-serving it.
+        key: ${{ runner.os }}-bun-store-v2-${{ hashFiles('bun.lock') }}
         restore-keys: |
-          ${{ runner.os }}-bun-store-
+          ${{ runner.os }}-bun-store-v2-
 
     - name: Cache Turbo local
       if: inputs.skip-turbo-cache != 'true'
