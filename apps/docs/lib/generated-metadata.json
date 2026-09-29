@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "7d10e38feb2d1045037ba394d1ef9adbf3344cb9a0672b1ae5114ef3403b8d12",
-  "docsContentFingerprint": "2bd16a131cad5d1ad8a297bcf11177e5aaa62ae002e247279a068449b9463dcf",
+  "cliSourceFingerprint": "c5614f6d7277150b6a39fd450efa71c1f821d95dfe37a6901b07c343a4fbc0aa",
+  "docsContentFingerprint": "d257522e1132610ef9e2ab4d4a9a4812e29a35849a2ef33aabeebf4daab8d557",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": [
@@ -23,7 +23,7 @@
       "displayName": "Videasy",
       "description": "Registered movies/series adapter; source and subtitle inventory vary by title",
       "domain": "videasy.to",
-      "recommended": true,
+      "recommended": false,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
       "status": "active",
@@ -33,7 +33,8 @@
         "2026-11: api.videasy.to / db.videasy.to went NXDOMAIN — the TMDB-format catalog moved to db.wingsdatabase.com/3 (verified /search/multi + /movie external_ids). VIDEASY_DB_BASES walks live-first.",
         "2026-07-16: Cineby server catalog labels (Yoru/Neon/Sage/Jett/…) map to /cdn /neon2 /ym /jett /… routes.",
         "2026-07-18: Inventory UI order matches cineby Servers (Yoru first). Resolve Phase A is Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse; localized servers stay Phase B.",
-        "2026-07-18: Resolve-gate always segment-probes HLS before attesting streamReachabilityVerified; dead CDNs fail over instead of hanging.",
+        "2026-07-18: Resolve-gate always segment-probes HLS before accepting a candidate; definitive-dead CDNs fail over instead of hanging.",
+        "2026-09-12: Resolve-gate no longer attests streamReachabilityVerified — the probe's 200 did not survive to mpv on signed CDN URLs (#361), so downstream checks re-probe rather than trust a false green for 5m.",
         "2026-07-11: stream sources-with-title routes on api.videasy.to remain route-dead (404).",
         "bc-frontend is the default Videasy client profile; stream/API origin/referer follow cineby.at (seed already did).",
         "Do not mark browser-safe because local decrypt/runtime behavior is required."
@@ -104,7 +105,7 @@
       "displayName": "HiAnime",
       "description": "Anime episodes in sub and dub via HiAnime (ani-cli parity lane)",
       "domain": "hianime.at",
-      "recommended": false,
+      "recommended": true,
       "mediaKinds": ["anime"],
       "capabilities": [
         "search",
@@ -114,9 +115,9 @@
         "multi-source",
         "quality-ranked"
       ],
-      "status": "candidate",
+      "status": "production",
       "notes": [
-        "Parity with ani-cli v5.1.2 (2026-09): /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902.",
+        "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
         "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
         "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
         "Each season is a separate provider-native slug; there is no in-provider season routing.",
@@ -733,7 +734,7 @@
     {
       "short": "-a",
       "long": "--anime",
-      "description": "Anime mode (AniDB default with provider fallback)"
+      "description": "Anime mode (HiAnime default with provider fallback)"
     },
     {
       "short": "-y",

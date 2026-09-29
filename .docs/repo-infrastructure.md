@@ -127,7 +127,7 @@ every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
 would otherwise skip the check meant to catch it. It runs `setup-bun` without
 `bun install` — the script imports only `node:fs` and `node:path`.
 
-`scripts/turbo-affected.sh` wraps `--affected` because a PR touching only
+`scripts/ci-affected-run.ts` wraps `--affected` because a PR touching only
 non-package files (`.github/`, `install.sh`, `tools/`, `docs/`, `.docs/`) used
 to select zero workspace tasks and exit 0 — four green legs that ran nothing.
 The wrapper dry-runs the selection first and falls back to the full task when
