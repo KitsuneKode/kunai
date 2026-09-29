@@ -81,12 +81,11 @@ function sortLaneModules(
   rank: ReadonlyMap<string, number>,
 ): CoreProviderModule[] {
   return modules
-    .map((module, index) => ({ module, index }))
-    .sort((a, b) => {
-      const rankDelta =
-        (rank.get(resolveProviderId(a.module.providerId)) ?? Number.MAX_SAFE_INTEGER) -
-        (rank.get(resolveProviderId(b.module.providerId)) ?? Number.MAX_SAFE_INTEGER);
-      return rankDelta === 0 ? a.index - b.index : rankDelta;
-    })
+    .map((module, index) => ({
+      module,
+      index,
+      rank: rank.get(resolveProviderId(module.providerId)) ?? Number.MAX_SAFE_INTEGER,
+    }))
+    .sort((a, b) => (a.rank === b.rank ? a.index - b.index : a.rank - b.rank))
     .map(({ module }) => module);
 }

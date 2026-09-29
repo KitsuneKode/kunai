@@ -137,6 +137,27 @@ export async function bootstrapProviders(
   });
 
   const providerRegistry = createProviderRegistry(engine, providerPriority);
+
+  // The module ordering is a pure function of the priority lists, which change
+  // only via config edits — memoize on the joined lists rather than re-sorting
+  // the module array on every resolve.
+  const getOrderedModules = (() => {
+    let cacheKey: string | null = null;
+    let ordered: readonly CoreProviderModule[] = providerModules;
+    return () => {
+      const priority = createProviderPrioritySnapshot(config);
+      const key = [
+        priority.providerPriority.join(","),
+        priority.animeProviderPriority.join(","),
+        (priority.youtubeProviderPriority ?? []).join(","),
+      ].join("|");
+      if (key !== cacheKey) {
+        cacheKey = key;
+        ordered = orderProviderModulesByPriority(providerModules, priority);
+      }
+      return ordered;
+    };
+  })();
   const streamHealthService = new StreamHealthService();
   const playbackResolveWork = new PlaybackResolveWorkService(
     new PlaybackResolveCoordinator({
@@ -150,6 +171,7 @@ export async function bootstrapProviders(
       titlePlaybackSource: titlePlaybackSource,
       diagnostics: diagnosticsService,
       getProviderPriority: () => createProviderPrioritySnapshot(config),
+      getOrderedModules,
       catalogCrosswalk: persistence.catalogCrosswalk,
     }),
     {
