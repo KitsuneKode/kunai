@@ -104,6 +104,23 @@ export const providerResearchProfiles = [
       "Registered and serving. Fixture coverage for animal-server subtitle delivery and dub/source availability is still thin.",
   },
   {
+    providerId: "animegg",
+    status: "production",
+    migrationAction: "promote-direct-provider",
+    migrationRank: 45,
+    dossierPath: ".docs/provider-dossiers/animegg.md",
+    evidencePaths: ["packages/providers/src/animegg/site.ts"],
+    runtimeClass: "direct-http server-rendered HTML scrape",
+    implementationSource: "production-code",
+    supportedContent: ["anime"],
+    sourceStrategy:
+      "Search, series, episode and embed pages are plain HTML; the embed carries direct MP4s per quality.",
+    subtitleStrategy:
+      "None: the subbed version is hard-subbed, so streams declare hardcoded delivery and no track is advertised.",
+    productionGap:
+      "The `bk` backup per source is unused because it is a direct URL for some titles and an mp4upload embed page for others.",
+  },
+  {
     providerId: "anikai",
     status: "candidate",
     migrationAction: "hold-for-future-runtime",
