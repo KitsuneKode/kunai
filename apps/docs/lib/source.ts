@@ -13,16 +13,18 @@ type DocsSourceConfig = {
 
 export const source = loader({
   baseUrl: "/docs",
-  // `docs.toFumadocsSource()` is typed against fumadocs-mdx's nested copy of
-  // fumadocs-core; bun's isolated install gives this app a nominally distinct
-  // copy, so `loader`'s `infer` cannot recover the page-data shape across the
-  // boundary and `page.data` collapses to bare `PageData`. Re-anchor the same
-  // runtime object to this workspace's `StaticSource` declaration.
+  // SAFETY: `docs.toFumadocsSource()` is typed against fumadocs-mdx's nested
+  // copy of fumadocs-core; bun's isolated install gives this app a nominally
+  // distinct copy, so `loader`'s `infer` cannot recover the page-data shape
+  // across the boundary and `page.data` collapses to bare `PageData`.
+  // Re-anchor the same runtime object to this workspace's `StaticSource`
+  // declaration.
   source: docs.toFumadocsSource() as StaticSource<DocsSourceConfig>,
   plugins: [
-    // `lucideIconsPlugin()` is declared against the default storage generic and
-    // fumadocs 16.15.x made `plugins` storage-invariant, so it no longer assigns
-    // directly. It only rewrites icon names into component refs — safe to pin.
+    // SAFETY: `lucideIconsPlugin()` is declared against the default storage
+    // generic and fumadocs 16.15.x made `plugins` storage-invariant, so it no
+    // longer assigns directly. It only rewrites icon names into component
+    // refs, so pinning the type is safe.
     lucideIconsPlugin() as never,
   ],
 });

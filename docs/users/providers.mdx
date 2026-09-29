@@ -57,8 +57,8 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 <ProviderDocSection id="kickassanime" title="KickAssAnime">
 
 **Adapter role:** the anime backup, third in the default order. It has its own catalogue, site and
-video servers, so a HiAnime or Miruro outage does not reach it, and unlike the others it can pick
-up a show Kunai found anywhere, by matching the name and year against its own catalogue.
+video servers, so a HiAnime or Miruro outage does not reach it. Unlike the others it can pick up
+a show Kunai found anywhere, by matching the name and year against its own catalogue.
 
 **Config id:** `kickassanime`.
 
@@ -126,7 +126,7 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 **Adapter role:** last in the default anime order, behind HiAnime, Miruro, KickAssAnime, AnimeGG and AniDB. Display name is AllManga; the runtime id is `allanime`. It carries the ani-cli parity path, which is why it stays registered even when its stream API is gated.
 
-**Config id:** `allanime`; the display name is not the config id.
+**Config id:** `allanime`. The display name is not the config id.
 
 **Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks hit a captcha/Cloudflare gate on stream sources while the episode catalog still loads, so the episode list can look healthy and still not play. Its decryption keys rotate often; a key change shows up as resolve failures until Kunai is updated.
 
@@ -292,7 +292,7 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
 ```
 
 The anime client shows as **AllManga** in the UI; the config id remains `allanime`. Every
-registered anime provider is tried automatically when the selected one fails; the priority list
+registered anime provider is tried automatically when the selected one fails. The priority list
 sets the order, it does not decide who is included.
 
 If you saved settings while AniDB was the default, Kunai moves that inherited default to the order

@@ -154,7 +154,7 @@ Source checkouts are the best path for debugging provider changes, playback reco
 
 The anime providers sit behind Cloudflare. Kunai
 tries its own HTTP client first and falls back to `curl` when Cloudflare refuses
-it, which, at Miruro's API, is every time, and at AniDB's, often. A provider
+it. At Miruro's API that is every time, and at AniDB's, often. A provider
 relay, if you run one, answers on Kunai's behalf and needs no `curl`. Cloudflare
 scores the TLS handshake, not just the `User-Agent`, so a plain `curl` is
 sometimes refused too even though the site is up. Either way anime search can come back with **no results** rather than an

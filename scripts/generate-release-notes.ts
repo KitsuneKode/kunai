@@ -189,6 +189,8 @@ function mergedArtifact(
   artifact: ReleaseNotesArtifact,
   preserved?: PreservedDiskFields,
 ): ReleaseNotesArtifact {
+  // SAFETY: serializeArtifact emits exactly the artifact schema, so parsing
+  // the round-trip back is the same object shape; used only for the render pass.
   return JSON.parse(serializeArtifact(artifact, preserved)) as ReleaseNotesArtifact;
 }
 
@@ -205,20 +207,20 @@ function readPreservedDiskFields(path: string): PreservedDiskFields | undefined 
   try {
     const onDisk = JSON.parse(readFileSync(path, "utf8")) as unknown;
     const publication = publicationStateFromUnknown(onDisk);
+    if (!(onDisk instanceof Object)) return undefined;
+    // SAFETY: onDisk is a JSON record this script itself wrote; each field read
+    // below still checks its own shape before use, so the record cast only
+    // unlocks keyed access.
+    const diskArtifact = onDisk as ReleaseNotesArtifact;
     const assets =
-      onDisk &&
-      typeof onDisk === "object" &&
-      "assets" in onDisk &&
-      Array.isArray((onDisk as ReleaseNotesArtifact).assets) &&
-      (onDisk as ReleaseNotesArtifact).assets!.length > 0
-        ? (onDisk as ReleaseNotesArtifact).assets
+      "assets" in diskArtifact &&
+      Array.isArray(diskArtifact.assets) &&
+      diskArtifact.assets.length > 0
+        ? diskArtifact.assets
         : undefined;
     const date =
-      onDisk &&
-      typeof onDisk === "object" &&
-      "date" in onDisk &&
-      typeof (onDisk as ReleaseNotesArtifact).date === "string"
-        ? (onDisk as ReleaseNotesArtifact).date
+      "date" in diskArtifact && String(diskArtifact.date) === diskArtifact.date
+        ? diskArtifact.date
         : undefined;
     if (!publication && !assets && date === undefined) return undefined;
     return {

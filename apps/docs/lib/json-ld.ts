@@ -5,7 +5,7 @@ import { docsSiteUrl } from "./site";
  * lets a `</script>` inside any string close the tag early. Escape `<` so the
  * payload can never leave the script element.
  */
-export function serializeJsonLd(data: unknown): string {
+export function serializeJsonLd<T>(data: T): string {
   return JSON.stringify(data).replace(/</g, "\\u003c");
 }
 

@@ -48,10 +48,6 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: serializeJsonLd(appJsonLd) }}
-      />
       <HomePageShell
         providers={codeMetadata.providers}
         paletteCommands={paletteCommands}
