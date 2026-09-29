@@ -1817,7 +1817,9 @@ test("sequential fallback records the in-flight provider as aborted on cancel", 
 
   const controller = new AbortController();
   const pending = engine.resolveWithFallback(
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     HEDGE_INPUT as never,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     ["slow-only"] as never,
     controller.signal,
   );
@@ -1828,6 +1830,7 @@ test("sequential fallback records the in-flight provider as aborted on cancel", 
   expect(output.result).toBeNull();
   // The attempt was cancelled mid-flight — it must be visible as aborted, not
   // silently dropped or rewritten as a provider failure.
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   expect(output.attempts).toEqual([{ providerId: "slow-only", aborted: true }] as never);
 });
 
@@ -1842,10 +1845,13 @@ test("hedged fallback records the losing candidate as aborted, in candidate orde
   });
 
   const output = await engine.resolveWithFallback(
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     HEDGE_INPUT as never,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     ["slow-primary", "fast-hedge"] as never,
   );
 
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   expect(output.providerId).toBe("fast-hedge" as never);
   // slow-primary was in flight when fast-hedge won. Dropping it would hide the
   // last act of the timeline from diagnostics and problem classification.
@@ -1868,7 +1874,9 @@ test("hedged fallback records every in-flight candidate as aborted on cancel", a
 
   const controller = new AbortController();
   const pending = engine.resolveWithFallback(
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     HEDGE_INPUT as never,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     ["slow-a", "slow-b"] as never,
     controller.signal,
   );
@@ -1877,6 +1885,7 @@ test("hedged fallback records every in-flight candidate as aborted on cancel", a
 
   const output = await pending;
   expect(output.result).toBeNull();
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   expect(output.attempts.map((attempt) => [attempt.providerId, attempt.aborted] as const)).toEqual([
     ["slow-a", true],
     ["slow-b", true],

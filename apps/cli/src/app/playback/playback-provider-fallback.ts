@@ -50,6 +50,7 @@ export function isProviderIdFallbackEligible(
   providerId: string,
 ): boolean {
   return isProviderFallbackEligible(
+    // SAFETY: providerId arrives from the provider registry — it is a ProviderId by domain contract.
     resolveEffectiveProviderHealth(container.providerHealth.get(providerId as ProviderId)),
   );
 }

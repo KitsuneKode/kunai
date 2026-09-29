@@ -347,6 +347,7 @@ describe("playback provider switch", () => {
     };
     const cancelReasons: string[] = [];
     const recomputeReasons: string[] = [];
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const container = {
       stateManager: {
         getState: () => state,

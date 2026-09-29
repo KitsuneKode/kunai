@@ -87,6 +87,13 @@ export interface ProviderEngineResolveOutput {
   readonly attempts: readonly ProviderEngineResolveAttempt[];
 }
 
+/** Writable draft of {@link ProviderEngineResolveAttempt} for staged construction. */
+type MutableFailureAttempt = {
+  providerId: ProviderId;
+  failure: ProviderFailure;
+  result?: ProviderResolveResult;
+};
+
 export type ProviderEngineEvent =
   | {
       readonly type: "provider-attempt-started";
@@ -525,14 +532,12 @@ export class ProviderEngine {
             attempt: { providerId: outcome.providerId, result: outcome.result },
           });
         } else {
-          indexedAttempts.push({
-            index: outcome.index,
-            attempt: {
-              providerId: outcome.providerId,
-              failure: outcome.failure,
-              ...(outcome.result ? { result: outcome.result } : {}),
-            },
-          });
+          const attempt: MutableFailureAttempt = {
+            providerId: outcome.providerId,
+            failure: outcome.failure,
+          };
+          if (outcome.result) attempt.result = outcome.result;
+          indexedAttempts.push({ index: outcome.index, attempt });
         }
       }
     };

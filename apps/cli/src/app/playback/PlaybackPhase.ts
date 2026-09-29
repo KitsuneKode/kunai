@@ -2056,6 +2056,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   !triedProviderIds.has(candidate.metadata.id) &&
                   isProviderFallbackEligible(
                     resolveEffectiveProviderHealth(
+                      // SAFETY: candidate.metadata.id comes from a registered provider module — it is a ProviderId by contract.
                       container.providerHealth?.get(candidate.metadata.id as ProviderId),
                     ),
                   ),

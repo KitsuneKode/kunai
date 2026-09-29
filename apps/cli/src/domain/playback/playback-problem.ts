@@ -400,6 +400,7 @@ function hasOfflineSignature(
   return Boolean(
     failure?.message &&
     isOfflineNetworkFailure({
+      // SAFETY: code passes through for the record only — the classifier reads message patterns, not the code.
       code: (failure.code as ProviderFailure["code"]) ?? "unknown",
       message: failure.message,
     }),
