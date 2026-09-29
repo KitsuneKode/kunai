@@ -7,6 +7,30 @@ lastReviewed: "2026-08-13"
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
+## Upstream status (2026-09-21) — operator wind-down, do not re-investigate
+
+The whole videasy deployment is being dismantled, not rotating:
+
+- `videasy.to`, `api.videasy.to`, `www.videasy.to` — A records **deleted**
+  (zone still served by ns1/ns2.ddos-guard.net, so DNS resolves the SOA but
+  nothing else).
+- `player.videasy.to` — edge still answers TLS but returns **502**; the
+  backend origin behind ddos-guard is gone.
+- `speedracelight.com` / `api.speedracelight.com` — the API surface the
+  adapter targets; A record removed, Cloudflare edge orphaned.
+- Cloudflare DoH (`1.1.1.1/dns-query`) confirms `videasy.to` has **no A
+  record** — this is upstream truth, not a local resolver artifact.
+
+**Verdict:** operator shutdown (likely DMCA-class). Recovery is not a code
+change — if the operator resurfaces it will be a new domain and a manifest
+edit, not a crypto/scheme fix. The adapter is kept in production loading on
+purpose: it is `DEFAULT_CONFIG.provider`, so removal would leave stored
+configs naming an unloaded module, and the endpoint-health circuit breaker
+already does the right job — one bounded probe per heal TTL, honest
+`network-error` reporting, automatic resurrection if upstream ever returns.
+Re-evaluate removal only if the upstream stays dead for months or a
+replacement default provider is chosen deliberately.
+
 ## Production status (2026-08-13) — cache and transport hardening
 
 Plan 038's active-path correctness work landed. What changed:
