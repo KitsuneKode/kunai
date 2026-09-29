@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   allMangaCryptoRemedy,
   diagnoseAllMangaBootstrap,
+  selectAllMangaBootstrapVerdict,
 } from "../../live/allmanga-crypto-freshness";
 
 /**
@@ -55,5 +56,38 @@ describe("allMangaCryptoRemedy", () => {
     // provider.
     expect(allMangaCryptoRemedy("current", 2)).toContain("stale");
     expect(allMangaCryptoRemedy("current", 0)).toBeUndefined();
+  });
+});
+
+describe("selectAllMangaBootstrapVerdict", () => {
+  test("a previous-epoch 200 during grace is current, not a rotation", () => {
+    // 2026-09-10: the calendar epoch was 2958 and answered invalid_boot_token;
+    // epoch 2957 still bootstrapped. Asking only the live epoch inverted the
+    // smoke while production walked both candidates and kept working.
+    const verdict = selectAllMangaBootstrapVerdict([
+      { epoch: 2957, status: 200, body: '{"epoch":2957,"partB":"..."}' },
+      { epoch: 2958, status: 403, body: '{"error":"invalid_boot_token"}' },
+    ]);
+
+    expect(verdict).toMatchObject({ epoch: 2957, diagnosis: "current" });
+  });
+
+  test("a live-epoch 200 wins even if the previous epoch already expired", () => {
+    const verdict = selectAllMangaBootstrapVerdict([
+      { epoch: 2957, status: 403, body: '{"error":"invalid_boot_token"}' },
+      { epoch: 2958, status: 200, body: '{"epoch":2958,"partB":"..."}' },
+    ]);
+
+    expect(verdict).toMatchObject({ epoch: 2958, diagnosis: "current" });
+  });
+
+  test("both epochs invalid_boot_token is a real constants rotation", () => {
+    const verdict = selectAllMangaBootstrapVerdict([
+      { epoch: 2957, status: 403, body: '{"error":"invalid_boot_token"}' },
+      { epoch: 2958, status: 403, body: '{"error":"invalid_boot_token"}' },
+    ]);
+
+    expect(verdict.diagnosis).toBe("derivation-constants-rotated");
+    expect(verdict.epoch).toBe(2958);
   });
 });

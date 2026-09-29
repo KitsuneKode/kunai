@@ -30,46 +30,58 @@ import {
   currentAllMangaEpochCandidates,
 } from "@kunai/providers/allmanga/crypto";
 
-import { allMangaCryptoRemedy, diagnoseAllMangaBootstrap } from "./allmanga-crypto-freshness";
+import {
+  allMangaCryptoRemedy,
+  selectAllMangaBootstrapVerdict,
+  type AllMangaBootstrapAttempt,
+} from "./allmanga-crypto-freshness";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-// Near an epoch boundary this returns `[previous, current]`, so the last entry
-// is the live one. Taking `[0]` there compares the pinned material against the
-// epoch that just ended and inverts the verdict.
+// Walk the same candidate list production uses. Asking only the calendar
+// epoch during the grace window returns `invalid_boot_token` while the
+// previous epoch — which fetchAllMangaCryptoMaterial tries first — still
+// bootstraps. That false-red is how this smoke inverted "healthy" on 2026-09-10.
 const epochCandidates = currentAllMangaEpochCandidates(Date.now());
-const epoch = epochCandidates.at(-1) ?? ALLMANGA_EPOCH;
-const boot = buildAllMangaBootToken({
-  epoch,
-  keyGroup: ALLMANGA_KEY_GROUP,
-  refererHost: "mkissa.to",
-  contentLane: ALLMANGA_CONTENT_LANE_EPISODE,
-});
-
-let status = 0;
-let body = "";
-try {
-  const response = await fetch(
-    `${ALLMANGA_BOOTSTRAP_URL}?buildId=${encodeURIComponent(ALLMANGA_BUILD_ID)}&k=${encodeURIComponent(ALLMANGA_CONTENT_LANE_EPISODE)}`,
-    {
-      headers: {
-        "User-Agent": UA,
-        Referer: `${ALLMANGA_SITE_ORIGIN}/`,
-        Origin: ALLMANGA_SITE_ORIGIN,
-        "x-build-id": ALLMANGA_BUILD_ID,
-        "x-aa-boot": boot,
+const liveEpoch = epochCandidates.at(-1) ?? ALLMANGA_EPOCH;
+const attempts: AllMangaBootstrapAttempt[] = [];
+for (const epoch of epochCandidates) {
+  const boot = buildAllMangaBootToken({
+    epoch,
+    keyGroup: ALLMANGA_KEY_GROUP,
+    refererHost: "mkissa.to",
+    contentLane: ALLMANGA_CONTENT_LANE_EPISODE,
+  });
+  let status = 0;
+  let body = "";
+  try {
+    const response = await fetch(
+      `${ALLMANGA_BOOTSTRAP_URL}?buildId=${encodeURIComponent(ALLMANGA_BUILD_ID)}&k=${encodeURIComponent(ALLMANGA_CONTENT_LANE_EPISODE)}`,
+      {
+        headers: {
+          "User-Agent": UA,
+          Referer: `${ALLMANGA_SITE_ORIGIN}/`,
+          Origin: ALLMANGA_SITE_ORIGIN,
+          "x-build-id": ALLMANGA_BUILD_ID,
+          "x-aa-boot": boot,
+        },
+        signal: AbortSignal.timeout(20_000),
       },
-      signal: AbortSignal.timeout(20_000),
-    },
-  );
-  status = response.status;
-  body = (await response.text()).slice(0, 400);
-} catch (error) {
-  body = error instanceof Error ? error.message : String(error);
+    );
+    status = response.status;
+    body = (await response.text()).slice(0, 400);
+  } catch (error) {
+    body = error instanceof Error ? error.message : String(error);
+  }
+  attempts.push({ epoch, status, body });
 }
 
-const diagnosis = diagnoseAllMangaBootstrap(status, body);
+const verdict = selectAllMangaBootstrapVerdict(attempts);
+const diagnosis = verdict.diagnosis;
+const status = verdict.status;
+const body = verdict.body;
+const epoch = verdict.epoch;
 
 /**
  * The bundled fallback carries its own expiry: the epoch is a 7-day bucket, so
@@ -77,7 +89,7 @@ const diagnosis = diagnoseAllMangaBootstrap(status, body);
  * A resolve quietly running on a fallback two epochs old looks exactly like a
  * dead provider.
  */
-const epochsBehind = epoch - ALLMANGA_EPOCH;
+const epochsBehind = liveEpoch - ALLMANGA_EPOCH;
 
 const payload = {
   ok: diagnosis === "current" && epochsBehind <= 1,
@@ -87,7 +99,7 @@ const payload = {
   status,
   pinnedBuildId: ALLMANGA_BUILD_ID,
   pinnedEpoch: ALLMANGA_EPOCH,
-  liveEpoch: epoch,
+  liveEpoch,
   epochsBehind,
   // No partB, boot token, or key material in the report.
   detail:

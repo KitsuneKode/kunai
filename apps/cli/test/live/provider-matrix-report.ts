@@ -72,10 +72,13 @@ function extractJsonObjects(text: string): SmokePayload[] {
       if (isJsonObject(value)) {
         objects.push(value);
       }
+      index = end + 1;
     } catch {
-      // A fragment that only looked like an object — keep scanning.
+      // findBalancedObjectEnd can close on a later object's `}` when the
+      // opener belongs to a truncated log line. Skipping to that `end`
+      // would jump over the real payload. Advance one brace and scan again.
+      index = start + 1;
     }
-    index = end + 1;
   }
 
   return objects;
