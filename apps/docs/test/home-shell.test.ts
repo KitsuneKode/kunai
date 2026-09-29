@@ -85,6 +85,6 @@ describe("docs home shell", () => {
     expect(homeFlow).toHaveLength(3);
     expect(homeStartCards).toHaveLength(4);
     expect(homeHero.primaryCta.href).toBe("/docs/users/getting-started");
-    expect(homeHero.secondaryCta.href).toBe("/docs");
+    expect(homeHero.secondaryCta.href).toBe("/docs/users/what-you-can-do");
   });
 });

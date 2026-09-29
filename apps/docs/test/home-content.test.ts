@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test";
 
 import { codeMetadata } from "../lib/code-metadata";
 import { docNavEntries, homeSectionsFromNav } from "../lib/doc-navigation";
-import { homeFlow, homeHero, homeHighlights, homeStartCards } from "../lib/home-content";
+import { homeFlow, homeHero, homeHighlights, homeKinds, homeStartCards } from "../lib/home-content";
 import { featuredCommands } from "../lib/home-presenters";
 import { PREFERRED_INSTALL } from "../lib/install-commands";
 
 describe("docs home content", () => {
   test("keeps install and getting-started entry points visible", () => {
     expect(homeHero.primaryCta.href).toBe("/docs/users/getting-started");
-    expect(homeHero.secondaryCta.href).toBe("/docs");
+    expect(homeHero.secondaryCta.href).toBe("/docs/users/what-you-can-do");
     expect(homeHero.installCommands).toContain(PREFERRED_INSTALL);
 
     const startHrefs = homeStartCards.map((card) => card.href);
@@ -32,7 +32,27 @@ describe("docs home content", () => {
   test("keeps recovery and provider promises in user-facing copy", () => {
     expect(homeFlow.map((step) => step.title)).toContain("Play in mpv");
     expect(homeHighlights.some((item) => item.label === "Recovery built in")).toBe(true);
-    expect(homeHero.description).toContain("recover without restarting");
+    expect(homeHero.description).toMatch(/recovery/i);
+    expect(homeHero.description).toMatch(/mpv/);
+  });
+
+  /**
+   * The regression this locks: the hero once described the mechanism without
+   * ever naming what Kunai plays. The only page text that said "anime" lived in
+   * the terminal simulator, which is client-only and appears after an
+   * interaction — so neither a crawler nor a skimming visitor could find it.
+   */
+  test("hero copy names every catalog mode in server-rendered text", () => {
+    const heroText = `${homeHero.title} ${homeHero.description}`.toLowerCase();
+
+    for (const kind of homeKinds) {
+      expect(heroText).toContain(kind.toLowerCase());
+    }
+  });
+
+  test("catalog modes match the shell's Tab order", () => {
+    expect(homeKinds).toEqual(["Anime", "Series", "Movies", "YouTube"]);
+    expect(homeHero.kindsHint.key).toBe("Tab");
   });
 
   test("provider count in highlights matches codegen", () => {

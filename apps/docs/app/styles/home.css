@@ -794,6 +794,72 @@
   flex: 0 0 auto;
 }
 
+/* ── Hero kinds row ────────────────────────────────────────────────────────
+   What Kunai plays, in the server-rendered HTML.
+
+   Visually distinct from the proof row below it on purpose: this row is the
+   answer to "what is this", the proof row is "can I trust it". Same family,
+   different job — so this one takes foreground weight and hairline rules,
+   and the proof row keeps its muted dots. */
+.kunai-hero-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  margin: 1.25rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.kunai-hero-kinds__item {
+  position: relative;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-fd-foreground);
+}
+
+.kunai-hero-kinds__item + .kunai-hero-kinds__item::before {
+  content: "";
+  position: absolute;
+  left: -0.5rem;
+  top: 0.15em;
+  bottom: 0.15em;
+  width: 1px;
+  background: var(--kunai-line);
+}
+
+.kunai-hero-kinds__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-fd-muted-foreground);
+  font-size: 0.75rem;
+}
+
+/* `kbd` ships as unstyled browser monospace and belongs to no design system
+   until it is themed. Scoped here rather than globally so the docs prose
+   keeps whatever it already does. */
+.kunai-hero-kinds__hint kbd {
+  border: 1px solid var(--kunai-line);
+  border-radius: 0.375rem;
+  background: color-mix(in oklab, var(--kunai-surface) 80%, transparent);
+  padding: 0.1rem 0.4rem;
+  color: color-mix(in oklab, var(--kunai-accent) 70%, var(--color-fd-foreground));
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+/* The h1 is the first text in the hero now that the eyebrow is gone, so it
+   sets its own top edge. `.kunai-display-title` caps at 20ch for section
+   headings; the hero headline is longer and needs the room, and declaring it
+   here beats relying on the source order between a utility and a component
+   class that share specificity. */
+.kunai-hero-static h1.kunai-display-title {
+  max-width: 24ch;
+  margin-top: 0;
+}
+
 /* ── Hero proof row ────────────────────────────────────────────────────────
    Four verifiable facts, each a link to where it can be checked. */
 .kunai-proof-row {

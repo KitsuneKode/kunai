@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s | Kunai — terminal streaming client",
   },
   description:
-    "Guides for the Kunai client: resolve third-party streams, hand off to mpv, recover, and use local offline files.",
+    "Guides for Kunai, the terminal client for anime, series, movies, and YouTube: resolve a stream, hand off to mpv, recover, and use local offline files.",
 };
 
 export const viewport: Viewport = {
