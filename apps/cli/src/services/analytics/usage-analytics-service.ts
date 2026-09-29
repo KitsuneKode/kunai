@@ -249,6 +249,15 @@ export class UsageAnalyticsService {
 
     const outcome = await this.send(endpoint, payload);
 
+    // Consent and rotation can change while the request is in flight, including
+    // through Settings/setup writers outside this service. Compare the original
+    // stored id (which ensureInstallId may have repaired), not the payload id.
+    const current = this.deps.config.getRaw();
+    if (current.analytics !== "enabled" || current.installId !== config.installId) return;
+
+    // ConfigServiceImpl.update mutates synchronously before its promise resolves:
+    // there is no yield between this guard and the mutation. save reads the latest
+    // config at flush, so a later disable/rotation also wins across the await below.
     // Success and permanent rejection both consume the 24h cadence; only a
     // transient failure schedules a near-term retry.
     await this.deps.config.update(

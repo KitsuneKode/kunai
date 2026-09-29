@@ -16,6 +16,7 @@ import {
   type AnalyticsFetch,
 } from "@/services/analytics/usage-analytics-service";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 const UUID = "11111111-2222-4333-8444-555555555555";
@@ -24,6 +25,7 @@ const TEST_ENDPOINT = "https://analytics.example.test/api/ping";
 function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
   let raw: KitsuneConfig = { ...DEFAULT_CONFIG, ...overrides };
   let saves = 0;
+  let persisted = { ...raw };
   return {
     getRaw: () => ({ ...raw }),
     async update(partial: Partial<KitsuneConfig>) {
@@ -31,6 +33,10 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
     },
     async save() {
       saves += 1;
+      persisted = { ...raw };
+    },
+    get persisted() {
+      return persisted;
     },
     get rawRef() {
       return raw;
@@ -42,7 +48,7 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
 }
 
 function makeService(
-  config: ReturnType<typeof makeConfig>,
+  config: Pick<ConfigServiceImpl, "getRaw" | "update" | "save">,
   options: {
     fetchImpl?: AnalyticsFetch;
     env?: { DO_NOT_TRACK?: string; CI?: string };
@@ -102,6 +108,108 @@ describe("identifier lifecycle", () => {
     expect(config.rawRef.installId).toBe("");
     expect(config.saveCount).toBe(0);
   });
+});
+
+describe("pending ping identity", () => {
+  const rotatedId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const outcomes = [
+    { name: "success", status: 204 },
+    { name: "permanent rejection", status: 400 },
+    { name: "retry", status: 503 },
+    { name: "network failure", status: null },
+  ];
+
+  for (const outcome of outcomes) {
+    for (const change of ["disable", "rotate", "disable then enable"] as const) {
+      test(`${change} during ${outcome.name} preserves identity and bookkeeping`, async () => {
+        const response = Promise.withResolvers<Response>();
+        const started = Promise.withResolvers<void>();
+        const config = makeConfig({ analytics: "enabled", installId: UUID });
+        const service = makeService(config, {
+          fetchImpl: () => {
+            started.resolve();
+            return response.promise;
+          },
+        });
+        const ping = service.maybePing();
+        await started.promise;
+        if (change === "rotate") {
+          // Same patch as the Settings rotation action, outside the service.
+          await config.update({
+            installId: rotateInstallId(() => rotatedId),
+            lastAnalyticsPingAt: 0,
+            analyticsRetryAfter: 0,
+          });
+          await config.save();
+        } else {
+          await service.setConsent("disabled");
+          if (change === "disable then enable") await service.setConsent("enabled");
+        }
+        const expected = config.getRaw();
+        const saves = config.saveCount;
+        if (outcome.status === null) response.reject(new Error("offline"));
+        else response.resolve(new Response(null, { status: outcome.status }));
+        await ping;
+
+        // Boolean identity assertions keep raw fixture ids out of failure logs.
+        expect(config.persisted.installId === expected.installId).toBe(true);
+        expect(config.rawRef.installId === expected.installId).toBe(true);
+        expect(config.persisted.analytics).toBe(expected.analytics);
+        expect(config.persisted.lastAnalyticsPingAt).toBe(0);
+        expect(config.persisted.analyticsRetryAfter).toBe(0);
+        expect(config.saveCount).toBe(saves);
+      });
+    }
+  }
+
+  for (const change of ["disable", "rotate"] as const) {
+    test(`${change} between real config update and save wins at flush`, async () => {
+      let persisted = { ...DEFAULT_CONFIG };
+      const config = new ConfigServiceImpl({
+        load: async () => ({}),
+        save: async (value) => {
+          persisted = { ...value };
+        },
+        reset: async () => {},
+      });
+      await config.update({ analytics: "enabled", installId: UUID });
+      const updated = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const service = makeService(
+        {
+          getRaw: () => config.getRaw(),
+          update: async (patch) => {
+            // The production mutation is synchronous; defer only its resolution.
+            const update = config.update(patch);
+            updated.resolve();
+            await release.promise;
+            await update;
+          },
+          save: async () => {
+            const save = config.save();
+            await config.flushPending();
+            await save;
+          },
+        },
+        { fetchImpl: async () => new Response(null, { status: 204 }) },
+      );
+      const ping = service.maybePing();
+      await updated.promise;
+      await config.update({
+        analytics: change === "disable" ? "disabled" : "enabled",
+        installId: change === "disable" ? "" : rotatedId,
+        lastAnalyticsPingAt: 0,
+        analyticsRetryAfter: 0,
+      });
+      release.resolve();
+      await ping;
+
+      expect(persisted.installId === (change === "disable" ? "" : rotatedId)).toBe(true);
+      expect(persisted.analytics).toBe(change === "disable" ? "disabled" : "enabled");
+      expect(persisted.lastAnalyticsPingAt).toBe(0);
+      expect(persisted.analyticsRetryAfter).toBe(0);
+    });
+  }
 });
 
 describe("consentPatch", () => {
