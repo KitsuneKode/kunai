@@ -53,7 +53,9 @@ export interface KitsuneConfig {
    * never again — so a user who picks the old provider back keeps it.
    *
    * Absent means "saved before revisions existed". 1 = anime lane moved from
-   * AniDB to Miruro (2026-09-11).
+   * AniDB to Miruro (2026-09-11). 2 = KickAssAnime and AnimeGG placed behind
+   * Miruro, ahead of AniDB (2026-09-12). A bump needs the previous default added
+   * to `INHERITED_ANIME_DEFAULTS` in ConfigServiceImpl, or it migrates nobody.
    */
   providerDefaultsRevision?: number;
   youtubeLanguageProfile: MediaLanguageProfile;

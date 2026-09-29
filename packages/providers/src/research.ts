@@ -121,6 +121,39 @@ export const providerResearchProfiles = [
       "The `bk` backup per source is unused because it is a direct URL for some titles and an mp4upload embed page for others.",
   },
   {
+    providerId: "kickassanime",
+    status: "production",
+    migrationAction: "promote-direct-provider",
+    migrationRank: 40,
+    dossierPath: ".docs/provider-dossiers/kickassanime.md",
+    evidencePaths: ["packages/providers/src/kickassanime/site.ts"],
+    runtimeClass: "direct-http JSON catalog + Astro island player",
+    implementationSource: "production-code",
+    supportedContent: ["anime"],
+    sourceStrategy:
+      "Plain JSON catalog (fsearch/episodes/servers), then the VidStreaming page carries the HLS master as serialized Astro props.",
+    subtitleStrategy:
+      "External .vtt tracks straight from the player props — the only anime source in the tree with soft subs rather than burned-in.",
+    productionGap:
+      "BirdStream's DASH is parsed but never chosen (its manifest 404'd on the title tested), so a VidStreaming outage has no second server.",
+  },
+  {
+    providerId: "anikoto",
+    status: "candidate",
+    migrationAction: "hold-for-future-runtime",
+    migrationRank: 55,
+    dossierPath: ".docs/provider-dossiers/anikoto-candidate.md",
+    evidencePaths: [".docs/provider-dossiers/anikoto-candidate.md"],
+    runtimeClass: "WordPress/Kiranime site fronting a third-party embed",
+    implementationSource: "scratchpad-report",
+    supportedContent: ["anime"],
+    sourceStrategy:
+      "Probed 2026-09-12: catalog is usable (GET /wp-json/kiranime/v1/anime/search?query=, episode lists in HTML), but every episode is one player.apnshare.org iframe that 403s a plain fetch — an embed extractor, the most fragile class, for coverage KickAssAnime and AnimeGG already give directly.",
+    subtitleStrategy: "Unknown: the embed was never opened, so no track evidence exists.",
+    productionGap:
+      "Needs an apnshare extractor plus impersonation before it is worth a dossier; its domain is also rotating (.to/.tv dead, .org redirects to .cc).",
+  },
+  {
     providerId: "anikai",
     status: "candidate",
     migrationAction: "hold-for-future-runtime",

@@ -1,11 +1,21 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "fe2730e78b53b640fd4338f70be6e41d07eab5a25f24c4a69405431562683903",
-  "docsContentFingerprint": "9603f925b2f300d112e4491769394e8aea209cd4b97bd315a094fb8b0c269e7e",
+  "cliSourceFingerprint": "20decfe42a37328a6567e34324e245149c2260e6695da71df37cbf7a85ac36ca",
+  "docsContentFingerprint": "5c9acc4b183e57aa6e0a73a7736224f03568c0c68f8b30bdbf48280d932a3f31",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
-  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "animegg", "youtube"],
+  "providerIds": [
+    "videasy",
+    "vidlink",
+    "rivestream",
+    "anidb",
+    "allanime",
+    "miruro",
+    "animegg",
+    "kickassanime",
+    "youtube"
+  ],
   "providers": [
     {
       "id": "videasy",
@@ -137,6 +147,27 @@
         "No Cloudflare challenge on any of the four documents; the four HTML documents need no referer.",
         "A title found in another catalog is matched against /search/?q= by name — title and alt titles, exactly one hit — and the slug is remembered on the title bridge. `title.id` is never trusted as a slug: AnimeGG slugs are plain kebab, so a same-shaped id from elsewhere (or AniList's numeric 21) would reach /series/<id>. Alt titles are split on both `,` and `;` — Frieren's English name sits after a semicolon.",
         "The STREAM does need one. Without a referer the CDN refuses the hand-off and mpv writes no frame; with the episode page as referer it plays. animegg.org 302s either way, so a status check on the /play URL cannot see this — only the player can."
+      ]
+    },
+    {
+      "id": "kickassanime",
+      "displayName": "KickAssAnime",
+      "description": "Independent anime source — HLS with separate subtitle tracks, sub and dub",
+      "domain": "kaa.lt",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
+      "status": "active",
+      "notes": [
+        "2026-09-11: added as a second anime source independent of Miruro, and the only one that ships subtitles as separate tracks rather than burned in.",
+        "Catalog is a plain JSON API: POST /api/fsearch {query, page}; GET /api/show/<slug>/episodes?ep=<page>&lang=<locale>; GET /api/show/<slug>/episode/ep-<n>-<epSlug> -> servers. Locales: ja-JP is sub, en-US is dub; dub coverage is often partial (Naruto: 2 of 220).",
+        "The site's JS is obfuscated, but nothing on the stream path is encrypted: the cat-player page carries the manifest and subtitles as serialized Astro island props ([0, value] / [1, array] tuples).",
+        "Headers are the whole trick, and each hop wants a different one. The HLS manifest needs `Referer: https://krussdomi.com/` (403 without). Segments — MPEG-TS served as .jpg from a rotating CDN host (st1.advancedairesearchlab.xyz on 2026-09-11, st1.narutokun.xyz on 2026-09-12) — need `Origin: https://krussdomi.com`; the referer alone is refused. Subtitle .vtt files need the same. Both headers are derived from the player's own origin rather than hardcoded, so a player move carries them along.",
+        "mpv applies the stream's referer and Origin to --sub-file / sub-add requests too, so subtitles load with no per-track headers (verified: sid=1 external webvtt).",
+        "Sub and dub are usually ONE file: the master carries a dub per audio rendition (Frieren ships nine, Japanese marked DEFAULT), so both locales hand back the same manifest id. The track is mpv's to choose via --alang, which is why `selectKaaAudio` reads the rendition group instead of trusting the locale — and why Kunai's audio setting had to stop reaching mpv as the literal `dub`, which matched no track and played Japanese.",
+        "The variant playlists are video-only (the audio lives in the rendition group), so the ladder is never expanded into per-quality URLs — mpv gets the master and picks. That is also why qualityRank is 0 rather than an invented height.",
+        "Only VidStreaming (HLS) is used. BirdStream serves DASH with many subtitle languages, but its manifest answered 404 for the title tested; the doubled slash in its URL (https:////bl.krussdomi.com) is normalized if it is ever enabled.",
+        "The domain rotates (kaa.to -> kaa.mx -> kickass-anime.ro -> kaa.lt). kickass-anime.ro still 301s to the current one and is asked when kaa.lt stops answering at connection level. Its redirect is read by hand (redirect: manual) and accepted only for an https `kaa.<tld>` / `kickass-anime.<tld>` host: an old alias can lapse and be bought, and following it blindly would hand the new owner the API base and every stream URL behind it."
       ]
     },
     {
