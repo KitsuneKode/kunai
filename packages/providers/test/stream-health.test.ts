@@ -131,7 +131,7 @@ describe("stream health", () => {
         }
         return new Response(new Uint8Array(2048).fill(1), { status: 206 });
       },
-      timeoutMs: STREAM_HEALTH_DEFAULTS.vidkingResolveGateTimeoutMs,
+      timeoutMs: STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
     });
 
     expect(result).toMatchObject({

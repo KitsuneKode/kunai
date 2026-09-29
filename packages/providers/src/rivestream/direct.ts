@@ -37,6 +37,11 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
+import {
+  dropRefusedStreams,
+  resolveGateBudgetMs,
+  selectVerifiedStream,
+} from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
 import {
@@ -83,7 +88,6 @@ const secretKeyCache = new TTLCache<string, string>(24 * 60 * 60 * 1000, {
   maxEntries: RIVESTREAM_SECRET_KEY_CACHE_LIMIT,
 });
 const RIVESTREAM_PROVIDER_SERVICES_TTL_MS = 24 * 60 * 60 * 1000;
-const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
 /**
  * Last-resort list for when service discovery is unreachable.
  *
@@ -111,6 +115,20 @@ let providerServicesCache:
       readonly expiresAtMs: number;
     }
   | undefined;
+
+/**
+ * Reset the module-level caches between tests.
+ *
+ * `providerServicesCache` and `secretKeyCache` outlive a single test file —
+ * module state is per process, not per file — so a test that resolves through
+ * this provider leaves discovery already cached for whatever runs next. Tests
+ * asserting on discovery call counts then see zero, and only in whatever order
+ * the runner happens to pick.
+ */
+export function clearRivestreamCachesForTest(): void {
+  providerServicesCache = undefined;
+  secretKeyCache.clear();
+}
 
 type RivestreamProviderServicesResponse = {
   readonly data?: unknown;
@@ -407,6 +425,16 @@ export const rivestreamProviderModule: CoreProviderModule = {
         secretKey,
       });
 
+      // The attempt budget caps this, so the gate has to be sized against what
+      // the candidate actually gets rather than the number chosen here.
+      const candidateTimeoutMs = providerCycleCandidateTimeoutMs(
+        input.startupPriority ?? "balanced",
+        RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+      );
+      const gateTimeoutMs = resolveGateBudgetMs(
+        candidateTimeoutMs,
+        RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
+      );
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
         candidates: cycleCandidates,
@@ -414,13 +442,15 @@ export const rivestreamProviderModule: CoreProviderModule = {
         now: context.now,
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
-        candidateTimeoutMs: providerCycleCandidateTimeoutMs(
-          input.startupPriority ?? "balanced",
-          RIVESTREAM_CANDIDATE_TIMEOUT_MS,
-        ),
+        candidateTimeoutMs,
         // Every service is fetched through the same www.rivestream.app front
         // door — a block there repeats identically for the rest, so stop early.
         shouldStopAfterFailure: (failure) => failure.failureClass === "candidate-blocked",
+        // Without these the cycle can neither skip a quarantined mirror nor
+        // record what it learned, so every resolve re-walked all eleven
+        // services and paid the full gate cost each time.
+        endpointHealth: context.endpointHealth,
+        titleId: tmdbId,
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           const sourceDataPromise = prefetchedSources.get(provider);
@@ -442,11 +472,18 @@ export const rivestreamProviderModule: CoreProviderModule = {
               cachePolicy,
               sourceDataPromise,
               signal: candidateContext.signal,
+              gateTimeoutMs,
             });
           } catch (error) {
             // A user cancellation is the engine's call — let it classify the
             // abort instead of wrapping it as a candidate failure.
             if (isAbortError(error) && context.signal?.aborted) throw error;
+            // The resolve gate already decided, and its verdict carries the
+            // parts that matter downstream: `candidate-blocked` and
+            // `endpointScoped`. Rebuilding it from a generic `ProviderHttpError`
+            // would relabel it `candidate-empty` and drop the flag, so endpoint
+            // health records nothing and the dead mirror is re-walked on every
+            // play.
             if (error instanceof ProviderCycleFailureError) {
               failures.push({
                 providerId: RIVESTREAM_PROVIDER_ID,
@@ -861,6 +898,44 @@ function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
+export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
+  let params: URLSearchParams;
+  try {
+    params = new URL(sourceUrl).searchParams;
+  } catch {
+    return null;
+  }
+  const raw = params.get("headers");
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof value !== "string") continue;
+    const cleaned = value.replace(/[\r\n]/g, "").trim();
+    if (!name.trim() || !cleaned) continue;
+    headers[name.trim()] = cleaned;
+  }
+  return Object.keys(headers).length > 0 ? headers : null;
+}
+
+export function resolveRivestreamStreamHeaders(sourceUrl: string): Record<string, string> {
+  const proxyHeaders = parseRivestreamProxyHeaders(sourceUrl);
+  if (!proxyHeaders) {
+    return { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT };
+  }
+  const headers: Record<string, string> = { ...proxyHeaders };
+  if (!Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")) {
+    headers["user-agent"] = USER_AGENT;
+  }
+  return headers;
+}
+
 async function resolveRivestreamProviderCandidate({
   candidate,
   provider,
@@ -869,6 +944,7 @@ async function resolveRivestreamProviderCandidate({
   cachePolicy,
   sourceDataPromise,
   signal,
+  gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly provider: string;
@@ -877,6 +953,8 @@ async function resolveRivestreamProviderCandidate({
   readonly cachePolicy: CachePolicy;
   readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
   readonly signal?: AbortSignal;
+  /** Sized against the clamped candidate timeout, never the raw constant. */
+  readonly gateTimeoutMs: number;
 }): Promise<RivestreamResolvedCandidate> {
   const displayLabel = displayRivestreamSourceLabel(provider);
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
@@ -893,8 +971,8 @@ async function resolveRivestreamProviderCandidate({
     });
   }
 
-  const streams: StreamCandidate[] = [];
-  const variants: ProviderVariantCandidate[] = [];
+  let streams: StreamCandidate[] = [];
+  let variants: ProviderVariantCandidate[] = [];
   const subtitles: SubtitleCandidate[] = [];
 
   // Expand HLS masters into per-rendition rows so the Tracks panel shows the
@@ -932,7 +1010,12 @@ async function resolveRivestreamProviderCandidate({
   for (const { source, variants: ladder } of expandedSources) {
     if (!source.url || ladder?.length === 0) continue;
     const qualityStr = String(source.quality || source.format || "auto");
-    const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
+    const protocol = source.url.includes(".m3u8")
+      ? "hls"
+      : source.url.includes(".mpd")
+        ? "dash"
+        : "mp4";
+    const streamHeaders = resolveRivestreamStreamHeaders(source.url);
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
       normalizeIsoLanguageCode(input.preferredAudioLanguage);
@@ -981,13 +1064,13 @@ async function resolveRivestreamProviderCandidate({
         variantId,
         url: row.url,
         protocol,
-        container: protocol === "hls" ? "m3u8" : "mp4",
+        container: protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4",
         audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
         qualityLabel,
         qualityRank,
         languageEvidence,
         sourceEvidence,
-        headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+        headers: streamHeaders,
         confidence: 0.95,
         cachePolicy,
         ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
@@ -1034,8 +1117,52 @@ async function resolveRivestreamProviderCandidate({
     });
   }
 
+  // Segment-probe before accepting the candidate. Rivestream's dead mirrors
+  // answer 200 on the master playlist and refuse every segment, so without this
+  // the cycle stops at the first server that merely *responds* and never
+  // reaches one that plays.
+  const selection = await selectVerifiedStream({
+    streams,
+    context,
+    timeoutMs: gateTimeoutMs,
+  });
+  if (!selection.accepted) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-blocked",
+      message: `${displayLabel}: ${selection.reason}`,
+      retryable: false,
+      at: context.now(),
+      // Every rung of this service was refused by probing its own streams, so
+      // it is durable evidence about this endpoint rather than a regional block.
+      endpointScoped: true,
+    });
+  }
+  // Keep the alternatives, drop the rungs the gate proved dead.
+  streams = dropRefusedStreams(streams, selection.refusedHosts);
+  variants = variants.filter((variant) =>
+    streams.some((candidateStream) => candidateStream.variantId === variant.id),
+  );
+
   return { provider, sourceId, streams, variants, subtitles };
 }
+
+/** How long one candidate may take before the cycle abandons it. */
+export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
+
+/**
+ * Budget for the resolve-gate probe.
+ *
+ * An HLS gate is three sequential round trips — master, variant, segment — and
+ * against Rivestream's dead mirror those measured 2.1-2.9s. The shared 3s
+ * default therefore landed right on the edge: the same candidate was rejected
+ * on one run and accepted on the next, because a cut-short probe reports
+ * `timeout`, which is deliberately *not* treated as proof of a dead stream.
+ * A gate that cannot reach a verdict is worse than no gate at all.
+ *
+ * Kept well below {@link RIVESTREAM_CANDIDATE_TIMEOUT_MS} so the probe cannot
+ * eat the budget its own candidate needs.
+ */
+export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 6_000;
 
 function extractRivestreamCaptions(
   data: RivestreamSourceResponse["data"],
