@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+tone_instructions: ""
+early_access: false
+enable_free_tier: true
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  auto_title_placeholder: "@coderabbitai"
+  review_status: true
+  poem: false
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  changed_files_summary: true
+  labeling_instructions: []
+  path_filters:
+    - "!**/*.lock"
+    - "!**/bun.lock"
+    - "!**/package-lock.json"
+    - "!.release/**"
+    - "!**/generated-*.json"
+    - "!docs/**"
+  path_instructions:
+    - path: "apps/cli/src/services/analytics/**"
+      instructions: >-
+        Analytics is consent-gated: only an explicit keystroke may enable it,
+        no telemetry may send before consent. Flag any path that creates an
+        installId or sends without a gate. See .docs/analytics-privacy-contract.md.
+    - path: "packages/providers/src/allmanga/**"
+      instructions: >-
+        This file carries ani-cli upstream parity logic (crypto, decoders).
+        A flag that looks dead or trivially true may be intentional upstream
+        compatibility — check .docs/providers.md before calling it a bug.
+    - path: "install.sh"
+      instructions: >-
+        POSIX sh, zero-dependency, runs via curl|bash. Never suggest adding jq,
+        python, or bashisms. Downloaded bytes are adversarial.
+    - path: "install.ps1"
+      instructions: >-
+        Must stay compatible with Windows PowerShell 5.1 (not just pwsh 7).
+    - path: "apps/cli/test/**"
+      instructions: >-
+        Tests use isolated storage roots. Flag any test that could touch the
+        real user profile (~/.config/kunai). Real sleeps are allowed only with
+        a documented ordering rationale; prefer waitUntil gates.
+  abort_on_close: true
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+      - "draft"
+    drafts: false
+    base_branches: []
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+chat:
+  auto_reply: true
+  integrations:
+    jira:
+      use: false
+    linear:
+      use: false
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: "auto"
+  issues:
+    scope: "auto"
+  jira_project_keys: []
+  linear_team_keys: []
+  pull_requests:
+    scope: "auto"
+code_generation:
+  docstrings:
+    language: "en-US"
+  unit_tests:
+    enabled: false
+tools:
+  shellcheck:
+    enabled: true
+  markdownlint:
+    enabled: true
+  biome:
+    enabled: false
+  eslint:
+    enabled: false
+  ruff:
+    enabled: false
+  hadolint:
+    enabled: true
+  gitleaks:
+    enabled: true
+  actionlint:
+    enabled: true
