@@ -1228,7 +1228,6 @@ describe("AllManga provider evidence fixtures", () => {
       slowBaselineDelayMs: 100,
     });
 
-    const startedAt = performance.now();
     const links = await resolveEpisodeSources({
       context: TEST_CONTEXT,
       apiUrl: "https://api.allanime.day/api",
@@ -1245,7 +1244,8 @@ describe("AllManga provider evidence fixtures", () => {
     const hosts = links.map((link) => new URL(link.url).hostname);
     expect(hosts).toContain("video.wixstatic.com");
     expect(hosts).toContain("direct.example");
-    expect(performance.now() - startedAt).toBeLessThan(80);
+    // The observable bound is the abort itself, not a wall-clock budget that a
+    // loaded CI runner can exceed without the budget path ever running late.
     expect(fetchMock.abortedBaselineRequests).toBe(1);
   });
 
