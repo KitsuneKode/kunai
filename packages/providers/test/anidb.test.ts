@@ -1196,6 +1196,7 @@ describe("anidb direct resolve season routing", () => {
   });
 
   test("a Cloudflare block is not retryable once both inner transports are spent", async () => {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const result = await resolveWithStub(
       {
         title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
@@ -1206,7 +1207,7 @@ describe("anidb direct resolve season routing", () => {
       } as Parameters<typeof anidbProviderModule.resolve>[0],
       (async () => {
         throw new Error("request blocked by Cloudflare challenge");
-      }) as unknown as typeof fetch,
+      }) as never,
     );
 
     expect(result.status).toBe("exhausted");

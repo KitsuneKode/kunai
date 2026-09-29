@@ -55,10 +55,10 @@ describe("hls manifest materializer", () => {
     const originalFetch = globalThis.fetch;
     let fetched = false;
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async () => {
       fetched = true;
       return new Response("#EXTM3U\n", { status: 200 });
-      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     }) as unknown as typeof fetch;
     try {
       expect(await materializeHlsManifestForPlayback(stream)).toBeNull();
@@ -72,6 +72,7 @@ describe("hls manifest materializer", () => {
     const manifest = ["#EXTM3U", "#EXTINF:3,", "/mirror/seg-1.jpg"].join("\n");
     const originalFetch = globalThis.fetch;
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input);
       const parsedUrl = new URL(url);
@@ -82,7 +83,6 @@ describe("hls manifest materializer", () => {
         });
       }
       return originalFetch(input);
-      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     }) as unknown as typeof fetch;
 
     const stream: StreamInfo = {
@@ -152,11 +152,11 @@ describe("hls manifest materializer", () => {
     const originalFetch = globalThis.fetch;
     let observedSignal: AbortSignal | undefined;
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
       // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       observedSignal = init?.signal as AbortSignal | undefined;
       throw new DOMException("The operation was aborted.", "AbortError");
-      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     }) as unknown as typeof fetch;
     const caller = new AbortController();
     caller.abort();

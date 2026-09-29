@@ -66,9 +66,9 @@ describe("production provider defaults", () => {
     // yet missing from Settings, so the user had no way to switch it off and
     // the "all relay-capable" summary line lied (#460). Derive the expectation
     // from the roster so a new relay-capable provider fails loudly here.
+    // SAFETY: providerId is branded; widen to string for the plain-string comparison list.
     const expected = modules
       .filter((module) => module.manifest.relayProfile !== undefined)
-      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       .map((module) => module.providerId as string)
       .sort();
 

@@ -2236,8 +2236,7 @@ test("PlaybackResolveService records no provider health from a cancelled resolve
       };
     },
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- unknown hop required: partial stub cannot overlap the full ProviderEngine contract
-  } as unknown as ProviderEngine;
+  } as never;
   const service = new PlaybackResolveService({
     engine,
     cacheStore: createMemoryCache(null),
