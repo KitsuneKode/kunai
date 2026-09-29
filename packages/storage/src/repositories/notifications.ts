@@ -209,6 +209,15 @@ export class NotificationRepository {
       .run(dedupKey, now);
   }
 
+  /**
+   * Remove a single notification WITHOUT tombstoning its dedupKey. For rows
+   * whose underlying condition cleared (not user-dismissed) — the same
+   * dedupKey must be allowed to re-fire when the condition returns.
+   */
+  removeByDedupKey(dedupKey: string): void {
+    this.db.query("DELETE FROM notifications WHERE dedup_key = ?").run(dedupKey);
+  }
+
   /** Dedup keys the user explicitly deleted; recordSignals must not recreate them. */
   listSuppressedKeys(): ReadonlySet<string> {
     const rows = this.db
