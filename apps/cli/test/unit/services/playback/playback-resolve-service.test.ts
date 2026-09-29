@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS } from "@/domain/playback/in-memory-stream-replay-policy";
+import { bindNetworkObserver } from "@/services/network/network-observation";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { PlaybackResolveService } from "@/services/playback/PlaybackResolveService";
 import { StreamHealthService } from "@/services/playback/StreamHealthService";
@@ -1885,6 +1886,102 @@ test("PlaybackResolveService does not poison provider health for offline network
   });
 
   expect(providerHealth.get("primary" as ProviderId)).toBeUndefined();
+});
+
+test("PlaybackResolveService does not count provider failures observed on a degraded uplink", async () => {
+  const providerHealth = createMemoryProviderHealth();
+  // Simulate the connectivity seam reporting a provably-shaky network — the
+  // provider's timeout may be our packet loss, not their fault.
+  bindNetworkObserver({
+    connectivity: {
+      getSnapshot: () => ({
+        status: "limited" as const,
+        checkedAt: Date.now(),
+        evidence: "provider-error" as const,
+      }),
+    },
+  } as never);
+  try {
+    const timeoutResult = {
+      ...createEmptyProviderResult("primary" as ProviderId),
+      healthDelta: {
+        providerId: "primary" as ProviderId,
+        outcome: "timeout" as const,
+        at: new Date().toISOString(),
+      },
+    };
+    const engine = createMockEngine({
+      result: null,
+      providerId: null,
+      attempts: [{ providerId: "primary" as ProviderId, result: timeoutResult }],
+    });
+    const service = new PlaybackResolveService({
+      engine,
+      cacheStore: createMemoryCache(null),
+      providerHealth: providerHealth as never,
+    });
+
+    await service.resolve({
+      title,
+      episode: { season: 1, episode: 2 },
+      mode: "series",
+      providerId: "primary",
+      audioPreference: "original",
+      subtitlePreference: "none",
+      signal: new AbortController().signal,
+    });
+
+    expect(providerHealth.get("primary" as ProviderId)).toBeUndefined();
+  } finally {
+    bindNetworkObserver(undefined);
+  }
+});
+
+test("PlaybackResolveService still counts provider failures when the uplink is healthy", async () => {
+  const providerHealth = createMemoryProviderHealth();
+  bindNetworkObserver({
+    connectivity: {
+      getSnapshot: () => ({
+        status: "online" as const,
+        checkedAt: Date.now(),
+        evidence: "provider-error" as const,
+      }),
+    },
+  } as never);
+  try {
+    const timeoutResult = {
+      ...createEmptyProviderResult("primary" as ProviderId),
+      healthDelta: {
+        providerId: "primary" as ProviderId,
+        outcome: "timeout" as const,
+        at: new Date().toISOString(),
+      },
+    };
+    const engine = createMockEngine({
+      result: null,
+      providerId: null,
+      attempts: [{ providerId: "primary" as ProviderId, result: timeoutResult }],
+    });
+    const service = new PlaybackResolveService({
+      engine,
+      cacheStore: createMemoryCache(null),
+      providerHealth: providerHealth as never,
+    });
+
+    await service.resolve({
+      title,
+      episode: { season: 1, episode: 2 },
+      mode: "series",
+      providerId: "primary",
+      audioPreference: "original",
+      subtitlePreference: "none",
+      signal: new AbortController().signal,
+    });
+
+    expect(providerHealth.get("primary" as ProviderId)?.consecutiveFailures).toBe(1);
+  } finally {
+    bindNetworkObserver(undefined);
+  }
 });
 
 test("PlaybackResolveService passes abort signal into stale cache health checks", async () => {

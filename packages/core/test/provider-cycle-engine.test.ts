@@ -275,12 +275,60 @@ test("runProviderCycle does not retry network-offline failures inside the same r
   });
 
   expect(result.selected).toBeUndefined();
-  expect(attempts).toEqual(["source:kiwi"]);
+  // Offline evidence corroborates across distinct servers: both candidates
+  // must fail DNS-level before the walk calls the uplink dead.
+  expect(attempts).toEqual(["source:kiwi", "source:telli"]);
   expect(result.stopReason).toBe("network-offline");
   expect(result.attempts.map((attempt) => attempt.failure?.failureClass)).toEqual([
     "candidate-network",
+    "candidate-network",
   ]);
   expect(result.attempts.every((attempt) => attempt.failure?.retryable === false)).toBe(true);
+});
+
+test("runProviderCycle keeps cycling past a single dead domain to a live sibling server", async () => {
+  const attempts: string[] = [];
+
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates,
+    maxAttemptsPerCandidate: 3,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      if (candidate.serverId === "kiwi") {
+        throw new Error("getaddrinfo ENOTFOUND dead.example.invalid");
+      }
+      return { streamId: candidate.id };
+    },
+  });
+
+  // One provider-internal domain being unreachable is a dead-mirror signal,
+  // not a dead uplink — the next server must still get its attempt.
+  expect(result.selected).toEqual({ streamId: "source:telli" });
+  expect(attempts).toEqual(["source:kiwi", "source:telli"]);
+  expect(result.stopReason).toBe("resolved");
+});
+
+test("runProviderCycle retries an offline-classified failure on the same server only once per verdict", async () => {
+  const attempts: string[] = [];
+
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates: [candidates[0]!],
+    maxAttemptsPerCandidate: 3,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      throw new Error("getaddrinfo ENOTFOUND api.allanime.day");
+    },
+  });
+
+  // A single dead domain never reaches quorum: the walk ends exhausted on
+  // that server's failure rather than claiming the uplink is down.
+  expect(result.selected).toBeUndefined();
+  expect(attempts).toEqual(["source:kiwi"]);
+  expect(result.stopReason).toBe("exhausted");
 });
 
 test("classifyProviderCycleError keeps blocked and parse failures non-retryable", () => {
