@@ -70,8 +70,15 @@ describe("@kunai/config parse boundary", () => {
     expect(DEFAULT_CONFIG.providerPriority).not.toContain("videasy");
   });
 
-  test("anime priority keeps AniDB first without pretending to be an allowlist", () => {
-    expect(DEFAULT_CONFIG.animeProvider).toBe("anidb");
-    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["anidb"]);
+  test("anime lane leads with Miruro and keeps AniDB and AllAnime behind it", () => {
+    expect(DEFAULT_CONFIG.animeProvider).toBe("miruro");
+    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["miruro", "anidb", "allanime"]);
+  });
+
+  test("a lane-default change ships with a bumped defaults revision", () => {
+    // Load migrates an inherited old default only when the on-disk revision is
+    // behind this one. Changing a default without bumping it strands every user
+    // who saved a setting on the previous default.
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(1);
   });
 });

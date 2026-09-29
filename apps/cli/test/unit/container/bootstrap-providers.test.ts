@@ -12,10 +12,26 @@ describe("production provider defaults", () => {
     const ids = modules.map((module) => module.providerId);
 
     expect(DEFAULT_CONFIG.provider).toBe("videasy");
-    expect(DEFAULT_CONFIG.animeProvider).toBe("anidb");
+    expect(DEFAULT_CONFIG.animeProvider).toBe("miruro");
     expect(ids).toContain(DEFAULT_CONFIG.provider);
     expect(ids).toContain(DEFAULT_CONFIG.animeProvider);
     expect(ids).toContain(DEFAULT_CONFIG.youtubeProvider);
+    // Every name in a default priority list must be a live module; ordering an
+    // unregistered id is a silent no-op that nothing would ever report.
+    for (const id of DEFAULT_CONFIG.animeProviderPriority) expect(ids).toContain(id);
+    for (const id of DEFAULT_CONFIG.providerPriority) expect(ids).toContain(id);
+
+    // A lane default renders with a "· candidate" suffix in the picker if its
+    // manifest says so, which is the wrong thing to show on the one provider
+    // most users never change.
+    for (const laneDefault of [
+      DEFAULT_CONFIG.provider,
+      DEFAULT_CONFIG.animeProvider,
+      DEFAULT_CONFIG.youtubeProvider,
+    ]) {
+      const module = modules.find((candidate) => candidate.providerId === laneDefault);
+      expect(module?.manifest.status).toBe("production");
+    }
   });
 
   test("every production source resolver keys the full request identity", async () => {
