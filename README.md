@@ -769,6 +769,9 @@ suite, changesets, and the release gate are all in
 [CONTRIBUTING.md](CONTRIBUTING.md). Design docs live in
 [.docs/architecture.md](.docs/architecture.md).
 
+AI tooling assists with code and review here; every change still lands through human
+review and the same typecheck, lint, and deterministic test gate as everything else.
+
 ---
 
 ## Appreciation
