@@ -11,6 +11,7 @@ function createResetContainer() {
   ]);
   const titleClears: string[] = [];
   const feedback: string[] = [];
+  const endpointClears: string[] = [];
 
   return {
     stateManager: {
@@ -56,11 +57,26 @@ function createResetContainer() {
         titleClears.push("__all__");
       },
     },
+    endpointHealth: {
+      deleteByProvider: (providerId: ProviderId) => {
+        endpointClears.push(`provider:${providerId}`);
+        return 1;
+      },
+      clearTitle: (titleId: string, providerId?: ProviderId) => {
+        endpointClears.push(providerId ? `title:${titleId}:${providerId}` : `title:${titleId}`);
+        return 1;
+      },
+      clearAll: () => {
+        endpointClears.push("__all__");
+        return 2;
+      },
+    },
     diagnosticsService: {
       record: () => {},
     },
     stateManagerDispatch: feedback,
     titleClears,
+    endpointClears,
   };
 }
 
@@ -112,5 +128,27 @@ describe("provider-health-reset", () => {
     await applyProviderHealthResetScope(container as never, "current-title");
     await applyProviderHealthResetScope(container as never, "current-title-provider");
     expect(harness.titleClears).toEqual(["mal:1", "mal:1:miruro"]);
+  });
+
+  test("reset scopes also clear endpoint quarantines for the same providers", async () => {
+    const harness = createResetContainer();
+    const container = {
+      ...harness,
+      stateManager: {
+        dispatch: () => {},
+        getState: harness.stateManager.getState,
+      },
+    };
+
+    const current = await applyProviderHealthResetScope(container as never, "current-provider");
+    expect(current.clearedEndpoints).toBe(1);
+    expect(harness.endpointClears).toContain("provider:miruro");
+
+    await applyProviderHealthResetScope(container as never, "current-title-provider");
+    expect(harness.endpointClears).toContain("title:mal:1:miruro");
+
+    const all = await applyProviderHealthResetScope(container as never, "all");
+    expect(all.clearedEndpoints).toBe(2);
+    expect(harness.endpointClears).toContain("__all__");
   });
 });

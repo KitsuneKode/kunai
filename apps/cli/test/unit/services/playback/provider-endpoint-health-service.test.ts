@@ -27,6 +27,27 @@ class MemoryEndpointHealthRepo {
   delete(providerId: string, endpoint: string): number {
     return this.rows.delete(this.key(providerId, endpoint)) ? 1 : 0;
   }
+
+  deleteByProvider(providerId: string): number {
+    let cleared = 0;
+    for (const key of this.rows.keys()) {
+      if (key.startsWith(`${providerId}:`)) {
+        this.rows.delete(key);
+        cleared += 1;
+      }
+    }
+    return cleared;
+  }
+
+  clearAll(): number {
+    const cleared = this.rows.size;
+    this.rows.clear();
+    return cleared;
+  }
+
+  list(): ProviderEndpointHealthRecord[] {
+    return [...this.rows.values()];
+  }
 }
 
 describe("ProviderEndpointHealthService", () => {
@@ -91,6 +112,64 @@ describe("ProviderEndpointHealthService", () => {
 
     service.recordSuccess("videasy", "broken");
     expect(service.shouldTry("videasy", "broken")).toBe(true);
+  });
+
+  test("deleteByProvider lifts one provider without touching the other", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    const service = new ProviderEndpointHealthService(repo);
+
+    for (const [providerId, endpoint] of [
+      ["videasy", "broken"],
+      ["rivestream", "primevids"],
+    ] as const) {
+      service.recordFailure(providerId, endpoint, {
+        class: "route-dead",
+        at: new Date().toISOString(),
+      });
+    }
+    expect(service.shouldTry("videasy", "broken")).toBe(false);
+
+    expect(service.deleteByProvider("videasy")).toBe(1);
+    expect(service.shouldTry("videasy", "broken")).toBe(true);
+    expect(service.shouldTry("rivestream", "primevids")).toBe(false);
+  });
+
+  test("clearTitle lifts only rows the title contributed to", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    const now = new Date("2026-06-23T12:00:00.000Z");
+    const service = new ProviderEndpointHealthService(repo, () => now);
+
+    service.recordFailure("videasy", "with-title", {
+      class: "route-dead",
+      titleId: "tmdb:1",
+      at: now.toISOString(),
+    });
+    service.recordFailure("videasy", "without-title", {
+      class: "route-dead",
+      at: now.toISOString(),
+    });
+
+    expect(service.clearTitle("tmdb:1")).toBe(1);
+    expect(service.shouldTry("videasy", "with-title")).toBe(true);
+    // No title evidence: a per-show reset must not lift it.
+    expect(service.shouldTry("videasy", "without-title")).toBe(false);
+  });
+
+  test("clearAll lifts every quarantine including transient cooldowns", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    const service = new ProviderEndpointHealthService(repo);
+
+    service.recordFailure("videasy", "broken", {
+      class: "route-dead",
+      at: new Date().toISOString(),
+    });
+    service.recordFailure("videasy", "slow", { class: "transient", at: new Date().toISOString() });
+    service.recordFailure("videasy", "slow", { class: "transient", at: new Date().toISOString() });
+    expect(service.shouldTry("videasy", "slow")).toBe(false);
+
+    expect(service.clearAll()).toBe(1);
+    expect(service.shouldTry("videasy", "broken")).toBe(true);
+    expect(service.shouldTry("videasy", "slow")).toBe(true);
   });
 });
 
