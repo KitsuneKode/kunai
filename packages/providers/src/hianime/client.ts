@@ -14,7 +14,7 @@ import {
   isCloudflareChallengeText,
   resolveCurlCandidate,
 } from "../shared/curl-impersonate";
-import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
+import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
@@ -458,12 +458,16 @@ export async function resolveHianimeEpisodeStreams({
     const fetchImpl =
       context.fetch?.fetch.bind(context.fetch) ??
       ((url: string, init?: RequestInit) => fetch(url, init));
-    const variants = await expandHlsMasterPlaylist({
+    const inventory = await expandHlsMasterInventory({
       fetch: fetchImpl,
       masterUrl: payload.src,
       headers: ladderHeaders,
       signal: createTimeoutSignal(signal, 15_000),
     });
+    // A dead master host (5xx/404/410) means the fallback `auto` row would point
+    // at the same dead URL — drop it so the caller fails instead of playing a
+    // corpse. 403/timeout stays: gatekept CDNs still play in mpv.
+    const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
     const links: HianimeStreamLink[] = variants.map((variant) => ({
       url: variant.url,
       quality: variant.qualityLabel,
@@ -471,6 +475,11 @@ export async function resolveHianimeEpisodeStreams({
       referer: embedReferer,
     }));
     if (links.length === 0) {
+      // A definitive dead-host answer is upstream evidence, not a transient
+      // transport failure — label it so the caller's outage summary is honest.
+      const deadHostStatus = isHlsDeadHostStatus(inventory.probe.httpStatus)
+        ? inventory.probe.httpStatus
+        : undefined;
       return {
         availableModes,
         observedServers,
@@ -478,8 +487,11 @@ export async function resolveHianimeEpisodeStreams({
           mode: requestedMode,
           status: "failed",
           failure: {
-            code: "network-error",
-            message: "hianime ladder expansion returned no variants",
+            code: deadHostStatus !== undefined ? "not-found" : "network-error",
+            message:
+              deadHostStatus !== undefined
+                ? `hianime master host answered HTTP ${deadHostStatus} — dead upstream`
+                : "hianime ladder expansion returned no variants",
           },
         },
       };

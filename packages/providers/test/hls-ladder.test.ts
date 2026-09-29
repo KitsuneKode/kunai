@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   expandHlsMasterInventory,
   expandHlsMasterPlaylist,
+  isHlsDeadHostStatus,
   looksLikeHlsMasterUrl,
   parseHlsMasterRenditions,
   parseHlsMasterVariants,
@@ -133,5 +134,28 @@ describe("hls rendition tracks (#EXT-X-MEDIA)", () => {
     expect(inventory.audioTracks).toEqual([]);
     expect(inventory.subtitleTracks).toEqual([]);
     expect(inventory.audioLanguages).toEqual([]);
+  });
+
+  test("expandHlsMasterInventory reports a dead host's HTTP status in probe", async () => {
+    const inventory = await expandHlsMasterInventory({
+      masterUrl: "https://dead.example/master.m3u8",
+      fetch: (async () =>
+        new Response("gone", { status: 503 })) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+
+    expect(inventory.probe).toEqual({ kind: "http-error", httpStatus: 503 });
+    // The fallback row still exists — callers decide whether to keep it.
+    expect(inventory.variants[0]?.qualityLabel).toBe("auto");
+    expect(isHlsDeadHostStatus(inventory.probe.httpStatus)).toBe(true);
+  });
+
+  test("isHlsDeadHostStatus drops 5xx/404/410 but keeps gatekept statuses", () => {
+    for (const dead of [500, 502, 503, 404, 410]) {
+      expect(isHlsDeadHostStatus(dead)).toBe(true);
+    }
+    for (const alive of [200, 301, 400, 401, 403, 429]) {
+      expect(isHlsDeadHostStatus(alive)).toBe(false);
+    }
+    expect(isHlsDeadHostStatus(undefined)).toBe(false);
   });
 });

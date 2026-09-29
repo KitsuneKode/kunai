@@ -100,6 +100,98 @@ describe("createMiruroResultFromPayload reachability attestation", () => {
   });
 });
 
+/**
+ * Unlabeled master rows are fetched to expand their variant ladder — that fetch
+ * is also the only liveness evidence a candidate gets. A definitive dead answer
+ * (5xx / 404 / 410) must drop the stream so the candidate loses to the next
+ * server; ambiguous failures (403, timeout, non-master body) still pass through
+ * because gatekept CDNs reject expansion yet play fine in mpv.
+ */
+describe("createMiruroResultFromPayload dead-host drop", () => {
+  const MASTER_SOURCE = {
+    streams: [
+      {
+        url: "https://hls.dead.example/stream/abc/master.m3u8",
+        type: "hls" as const,
+        referer: "https://www.miruro.bz/",
+      },
+    ],
+  };
+
+  function contextReturning(status: number): ProviderRuntimeContext {
+    return {
+      ...TEST_CONTEXT,
+      fetch: {
+        runtime: "direct-http",
+        fetch: async () => new Response("dead", { status }),
+      } as ProviderRuntimeContext["fetch"],
+    };
+  }
+
+  test("a 503 master playlist drops the stream and fails the candidate", async () => {
+    const events: import("@kunai/types").ProviderTraceEvent[] = [];
+    const result = await createMiruroResultFromPayload({
+      input: TEST_INPUT,
+      sourceData: MASTER_SOURCE,
+      audioCategory: "sub",
+      serverProfile: KIWI_SUB,
+      context: contextReturning(503),
+      events,
+    });
+
+    expect(result).toBeNull();
+    expect(events.some((e) => e.type === "source:failed")).toBe(true);
+  });
+
+  test("a 404 master playlist drops the stream and fails the candidate", async () => {
+    const result = await createMiruroResultFromPayload({
+      input: TEST_INPUT,
+      sourceData: MASTER_SOURCE,
+      audioCategory: "sub",
+      serverProfile: KIWI_SUB,
+      context: contextReturning(404),
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test("a 403 master playlist still passes through (WAF ambiguity preserved)", async () => {
+    const result = await createMiruroResultFromPayload({
+      input: TEST_INPUT,
+      sourceData: MASTER_SOURCE,
+      audioCategory: "sub",
+      serverProfile: KIWI_SUB,
+      context: contextReturning(403),
+    });
+
+    expect(result?.status).toBe("resolved");
+    expect(result?.streams.length).toBeGreaterThan(0);
+  });
+
+  test("a dead master alongside a live leaf keeps the candidate alive", async () => {
+    const result = await createMiruroResultFromPayload({
+      input: TEST_INPUT,
+      sourceData: {
+        streams: [
+          ...MASTER_SOURCE.streams,
+          {
+            url: "https://uwucdn.top/stream/720/index.m3u8",
+            type: "hls" as const,
+            quality: "720p",
+            referer: "https://kwik.cx/",
+          },
+        ],
+      },
+      audioCategory: "sub",
+      serverProfile: KIWI_SUB,
+      context: contextReturning(503),
+    });
+
+    expect(result?.status).toBe("resolved");
+    expect(result?.streams.some((s) => s.url?.includes("uwucdn"))).toBe(true);
+  });
+});
+
 describe("resolveMiruroAnilistId", () => {
   const anime = (id: string, anilistId?: string) => ({
     id,

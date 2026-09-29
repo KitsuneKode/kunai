@@ -23,6 +23,11 @@ import type {
 
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import {
+  expandHlsMasterInventory,
+  isHlsDeadHostStatus,
+  type HlsLadderVariant,
+} from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
   findLastCycleFailure,
@@ -405,7 +410,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs: 10_000,
-        resolveCandidate: async (candidate) => {
+        resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           const sourceDataPromise = prefetchedSources.get(provider);
           if (!provider || !sourceDataPromise) {
@@ -425,6 +430,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
               context,
               cachePolicy,
               sourceDataPromise,
+              signal: candidateContext.signal,
             });
           } catch (error) {
             const providerError =
@@ -832,6 +838,7 @@ async function resolveRivestreamProviderCandidate({
   context,
   cachePolicy,
   sourceDataPromise,
+  signal,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly provider: string;
@@ -839,6 +846,7 @@ async function resolveRivestreamProviderCandidate({
   readonly context: ProviderRuntimeContext;
   readonly cachePolicy: CachePolicy;
   readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
+  readonly signal?: AbortSignal;
 }): Promise<RivestreamResolvedCandidate> {
   const displayLabel = displayRivestreamSourceLabel(provider);
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
@@ -859,13 +867,41 @@ async function resolveRivestreamProviderCandidate({
   const variants: ProviderVariantCandidate[] = [];
   const subtitles: SubtitleCandidate[] = [];
 
-  rawSources.forEach((source) => {
-    if (!source.url) return;
+  // Expand HLS masters into per-rendition rows so the Tracks panel shows the
+  // real ladder (360p/720p/…) instead of a single `auto` row — and a dead
+  // master host drops out here instead of failing in mpv.
+  const expandedSources = await Promise.all(
+    rawSources.map(async (source) => {
+      if (!source.url || !source.url.includes(".m3u8")) {
+        return { source, variants: null as readonly HlsLadderVariant[] | null };
+      }
+      const inventory = await expandHlsMasterInventory({
+        fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
+        masterUrl: source.url,
+        headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+        // The per-candidate controller aborts at candidateTimeoutMs — ladder
+        // expansion runs after the prefetch, so a hung master must die with
+        // the attempt instead of lingering as an orphan fetch.
+        signal: signal ?? context.signal,
+      });
+      if (isHlsDeadHostStatus(inventory.probe.httpStatus)) {
+        return { source, variants: [] as readonly HlsLadderVariant[] };
+      }
+      // Only a parsed master expands — the `auto` fallback row would erase the
+      // API's own quality label, so any other probe result keeps the source row.
+      return {
+        source,
+        variants:
+          inventory.probe.kind === "ok"
+            ? inventory.variants
+            : (null as readonly HlsLadderVariant[] | null),
+      };
+    }),
+  );
+
+  for (const { source, variants: ladder } of expandedSources) {
+    if (!source.url || ladder?.length === 0) continue;
     const qualityStr = String(source.quality || source.format || "auto");
-    const qualityLabel = normalizeQualityLabel(qualityStr);
-    const qualityRank = qualityRankFromLabel(qualityStr) ?? 0;
-    const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [source.url]);
-    const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, source.url]);
     const protocol = source.url.includes(".m3u8") ? "hls" : "mp4";
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
@@ -896,35 +932,48 @@ async function resolveRivestreamProviderCandidate({
       }),
     ];
 
-    streams.push({
-      id: streamId,
-      providerId: RIVESTREAM_PROVIDER_ID,
-      sourceId,
-      variantId,
-      url: source.url,
-      protocol,
-      container: protocol === "hls" ? "m3u8" : "mp4",
-      audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
-      qualityLabel,
-      qualityRank,
-      languageEvidence,
-      sourceEvidence,
-      headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
-      confidence: 0.95,
-      cachePolicy,
-      ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
-    });
+    // Expanded masters emit one row per rendition; anything else stays a
+    // single row at the API's own quality label.
+    const rows: { url: string; qualityStr: string }[] = ladder
+      ? ladder.map((v) => ({ url: v.url, qualityStr: v.qualityLabel }))
+      : [{ url: source.url, qualityStr }];
 
-    const stream = streams[streams.length - 1];
-    if (stream) {
-      variants.push(
-        createVariantCandidateFromStream({
-          providerId: RIVESTREAM_PROVIDER_ID,
-          stream,
-        }),
-      );
+    for (const row of rows) {
+      const qualityLabel = normalizeQualityLabel(row.qualityStr);
+      const qualityRank = qualityRankFromLabel(row.qualityStr) ?? 0;
+      const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [row.url]);
+      const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, row.url]);
+
+      streams.push({
+        id: streamId,
+        providerId: RIVESTREAM_PROVIDER_ID,
+        sourceId,
+        variantId,
+        url: row.url,
+        protocol,
+        container: protocol === "hls" ? "m3u8" : "mp4",
+        audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
+        qualityLabel,
+        qualityRank,
+        languageEvidence,
+        sourceEvidence,
+        headers: { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT },
+        confidence: 0.95,
+        cachePolicy,
+        ...streamPresentationFields({ displayLabel, subtitle: audioSubtitle }),
+      });
+
+      const stream = streams[streams.length - 1];
+      if (stream) {
+        variants.push(
+          createVariantCandidateFromStream({
+            providerId: RIVESTREAM_PROVIDER_ID,
+            stream,
+          }),
+        );
+      }
     }
-  });
+  }
 
   const embeddedCaptions = extractRivestreamCaptions(sourceData.data);
   for (const subtitle of embeddedCaptions) {
@@ -943,6 +992,15 @@ async function resolveRivestreamProviderCandidate({
       source: "provider",
       confidence: 0.95,
       cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" },
+    });
+  }
+
+  if (streams.length === 0) {
+    throw createProviderCycleFailureError(candidate, {
+      failureClass: "candidate-empty",
+      message: `Rivestream ${provider} returned sources but all masters were unreachable`,
+      retryable: true,
+      at: context.now(),
     });
   }
 
