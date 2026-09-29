@@ -55,7 +55,7 @@ describe("rivestream dead master host", () => {
     );
   });
 
-  test("a 403 ladder probe keeps the row (gatekept CDN still plays in mpv)", async () => {
+  test("a 403 probe refuses the row (a refusal is a verdict, not a maybe)", async () => {
     const services = await readFixture<unknown>("rivestream/services-response.json");
     const sourceFixture = await readFixture<unknown>("rivestream/source-response.json");
     const context: ProviderRuntimeContext = {
@@ -72,7 +72,10 @@ describe("rivestream dead master host", () => {
 
     const result = await resolveRivestream(MOVIE_INPUT, context);
 
-    expect(result.status).toBe("resolved");
-    expect(result.sources?.length ?? 0).toBeGreaterThan(0);
+    // The resolve gate probes the same URL+headers mpv would receive: a 403
+    // there is a refusal, not a "maybe the real player gets through". Shipping
+    // the row anyway is what handed users CDN error pages as "streams".
+    expect(result.status).toBe("exhausted");
+    expect(result.streams ?? []).toHaveLength(0);
   });
 });
