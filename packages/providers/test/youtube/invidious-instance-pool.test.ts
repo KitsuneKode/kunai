@@ -10,7 +10,7 @@ describe("invidious instance reachability", () => {
   // Upstream now reports every working clearnet instance as `api: false`, while
   // every `api: null` entry is a non-routable overlay-network address. Selecting
   // on `api` alone therefore keeps only the hosts a normal machine cannot reach.
-  const UPSTREAM_SHAPE = JSON.stringify([
+  const UPSTREAM_BODY = JSON.stringify([
     ["invidious.nerdvpn.de", { api: false, uri: "https://invidious.nerdvpn.de" }],
     ["inv.nadeko.net", { api: false, uri: "https://inv.nadeko.net" }],
     ["inv.nadeko.ygg", { api: null, uri: "https://inv.nadeko.ygg" }],
@@ -40,12 +40,12 @@ describe("invidious instance reachability", () => {
   }
 
   test("keeps reachable clearnet instances and drops overlay-network hosts", async () => {
-    const instances = await fetchWith(UPSTREAM_SHAPE, 1_800_000_000_000);
+    const instances = await fetchWith(UPSTREAM_BODY, 1_800_000_000_000);
     expect(instances).toEqual(["https://invidious.nerdvpn.de", "https://inv.nadeko.net"]);
   });
 
   test("never returns a .onion, .i2p or .ygg address", async () => {
-    const instances = await fetchWith(UPSTREAM_SHAPE, 1_800_002_000_000);
+    const instances = await fetchWith(UPSTREAM_BODY, 1_800_002_000_000);
     expect(instances.length).toBeGreaterThan(0);
     for (const instance of instances) {
       expect(instance).not.toMatch(/\.(onion|i2p|ygg)$/);

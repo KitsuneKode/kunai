@@ -308,10 +308,10 @@ describe("hianime embed decoding", () => {
     expect(() => decodeHianimeEmbedPage(`<script>window.__P="${badJson}"</script>`)).toThrowError(
       new HianimeEmbedDecodeError("embed-json-syntax-invalid"),
     );
-    const badShape = obfuscateHianimeEmbedPayload(JSON.stringify({ nope: true }));
-    expect(() => decodeHianimeEmbedPage(`<script>window.__P="${badShape}"</script>`)).toThrowError(
-      new HianimeEmbedDecodeError("embed-json-shape-invalid"),
-    );
+    const badPayload = obfuscateHianimeEmbedPayload(JSON.stringify({ nope: true }));
+    expect(() =>
+      decodeHianimeEmbedPage(`<script>window.__P="${badPayload}"</script>`),
+    ).toThrowError(new HianimeEmbedDecodeError("embed-json-shape-invalid"));
   });
 
   test("reads MAL id and referer from the embed URL", () => {

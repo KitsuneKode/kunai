@@ -126,14 +126,14 @@ export async function discoverKaaBase(context: ProviderRuntimeContext): Promise<
     const location = response.headers.get("location");
     if (response.status < 300 || response.status >= 400 || !location) return null;
     const target = new URL(location, REDIRECTING_ALIAS);
-    if (target.protocol !== "https:" || !KAA_HOST_SHAPE.test(target.hostname)) return null;
+    if (target.protocol !== "https:" || !KAA_HOST_PATTERN.test(target.hostname)) return null;
     return target.origin === new URL(REDIRECTING_ALIAS).origin ? null : target.origin;
   } catch {
     return null;
   }
 }
 
-const KAA_HOST_SHAPE = /^(?:www\.)?(?:kaa|kickass-?anime)\.[a-z]{2,6}$/;
+const KAA_HOST_PATTERN = /^(?:www\.)?(?:kaa|kickass-?anime)\.[a-z]{2,6}$/;
 
 async function fetchJson(
   context: ProviderRuntimeContext,
@@ -222,10 +222,10 @@ export function resolveKaaSlug(title: TitleIdentity): string | null {
   const native = title.externalIds?.providerNativeIds?.[KICKASSANIME_PROVIDER_ID]?.trim();
   if (native && /^[a-z0-9][a-z0-9-]*$/.test(native)) return native;
   const id = title.id?.trim();
-  return id && KAA_SLUG_SHAPE.test(id) ? id : null;
+  return id && KAA_SLUG_PATTERN.test(id) ? id : null;
 }
 
-const KAA_SLUG_SHAPE = /^[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{4}$/;
+const KAA_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{4}$/;
 
 function titleKey(value: string): string {
   return (
@@ -278,7 +278,7 @@ async function locateKaaShow(
     ? { providerId: KICKASSANIME_PROVIDER_ID, catalogKind: "anime" as const, catalogId: anilistId }
     : undefined;
   const remembered = bridgeKey ? context.titleBridge?.get(bridgeKey) : undefined;
-  if (remembered && KAA_SLUG_SHAPE.test(remembered)) return remembered;
+  if (remembered && KAA_SLUG_PATTERN.test(remembered)) return remembered;
 
   const query = title.title.trim();
   if (!query) return null;

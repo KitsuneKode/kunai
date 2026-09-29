@@ -89,7 +89,7 @@ export function assertReleaseProviderSignoffComplete(signoff: ReleaseProviderSig
       throw new Error(`Duplicate release signoff lane: ${route.lane}`);
     }
     lanes.add(route.lane);
-    assertRouteShape(route);
+    assertRoutePayload(route);
   }
 
   for (const required of RELEASE_SIGNOFF_REQUIRED_LANES) {
@@ -178,7 +178,7 @@ function sanitizeRoute(route: ReleaseProviderSignoffRoute): ReleaseProviderSigno
   };
 }
 
-function assertRouteShape(route: ReleaseProviderSignoffRoute): void {
+function assertRoutePayload(route: ReleaseProviderSignoffRoute): void {
   const { lane } = route;
   if (!route.configuredProvider.trim()) {
     throw new Error(`Release signoff lane ${lane} requires configuredProvider`);

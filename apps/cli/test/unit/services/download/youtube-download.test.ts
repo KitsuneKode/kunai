@@ -54,6 +54,7 @@ describe("DownloadService youtube argv contract", () => {
       const outputPath = oIndex >= 0 ? options.args[oIndex + 1] : "";
       if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
       return {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         process: { kill: mock(() => {}) } as never,
         completed: Promise.resolve({ exitCode: 0, stderr: "" }),
         cancel: mock(() => {}),

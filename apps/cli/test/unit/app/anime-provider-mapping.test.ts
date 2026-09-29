@@ -33,6 +33,7 @@ const allanimeProviderRegistry = {
       isAnimeProvider: true,
       catalogIdentity: "provider-native" as const,
     },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     capabilities: {} as never,
     canHandle: () => true,
     resolveStream: async () => null,
@@ -63,6 +64,7 @@ const anidbProviderRegistry = {
       isAnimeProvider: true,
       catalogIdentity: "provider-native" as const,
     },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     capabilities: {} as never,
     canHandle: () => true,
     resolveStream: async () => null,
@@ -92,6 +94,7 @@ const miruroProviderRegistry = {
       isAnimeProvider: true,
       catalogIdentity: "anilist" as const,
     },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     capabilities: {} as never,
     canHandle: () => true,
     resolveStream: async () => null,
@@ -280,6 +283,7 @@ test("AniDB mapping rejects a non-AniDB native result and retains catalog identi
           isAnimeProvider: true,
           catalogIdentity: "provider-native" as const,
         },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         capabilities: {} as never,
         canHandle: () => true,
         resolveStream: async () => null,

@@ -2,6 +2,7 @@ import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
 import { VIDEASY_DB_BASE } from "@kunai/providers";
+import type { JsonValue } from "@kunai/types";
 
 export { VIDEASY_DB_BASE as TMDB_PROXY_BASE };
 
@@ -14,11 +15,11 @@ const SESSION_CACHE_MS = 2 * 60 * 1_000;
 
 type SessionCacheEntry = {
   readonly expiresAt: number;
-  readonly value: unknown;
+  readonly value: JsonValue;
 };
 
 const sessionCache = new Map<string, SessionCacheEntry>();
-const inflightRequests = new Map<string, Promise<unknown>>();
+const inflightRequests = new Map<string, Promise<JsonValue>>();
 
 function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
@@ -38,7 +39,7 @@ export async function fetchTmdbJsonCached(
   path: string,
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<unknown> {
+): Promise<JsonValue> {
   const normalized = normalizePath(path);
   const now = Date.now();
   const cached = sessionCache.get(normalized);
@@ -66,13 +67,14 @@ export async function fetchTmdbProxyJson(
   path: string,
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<unknown> {
+): Promise<JsonValue> {
   const normalized = normalizePath(path);
   const url = `${VIDEASY_DB_BASE}${normalized}`;
   return observeOnlineIfBound("search-error", async () => {
     const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
     if (!res.ok) throw new Error(`${res.status} ${url}`);
-    return res.json();
+    // SAFETY: Response.json() resolves to the parsed JSON document.
+    return res.json() as Promise<JsonValue>;
   });
 }
 
@@ -80,7 +82,7 @@ export async function fetchTmdbJsonWithFallback(
   path: string,
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<unknown> {
+): Promise<JsonValue> {
   const normalized = normalizePath(path);
   try {
     return await fetchTmdbProxyJson(normalized, signal, timeoutMs);
@@ -90,7 +92,8 @@ export async function fetchTmdbJsonWithFallback(
     return observeOnlineIfBound("search-error", async () => {
       const res = await fetch(directUrl, { signal: withTimeoutSignal(signal, timeoutMs) });
       if (!res.ok) throw new Error(`${res.status} ${directUrl}`);
-      return res.json();
+      // SAFETY: Response.json() resolves to the parsed JSON document.
+      return res.json() as Promise<JsonValue>;
     });
   }
 }

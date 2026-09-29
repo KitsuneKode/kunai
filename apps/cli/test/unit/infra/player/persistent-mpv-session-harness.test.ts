@@ -128,6 +128,7 @@ describe("PersistentMpvSession single pending load owner", () => {
     const session = await PersistentMpvSession.create({
       stream: createStream(),
       options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
       onControlReady: () => {},
       runtime: harness.runtime,
@@ -212,6 +213,7 @@ describe("PersistentMpvSession deferred bootstrap resources", () => {
           if (event.type === "player-closed") terminated = true;
         },
       },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
       onControlReady: () => {},
       runtime,
@@ -271,6 +273,7 @@ describe("PersistentMpvSession deferred bootstrap resources", () => {
         primarySubtitle: null,
         onPlaybackEvent: (event) => publicEvents.push(event.type),
       },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
       onControlReady: (control) => controls.push(control),
       runtime,

@@ -82,6 +82,7 @@ describe("setSessionLane", () => {
       dispatch: (event: unknown) => events.push(event),
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     setSessionLane(stateManager as never, "youtube", providerRegistry());
 
     expect(events).toEqual([{ type: "SET_MODE", mode: "youtube", provider: "youtube" }]);
@@ -110,6 +111,7 @@ describe("switchSessionMode", () => {
       dispatch: (event: unknown) => events.push(event),
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     switchSessionMode(stateManager as never, providerRegistry());
 
     expect(events).toEqual([{ type: "SET_MODE", mode: "youtube", provider: "youtube" }]);

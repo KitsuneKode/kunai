@@ -87,7 +87,7 @@ function countLabel(result: SearchResult, isYoutubeResult: boolean): string | un
   const count = result.episodeCount;
   if (count === undefined) return undefined;
   if (result.type === "movie" && !isYoutubeResult) return undefined;
-  const collection = result.contentShape === "channel" || result.contentShape === "playlist";
+  const collection = result.resultKind === "channel" || result.resultKind === "playlist";
   if (collection) return count === 1 ? "1 video" : `${count} videos`;
   return count === 1 ? "1 episode" : `${count} episodes`;
 }
@@ -189,15 +189,15 @@ export function toBrowseResultOption(
   const alternateTitles = formatAlternateTitles(result, displayTitle);
   const overview = normalizeProviderText(result.overview);
   const isYoutubeResult =
-    result.contentShape !== undefined ||
+    result.resultKind !== undefined ||
     result.externalIds?.youtubeId !== undefined ||
     result.id.startsWith("youtube:");
   const contentLabel = isYoutubeResult
-    ? result.contentShape === "playlist"
+    ? result.resultKind === "playlist"
       ? "Playlist"
-      : result.contentShape === "channel"
+      : result.resultKind === "channel"
         ? "Channel"
-        : result.contentShape === "short"
+        : result.resultKind === "short"
           ? "Short"
           : "Video"
     : isAnimeContent(result)
@@ -310,11 +310,11 @@ export function toBrowseResultOption(
         ? "This YouTube premiere has not started yet."
         : isYoutubeResult && result.liveStatus === "live"
           ? "This stream is live. Press Enter to join at the live edge."
-          : isYoutubeResult && result.contentShape === "playlist"
+          : isYoutubeResult && result.resultKind === "playlist"
             ? "Press Enter to open this playlist and choose a video."
-            : isYoutubeResult && result.contentShape === "channel"
+            : isYoutubeResult && result.resultKind === "channel"
               ? "Press Enter to open this channel and choose a video."
-              : isYoutubeResult && result.contentShape === "short"
+              : isYoutubeResult && result.resultKind === "short"
                 ? "Press Enter to open this Short and continue to playback."
                 : isYoutubeResult
                   ? "Press Enter to open this video and continue to playback."

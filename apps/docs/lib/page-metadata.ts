@@ -77,13 +77,13 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
       url,
       type: input.type ?? "website",
       siteName: "Kunai Docs",
-      ...(input.socialImage === "segment" ? {} : { images: [SOCIAL_IMAGE] }),
+      ...(input.socialImage === "segment" ? null : { images: [SOCIAL_IMAGE] }),
     },
     twitter: {
       card: "summary_large_image",
       title: input.title,
       description: socialDescription,
-      ...(input.socialImage === "segment" ? {} : { images: [TWITTER_IMAGE] }),
+      ...(input.socialImage === "segment" ? null : { images: [TWITTER_IMAGE] }),
     },
   };
 

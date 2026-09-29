@@ -81,11 +81,11 @@ function createProviderResult(url: string): ProviderEngineResolveOutput {
   return {
     result: {
       status: "resolved",
-      providerId: "fallback" as ProviderId,
+      providerId: "fallback",
       streams: [
         {
           id: "stream:fallback:1",
-          providerId: "fallback" as ProviderId,
+          providerId: "fallback",
           url,
           protocol: "hls" as const,
           confidence: 0.9,
@@ -103,8 +103,8 @@ function createProviderResult(url: string): ProviderEngineResolveOutput {
       },
       failures: [],
     },
-    providerId: "fallback" as ProviderId,
-    attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
+    providerId: "fallback",
+    attempts: [{ providerId: "fallback", result: undefined }],
   };
 }
 
@@ -112,11 +112,11 @@ function createProviderResultWithSelectionDecision(): ProviderEngineResolveOutpu
   return {
     result: {
       status: "resolved",
-      providerId: "fallback" as ProviderId,
+      providerId: "fallback",
       streams: [
         {
           id: "stream:fallback:1",
-          providerId: "fallback" as ProviderId,
+          providerId: "fallback",
           url: "https://fallback.example/stream.m3u8",
           protocol: "hls" as const,
           confidence: 0.9,
@@ -141,8 +141,8 @@ function createProviderResultWithSelectionDecision(): ProviderEngineResolveOutpu
         enrichmentLane: "required",
       },
     },
-    providerId: "fallback" as ProviderId,
-    attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
+    providerId: "fallback",
+    attempts: [{ providerId: "fallback", result: undefined }],
   };
 }
 
@@ -150,11 +150,11 @@ function createProviderResultAfterFallback(): ProviderEngineResolveOutput {
   return {
     result: {
       status: "resolved",
-      providerId: "rivestream" as ProviderId,
+      providerId: "rivestream",
       streams: [
         {
           id: "stream:rivestream:1",
-          providerId: "rivestream" as ProviderId,
+          providerId: "rivestream",
           url: "https://rivestream.example/stream.m3u8",
           protocol: "hls" as const,
           confidence: 0.9,
@@ -172,19 +172,19 @@ function createProviderResultAfterFallback(): ProviderEngineResolveOutput {
       },
       failures: [],
     },
-    providerId: "rivestream" as ProviderId,
+    providerId: "rivestream",
     attempts: [
       {
-        providerId: "vidking" as ProviderId,
+        providerId: "vidking",
         failure: {
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           code: "timeout",
           message: "VidKing timed out",
           retryable: true,
           at: "2026-05-15T00:00:00.000Z",
         },
       },
-      { providerId: "rivestream" as ProviderId, result: undefined },
+      { providerId: "rivestream", result: undefined },
     ],
   };
 }
@@ -195,10 +195,10 @@ function createProviderResultWithSourceTraceFailure(): ProviderEngineResolveOutp
     providerId: null,
     attempts: [
       {
-        providerId: "videasy" as ProviderId,
+        providerId: "videasy",
         result: {
           status: "exhausted",
-          providerId: "videasy" as ProviderId,
+          providerId: "videasy",
           streams: [],
           subtitles: [],
           sources: [],
@@ -215,7 +215,7 @@ function createProviderResultWithSourceTraceFailure(): ProviderEngineResolveOutp
             events: [
               {
                 type: "source:start",
-                providerId: "videasy" as ProviderId,
+                providerId: "videasy",
                 sourceId: "source:videasy:mb-flix",
                 at: "2026-06-21T00:00:01.000Z",
                 attempt: 1,
@@ -224,7 +224,7 @@ function createProviderResultWithSourceTraceFailure(): ProviderEngineResolveOutp
               },
               {
                 type: "source:failed",
-                providerId: "videasy" as ProviderId,
+                providerId: "videasy",
                 sourceId: "source:videasy:mb-flix",
                 at: "2026-06-21T00:00:02.000Z",
                 attempt: 1,
@@ -235,7 +235,7 @@ function createProviderResultWithSourceTraceFailure(): ProviderEngineResolveOutp
           },
           failures: [
             {
-              providerId: "videasy" as ProviderId,
+              providerId: "videasy",
               code: "not-found",
               message: "Videasy did not produce a playable source",
               retryable: false,
@@ -244,7 +244,7 @@ function createProviderResultWithSourceTraceFailure(): ProviderEngineResolveOutp
           ],
         },
         failure: {
-          providerId: "videasy" as ProviderId,
+          providerId: "videasy",
           code: "not-found",
           message: "Videasy did not produce a playable source",
           retryable: false,
@@ -488,18 +488,18 @@ describe("PlaybackResolveCoordinator", () => {
       engine: createObservedMockEngine(createProviderResultAfterFallback(), [
         {
           type: "provider-attempt-started",
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           attempt: 1,
           at: "2026-05-15T00:00:00.000Z",
         },
         {
           type: "provider-attempt-failed",
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           attempt: 1,
           at: "2026-05-15T00:00:02.000Z",
           elapsedMs: 2000,
           failure: {
-            providerId: "vidking" as ProviderId,
+            providerId: "vidking",
             code: "timeout",
             message: "VidKing timed out",
             retryable: true,
@@ -508,11 +508,11 @@ describe("PlaybackResolveCoordinator", () => {
         },
         {
           type: "provider-fallback-started",
-          fromProviderId: "vidking" as ProviderId,
-          toProviderId: "rivestream" as ProviderId,
+          fromProviderId: "vidking",
+          toProviderId: "rivestream",
           at: "2026-05-15T00:00:02.001Z",
           failure: {
-            providerId: "vidking" as ProviderId,
+            providerId: "vidking",
             code: "timeout",
             message: "VidKing timed out",
             retryable: true,
@@ -647,8 +647,8 @@ describe("hedge outcome reporting", () => {
 
   const hedgeEvent = (from: string, to: string): ProviderEngineEvent => ({
     type: "provider-hedge-started",
-    fromProviderId: from as ProviderId,
-    toProviderId: to as ProviderId,
+    fromProviderId: from,
+    toProviderId: to,
     at: new Date().toISOString(),
     hedgeDelayMs: 5_000,
   });

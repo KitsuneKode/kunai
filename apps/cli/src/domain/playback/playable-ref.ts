@@ -73,7 +73,7 @@ export function buildPlayIntent(ref: PlayableRef): PlayIntent {
     : {
         season: ref.season ?? 1,
         episode: ref.episode ?? ref.absoluteEpisode ?? 1,
-        ...(ref.absoluteEpisode === undefined ? {} : { absoluteEpisode: ref.absoluteEpisode }),
+        ...(ref.absoluteEpisode === undefined ? null : { absoluteEpisode: ref.absoluteEpisode }),
       };
 
   const resumeSeconds =

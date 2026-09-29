@@ -148,7 +148,7 @@ const payload = {
     : usedFixtureFallback
       ? "no_results"
       : null,
-  ...(resolveError ? providerSmokeError(resolveError) : {}),
+  ...(resolveError ? providerSmokeError(resolveError) : null),
   failureCodes,
   failureMessages,
   streamCandidates,

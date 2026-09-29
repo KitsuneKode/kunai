@@ -203,7 +203,7 @@ function readPreservedDiskFields(path: string): PreservedDiskFields | undefined 
         : undefined;
     if (!publication && !assets) return undefined;
     return {
-      ...(assets ? { assets } : {}),
+      ...(assets ? { assets } : null),
       ...(publication ? { status: publication.status, publishedAt: publication.publishedAt } : {}),
     };
   } catch {

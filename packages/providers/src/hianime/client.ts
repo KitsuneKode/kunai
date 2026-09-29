@@ -576,7 +576,7 @@ export async function resolveHianimeEpisodeStreams({
         status: "resolved",
         links,
         subtitles: payload.subtitles,
-        ...(malId ? { malId } : {}),
+        ...(malId ? { malId } : null),
         ...(payload.intro ? { intro: payload.intro } : {}),
         ...(payload.outro ? { outro: payload.outro } : {}),
         embedReferer,

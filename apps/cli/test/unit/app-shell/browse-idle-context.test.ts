@@ -33,6 +33,7 @@ describe("buildBrowseIdleContext", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const { idleContext } = await buildBrowseIdleContext(container as never, {
       preloadedHistory: {
         "tmdb:1": {
@@ -86,6 +87,7 @@ describe("buildBrowseIdleContext", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const { idleContext } = await buildBrowseIdleContext(container as never, {
       preloadedHistory: {
         "tmdb:short": {

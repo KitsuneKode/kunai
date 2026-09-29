@@ -11,6 +11,7 @@ test("forceSettleAllRootContent resolves pending mount promises", async () => {
   const mounted = mountRootContent({
     kind: "playback",
     fallbackValue: "quit" as const,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     renderContent: () => null as never,
   });
 
@@ -25,6 +26,7 @@ test("subscribeRootContentSession notifies on mount and clear", () => {
   const mounted = mountRootContent({
     kind: "picker",
     fallbackValue: "cancelled" as const,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     renderContent: () => null as never,
   });
   clearRootContentSession();

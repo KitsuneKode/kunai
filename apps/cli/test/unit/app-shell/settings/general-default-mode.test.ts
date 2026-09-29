@@ -16,6 +16,7 @@ function baseConfig(): KitsuneConfig {
  * promised was there.
  */
 function rows() {
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   return generalSettingsRows({ config: baseConfig() } as never);
 }
 
@@ -45,6 +46,7 @@ test("usage analytics is a visible opt-in setting that clears the id when disabl
 });
 
 function rowsFor(config: Partial<KitsuneConfig>) {
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   return generalSettingsRows({ config: { ...baseConfig(), ...config } } as never);
 }
 

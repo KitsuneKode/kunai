@@ -74,7 +74,7 @@ export function parseAnimeggSearchResults(html: string): AnimeggSearchResult[] {
     results.push({
       slug,
       title,
-      ...(posterUrl ? { posterUrl } : {}),
+      ...(posterUrl ? { posterUrl } : null),
       ...(Number.isFinite(episodes) && episodes > 0 ? { episodeCount: episodes } : {}),
       // The site separates alt titles with either "," or ";" — Frieren's
       // English name sits after a semicolon, and splitting on commas alone
@@ -84,7 +84,7 @@ export function parseAnimeggSearchResults(html: string): AnimeggSearchResult[] {
         .map((name) => name.trim())
         .filter((name) => name.length > 0 && name !== title)
         .slice(0, 6),
-      ...(status ? { status } : {}),
+      ...(status ? { status } : null),
     });
   }
   return results;

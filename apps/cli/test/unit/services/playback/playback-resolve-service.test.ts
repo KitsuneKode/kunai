@@ -38,10 +38,13 @@ const stream = {
 function createMemoryCache(value: typeof stream | null): CacheStore & { setKeys: string[] } {
   let stored: typeof stream | null = value;
   const setKeys: string[] = [];
+  // SAFETY: the cache stub truncates CacheStore to the members under test.
   return {
     get: async () => stored,
-    set: async (_key: string, val: unknown) => {
+    set: async <T>(_key: string, val: T) => {
       setKeys.push(_key);
+      // SAFETY: the cache stub round-trips the stream fixture; the store only
+      // persists what its own tests hand it.
       stored = val as typeof stream;
     },
     setKeys,
@@ -51,7 +54,7 @@ function createMemoryCache(value: typeof stream | null): CacheStore & { setKeys:
     clear: async () => {},
     prune: async () => {},
     ttl: () => 0,
-  } as unknown as CacheStore & { setKeys: string[] };
+  } as never;
 }
 
 function createMemoryProviderHealth(initial: ProviderHealth[] = []) {
@@ -83,9 +86,7 @@ function createEmptyProviderResult(providerId: ProviderId): ProviderResolveResul
   };
 }
 
-function createResolvedProviderResult(
-  providerId: ProviderId = "fallback" as ProviderId,
-): ProviderResolveResult {
+function createResolvedProviderResult(providerId: ProviderId = "fallback"): ProviderResolveResult {
   return {
     status: "resolved",
     providerId,
@@ -114,7 +115,7 @@ function createResolvedProviderResult(
 }
 
 function createResolvedEngineOutput(
-  providerId: ProviderId = "fallback" as ProviderId,
+  providerId: ProviderId = "fallback",
 ): ProviderEngineResolveOutput {
   return {
     result: createResolvedProviderResult(providerId),
@@ -157,6 +158,8 @@ function createMockEngine(
     readonly onResolveInput?: (input: ProviderResolveInput) => void;
   } = {},
 ): ProviderEngine {
+  // SAFETY: the engine stub below truncates ProviderEngine to the members
+  // the service under test invokes.
   return {
     modules: options.modules ?? [],
     get: () => undefined,
@@ -172,7 +175,7 @@ function createMockEngine(
       options.onCandidateIds?.(candidateIds);
       return resolveWithFallbackResult;
     },
-  } as unknown as ProviderEngine;
+  } as never;
 }
 
 test("PlaybackResolveService returns cached stream without provider resolve", async () => {
@@ -202,11 +205,11 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
     {
       result: {
         status: "resolved",
-        providerId: "fallback" as ProviderId,
+        providerId: "fallback",
         streams: [
           {
             id: "stream:fallback:1",
-            providerId: "fallback" as ProviderId,
+            providerId: "fallback",
             url: "https://fallback.example/stream.m3u8",
             protocol: "hls" as const,
             confidence: 0.9,
@@ -224,8 +227,8 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
         },
         failures: [],
       },
-      providerId: "fallback" as ProviderId,
-      attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
+      providerId: "fallback",
+      attempts: [{ providerId: "fallback", result: undefined }],
     },
     {
       onResolveInput: (input) => {
@@ -249,6 +252,7 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
   expect(result.providerId).toBe("fallback");
   expect(result.stream).not.toBeNull();
   expect(result.stream!.url).toBe(fallbackStream.url);
+  // SAFETY: the observer captured the exact input object the service passed.
   expect((observedResolveInput as ProviderResolveInput | null)?.startupPriority).toBe("fast");
 });
 
@@ -315,12 +319,12 @@ test("PlaybackResolveService degrades through shared stream and inventory cache 
 
 test("PlaybackResolveService continues when stale inventory deletion fails", async () => {
   const deferredInventory: ProviderResolveResult = {
-    ...createResolvedProviderResult("primary" as ProviderId),
+    ...createResolvedProviderResult("primary"),
     selectedStreamId: "stream:primary:deferred",
     streams: [
       {
         id: "stream:primary:deferred",
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         deferredLocator: "opaque:deferred",
         protocol: "dash",
         confidence: 0.9,
@@ -394,11 +398,11 @@ test("PlaybackResolveService does not cache deferred media locators", async () =
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "allanime" as ProviderId,
+      providerId: "allanime",
       streams: [
         {
           id: "stream:allanime:ak:1",
-          providerId: "allanime" as ProviderId,
+          providerId: "allanime",
           deferredLocator: "allmanga-ak:test-locator",
           protocol: "dash" as const,
           container: "mpd" as const,
@@ -417,8 +421,8 @@ test("PlaybackResolveService does not cache deferred media locators", async () =
       },
       failures: [],
     },
-    providerId: "allanime" as ProviderId,
-    attempts: [{ providerId: "allanime" as ProviderId, result: undefined }],
+    providerId: "allanime",
+    attempts: [{ providerId: "allanime", result: undefined }],
   });
   const service = new PlaybackResolveService({ engine, cacheStore: cache });
 
@@ -442,11 +446,11 @@ test("PlaybackResolveService forwards quality preference to source inventory get
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "primary" as ProviderId,
+      providerId: "primary",
       streams: [
         {
           id: "stream:primary:1",
-          providerId: "primary" as ProviderId,
+          providerId: "primary",
           url: "https://primary.example/stream.m3u8",
           protocol: "hls" as const,
           confidence: 0.9,
@@ -464,8 +468,8 @@ test("PlaybackResolveService forwards quality preference to source inventory get
       },
       failures: [],
     },
-    providerId: "primary" as ProviderId,
-    attempts: [{ providerId: "primary" as ProviderId, result: undefined }],
+    providerId: "primary",
+    attempts: [{ providerId: "primary", result: undefined }],
   });
   const service = new PlaybackResolveService({
     engine,
@@ -502,11 +506,11 @@ test("PlaybackResolveService reuses source inventory before a provider resolve",
   const inventory = {
     get: async (): Promise<ProviderResolveResult> => ({
       status: "resolved",
-      providerId: "primary" as ProviderId,
+      providerId: "primary",
       streams: [
         {
           id: "stream:inventory:1",
-          providerId: "primary" as ProviderId,
+          providerId: "primary",
           url: "https://inventory.example/stream.m3u8",
           protocol: "hls" as const,
           confidence: 0.9,
@@ -539,6 +543,7 @@ test("PlaybackResolveService reuses source inventory before a provider resolve",
     engine,
     cacheStore: createMemoryCache(null),
     sourceInventory: inventory,
+    // SAFETY: the health-check stub returns the one verdict this test asserts on.
     streamHealthService: {
       check: async () => ({
         healthy: true,
@@ -567,12 +572,12 @@ test("PlaybackResolveService resolves fresh when cached inventory lacks an expli
   const inventory = {
     get: async (): Promise<ProviderResolveResult> => ({
       status: "resolved",
-      providerId: "primary" as ProviderId,
+      providerId: "primary",
       streams: [
         {
           id: "stream:inventory:other",
           sourceId: "source:other",
-          providerId: "primary" as ProviderId,
+          providerId: "primary",
           url: "https://inventory.example/other.m3u8",
           protocol: "hls" as const,
           confidence: 0.9,
@@ -626,11 +631,11 @@ test("PlaybackResolveService records the classified primary failure when fallbac
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "fallback" as ProviderId,
+      providerId: "fallback",
       streams: [
         {
           id: "stream:fallback",
-          providerId: "fallback" as ProviderId,
+          providerId: "fallback",
           url: "https://fallback.example/stream.m3u8",
           protocol: "hls" as const,
           confidence: 0.9,
@@ -648,19 +653,19 @@ test("PlaybackResolveService records the classified primary failure when fallbac
       },
       failures: [],
     },
-    providerId: "fallback" as ProviderId,
+    providerId: "fallback",
     attempts: [
       {
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         failure: {
-          providerId: "primary" as ProviderId,
+          providerId: "primary",
           code: "parse-failed",
           message: "schema changed",
           retryable: true,
           at: new Date().toISOString(),
         },
       },
-      { providerId: "fallback" as ProviderId, result: undefined },
+      { providerId: "fallback", result: undefined },
     ],
   });
   const service = new PlaybackResolveService({
@@ -668,7 +673,7 @@ test("PlaybackResolveService records the classified primary failure when fallbac
     cacheStore: createMemoryCache(null),
     titleProviderHealth: {
       recordFailure: (_titleId, _providerId, _fallbackId, kind) =>
-        failures.push(typeof kind === "string" ? kind : kind.errorClass),
+        failures.push(kind instanceof Object ? kind.errorClass : kind),
       recordCleanSuccess: () => {},
     },
   });
@@ -690,12 +695,12 @@ test("PlaybackResolveService does not carry primary source selection into fallba
   const cache = createMemoryCache(null);
   const fallbackResult: ProviderResolveResult = {
     status: "resolved",
-    providerId: "fallback" as ProviderId,
+    providerId: "fallback",
     selectedStreamId: "stream:fallback",
     streams: [
       {
         id: "stream:fallback",
-        providerId: "fallback" as ProviderId,
+        providerId: "fallback",
         sourceId: "source:fallback:flowcast",
         url: "https://fallback.example/stream.m3u8",
         protocol: "hls" as const,
@@ -716,12 +721,12 @@ test("PlaybackResolveService does not carry primary source selection into fallba
   };
   const engine = createMockEngine({
     result: fallbackResult,
-    providerId: "fallback" as ProviderId,
+    providerId: "fallback",
     attempts: [
       {
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         failure: {
-          providerId: "primary" as ProviderId,
+          providerId: "primary",
           code: "not-found",
           message: "primary had no streams",
           retryable: true,
@@ -729,7 +734,7 @@ test("PlaybackResolveService does not carry primary source selection into fallba
         },
       },
       {
-        providerId: "fallback" as ProviderId,
+        providerId: "fallback",
         result: fallbackResult,
       },
     ],
@@ -763,11 +768,11 @@ test("PlaybackResolveService caches late valid user-navigation results without r
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "primary" as ProviderId,
+      providerId: "primary",
       streams: [
         {
           id: "stream:primary:1",
-          providerId: "primary" as ProviderId,
+          providerId: "primary",
           url: "https://late.example/stream.m3u8",
           protocol: "hls" as const,
           confidence: 0.9,
@@ -785,8 +790,8 @@ test("PlaybackResolveService caches late valid user-navigation results without r
       },
       failures: [],
     },
-    providerId: "primary" as ProviderId,
-    attempts: [{ providerId: "primary" as ProviderId, result: undefined }],
+    providerId: "primary",
+    attempts: [{ providerId: "primary", result: undefined }],
   });
   const service = new PlaybackResolveService({ engine, cacheStore: cache });
 
@@ -807,10 +812,10 @@ test("PlaybackResolveService caches late valid user-navigation results without r
 
 test("PlaybackResolveService records empty provider results as failed attempts", async () => {
   const emptyResult = {
-    ...createEmptyProviderResult("primary" as ProviderId),
+    ...createEmptyProviderResult("primary"),
     failures: [
       {
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         code: "not-found" as const,
         message: "primary had no stream candidates",
         retryable: true,
@@ -821,7 +826,7 @@ test("PlaybackResolveService records empty provider results as failed attempts",
   const engine = createMockEngine({
     result: null,
     providerId: null,
-    attempts: [{ providerId: "primary" as ProviderId, result: emptyResult }],
+    attempts: [{ providerId: "primary", result: emptyResult }],
   });
   const service = new PlaybackResolveService({ engine, cacheStore: createMemoryCache(null) });
 
@@ -893,11 +898,11 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "fallback" as ProviderId,
+      providerId: "fallback",
       streams: [
         {
           id: "stream:fallback:1",
-          providerId: "fallback" as ProviderId,
+          providerId: "fallback",
           url: fallbackStream.url,
           protocol: "hls" as const,
           confidence: 0.9,
@@ -915,8 +920,8 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
       },
       failures: [],
     },
-    providerId: "fallback" as ProviderId,
-    attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
+    providerId: "fallback",
+    attempts: [{ providerId: "fallback", result: undefined }],
   });
   const service = new PlaybackResolveService({
     engine,
@@ -966,9 +971,9 @@ test("PlaybackResolveService can try a fresh source without deleting a playable 
       providerId: null,
       attempts: [
         {
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           failure: {
-            providerId: "vidking" as ProviderId,
+            providerId: "vidking",
             code: "not-found",
             message: "No fresher source",
             retryable: true,
@@ -1017,11 +1022,11 @@ test("PlaybackResolveService skips a blocked cached stream during recovery", asy
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "vidking" as ProviderId,
+      providerId: "vidking",
       streams: [
         {
           id: "stream:vidking:fresh",
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           url: freshStreamUrl,
           protocol: "hls" as const,
           confidence: 0.9,
@@ -1039,8 +1044,8 @@ test("PlaybackResolveService skips a blocked cached stream during recovery", asy
       },
       failures: [],
     },
-    providerId: "vidking" as ProviderId,
-    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+    providerId: "vidking",
+    attempts: [{ providerId: "vidking", result: undefined }],
   });
   const events: string[] = [];
   const service = new PlaybackResolveService({ engine, cacheStore: cache });
@@ -1069,12 +1074,12 @@ test("PlaybackResolveService selects an alternate provider stream when the prefe
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "vidking" as ProviderId,
+      providerId: "vidking",
       selectedStreamId: "stream:vidking:dead",
       streams: [
         {
           id: "stream:vidking:dead",
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           url: blockedUrl,
           protocol: "hls" as const,
           confidence: 0.9,
@@ -1082,7 +1087,7 @@ test("PlaybackResolveService selects an alternate provider stream when the prefe
         },
         {
           id: "stream:vidking:alt",
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           url: alternateUrl,
           protocol: "hls" as const,
           confidence: 0.8,
@@ -1100,8 +1105,8 @@ test("PlaybackResolveService selects an alternate provider stream when the prefe
       },
       failures: [],
     },
-    providerId: "vidking" as ProviderId,
-    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+    providerId: "vidking",
+    attempts: [{ providerId: "vidking", result: undefined }],
   });
   const service = new PlaybackResolveService({ engine, cacheStore: cache });
 
@@ -1166,11 +1171,11 @@ test("PlaybackResolveService deletes stale cache and refetches when validation f
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "fallback" as ProviderId,
+      providerId: "fallback",
       streams: [
         {
           id: "stream:fallback:1",
-          providerId: "fallback" as ProviderId,
+          providerId: "fallback",
           url: fallbackStream.url,
           protocol: "hls" as const,
           confidence: 0.9,
@@ -1188,8 +1193,8 @@ test("PlaybackResolveService deletes stale cache and refetches when validation f
       },
       failures: [],
     },
-    providerId: "fallback" as ProviderId,
-    attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
+    providerId: "fallback",
+    attempts: [{ providerId: "fallback", result: undefined }],
   });
   const service = new PlaybackResolveService({
     engine,
@@ -1220,7 +1225,7 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   const observedCandidates: ProviderId[][] = [];
   const providerHealth = createMemoryProviderHealth([
     {
-      providerId: "anime-down" as ProviderId,
+      providerId: "anime-down",
       status: "down",
       checkedAt: new Date().toISOString(),
       consecutiveFailures: 5,
@@ -1231,20 +1236,20 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
     {
       modules: [
         {
-          providerId: "primary" as ProviderId,
-          manifest: createManifest("primary" as ProviderId, ["anime"]),
+          providerId: "primary",
+          manifest: createManifest("primary", ["anime"]),
         },
         {
-          providerId: "anime-ok" as ProviderId,
-          manifest: createManifest("anime-ok" as ProviderId, ["anime"]),
+          providerId: "anime-ok",
+          manifest: createManifest("anime-ok", ["anime"]),
         },
         {
-          providerId: "series-only" as ProviderId,
-          manifest: createManifest("series-only" as ProviderId, ["series", "movie"]),
+          providerId: "series-only",
+          manifest: createManifest("series-only", ["series", "movie"]),
         },
         {
-          providerId: "anime-down" as ProviderId,
-          manifest: createManifest("anime-down" as ProviderId, ["anime"]),
+          providerId: "anime-down",
+          manifest: createManifest("anime-down", ["anime"]),
         },
       ],
       onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
@@ -1253,6 +1258,7 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   const service = new PlaybackResolveService({
     engine,
     cacheStore: cache,
+    // SAFETY: the health stub satisfies the narrow seam this service consumes.
     providerHealth: providerHealth as never,
   });
 
@@ -1275,7 +1281,7 @@ test("PlaybackResolveService emits provider-health-skipped when down providers a
   const feedback: string[] = [];
   const providerHealth = createMemoryProviderHealth([
     {
-      providerId: "anime-down" as ProviderId,
+      providerId: "anime-down",
       status: "down",
       checkedAt: new Date().toISOString(),
       consecutiveFailures: 5,
@@ -1286,12 +1292,12 @@ test("PlaybackResolveService emits provider-health-skipped when down providers a
     {
       modules: [
         {
-          providerId: "primary" as ProviderId,
-          manifest: createManifest("primary" as ProviderId, ["anime"]),
+          providerId: "primary",
+          manifest: createManifest("primary", ["anime"]),
         },
         {
-          providerId: "anime-down" as ProviderId,
-          manifest: createManifest("anime-down" as ProviderId, ["anime"]),
+          providerId: "anime-down",
+          manifest: createManifest("anime-down", ["anime"]),
         },
       ],
     },
@@ -1299,6 +1305,7 @@ test("PlaybackResolveService emits provider-health-skipped when down providers a
   const service = new PlaybackResolveService({
     engine,
     cacheStore: cache,
+    // SAFETY: the health stub satisfies the narrow seam this service consumes.
     providerHealth: providerHealth as never,
   });
 
@@ -1331,23 +1338,23 @@ test("PlaybackResolveService reads provider priority at resolve time", async () 
   const observedCandidates: ProviderId[][] = [];
   let priority = {
     providerPriority: ["primary", "fallback-a", "fallback-b"],
-    animeProviderPriority: [] as string[],
+    animeProviderPriority: [],
   };
   const engine = createMockEngine(
     { result: null, providerId: null, attempts: [] },
     {
       modules: [
         {
-          providerId: "primary" as ProviderId,
-          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+          providerId: "primary",
+          manifest: createManifest("primary", ["series", "movie"]),
         },
         {
-          providerId: "fallback-a" as ProviderId,
-          manifest: createManifest("fallback-a" as ProviderId, ["series", "movie"]),
+          providerId: "fallback-a",
+          manifest: createManifest("fallback-a", ["series", "movie"]),
         },
         {
-          providerId: "fallback-b" as ProviderId,
-          manifest: createManifest("fallback-b" as ProviderId, ["series", "movie"]),
+          providerId: "fallback-b",
+          manifest: createManifest("fallback-b", ["series", "movie"]),
         },
       ],
       onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
@@ -1389,11 +1396,11 @@ test("PlaybackResolveService sends refresh intent and ignores provider health on
     {
       result: {
         status: "resolved",
-        providerId: "fallback-down" as ProviderId,
+        providerId: "fallback-down",
         streams: [
           {
             id: "stream:fallback-down:1",
-            providerId: "fallback-down" as ProviderId,
+            providerId: "fallback-down",
             url: "https://fallback-down.example/live.m3u8",
             protocol: "hls" as const,
             confidence: 0.9,
@@ -1411,18 +1418,18 @@ test("PlaybackResolveService sends refresh intent and ignores provider health on
         },
         failures: [],
       },
-      providerId: "fallback-down" as ProviderId,
-      attempts: [{ providerId: "fallback-down" as ProviderId, result: undefined }],
+      providerId: "fallback-down",
+      attempts: [{ providerId: "fallback-down", result: undefined }],
     },
     {
       modules: [
         {
-          providerId: "primary" as ProviderId,
-          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+          providerId: "primary",
+          manifest: createManifest("primary", ["series", "movie"]),
         },
         {
-          providerId: "fallback-down" as ProviderId,
-          manifest: createManifest("fallback-down" as ProviderId, ["series", "movie"]),
+          providerId: "fallback-down",
+          manifest: createManifest("fallback-down", ["series", "movie"]),
         },
       ],
       onResolveInput: (input) => {
@@ -1436,9 +1443,10 @@ test("PlaybackResolveService sends refresh intent and ignores provider health on
   const service = new PlaybackResolveService({
     engine,
     cacheStore: cache,
+    // SAFETY: the stubbed health store satisfies the service's health seam.
     providerHealth: createMemoryProviderHealth([
       {
-        providerId: "fallback-down" as ProviderId,
+        providerId: "fallback-down",
         status: "down",
         checkedAt: "2026-05-28T00:00:00.000Z",
       },
@@ -1469,15 +1477,15 @@ test("PlaybackResolveService hands a freshly resolved stream to mpv without a pr
   const observedCandidates: ProviderId[][] = [];
   const resolvedByProvider = new Map<ProviderId, ProviderResolveResult>([
     [
-      "primary" as ProviderId,
+      "primary",
       {
         status: "resolved",
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         selectedStreamId: "stream:primary:dead",
         streams: [
           {
             id: "stream:primary:dead",
-            providerId: "primary" as ProviderId,
+            providerId: "primary",
             url: "https://primary.example/dead.m3u8",
             protocol: "hls" as const,
             confidence: 0.9,
@@ -1497,15 +1505,15 @@ test("PlaybackResolveService hands a freshly resolved stream to mpv without a pr
       },
     ],
     [
-      "fallback" as ProviderId,
+      "fallback",
       {
         status: "resolved",
-        providerId: "fallback" as ProviderId,
+        providerId: "fallback",
         selectedStreamId: "stream:fallback:live",
         streams: [
           {
             id: "stream:fallback:live",
-            providerId: "fallback" as ProviderId,
+            providerId: "fallback",
             url: "https://fallback.example/live.m3u8",
             protocol: "hls" as const,
             confidence: 0.9,
@@ -1525,15 +1533,16 @@ test("PlaybackResolveService hands a freshly resolved stream to mpv without a pr
       },
     ],
   ]);
+  // SAFETY: the engine stub truncates ProviderEngine to the members this test drives.
   const engine = {
     modules: [
       {
-        providerId: "primary" as ProviderId,
-        manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+        providerId: "primary",
+        manifest: createManifest("primary", ["series", "movie"]),
       },
       {
-        providerId: "fallback" as ProviderId,
-        manifest: createManifest("fallback" as ProviderId, ["series", "movie"]),
+        providerId: "fallback",
+        manifest: createManifest("fallback", ["series", "movie"]),
       },
     ],
     get: () => undefined,
@@ -1543,13 +1552,14 @@ test("PlaybackResolveService hands a freshly resolved stream to mpv without a pr
         providerId,
         providerId === "primary" || providerId === "fallback" ? ["series", "movie"] : [],
       ),
+    // SAFETY: the resolve stub truncates the result shape the coordinator reads.
     resolve: async () => ({}) as ProviderResolveResult,
     resolveWithFallback: async (
       _input: ProviderResolveInput,
       candidateIds: readonly ProviderId[],
     ) => {
       observedCandidates.push([...candidateIds]);
-      const providerId = candidateIds[0] as ProviderId | undefined;
+      const providerId = candidateIds[0];
       const result = providerId ? resolvedByProvider.get(providerId) : undefined;
       return {
         result: result ?? null,
@@ -1557,7 +1567,7 @@ test("PlaybackResolveService hands a freshly resolved stream to mpv without a pr
         attempts: providerId && result ? [{ providerId, result }] : [],
       };
     },
-  } as unknown as ProviderEngine;
+  } as never;
   const healthChecks: string[] = [];
   const service = new PlaybackResolveService({
     engine,
@@ -1600,11 +1610,11 @@ test("PlaybackResolveService keeps primary first despite title health suggestion
     {
       result: {
         status: "resolved",
-        providerId: "fallback" as ProviderId,
+        providerId: "fallback",
         streams: [
           {
             id: "stream:fallback:1",
-            providerId: "fallback" as ProviderId,
+            providerId: "fallback",
             url: "https://fallback.example/stream.m3u8",
             protocol: "hls" as const,
             confidence: 0.9,
@@ -1622,18 +1632,18 @@ test("PlaybackResolveService keeps primary first despite title health suggestion
         },
         failures: [],
       },
-      providerId: "fallback" as ProviderId,
-      attempts: [{ providerId: "fallback" as ProviderId, result: undefined }],
+      providerId: "fallback",
+      attempts: [{ providerId: "fallback", result: undefined }],
     },
     {
       modules: [
         {
-          providerId: "primary" as ProviderId,
-          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+          providerId: "primary",
+          manifest: createManifest("primary", ["series", "movie"]),
         },
         {
-          providerId: "fallback" as ProviderId,
-          manifest: createManifest("fallback" as ProviderId, ["series", "movie"]),
+          providerId: "fallback",
+          manifest: createManifest("fallback", ["series", "movie"]),
         },
       ],
       onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
@@ -1673,16 +1683,16 @@ test("PlaybackResolveService guided mode walks full configured provider priority
     {
       modules: [
         {
-          providerId: "primary" as ProviderId,
-          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+          providerId: "primary",
+          manifest: createManifest("primary", ["series", "movie"]),
         },
         {
-          providerId: "fallback-a" as ProviderId,
-          manifest: createManifest("fallback-a" as ProviderId, ["series", "movie"]),
+          providerId: "fallback-a",
+          manifest: createManifest("fallback-a", ["series", "movie"]),
         },
         {
-          providerId: "fallback-b" as ProviderId,
-          manifest: createManifest("fallback-b" as ProviderId, ["series", "movie"]),
+          providerId: "fallback-b",
+          manifest: createManifest("fallback-b", ["series", "movie"]),
         },
       ],
       onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
@@ -1710,13 +1720,13 @@ test("PlaybackResolveService skips duplicate health check when provider attested
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "vidking" as ProviderId,
+      providerId: "vidking",
       selectedStreamId: "stream:vidking:1",
       streamReachabilityVerified: true,
       streams: [
         {
           id: "stream:vidking:1",
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           url: verifiedUrl,
           protocol: "hls" as const,
           confidence: 0.9,
@@ -1734,8 +1744,8 @@ test("PlaybackResolveService skips duplicate health check when provider attested
       },
       failures: [],
     },
-    providerId: "vidking" as ProviderId,
-    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+    providerId: "vidking",
+    attempts: [{ providerId: "vidking", result: undefined }],
   });
   const service = new PlaybackResolveService({
     engine,
@@ -1773,12 +1783,12 @@ test("PlaybackResolveService manual recovery mode does not auto-fallback", async
     {
       modules: [
         {
-          providerId: "primary" as ProviderId,
-          manifest: createManifest("primary" as ProviderId, ["series", "movie"]),
+          providerId: "primary",
+          manifest: createManifest("primary", ["series", "movie"]),
         },
         {
-          providerId: "fallback" as ProviderId,
-          manifest: createManifest("fallback" as ProviderId, ["series", "movie"]),
+          providerId: "fallback",
+          manifest: createManifest("fallback", ["series", "movie"]),
         },
       ],
       onCandidateIds: (candidateIds) => observedCandidates.push([...candidateIds]),
@@ -1809,11 +1819,11 @@ test("PlaybackResolveService persists consecutive provider failures before marki
     providerId: null,
     attempts: [
       {
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         result: {
-          ...createEmptyProviderResult("primary" as ProviderId),
+          ...createEmptyProviderResult("primary"),
           healthDelta: {
-            providerId: "primary" as ProviderId,
+            providerId: "primary",
             outcome: "failure",
             resolveMs: 100,
             at: now,
@@ -1825,6 +1835,7 @@ test("PlaybackResolveService persists consecutive provider failures before marki
   const service = new PlaybackResolveService({
     engine,
     cacheStore: cache,
+    // SAFETY: the health stub satisfies the narrow seam this service consumes.
     providerHealth: providerHealth as never,
   });
 
@@ -1840,7 +1851,7 @@ test("PlaybackResolveService persists consecutive provider failures before marki
     });
   }
 
-  const health = providerHealth.get("primary" as ProviderId);
+  const health = providerHealth.get("primary");
   expect(health?.consecutiveFailures).toBe(5);
   expect(health?.status).toBe("down");
 });
@@ -1848,10 +1859,10 @@ test("PlaybackResolveService persists consecutive provider failures before marki
 test("PlaybackResolveService does not poison provider health for offline network results", async () => {
   const providerHealth = createMemoryProviderHealth();
   const offlineResult = {
-    ...createEmptyProviderResult("primary" as ProviderId),
+    ...createEmptyProviderResult("primary"),
     failures: [
       {
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         code: "network-error" as const,
         message: "getaddrinfo ENOTFOUND provider.example",
         retryable: false,
@@ -1859,7 +1870,7 @@ test("PlaybackResolveService does not poison provider health for offline network
       },
     ],
     healthDelta: {
-      providerId: "primary" as ProviderId,
+      providerId: "primary",
       outcome: "failure" as const,
       at: new Date().toISOString(),
     },
@@ -1867,11 +1878,12 @@ test("PlaybackResolveService does not poison provider health for offline network
   const engine = createMockEngine({
     result: null,
     providerId: null,
-    attempts: [{ providerId: "primary" as ProviderId, result: offlineResult }],
+    attempts: [{ providerId: "primary", result: offlineResult }],
   });
   const service = new PlaybackResolveService({
     engine,
     cacheStore: createMemoryCache(null),
+    // SAFETY: the health stub satisfies the narrow seam this service consumes.
     providerHealth: providerHealth as never,
   });
 
@@ -1885,13 +1897,14 @@ test("PlaybackResolveService does not poison provider health for offline network
     signal: new AbortController().signal,
   });
 
-  expect(providerHealth.get("primary" as ProviderId)).toBeUndefined();
+  expect(providerHealth.get("primary")).toBeUndefined();
 });
 
 test("PlaybackResolveService does not count provider failures observed on a degraded uplink", async () => {
   const providerHealth = createMemoryProviderHealth();
   // Simulate the connectivity seam reporting a provably-shaky network — the
   // provider's timeout may be our packet loss, not their fault.
+  // SAFETY: the observer stub supplies the single snapshot this test drives.
   bindNetworkObserver({
     connectivity: {
       getSnapshot: () => ({
@@ -1903,9 +1916,9 @@ test("PlaybackResolveService does not count provider failures observed on a degr
   } as never);
   try {
     const timeoutResult = {
-      ...createEmptyProviderResult("primary" as ProviderId),
+      ...createEmptyProviderResult("primary"),
       healthDelta: {
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         outcome: "timeout" as const,
         at: new Date().toISOString(),
       },
@@ -1913,11 +1926,12 @@ test("PlaybackResolveService does not count provider failures observed on a degr
     const engine = createMockEngine({
       result: null,
       providerId: null,
-      attempts: [{ providerId: "primary" as ProviderId, result: timeoutResult }],
+      attempts: [{ providerId: "primary", result: timeoutResult }],
     });
     const service = new PlaybackResolveService({
       engine,
       cacheStore: createMemoryCache(null),
+      // SAFETY: the health stub satisfies the narrow seam this service consumes.
       providerHealth: providerHealth as never,
     });
 
@@ -1931,7 +1945,7 @@ test("PlaybackResolveService does not count provider failures observed on a degr
       signal: new AbortController().signal,
     });
 
-    expect(providerHealth.get("primary" as ProviderId)).toBeUndefined();
+    expect(providerHealth.get("primary")).toBeUndefined();
   } finally {
     bindNetworkObserver(undefined);
   }
@@ -1939,6 +1953,7 @@ test("PlaybackResolveService does not count provider failures observed on a degr
 
 test("PlaybackResolveService still counts provider failures when the uplink is healthy", async () => {
   const providerHealth = createMemoryProviderHealth();
+  // SAFETY: the observer stub supplies the single snapshot this test drives.
   bindNetworkObserver({
     connectivity: {
       getSnapshot: () => ({
@@ -1950,9 +1965,9 @@ test("PlaybackResolveService still counts provider failures when the uplink is h
   } as never);
   try {
     const timeoutResult = {
-      ...createEmptyProviderResult("primary" as ProviderId),
+      ...createEmptyProviderResult("primary"),
       healthDelta: {
-        providerId: "primary" as ProviderId,
+        providerId: "primary",
         outcome: "timeout" as const,
         at: new Date().toISOString(),
       },
@@ -1960,11 +1975,12 @@ test("PlaybackResolveService still counts provider failures when the uplink is h
     const engine = createMockEngine({
       result: null,
       providerId: null,
-      attempts: [{ providerId: "primary" as ProviderId, result: timeoutResult }],
+      attempts: [{ providerId: "primary", result: timeoutResult }],
     });
     const service = new PlaybackResolveService({
       engine,
       cacheStore: createMemoryCache(null),
+      // SAFETY: the health stub satisfies the narrow seam this service consumes.
       providerHealth: providerHealth as never,
     });
 
@@ -1978,7 +1994,7 @@ test("PlaybackResolveService still counts provider failures when the uplink is h
       signal: new AbortController().signal,
     });
 
-    expect(providerHealth.get("primary" as ProviderId)?.consecutiveFailures).toBe(1);
+    expect(providerHealth.get("primary")?.consecutiveFailures).toBe(1);
   } finally {
     bindNetworkObserver(undefined);
   }
@@ -2019,17 +2035,18 @@ test("PlaybackResolveService passes abort signal into stale cache health checks"
 test("PlaybackResolveService stops a stalling provider fan-out at its total deadline", async () => {
   const controller = new AbortController();
   let observedSignal: AbortSignal | undefined;
+  // SAFETY: the engine stub truncates ProviderEngine to the members this test drives.
   const engine = {
     modules: [
       {
-        providerId: "primary" as ProviderId,
-        manifest: createManifest("primary" as ProviderId, ["movie"]),
+        providerId: "primary",
+        manifest: createManifest("primary", ["movie"]),
       },
     ],
     get: () => undefined,
-    getProviderIds: () => ["primary" as ProviderId],
-    getManifest: () => createManifest("primary" as ProviderId, ["movie"]),
-    resolve: async () => createEmptyProviderResult("primary" as ProviderId),
+    getProviderIds: () => ["primary"],
+    getManifest: () => createManifest("primary", ["movie"]),
+    resolve: async () => createEmptyProviderResult("primary"),
     resolveWithFallback: async (
       _input: ProviderResolveInput,
       _candidateIds: readonly ProviderId[],
@@ -2041,7 +2058,7 @@ test("PlaybackResolveService stops a stalling provider fan-out at its total dead
       }
       return { result: null, providerId: null, attempts: [] };
     },
-  } as unknown as ProviderEngine;
+  } as never;
   const service = new PlaybackResolveService({
     engine,
     cacheStore: createMemoryCache(null),
@@ -2070,11 +2087,11 @@ test("PlaybackResolveService stops a stalling provider fan-out at its total dead
 
 test("PlaybackResolveService routes AniDB identity and absolute episode into the production engine", async () => {
   let observed: ProviderResolveInput | null = null;
-  const engine = createMockEngine(createResolvedEngineOutput("anidb" as ProviderId), {
+  const engine = createMockEngine(createResolvedEngineOutput("anidb"), {
     modules: [
       {
-        providerId: "anidb" as ProviderId,
-        manifest: createManifest("anidb" as ProviderId, ["anime"], "provider-native"),
+        providerId: "anidb",
+        manifest: createManifest("anidb", ["anime"], "provider-native"),
       },
     ],
     onResolveInput: (input) => {
@@ -2099,6 +2116,7 @@ test("PlaybackResolveService routes AniDB identity and absolute episode into the
     signal: new AbortController().signal,
   });
 
+  // SAFETY: the spy captured the exact resolve input the service emitted.
   const input = observed as ProviderResolveInput | null;
   expect(input?.title.id).toBe("151807");
   expect(input?.title.anilistId).toBe("151807");
@@ -2112,11 +2130,11 @@ test("PlaybackResolveService rejects blocked prefetched streams and falls throug
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "vidking" as ProviderId,
+      providerId: "vidking",
       streams: [
         {
           id: "stream:vidking:fresh",
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           url: freshStreamUrl,
           protocol: "hls" as const,
           confidence: 0.9,
@@ -2134,8 +2152,8 @@ test("PlaybackResolveService rejects blocked prefetched streams and falls throug
       },
       failures: [],
     },
-    providerId: "vidking" as ProviderId,
-    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+    providerId: "vidking",
+    attempts: [{ providerId: "vidking", result: undefined }],
   });
   const events: string[] = [];
   const service = new PlaybackResolveService({ engine, cacheStore: cache });
@@ -2165,11 +2183,11 @@ test("PlaybackResolveService rejects stale prefetched streams and falls through 
   const engine = createMockEngine({
     result: {
       status: "resolved",
-      providerId: "vidking" as ProviderId,
+      providerId: "vidking",
       streams: [
         {
           id: "stream:vidking:fresh",
-          providerId: "vidking" as ProviderId,
+          providerId: "vidking",
           url: freshStreamUrl,
           protocol: "hls" as const,
           confidence: 0.9,
@@ -2187,8 +2205,8 @@ test("PlaybackResolveService rejects stale prefetched streams and falls through 
       },
       failures: [],
     },
-    providerId: "vidking" as ProviderId,
-    attempts: [{ providerId: "vidking" as ProviderId, result: undefined }],
+    providerId: "vidking",
+    attempts: [{ providerId: "vidking", result: undefined }],
   });
   const events: string[] = [];
   const service = new PlaybackResolveService({ engine, cacheStore: cache });

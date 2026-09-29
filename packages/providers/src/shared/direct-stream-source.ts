@@ -201,7 +201,7 @@ export async function resolveDirectStreamSource(
           stream: candidate,
           context,
           ...(options.resolveGateTimeoutMs === undefined
-            ? {}
+            ? null
             : { timeoutMs: options.resolveGateTimeoutMs }),
         });
 

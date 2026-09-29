@@ -53,6 +53,7 @@ test("calendar continue-ready selection uses continueSourcePreference like Histo
     completed: true,
     updatedAt: "2026-01-02T00:00:00.000Z",
   });
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   const service = new ContinueWatchingService(repo as never);
   const result: SearchResult = {
     id: "tmdb:1",
@@ -94,6 +95,7 @@ test("calendar continue-ready selection uses continueSourcePreference like Histo
   const selection = resolveCalendarContinueSelection(
     {
       continueWatchingService: service,
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       historyRepository: repo as never,
       releaseProgressCache: {
         getByTitleIds: () =>

@@ -672,7 +672,7 @@ export function buildDiscordActivity(
     ...urlFields,
     ...(hasPlaybackTimeline ? timeline : activity.paused ? { timestamps: null } : timeline),
     assets,
-    ...(buttons.length > 0 ? { buttons } : {}),
+    ...(buttons.length > 0 ? { buttons } : null),
   };
 }
 

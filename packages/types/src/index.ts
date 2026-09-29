@@ -5,7 +5,7 @@ export type ProviderLane = "anime" | "series" | "youtube";
 export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
 
 /** The user-visible YouTube result kind; collections are not playable videos. */
-export type YouTubeContentShape = "video" | "short" | "playlist" | "channel";
+export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 
 export type * from "./provider-cycle";
 export * from "./share";
@@ -691,7 +691,7 @@ export interface ProviderSearchInput {
   readonly preferredAudioLanguage?: string;
   readonly preferredSubtitleLanguage?: string;
   /** Optional provider-native shape hint (used by YouTube Shorts filtering). */
-  readonly preferredContentShape?: YouTubeContentShape;
+  readonly preferredResultKind?: YouTubeResultKind;
 }
 
 export interface ProviderSearchResult {
@@ -722,7 +722,7 @@ export interface ProviderSearchResult {
   readonly liveStatus?: YouTubeLiveStatus;
   readonly premium?: boolean;
   readonly paid?: boolean;
-  readonly contentShape?: YouTubeContentShape;
+  readonly resultKind?: YouTubeResultKind;
 }
 
 export interface ProviderEpisodeListInput {
@@ -860,3 +860,5 @@ export interface PlaybackRecoveryEvent {
   readonly resumeSeconds?: number;
   readonly traceId?: string;
 }
+
+export * from "./json-value";

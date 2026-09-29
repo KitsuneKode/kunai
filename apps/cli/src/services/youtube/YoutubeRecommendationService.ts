@@ -52,7 +52,7 @@ function providerResultToSearchResult(result: ProviderSearchResult): SearchResul
     liveStatus: result.liveStatus,
     premium: result.premium,
     paid: result.paid,
-    contentShape: result.contentShape,
+    resultKind: result.resultKind,
   };
 }
 

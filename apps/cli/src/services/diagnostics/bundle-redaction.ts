@@ -1,3 +1,5 @@
+import type { LooseJsonValue } from "@kunai/types";
+
 import { resolveRedactionHomeDir } from "./redaction";
 
 export type BundleRedactionOptions = {
@@ -63,7 +65,10 @@ export function redactBundleText(value: string, options: BundleRedactionOptions 
 }
 
 /** Recursively redact strings inside JSON-like values for support bundles. */
-export function redactBundleValue(value: unknown, options: BundleRedactionOptions = {}): unknown {
+export function redactBundleValue(
+  value: unknown,
+  options: BundleRedactionOptions = {},
+): LooseJsonValue {
   const secrets = collectSensitiveLiterals(value);
   const structured = redactStructure(value, options, undefined);
   return secrets.length > 0 ? scrubLiteralSecrets(structured, secrets, options) : structured;
@@ -108,7 +113,7 @@ function redactStructure(
   value: unknown,
   options: BundleRedactionOptions,
   key: string | undefined,
-): unknown {
+): LooseJsonValue {
   if (typeof value === "string") {
     if (key && SENSITIVE_CONTENT_KEYS.has(key.toLowerCase())) {
       return "[redacted]";
@@ -125,9 +130,11 @@ function redactStructure(
   if (Array.isArray(value)) {
     return value.map((item) => redactStructure(item, options, key));
   }
-  if (!value || typeof value !== "object") return value;
+  // SAFETY: diagnostic bundle payloads are JSON-serializable; non-JSON leaves
+  // (Dates, class instances) do not reach the bundle writer.
+  if (!value || typeof value !== "object") return value as LooseJsonValue;
 
-  const output: Record<string, unknown> = {};
+  const output: Record<string, LooseJsonValue> = {};
   for (const [entryKey, entry] of Object.entries(value)) {
     if (SENSITIVE_CONTENT_KEYS.has(entryKey.toLowerCase())) {
       output[entryKey] = "[redacted]";
@@ -142,7 +149,7 @@ function scrubLiteralSecrets(
   value: unknown,
   secrets: readonly string[],
   options: BundleRedactionOptions,
-): unknown {
+): LooseJsonValue {
   if (typeof value === "string") {
     let out = value;
     for (const secret of secrets) {
@@ -154,8 +161,10 @@ function scrubLiteralSecrets(
   if (Array.isArray(value)) {
     return value.map((item) => scrubLiteralSecrets(item, secrets, options));
   }
-  if (!value || typeof value !== "object") return value;
-  const output: Record<string, unknown> = {};
+  // SAFETY: diagnostic bundle payloads are JSON-serializable; non-JSON leaves
+  // do not reach the bundle writer.
+  if (!value || typeof value !== "object") return value as LooseJsonValue;
+  const output: Record<string, LooseJsonValue> = {};
   for (const [key, entry] of Object.entries(value)) {
     output[key] = scrubLiteralSecrets(entry, secrets, options);
   }

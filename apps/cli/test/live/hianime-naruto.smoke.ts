@@ -122,7 +122,7 @@ const payload = {
   // Structured resolve errors win over the empty fallbacks above: when the
   // resolve rejected, sub.result is null and the fallbacks would otherwise
   // blank the error's own failure codes and trace summary.
-  ...(sub.resolveError ? providerSmokeError(sub.resolveError) : {}),
+  ...(sub.resolveError ? providerSmokeError(sub.resolveError) : null),
   dub: {
     streamResolved: Boolean(dub.stream?.url),
     quality:
@@ -134,7 +134,7 @@ const payload = {
     failureCodes: dub.result?.failures.map((failure) => failure.code) ?? [],
     probe: dub.probe,
     reachable: dub.reachable,
-    ...(dub.resolveError ? providerSmokeError(dub.resolveError) : {}),
+    ...(dub.resolveError ? providerSmokeError(dub.resolveError) : null),
   },
   ...providerSmokeProfilePayload(profile),
   cacheCleared: clearCache,

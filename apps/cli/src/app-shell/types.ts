@@ -206,7 +206,7 @@ export type PlaybackRecommendationRailItem = {
   readonly externalIds?: import("@/domain/types").SearchResult["externalIds"];
   readonly channelId?: string;
   readonly channelTitle?: string;
-  readonly contentShape?: import("@/domain/types").SearchResult["contentShape"];
+  readonly resultKind?: import("@/domain/types").SearchResult["resultKind"];
 };
 
 export type LoadingShellStage =
@@ -330,7 +330,7 @@ export type BrowseIdleContextLoader = () => Promise<BrowseIdleContext | undefine
 
 export type BrowseLocalFilterFacts = {
   readonly mediaType?: "movie" | "series";
-  readonly contentShape?: "video" | "short" | "playlist" | "channel";
+  readonly resultKind?: "video" | "short" | "playlist" | "channel";
   readonly isAnime?: boolean;
   readonly downloaded?: boolean;
   readonly watched?: WatchFilter;

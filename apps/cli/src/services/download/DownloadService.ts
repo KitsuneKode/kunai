@@ -1113,6 +1113,8 @@ export class DownloadService {
       headers: resolved.stream.headers,
       subtitleUrl: resolved.stream.subtitle ?? job.subtitleUrl,
       subtitleLanguage: subtitleLanguage ?? job.subtitleLanguage,
+      // SAFETY: resolved.providerId is the provider that produced the verified
+      // stream; the job record stores that identity verbatim.
       lastResolvedProviderId: resolved.providerId as never,
     };
 

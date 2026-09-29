@@ -102,6 +102,63 @@ type LegacyInstallManifest = {
   readonly schemaVersion?: unknown;
 };
 
+type MutableInstallManifest = {
+  -readonly [K in keyof InstallManifest]: InstallManifest[K];
+};
+
+type StoredManifestRecord = {
+  readonly schemaVersion?: unknown;
+  readonly method?: unknown;
+  readonly installedAt?: unknown;
+  readonly updatedAt?: unknown;
+  readonly launcherPath?: unknown;
+  readonly downloadBaseUrl?: unknown;
+  readonly preferredChannel?: unknown;
+  readonly activeVersion?: unknown;
+  readonly previousVersion?: unknown;
+  readonly managedPaths?: unknown;
+  readonly versionedPath?: unknown;
+  readonly observedProvenance?: unknown;
+  readonly target?: unknown;
+  readonly artifactName?: unknown;
+  readonly artifactSha256?: unknown;
+  readonly artifactSizeBytes?: unknown;
+  readonly artifactSourceUrl?: unknown;
+  readonly archiveName?: unknown;
+  readonly archiveSha256?: unknown;
+  readonly archiveSizeBytes?: unknown;
+  readonly archiveSourceUrl?: unknown;
+};
+
+function isObjectLike<T>(value: T): value is T & object {
+  return value !== null && !Array.isArray(value) && value instanceof Object;
+}
+
+function isStringValue<T>(value: T): value is T & string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function isNonEmptyString<T>(value: T): value is T & string {
+  return isStringValue(value) && value.length > 0;
+}
+
+function isIntegerValue<T>(value: T): value is T & number {
+  return Number.isInteger(value);
+}
+
+function isPositiveSafeInteger<T>(value: T): value is T & number {
+  // SAFETY: Number.isSafeInteger has already rejected every non-number value.
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isSha256Value<T>(value: T): value is T & string {
+  return isStringValue(value) && /^[a-fA-F0-9]{64}$/.test(value);
+}
+
+function isNumberValue<T>(value: T): value is T & number {
+  return Object.prototype.toString.call(value) === "[object Number]";
+}
+
 /** True when this is a native binary install with a versioned store path. */
 export function isVersionedBinaryManifest(manifest: InstallManifest): boolean {
   return manifest.method === "binary" && Boolean(manifest.versionedPath);
@@ -152,19 +209,22 @@ export async function inspectInstallManifest(
 
   let raw: unknown;
   try {
+    // SAFETY: JSON.parse returns any; the fields are decoded field-by-field below.
     raw = JSON.parse(rawText) as unknown;
   } catch {
     return { status: "invalid", reason: "invalid-json" };
   }
 
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  if (!isObjectLike(raw)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
 
-  const record = raw as Record<string, unknown>;
+  // SAFETY: raw is a parsed JSON object; every field is validated before use.
+  const record = raw as StoredManifestRecord;
   if ("schemaVersion" in record) {
     return inspectCurrentSchema(record, configDir);
   }
+  // SAFETY: raw is a parsed JSON object; every field is validated before use.
   return inspectLegacySchema(record as LegacyInstallManifest, configDir);
 }
 
@@ -302,7 +362,7 @@ export async function writeInstallManifestUnderActivation(
   const now = new Date().toISOString();
   const installedAt = existing.status === "loaded" ? existing.manifest.installedAt : now;
 
-  const full: InstallManifest = {
+  const full: MutableInstallManifest = {
     schemaVersion: INSTALL_MANIFEST_SCHEMA_VERSION,
     method: partial.method,
     activeVersion,
@@ -312,23 +372,19 @@ export async function writeInstallManifestUnderActivation(
     downloadBaseUrl: partial.downloadBaseUrl,
     installedAt,
     updatedAt: now,
-    ...(partial.versionedPath ? { versionedPath: partial.versionedPath } : {}),
-    ...(previousVersion ? { previousVersion } : {}),
-    ...(partial.observedProvenance ? { observedProvenance: partial.observedProvenance } : {}),
-    ...(partial.target ? { target: partial.target } : {}),
-    ...(partial.artifactName ? { artifactName: partial.artifactName } : {}),
-    ...(partial.artifactSha256 ? { artifactSha256: partial.artifactSha256 } : {}),
-    ...(partial.artifactSizeBytes !== undefined
-      ? { artifactSizeBytes: partial.artifactSizeBytes }
-      : {}),
-    ...(partial.artifactSourceUrl ? { artifactSourceUrl: partial.artifactSourceUrl } : {}),
-    ...(partial.archiveName ? { archiveName: partial.archiveName } : {}),
-    ...(partial.archiveSha256 ? { archiveSha256: partial.archiveSha256 } : {}),
-    ...(partial.archiveSizeBytes !== undefined
-      ? { archiveSizeBytes: partial.archiveSizeBytes }
-      : {}),
-    ...(partial.archiveSourceUrl ? { archiveSourceUrl: partial.archiveSourceUrl } : {}),
   };
+  if (partial.versionedPath) full.versionedPath = partial.versionedPath;
+  if (previousVersion) full.previousVersion = previousVersion;
+  if (partial.observedProvenance) full.observedProvenance = partial.observedProvenance;
+  if (partial.target) full.target = partial.target;
+  if (partial.artifactName) full.artifactName = partial.artifactName;
+  if (partial.artifactSha256) full.artifactSha256 = partial.artifactSha256;
+  if (partial.artifactSizeBytes !== undefined) full.artifactSizeBytes = partial.artifactSizeBytes;
+  if (partial.artifactSourceUrl) full.artifactSourceUrl = partial.artifactSourceUrl;
+  if (partial.archiveName) full.archiveName = partial.archiveName;
+  if (partial.archiveSha256) full.archiveSha256 = partial.archiveSha256;
+  if (partial.archiveSizeBytes !== undefined) full.archiveSizeBytes = partial.archiveSizeBytes;
+  if (partial.archiveSourceUrl) full.archiveSourceUrl = partial.archiveSourceUrl;
 
   await persistManifest(full, layout.configDir);
 }
@@ -389,11 +445,11 @@ async function persistManifest(manifest: InstallManifest, configDir: string): Pr
 }
 
 function inspectCurrentSchema(
-  record: Record<string, unknown>,
+  record: StoredManifestRecord,
   configDir: string,
 ): InstallManifestInspection {
   const schemaVersion = record.schemaVersion;
-  if (typeof schemaVersion !== "number" || !Number.isInteger(schemaVersion)) {
+  if (!isIntegerValue(schemaVersion)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
   if (schemaVersion !== 1 && schemaVersion !== INSTALL_MANIFEST_SCHEMA_VERSION) {
@@ -401,44 +457,39 @@ function inspectCurrentSchema(
   }
 
   const method = record.method;
-  if (typeof method !== "string" || !METHODS.has(method)) {
+  if (!isStringValue(method) || !METHODS.has(method)) {
     return { status: "invalid", reason: "unknown-method" };
   }
+  // SAFETY: METHODS holds exactly the InstallManifestMethod union members.
   const typedMethod = method as InstallManifestMethod;
 
-  if (typeof record.installedAt !== "string" || !record.installedAt) {
+  if (!isNonEmptyString(record.installedAt)) {
     return { status: "invalid", reason: "missing-timestamp" };
   }
-  if (typeof record.updatedAt !== "string" || !record.updatedAt) {
+  if (!isNonEmptyString(record.updatedAt)) {
     return { status: "invalid", reason: "missing-timestamp" };
   }
-  if (typeof record.launcherPath !== "string" || !record.launcherPath) {
+  if (!isNonEmptyString(record.launcherPath)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
-  if (typeof record.downloadBaseUrl !== "string" || !record.downloadBaseUrl) {
+  if (!isNonEmptyString(record.downloadBaseUrl)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
   if (record.preferredChannel !== "stable") {
     return { status: "invalid", reason: "invalid-shape" };
   }
-  if (typeof record.activeVersion !== "string") {
+  if (!isStringValue(record.activeVersion)) {
     return { status: "invalid", reason: "invalid-version" };
   }
   if (!parseCanonicalVersion(record.activeVersion)) {
     return { status: "invalid", reason: "invalid-version" };
   }
   if (record.previousVersion !== undefined) {
-    if (
-      typeof record.previousVersion !== "string" ||
-      !parseCanonicalVersion(record.previousVersion)
-    ) {
+    if (!isStringValue(record.previousVersion) || !parseCanonicalVersion(record.previousVersion)) {
       return { status: "invalid", reason: "invalid-version" };
     }
   }
-  if (
-    !Array.isArray(record.managedPaths) ||
-    !record.managedPaths.every((p) => typeof p === "string")
-  ) {
+  if (!Array.isArray(record.managedPaths) || !record.managedPaths.every(isStringValue)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
   if (!archiveProvenanceComplete(record)) {
@@ -448,7 +499,7 @@ function inspectCurrentSchema(
     schemaVersion === INSTALL_MANIFEST_SCHEMA_VERSION &&
     record.archiveName !== undefined &&
     record.artifactSourceUrl === undefined &&
-    typeof record.artifactName === "string"
+    isStringValue(record.artifactName)
       ? `${record.downloadBaseUrl.replace(/\/+$/, "")}/download/v${record.activeVersion}/${record.artifactName}`
       : undefined;
   if (!archiveHasArtifactProvenance(record, predecessorArtifactSourceUrl !== undefined)) {
@@ -480,43 +531,41 @@ function inspectCurrentSchema(
     return { status: "invalid", reason: "malicious-managed-paths" };
   }
 
-  const manifest: InstallManifest = {
+  const manifest: MutableInstallManifest = {
     schemaVersion: INSTALL_MANIFEST_SCHEMA_VERSION,
     method: typedMethod,
     activeVersion: record.activeVersion,
     preferredChannel: "stable",
     launcherPath: record.launcherPath,
+    // SAFETY: every element passed the isStringValue check above.
     managedPaths: record.managedPaths as string[],
     downloadBaseUrl: record.downloadBaseUrl,
     installedAt: record.installedAt,
     updatedAt: record.updatedAt,
-    ...(typeof record.versionedPath === "string" ? { versionedPath: record.versionedPath } : {}),
-    ...(typeof record.previousVersion === "string"
-      ? { previousVersion: record.previousVersion }
-      : {}),
-    ...(typeof record.observedProvenance === "string"
-      ? { observedProvenance: record.observedProvenance }
-      : {}),
-    ...(typeof record.target === "string" ? { target: record.target } : {}),
-    ...(typeof record.artifactName === "string" ? { artifactName: record.artifactName } : {}),
-    ...(typeof record.artifactSha256 === "string" ? { artifactSha256: record.artifactSha256 } : {}),
-    ...(typeof record.artifactSizeBytes === "number"
-      ? { artifactSizeBytes: record.artifactSizeBytes }
-      : {}),
-    ...(typeof record.artifactSourceUrl === "string"
-      ? { artifactSourceUrl: record.artifactSourceUrl }
-      : predecessorArtifactSourceUrl
-        ? { artifactSourceUrl: predecessorArtifactSourceUrl }
-        : {}),
-    ...(typeof record.archiveName === "string" ? { archiveName: record.archiveName } : {}),
-    ...(typeof record.archiveSha256 === "string" ? { archiveSha256: record.archiveSha256 } : {}),
-    ...(typeof record.archiveSizeBytes === "number"
-      ? { archiveSizeBytes: record.archiveSizeBytes }
-      : {}),
-    ...(typeof record.archiveSourceUrl === "string"
-      ? { archiveSourceUrl: record.archiveSourceUrl }
-      : {}),
   };
+  if (isStringValue(record.versionedPath)) manifest.versionedPath = record.versionedPath;
+  if (isStringValue(record.previousVersion)) manifest.previousVersion = record.previousVersion;
+  if (isStringValue(record.observedProvenance)) {
+    manifest.observedProvenance = record.observedProvenance;
+  }
+  if (isStringValue(record.target)) manifest.target = record.target;
+  if (isStringValue(record.artifactName)) manifest.artifactName = record.artifactName;
+  if (isStringValue(record.artifactSha256)) manifest.artifactSha256 = record.artifactSha256;
+  if (isNumberValue(record.artifactSizeBytes)) {
+    manifest.artifactSizeBytes = record.artifactSizeBytes;
+  }
+  const artifactSourceUrl = isStringValue(record.artifactSourceUrl)
+    ? record.artifactSourceUrl
+    : predecessorArtifactSourceUrl;
+  if (artifactSourceUrl !== undefined) manifest.artifactSourceUrl = artifactSourceUrl;
+  if (isStringValue(record.archiveName)) manifest.archiveName = record.archiveName;
+  if (isStringValue(record.archiveSha256)) manifest.archiveSha256 = record.archiveSha256;
+  if (isNumberValue(record.archiveSizeBytes)) {
+    manifest.archiveSizeBytes = record.archiveSizeBytes;
+  }
+  if (isStringValue(record.archiveSourceUrl)) {
+    manifest.archiveSourceUrl = record.archiveSourceUrl;
+  }
 
   return {
     status: "loaded",
@@ -529,32 +578,33 @@ function inspectLegacySchema(
   legacy: LegacyInstallManifest,
   configDir: string,
 ): InstallManifestInspection {
-  if (typeof legacy.channel !== "string" || !METHODS.has(legacy.channel)) {
+  if (!isStringValue(legacy.channel) || !METHODS.has(legacy.channel)) {
     return { status: "invalid", reason: "unknown-method" };
   }
-  if (typeof legacy.binPath !== "string" || !legacy.binPath) {
+  if (!isNonEmptyString(legacy.binPath)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
-  if (typeof legacy.dlBase !== "string" || !legacy.dlBase) {
+  if (!isNonEmptyString(legacy.dlBase)) {
     return { status: "invalid", reason: "invalid-shape" };
   }
-  if (typeof legacy.installedAt !== "string" || !legacy.installedAt) {
+  if (!isNonEmptyString(legacy.installedAt)) {
     return { status: "invalid", reason: "missing-timestamp" };
   }
-  if (typeof legacy.version !== "string") {
+  if (!isStringValue(legacy.version)) {
     return { status: "invalid", reason: "invalid-version" };
   }
   if (!parseCanonicalVersion(legacy.version)) {
     return { status: "invalid", reason: "invalid-version" };
   }
 
+  // SAFETY: METHODS holds exactly the InstallManifestMethod union members.
   const method = legacy.channel as InstallManifestMethod;
   const layout = getInstallLayoutPaths({
     configDir,
     launcherPath: legacy.binPath,
   });
   const now = new Date().toISOString();
-  const manifest: InstallManifest = {
+  const manifest: MutableInstallManifest = {
     schemaVersion: INSTALL_MANIFEST_SCHEMA_VERSION,
     method,
     activeVersion: legacy.version,
@@ -564,10 +614,8 @@ function inspectLegacySchema(
     downloadBaseUrl: legacy.dlBase,
     installedAt: legacy.installedAt,
     updatedAt: now,
-    ...(typeof legacy.versionPath === "string" && legacy.versionPath
-      ? { versionedPath: legacy.versionPath }
-      : {}),
   };
+  if (isNonEmptyString(legacy.versionPath)) manifest.versionedPath = legacy.versionPath;
 
   return { status: "loaded", needsMigration: true, manifest };
 }
@@ -582,7 +630,7 @@ function managedPathsAreSafe(
   }
   const allowedRoots = deriveManagedPaths("binary", layout).map((root) => resolve(root));
   for (const entry of paths) {
-    if (typeof entry !== "string" || !entry || !isAbsolute(entry)) return false;
+    if (!entry || !isAbsolute(entry)) return false;
     const normalized = normalize(entry);
     if (normalized.includes("..")) return false;
     const resolved = resolve(normalized);
@@ -594,18 +642,16 @@ function managedPathsAreSafe(
   return true;
 }
 
-function optionalString(value: unknown): boolean {
-  return value === undefined || (typeof value === "string" && value.length > 0);
+function optionalString<T>(value: T): boolean {
+  return value === undefined || isNonEmptyString(value);
 }
 
-function optionalSha256(value: unknown): boolean {
-  return value === undefined || (typeof value === "string" && /^[a-fA-F0-9]{64}$/.test(value));
+function optionalSha256<T>(value: T): boolean {
+  return value === undefined || isSha256Value(value);
 }
 
-function optionalSize(value: unknown): boolean {
-  return (
-    value === undefined || (typeof value === "number" && Number.isSafeInteger(value) && value > 0)
-  );
+function optionalSize<T>(value: T): boolean {
+  return value === undefined || isPositiveSafeInteger(value);
 }
 
 function archiveProvenanceComplete(value: {
@@ -636,14 +682,9 @@ function archiveHasArtifactProvenance(
 ): boolean {
   if (value.archiveName === undefined) return true;
   return (
-    typeof value.artifactName === "string" &&
-    value.artifactName.length > 0 &&
-    typeof value.artifactSha256 === "string" &&
-    /^[a-fA-F0-9]{64}$/.test(value.artifactSha256) &&
-    typeof value.artifactSizeBytes === "number" &&
-    Number.isSafeInteger(value.artifactSizeBytes) &&
-    value.artifactSizeBytes > 0 &&
-    (allowMissingSourceUrl ||
-      (typeof value.artifactSourceUrl === "string" && value.artifactSourceUrl.length > 0))
+    isNonEmptyString(value.artifactName) &&
+    isSha256Value(value.artifactSha256) &&
+    isPositiveSafeInteger(value.artifactSizeBytes) &&
+    (allowMissingSourceUrl || isNonEmptyString(value.artifactSourceUrl))
   );
 }

@@ -23,7 +23,7 @@ export function videoMetaFromSearchResult(result: SearchResult): VideoMeta | nul
     result.viewCount !== undefined ||
     result.publishedAt !== undefined ||
     result.durationSeconds !== undefined ||
-    result.contentShape !== undefined ||
+    result.resultKind !== undefined ||
     result.liveStatus !== undefined ||
     result.episodeCount !== undefined ||
     result.premium !== undefined ||
@@ -35,7 +35,7 @@ export function videoMetaFromSearchResult(result: SearchResult): VideoMeta | nul
     viewCount: result.viewCount,
     publishedAt: result.publishedAt,
     durationSeconds: result.durationSeconds,
-    contentShape: result.contentShape,
+    resultKind: result.resultKind,
     liveStatus: result.liveStatus,
     videoCount: result.episodeCount,
     premium: result.premium,

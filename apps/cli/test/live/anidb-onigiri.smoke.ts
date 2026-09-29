@@ -123,7 +123,7 @@ const payload = {
     stream,
     resolveDurationMs,
   }),
-  ...(resolveError ? providerSmokeError(resolveError) : {}),
+  ...(resolveError ? providerSmokeError(resolveError) : null),
   searchedProvider: "anidb",
   searchResults: searchResults.length,
   failureCodes,

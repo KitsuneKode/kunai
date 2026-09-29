@@ -171,7 +171,7 @@ export function parseHianimeEpisodesHtml(
     const parsed = rawNumber !== undefined ? Number.parseInt(rawNumber, 10) : Number.NaN;
     const number = Number.isInteger(parsed) && parsed > 0 ? parsed : position;
     const title = extractEpisodeTitle(body);
-    entries.push({ episodeId, number, ...(title ? { title } : {}) });
+    entries.push({ episodeId, number, ...(title ? { title } : null) });
   }
   return entries;
 }

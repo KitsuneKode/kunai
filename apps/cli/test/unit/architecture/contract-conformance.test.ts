@@ -200,6 +200,7 @@ describe("contract conformance", () => {
     const declared = new Set(
       KEYBINDINGS.map((binding) => binding.scope as string).concat([...KNOWN_EMPTY_SCOPES]),
     );
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const empty = [...declared].filter((scope) => !used.has(scope as never));
 
     expect(empty.filter((scope) => !KNOWN_EMPTY_SCOPES.has(scope))).toEqual([]);
@@ -213,6 +214,7 @@ describe("contract conformance", () => {
    */
   test("every keybinding scope is reachable from resolveHelpScope", () => {
     const state = (playbackStatus: string, ...modals: readonly string[]) =>
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       ({ playbackStatus, activeModals: modals.map((type) => ({ type })) }) as never;
 
     const REACHABLE: Readonly<Record<string, () => unknown>> = {

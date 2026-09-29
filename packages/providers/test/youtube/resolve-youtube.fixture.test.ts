@@ -65,6 +65,7 @@ describe("resolveYoutube", () => {
     const cache = new Map<string, unknown>();
     configureYoutubeProvider({
       metadataCache: {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         get: (videoId) => cache.get(videoId) as never,
         set: (videoId, info) => {
           cache.set(videoId, info);

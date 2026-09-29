@@ -58,6 +58,7 @@ describe("session display helpers", () => {
       }),
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     expect(resolveProviderIdForSessionLane(state, providerRegistry as never)).toBe("youtube");
 
     const dispatches: Array<{ type: string; provider?: string }> = [];
@@ -68,6 +69,7 @@ describe("session display helpers", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     expect(ensureSessionProviderMatchesLane(stateManager, providerRegistry as never)).toBe(
       "youtube",
     );

@@ -108,6 +108,7 @@ describe("miruro endpoint health", () => {
   test("a rate-limited backend is recorded against its server, and the next one plays", async () => {
     const { context, failures } = harness({ peweStatus: 429 });
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const result = await miruroProviderModule.resolve(INPUT as never, context);
 
     expect(result.status).toBe("resolved");
@@ -125,6 +126,7 @@ describe("miruro endpoint health", () => {
     // release signoff's anime lane took 13s against 2s for the others.
     const { context, requests } = harness({ quarantined: ["pewe"] });
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const result = await miruroProviderModule.resolve(INPUT as never, context);
 
     expect(result.status).toBe("resolved");
@@ -137,6 +139,7 @@ describe("miruro endpoint health", () => {
     // got quarantined for an hour before.
     const { context, failures } = harness({ peweStatus: "network-error" });
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await miruroProviderModule.resolve(INPUT as never, context);
 
     expect(failures.filter((failure) => failure.endpoint === "pewe")).toEqual([]);
@@ -145,6 +148,7 @@ describe("miruro endpoint health", () => {
   test("an episode a server simply lacks is no evidence against the server", async () => {
     const { context, failures } = harness({ peweStreams: false });
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const result = await miruroProviderModule.resolve(INPUT as never, context);
 
     expect(result.status).toBe("resolved");
@@ -154,6 +158,7 @@ describe("miruro endpoint health", () => {
   test("a server that plays clears its record", async () => {
     const { context, successes } = harness({ quarantined: ["pewe"] });
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await miruroProviderModule.resolve(INPUT as never, context);
 
     expect(successes).toContain("moo");

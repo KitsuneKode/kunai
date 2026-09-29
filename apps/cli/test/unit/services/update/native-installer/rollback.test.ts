@@ -135,7 +135,7 @@ async function seedBinaryManifest(
       versionedPath: versionBinaryPath(layout, activeVersion),
       downloadBaseUrl: "https://example.test/releases",
       target: "linux-x64-gnu",
-      ...(previousVersion ? { previousVersion } : {}),
+      ...(previousVersion ? { previousVersion } : null),
     },
     layout,
   );

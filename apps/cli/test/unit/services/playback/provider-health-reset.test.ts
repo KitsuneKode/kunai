@@ -5,9 +5,9 @@ import type { ProviderId } from "@kunai/types";
 
 function createResetContainer() {
   const globalRows = new Map<ProviderId, { status: string }>([
-    ["miruro" as ProviderId, { status: "down" }],
-    ["allanime" as ProviderId, { status: "degraded" }],
-    ["vidking" as ProviderId, { status: "down" }],
+    ["miruro", { status: "down" }],
+    ["allanime", { status: "degraded" }],
+    ["vidking", { status: "down" }],
   ]);
   const titleClears: string[] = [];
   const feedback: string[] = [];
@@ -93,10 +93,11 @@ describe("provider-health-reset", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const result = await applyProviderHealthResetScope(container as never, "current-provider");
     expect(result.clearedGlobal).toBe(1);
-    expect(harness.providerHealth.get("miruro" as ProviderId)).toBeUndefined();
-    expect(harness.providerHealth.get("allanime" as ProviderId)).toBeDefined();
+    expect(harness.providerHealth.get("miruro")).toBeUndefined();
+    expect(harness.providerHealth.get("allanime")).toBeDefined();
     expect(harness.stateManagerDispatch[0]).toContain("Cleared global provider failure memory");
   });
 
@@ -110,9 +111,10 @@ describe("provider-health-reset", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const result = await applyProviderHealthResetScope(container as never, "anime-lane");
     expect(result.clearedGlobal).toBe(2);
-    expect(harness.providerHealth.get("vidking" as ProviderId)).toBeDefined();
+    expect(harness.providerHealth.get("vidking")).toBeDefined();
   });
 
   test("applyProviderHealthResetScope clears title memory scopes", async () => {
@@ -125,7 +127,9 @@ describe("provider-health-reset", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await applyProviderHealthResetScope(container as never, "current-title");
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await applyProviderHealthResetScope(container as never, "current-title-provider");
     expect(harness.titleClears).toEqual(["mal:1", "mal:1:miruro"]);
   });
@@ -140,13 +144,16 @@ describe("provider-health-reset", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const current = await applyProviderHealthResetScope(container as never, "current-provider");
     expect(current.clearedEndpoints).toBe(1);
     expect(harness.endpointClears).toContain("provider:miruro");
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await applyProviderHealthResetScope(container as never, "current-title-provider");
     expect(harness.endpointClears).toContain("title:mal:1:miruro");
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const all = await applyProviderHealthResetScope(container as never, "all");
     expect(all.clearedEndpoints).toBe(2);
     expect(harness.endpointClears).toContain("__all__");

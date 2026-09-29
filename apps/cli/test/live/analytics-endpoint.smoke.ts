@@ -50,6 +50,7 @@ let raw: Record<string, unknown> = {
   analyticsEndpoint: endpoint,
 };
 const config = {
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   getRaw: () => ({ ...raw }) as never,
   async update(partial: Record<string, unknown>) {
     raw = { ...raw, ...partial };
@@ -58,6 +59,7 @@ const config = {
 };
 
 const service = new UsageAnalyticsService({
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   config: config as never,
   currentVersion: "0.3.0",
   endpoint,

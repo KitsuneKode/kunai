@@ -50,11 +50,11 @@ function parseRow(row: ArmRawRow): ArmIdGraph | null {
 
   if (!anilistId && !malId && !tmdbId && !imdbId) return null;
   return {
-    ...(anilistId ? { anilistId } : {}),
-    ...(malId ? { malId } : {}),
-    ...(tmdbId ? { tmdbId } : {}),
-    ...(imdbId ? { imdbId } : {}),
-    ...(tmdbSeason !== undefined ? { tmdbSeason } : {}),
+    ...(anilistId ? { anilistId } : null),
+    ...(malId ? { malId } : null),
+    ...(tmdbId ? { tmdbId } : null),
+    ...(imdbId ? { imdbId } : null),
+    ...(tmdbSeason !== undefined ? { tmdbSeason } : null),
   };
 }
 

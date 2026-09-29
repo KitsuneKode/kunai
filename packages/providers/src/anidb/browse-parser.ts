@@ -194,7 +194,7 @@ function extractAnidbCardFields(
   const rating = ratingMatch ? Number(ratingMatch[1]) : undefined;
   return {
     posterUrl: extractAnidbPosterUrl(body),
-    ...(rating !== undefined && Number.isFinite(rating) ? { rating } : {}),
+    ...(rating !== undefined && Number.isFinite(rating) ? { rating } : null),
     ...(/\bmovie\b/i.test(remainder) ? { kind: "movie" as const } : {}),
   };
 }

@@ -22,7 +22,7 @@ import type {
 } from "@/services/playback/PlaybackSourceInventoryView";
 import type { ProviderId } from "@kunai/types";
 
-const PROVIDER = "vidking" as ProviderId;
+const PROVIDER = "vidking";
 
 function sourceGroup(over: Partial<PlaybackSourceGroupView>): PlaybackSourceGroupView {
   return {

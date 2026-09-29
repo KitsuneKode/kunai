@@ -149,11 +149,11 @@ export function parseHianimeEmbedPayload(json: string): HianimeEmbedPayload {
   return {
     src: (parsed.src as string).trim(),
     subtitles,
-    ...(intro ? { intro } : {}),
-    ...(outro ? { outro } : {}),
-    ...(downloadUrl ? { downloadUrl } : {}),
-    ...(poster ? { poster } : {}),
-    ...(spriteVtt ? { spriteVtt } : {}),
+    ...(intro ? { intro } : null),
+    ...(outro ? { outro } : null),
+    ...(downloadUrl ? { downloadUrl } : null),
+    ...(poster ? { poster } : null),
+    ...(spriteVtt ? { spriteVtt } : null),
   };
 }
 

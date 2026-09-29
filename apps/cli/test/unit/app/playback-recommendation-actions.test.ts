@@ -45,6 +45,7 @@ describe("playback recommendation actions", () => {
       },
     };
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const queued = enqueuePostPlaybackRecommendation(container as never, item);
 
     expect(queued).toBeInstanceOf(Promise);

@@ -206,7 +206,7 @@ describe("resolveMiruroAnilistId", () => {
     id,
     kind: "anime" as const,
     title: "One Piece",
-    ...(anilistId === undefined ? {} : { anilistId }),
+    ...(anilistId === undefined ? null : { anilistId }),
   });
 
   test("accepts an explicit positive decimal anilistId", () => {
@@ -678,6 +678,7 @@ describe("fetchMiruroPipeBody CF-challenge retry", () => {
         "https://www.miruro.bz/api/secure/pipe?x=1",
         {},
         undefined,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         fetchPort as never,
       );
       expect(calls).toBe(2);
@@ -707,6 +708,7 @@ describe("fetchMiruroPipeBody CF-challenge retry", () => {
         "https://www.miruro.bz/api/secure/pipe?x=1",
         {},
         undefined,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         fetchPort as never,
         { wafLikely: true },
       );
@@ -739,6 +741,7 @@ describe("fetchMiruroPipeBody CF-challenge retry", () => {
           "https://www.miruro.bz/api/secure/pipe?x=1",
           {},
           controller.signal,
+          // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
           fetchPort as never,
         ),
       ).rejects.toThrow();
@@ -1010,6 +1013,7 @@ describe("Miruro search", () => {
   });
 
   test("an empty query never reaches the network", async () => {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const context = { providerId: "miruro", now: () => "2026-09-11T00:00:00.000Z" } as never;
     expect(await miruroProviderModule.search?.({ query: "   " }, context)).toBeNull();
   });

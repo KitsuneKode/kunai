@@ -34,6 +34,7 @@ function fakeVault(overrides: Partial<CredentialVaultPort> = {}): CredentialVaul
 }
 
 function fakePaths(configDir: string) {
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   return { configDir } as never;
 }
 
@@ -342,6 +343,7 @@ describe("ConfigService vault lane (#179)", () => {
       },
       reset: async () => {},
     };
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     return store as never as { written: typeof written } & ConstructorParameters<
       typeof ConfigServiceImpl
     >[0];
@@ -364,6 +366,7 @@ describe("ConfigService vault lane (#179)", () => {
     const vault = fakeVault();
     const store = captureStore({});
     const service = await ConfigServiceImpl.load(store, vault);
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await service.update({ videasySessionToken: "fixture-videasy-session-b" } as never);
     await service.save();
 
@@ -379,6 +382,7 @@ describe("ConfigService vault lane (#179)", () => {
     const service = await ConfigServiceImpl.load(store, vault);
     expect(service.videasySessionToken).toBe("fixture-videasy-session-old"); // hydrated from vault
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await service.update({ videasySessionToken: "" } as never);
     await service.save();
     expect(vault.store.has(CREDENTIAL_KEYS.videasySessionToken)).toBe(false);

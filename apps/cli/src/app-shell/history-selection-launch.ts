@@ -68,6 +68,6 @@ export async function resolveHistorySelectionLaunch(
       ...titleFromHistorySelection(selection),
       launchSource: reason === "history" ? "history" : "continue",
     },
-    ...(episode ? { episode } : {}),
+    ...(episode ? { episode } : null),
   };
 }

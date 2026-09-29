@@ -208,6 +208,7 @@ test("unknown action ids fail loudly instead of resolving as a silent no-op", as
 
   await expect(
     router.run({
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       actionId: "not-a-real-action" as never,
       item,
       source: "history",

@@ -474,7 +474,7 @@ describe("searchTitles", () => {
             id: "youtube:abc123",
             title: "YouTube Result",
             type: "movie",
-            contentShape: "video",
+            resultKind: "video",
             externalIds: { youtubeId: "abc123" },
           },
         ];
@@ -543,7 +543,7 @@ describe("searchTitles", () => {
             id: "youtube:cross-mode",
             title: "Cross Mode YouTube",
             type: "movie",
-            contentShape: "video",
+            resultKind: "video",
             externalIds: { youtubeId: "cross-mode" },
           },
         ];
@@ -597,7 +597,7 @@ describe("searchTitles", () => {
             id: "youtube:stale-lane",
             title: "Harkirat",
             type: "movie",
-            contentShape: "video",
+            resultKind: "video",
             externalIds: { youtubeId: "stale-lane" },
           },
         ];
@@ -708,7 +708,7 @@ describe("searchTitles", () => {
     });
   });
 
-  test("applies type:playlist locally against SearchResult.contentShape", async () => {
+  test("applies type:playlist locally against SearchResult.resultKind", async () => {
     const searchRegistry = {
       getDefault: () => ({
         metadata: { id: "youtube-catalog", name: "YouTube" },
@@ -720,7 +720,7 @@ describe("searchTitles", () => {
             year: "",
             overview: "",
             posterPath: null,
-            contentShape: "video",
+            resultKind: "video",
           },
           {
             id: "youtube:p1",
@@ -729,7 +729,7 @@ describe("searchTitles", () => {
             year: "",
             overview: "",
             posterPath: null,
-            contentShape: "playlist",
+            resultKind: "playlist",
           },
         ],
       }),
@@ -773,7 +773,7 @@ describe("searchTitles", () => {
     expect(result.evidence.unsupported).not.toContain("type playlist");
   });
 
-  test("applies type:short locally against SearchResult.contentShape", async () => {
+  test("applies type:short locally against SearchResult.resultKind", async () => {
     const searchRegistry = {
       getDefault: () => ({
         metadata: { id: "youtube-catalog", name: "YouTube" },
@@ -785,7 +785,7 @@ describe("searchTitles", () => {
             year: "",
             overview: "",
             posterPath: null,
-            contentShape: "video",
+            resultKind: "video",
           },
           {
             id: "youtube:s1",
@@ -794,7 +794,7 @@ describe("searchTitles", () => {
             year: "",
             overview: "",
             posterPath: null,
-            contentShape: "short",
+            resultKind: "short",
           },
         ],
       }),
@@ -913,6 +913,7 @@ describe("searchTitles", () => {
 
   test("declares AniDB/AniList catalog compatibility in both authorities", () => {
     const anilistDefinition = SEARCH_SERVICE_DEFINITIONS.find((def) => def.id === "anilist");
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const anilistService = new AniListSearchService({} as never);
     const expected = ["anidb", "allanime", "allmanga", "miruro", "hianime"];
 
@@ -965,7 +966,9 @@ describe("searchTitles", () => {
         mode: "anime",
         providerId: "anidb",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: registry as never,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerRegistry: { get: () => provider } as never,
       },
     );

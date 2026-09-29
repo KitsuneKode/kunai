@@ -38,6 +38,7 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
   const confirmations: Array<{ localJobId?: string }> = [];
   return {
     ctx: {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container: {} as never,
       historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: true }] },
       historySelections: [{ titleId: "tmdb:1", entry: history() }],
@@ -92,6 +93,7 @@ describe("handleHistoryOverlayInput", () => {
       "q",
       {},
       {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         container: container as never,
         historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: false }] },
         historySelections: [{ titleId: "tmdb:1", entry: history() }],

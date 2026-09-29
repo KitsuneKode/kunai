@@ -85,8 +85,8 @@ export function applyExpression(svg, name) {
       if (cfg.swap) {
         // `swap` is one shape for both eyes, or a per-side pair when the shape
         // is not symmetric — the squint's taper points outward on each side.
-        const shape = typeof cfg.swap === "string" ? cfg.swap : cfg.swap[side];
-        return `${open}<g class="eye-x">${shape}</g></g>`;
+        const eyeSwap = typeof cfg.swap === "string" ? cfg.swap : cfg.swap[side];
+        return `${open}<g class="eye-x">${eyeSwap}</g></g>`;
       }
       const t = cfg[side] ? ` transform="${cfg[side]}"` : "";
       const clip = cfg.clip ? ' clip-path="url(#lidClip)"' : "";

@@ -51,9 +51,9 @@ function resolvedMetadataFromSearchResult(match: SearchResult): ResolvedHistoryM
       : undefined;
   if (!posterUrl && !externalIds && !episodeCount) return null;
   return {
-    ...(posterUrl ? { posterUrl } : {}),
-    ...(externalIds ? { externalIds } : {}),
-    ...(episodeCount ? { episodeCount } : {}),
+    ...(posterUrl ? { posterUrl } : null),
+    ...(externalIds ? { externalIds } : null),
+    ...(episodeCount ? { episodeCount } : null),
   };
 }
 
@@ -96,9 +96,9 @@ function resolvedMetadataFromDetail(detail: TitleDetail): ResolvedHistoryMetadat
       : undefined;
   return {
     title,
-    ...(posterUrl ? { posterUrl } : {}),
+    ...(posterUrl ? { posterUrl } : null),
     ...(detail.externalIds ? { externalIds: detail.externalIds } : {}),
-    ...(episodeCount ? { episodeCount } : {}),
+    ...(episodeCount ? { episodeCount } : null),
   };
 }
 

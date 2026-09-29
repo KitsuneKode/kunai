@@ -64,7 +64,7 @@ export function buildDependencyRows(
     role: "playback",
     detail: snapshot.mpv ? "found on PATH" : "not found",
     fix: mpvIssue ? fixFor(mpvIssue.install, which) : null,
-    ...(snapshot.mpv ? {} : { consequence: "Nothing can play until this is installed." }),
+    ...(snapshot.mpv ? null : { consequence: "Nothing can play until this is installed." }),
   });
 
   const ytDlpIssue = issue("yt-dlp-missing");
@@ -76,7 +76,7 @@ export function buildDependencyRows(
     role: "youtube · downloads",
     detail: snapshot.ytDlp ? "found on PATH" : "not found",
     fix: ytDlpIssue ? fixFor(ytDlpIssue.install, which) : null,
-    ...(snapshot.ytDlp ? {} : { consequence: "YouTube playback and downloads need it." }),
+    ...(snapshot.ytDlp ? null : { consequence: "YouTube playback and downloads need it." }),
   });
 
   // Named ffmpeg, because that is the package. `ffprobe` is only the binary we
@@ -91,7 +91,7 @@ export function buildDependencyRows(
     detail: snapshot.ffprobe ? "found on PATH" : "not found",
     fix: ffmpegIssue ? fixFor(ffmpegIssue.install, which) : null,
     ...(snapshot.ffprobe
-      ? {}
+      ? null
       : {
           consequence: "Without it yt-dlp cannot merge streams, so quality quietly caps lower.",
         }),
@@ -111,7 +111,7 @@ export function buildDependencyRows(
         : "no curl at all",
     fix: curlIssue ? fixFor(curlIssue.install, which) : null,
     ...(snapshot.curl.impersonates
-      ? {}
+      ? null
       : {
           consequence:
             "Cloudflare fingerprints the TLS handshake, so anime search can come back empty.",

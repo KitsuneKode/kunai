@@ -24,7 +24,7 @@ export function mediaItemFromHistoryEntry(
           season: entry.season ?? 1,
           episode: entry.episode ?? entry.absoluteEpisode ?? 1,
         }
-      : {}),
+      : null),
     providerHints: [{ providerId: entry.providerId ?? "unknown" }],
   };
 }

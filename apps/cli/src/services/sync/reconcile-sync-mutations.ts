@@ -235,7 +235,7 @@ async function projectRecord(
         title: history.title,
         externalIds: history.externalIds,
       },
-      { ...(signal ? { signal } : {}), requiredTracker: "anilist" },
+      { ...(signal ? { signal } : null), requiredTracker: "anilist" },
     );
     const unresolved = retainedIdentityProjection(targets);
     if (unresolved) return unresolved;

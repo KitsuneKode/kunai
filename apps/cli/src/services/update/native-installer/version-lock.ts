@@ -51,9 +51,18 @@ export type VersionLockInspection =
 
 const LIFECYCLE_CORRUPT_GRACE_MS = 250;
 
+function isStringValue<T>(value: T): value is T & string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function isNonEmptyString<T>(value: T): value is T & string {
+  return isStringValue(value) && value.length > 0;
+}
+
 export async function readLockContent(path: string): Promise<VersionLockContent | null> {
   if (!existsSync(path)) return null;
   try {
+    // SAFETY: isModernLifecycleContent validates the required fields before use.
     return JSON.parse(await readFile(path, "utf8")) as VersionLockContent;
   } catch {
     return null;
@@ -80,16 +89,13 @@ function isModernLifecycleContent(content: VersionLockContent): boolean {
     Number.isSafeInteger(content.pid) &&
     content.pid > 0 &&
     content.version === LIFECYCLE_LOCK_VERSION &&
-    typeof content.execPath === "string" &&
-    content.execPath.length > 0 &&
-    typeof content.ownerId === "string" &&
-    content.ownerId.length > 0 &&
-    typeof content.acquiredAt === "string" &&
+    isNonEmptyString(content.execPath) &&
+    isNonEmptyString(content.ownerId) &&
+    isNonEmptyString(content.acquiredAt) &&
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(content.acquiredAt) &&
-    typeof content.hostname === "string" &&
+    isStringValue(content.hostname) &&
     content.hostname.trim().length > 0 &&
-    (content.processStartId === null ||
-      (typeof content.processStartId === "string" && content.processStartId.length > 0))
+    (content.processStartId === null || isNonEmptyString(content.processStartId))
   );
 }
 
@@ -294,6 +300,7 @@ export async function releaseCurrentVersionLock(): Promise<void> {
 export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<void> {
   if (!existsSync(layout.locksDir)) return;
   const { readdir } = await import("node:fs/promises");
+  // SAFETY: readdir failure recovers as an empty listing of lock names.
   for (const entry of await readdir(layout.locksDir).catch(() => [] as string[])) {
     if (entry === LIFECYCLE_LOCK_NAME) {
       const path = join(layout.locksDir, LIFECYCLE_LOCK_NAME);
@@ -324,6 +331,7 @@ export async function hasActiveVersionLocks(
 ): Promise<boolean> {
   if (!existsSync(layout.locksDir)) return false;
   const { readdir } = await import("node:fs/promises");
+  // SAFETY: readdir failure recovers as an empty listing of lock names.
   for (const entry of await readdir(layout.locksDir).catch(() => [] as string[])) {
     if (entry === LIFECYCLE_LOCK_NAME) continue;
     const version = parseCanonicalVersion(entry.replace(/\.lock$/, ""));

@@ -509,7 +509,7 @@ export class PlayerServiceImpl implements PlayerService {
               await control.stopCurrentFile?.(reason);
             },
           }
-        : {}),
+        : null),
     };
   }
 

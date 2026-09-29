@@ -725,7 +725,7 @@ export function createHistoryKey(
 }
 
 function migrateLegacyProviderId(providerId: string): ProviderId {
-  return (providerId === "vidking" ? "videasy" : providerId) as ProviderId;
+  return providerId === "vidking" ? "videasy" : providerId;
 }
 
 function mapHistoryRow(row: HistoryProgressRow): HistoryProgress {
@@ -804,7 +804,7 @@ function parseProviderNativeIds(
   const compact: Partial<Record<ProviderId, string>> = {};
   for (const [providerId, nativeId] of Object.entries(value)) {
     if (typeof nativeId !== "string" || !nativeId.trim()) continue;
-    compact[providerId as ProviderId] = nativeId.trim();
+    compact[providerId] = nativeId.trim();
   }
   return Object.keys(compact).length > 0 ? compact : undefined;
 }
@@ -830,7 +830,7 @@ function parseExternalIds(value: string | null): ProviderExternalIds | undefined
       ...(typeof parsed.youtubePlaylistId === "string" && parsed.youtubePlaylistId
         ? { youtubePlaylistId: parsed.youtubePlaylistId }
         : {}),
-      ...(providerNativeIds ? { providerNativeIds } : {}),
+      ...(providerNativeIds ? { providerNativeIds } : null),
     };
     return Object.keys(externalIds).length > 0 ? externalIds : undefined;
   } catch {

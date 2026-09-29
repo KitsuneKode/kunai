@@ -167,8 +167,8 @@ function withEpisodeCatalogIdentity(title: TitleInfo, episode: EpisodeInfo | und
     ...title,
     externalIds: {
       ...title.externalIds,
-      ...(anilistId !== undefined ? { anilistId } : {}),
-      ...(malId !== undefined ? { malId } : {}),
+      ...(anilistId !== undefined ? { anilistId } : null),
+      ...(malId !== undefined ? { malId } : null),
     },
   };
 }

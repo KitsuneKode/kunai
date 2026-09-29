@@ -13,12 +13,12 @@ function health(
   medianResolveMs?: number,
 ): EffectiveProviderHealth {
   return {
-    providerId: providerId as ProviderId,
+    providerId: providerId,
     stored:
       medianResolveMs === undefined
         ? undefined
         : {
-            providerId: providerId as ProviderId,
+            providerId: providerId,
             status: "healthy",
             checkedAt: "2026-07-28T12:00:00.000Z",
             medianResolveMs,
@@ -33,7 +33,7 @@ function health(
 
 describe("orderProviderCandidates", () => {
   test("configured priority is preserved when health is equal", () => {
-    const order = orderProviderCandidates(["c", "a", "b"] as ProviderId[], {
+    const order = orderProviderCandidates(["c", "a", "b"], {
       a: health("a", "healthy"),
       b: health("b", "healthy"),
       c: health("c", "healthy"),
@@ -44,7 +44,7 @@ describe("orderProviderCandidates", () => {
   });
 
   test("degraded providers sink below healthy ones", () => {
-    const order = orderProviderCandidates(["slowbut", "fine"] as ProviderId[], {
+    const order = orderProviderCandidates(["slowbut", "fine"], {
       slowbut: health("slowbut", "degraded"),
       fine: health("fine", "healthy"),
     });
@@ -53,7 +53,7 @@ describe("orderProviderCandidates", () => {
   });
 
   test("latency breaks a tie between equally healthy providers", () => {
-    const order = orderProviderCandidates(["slow", "fast"] as ProviderId[], {
+    const order = orderProviderCandidates(["slow", "fast"], {
       slow: health("slow", "healthy", 9_000),
       fast: health("fast", "healthy", 800),
     });
@@ -62,7 +62,7 @@ describe("orderProviderCandidates", () => {
   });
 
   test("unknown latency never outranks a measured fast provider", () => {
-    const order = orderProviderCandidates(["unmeasured", "fast"] as ProviderId[], {
+    const order = orderProviderCandidates(["unmeasured", "fast"], {
       unmeasured: health("unmeasured", "healthy"),
       fast: health("fast", "healthy", 500),
     });
@@ -71,7 +71,7 @@ describe("orderProviderCandidates", () => {
   });
 
   test("health outranks latency", () => {
-    const order = orderProviderCandidates(["quickbutbroken", "steady"] as ProviderId[], {
+    const order = orderProviderCandidates(["quickbutbroken", "steady"], {
       quickbutbroken: health("quickbutbroken", "degraded", 100),
       steady: health("steady", "healthy", 5_000),
     });
@@ -80,13 +80,13 @@ describe("orderProviderCandidates", () => {
   });
 
   test("providers with no health entry keep their configured position", () => {
-    const order = orderProviderCandidates(["a", "b"] as ProviderId[], {});
+    const order = orderProviderCandidates(["a", "b"], {});
     expect(order).toEqual(["a", "b"]);
   });
 
   test("an unmeasured provider is not demoted below a degraded one", () => {
     // No data is not evidence of being broken.
-    const order = orderProviderCandidates(["broken", "unmeasured"] as ProviderId[], {
+    const order = orderProviderCandidates(["broken", "unmeasured"], {
       broken: health("broken", "degraded", 10),
     });
 
@@ -94,7 +94,7 @@ describe("orderProviderCandidates", () => {
   });
 
   test("ordering is stable for equal health and equal latency", () => {
-    const order = orderProviderCandidates(["b", "a"] as ProviderId[], {
+    const order = orderProviderCandidates(["b", "a"], {
       a: health("a", "healthy", 1_000),
       b: health("b", "healthy", 1_000),
     });
@@ -103,12 +103,12 @@ describe("orderProviderCandidates", () => {
   });
 
   test("does not mutate the input list", () => {
-    const candidates = ["slow", "fast"] as ProviderId[];
+    const candidates = ["slow", "fast"];
     orderProviderCandidates(candidates, {
       slow: health("slow", "healthy", 9_000),
       fast: health("fast", "healthy", 100),
     });
 
-    expect(candidates).toEqual(["slow", "fast"] as ProviderId[]);
+    expect(candidates).toEqual(["slow", "fast"]);
   });
 });

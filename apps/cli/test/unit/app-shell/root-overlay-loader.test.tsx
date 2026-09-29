@@ -43,6 +43,7 @@ function ReducerBackedRootHost({ stateManager }: { stateManager: SessionStateMan
       <RootOverlayLoader
         overlay={overlay}
         state={state}
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         container={{ stateManager } as never}
         onRedraw={() => {}}
       />
@@ -55,6 +56,7 @@ function mountLoader(actions: unknown[]) {
   return render(
     <RootOverlayLoader
       overlay={{ type: "help" }}
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       state={{} as never}
       container={
         {

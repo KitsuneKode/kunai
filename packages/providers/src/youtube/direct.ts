@@ -17,7 +17,7 @@ import type {
   SubtitleCandidate,
   ProviderVariantCandidate,
   YouTubeLiveStatus,
-  YouTubeContentShape,
+  YouTubeResultKind,
 } from "@kunai/types";
 
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -102,12 +102,12 @@ async function searchYoutube(
   if (!query) return [];
 
   // Invidious does not consistently identify Shorts. Prefer a provider path
-  // that carries an explicit shape signal when the caller asks for them, and
+  // that carries an explicit kind signal when the caller asks for them, and
   // never return regular videos under a `type:short` filter.
-  if (input.preferredContentShape === "short") {
+  if (input.preferredResultKind === "short") {
     // yt-dlp reads YouTube's own Shorts filter, so when it answers at all its
     // answer is authoritative -- including an empty one. Falling through to a
-    // backend that cannot filter by shape would either invent non-Shorts results
+    // backend that cannot filter by kind would either invent non-Shorts results
     // or, when that backend is down, report "search failed" for a query that
     // simply has no Shorts.
     const ytsearch = await searchYoutubeViaYtsearch(query, context, "short");
@@ -119,7 +119,7 @@ async function searchYoutube(
           signal: context.signal,
         });
         const mapped = mapPipedSearchResults(piped.items).filter(
-          (result) => result.contentShape === "short",
+          (result) => result.resultKind === "short",
         );
         if (mapped.length > 0) return mapped;
       } catch {
@@ -133,7 +133,7 @@ async function searchYoutube(
       preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
       signal: context.signal,
     });
-    return filterYoutubeContentShape(mapInvidiousSearchResults(items), input.preferredContentShape);
+    return filterYoutubeResultKind(mapInvidiousSearchResults(items), input.preferredResultKind);
   } catch (invidiousError) {
     if (globalYoutubeConfig.pipedApiUrl?.trim()) {
       try {
@@ -141,9 +141,9 @@ async function searchYoutube(
           apiBaseUrl: globalYoutubeConfig.pipedApiUrl,
           signal: context.signal,
         });
-        const mapped = filterYoutubeContentShape(
+        const mapped = filterYoutubeResultKind(
           mapPipedSearchResults(piped.items),
-          input.preferredContentShape,
+          input.preferredResultKind,
         );
         if (mapped.length > 0) return mapped;
       } catch {
@@ -156,7 +156,7 @@ async function searchYoutube(
     const ytsearchResults = await searchYoutubeViaYtsearch(
       query,
       context,
-      input.preferredContentShape,
+      input.preferredResultKind,
     );
     // Last-resort lane: an empty answer here should surface the original backend
     // error rather than a bare "no results", so only a non-empty list short-circuits.
@@ -166,11 +166,11 @@ async function searchYoutube(
   }
 }
 
-function filterYoutubeContentShape(
+function filterYoutubeResultKind(
   results: readonly ProviderSearchResult[],
-  shape: YouTubeContentShape | undefined,
+  kind: YouTubeResultKind | undefined,
 ): readonly ProviderSearchResult[] {
-  return shape ? results.filter((result) => result.contentShape === shape) : results;
+  return kind ? results.filter((result) => result.resultKind === kind) : results;
 }
 
 const YTSEARCH_RESULT_LIMIT = 12;
@@ -189,16 +189,16 @@ const YOUTUBE_SHORTS_SEARCH_FILTER = "EgIYAQ%3D%3D";
 
 export function youtubeSearchTarget(
   query: string,
-  requestedShape: YouTubeContentShape | undefined,
+  requestedKind: YouTubeResultKind | undefined,
 ): string {
-  if (requestedShape !== "short") return `ytsearch${YTSEARCH_RESULT_LIMIT}:${query}`;
+  if (requestedKind !== "short") return `ytsearch${YTSEARCH_RESULT_LIMIT}:${query}`;
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${YOUTUBE_SHORTS_SEARCH_FILTER}`;
 }
 
 async function searchYoutubeViaYtsearch(
   query: string,
   context: ProviderRuntimeContext,
-  requestedShape?: YouTubeContentShape,
+  requestedKind?: YouTubeResultKind,
 ): Promise<readonly ProviderSearchResult[] | null> {
   if (!Bun.which("yt-dlp", { PATH: process.env.PATH })) return null;
 
@@ -208,7 +208,7 @@ async function searchYoutubeViaYtsearch(
     "--no-warnings",
     "--playlist-end",
     String(YTSEARCH_RESULT_LIMIT),
-    youtubeSearchTarget(query, requestedShape),
+    youtubeSearchTarget(query, requestedKind),
   ];
   try {
     const proc = await spawnYtDlpWithTimeout({ args, signal: context.signal, timeoutMs: 30_000 });
@@ -259,7 +259,7 @@ async function searchYoutubeViaYtsearch(
           viewCount: entry.view_count,
           publishedAt: parseUploadDate(entry),
           liveStatus: mapYtDlpLiveStatus(entry.is_live, entry.live_status),
-          contentShape:
+          resultKind:
             entry.is_short === true ||
             [entry.url, entry.webpage_url, entry.original_url].some((url) =>
               /\/shorts\//i.test(url ?? ""),
@@ -279,7 +279,7 @@ async function searchYoutubeViaYtsearch(
     // An empty array means "this search ran and found nothing"; `null` is reserved
     // for "the search could not run". The Shorts caller relies on that distinction
     // so a genuine no-Shorts answer is not mistaken for a dead lane.
-    return filterYoutubeContentShape(results, requestedShape);
+    return filterYoutubeResultKind(results, requestedKind);
   } catch {
     return null;
   }

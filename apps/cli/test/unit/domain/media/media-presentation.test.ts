@@ -106,6 +106,7 @@ describe("presentMedia", () => {
     expect(
       presentMedia({
         title: "Mystery Row",
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         mediaKind: "documentary" as never,
         season: 1,
         episode: 1,

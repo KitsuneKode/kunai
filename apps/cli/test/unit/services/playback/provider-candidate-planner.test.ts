@@ -10,7 +10,7 @@ describe("ProviderCandidatePlanner", () => {
   test("filters fallback providers by media kind and down health", () => {
     expect(
       planProviderCandidates({
-        primaryProviderId: "primary" as ProviderId,
+        primaryProviderId: "primary",
         mediaKind: "anime",
         recoveryMode: "fallback-first",
         now,
@@ -55,7 +55,7 @@ describe("ProviderCandidatePlanner", () => {
   test("includes down providers after TTL auto-heal", () => {
     expect(
       planProviderCandidates({
-        primaryProviderId: "primary" as ProviderId,
+        primaryProviderId: "primary",
         mediaKind: "anime",
         recoveryMode: "fallback-first",
         now,
@@ -80,7 +80,7 @@ describe("ProviderCandidatePlanner", () => {
   test("can ignore provider health for an explicit recompute", () => {
     expect(
       planProviderCandidates({
-        primaryProviderId: "primary" as ProviderId,
+        primaryProviderId: "primary",
         mediaKind: "series",
         recoveryMode: "fallback-first",
         ignoreProviderHealth: true,
@@ -109,7 +109,7 @@ describe("ProviderCandidatePlanner", () => {
   test("keeps title health suggestions advisory and walks full provider priority in guided mode", () => {
     expect(
       planProviderCandidates({
-        primaryProviderId: "primary" as ProviderId,
+        primaryProviderId: "primary",
         mediaKind: "series",
         recoveryMode: "guided",
         now,
@@ -133,7 +133,7 @@ describe("ProviderCandidatePlanner", () => {
   test("manual recovery stays on the selected provider while reporting fallback availability", () => {
     expect(
       planProviderCandidates({
-        primaryProviderId: "primary" as ProviderId,
+        primaryProviderId: "primary",
         mediaKind: "series",
         recoveryMode: "manual",
         now,
@@ -150,7 +150,7 @@ describe("ProviderCandidatePlanner", () => {
     // The primary is the user's explicit choice for this resolve and leads even
     // when a fallback is measurably healthier.
     const plan = planProviderCandidates({
-      primaryProviderId: "primary" as ProviderId,
+      primaryProviderId: "primary",
       mediaKind: "series",
       recoveryMode: "fallback-first",
       now,
@@ -175,7 +175,7 @@ describe("ProviderCandidatePlanner", () => {
 
   test("latency breaks a tie between equally healthy fallbacks", () => {
     const plan = planProviderCandidates({
-      primaryProviderId: "primary" as ProviderId,
+      primaryProviderId: "primary",
       mediaKind: "series",
       recoveryMode: "fallback-first",
       now,
@@ -197,7 +197,7 @@ describe("ProviderCandidatePlanner", () => {
 
   test("configured order survives when health gives no reason to reorder", () => {
     const plan = planProviderCandidates({
-      primaryProviderId: "primary" as ProviderId,
+      primaryProviderId: "primary",
       mediaKind: "series",
       recoveryMode: "fallback-first",
       now,
@@ -214,7 +214,7 @@ describe("ProviderCandidatePlanner", () => {
 
 function module(providerId: string, mediaKinds: readonly MediaKind[]) {
   return {
-    providerId: providerId as ProviderId,
+    providerId: providerId,
     manifest: { mediaKinds },
   };
 }

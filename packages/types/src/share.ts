@@ -275,12 +275,12 @@ function parseKunaiProtocolUrl(value: string): ParsedKunaiShare | null {
     ref: {
       anchor,
       kind,
-      ...(season !== null ? { season } : {}),
-      ...(episode !== null ? { episode } : {}),
-      ...(absoluteEpisode !== null ? { absoluteEpisode } : {}),
-      ...(startSeconds !== null ? { startSeconds } : {}),
-      ...(src ? { hint: { providerId: src, ...(quality ? { quality } : {}) } } : {}),
-      ...(title ? { title } : {}),
+      ...(season !== null ? { season } : null),
+      ...(episode !== null ? { episode } : null),
+      ...(absoluteEpisode !== null ? { absoluteEpisode } : null),
+      ...(startSeconds !== null ? { startSeconds } : null),
+      ...(src ? { hint: { providerId: src, ...(quality ? { quality } : null) } } : {}),
+      ...(title ? { title } : null),
     },
   };
 }
@@ -329,12 +329,12 @@ function parseCompactShareCode(value: string): ParsedKunaiShare | null {
     ref: {
       anchor: { by: "catalog", ns, id },
       kind,
-      ...(season !== null ? { season } : {}),
-      ...(episode !== null ? { episode } : {}),
-      ...(absoluteEpisode !== null ? { absoluteEpisode } : {}),
-      ...(startSeconds !== null ? { startSeconds } : {}),
-      ...(providerId ? { hint: { providerId, ...(quality ? { quality } : {}) } } : {}),
-      ...(title ? { title } : {}),
+      ...(season !== null ? { season } : null),
+      ...(episode !== null ? { episode } : null),
+      ...(absoluteEpisode !== null ? { absoluteEpisode } : null),
+      ...(startSeconds !== null ? { startSeconds } : null),
+      ...(providerId ? { hint: { providerId, ...(quality ? { quality } : null) } } : {}),
+      ...(title ? { title } : null),
     },
   };
 }

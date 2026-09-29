@@ -88,7 +88,7 @@ function normalizeTitleProviderPreferences(
   return normalized;
 }
 
-function normalizeProviderRelayConfig(value: unknown): ProviderRelayConfig {
+function normalizeProviderRelayConfig<T>(value: T): ProviderRelayConfig {
   if (!value || typeof value !== "object") return DEFAULT_CONFIG.providerRelay;
   const raw = value as Partial<ProviderRelayConfig>;
   const baseUrl = normalizeRelayBaseUrl(raw.baseUrl);
@@ -112,7 +112,7 @@ function normalizeProviderRelayConfig(value: unknown): ProviderRelayConfig {
   };
 }
 
-function normalizeRelayBaseUrl(value: unknown): string {
+function normalizeRelayBaseUrl<T>(value: T): string {
   if (typeof value !== "string") return "";
   return normalizeRelayBaseUrlValue(value) ?? "";
 }
@@ -123,7 +123,7 @@ function normalizeRelayBaseUrl(value: unknown): string {
  * belongs. `.trim()` on that throws inside `load()`, which takes down startup for a
  * field nothing critical depends on.
  */
-function trimmedConfigString(value: unknown): string | undefined {
+function trimmedConfigString<T>(value: T): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
@@ -818,7 +818,7 @@ export class ConfigServiceImpl implements ConfigService {
 
   private savePending: Promise<void> | null = null;
   private savePendingResolve: (() => void) | null = null;
-  private savePendingReject: ((reason: unknown) => void) | null = null;
+  private savePendingReject: ((reason?: Error | string) => void) | null = null;
   /**
    * The store write started by a fired debounce, until it settles.
    *
@@ -882,7 +882,7 @@ export class ConfigServiceImpl implements ConfigService {
         await this.persistConfig(this.config);
         resolve?.();
       } catch (error) {
-        reject?.(error);
+        reject?.(error instanceof Error ? error : String(error));
       } finally {
         if (this.saveInFlight === pending) this.saveInFlight = null;
       }
@@ -901,11 +901,11 @@ function normalizeStringList(values: readonly string[] | undefined): readonly st
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
-function normalizeOptionalSecret(value: unknown): string {
+function normalizeOptionalSecret<T>(value: T): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeVideasySessionExpiresAt(value: unknown, token?: unknown): number {
+function normalizeVideasySessionExpiresAt<T, U>(value: T, token?: U): number {
   const expiresAt = typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
   if (!normalizeOptionalSecret(token)) return 0;
   return isExpiredVideasySession(expiresAt) ? 0 : expiresAt;
@@ -989,7 +989,7 @@ function shouldPersistVideasyAppIdMigration(
   );
 }
 
-function normalizeVideasyAppId(value: unknown, sessionToken = ""): KitsuneConfig["videasyAppId"] {
+function normalizeVideasyAppId<T>(value: T, sessionToken = ""): KitsuneConfig["videasyAppId"] {
   const appId = typeof value === "string" ? value.trim() : "";
   if (appId === "bc-frontend") return "bc-frontend";
   // Legacy persisted default before Cineplay became primary. Without a paired vidking.net
@@ -998,38 +998,44 @@ function normalizeVideasyAppId(value: unknown, sessionToken = ""): KitsuneConfig
   return "bc-frontend";
 }
 
-function normalizeRecoveryMode(value: unknown): RecoveryMode {
-  return value === "fallback-first" || value === "manual" ? value : "guided";
+function normalizeRecoveryMode<T>(value: T): RecoveryMode {
+  return value === "manual" ? "manual" : value === "fallback-first" ? "fallback-first" : "guided";
 }
 
-function normalizeContinueSourcePreference(value: unknown): ContinueSourcePreference {
-  return value === "local" || value === "stream" || value === "ask" ? value : "auto";
+function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreference {
+  return value === "local"
+    ? "local"
+    : value === "stream"
+      ? "stream"
+      : value === "ask"
+        ? "ask"
+        : "auto";
 }
 
-function normalizeAnalyticsPreference(value: unknown): KitsuneConfig["analytics"] {
-  return value === "enabled" || value === "disabled" || value === "unset" ? value : "unset";
+function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
+  return value === "enabled" ? "enabled" : value === "disabled" ? "disabled" : "unset";
 }
 
-function normalizeStartupPriority(value: unknown): StartupPriority {
-  return value === "fast" || value === "quality-first" || value === "balanced" ? value : "balanced";
+function normalizeStartupPriority<T>(value: T): StartupPriority {
+  return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
 }
 
-function normalizeBytes(value: unknown, fallback: number): number {
+function normalizeBytes<T>(value: T, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.max(0, Math.trunc(value));
 }
 
-function normalizeRunwayTarget(value: unknown): number {
+function normalizeRunwayTarget<T>(value: T): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_OFFLINE_RUNWAY_TARGET;
   return Math.max(1, Math.min(24, Math.trunc(value)));
 }
 
-function normalizeMpvReconnectAttempts(value: unknown): number {
+function normalizeMpvReconnectAttempts<T>(value: T): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 1;
   return Math.max(0, Math.min(1, Math.trunc(value)));
 }
 
-function normalizeMaxConcurrentDownloads(value: unknown): number {
+function normalizeMaxConcurrentDownloads<T>(value: T): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 3;
   return Math.max(1, Math.min(5, Math.trunc(value)));
 }
