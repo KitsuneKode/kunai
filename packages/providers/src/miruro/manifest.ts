@@ -45,7 +45,13 @@ export const miruroManifest = defineProviderManifest({
   runtimePorts: [
     {
       runtime: "direct-http",
-      operations: ["search", "resolve-stream", "health-check"],
+      operations: [
+        "search",
+        "list-episodes",
+        "resolve-stream",
+        "resolve-subtitles",
+        "health-check",
+      ],
       browserSafe: false,
       relaySafe: true,
       localOnly: false,

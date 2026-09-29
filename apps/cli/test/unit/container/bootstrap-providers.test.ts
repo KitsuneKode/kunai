@@ -34,6 +34,56 @@ describe("production provider defaults", () => {
     }
   });
 
+  test("the production roster is pinned — adding a module fails loudly here", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    // Reverse-parity pin: a provider registered here but absent from coverage
+    // lists elsewhere (as happened to hianime in the resolve-gate coverage
+    // test) is invisible. Every roster change is a deliberate edit of this list.
+    // The allmanga module registers as "allanime" — its historical id, kept
+    // so existing configs and cache keys keep resolving.
+    expect(modules.map((module) => module.providerId).sort()).toEqual([
+      "allanime",
+      "anidb",
+      "animegg",
+      "hianime",
+      "kickassanime",
+      "miruro",
+      "rivestream",
+      "videasy",
+      "vidlink",
+      "youtube",
+    ]);
+  });
+
+  test("every declared capability has a runtime operation that implements it", async () => {
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    // Capability names and runtime-operation names are different vocabularies
+    // on purpose; this is the map. Capabilities absent from it (multi-source,
+    // quality-ranked) describe behavior, not operations, and are exempt.
+    const operationForCapability = {
+      search: "search",
+      "episode-list": "list-episodes",
+      "source-resolve": "resolve-stream",
+      "subtitle-resolve": "resolve-subtitles",
+    } as const;
+
+    for (const module of modules) {
+      const operations = new Set(module.manifest.runtimePorts.flatMap((port) => port.operations));
+      for (const capability of module.manifest.capabilities) {
+        const operation = operationForCapability[capability as keyof typeof operationForCapability];
+        if (!operation) continue;
+        expect(
+          operations.has(operation),
+          `${module.providerId} declares "${capability}" but no runtime port implements "${operation}"`,
+        ).toBe(true);
+      }
+    }
+  });
+
   test("every production source resolver keys the full request identity", async () => {
     const modules = await loadProductionProviderModules(
       createProviderPrioritySnapshot(DEFAULT_CONFIG),
