@@ -1,11 +1,11 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "7cc19c9221256c9708bf7a402833fadaf474f7b5e6bab7f23db4b42530e812cf",
-  "docsContentFingerprint": "19220f19027de848bb7d4e4919a566b9fcfbda65b0f08071923fe84f18892db3",
+  "cliSourceFingerprint": "af530de961c781e12363a52acd6f745dc24b3fd296973bff9ab4dc601e962bd7",
+  "docsContentFingerprint": "46c297d24941672fc797c4e580319c4fbb08adcd27c06e92225aabbe5fa15168",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
-  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "hianime", "miruro", "youtube"],
+  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
   "providers": [
     {
       "id": "videasy",
@@ -74,7 +74,7 @@
     {
       "id": "allanime",
       "displayName": "AllManga",
-      "description": "Anime episodes in sub and dub — the ani-cli parity source, third in the default order",
+      "description": "Anime episodes in sub and dub — the primary anime source",
       "domain": "mkissa.to",
       "recommended": false,
       "mediaKinds": ["anime"],
@@ -85,31 +85,6 @@
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
         "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
         "2026-08: mkissa crypto rotates buildId + derivation constants (81 → 119 → 140; 140 added bootPrefix HMAC and group.host.lane.buildId.epoch payload) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. ani-cli v5 moved primary to anidb.app."
-      ]
-    },
-    {
-      "id": "hianime",
-      "displayName": "HiAnime",
-      "description": "Anime episodes in sub and dub via HiAnime (ani-cli parity lane)",
-      "domain": "hianime.at",
-      "recommended": false,
-      "mediaKinds": ["anime"],
-      "capabilities": [
-        "search",
-        "episode-list",
-        "source-resolve",
-        "subtitle-resolve",
-        "multi-source",
-        "quality-ranked"
-      ],
-      "status": "candidate",
-      "notes": [
-        "Parity with ani-cli v5.1.2 (2026-09): /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902.",
-        "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
-        "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
-        "Each season is a separate provider-native slug; there is no in-provider season routing.",
-        "Bun/fetch may meet Cloudflare where curl passes; the client falls back to curl/curl-impersonate like AniDB/Miruro.",
-        "Relay-safe for metadata RPC (/rpc/hianime). Video always stays direct; the relay has no media route."
       ]
     },
     {
@@ -131,11 +106,12 @@
       "notes": [
         "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
         "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
-        "Primary hosts: www.miruro.bz, www.miruro.ru. Bare miruro.bz/.ru are 301 redirects to www. and still CF-block at the pipe path; miruro.com serves a different app shell with no /api/secure/pipe; miruro.tv/.to are TLS-dead — all stay off the resolve list.",
+        "2026-09-11: all four www. mirrors (.bz, .ru, .to, .tv) serve /api/secure/pipe — the earlier 'miruro.tv/.to are TLS-dead' reading came from a network whose reachability to them flaps (same host timed out, failed fast, then answered within minutes). Bare origins are 301 redirects to www.; miruro.com is a landing page with no pipe and is excluded by name.",
+        "2026-09-11: mirror order is live. status.miruro.com is Uptime Kuma with public JSON (/api/status-page/miruro plus /api/status-page/heartbeat/miruro); it is read in the background, names mirrors Kunai does not ship with, and only ever demotes a mirror it calls down. The mirror that last answered leads. See miruro/mirrors.ts.",
         "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
         "2026-09-11: default anime provider (config providerDefaultsRevision 1), ahead of AniDB and AllAnime. The case for it is structural, not a speed claim: it fronts ~a dozen backends, so an upstream outage costs one server — on 2026-09-11 anidb.app and api.mkissa.net were both refusing us while moo/bee/bonk/kiwi served streams.",
         "2026-09-11: searches through its own pipe (path `search`, query `q` plus `type: ANIME`; `search`/`query` are ignored and return the popular list). It relays AniList's catalog, so it kept answering while AniList's API was disabled. `dubLanguages` on those rows is voice-actor data, not availability.",
-        "2026-09-11: the pipe returns a backend's URL whether or not that backend is up — `pewe` served hls.anidb.app URLs (503) through AniDB's maintenance, and won the cycle. Candidates are now rejected on 404/410/502/503/504 from one ranged GET, and only when that status came from the host asked. Never on 401/403/429 (owocdn answers Bun's fetch 403 while mpv plays), never on a plain 500 (AnimeGG hands off to vidcache, which 500s anything but its player), and never on a cross-host redirect.",
+        "2026-09-11: the pipe returns a backend's URL whether or not that backend is up — `pewe` served hls.anidb.app URLs (503) through AniDB's maintenance, and won the cycle. Candidates are now rejected on 404/410/5xx from one ranged GET; never on 401/403/429, which owocdn returns to Bun's fetch while mpv plays.",
         "Structural dependency: every backend is reached through miruro.bz/.ru. If Miruro itself goes dark, all of them go with it — which is why AniDB and AllAnime stay registered behind it.",
         "May hit Cloudflare rate limits if called too frequently.",
         "2026-09-11: the pipe is reachable — Bun fetch is always CF-403'd (its TLS fingerprint), and curl clears the edge on both mirrors. The superseded 2026-08-17 note claiming curl also received CF 403 was measured through a predicate that read any HTML body as a Cloudflare block, including the mirror's own `502 upstream unreachable` page.",
@@ -666,7 +642,7 @@
     {
       "short": "-i",
       "long": "--id",
-      "description": "Open a specific title id or namespaced catalog id"
+      "description": "Open a specific title id"
     },
     {
       "short": "-t",
