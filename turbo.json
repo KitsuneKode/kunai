@@ -5,6 +5,7 @@
       "dependsOn": ["^transit"]
     },
     "typecheck": {
+      "cache": false,
       "dependsOn": ["transit"],
       "outputs": []
     },

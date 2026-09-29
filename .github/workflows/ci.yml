@@ -137,9 +137,9 @@ jobs:
         with:
           turbo-cache-prefix: fmt
 
-      - name: Format check (affected on PR)
+      - name: Format check (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run fmt:check --affected --summarize
+        run: bun run scripts/ci-affected-run.ts fmt:check --summarize
 
       - name: Format check (full on main)
         if: github.event_name == 'push'
@@ -159,9 +159,9 @@ jobs:
         with:
           turbo-cache-prefix: lint
 
-      - name: Lint (affected on PR)
+      - name: Lint (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run lint --affected --summarize
+        run: bun run scripts/ci-affected-run.ts lint --summarize
 
       - name: Lint (full on main)
         if: github.event_name == 'push'
@@ -185,9 +185,9 @@ jobs:
         with:
           turbo-cache-prefix: typecheck
 
-      - name: Typecheck (affected on PR)
+      - name: Typecheck (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run typecheck --affected --summarize
+        run: bun run scripts/ci-affected-run.ts typecheck --summarize
 
       - name: Typecheck (full on main)
         if: github.event_name == 'push'
@@ -207,9 +207,9 @@ jobs:
         with:
           turbo-cache-prefix: test
 
-      - name: Test (affected on PR)
+      - name: Test (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
-        run: bunx turbo run test --affected --summarize
+        run: bun run scripts/ci-affected-run.ts test --summarize
 
       - name: Test (full on main)
         if: github.event_name == 'push'
