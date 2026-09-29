@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   expandHlsMasterInventory,
-  expandHlsMasterPlaylist,
   isHlsDeadHostStatus,
   looksLikeHlsMasterUrl,
   parseHlsMasterRenditions,
@@ -26,8 +25,8 @@ describe("hls ladder", () => {
     expect(variants[2]?.url).toBe("https://cdn.example/1080p.m3u8");
   });
 
-  test("expandHlsMasterPlaylist fetches and sorts highest quality first", async () => {
-    const variants = await expandHlsMasterPlaylist({
+  test("expandHlsMasterInventory fetches and sorts highest quality first", async () => {
+    const { variants } = await expandHlsMasterInventory({
       masterUrl: "https://cdn.example/master.m3u8",
       fetch: (async () =>
         new Response(MASTER, {
@@ -38,8 +37,8 @@ describe("hls ladder", () => {
     expect(variants.map((variant) => variant.qualityLabel)).toEqual(["1080p", "720p", "360p"]);
   });
 
-  test("expandHlsMasterPlaylist falls back to auto on media playlist", async () => {
-    const variants = await expandHlsMasterPlaylist({
+  test("expandHlsMasterInventory falls back to auto on media playlist", async () => {
+    const { variants } = await expandHlsMasterInventory({
       masterUrl: "https://cdn.example/index.m3u8",
       fetch: (async () =>
         new Response("#EXTM3U\n#EXTINF:4,\nseg0.ts\n", {
@@ -83,7 +82,7 @@ v0.m3u8
 #EXT-X-STREAM-INF:BANDWIDTH=3652287,CODECS="mp4a.40.2,avc1.640028",RESOLUTION=1920x768
 v2.m3u8
 `;
-    const variants = await expandHlsMasterPlaylist({
+    const { variants } = await expandHlsMasterInventory({
       masterUrl: "https://cdn.example/master.m3u8",
       // SAFETY: stub returns Response like fetch; the option type expects the full fetch signature.
       fetch: (async () => new Response(muxed)) as ExpandHlsMasterPlaylistOptions["fetch"],
@@ -104,7 +103,7 @@ v-1080/playlist.m3u8
 #EXT-X-STREAM-INF:BANDWIDTH=1764061,RESOLUTION=640x360,AUDIO="aac"
 v-360/playlist.m3u8
 `;
-    const variants = await expandHlsMasterPlaylist({
+    const { variants } = await expandHlsMasterInventory({
       masterUrl: "https://cdn.example/master.m3u8",
       // SAFETY: stub returns Response like fetch; the option type expects the full fetch signature.
       fetch: (async () => new Response(labelledOnly)) as ExpandHlsMasterPlaylistOptions["fetch"],
@@ -124,7 +123,7 @@ v-360/playlist.m3u8
 #EXT-X-STREAM-INF:BANDWIDTH=13298235,RESOLUTION=1920x1080,AUDIO="aac"
 v-1080/playlist.m3u8
 `;
-    const variants = await expandHlsMasterPlaylist({
+    const { variants } = await expandHlsMasterInventory({
       masterUrl: "https://cdn.example/master.m3u8",
       // SAFETY: stub returns Response like fetch; the option type expects the full fetch signature.
       fetch: (async () => new Response(mixedGroup)) as ExpandHlsMasterPlaylistOptions["fetch"],
