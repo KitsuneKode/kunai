@@ -385,13 +385,12 @@ Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct
 
 A relay only helps when it reaches the provider from a network that is not blocked. A captcha gate (`NEED_CAPTCHA`) or a regional block is tied to your IP, so the relay has to run somewhere else — a free serverless host, or a machine in an ungated region. Both deploy from a source checkout, since the relay imports the `@kunai/relay` and `@kunai/providers` workspace packages.
 
-**On Vercel.** Full steps and the reason the bundle step is required are in `apps/relay-server/README.md`:
+**On Vercel.** Full steps and the reason handler bundling is required are in `apps/relay-server/README.md`:
 
 ```sh
 cd apps/relay-server
 vercel env add RELAY_TOKEN   # a random secret; the relay refuses internet traffic without one
 vercel build --prod --yes
-bun run vercel:bundle-output
 vercel deploy --prebuilt --prod
 ```
 
