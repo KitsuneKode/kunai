@@ -11,33 +11,35 @@ export function createDefaultMobileState(): MobileState {
   return { schemaVersion: 1, hostProofRuns: 0 };
 }
 
-export function decodeMobileState(value: unknown): MobileState {
+export function decodeMobileState<T>(value: T): MobileState {
   if (value === undefined) return createDefaultMobileState();
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (!(value instanceof Object) || Array.isArray(value)) {
     throw new Error("Invalid mobile state");
   }
 
-  const record = value as Record<string, unknown>;
   const allowedKeys = new Set(["schemaVersion", "hostProofRuns", "lastResult"]);
-  if (Object.keys(record).some((key) => !allowedKeys.has(key))) {
+  if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
     throw new Error("Invalid mobile state");
   }
+
+  // SAFETY: value is Kunai's own persisted state JSON; every field is
+  // validated below before it lands in the returned object, so the typed
+  // view only unlocks keyed access.
+  const record = value as Partial<MobileState>;
+  const hostProofRuns = record.hostProofRuns;
   if (
     record.schemaVersion !== 1 ||
-    !Number.isInteger(record.hostProofRuns) ||
-    (record.hostProofRuns as number) < 0 ||
-    (record.lastResult !== undefined &&
-      (typeof record.lastResult !== "string" ||
-        !LAST_RESULTS.has(record.lastResult as NonNullable<MobileState["lastResult"]>)))
+    hostProofRuns === undefined ||
+    !Number.isInteger(hostProofRuns) ||
+    hostProofRuns < 0 ||
+    (record.lastResult !== undefined && !LAST_RESULTS.has(record.lastResult))
   ) {
     throw new Error("Invalid mobile state");
   }
 
   return {
     schemaVersion: 1,
-    hostProofRuns: record.hostProofRuns as number,
-    ...(record.lastResult === undefined
-      ? {}
-      : { lastResult: record.lastResult as NonNullable<MobileState["lastResult"]> }),
+    hostProofRuns,
+    ...(record.lastResult !== undefined && { lastResult: record.lastResult }),
   };
 }

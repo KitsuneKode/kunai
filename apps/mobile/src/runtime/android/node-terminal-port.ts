@@ -71,9 +71,10 @@ function createLazyStdin(): Pick<NodeTerminalRuntime, "readLine" | "close"> {
 
   function open(): () => Promise<AndroidReadLineResult> {
     if (readLine) return readLine;
-    const activeReader = (
-      Readable.toWeb(process.stdin) as unknown as ReadableStream<Uint8Array>
-    ).getReader();
+    const webStream: unknown = Readable.toWeb(process.stdin);
+    // SAFETY: Node's stream/web ReadableStream is the same object lib.dom
+    // names ReadableStream; the typings are declared separately per runtime.
+    const activeReader = (webStream as ReadableStream<Uint8Array>).getReader();
     reader = activeReader;
     readLine = createBufferedAndroidReadLine({
       read: async () => await activeReader.read(),
@@ -134,7 +135,7 @@ export function createNodeTerminalPort(
         const answer = await pendingAnswer;
         const decision = interpretMobileChoiceAnswer(
           input,
-          typeof answer === "string" ? answer : undefined,
+          answer !== null && !(answer instanceof Object) ? answer : undefined,
         );
         if (decision.kind !== "invalid") return decision;
         await runtime.write(MOBILE_INVALID_SELECTION);

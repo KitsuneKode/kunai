@@ -8,34 +8,36 @@ import {
   type AndroidStateRuntime,
 } from "../../../../src/runtime/android/node-state-store";
 
-function fakeRuntime(initial: Readonly<Record<string, string>> = {}): {
+type FakeNodeStateRuntime = {
   readonly files: Map<string, string>;
   readonly moves: [string, string][];
   failMoveFrom?: string;
   readonly runtime: AndroidStateRuntime;
-} {
-  const result = {
-    files: new Map(Object.entries(initial)),
-    moves: [] as [string, string][],
-    failMoveFrom: undefined as string | undefined,
-    runtime: {} as AndroidStateRuntime,
-  };
-  result.runtime = {
-    ensureDirectory: async () => {},
-    readText: async (path) => result.files.get(path),
-    writeText: async (path, value) => {
-      result.files.set(path, value);
-    },
-    remove: async (path) => {
-      result.files.delete(path);
-    },
-    move: async (from, to) => {
-      result.moves.push([from, to]);
-      if (from === result.failMoveFrom) throw new Error("move failed");
-      const value = result.files.get(from);
-      if (value === undefined) throw new Error("source missing");
-      result.files.delete(from);
-      result.files.set(to, value);
+};
+
+function fakeRuntime(initial: Readonly<Record<string, string>> = {}): FakeNodeStateRuntime {
+  const files = new Map(Object.entries(initial));
+  const moves: [string, string][] = [];
+  const result: FakeNodeStateRuntime = {
+    files,
+    moves,
+    runtime: {
+      ensureDirectory: async () => {},
+      readText: async (path) => files.get(path),
+      writeText: async (path, value) => {
+        files.set(path, value);
+      },
+      remove: async (path) => {
+        files.delete(path);
+      },
+      move: async (from, to) => {
+        moves.push([from, to]);
+        if (from === result.failMoveFrom) throw new Error("move failed");
+        const value = files.get(from);
+        if (value === undefined) throw new Error("source missing");
+        files.delete(from);
+        files.set(to, value);
+      },
     },
   };
   return result;

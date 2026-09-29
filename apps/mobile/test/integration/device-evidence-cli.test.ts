@@ -57,6 +57,8 @@ describe("mobile device evidence CLI", () => {
   test("accepts only a complete metadata-bound physical matrix and prints redacted rows", async () => {
     const directory = await mkdtemp(join(tmpdir(), "kunai-mobile-evidence-"));
     temporaryDirectories.push(directory);
+    // SAFETY: METADATA_PATH is the repo's own generated build manifest;
+    // the spawned validator re-verifies every field before reading them.
     const metadata = JSON.parse(await readFile(METADATA_PATH, "utf8")) as MobileBuildMetadata;
     const androidPath = join(directory, "android.json");
     const iosPath = join(directory, "ios.json");
@@ -87,6 +89,8 @@ describe("mobile device evidence CLI", () => {
   test("rejects a claimed row whose artifact set is not in the generated metadata", async () => {
     const directory = await mkdtemp(join(tmpdir(), "kunai-mobile-evidence-"));
     temporaryDirectories.push(directory);
+    // SAFETY: METADATA_PATH is the repo's own generated build manifest;
+    // the spawned validator re-verifies every field before reading them.
     const metadata = JSON.parse(await readFile(METADATA_PATH, "utf8")) as MobileBuildMetadata;
     const androidPath = join(directory, "android.json");
     const iosPath = join(directory, "ios.json");

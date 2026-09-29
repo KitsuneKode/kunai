@@ -17,7 +17,9 @@ function removeArtifacts(jsc: AShellJsc): void {
   }
 }
 
-function parseMetadata(value: string, maxBytes: number): { status: number; bytes: number } {
+type AShellHttpMetadata = { readonly status: number; readonly bytes: number };
+
+function parseMetadata(value: string, maxBytes: number): AShellHttpMetadata {
   const match = /^(\d{3})\r?\n(\d+)\r?\n?$/u.exec(value);
   if (!match) throw new Error("invalid metadata");
   const status = Number(match[1]);

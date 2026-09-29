@@ -1,6 +1,6 @@
 import type { MobileEnvironment } from "../../application/contracts";
 import { createAShellCommandBridge } from "./ashell-command-bridge";
-import { requireAShellJsc } from "./ashell-globals";
+import { requireAShellJsc, type AShellJsc } from "./ashell-globals";
 import { createAShellHttpPort } from "./ashell-http-port";
 import { createAShellPlayerPort } from "./ashell-player-port";
 import { createAShellStateStore } from "./ashell-state-store";
@@ -12,8 +12,8 @@ const MOBILE_ARGV_COUNT_PATH = ".runtime/argv-count";
 const MOBILE_ARGV_PREFIX = ".runtime/argv-";
 const MOBILE_ARGV_LIMIT = 32;
 
-export function createMobileEnvironment(jscHost: unknown = globalThis.jsc): MobileEnvironment {
-  const jsc = requireAShellJsc(jscHost);
+export function createMobileEnvironment(jscHost?: AShellJsc): MobileEnvironment {
+  const jsc = requireAShellJsc(jscHost ?? globalThis.jsc);
   const bridge = createAShellCommandBridge(jsc);
   return {
     http: createAShellHttpPort({ jsc, bridge }),
@@ -42,8 +42,8 @@ function removeStagedMobileArgv(
   return removed;
 }
 
-export function mobileArgv(jscHost: unknown = globalThis.jsc): readonly string[] {
-  const jsc = requireAShellJsc(jscHost);
+export function mobileArgv(jscHost?: AShellJsc): readonly string[] {
+  const jsc = requireAShellJsc(jscHost ?? globalThis.jsc);
   let argv: string[] | undefined;
   let cleanupCount = MOBILE_ARGV_LIMIT;
   try {
@@ -68,6 +68,9 @@ export function mobileArgv(jscHost: unknown = globalThis.jsc): readonly string[]
 }
 
 export function mobileVersion(): string {
+  // The bundler injects __KUNAI_MOBILE_VERSION__ via define; unbundled runs
+  // leave the identifier undeclared, so typeof is the only safe probe.
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   return typeof __KUNAI_MOBILE_VERSION__ === "string" ? __KUNAI_MOBILE_VERSION__ : "0.0.0-dev";
 }
 

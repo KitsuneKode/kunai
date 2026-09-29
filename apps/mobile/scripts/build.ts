@@ -61,14 +61,19 @@ function requireMetafile(
   return result.metafile;
 }
 
+function nonEmptyText<T>(value: T): value is T & string {
+  return String(value) === value && String(value).length > 0;
+}
+
 async function releaseVersion(): Promise<string> {
-  const packageJson = JSON.parse(
+  const raw: unknown = JSON.parse(
     await readFile(join(REPOSITORY_ROOT, "apps/cli/package.json"), "utf8"),
-  ) as { version?: unknown };
-  if (typeof packageJson.version !== "string" || packageJson.version.length === 0) {
+  );
+  const version = raw instanceof Object && "version" in raw ? raw.version : undefined;
+  if (!nonEmptyText(version)) {
     throw new Error("[mobile-build] release version is unavailable");
   }
-  return packageJson.version;
+  return version;
 }
 
 async function buildAndroid(target: MobileTarget, version: string): Promise<void> {
@@ -138,7 +143,7 @@ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
     throw new Error(`[mobile-build] forbidden iOS output tokens: ${forbiddenTokens.join(", ")}`);
   }
 
-  const host = globalThis as typeof globalThis & { jsc?: unknown };
+  const host = globalThis;
   const previousJsc = host.jsc;
   const previousLog = console.log;
   const output: string[] = [];
@@ -178,8 +183,7 @@ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
     await waitForMobileHostProof(hostProofCompleted, "[mobile-build] fake JSC host proof");
   } finally {
     console.log = previousLog;
-    if (previousJsc === undefined) delete host.jsc;
-    else host.jsc = previousJsc;
+    host.jsc = previousJsc;
   }
   if (!output.some((line) => line.includes("Usage: kunai-mobile"))) {
     throw new Error("[mobile-build] fake JSC harness did not reach mobile help output");

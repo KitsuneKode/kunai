@@ -17,7 +17,9 @@ const DIST = join(MOBILE_ROOT, "dist");
 // Bun can intentionally masquerade as `node` inside a nested package script.
 // Pin the real Node executable that Bun exposes to lifecycle scripts so this
 // suite qualifies the runtime shipped to Termux rather than Bun compatibility.
-const NODE_RUNTIME = process.env.NODE ?? "node";
+function nodeRuntime(): string {
+  return process.env.NODE ?? "node";
+}
 // SAFETY: The build script writes this generated manifest from a MobileBuildMetadata value,
 // and the tests below independently verify its complete target and artifact fields.
 const BUILD_METADATA = JSON.parse(
@@ -57,6 +59,8 @@ describe("mobile build artifacts", () => {
   });
 
   test("declares every emitted artifact as a Turbo build output", () => {
+    // SAFETY: turbo.json is a repo-controlled config; the test only reads the
+    // build task's outputs list and fails loudly if the shape drifts.
     const config = Bun.JSONC.parse(readFileSync(join(MOBILE_ROOT, "../../turbo.json"), "utf8")) as {
       tasks: { build: { outputs: string[] } };
     };
@@ -95,8 +99,8 @@ describe("mobile build artifacts", () => {
 
   test("runs help and version from the emitted artifact under Node", () => {
     const artifact = join(DIST, "android/kunai-mobile-android.mjs");
-    const help = spawnSync(NODE_RUNTIME, [artifact, "--help"], { encoding: "utf8" });
-    const version = spawnSync(NODE_RUNTIME, [artifact, "--version"], { encoding: "utf8" });
+    const help = spawnSync(nodeRuntime(), [artifact, "--help"], { encoding: "utf8" });
+    const version = spawnSync(nodeRuntime(), [artifact, "--version"], { encoding: "utf8" });
 
     expect(help.status).toBe(0);
     expect(help.stderr).toBe("");
@@ -110,7 +114,7 @@ describe("mobile build artifacts", () => {
     const artifact = join(DIST, "android/kunai-mobile-android.mjs");
     const rejectedUrl = "http://user:secret@media.example/video.m3u8#fragment";
     const result = spawnSync(
-      NODE_RUNTIME,
+      nodeRuntime(),
       [
         artifact,
         "--host-proof",
@@ -140,7 +144,7 @@ describe("mobile build artifacts", () => {
         stderr: string;
       }>((resolve, reject) => {
         const child = spawn(
-          NODE_RUNTIME,
+          nodeRuntime(),
           [
             artifact,
             "--host-proof",
@@ -197,12 +201,12 @@ describe("mobile build artifacts", () => {
     try {
       let competitor: ReturnType<typeof spawnSync> | undefined;
       const code = await new Promise<number | null>((resolve, reject) => {
-        const child = spawn(NODE_RUNTIME, args, { env, stdio: ["pipe", "pipe", "pipe"] });
+        const child = spawn(nodeRuntime(), args, { env, stdio: ["pipe", "pipe", "pipe"] });
         let output = "";
         child.stdout.on("data", (chunk) => {
           output += String(chunk);
           if (competitor || !output.includes("Continue? ")) return;
-          competitor = spawnSync(NODE_RUNTIME, args, { env, input: "0\n", encoding: "utf8" });
+          competitor = spawnSync(nodeRuntime(), args, { env, input: "0\n", encoding: "utf8" });
           child.stdin.end("0\n");
         });
         child.once("error", reject);
@@ -210,7 +214,7 @@ describe("mobile build artifacts", () => {
       });
       expect(code).toBe(0);
       expect(competitor?.status).toBe(1);
-      expect(spawnSync(NODE_RUNTIME, args, { env, input: "0\n" }).status).toBe(0);
+      expect(spawnSync(nodeRuntime(), args, { env, input: "0\n" }).status).toBe(0);
       expect(
         JSON.parse(readFileSync(join(home, ".local/share/kunai-mobile/mobile-state.json"), "utf8"))
           .hostProofRuns,
@@ -224,7 +228,7 @@ describe("mobile build artifacts", () => {
     const home = mkdtempSync(join(tmpdir(), "kunai-mobile-node-cancel-"));
     const artifact = join(DIST, "android/kunai-mobile-android.mjs");
     const child = spawn(
-      NODE_RUNTIME,
+      nodeRuntime(),
       [
         artifact,
         "--host-proof",

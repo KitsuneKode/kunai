@@ -54,6 +54,9 @@ export function mobileArgv(): readonly string[] {
 }
 
 export function mobileVersion(): string {
+  // The bundler injects __KUNAI_MOBILE_VERSION__ via define; unbundled runs
+  // leave the identifier undeclared, so typeof is the only safe probe.
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   return typeof __KUNAI_MOBILE_VERSION__ === "string" ? __KUNAI_MOBILE_VERSION__ : "0.0.0-dev";
 }
 

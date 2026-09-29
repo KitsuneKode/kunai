@@ -22,13 +22,18 @@ const REQUIRED_METHODS = [
   "system",
 ] as const;
 
-export function requireAShellJsc(value: unknown = globalThis.jsc): AShellJsc {
-  if (value === null || typeof value !== "object") {
+export function requireAShellJsc<T>(value?: T): AShellJsc {
+  const host = value ?? globalThis.jsc;
+  if (!(host instanceof Object)) {
     throw new Error("a-Shell jsc host is unavailable");
   }
-  const candidate = value as Record<string, unknown>;
-  if (REQUIRED_METHODS.some((method) => typeof candidate[method] !== "function")) {
+  // SAFETY: candidate is the injected host global; each method is probed
+  // before the AShellJsc view is returned.
+  const candidate = host as Partial<AShellJsc>;
+  if (REQUIRED_METHODS.some((method) => !(candidate[method] instanceof Function))) {
     throw new Error("a-Shell jsc host is incomplete");
   }
-  return value as AShellJsc;
+  // SAFETY: every method on AShellJsc was probed above; the shape assertion
+  // only changes the static view of the checked object.
+  return candidate as AShellJsc;
 }

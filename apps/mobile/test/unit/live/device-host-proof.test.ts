@@ -85,8 +85,7 @@ describe("mobile physical-device evidence", () => {
     const evidence = androidEvidence();
     expect(validateMobileDeviceEvidence(evidence)).toEqual(evidence);
     expect(formatMobileDeviceEvidenceRow(evidence)).toContain("runtime=v22.18.0");
-    const missing: Record<string, unknown> = { ...evidence };
-    delete missing.runtimeVersion;
+    const { runtimeVersion: _runtimeVersion, ...missing } = evidence;
     expect(() => validateMobileDeviceEvidence(missing)).toThrow("exact fields");
     for (const runtimeVersion of ["", " ", 22, "x".repeat(65)]) {
       expect(() => validateMobileDeviceEvidence({ ...evidence, runtimeVersion })).toThrow(
@@ -114,8 +113,7 @@ describe("mobile physical-device evidence", () => {
   });
 
   test("rejects missing, unknown, secret-shaped, URL-shaped, and query-shaped data", () => {
-    const missing: Record<string, unknown> = { ...androidEvidence() };
-    delete missing.http;
+    const { http: _http, ...missing } = androidEvidence();
     expect(() => validateMobileDeviceEvidence(missing)).toThrow("exact fields");
 
     expect(() =>

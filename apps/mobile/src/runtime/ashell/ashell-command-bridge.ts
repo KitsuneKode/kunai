@@ -18,9 +18,9 @@ export function createAShellCommandBridge(jsc: AShellJsc): AShellCommandBridge {
       const command = HELPER_COMMANDS[name];
       if (command === undefined) throw new Error("Unsupported helper");
       const status = jsc.system(command);
-      if (typeof status === "number" && Number.isSafeInteger(status)) return status;
-      if (typeof status === "string" && /^-?\d+$/u.test(status)) {
-        const numericStatus = Number(status);
+      const text = String(status);
+      if (/^-?\d+$/u.test(text)) {
+        const numericStatus = Number(text);
         if (Number.isSafeInteger(numericStatus)) return numericStatus;
       }
       throw new Error("Invalid helper status");

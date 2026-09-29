@@ -48,14 +48,21 @@ const EVIDENCE_FIELD_SET = new Set<string>(EVIDENCE_FIELDS);
 const RESULT_FIELDS = ["terminalInput", "http", "stateRecovery", "cancellation"] as const;
 const MAX_EVIDENCE_BYTES = 64 * 1024;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+type JsonObject = { readonly [key: string]: JsonValue };
+type JsonValue = undefined | string | number | boolean | null | readonly JsonValue[] | JsonObject;
+
+function isJsonObject<T>(value: T): value is T & JsonObject {
+  return value instanceof Object && !Array.isArray(value);
 }
 
-function assertRedactedStrings(value: Record<string, unknown>): void {
+function isJsonString<T>(value: T): value is T & string {
+  return String(value) === value;
+}
+
+function assertRedactedStrings(value: JsonObject): void {
   for (const field of EVIDENCE_FIELDS) {
     const item = value[field];
-    if (typeof item !== "string") continue;
+    if (!isJsonString(item)) continue;
     if (
       [...item].some((character) => {
         const codePoint = character.codePointAt(0);
@@ -70,7 +77,7 @@ function assertRedactedStrings(value: Record<string, unknown>): void {
   }
 }
 
-function assertExactFields(value: Record<string, unknown>): void {
+function assertExactFields(value: JsonObject): void {
   const keys = Object.keys(value);
   const sensitive = keys.find((key) => /authorization|cookie|password|secret|token/iu.test(key));
   if (sensitive) throw new Error("Mobile device evidence contains a sensitive field");
@@ -80,38 +87,37 @@ function assertExactFields(value: Record<string, unknown>): void {
 }
 
 function assertEnum<T extends string>(
-  value: unknown,
+  value: JsonValue,
   field: string,
   allowed: readonly T[],
 ): asserts value is T {
-  if (typeof value !== "string" || !allowed.includes(value as T)) {
+  if (!isJsonString(value) || !allowed.some((entry) => entry === value)) {
     throw new Error(`Mobile device evidence has an invalid ${field}`);
   }
 }
 
-function assertBoolean(value: unknown, field: string): asserts value is boolean {
-  if (typeof value !== "boolean") {
+function assertBoolean(value: JsonValue, field: string): asserts value is boolean {
+  if (value !== true && value !== false) {
     throw new Error(`Mobile device evidence has an invalid ${field}`);
   }
 }
 
-function assertRecordedAt(value: unknown): asserts value is string {
-  if (typeof value !== "string")
-    throw new Error("Mobile device evidence has an invalid recordedAt");
+function assertRecordedAt(value: JsonValue): asserts value is string {
+  if (!isJsonString(value)) throw new Error("Mobile device evidence has an invalid recordedAt");
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== value) {
     throw new Error("Mobile device evidence has an invalid recordedAt");
   }
 }
 
-function assertVersionString(value: unknown, field: string): asserts value is string {
-  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,63}$/u.test(value)) {
+function assertVersionString(value: JsonValue, field: string): asserts value is string {
+  if (!isJsonString(value) || !/^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,63}$/u.test(value)) {
     throw new Error(`Mobile device evidence has an invalid ${field}`);
   }
 }
 
-export function validateMobileDeviceEvidence(value: unknown): MobileDeviceEvidence {
-  if (!isRecord(value)) throw new Error("Mobile device evidence must be a JSON object");
+export function validateMobileDeviceEvidence(value: JsonValue): MobileDeviceEvidence {
+  if (!isJsonObject(value)) throw new Error("Mobile device evidence must be a JSON object");
   assertExactFields(value);
   assertRedactedStrings(value);
 
@@ -121,7 +127,7 @@ export function validateMobileDeviceEvidence(value: unknown): MobileDeviceEviden
   assertVersionString(value.kunaiVersion, "kunaiVersion");
   assertEnum(value.platform, "platform", ["android", "ios"]);
   if (
-    typeof value.osVersion !== "string" ||
+    !isJsonString(value.osVersion) ||
     !/^[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,63}$/u.test(value.osVersion)
   ) {
     throw new Error("Mobile device evidence has an invalid osVersion");
@@ -137,10 +143,7 @@ export function validateMobileDeviceEvidence(value: unknown): MobileDeviceEviden
   assertVersionString(value.playerVersion, "playerVersion");
   assertEnum(value.deviceClass, "deviceClass", ["physical"]);
   assertEnum(value.artifactTarget, "artifactTarget", ["android-termux-node", "ios-ashell"]);
-  if (
-    typeof value.artifactSetSha256 !== "string" ||
-    !/^[a-f0-9]{64}$/u.test(value.artifactSetSha256)
-  ) {
+  if (!isJsonString(value.artifactSetSha256) || !/^[a-f0-9]{64}$/u.test(value.artifactSetSha256)) {
     throw new Error("Mobile device evidence has an invalid artifactSetSha256");
   }
   for (const field of RESULT_FIELDS) assertEnum(value[field], field, ["passed", "failed"]);
@@ -164,6 +167,8 @@ export function validateMobileDeviceEvidence(value: unknown): MobileDeviceEviden
     throw new Error("iOS physical evidence requires an arm64 device");
   }
 
+  // SAFETY: every field above was asserted against its exact contract; the
+  // final cast names the fully validated shape.
   return value as MobileDeviceEvidence;
 }
 
@@ -176,10 +181,10 @@ export function mobileDeviceEvidencePassed(evidence: MobileDeviceEvidence): bool
 }
 
 export function validateMobileEvidenceMatrix(
-  metadataValue: unknown,
-  evidenceValues: readonly unknown[],
+  metadataValue: JsonValue,
+  evidenceValues: readonly JsonValue[],
 ): readonly MobileDeviceEvidence[] {
-  if (!isRecord(metadataValue) || metadataValue.schemaVersion !== 2) {
+  if (!isJsonObject(metadataValue) || metadataValue.schemaVersion !== 2) {
     throw new Error("Mobile build metadata schemaVersion must be 2");
   }
   assertVersionString(metadataValue.version, "build metadata version");
@@ -210,12 +215,12 @@ export function validateMobileEvidenceMatrix(
       throw new Error("Mobile device evidence does not match the Kunai version");
     }
     const matches = metadataValue.artifactSets.filter(
-      (candidate): candidate is Record<string, unknown> =>
-        isRecord(candidate) && candidate.target === row.artifactTarget,
+      (candidate): candidate is JsonObject =>
+        isJsonObject(candidate) && candidate.target === row.artifactTarget,
     );
     if (
       matches.length !== 1 ||
-      typeof matches[0]?.sha256 !== "string" ||
+      !isJsonString(matches[0]?.sha256) ||
       matches[0].sha256 !== row.artifactSetSha256
     ) {
       throw new Error("Mobile device evidence does not match the generated artifact set");
@@ -250,13 +255,13 @@ export function formatMobileDeviceEvidenceRow(evidence: MobileDeviceEvidence): s
   ].join(" | ");
 }
 
-async function readJson(path: string): Promise<unknown> {
+async function readJson(path: string): Promise<JsonValue> {
   const file = Bun.file(path);
   if (!(await file.exists()) || file.size > MAX_EVIDENCE_BYTES) {
     throw new Error("Mobile qualification input is missing or too large");
   }
   try {
-    return JSON.parse(await file.text()) as unknown;
+    return JSON.parse(await file.text());
   } catch {
     throw new Error("Mobile qualification input is not valid JSON");
   }

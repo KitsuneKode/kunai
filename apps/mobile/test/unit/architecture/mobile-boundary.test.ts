@@ -54,9 +54,11 @@ function describeEdge(edge: ImportEdge): string {
 
 describe("mobile application boundary", () => {
   test("is a private declared workspace", () => {
+    // SAFETY: repo-controlled package.json; the test asserts the fields it reads.
     const rootPackage = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
       workspaces: { packages: string[] };
     };
+    // SAFETY: repo-controlled package.json; the test asserts the fields it reads.
     const mobilePackage = JSON.parse(
       readFileSync(join(REPO_ROOT, "apps/mobile/package.json"), "utf8"),
     ) as { name?: string; private?: boolean };

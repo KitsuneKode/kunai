@@ -45,6 +45,7 @@ describe("a-Shell fixed command bridge", () => {
     const bridge = createAShellCommandBridge(fakeJsc(systemCommands));
     const answer = "$(touch /tmp/nope); token=secret";
 
+    // SAFETY: deliberately out-of-contract input probes the helper allowlist.
     expect(() => bridge.runFixedHelper("../../bin/sh" as never)).toThrow("Unsupported helper");
     expect(systemCommands.join(" ")).not.toContain(answer);
     expect(systemCommands).toHaveLength(0);

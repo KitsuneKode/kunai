@@ -1,7 +1,7 @@
 import type { MobileHttpPort, MobileHttpRequest } from "../../application/contracts";
 import { parsePortableHttpUrl } from "../../application/portable-url";
 
-type TimeoutToken = unknown;
+type TimeoutToken = ReturnType<typeof setTimeout> | number;
 type AndroidFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export type NodeHttpRuntime = {
@@ -46,7 +46,7 @@ export function createNodeHttpPort(overrides: Partial<NodeHttpRuntime> = {}): Mo
   const runtime: NodeHttpRuntime = {
     fetch: (input, init) => fetch(input, init),
     scheduleTimeout: (callback, milliseconds) => setTimeout(callback, milliseconds),
-    cancelTimeout: (token) => clearTimeout(token as ReturnType<typeof setTimeout>),
+    cancelTimeout: (token) => clearTimeout(token),
     ...overrides,
   };
 

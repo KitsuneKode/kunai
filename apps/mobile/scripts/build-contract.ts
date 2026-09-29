@@ -23,9 +23,14 @@ export const MOBILE_TARGETS: readonly MobileTarget[] = [
   },
 ] as const;
 
+export type MobileBuildMetafileEntry = {
+  readonly bytes: number;
+  readonly imports?: readonly { readonly path: string; readonly kind?: string }[];
+};
+
 export type MobileBuildMetafile = {
-  readonly inputs: Readonly<Record<string, unknown>>;
-  readonly outputs?: Readonly<Record<string, unknown>>;
+  readonly inputs: Readonly<Record<string, MobileBuildMetafileEntry>>;
+  readonly outputs?: Readonly<Record<string, MobileBuildMetafileEntry>>;
 };
 
 export type MobileArtifactMetadata = {
