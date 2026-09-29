@@ -14,6 +14,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import type { ProviderModule, ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
+
 import { allmangaProviderModule } from "../src/allmanga/direct";
 import { anidbProviderModule } from "../src/anidb/direct";
 import { hianimeProviderModule } from "../src/hianime/direct";
@@ -54,50 +56,59 @@ interface StatusFile {
   readonly providers: readonly ProviderRow[];
 }
 
-const resolveContext = (signal: AbortSignal) =>
-  ({
-    fetchImpl: fetch,
-    now: () => new Date(),
-    signal,
-    cache: { read: async () => null, write: async () => {} },
-    endpointHealth: {
-      isDown: () => false,
-      shouldTry: () => true,
-      recordSuccess: () => {},
-      recordFailure: () => {},
-    },
-  }) as never;
+const resolveContext = (signal: AbortSignal): ProviderRuntimeContext => ({
+  fetch: {
+    runtime: "direct-http",
+    fetch: (input, init) => fetch(input, init),
+  },
+  now: () => new Date().toISOString(),
+  signal,
+  cache: {
+    read: async () => null,
+    write: async () => {},
+  },
+  endpointHealth: {
+    shouldTry: () => true,
+    recordSuccess: () => {},
+    recordFailure: () => {},
+  },
+});
 
-const MOVIE_INPUT = {
+const MOVIE_INPUT: ProviderResolveInput = {
   allowedRuntimes: ["direct-http"],
+  intent: "play",
   mediaKind: "movie",
-  title: { id: "tmdb:550", kind: "movie", title: "Fight Club", tmdbId: 550 },
+  title: { id: "tmdb:550", kind: "movie", title: "Fight Club", tmdbId: "550" },
   episode: { season: 1, episode: 1 },
-} as const;
+};
 
-const ONE_PIECE_ANILIST = {
+const ONE_PIECE_ANILIST: ProviderResolveInput = {
   allowedRuntimes: ["direct-http"],
+  intent: "play",
   mediaKind: "anime",
   title: { id: "anilist:21", kind: "anime", title: "One Piece", anilistId: "21" },
   episode: { season: 1, episode: 1 },
-} as const;
+};
 
-const ALLMANGA_ONE_PIECE = {
+const ALLMANGA_ONE_PIECE: ProviderResolveInput = {
   allowedRuntimes: ["direct-http"],
+  intent: "play",
   mediaKind: "anime",
   title: { id: "allanime:ReooPAxPMsHM4KPMY", kind: "anime", title: "One Piece" },
   episode: { season: 1, episode: 1 },
-} as const;
+};
 
-const ANIDB_ONE_PIECE = {
+const ANIDB_ONE_PIECE: ProviderResolveInput = {
   allowedRuntimes: ["direct-http"],
+  intent: "play",
   mediaKind: "anime",
   title: { id: "one-piece-69", kind: "anime", title: "One Piece" },
   episode: { season: 1, episode: 1 },
-} as const;
+};
 
-const YOUTUBE_INPUT = {
+const YOUTUBE_INPUT: ProviderResolveInput = {
   allowedRuntimes: ["direct-http"],
+  intent: "play",
   mediaKind: "video",
   title: {
     id: "youtube:dQw4w9WgXcQ",
@@ -105,13 +116,13 @@ const YOUTUBE_INPUT = {
     title: "Rick Astley - Never Gonna Give You Up",
   },
   episode: { season: 1, episode: 1 },
-} as const;
+};
 
 interface ProbeSpec {
   readonly id: string;
-  readonly module: { resolve: (input: unknown, context: unknown) => Promise<unknown> };
+  readonly module: Pick<ProviderModule, "resolve">;
   readonly frontDoor: string;
-  readonly input: unknown;
+  readonly input: ProviderResolveInput;
 }
 
 const PROBES: readonly ProbeSpec[] = [
@@ -181,12 +192,17 @@ async function probeFrontDoor(url: string): Promise<number | null> {
   }
 }
 
+interface Classification {
+  status: SweepStatus;
+  note: string;
+}
+
 function classify(
   upstreamHttp: number | null,
   resolveStatus: string,
   streams: number,
   firstFailureCode: string | undefined,
-): { status: SweepStatus; note: string } {
+): Classification {
   if (upstreamHttp === null && resolveStatus !== "resolved") {
     return { status: "dead", note: "upstream unreachable" };
   }
@@ -213,26 +229,21 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
   const started = Date.now();
   const signal = AbortSignal.timeout(RESOLVE_TIMEOUT_MS);
   try {
-    const result = (await spec.module.resolve(spec.input, resolveContext(signal))) as Record<
-      string,
-      unknown
-    >;
+    const result = await spec.module.resolve(spec.input, resolveContext(signal));
     const resolveMs = Date.now() - started;
-    const status = String(result.status ?? "unknown");
-    const streams = (result.streams ?? []) as Record<string, unknown>[];
-    const failures = (result.failures ?? []) as { code?: string; message?: string }[];
+    const status = result.status;
+    const streams = result.streams;
+    const failures = result.failures;
     const qualities = [
-      ...new Set(
-        streams.map((s) => String(s.qualityHint ?? s.quality ?? "")).filter((q) => q.length > 0),
-      ),
+      ...new Set(streams.map((s) => s.qualityLabel ?? "").filter((q) => q.length > 0)),
     ];
     const servers = [
-      ...new Set(streams.map((s) => String(s.serverLabel ?? "")).filter((s) => s.length > 0)),
+      ...new Set(streams.map((s) => s.serverName ?? "").filter((s) => s.length > 0)),
     ];
-    const audio = [...new Set(streams.flatMap((s) => (s.audioLanguages ?? []) as string[]))];
+    const audio = [...new Set(streams.flatMap((s) => s.audioLanguages ?? []))];
     const subtitleLanes =
-      ((result.subtitles ?? []) as unknown[]).length ||
-      streams.filter((s) => ((s.subtitles ?? []) as unknown[]).length > 0).length;
+      result.subtitles.length ||
+      streams.filter((s) => (s.subtitleLanguages?.length ?? 0) > 0).length;
     const classified = classify(upstreamHttp, status, streams.length, failures[0]?.code);
     if (status !== "resolved" && /captcha|waf|challenge/i.test(failures[0]?.message ?? "")) {
       classified.status = "blocked";

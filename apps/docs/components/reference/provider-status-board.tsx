@@ -1,6 +1,6 @@
 import { providerStatus, type ProviderSweepStatus } from "@/lib/provider-status";
 
-const STATUS_STYLE: Record<ProviderSweepStatus, { label: string; className: string }> = {
+const STATUS_STYLE = {
   healthy: {
     label: "Healthy",
     className: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
@@ -21,15 +21,15 @@ const STATUS_STYLE: Record<ProviderSweepStatus, { label: string; className: stri
     label: "Unreachable",
     className: "bg-red-500/15 text-red-600 dark:text-red-400",
   },
-};
+} satisfies Record<ProviderSweepStatus, { label: string; className: string }>;
 
-const ORDER: Record<ProviderSweepStatus, number> = {
+const ORDER = {
   healthy: 0,
   degraded: 1,
   blocked: 2,
   down: 3,
   dead: 4,
-};
+} satisfies Record<ProviderSweepStatus, number>;
 
 function checkedAgo(iso: string): string {
   const hours = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000));

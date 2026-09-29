@@ -23,6 +23,8 @@ export type ProviderStatusFile = {
   readonly providers: readonly ProviderStatusRow[];
 };
 
+// SAFETY: generated-provider-status.json is written by provider-status-sweep.ts
+// with exactly this schema; the sweep is the single producer.
 const file = generated as ProviderStatusFile;
 
 export const providerStatus: ProviderStatusFile = file;
