@@ -45,7 +45,7 @@ void cleanupOldVersions(layout);
 
 A rejected fire-and-forget promise is an `unhandledRejection`, which
 `main.ts:1222-1229` escalates to `getShutdownCoordinator().request({ fatal: true })`.
-The failure lands *after a successful upgrade*: the new version is installed
+The failure lands _after a successful upgrade_: the new version is installed
 and activated, then the process dies.
 
 **The class, not the instance.** `main.ts` makes every unhandled rejection
@@ -53,7 +53,7 @@ fatal, and `void f()` is the codebase's fire-and-forget idiom — there are
 ~107 `void` callsites in `apps/cli/src` + `packages/*/src`. Most are safe by
 construction (`MpvIpcSession.send` is resolve-only — `mpv-ipc.ts:246-288`
 funnels every failure through `finish({ok:false})`); some are
-self-contained handlers. But nothing *distinguishes* a resolve-only `void`
+self-contained handlers. But nothing _distinguishes_ a resolve-only `void`
 from a can-reject `void` — a reader has to trace every callee to know, and a
 new one can regress silently. `typescript/no-floating-promises` exists in the
 installed oxlint but `void` is its sanctioned escape hatch, so no lint rule
@@ -71,23 +71,25 @@ its probe in try/catch — `lock-owner-identity.ts:59-99`).
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Find all `void` sites | `grep -rnE '^\s*void [a-zA-Z_]' apps/cli/src packages/*/src` | the sweep's working list (~107) |
-| Focused tests | `bun run --cwd apps/cli test:file test/unit/services/update/native-installer/install-latest.test.ts` | all pass |
-| Full gates | `bun run typecheck --force && bun run test --force` | exit 0 |
+| Purpose               | Command                                                                                              | Expected                        |
+| --------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Find all `void` sites | `grep -rnE '^\s*void [a-zA-Z_]' apps/cli/src packages/*/src`                                         | the sweep's working list (~107) |
+| Focused tests         | `bun run --cwd apps/cli test:file test/unit/services/update/native-installer/install-latest.test.ts` | all pass                        |
+| Full gates            | `bun run typecheck --force && bun run test --force`                                                  | exit 0                          |
 
 ## Scope
 
 **In scope:**
+
 - `apps/cli/src/services/update/native-installer/cleanup-versions.ts`
 - `apps/cli/src/services/update/native-installer/install-latest.ts`
 - The `void` callsite sweep + convention write-up (engineering-guide.md)
 - Matching unit tests
 
 **Out of scope:**
+
 - Lock semantics in `version-lock.ts` — `tryAcquireVersionLock` throwing on
-  `mkdir` is correct for its *named* callers; the fix belongs at the cleanup
+  `mkdir` is correct for its _named_ callers; the fix belongs at the cleanup
   boundary.
 - Retention policy itself.
 - Enabling `typescript/no-floating-promises` — evaluated and rejected: `void`
@@ -110,7 +112,7 @@ if (!lock.acquired) return true;
 await lock.release();
 ```
 
-The direction matters: on probe failure, treat the version as *protected*.
+The direction matters: on probe failure, treat the version as _protected_.
 That makes "errors are swallowed" a true statement for every caller, present
 and future — not just these two.
 
@@ -118,7 +120,7 @@ and future — not just these two.
 
 Add `.catch(() => {})` at `install-latest.ts:340` so it matches `main.ts:743`
 exactly. Belt-and-suspenders is the codebase's own pattern here (the docstring
-claims the property *and* main.ts still catches).
+claims the property _and_ main.ts still catches).
 
 **Verify:** `bun run --cwd apps/cli typecheck` → exit 0.
 
@@ -152,7 +154,7 @@ This is the deliverable that prevents the next one.
 
 - New: `cleanupOldVersions` resolves when `locksDir` is uncreatable (layout
   whose parent path is a regular file → mkdir ENOTDIR → assert the promise
-  *resolves*; deterministic repro of the race, no `unhandledRejection`
+  _resolves_; deterministic repro of the race, no `unhandledRejection`
   machinery needed).
 - Regression: retention still deletes beyond `VERSION_RETENTION_COUNT` on the
   happy path (existing tests should cover this — check before writing a
@@ -172,7 +174,7 @@ This is the deliverable that prevents the next one.
   fix may already have landed differently.
 - `tryAcquireVersionLock` signature changed (e.g. returns a result type
   instead of throwing) — adapt Step 1 to the new contract.
-- The sweep finds a *large* number of can-reject sites (say >10) — stop and
+- The sweep finds a _large_ number of can-reject sites (say >10) — stop and
   reassess scope; that would be a different-sized problem than this plan
   assumes.
 

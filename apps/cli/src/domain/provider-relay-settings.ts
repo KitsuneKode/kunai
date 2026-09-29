@@ -4,9 +4,18 @@ import {
   resolveEffectiveProviderRelayConfig,
 } from "@kunai/relay";
 
+/**
+ * Every production provider whose manifest declares `relayProfile`. A contract
+ * test pins this list against `loadProductionProviderModules()` — hianime was
+ * omitted here once, which left it permanently relay-routed with no way to
+ * turn it off and made the "all relay-capable" summary a lie (#460).
+ */
 export const RELAY_CAPABLE_PROVIDER_OPTIONS = [
   { value: "anidb", label: "AniDB" },
   { value: "allanime", label: "AllAnime" },
+  { value: "animegg", label: "AnimeGG" },
+  { value: "hianime", label: "HiAnime" },
+  { value: "kickassanime", label: "KickAssAnime" },
   { value: "miruro", label: "Miruro" },
   { value: "videasy", label: "Videasy" },
   { value: "vidlink", label: "VidLink" },

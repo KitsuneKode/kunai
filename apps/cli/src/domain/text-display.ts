@@ -94,13 +94,24 @@ export function truncateAtWord(value: string, maxLength: number): string {
   if (measureColumns(value) <= maxLength) return value;
   if (maxLength <= 1) return ELLIPSIS;
 
+  // The budget is in terminal columns, so the cut must walk columns too:
+  // `value.slice(0, budget)` counts UTF-16 code units, which lets CJK emit up
+  // to twice the budget's width and can split a surrogate pair mid-character.
   const budget = maxLength - 1;
-  const slice = value.slice(0, budget);
-  if (value[budget] === " ") return `${slice.trimEnd()}${ELLIPSIS}`;
+  let columns = 0;
+  let output = "";
+  for (const char of value) {
+    const width = charColumns(char);
+    if (columns + width > budget) break;
+    output += char;
+    columns += width;
+  }
 
-  const lastSpace = slice.lastIndexOf(" ");
+  // Stopped exactly at a word boundary — nothing to back off to.
+  if (value[output.length] === " ") return `${output.trimEnd()}${ELLIPSIS}`;
+  const lastSpace = output.lastIndexOf(" ");
   if (lastSpace <= 0) return truncateLine(value, maxLength);
-  return `${slice.slice(0, lastSpace)}${ELLIPSIS}`;
+  return `${output.slice(0, lastSpace)}${ELLIPSIS}`;
 }
 
 export function wrapText(value: string, width: number, maxLines: number): string[] {

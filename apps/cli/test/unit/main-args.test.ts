@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { buildCliHelpText, parseCliArgs as parseArgs } from "@/cli-args";
+import { buildCliHelpText, CliUsageError, parseCliArgs as parseArgs } from "@/cli-args";
 
 test("buildCliHelpText describes canonical launch flags", () => {
   const help = buildCliHelpText("0.0.0-test");
@@ -149,6 +149,31 @@ test("parseArgs accepts a trusted --open share URL", () => {
   expect(args.handoffUrl).toBeUndefined();
 });
 
+test("parseArgs rejects --open combined with --handoff-url", () => {
+  // Accepting both would silently upgrade whichever a tokenizing launcher
+  // smuggled into argv — the untrusted channel must never ride on the trusted
+  // one.
+  expect(() =>
+    parseArgs([
+      "--open",
+      "kunai://play?cat=tmdb%3A1399",
+      "--handoff-url",
+      "kunai://play?cat=tmdb%3A438631",
+    ]),
+  ).toThrow(CliUsageError);
+});
+
+test("parseArgs rejects whitespace inside a handoff URL", () => {
+  // Whitespace in the value means a launcher tokenized extra argv into it —
+  // refuse rather than let a smuggled flag ride in on the URL.
+  expect(() => parseArgs(["--handoff-url", "kunai://play?cat=tmdb%3A1 --jump 2"])).toThrow(
+    CliUsageError,
+  );
+  expect(() => parseArgs(["--handoff-url", "kunai://play?cat=tmdb%3A1\t--debug"])).toThrow(
+    CliUsageError,
+  );
+});
+
 test("parseArgs supports explicit local protocol handler installation", () => {
   const args = parseArgs(["--install-protocol-handler"]);
 
@@ -196,12 +221,12 @@ test("parseArgs ignores invalid --jump values without crashing", () => {
     warnings.length = 0;
     const nonNumeric = parseArgs(["-S", "Dune", "--jump", "abc"]);
     warnings.length = 0;
-    const missing = parseArgs(["-S", "Dune", "--jump"]);
 
     expect(negative.jump).toBeUndefined();
     expect(zero.jump).toBeUndefined();
     expect(nonNumeric.jump).toBeUndefined();
-    expect(missing.jump).toBeUndefined();
+    // A missing value is a usage error — distinct from a consumed-but-invalid one.
+    expect(() => parseArgs(["-S", "Dune", "--jump"])).toThrow(/--jump expected a value/);
 
     warnings.length = 0;
     parseArgs(["-S", "Dune", "--jump", "0"]);
@@ -230,12 +255,15 @@ test("parseArgs prefers an explicit -S over bare positionals", () => {
   expect(args.anime).toBe(true);
 });
 
-test("parseArgs does not let a value flag swallow a following known flag", () => {
-  // `-S` with no value before `--anime` must NOT capture "--anime" as the query.
-  const args = parseArgs(["-S", "--anime"]);
+test("parseArgs rejects a value flag followed by a known flag", () => {
+  // `-S` with no value before `--anime` is a usage error — it must neither
+  // capture "--anime" as the query nor silently drop the missing value.
+  expect(() => parseArgs(["-S", "--anime"])).toThrow(CliUsageError);
+  expect(() => parseArgs(["-S", "--anime"])).toThrow(/-S expected a value/);
+});
 
-  expect(args.search).toBeUndefined();
-  expect(args.anime).toBe(true);
+test("parseArgs rejects a value flag at end of input", () => {
+  expect(() => parseArgs(["--search"])).toThrow(/--search expected a value/);
 });
 
 test("parseArgs still consumes negative-looking values for --jump", () => {
@@ -246,11 +274,37 @@ test("parseArgs still consumes negative-looking values for --jump", () => {
   expect(args.search).toBe("Dune");
 });
 
-test("parseArgs ignores unknown flags without dropping valid ones", () => {
-  const args = parseArgs(["--definitely-not-a-flag", "-S", "Dune", "-a"]);
+test("parseArgs rejects an unknown flag as a usage error", () => {
+  expect(() => parseArgs(["--definitely-not-a-flag", "-S", "Dune", "-a"])).toThrow(CliUsageError);
+  expect(() => parseArgs(["--tpyo", "--dry-run"])).toThrow(/unknown option --tpyo/);
+});
 
-  expect(args.search).toBe("Dune");
-  expect(args.anime).toBe(true);
+test("parseArgs rejects an unknown flag without letting its value become the query", () => {
+  // `--config` is not a Kunai flag. Before strict parsing it was dropped and
+  // the next token — a filesystem path — became the search query.
+  expect(() => parseArgs(["--config", "/tmp/x.json", "--dry-run"])).toThrow(
+    /unknown option --config/,
+  );
+});
+
+test("parseArgs rejects a mistyped subcommand as a usage error", () => {
+  // `runCli` only dispatches maintenance commands in argv[0]; a near-miss in
+  // the query slot must name the command the caller probably meant instead
+  // of becoming a network search.
+  expect(() => parseArgs(["doctro"])).toThrow(/did you mean "kunai doctor"/);
+  expect(() => parseArgs(["upgarde"])).toThrow(/did you mean "kunai upgrade"/);
+});
+
+test("parseArgs rejects a subcommand buried behind flags", () => {
+  // argv[0] is "--debug", so runCli never saw "doctor" — it must not become
+  // the search query.
+  expect(() => parseArgs(["--debug", "doctor"])).toThrow(/kunai doctor/);
+});
+
+test("parseArgs still treats ordinary words and multi-word positionals as queries", () => {
+  expect(parseArgs(["shrae"]).search).toBe("shrae");
+  expect(parseArgs(["doctors", "who"]).search).toBe("doctors who");
+  expect(parseArgs(["tv"]).search).toBe("tv");
 });
 
 test("parseArgs routes --history / --offline / --continue to their bootstrap surfaces", () => {
@@ -274,6 +328,24 @@ test("parseArgs routes --history / --offline / --continue to their bootstrap sur
   expect(continuePlayback.continuePlayback).toBe(true);
   expect(continuePlayback.history).toBe(false);
   expect(continuePlayback.offline).toBe(false);
+});
+
+test("parseArgs validates -i/--id against the resolvable grammar", () => {
+  // Bare ids are numeric TMDB ids; `tmdb:`/`anilist:`/`mal:` carry positive
+  // integers and `youtube:` carries an opaque video/playlist id. Unknown
+  // namespaces (`imdb:`, `crunchyroll:`) are NOT parse errors — the resolver
+  // reports them as `id-unknown-namespace` (see direct-id-namespaces.test.ts).
+  for (const bad of ["abc", "0", "-5", "anilist:abc", "anilist:", "mal:0", "tmdb:0"]) {
+    expect(() => parseArgs(["-i", bad, "-t", "movie"])).toThrow(CliUsageError);
+  }
+  expect(() => parseArgs(["-i", "abc", "-t", "movie"])).toThrow(/invalid -i\/--id/);
+
+  expect(parseArgs(["-i", "438631", "-t", "movie"]).id).toBe("438631");
+  expect(parseArgs(["-i", "anilist:21", "-t", "tv"]).id).toBe("anilist:21");
+  expect(parseArgs(["-i", "tmdb:438631", "-t", "movie"]).id).toBe("tmdb:438631");
+  expect(parseArgs(["-i", "mal:34034"]).id).toBe("mal:34034");
+  expect(parseArgs(["-i", "youtube:dQw4w9WgXcQ"]).id).toBe("youtube:dQw4w9WgXcQ");
+  expect(parseArgs(["-i", "imdb:tt0133093", "-t", "movie"]).id).toBe("imdb:tt0133093");
 });
 
 test("--no-user-mpv-config reaches mpv as noUserConfig", () => {

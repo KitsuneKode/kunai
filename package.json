@@ -46,7 +46,7 @@
         "fumadocs-core": "^16.15.15",
         "fumadocs-mdx": "^15.4.5",
         "fumadocs-ui": "^16.15.15",
-        "motion": "^12.43.0",
+        "motion": "^13.4.4",
         "next": "^16.3.6",
         "tailwind-merge": "^3.7.0",
         "tailwindcss": "^4.3.3",
@@ -68,8 +68,10 @@
     "lint:anti-slop:changed": "bun run scripts/anti-slop-changed.ts",
     "lint:anti-slop:baseline": "bun run scripts/anti-slop-baseline.ts",
     "lint:anti-slop:baseline:update": "bun run scripts/anti-slop-baseline.ts --update",
-    "fmt": "turbo run fmt",
-    "fmt:check": "turbo run fmt:check",
+    "fmt": "turbo run fmt && bun run fmt:root",
+    "fmt:check": "turbo run fmt:check && bun run fmt:root:check",
+    "fmt:root": "oxfmt --write '*.md' '*.json' '*.toml' '*.yml' '*.yaml' .oxfmtrc.json .oxlintrc.json .oxlintrc.anti-slop.json .run.toml .gitguardian.yaml .changeset .docs .github .plans .release docs scripts test tools",
+    "fmt:root:check": "oxfmt --check '*.md' '*.json' '*.toml' '*.yml' '*.yaml' .oxfmtrc.json .oxlintrc.json .oxlintrc.anti-slop.json .run.toml .gitguardian.yaml .changeset .docs .github .plans .release docs scripts test tools",
     "test": "turbo run test",
     "test:coverage": "bun run --cwd apps/cli test:coverage",
     "sandbox": "scripts/dev-sandbox.sh",
@@ -99,8 +101,8 @@
     "test:live:offline-beta": "bun run --cwd apps/cli test:live:offline-beta",
     "test:live:videasy": "bun run --cwd apps/cli test:live:videasy",
     "test:live:videasy:suite": "bun run --cwd apps/cli test:live:videasy:suite",
-    "ci": "turbo run typecheck lint fmt:check test --summarize",
-    "ci:affected": "turbo run typecheck lint fmt:check test --affected --summarize",
+    "ci": "turbo run typecheck lint fmt:check test --summarize && bun run verify:doc-paths && bun run verify:doc-frontmatter && bun run verify:parity-references && bun run verify:doc-coverage",
+    "ci:affected": "bun run scripts/ci-affected-run.ts typecheck --summarize && bun run scripts/ci-affected-run.ts lint --summarize && bun run scripts/ci-affected-run.ts fmt:check --summarize && bun run scripts/ci-affected-run.ts test --summarize",
     "build": "turbo run build build:binary:host --filter=@kitsunekode/kunai",
     "brand:social": "bun .reference/design/brand/generate-social-cards.mjs",
     "build:binaries": "turbo run build:binaries --filter=@kitsunekode/kunai",
@@ -122,6 +124,7 @@
     "verify:doc-paths": "bun run scripts/verify-doc-paths.ts",
     "verify:doc-coverage": "bun run scripts/verify-doc-coverage.ts",
     "verify:doc-frontmatter": "bun run scripts/verify-doc-frontmatter.ts",
+    "verify:parity-references": "bun run scripts/verify-parity-references.ts",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
     "changeset": "bunx changeset",
     "version:packages": "bunx changeset version && bun run scripts/sync-npm-platform-versions.ts && bun run scripts/sync-root-changelog.ts && bun run release:notes",
@@ -163,6 +166,7 @@
     "@types/node": "catalog:",
     "fumadocs-core": "catalog:web",
     "fumadocs-ui": "catalog:web",
+    "mdast-util-to-markdown": "2.1.2",
     "ws": "^8.21.0"
   },
   "lint-staged": {
@@ -170,7 +174,7 @@
       "oxlint",
       "oxfmt --write"
     ],
-    "**/*.{json,md}": [
+    "**/*.{json,md,mdx,yml,yaml,toml}": [
       "oxfmt --write"
     ],
     "apps/cli/package.json": [
@@ -202,7 +206,7 @@
     }
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.2"
   },
   "packageManager": "bun@1.4.2",
   "trustedDependencies": [

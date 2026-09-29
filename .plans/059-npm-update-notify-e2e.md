@@ -38,11 +38,11 @@ catch the gap between unit tests and the real journey, if one exists.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Install-method detection unit tests | `bun run --cwd apps/cli test:file test/unit/services/update/` | pass |
-| Real install | `npm i -g @kitsunekode/kunai@<previous-version>` | lands on PATH |
-| Isolation | run with `storageRootEnv`-style env (sandboxed HOME/XDG) — never your live profile | config under sandbox |
+| Purpose                             | Command                                                                            | Expected             |
+| ----------------------------------- | ---------------------------------------------------------------------------------- | -------------------- |
+| Install-method detection unit tests | `bun run --cwd apps/cli test:file test/unit/services/update/`                      | pass                 |
+| Real install                        | `npm i -g @kitsunekode/kunai@<previous-version>`                                   | lands on PATH        |
+| Isolation                           | run with `storageRootEnv`-style env (sandboxed HOME/XDG) — never your live profile | config under sandbox |
 
 ## Steps
 

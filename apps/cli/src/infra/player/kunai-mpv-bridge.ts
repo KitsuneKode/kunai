@@ -1,7 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { getKunaiPaths } from "@kunai/storage";
@@ -87,11 +87,30 @@ export function buildKunaiBridgeScriptOptsArg(
   return parts.join(",");
 }
 
-/** Only temp generated keys scripts should be deleted on shutdown. */
+/**
+ * Only temp generated keys scripts should be deleted on shutdown.
+ *
+ * The shape must be exact: the file is a *direct child* of the OS temp dir
+ * whose *basename* carries the `kunai-mpv-keys-` prefix and a `.lua` suffix.
+ * The old predicate (`startsWith(tmpdir()) && path.includes(prefix)`) also
+ * matched anything inside a temp *directory* of that name, paths under
+ * `/tmp`-lookalike prefixes (`/tmpfoo/`), and non-lua files — a custom
+ * `mpvKunaiScriptPath` shaped like either would have been deleted from under
+ * the user.
+ */
 export function isEphemeralKunaiLuaScript(path: string | null | undefined): boolean {
   if (!path) return false;
-  const t = tmpdir();
-  return path.startsWith(t) && path.includes("kunai-mpv-keys-");
+  const resolved = resolve(path);
+  const tmp = resolve(tmpdir());
+  const roots = new Set([tmp]);
+  // macOS temp is a symlink (`/var/…` → `/private/var/…`); compare both spellings.
+  try {
+    roots.add(realpathSync(tmp));
+  } catch {
+    // tmpdir unreadable — the lexical spelling still applies.
+  }
+  if (!roots.has(dirname(resolved))) return false;
+  return /^kunai-mpv-keys-[^/\\]+\.lua$/.test(basename(resolved));
 }
 
 /** Duration for skip chip + delayed auto-skip (ms), from config script-opts `prompt_seconds`. */

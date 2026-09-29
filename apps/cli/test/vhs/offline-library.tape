@@ -1,6 +1,6 @@
 # Offline library + download queue — network-free (`--offline` makes no provider
 # calls). Run via: bun run --cwd apps/cli test:vhs:offline
-Output test/vhs/golden/offline-library.gif
+Output test/vhs/captures/offline-library.gif
 
 Set Width 1600
 Set Height 900

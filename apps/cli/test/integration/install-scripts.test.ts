@@ -31,6 +31,7 @@ import {
   installCommandShim,
   seedActivationLock,
   seedLifecycleLock,
+  withCommandPath,
   withoutKunaiPathOverrides,
   withReleaseFixture,
 } from "./helpers/installer-script-harness";
@@ -350,6 +351,121 @@ describe("install.sh dry-run", () => {
     });
     expect(upgrade.status).not.toBe(0);
     expect(upgrade.stderr).toContain("Unknown option");
+  });
+});
+
+describe("install.sh environment fallbacks", () => {
+  test("KUNAI_INSTALL_DRY_RUN=1 runs the dry-run path with no flag", () => {
+    const sandbox = createInstallerSandbox("install-sh-env-dry");
+    try {
+      const result = runInstallSh(["--yes", "--version", "9.8.7"], {
+        ...sandbox.env,
+        KUNAI_INSTALL_DRY_RUN: "1",
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("[dry-run]");
+      expect(existsSync(sandbox.binDir)).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("KUNAI_INSTALL_VERSION pins the release without --version", () => {
+    const sandbox = createInstallerSandbox("install-sh-env-version");
+    try {
+      const result = runInstallSh(["--dry-run", "--yes"], {
+        ...sandbox.env,
+        KUNAI_INSTALL_VERSION: "9.8.7",
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("v9.8.7");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("KUNAI_INSTALL_METHOD chooses the method without --method", () => {
+    const sandbox = createInstallerSandbox("install-sh-env-method");
+    try {
+      // install_npm gates on `require node`/`require npm` — shim both so the
+      // test does not depend on the host toolchain.
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(shimDir, "node");
+      installCommandShim(shimDir, "npm");
+      const env = withCommandPath({ ...sandbox.env, KUNAI_INSTALL_METHOD: "npm" }, shimDir);
+
+      const result = runInstallSh(["--dry-run", "--yes"], env);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("npm install -g");
+      expect(result.stdout).not.toContain("Downloading kunai-");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("KUNAI_SKIP_DEPS=1 skips the optional dependency report", () => {
+    const sandbox = createInstallerSandbox("install-sh-env-skipdeps");
+    try {
+      const result = runInstallSh(["--dry-run", "--yes", "--version", "9.8.7"], {
+        ...sandbox.env,
+        KUNAI_SKIP_DEPS: "1",
+      });
+      expect(result.status).toBe(0);
+      // Whatever this host has installed, the deps section must not run at all.
+      expect(result.stdout).not.toContain("mpv is not installed");
+      expect(result.stdout).not.toContain("already installed");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+});
+
+describe("install.sh root and stdin-execution guards", () => {
+  test("--help works under `bash -s --` — the documented pipe route", () => {
+    const result = spawnSync("bash", ["-s", "--", "--help"], {
+      input: readFileSync(INSTALL_SH, "utf8"),
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("can't read");
+    expect(result.stdout).toContain("Kunai installer");
+    expect(result.stdout).toContain("--skip-path-update");
+  });
+
+  test("refuses to install as root without the opt-in", () => {
+    const sandbox = createInstallerSandbox("install-sh-root-guard");
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(shimDir, "id", "#!/bin/sh\necho 0\n");
+      const env = withCommandPath(sandbox.env, shimDir);
+      // The shared sandbox opts installs in for root-container CI; this test
+      // exercises the guard itself.
+      delete env.KUNAI_INSTALL_ALLOW_ROOT;
+
+      const result = runInstallSh(["--yes", "--skip-deps", "--version", "9.8.7"], env);
+      expect(result.status).toBe(1);
+      expect(`${result.stdout}${result.stderr}`).toContain("Refusing to install as root");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("KUNAI_INSTALL_ALLOW_ROOT=1 lets a deliberate root install plan print", () => {
+    const sandbox = createInstallerSandbox("install-sh-root-allowed");
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(shimDir, "id", "#!/bin/sh\necho 0\n");
+      const env = withCommandPath({ ...sandbox.env, KUNAI_INSTALL_ALLOW_ROOT: "1" }, shimDir);
+
+      const result = runInstallSh(["--yes", "--skip-deps", "--version", "9.8.7", "--dry-run"], env);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Kunai installer");
+    } finally {
+      sandbox.cleanup();
+    }
   });
 });
 

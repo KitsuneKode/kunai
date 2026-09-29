@@ -117,7 +117,9 @@ export async function mapAnimeTitleToProviderNative(
   container: Container,
   mode: ShellMode,
 ): Promise<{ readonly title: TitleInfo; readonly note?: string }> {
-  const providerId = container.stateManager.getState().provider;
+  // This runs before SET_MODE lands, so the session provider can still be the
+  // movie-lane one — the anime mapping must target the lane's own provider.
+  const providerId = container.stateManager.getState().defaultProviders.anime;
   const catalogId = shareTitleCatalogIdForAnimeMapping(title);
   const searchResult: SearchResult = {
     id: catalogId,

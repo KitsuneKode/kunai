@@ -64,14 +64,13 @@ describe("@kunai/config parse boundary", () => {
     expect(merged.providerRelay).toEqual(DEFAULT_CONFIG.providerRelay);
   });
 
-  test("defaults put Videasy first in the series automatic lane", () => {
-    expect(DEFAULT_CONFIG.provider).toBe("videasy");
-    expect(DEFAULT_CONFIG.providerPriority).toEqual(["rivestream", "vidlink"]);
-    expect(DEFAULT_CONFIG.providerPriority).not.toContain("videasy");
+  test("defaults put VidLink first in the series automatic lane", () => {
+    expect(DEFAULT_CONFIG.provider).toBe("vidlink");
+    expect(DEFAULT_CONFIG.providerPriority).toEqual(["rivestream", "videasy"]);
   });
 
-  test("anime lane leads with Miruro and keeps AniDB and AllAnime behind it", () => {
-    expect(DEFAULT_CONFIG.animeProvider).toBe("miruro");
+  test("anime lane leads with HiAnime and keeps the independent backends behind it", () => {
+    expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
       "miruro",
       "kickassanime",
@@ -85,6 +84,6 @@ describe("@kunai/config parse boundary", () => {
     // Load migrates an inherited old default only when the on-disk revision is
     // behind this one. Changing a default without bumping it strands every user
     // who saved a setting on the previous default.
-    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(2);
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(3);
   });
 });

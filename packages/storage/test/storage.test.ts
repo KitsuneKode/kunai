@@ -417,12 +417,14 @@ test("provider health, inventory, and trace repositories round trip typed data",
     "inventory:key",
     "vidking",
     "tmdb:1",
-    { sources: 2 },
+    { streamCount: 2 },
     "2026-04-29T01:00:00.000Z",
   );
   expect(
-    inventoryRepo.get<{ sources: number }>("inventory:key", new Date("2026-04-29T00:30:00.000Z"))
-      ?.inventory.sources,
+    inventoryRepo.get<{ streamCount: number }>(
+      "inventory:key",
+      new Date("2026-04-29T00:30:00.000Z"),
+    )?.inventory.streamCount,
   ).toBe(2);
 
   const traceRepo = new ResolveTraceRepository(db);

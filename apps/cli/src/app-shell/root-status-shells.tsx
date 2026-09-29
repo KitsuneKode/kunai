@@ -1,6 +1,7 @@
 import { resolveContentKind, showsEpisodeLabel } from "@/domain/media/content-kind";
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
+import { measureColumns } from "@/domain/text-display";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
@@ -135,6 +136,10 @@ function toneColor(tone: ErrorRowTone): string {
  * Petals are written LAST and only into cells the text left empty, so a petal
  * can never lengthen the row — which is what makes reflow impossible rather
  * than merely unlikely.
+ *
+ * Cells are terminal columns, not code points: a wide glyph claims its second
+ * column as an empty cell so the width clip and the petal lanes both measure
+ * real screen space (and a petal cannot land on a glyph's trailing half).
  */
 function rowCells(row: ErrorRow, petals: readonly PetalPlacement[], width: number): Cell[] {
   const cells: Cell[] = [{ ch: "│", color: palette.dangerDim, bold: false }];
@@ -146,8 +151,21 @@ function rowCells(row: ErrorRow, petals: readonly PetalPlacement[], width: numbe
     const color = toneColor(segment.tone);
     const bold = segment.tone === "danger-strong";
     for (const ch of segment.text) {
-      if (cells.length >= width) break;
+      const chColumns = measureColumns(ch);
+      if (chColumns === 0) {
+        // A combining mark draws nothing; fuse it onto the text cell it
+        // modifies instead of letting it occupy a column of its own.
+        for (let i = cells.length - 1; i > GUTTER_COLUMN; i--) {
+          const host = cells[i];
+          if (!host || host.ch === " " || host.ch.length === 0) continue;
+          cells[i] = { ...host, ch: host.ch + ch };
+          break;
+        }
+        continue;
+      }
+      if (cells.length + chColumns > width) break;
       cells.push({ ch, color, bold });
+      for (let i = 1; i < chColumns; i++) cells.push({ ch: "", color, bold });
     }
   }
 
@@ -226,23 +244,34 @@ export function ErrorShell({
     }
   });
 
-  const rows = React.useMemo(
-    () =>
-      buildErrorRows({ message, scenario, waterfall, debugExcerpt, canRetry: Boolean(onRetry) }),
-    [message, scenario, waterfall, debugExcerpt, onRetry],
-  );
-
   // Width comes from the terminal alone — never from the petals, or the border
-  // would move frame to frame.
+  // would move frame to frame. Computed before the rows so the free-text
+  // message wraps to it instead of being clipped mid-word at the panel edge.
   const { cols } = useShellDimensions();
   const width = Math.max(MIN_PANEL_WIDTH, Math.min(cols - PANEL_CHROME, MAX_PANEL_WIDTH));
+
+  const rows = React.useMemo(
+    () =>
+      buildErrorRows({
+        message,
+        scenario,
+        waterfall,
+        debugExcerpt,
+        canRetry: Boolean(onRetry),
+        textWidth: width - TEXT_COLUMN,
+      }),
+    [message, scenario, waterfall, debugExcerpt, onRetry, width],
+  );
 
   const settled = settledFrame(rows.length);
   const tick = useFrameTick(true, PETAL_STEP_MS, settled);
   const frame = reducedMotionEnabled() ? settled : tick;
 
+  // Columns, not code points — the petal lanes yield to where text actually
+  // ends on screen, and a CJK row's text ends roughly twice as far right as a
+  // code-point count suggests.
   const rowEndColumns = React.useMemo(
-    () => rows.map((row) => TEXT_COLUMN + [...rowText(row)].length),
+    () => rows.map((row) => TEXT_COLUMN + measureColumns(rowText(row))),
     [rows],
   );
   const petals = petalsForFrame({ frame, rowCount: rows.length, rowEndColumns, width });

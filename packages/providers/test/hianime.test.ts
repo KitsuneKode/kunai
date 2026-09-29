@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ProviderRuntimeContext } from "@kunai/types";
+import type { LooseJsonValue, ProviderRuntimeContext } from "@kunai/types";
 
 import {
   chooseHianimeSearchMatch,
   clearHianimeCachesForTest,
+  cloudflareBlockMessage,
   decodeHianimeEmbedPage,
   deobfuscateHianimeEmbedBlob,
   obfuscateHianimeEmbedPayload,
@@ -12,6 +13,7 @@ import {
   HianimeEmbedDecodeError,
   hianimeCurlFailureMessage,
   hianimeEmbedReferer,
+  hianimeUrlLabel,
   hianimeMalIdFromEmbedUrl,
   hianimeNumericId,
   hianimeProviderModule,
@@ -22,13 +24,14 @@ import {
   resolveHianimeEpisodeStreams,
   resolveHianimeShow,
   fetchHianimeEpisodeCatalog,
+  hianimeFetchText,
   splitCurlHttpTrailer,
 } from "../src/hianime/direct";
 import { HIANIME_PROVIDER_ID, hianimeManifest } from "../src/hianime/manifest";
 
 const NOW = "2026-09-13T00:00:00.000Z";
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: LooseJsonValue, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -52,6 +55,8 @@ const SUB_PAYLOAD = {
   ],
   skip: { intro: null, outro: { start: 1280, end: 1369 } },
   download_url: "/download/mal/20/1/sub",
+  poster: "https://hls2.aniwatchtv.uk/v/demo/sub/poster.jpg",
+  sprite_vtt: "https://hls2.aniwatchtv.uk/v/demo/sub/sprite.vtt",
 };
 
 const DUB_PAYLOAD = {
@@ -288,6 +293,7 @@ describe("hianime embed decoding", () => {
     expect(JSON.parse(deobfuscateHianimeEmbedBlob(blob ?? ""))).toMatchObject({
       src: SUB_PAYLOAD.src,
     });
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const { default: _ignored, ...subTrack } = SUB_PAYLOAD.subtitles[0] as Record<string, unknown>;
     expect(decodeHianimeEmbedPage(page)).toMatchObject({
       src: SUB_PAYLOAD.src,
@@ -357,6 +363,18 @@ describe("hianime module resolve", () => {
       format: "vtt",
       source: "provider",
     });
+    // Embed poster + sprite VTT ride the standard artwork slot — the inventory
+    // projection turns seekBarVttUrl into the "seek thumbnails" capability.
+    for (const stream of result.streams) {
+      expect(stream.artwork).toEqual({
+        posterUrl: "https://hls2.aniwatchtv.uk/v/demo/sub/poster.jpg",
+        thumbnailUrl: "https://hls2.aniwatchtv.uk/v/demo/sub/poster.jpg",
+        seekBarVttUrl: "https://hls2.aniwatchtv.uk/v/demo/sub/sprite.vtt",
+      });
+    }
+    expect(result.variants?.[0]?.artwork?.seekBarVttUrl).toBe(
+      "https://hls2.aniwatchtv.uk/v/demo/sub/sprite.vtt",
+    );
     expect(result.externalIds).toMatchObject({
       malId: "20",
       providerNativeIds: { [HIANIME_PROVIDER_ID]: "naruto-1335" },
@@ -592,6 +610,32 @@ describe("hianime curl http trailer", () => {
       "hianime fetch connection error (no HTTP response; curl exit 35): gnutls handshake failed",
     );
   });
+
+  test("curl failure names the failed URL without leaking its query", () => {
+    // A /search URL carries the user's title query — errors land in logs.txt,
+    // so the label keeps origin + pathname only (upstream #1902 names the URL).
+    expect(
+      hianimeCurlFailureMessage("", "", 7, "https://hianime.at/search?keyword=oni%20girls&type=1"),
+    ).toBe(
+      "hianime fetch connection error (no HTTP response; curl exit 7) from https://hianime.at/search",
+    );
+  });
+
+  test("cloudflare advice depends on the binary that ran", () => {
+    expect(cloudflareBlockMessage(false)).toBe(
+      "hianime blocked by Cloudflare (try curl-impersonate)",
+    );
+    expect(cloudflareBlockMessage(true)).toBe(
+      "hianime blocked by Cloudflare (curl-impersonate was already used; retry later or from another network)",
+    );
+  });
+
+  test("url labels drop queries and survive malformed input", () => {
+    expect(hianimeUrlLabel("https://hianime.at/ajax/search?q=x&page=2")).toBe(
+      "https://hianime.at/ajax/search",
+    );
+    expect(hianimeUrlLabel("not a url")).toBe("not a url");
+  });
 });
 
 describe("hianime http failures", () => {
@@ -604,7 +648,10 @@ describe("hianime http failures", () => {
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
       globalThis.fetch = fetchImpl as unknown as typeof fetch;
       return await run();
     } finally {
@@ -615,6 +662,7 @@ describe("hianime http failures", () => {
 
   test("maps 404/410 to not-found at the stream layer", async () => {
     const resolution = await withoutCurl(httpStatus(404), () =>
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       resolveHianimeEpisodeStreams({
         context: { now: () => NOW },
         episodeId: "22676",
@@ -691,6 +739,8 @@ describe("hianime http failures", () => {
         throw new Error("network must not be touched on a persistent hit");
       }),
       cache: {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- unknown hop required: cast target is an unresolved generic
         read: async <T>(): Promise<T | null> => [...cached] as unknown as T,
         write: async (): Promise<void> => {
           writes += 1;
@@ -727,9 +777,13 @@ describe("hianime module search and episodes", () => {
       const originalWhich = Bun.which;
       const originalFetch = globalThis.fetch;
       try {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
         globalThis.fetch = (async () => {
           throw new Error("boom");
+          // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
         }) as unknown as typeof fetch;
         return await hianimeProviderModule.search?.({ query: "naruto" }, { now: () => NOW });
       } finally {
@@ -773,5 +827,115 @@ describe("hianime module search and episodes", () => {
       id: "naruto-1335",
     });
     expect(searchHits).toBe(1);
+  });
+});
+
+describe("hianime relay routing (#460)", () => {
+  test("a relayed response is final — the client must not re-ask upstream direct", async () => {
+    // Without the marker check, a relayed 403 fell through to a direct
+    // fetch/curl — silently bypassing the relay a geo-gated user deployed.
+    const context = {
+      now: () => NOW,
+      fetch: {
+        runtime: "direct-http" as const,
+        fetch: async () =>
+          new Response("upstream says no", {
+            status: 403,
+            headers: { "X-Kunai-Relayed": "1" },
+          }),
+      },
+    } satisfies ProviderRuntimeContext;
+
+    // If the code falls through anyway it reaches plain fetch next; make that
+    // path a loud sentinel instead of a real network call. Bun.which = null
+    // keeps resolveCurlCandidate() empty so fetch is the only fallback.
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    Bun.which = (() => null) as typeof Bun.which;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    globalThis.fetch = (async () => {
+      throw new Error("SENTINEL: direct upstream request happened");
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    }) as unknown as typeof fetch;
+    try {
+      const thrown = await hianimeFetchText("https://hianime.at/search?keyword=x", {
+        context,
+      }).then(
+        () => null,
+        (error) => (error instanceof Error ? error.message : String(error)),
+      );
+      expect(thrown).toContain("via relay");
+      expect(thrown).not.toContain("SENTINEL");
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("a relayed Cloudflare challenge reports the block instead of bypassing", async () => {
+    const context = {
+      now: () => NOW,
+      fetch: {
+        runtime: "direct-http" as const,
+        fetch: async () =>
+          new Response("<html>Just a moment...</html>", {
+            headers: { "X-Kunai-Relayed": "1" },
+          }),
+      },
+    } satisfies ProviderRuntimeContext;
+
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    Bun.which = (() => null) as typeof Bun.which;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    globalThis.fetch = (async () => {
+      throw new Error("SENTINEL: direct upstream request happened");
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    }) as unknown as typeof fetch;
+    try {
+      const thrown = await hianimeFetchText("https://hianime.at/search?keyword=x", {
+        context,
+      }).then(
+        () => null,
+        (error) => (error instanceof Error ? error.message : String(error)),
+      );
+      expect(thrown).toContain("Cloudflare");
+      expect(thrown).not.toContain("SENTINEL");
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("an unmarked response still falls through to the local transport", async () => {
+    // Relay off / relay-unchecked: the direct-port response may legitimately
+    // fall through to local curl (or plain fetch) — that bypass is the whole
+    // point of the non-relay path.
+    const context = {
+      now: () => NOW,
+      fetch: {
+        runtime: "direct-http" as const,
+        fetch: async () => new Response("nope", { status: 403 }),
+      },
+    } satisfies ProviderRuntimeContext;
+
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    Bun.which = (() => null) as typeof Bun.which;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    globalThis.fetch = (async () => new Response("direct answer")) as unknown as typeof fetch;
+    try {
+      const text = await hianimeFetchText("https://hianime.at/search?keyword=x", { context });
+      expect(text).toBe("direct answer");
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
   });
 });

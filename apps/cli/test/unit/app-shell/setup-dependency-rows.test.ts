@@ -12,7 +12,7 @@ import {
 } from "@/infra/os/install-commands";
 import { probeCapabilities } from "@/ui";
 
-const NOTHING = { which: () => null, listPathEntries: () => [] };
+const NOTHING = { which: () => null, listPathEntries: () => [], exists: () => false };
 
 async function bareSnapshot() {
   return probeCapabilities(NOTHING);
@@ -114,6 +114,18 @@ describe("every dependency is installable on every platform we ship to", () => {
     expect(command).toBe("sudo pacman -S mpv");
     expect(command).not.toContain("apt");
     expect(command).not.toContain("brew");
+  });
+
+  test("remediation labels never glue onto the command", () => {
+    // `openSUSE` is exactly 8 chars — a fixed padEnd(8) rendered
+    // "openSUSEsudo zypper install mpv" (#452). Every line must keep a
+    // separator between the label and the command.
+    for (const line of buildRemediationLines(MPV_INSTALL)) {
+      expect(line).toMatch(/^[A-Za-z]+\s+\S/);
+    }
+    const suse = buildRemediationLines(MPV_INSTALL).find((line) => line.includes("zypper"));
+    expect(suse).toContain("openSUSE ");
+    expect(suse).toContain("sudo zypper install mpv");
   });
 });
 

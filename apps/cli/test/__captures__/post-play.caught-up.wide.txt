@@ -1,10 +1,11 @@
 # post-play.caught-up · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │  DETAILS
- ◉ caught up · airing                                                                              │
- next broadcast · Thu 23:00                                                                        │  progress   7 / 12 · 58%
+ S04E07                                                                                            │
                                                                                                    │
- ▌ Bookmark          save to watchlist for release alerts [w]                                      │
+ ◉ caught up · airing                                                                              │
+ next broadcast · Thu 23:00                                                                        │
+                                                                                                   │
+ ▌ Bookmark          save to watchlist for release alerts [w]                                      │                  ❀
    Calendar          see what's ready for you now [/calendar]                                      │
    Search            find something to watch now [s]                                               │
                                                                                                    │
@@ -12,11 +13,15 @@
                                                                                                    │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
  │                             │  │                             │  │                             │ │
- │              F              │  │             VS              │  │             HD              │ │
- │                             │  │                             │  │                             │ │
+ │              F              │  │             VS              │  │             HD              │ │  ❀ series
+ │                             │  │                             │  │                             │ │  DR. STONE
  │ 1                           │  │ 2                           │  │ 3                           │ │
- │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │  ── up next ──────────────────────
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
- └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │               E32 · Challengers…
+                                                                                                   │               autoplay
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │       ❀
                                                                                                    │
- ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │
+                                                                                                   │
+                                                                                                   │
+                                                                                                   │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%

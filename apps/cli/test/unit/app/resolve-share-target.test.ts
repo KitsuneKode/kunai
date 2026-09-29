@@ -50,6 +50,9 @@ function createResolverContainer(
       getState: () => ({
         provider: providerId,
         mode: overrides.isAnimeProvider || providerId === "allanime" ? "anime" : "series",
+        defaultProviders: {
+          anime: overrides.animeProvider ?? "allanime",
+        },
       }),
       dispatch: () => {},
       subscribe: () => () => {},

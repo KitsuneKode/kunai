@@ -19,6 +19,7 @@ import {
   fetchTitleDetail,
   peekTitleDetail,
 } from "@/services/catalog/TitleDetailService";
+import { clearTmdbSessionCache } from "@/services/catalog/tmdb-proxy";
 
 // ---------------------------------------------------------------------------
 // Helpers to build minimal fake TMDB/AniList API responses
@@ -176,6 +177,9 @@ beforeEach(() => {
 
 afterEach(() => {
   clearTitleDetailCache();
+  // The tmdb-proxy host breakers are module state — a stubbed 5xx/transport
+  // failure must not carry into the next test.
+  clearTmdbSessionCache();
 });
 
 // ---------------------------------------------------------------------------

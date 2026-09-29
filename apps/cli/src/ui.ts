@@ -12,8 +12,11 @@ import {
   YT_DLP_INSTALL,
   type PlatformInstall,
 } from "@/infra/os/install-commands";
+import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
+import { isJsonString } from "@kunai/types";
 
 import { whichLive } from "./infra/os/which";
 
@@ -61,9 +64,10 @@ export interface CapabilitySnapshot {
   readonly ffprobe: boolean;
   readonly ytDlp: boolean;
   /**
-   * The curl the AniDB provider can use. AniDB is the default anime provider and
-   * anidb.app sits behind Cloudflare, so this is a real dependency of the
-   * default route, not a nicety — and plain curl frequently is not enough.
+   * The curl the anime-lane providers can use. HiAnime is the default anime
+   * provider and both it and AniDB sit behind Cloudflare, so this is a real
+   * dependency of the default route, not a nicety — and plain curl frequently
+   * is not enough.
    */
   readonly curl: CurlCapability;
   readonly image: ImageCapability;
@@ -75,12 +79,13 @@ type CapabilityNoticeState = {
   readonly fingerprint: string;
 };
 
-// Resolved at call time, not module load — same reason as FileStorage: the
-// storage root can change between containers in one process (test profiles).
-const noticePaths = () => {
+// Resolved per call, never at module load: a module-level `getKunaiPaths()`
+// bakes whatever env happened to be set at import time, which is how this
+// file used to write to the developer's real config dir under test isolation.
+function capabilityNoticePaths() {
   const dir = getKunaiPaths().configDir;
   return { dir, file: join(dir, "capability-notice.json") };
-};
+}
 
 function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
   const issueBits = [...snapshot.issues]
@@ -93,10 +98,12 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
   try {
-    const file = Bun.file(noticePaths().file);
+    const file = Bun.file(capabilityNoticePaths().file);
     if (!(await file.exists())) return null;
+    // SAFETY: the file is JSON we wrote; unknown fields are tolerated and the
+    // two fields we read are validated by the checks below.
     const parsed = (await file.json()) as Partial<CapabilityNoticeState>;
-    if (typeof parsed.version !== "string" || typeof parsed.fingerprint !== "string") {
+    if (!isJsonString(parsed.version) || !isJsonString(parsed.fingerprint)) {
       return null;
     }
     return { version: parsed.version, fingerprint: parsed.fingerprint };
@@ -106,9 +113,27 @@ async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null
 }
 
 async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<void> {
-  const { dir, file } = noticePaths();
-  await mkdir(dir, { recursive: true });
-  await Bun.write(file, JSON.stringify(state, null, 2));
+  const { dir, file } = capabilityNoticePaths();
+  try {
+    await mkdir(dir, { recursive: true });
+    await Bun.write(file, JSON.stringify(state, null, 2));
+  } catch (error) {
+    // The notice is only a "don't nag twice" marker — worst case it reappears
+    // on the next launch. A read-only config dir must not kill the shell with
+    // an unhandled rejection, and the one line it earns gets the same
+    // home-dir redaction the rest of the log surface uses.
+    const homeDir = resolveRedactionHomeDir();
+    const where = String(redactDiagnosticValue(dir, { homeDir }));
+    // The fs error message embeds the raw absolute path — redact it through
+    // the same pass before it reaches the terminal.
+    const detail = String(
+      redactDiagnosticValue(error instanceof Error ? error.message : String(error), { homeDir }),
+    );
+    console.error(
+      `kunai: could not record capability state — ${where} is not writable. ` +
+        `Continuing; the dependency notice will reappear until this succeeds. (${detail})`,
+    );
+  }
 }
 
 /**
@@ -122,12 +147,21 @@ export async function probeCapabilities(
     which?: (command: string) => string | null;
     /** PATH listing seam for curl-impersonate discovery. Injected by tests. */
     listPathEntries?: () => readonly string[];
+    /** Filesystem probe seam for flatpak mpv discovery. Injected by tests. */
+    exists?: (path: string) => boolean;
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
   const which = options.which ?? ((command: string) => whichLive(command));
   const issues: CapabilityIssue[] = [];
-  const mpv = Boolean(which("mpv"));
+  // Flatpak io.mpv.Mpv counts as present — a which-only probe reports
+  // "not installed" on Steam Deck / Flatpak-only hosts that can play fine.
+  const mpv = Boolean(
+    discoverMpvInvocation({
+      which,
+      ...(options.exists && { exists: options.exists }),
+    }),
+  );
   const ffprobe = Boolean(which("ffprobe"));
   const ytDlp = Boolean(which("yt-dlp"));
   // Ask the provider which binary it would actually drive rather than probing
@@ -136,7 +170,7 @@ export async function probeCapabilities(
   // over-reports one carrying only plain curl.
   const resolvedCurl = resolveAnidbCurl({
     which,
-    ...(options.listPathEntries ? { listPathEntries: options.listPathEntries } : {}),
+    ...(options.listPathEntries && { listPathEntries: options.listPathEntries }),
   });
   const curl: CurlCapability = {
     present: resolvedCurl !== null,
@@ -192,10 +226,10 @@ export async function probeCapabilities(
       id: "curl-missing",
       // Anime is one mode, so this degrades that route rather than blocking the
       // shell — but it is the *default* anime route, so silence here means the
-      // user sees an empty AniDB search with no explanation.
+      // user sees an empty HiAnime or AniDB search with no explanation.
       severity: "degraded",
       message:
-        "curl not found — AniDB (the default anime provider) sits behind Cloudflare and needs it; anime search may return nothing without it.",
+        "curl not found — the anime providers (HiAnime, AniDB) sit behind Cloudflare and need it; anime search may return nothing without it.",
       install: CURL_INSTALL,
       remediation: [
         ...buildRemediationLines(CURL_INSTALL),
@@ -210,10 +244,10 @@ export async function probeCapabilities(
       // Plain curl is present, so this is not "missing a dependency" — it is a
       // capability gap that only shows up as empty anime search results. It was
       // previously invisible: `curl: true` reported ready and the user had no
-      // way to learn why AniDB returned nothing.
+      // way to learn why the anime providers returned nothing.
       severity: "degraded",
       message:
-        "Only plain curl found — Cloudflare fingerprints the TLS handshake, so AniDB and Miruro may still be challenged. A curl-impersonate build matches a real browser.",
+        "Only plain curl found — Cloudflare fingerprints the TLS handshake, so HiAnime, AniDB, and Miruro may still be challenged. A curl-impersonate build matches a real browser.",
       install: CURL_IMPERSONATE_INSTALL,
       remediation: buildRemediationLines(CURL_IMPERSONATE_INSTALL),
     });

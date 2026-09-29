@@ -2,6 +2,7 @@ import { buildDiscoverSections } from "@/app/discover/discover-sections";
 import { loadDiscoveryList } from "@/app/discover/discovery-lists";
 import type { Container } from "@/container";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
+import { loadAnimeRecommendationsForMedia } from "@/services/catalog/CatalogDiscoveryService";
 import { loadYoutubeRecommendations } from "@/services/youtube/YoutubeRecommendationService";
 
 export interface PostPlaybackRecommendationItem {
@@ -314,6 +315,14 @@ export async function loadPostPlaybackRecommendationItems(
   }
 
   if (mode === "anime") {
+    // Per-title similar titles first — the episode that just ended is the
+    // anchor. AniList media ids are the anime lane's catalog ids; a title
+    // without a numeric id (or an upstream miss) falls through to trending.
+    const anilistId = title.externalIds?.anilistId ?? title.id;
+    const similar = await loadAnimeRecommendationsForMedia(anilistId)
+      .then((items) => dedupeRecommendationItems(items, title.name))
+      .catch(() => []);
+    if (similar.length > 0) return similar;
     return loadDiscoveryList("anime")
       .then((items) => dedupeRecommendationItems(items, title.name))
       .catch(() => []);

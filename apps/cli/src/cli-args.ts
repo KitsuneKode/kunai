@@ -2,6 +2,20 @@ import type { ShellChrome } from "@/container";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { Command } from "commander";
 
+/**
+ * A malformed invocation — unknown flag, missing value, mistyped subcommand,
+ * unreadable `-i` id. `runCli` prints the message plus a help pointer and
+ * exits 2, the usage-error code `kunai completion` already uses. Warnings
+ * (`--jump 0`, `--youtube` overriding `--anime`) still parse; errors do not —
+ * a script must be able to tell "I typo'd a flag" apart from success.
+ */
+export class CliUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CliUsageError";
+  }
+}
+
 export type CliArgs = {
   search?: string;
   id?: string;
@@ -51,7 +65,7 @@ LAUNCH
                              (bare = TMDB; or anilist:<id>, mal:<id>,
                              tmdb:<id>, youtube:<id>)
   -t, --type <movie|tv>      Content type for --id (tv = series)
-  -a, --anime                Anime mode (AniDB default with provider fallback)
+  -a, --anime                Anime mode (HiAnime default with provider fallback)
   -y, --youtube              YouTube mode (YouTube provider)
       --continue, --resume   Jump into Continue Watching
       --history              Open watch history
@@ -125,9 +139,9 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
 ];
 
 // Every recognized flag token. Used so a value-consuming flag (e.g. `-S`) never
-// swallows a following *flag* as its value, and so unknown options surface a
-// warning instead of being silently dropped. Includes `--check`/`--purge`/`--json`/
-// `--list`/`--to` (read by runCli, not here) to avoid false "unknown option" warnings.
+// swallows a following *flag* as its value, and so unknown options are rejected
+// instead of being silently dropped. Includes `--check`/`--purge`/`--json`/
+// `--list`/`--to` (read by runCli, not here) to avoid false "unknown option" errors.
 export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "-S",
   "--search",
@@ -281,17 +295,22 @@ function createCliCommand(): Command {
 
 function normalizeCliArgv(argv: readonly string[]): {
   readonly argv: readonly string[];
-  readonly warnings: readonly string[];
+  readonly errors: readonly string[];
 } {
   const normalized: string[] = [];
-  const warnings: string[] = [];
+  const errors: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg) continue;
     if (VALUE_FLAGS.has(arg)) {
       const next = argv[i + 1];
+      // A flag token must never become another flag's value — `-S --anime` is
+      // a missing value, not the query "--anime". And a value-taking flag that
+      // cannot consume exactly one token is a usage error, not a soft drop:
+      // the previous warn-and-drop path let `--config /path` turn the path
+      // into the search query.
       if (next === undefined || KNOWN_FLAGS.has(next)) {
-        warnings.push(`${arg} expected a value`);
+        errors.push(`${arg} expected a value`);
       } else {
         normalized.push(arg, next);
         i += 1;
@@ -299,18 +318,63 @@ function normalizeCliArgv(argv: readonly string[]): {
       continue;
     }
     if (arg.startsWith("-") && arg !== "-" && !KNOWN_FLAGS.has(arg)) {
-      warnings.push(`unknown option ${arg}`);
+      errors.push(`unknown option ${arg}`);
       continue;
     }
     normalized.push(arg);
   }
-  return { argv: normalized, warnings };
+  return { argv: normalized, errors };
+}
+
+/**
+ * Levenshtein distance — the typo gate for subcommand near-misses. Seven words
+ * of dictionary need no library.
+ */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const current: number[] = [i];
+    for (let j = 1; j <= b.length; j++) {
+      // Indices are bounded by the loop — the `?? 0`s satisfy
+      // noUncheckedIndexedAccess without non-null assertions.
+      current[j] = Math.min(
+        (previous[j] ?? 0) + 1,
+        (current[j - 1] ?? 0) + 1,
+        (previous[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length] ?? a.length;
+}
+
+/**
+ * A first positional is a query only if it does not look like a mistyped
+ * maintenance command. Distance ≤ 2 catches the real typos (`kunai doctro`,
+ * `kunai upgarde`); words under 4 chars are exempt so `kunai tv` stays a
+ * search. Escaped either way by `-S <query>`.
+ */
+function nearestSubcommand(word: string): string | undefined {
+  if (word.length < 4) return undefined;
+  let best: string | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const command of CLI_SUBCOMMANDS) {
+    const distance = editDistance(word, command);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = command;
+    }
+  }
+  return bestDistance <= 2 ? best : undefined;
 }
 
 // Process argv parsing is intentionally delegated to Commander so Kunai does
 // not grow a bespoke CLI parser as subcommands and flags mature.
 export function parseCliArgs(argv: readonly string[]): CliArgs {
   const normalized = normalizeCliArgv(argv);
+  if (normalized.errors.length > 0) {
+    throw new CliUsageError(normalized.errors.join("; "));
+  }
   const command = createCliCommand();
   command.configureOutput({
     writeErr: () => {},
@@ -318,7 +382,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   });
   command.parse([...normalized.argv], { from: "user" });
   const options = command.opts<CommanderCliOptions>();
-  const warnings = [...normalized.warnings];
+  const warnings: string[] = [];
   const positionals = command.args.filter((arg) => arg !== undefined && !arg.startsWith("-"));
 
   const args: Omit<CliArgs, "shellChrome"> = {
@@ -345,6 +409,28 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
 
   args.search = options.search;
   args.id = options.id;
+  if (args.id !== undefined) {
+    // Reject only what no downstream grammar can read: a non-numeric bare id
+    // or a *known* namespace carrying a non-numeric id (`anilist:abc`). Unknown
+    // namespaces pass through — `resolveDirectTitle` reports them as
+    // `id-unknown-namespace` rather than a usage error, and `youtube:` ids are
+    // opaque (video or `PL…` playlist), not numeric. The namespace set mirrors
+    // `DIRECT_ID_NAMESPACES` in app/bootstrap/bootstrap-intent.ts.
+    const id = args.id.trim();
+    const nsMatch = /^([a-z]+):(.+)$/i.exec(id);
+    if (nsMatch?.[1] && nsMatch[2] !== undefined) {
+      const ns = nsMatch[1].toLowerCase();
+      const nsId = nsMatch[2].trim();
+      if ((ns === "tmdb" || ns === "anilist" || ns === "mal") && !/^[1-9]\d*$/.test(nsId)) {
+        throw new CliUsageError(`invalid -i/--id "${args.id}" — ${ns}: ids are positive integers`);
+      }
+    } else if (!/^[1-9]\d*$/.test(id)) {
+      throw new CliUsageError(
+        `invalid -i/--id "${args.id}" — accepted forms: <tmdb-id>, tmdb:<id>, anilist:<id>, mal:<id>, youtube:<id>`,
+      );
+    }
+    args.id = id;
+  }
   if (options.type !== undefined) args.type = options.type === "tv" ? "series" : options.type;
   args.anime = Boolean(options.anime);
   args.youtube = Boolean(options.youtube);
@@ -387,6 +473,18 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.downloadPath = options.downloadPath;
   args.openUrl = options.open;
   args.handoffUrl = options.handoffUrl;
+  if (args.openUrl && args.handoffUrl) {
+    // `--open` is the trusted local channel and `--handoff-url` the untrusted
+    // desktop-handler one; accepting both would silently upgrade whichever a
+    // tokenizing launcher smuggled into argv.
+    throw new CliUsageError("--open and --handoff-url are mutually exclusive");
+  }
+  if (args.handoffUrl && /\s/.test(args.handoffUrl)) {
+    // A kunai:// URL never contains whitespace; finding any means something
+    // tokenized extra argv into the value — refuse rather than risk a
+    // smuggled flag.
+    throw new CliUsageError("invalid kunai:// handoff URL");
+  }
   args.installProtocolHandler = Boolean(options.installProtocolHandler);
   args.dryRun = Boolean(options.dryRun);
   args.mpv = {
@@ -402,6 +500,21 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.version = Boolean(options.version);
 
   if (args.search === undefined && args.id === undefined && positionals.length > 0) {
+    // A lone positional that is a subcommand — or reads like a typo of one —
+    // must not silently become a search. `runCli` only dispatches a
+    // subcommand in argv[0], so `kunai --debug doctor` and `kunai doctro`
+    // both landed here as queries before.
+    const suggestion =
+      positionals.length === 1 && positionals[0] !== undefined
+        ? nearestSubcommand(positionals[0])
+        : undefined;
+    if (suggestion !== undefined) {
+      throw new CliUsageError(
+        suggestion === positionals[0]
+          ? `"${suggestion}" is a maintenance command — run "kunai ${suggestion}" directly`
+          : `unknown command "${positionals[0]}" — did you mean "kunai ${suggestion}"?`,
+      );
+    }
     args.search = positionals.join(" ");
   } else {
     for (const positional of positionals) warnings.push(`ignored argument ${positional}`);

@@ -3,6 +3,7 @@ import { unlink } from "node:fs/promises";
 
 import type { PlaybackResult } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
+import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "@/infra/player/mpv-ipc";
 import {
@@ -70,8 +71,6 @@ import {
 import type { StreamPreflightResult } from "@/services/playback/stream-health-check";
 import { normalizeSubtitleUrl } from "@/subtitle";
 
-import { whichLive } from "./infra/os/which";
-
 export async function launchMpv(opts: {
   url: string;
   urlKind?: MpvUrlKind;
@@ -119,12 +118,13 @@ export async function launchMpv(opts: {
     baseEmit(event);
   };
 
-  if (!whichLive("mpv")) {
+  const mpvInvocation = discoverMpvInvocation();
+  if (!mpvInvocation) {
     throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
   }
 
   const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
-  const mpv = Bun.spawn(["mpv", ...args], {
+  const mpv = Bun.spawn([...mpvInvocation.argv, ...args], {
     stdin: stdio,
     stdout: stdio,
     stderr: stdio,

@@ -40,6 +40,16 @@ export type SearchRoutingDiagnosis =
       readonly attemptedDefaultFallback: false;
     };
 
+/**
+ * A provider search that threw while the lane kept working. Surfaced so the
+ * empty-result copy can say "the provider is down", not just "no results" —
+ * an outage and a typo used to render identically (#464).
+ */
+export type ProviderSearchFailure = {
+  readonly providerId: string;
+  readonly message: string;
+};
+
 export type SearchRoutingResult = {
   readonly results: SearchResult[];
   readonly resolvedLane: ProviderLane;
@@ -48,6 +58,7 @@ export type SearchRoutingResult = {
   readonly strategy: "provider-native" | "registry" | "unsupported";
   readonly evidence: SearchFilterEvidence;
   readonly diagnosis?: SearchRoutingDiagnosis;
+  readonly providerSearchFailures?: readonly ProviderSearchFailure[];
 };
 
 export type SearchFilterEvidence = {
@@ -179,45 +190,76 @@ export async function searchTitles(
     };
   }
 
-  if (provider && routing.mode === "anime" && provider.search) {
-    const results = await provider.search(
-      query,
-      {
-        audioPreference: context.animeLanguageProfile.audio,
-        subtitlePreference: context.animeLanguageProfile.subtitle,
-      },
-      context.signal,
-    );
+  const providerSearchFailures: ProviderSearchFailure[] = [];
 
-    if (results) {
+  if (routing.mode === "anime") {
+    /* The configured provider leads; the rest of the lane follows in priority
+     * order. One provider's outage must not read as "no results" or hide the
+     * search three working providers could have answered (#464). */
+    const laneCandidates = [
+      ...(provider ? [provider] : []),
+      ...context.providerRegistry
+        .getAll()
+        .filter(
+          (candidate) =>
+            candidate.metadata.providerLane === "anime" &&
+            candidate.metadata.id !== provider?.metadata.id,
+        ),
+    ];
+
+    for (const candidate of laneCandidates) {
+      if (!candidate.search) continue;
+      let results: readonly SearchResult[] | null | undefined;
+      try {
+        results = await candidate.search(
+          query,
+          {
+            audioPreference: context.animeLanguageProfile.audio,
+            subtitlePreference: context.animeLanguageProfile.subtitle,
+          },
+          context.signal,
+        );
+      } catch (error) {
+        if (context.signal?.aborted) throw error;
+        providerSearchFailures.push({
+          providerId: candidate.metadata.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+
+      // An honest empty answer is a catalog verdict, not an outage — hand the
+      // query to the registry catalog exactly as before.
+      if (!results || results.length === 0) break;
+
       const normalized = results.map(normalizeProviderSearchResult);
 
-      if (normalized.length > 0) {
-        // Skip AniList enrichment when provider already supplied rich metadata.
-        const hasNativeMetadata = normalized.some(
-          (r) => r.posterPath && r.metadataSource === "AniList",
-        );
-        const hasCachedAliases = normalized.some((r) => (r.titleAliases?.length ?? 0) > 0);
-        const enriched =
-          context.enrichAnimeMetadata === false || hasNativeMetadata || hasCachedAliases
-            ? normalized
-            : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
+      // Skip AniList enrichment when provider already supplied rich metadata.
+      const hasNativeMetadata = normalized.some(
+        (r) => r.posterPath && r.metadataSource === "AniList",
+      );
+      const hasCachedAliases = normalized.some((r) => (r.titleAliases?.length ?? 0) > 0);
+      const enriched =
+        context.enrichAnimeMetadata === false || hasNativeMetadata || hasCachedAliases
+          ? normalized
+          : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
 
-        // Apply the same local-filter pipeline every other provider path uses so
-        // the returned evidence can never claim a filter that was not applied.
-        const evidence = classifySearchEvidence(intent, provider.metadata.id, context.mode);
-        return {
-          results: withResolvedSearchLane(
-            applyLocalSearchFilters(enriched, intent, evidence),
-            resolvedLane,
-          ),
+      // Apply the same local-filter pipeline every other provider path uses so
+      // the returned evidence can never claim a filter that was not applied.
+      const evidence = classifySearchEvidence(intent, candidate.metadata.id, context.mode);
+      return {
+        results: withResolvedSearchLane(
+          applyLocalSearchFilters(enriched, intent, evidence),
           resolvedLane,
-          sourceId: provider.metadata.id,
-          sourceName: provider.metadata.name,
-          strategy: "provider-native",
-          evidence,
-        };
-      }
+        ),
+        resolvedLane,
+        sourceId: candidate.metadata.id,
+        sourceName: candidate.metadata.name,
+        strategy: "provider-native",
+        evidence,
+        providerSearchFailures:
+          providerSearchFailures.length > 0 ? providerSearchFailures : undefined,
+      };
     }
   }
 
@@ -267,6 +309,7 @@ export async function searchTitles(
     sourceName: searchService.metadata.name,
     strategy: "registry",
     evidence,
+    providerSearchFailures: providerSearchFailures.length > 0 ? providerSearchFailures : undefined,
   };
 }
 

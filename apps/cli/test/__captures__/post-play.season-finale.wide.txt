@@ -1,27 +1,30 @@
 # post-play.season-finale · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │  DETAILS
+ S04E07                                                                                            │
+                                                                                                   │
  ✦ Season 4 complete                                                                               │
-                                                                                                   │  progress   7 / 12 · 58%
+                                                                                                   │
  █████████████████████┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ 7 / 12 this season · 58%                                     │
-                                                                                                   │
+                                                                                                   │                  ❀
  ╭────────────────────────────────────────────────────────────────────────────────────────────────╮│
- │ ▶ UP NEXT                                                                                      ││
+ │ ▶ NEXT SEASON                                                                                  ││
  │                                                                                                ││
- │             E32 · Challengers of Science                                                       ││
- │     DS      Status available · autoplay on                                                     ││
- │             ↵ play · e episodes                                                                ││
+ │                   E32 · Challengers of Science                                                 ││
+ │                   Status available · autoplay on                                               ││
+ │        DS         ↵ play · e episodes                                                          ││
  │                                                                                                ││
+ │                                                                                                ││  ❀ series
+ │                                                                                                ││  DR. STONE
  ╰────────────────────────────────────────────────────────────────────────────────────────────────╯│
-                                                                                                   │
+                                                                                                   │  ── up next ──────────────────────
  ▌ ↵ Continue        continue to next season [↵ n]                                                 │
-   Episodes          review this season [e]                                                        │
-                                                                                                   │
- ────────────────────────────────────── you might also like ───────────────────────────────────────│
+   Episodes          review this season [e]                                                        │               E32 · Challengers…
+                                                                                                   │               autoplay
+ ────────────────────────────────────── you might also like ───────────────────────────────────────│       ❀
                                                                                                    │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
  │                             │  │                             │  │                             │ │
- │              F              │  │             VS              │  │             HD              │ │
+ │              F              │  │             VS              │  │             HD              │ │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%
  │                             │  │                             │  │                             │ │
  │ 1                           │  │ 2                           │  │ 3                           │ │
  │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │

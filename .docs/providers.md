@@ -176,6 +176,19 @@ here. The rule is _what may be persisted_, not whether to cache:
   `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
   sweeps can scope them.
 
+**Stream verification has two boundaries, and only one is universal.** The
+resolve-gate is opt-in per provider: VidLink enables it through
+`resolveDirectStreamSource`, Videasy runs its own probe as a negative gate only
+(it rejects definitive failures but attests nothing — issue #361 showed a green
+probe can 403 the very next request on signed CDN URLs), and YouTube is attested
+by construction. The playback preflight is the universal boundary: any stream
+that is not provider-attested inside `playbackTrustMs` is probed at handoff, and
+the probe races mpv's `loadfile`, so it adds no wait — a definitive dead URL
+fails fast only when mpv itself also fails. Stream age alone used to waive that
+probe for the first five minutes (`recent-resolve`), which let autoplay
+replacements hand mpv URLs no code had ever fetched; the waiver now requires
+attestation (issue #459).
+
 **VidLink needs the browser playback environment (2026-08-24).** Without an
 `x-playback-environment` header, `vidlink.pro/api/b` answers with
 `deliveryType: "file"` — direct MP4s on `bcdn.hakunaymatata.com` flagged
@@ -496,8 +509,8 @@ rotations — lives in
 `packages/providers/src/allmanga/api-client.ts` contains the crypto/decoder and GraphQL helpers shared by the `allmangaProviderModule`. The module itself (`allmanga/direct.ts`) implements `CoreProviderModule`.
 
 - `packages/providers/src/allmanga/api-client.ts` should stay aligned with the specific ani-cli/AllManga-inspired behavior it implements unless Kunai deliberately chooses a different contract
-- when AllAnime or AllManga breaks, compare against ani-cli before guessing at a fix
-- on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli`
+- when AllAnime or AllManga breaks, compare against ani-cli **v4.x** before guessing at a fix — upstream deleted its AllAnime code in v5.0 (2026-08-01) and moved to anidb.app, so `master` and the pinned v5 checkout contain no mkissa logic to compare against; the live AllManga mkissa JS chunk is the current source of truth
+- on this machine, the canonical local ani-cli checkout is `~/Projects/osc/ani-cli` (version pinned in `scripts/parity-references.json`)
 - if ani-cli is also broken upstream, Kunai may carry a temporary local fix, but that divergence should be documented and easy to remove when parity can be restored
 - this is a concrete API-client parity policy, not the default contract for every anime source
 - when fixing this family of providers, check:
@@ -583,13 +596,17 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
-`miruro` is the **default** anime provider (`animeProvider: "miruro"`,
-`animeProviderPriority: ["miruro", "anidb", "allanime"]`, provider-defaults
-revision 1, 2026-09-11). The case is structural: Miruro fronts roughly a dozen
-backends behind one AniList-keyed pipe, so an upstream outage costs a server
-rather than the lane.
+`hianime` is the **default** anime provider (`animeProvider: "hianime"`,
+`animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb",
+"allanime"]`, provider-defaults revision 3). The lead moved off AniDB when
+anidb.app started answering 503 at the origin, matching ani-cli's own `fix:`
+switch to hianime. `anidb` stays registered and in the priority tail: it still
+carries the AID cross-link and XML episode-title strengths the other adapters
+lack. `miruro` is the first fallback — it fronts roughly a dozen backends
+behind one AniList-keyed pipe, so an upstream outage costs a server rather
+than the lane.
 
-Its search goes through Miruro's own pipe (`search`, `q` + `type: "ANIME"`),
+Miruro's search goes through its own pipe (`search`, `q` + `type: "ANIME"`),
 which relays AniList's catalog: results carry AniList and MAL ids exactly as the
 AniList search service emits them, so history sees one title whichever path
 found it, and AniSkip gets its MAL id without calling AniList. This matters
@@ -627,13 +644,13 @@ once, so each probe spent the full timeout to learn nothing. Measured on
 from that alone, and ~1.1 s once `pewe` was quarantined.
 
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
-backends is reached through it, so the two providers behind it are the ones that
-share none of that. `kickassanime` is second and `animegg` third: both have their
-own catalog, site and CDN, but KickAssAnime can also take over a title found in
-_another_ catalog — it matches the show by name and year and remembers the
-result on the title bridge — whereas AnimeGG only plays what its own search
-found. AniDB, AllAnime, and HiAnime stay behind them, AniDB for when it returns
-and AllAnime for the ani-cli parity path. See
+backends is reached through it, so the providers behind it are the ones that
+share none of that. `kickassanime` and `animegg` follow it in the default
+order: both have their own catalog, site and CDN, but KickAssAnime can also
+take over a title found in _another_ catalog — it matches the show by name and
+year and remembers the result on the title bridge — whereas AnimeGG only plays
+what its own search found. AniDB and AllAnime close the order, AniDB for when
+it returns and AllAnime for the ani-cli parity path. See
 [the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
 [the AnimeGG dossier](./provider-dossiers/animegg.md), both of which record why a
 reachability probe cannot judge their streams.
@@ -687,12 +704,12 @@ default to the table — a bump alone stamps configs without changing them.
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
 
-- **KickAssAnime (`kickassanime`)** — `provider-native`; second in the default anime order. Slugs are
+- **KickAssAnime (`kickassanime`)** — `provider-native`; third in the default anime order, behind HiAnime and Miruro. Slugs are
   `name-<4 hex>` (`sousou-no-frieren-2d15`), and only that shape is accepted as a native id, so an
   AniList id or another site's slug is never sent as one. A title from any other catalog is matched
   by name and year — exactly one hit, or the provider steps aside — and the slug is then stored
   through `context.titleBridge` against the AniList id, so later plays ask nothing.
-- **AniDB (`anidb`)** — `provider-native`; fourth in the default anime order, behind Miruro, KickAssAnime and AnimeGG. Native ids must satisfy
+- **AniDB (`anidb`)** — `provider-native`; fifth in the default anime order, behind HiAnime, Miruro, KickAssAnime and AnimeGG (demoted from the lead when anidb.app went 503). Native ids must satisfy
   `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
   AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
   `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.
@@ -701,8 +718,8 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is
   preserved on merge. An AllAnime lookup may populate only `providerNativeIds.allanime`.
 - **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
-- **HiAnime (`hianime`)** — `provider-native`, registered as a fallback and
-  manually selectable. Native ids are `slug-positiveNumericSuffix` (same shape
+- **HiAnime (`hianime`)** — `provider-native`, the anime lane default. Native
+  ids are `slug-positiveNumericSuffix` (same shape
   as AniDB); discovery searches by title and remaps to the matched slug.
   A HiAnime lookup populates only `providerNativeIds.hianime`.
 - **AllAnime and Miruro episode numbering** — when a request carries both a

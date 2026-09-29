@@ -24,6 +24,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 
 import {
   miruroInventorySourceId,
@@ -139,22 +140,28 @@ export function setMiruroPipeRetrySleepForTest(
   miruroPipeRetrySleepImpl = sleep ?? sleepAbortable;
 }
 
-let curlSupportsHttp2: boolean | null = null;
+// Keyed by binary path — the resolved candidate can change if PATH changes
+// mid-process, and probing bare "curl" could report features of a different
+// binary than the one pipeCall spawns.
+const curlHttp2Probes = new Map<string, Promise<boolean>>();
 
-function detectCurlHttp2Support(): boolean {
-  if (curlSupportsHttp2 !== null) return curlSupportsHttp2;
-  try {
-    const proc = Bun.spawnSync(["curl", "--version"]);
-    if (proc.exitCode === 0) {
-      const features = proc.stdout.toString();
-      curlSupportsHttp2 = /\bHTTP2\b/i.test(features);
-    } else {
-      curlSupportsHttp2 = false;
-    }
-  } catch {
-    curlSupportsHttp2 = false;
+function detectCurlHttp2Support(curlPath: string): Promise<boolean> {
+  let probe = curlHttp2Probes.get(curlPath);
+  if (probe === undefined) {
+    probe = probeCurlHttp2Support(curlPath);
+    curlHttp2Probes.set(curlPath, probe);
   }
-  return curlSupportsHttp2;
+  return probe;
+}
+
+async function probeCurlHttp2Support(curlPath: string): Promise<boolean> {
+  try {
+    const proc = Bun.spawn([curlPath, "--version"], { stdout: "pipe", stderr: "ignore" });
+    const [features, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    return exitCode === 0 && /\bHTTP2\b/i.test(features);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -1760,7 +1767,7 @@ export async function fetchMiruroPipeBody(
     };
   }
 
-  const hasCurlHttp2 = detectCurlHttp2Support();
+  const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
   const args = [
     curl.path,
     ...curlCipherArgs(curl.impersonates),
@@ -1918,13 +1925,23 @@ async function pipeCall(
       }
       if (candidate.cloudflareHtml) {
         wafHits += 1;
-        lastError = new Error(`HTTP ${candidate.status || 403} (cloudflare html)`);
+        lastError = providerHttpErrorForStatus({
+          status: candidate.status || 403,
+          message: `HTTP ${candidate.status || 403} (cloudflare html)`,
+          providerId: MIRURO_PROVIDER_ID,
+          stage: "pipe-fetch",
+        });
         if (wafHits >= MIRURO_WAF_FAIL_FAST_THRESHOLD) {
           throw new Error(miruroWafBlockMessage(), { cause: lastError });
         }
         continue;
       }
-      lastError = new Error(describeMiruroPipeFailure(candidate.status, candidate.text));
+      lastError = providerHttpErrorForStatus({
+        status: candidate.status,
+        message: describeMiruroPipeFailure(candidate.status, candidate.text),
+        providerId: MIRURO_PROVIDER_ID,
+        stage: "pipe-fetch",
+      });
       // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
     } catch (error) {
       if (error instanceof MiruroPipeDecodeError) throw error;
@@ -1935,7 +1952,21 @@ async function pipeCall(
     }
   }
 
-  const message = lastError?.message ?? "request failed";
+  const message = lastError instanceof Error ? lastError.message : "request failed";
+  // A status-bearing failure keeps its verdict through the wrap — otherwise a
+  // persistent 429/5xx re-enters the engine as an untyped retryable error and
+  // never reaches quarantine (#458).
+  if (lastError instanceof ProviderHttpError) {
+    throw new ProviderHttpError({
+      message: `Miruro pipe network request failed: ${message}`,
+      providerId: MIRURO_PROVIDER_ID,
+      stage: "pipe-fetch",
+      status: lastError.status,
+      code: lastError.code,
+      retryable: lastError.retryable,
+      cause: lastError,
+    });
+  }
   throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
 }
 

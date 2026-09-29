@@ -84,7 +84,13 @@ non-interactive terminal, or when `DO_NOT_TRACK=1` or `CI=true`.
 When on, Kunai sends at most one tiny ping per day:
 
 ```json
-{ "installId": "<sha256-hex>", "version": "<semver>", "os": "<platform>", "arch": "<arch>", "ts": 0 }
+{
+  "installId": "<sha256-hex>",
+  "version": "<semver>",
+  "os": "<platform>",
+  "arch": "<arch>",
+  "ts": 0
+}
 ```
 
 - `installId` on the wire is **`sha256` of your local install id**, not the id

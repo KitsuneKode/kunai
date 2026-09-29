@@ -18,7 +18,7 @@ audit-2 S6 review pass.
 ## Why this matters
 
 The "Day by day" card (`trend-section.tsx:57-91`) renders `series.points`
-straight through — and `points` is *ascending*, guaranteed by the parser
+straight through — and `points` is _ascending_, guaranteed by the parser
 (`analytics-series.ts:130` rejects any day that does not strictly increase).
 So the table opens on the oldest day in the window, and yesterday — the row a
 reader actually wants — sits at the bottom of a 260px scroll box behind ~90
@@ -46,7 +46,7 @@ days a reader came for.
 - `TrendTable` is server-rendered inside `trend-section.tsx` (no `"use client"`,
   all rows in the initial HTML, `max-h-[260px] overflow-y-auto` scroll box,
   `sticky thead`).
-- Ascending order is a *parse-time contract*, not just a convention — do not
+- Ascending order is a _parse-time contract_, not just a convention — do not
   touch it. The charts (`ChartInstalls`, `ShareSection`) consume the same
   `points` array on the same render.
 - No test covers the table (`apps/docs/test/` has series/fetch/derive/panel
@@ -60,20 +60,22 @@ matrix).
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Focused tests | `bun run --cwd apps/docs test` | all pass |
-| Docs build | `bun run --cwd apps/docs build` | exits 0 |
-| Full gates | `bun run typecheck --force && bun run test --force` | exit 0 |
+| Purpose       | Command                                             | Expected |
+| ------------- | --------------------------------------------------- | -------- |
+| Focused tests | `bun run --cwd apps/docs test`                      | all pass |
+| Docs build    | `bun run --cwd apps/docs build`                     | exits 0  |
+| Full gates    | `bun run typecheck --force && bun run test --force` | exit 0   |
 
 ## Scope
 
 **In scope:**
+
 - `apps/docs/components/analytics/trend-section.tsx` — move `TrendTable` into a
   new `components/analytics/trend-table.tsx`
 - `apps/docs/test/trend-table.test.tsx` — new coverage
 
 **Out of scope:**
+
 - `series.json` endpoint changes (cursor pagination, raising
   `MAX_SERIES_DAYS`) — a full-history view is a separate decision.
 - The charts — they keep ascending order; only the table flips.

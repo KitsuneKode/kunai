@@ -7,6 +7,7 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
+import { providerHttpErrorForStatus } from "../runtime/fetch";
 import {
   directStreamFetchSignal,
   resolveDirectStreamSource,
@@ -57,7 +58,12 @@ export function resolveVidrockDirect(
         signal: directStreamFetchSignal(ctx.signal, VIDROCK_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
-        throw new Error(`VidRock API returned HTTP ${response.status}`);
+        throw providerHttpErrorForStatus({
+          status: response.status,
+          message: `VidRock API returned HTTP ${response.status}`,
+          providerId: VIDROCK_PROVIDER_ID,
+          stage: "direct-stream",
+        });
       }
 
       const data = (await response.json()) as Record<string, VidrockServer | undefined> | unknown;

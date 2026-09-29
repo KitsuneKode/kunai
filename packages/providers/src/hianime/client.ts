@@ -7,6 +7,7 @@
  * curl/curl-impersonate — the same shape as the AniDB client.
  */
 
+import { isRelayedResponse, providerHttpErrorForStatus } from "@kunai/types";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { ProviderHttpError } from "../runtime/fetch";
@@ -25,7 +26,7 @@ import {
   HianimeEmbedDecodeError,
   type HianimeEmbedPayload,
 } from "./embed";
-import { HIANIME_SUPPORTED_SERVER } from "./manifest";
+import { HIANIME_PROVIDER_ID, HIANIME_SUPPORTED_SERVER } from "./manifest";
 import {
   chooseHianimeSearchMatch,
   HIANIME_BASE,
@@ -64,19 +65,6 @@ export {
 const EPISODE_CATALOG_MEMORY_TTL_MS = 1_800_000;
 const EPISODE_CATALOG_PERSIST_TTL_MS = 2 * 60 * 60 * 1000;
 const HIANIME_EPISODES_CACHE_NAMESPACE = "hianime:episodes";
-
-/**
- * The remediation to suggest, given what actually ran. Suggesting
- * curl-impersonate to a user who is already running curl-impersonate is advice
- * they have followed, and repeating it makes a blocked upstream look like a
- * local misconfiguration. Parity: ani-cli suppresses its own
- * "try installing curl-impersonate" line when `$curl_exe` is not plain curl.
- */
-function hianimeBlockedMessage(impersonates: boolean): string {
-  return impersonates
-    ? "hianime blocked by Cloudflare (curl-impersonate was already used)"
-    : "hianime blocked by Cloudflare (try curl-impersonate)";
-}
 
 const episodeCache = new TTLCache<string, readonly HianimeEpisodeEntry[]>(
   EPISODE_CATALOG_MEMORY_TTL_MS,
@@ -117,6 +105,9 @@ export type HianimeModeResolution =
       readonly malId?: string;
       readonly intro?: { readonly start: number; readonly end: number };
       readonly outro?: { readonly start: number; readonly end: number };
+      /** Episode poster and scrub-preview sprite, when the embed provides them. */
+      readonly poster?: string;
+      readonly spriteVtt?: string;
       readonly embedReferer: string;
       /** True when the ladder collapsed to the single `auto` fallback row. */
       readonly ladderFallback?: boolean;
@@ -147,16 +138,18 @@ const CURL_TIMEOUT_EXIT_CODE = 28;
 /**
  * Split curl's `-w '\n%{http_code}'` trailer into `{ body, httpCode }`.
  * `httpCode` is null when curl never received an HTTP response (DNS, TCP, or
- * TLS failure) — the ani-cli 5.1.2 distinction between "no HTTP response"
+ * TLS failure) — the ani-cli 5.1.4 distinction between "no HTTP response"
  * and "HTTP NNN", so a dead route is never misread as an HTTP error. curl
  * prints `000` for that case, which is a missing status, not status zero.
  * Only one trailing line is ever cut, so a body that naturally ends in
  * `\nNNN` keeps its bytes.
  */
-export function splitCurlHttpTrailer(stdout: string): {
+export type CurlHttpTrailer = {
   readonly body: string;
   readonly httpCode: number | null;
-} {
+};
+
+export function splitCurlHttpTrailer(stdout: string): CurlHttpTrailer {
   const match = /\n(\d{3})$/.exec(stdout);
   if (!match?.[1]) return { body: stdout, httpCode: null };
   const code = Number(match[1]);
@@ -164,28 +157,54 @@ export function splitCurlHttpTrailer(stdout: string): {
   return { body, httpCode: code === 0 ? null : code };
 }
 
+/**
+ * The request label for error messages: origin + path, never the query —
+ * `/search?keyword=…` would otherwise write the user's title query into an
+ * error that lands in logs.txt.
+ */
+export function hianimeUrlLabel(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
 /** Name the failed layer first: transport (`no HTTP response`) or HTTP status. */
 export function hianimeCurlFailureMessage(
   stdout: string,
   stderr: string,
   exitCode: number,
+  url?: string,
 ): string {
   const { httpCode } = splitCurlHttpTrailer(stdout);
   const detail = httpCode !== null ? `HTTP ${httpCode}` : "no HTTP response";
   const tail = stderr.trim();
-  return `hianime fetch connection error (${detail}; curl exit ${exitCode})${tail ? `: ${tail}` : ""}`;
+  const where = url ? ` from ${hianimeUrlLabel(url)}` : "";
+  return `hianime fetch connection error (${detail}; curl exit ${exitCode})${where}${tail ? `: ${tail}` : ""}`;
+}
+
+/** The advice depends on the binary that just ran — telling a user to "try
+ * curl-impersonate" when the impersonating wrapper is what Cloudflare just
+ * refused sends them chasing a tool they already have. */
+export function cloudflareBlockMessage(impersonated: boolean): string {
+  return impersonated
+    ? "hianime blocked by Cloudflare (curl-impersonate was already used; retry later or from another network)"
+    : "hianime blocked by Cloudflare (try curl-impersonate)";
 }
 
 export async function runHianimeCurlWithRetry(
   args: readonly string[],
   signal?: AbortSignal,
+  url?: string,
 ): Promise<string> {
   let result = await spawnCurlOnce(args, signal);
   if (result.exitCode === CURL_TIMEOUT_EXIT_CODE) {
     result = await spawnCurlOnce(args, signal);
   }
   if (result.exitCode !== 0) {
-    throw new Error(hianimeCurlFailureMessage(result.stdout, result.stderr, result.exitCode));
+    throw new Error(hianimeCurlFailureMessage(result.stdout, result.stderr, result.exitCode, url));
   }
   return result.stdout;
 }
@@ -201,6 +220,14 @@ function spawnCurlOnce(
     proc.exited,
   ]).then(([stdout, stderr, exitCode]) => ({ stdout, stderr, exitCode }));
 }
+
+/**
+ * A response the relay port marked as relayed is final: re-asking the same
+ * upstream URL direct would silently bypass the relay the user deployed.
+ * Transport errors and *direct* (unmarked) responses still fall through to
+ * local curl/impersonate — that path is the legitimate Cloudflare bypass.
+ */
+class HianimeRelayedUpstreamError extends Error {}
 
 export async function hianimeFetchText(
   url: string,
@@ -218,12 +245,25 @@ export async function hianimeFetchText(
         headers: { "User-Agent": HIANIME_USER_AGENT, Referer: referer },
         signal: createTimeoutSignal(options.signal, 15_000),
       });
+      if (isRelayedResponse(response)) {
+        /* The relay answered for this request — re-asking the same URL direct
+         * would silently bypass the relay the user deployed (#460). Treat the
+         * response as final, including a definitive upstream status. */
+        const text = response.ok ? await response.text() : "";
+        if (response.ok && !isCloudflareChallengeText(text)) return text;
+        throw new HianimeRelayedUpstreamError(
+          isCloudflareChallengeText(text)
+            ? cloudflareBlockMessage(false)
+            : `hianime fetch HTTP ${response.status} from ${hianimeUrlLabel(url)} via relay`,
+        );
+      }
       if (response.ok) {
         const text = await response.text();
         if (!isCloudflareChallengeText(text)) return text;
       }
     } catch (error) {
       if (options.signal?.aborted === true) throw error;
+      if (error instanceof HianimeRelayedUpstreamError) throw error;
       // Fall through to local curl/impersonate.
     }
   }
@@ -234,7 +274,16 @@ export async function hianimeFetchText(
       headers: { "User-Agent": HIANIME_USER_AGENT, Referer: referer },
       signal: createTimeoutSignal(options.signal, 15_000),
     });
-    if (!response.ok) throw new Error(`hianime fetch HTTP ${response.status} from ${url}`);
+    if (!response.ok) {
+      // The status rides the error so classification reads the structure, not
+      // the message string (#458).
+      throw providerHttpErrorForStatus({
+        status: response.status,
+        message: `hianime fetch HTTP ${response.status} from ${hianimeUrlLabel(url)}`,
+        providerId: HIANIME_PROVIDER_ID,
+        stage: "fetch-page",
+      });
+    }
     const text = await response.text();
     if (isCloudflareChallengeText(text)) {
       throw new Error("hianime blocked by Cloudflare (install curl)");
@@ -260,23 +309,26 @@ export async function hianimeFetchText(
   // status check below (ani-cli `hianime_curl` parity), otherwise an error
   // page flows into JSON parsing and misreports as `parse-failed`.
   const { body, httpCode } = splitCurlHttpTrailer(
-    await runHianimeCurlWithRetry(args, options.signal),
+    await runHianimeCurlWithRetry(args, options.signal, url),
   );
   // Name the leg. A hianime resolve is four network hops (episodes, servers,
   // embed page, master playlist) and "hianime fetch HTTP 503" says which of
   // them died to nobody. The layer name and curl exit already ride along on
   // the transport-failure path; this is the same courtesy for the status path.
   // Parity: ani-cli's `hianime_curl` names the URL on both exits.
-  const blocked = isCloudflareChallengeText(body);
   if (httpCode !== null && (httpCode < 200 || httpCode > 299)) {
-    throw new Error(
-      blocked
-        ? hianimeBlockedMessage(curl.impersonates)
-        : `hianime fetch HTTP ${httpCode} from ${url}`,
-    );
+    if (isCloudflareChallengeText(body)) {
+      throw new Error(cloudflareBlockMessage(curl.impersonates));
+    }
+    throw providerHttpErrorForStatus({
+      status: httpCode,
+      message: `hianime fetch HTTP ${httpCode} from ${hianimeUrlLabel(url)}`,
+      providerId: HIANIME_PROVIDER_ID,
+      stage: "fetch-page",
+    });
   }
-  if (blocked) {
-    throw new Error(hianimeBlockedMessage(curl.impersonates));
+  if (isCloudflareChallengeText(body)) {
+    throw new Error(cloudflareBlockMessage(curl.impersonates));
   }
   return body;
 }
@@ -576,11 +628,13 @@ export async function resolveHianimeEpisodeStreams({
         status: "resolved",
         links,
         subtitles: payload.subtitles,
-        ...(malId ? { malId } : null),
-        ...(payload.intro ? { intro: payload.intro } : {}),
-        ...(payload.outro ? { outro: payload.outro } : {}),
+        ...(malId && { malId }),
+        ...(payload.intro && { intro: payload.intro }),
+        ...(payload.outro && { outro: payload.outro }),
+        ...(payload.poster && { poster: payload.poster }),
+        ...(payload.spriteVtt && { spriteVtt: payload.spriteVtt }),
         embedReferer,
-        ...(ladderFallback ? { ladderFallback: true as const } : {}),
+        ...(ladderFallback && { ladderFallback: true as const }),
       },
     };
   } catch (error) {

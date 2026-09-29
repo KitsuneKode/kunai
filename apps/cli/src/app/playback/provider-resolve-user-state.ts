@@ -3,7 +3,6 @@ import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 export type ProviderResolveUserState =
   | "slow-source"
   | "trying-another-source"
-  | "using-cached-source"
   | "provider-title-issue"
   | "network-unstable"
   | "no-playable-source";
@@ -30,8 +29,6 @@ export type ProviderResolveUserStateInput = {
   readonly problem?: PlaybackProblem | null;
   /** True only once fallback to another provider has actually started. */
   readonly fallbackInProgress?: boolean;
-  /** True only when a refresh failed and the last cached stream was reused. */
-  readonly servedFromCacheAfterFailure?: boolean;
   /** Wall time spent resolving so far. */
   readonly elapsedSeconds?: number;
 };
@@ -112,14 +109,6 @@ export function classifyProviderResolveUserState(
       title: "Trying another source",
       detail:
         "The previous source did not resolve cleanly. Kunai is trying a compatible alternative.",
-    };
-  }
-
-  if (input.servedFromCacheAfterFailure) {
-    return {
-      state: "using-cached-source",
-      title: "Using cached source",
-      detail: "The fresh lookup failed, so Kunai kept the last playable cached stream.",
     };
   }
 

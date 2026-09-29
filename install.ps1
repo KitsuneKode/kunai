@@ -2344,6 +2344,22 @@ if ($Version -ne 'latest') {
   $null = Get-NormalizedVersion $Version
 }
 
+# Running elevated installs into the *administrator's* profile — LOCALAPPDATA
+# and APPDATA resolve to that token's directories, and the user never gets
+# kunai on PATH, with no error anywhere. Refuse by default; deliberate
+# system/container installs opt in via KUNAI_INSTALL_ALLOW_ELEVATED, and an
+# elevated -DryRun still prints the plan.
+if (-not $DryRun -and $OnWindows -and -not ($env:KUNAI_INSTALL_ALLOW_ELEVATED -match '^(?i:1|true|yes|y)$')) {
+  $elevated = (New-Object Security.Principal.WindowsPrincipal(
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+  )).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  if ($elevated) {
+    Write-Host "x Refusing to install elevated — Kunai would land in the administrator's profile and your user never gets it on PATH." -ForegroundColor Red
+    Write-Host '-> Re-run in a non-elevated shell as the user who will run kunai, or set KUNAI_INSTALL_ALLOW_ELEVATED=1 for a system/container install.'
+    exit 1
+  }
+}
+
 Write-Host 'Kunai installer' -ForegroundColor Cyan
 
 switch ($Method) {

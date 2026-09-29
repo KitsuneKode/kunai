@@ -253,11 +253,13 @@ export function parseHlsMasterVariants(
     }
 
     const qualityLabel = normalizeQualityLabel(labelSource) ?? labelSource;
+    // `currentBandwidth` is always a number — the `?? 0` that used to trail it
+    // was dead. A 0 simply ranks the variant lowest, which is what an
+    // unlabeled, unres'd row means.
     const qualityRank =
       qualityRankFromLabel(qualityLabel) ??
       qualityRankFromLabel(currentResolution) ??
-      currentBandwidth ??
-      0;
+      currentBandwidth;
 
     variants.push({
       url: absoluteUrl,

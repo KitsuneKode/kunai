@@ -8,6 +8,7 @@ export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
 export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 
 export type * from "./provider-cycle";
+export * from "./provider-http-error";
 export * from "./share";
 
 export type ProviderId = string & { readonly __brand?: "ProviderId" };
@@ -546,6 +547,13 @@ export interface ProviderCachePort {
 export interface ProviderRuntimePort {
   readonly runtime: ProviderRuntime;
   readonly operations: readonly ProviderOperation[];
+  /**
+   * "Safe to execute inside a browser runtime" — NOT "requires a browser".
+   * `false` means the port relies on Node/Bun-only APIs (raw sockets, crypto,
+   * child processes). Every Kunai production provider is a headless resolver;
+   * none of them need a browser, and a generated table that renders this column
+   * as "browser required" would invert the meaning.
+   */
   readonly browserSafe: boolean;
   readonly relaySafe: boolean;
   readonly localOnly: boolean;
@@ -587,6 +595,21 @@ export interface ProviderAbortState {
 export interface ProviderFetchPort {
   readonly runtime: "browser-safe-fetch" | "direct-http";
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+}
+
+/**
+ * Header a fetch port sets when the response actually came back through the
+ * relay (value "1"). A provider that would otherwise retry the same URL
+ * directly — say, to dodge a Cloudflare challenge — must treat a marked
+ * response as final: re-requesting upstream direct would silently bypass the
+ * relay the user deployed. Absent means the port answered locally (relay off,
+ * unauthorized fallback, or a direct port), so local fall-through stays legal.
+ */
+export const RELAYED_RESPONSE_HEADER = "X-Kunai-Relayed";
+
+/** True when this response was produced by the relay rather than a local fetch. */
+export function isRelayedResponse(response: Response): boolean {
+  return response.headers.get(RELAYED_RESPONSE_HEADER) === "1";
 }
 
 export type RelayMethod = "GET" | "POST" | "HEAD";

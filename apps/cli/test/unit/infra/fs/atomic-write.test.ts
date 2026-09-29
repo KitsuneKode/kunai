@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -231,6 +241,58 @@ describe("secret and durable writes", () => {
   test("a directory flush never fails a write that already landed", async () => {
     const root = await makeRoot();
     await expect(__testing.flushDirectory(join(root, "does-not-exist"))).resolves.toBeUndefined();
+  });
+
+  test("the temp create is exclusive — a planted symlink is not written through", async () => {
+    if (process.platform === "win32") return; // unprivileged symlink creation needs dev mode
+    const root = await makeRoot();
+    const victim = join(root, "victim.txt");
+    const tmp = join(root, ".config.json.planted.tmp");
+    await writeFile(victim, "do not touch");
+    await symlink(victim, tmp);
+
+    await expect(__testing.writeAndFlush(tmp, "payload")).rejects.toThrow();
+    expect(await readFile(victim, "utf8")).toBe("do not touch");
+  });
+
+  test("a temp-name collision retries on a fresh name instead of truncating it", async () => {
+    const root = await makeRoot();
+    const target = join(root, "config.json");
+    const occupied = join(root, ".config.json.occupied.tmp");
+    await writeFile(occupied, "not ours");
+
+    let calls = 0;
+    const tmp = await __testing.createExclusiveTemp(
+      target,
+      async (candidate) => {
+        await __testing.writeAndFlush(candidate, "new");
+      },
+      () => (calls++ === 0 ? occupied : join(root, `.config.json.free-${calls}.tmp`)),
+    );
+
+    expect(tmp).not.toBe(occupied);
+    expect(await readFile(occupied, "utf8")).toBe("not ours");
+    expect(await readFile(tmp, "utf8")).toBe("new");
+    await unlink(tmp);
+  });
+
+  test("eight consecutive collisions fail rather than write through", async () => {
+    const root = await makeRoot();
+    const target = join(root, "config.json");
+    const occupied = join(root, ".config.json.always.tmp");
+    await writeFile(occupied, "foreign");
+
+    await expect(
+      __testing.createExclusiveTemp(
+        target,
+        async (candidate) => {
+          await __testing.writeAndFlush(candidate, "new");
+        },
+        () => occupied,
+      ),
+    ).rejects.toThrow(/unique temp file/);
+
+    expect(await readFile(occupied, "utf8")).toBe("foreign");
   });
 
   test("Windows ACL hardening is skipped rather than guessed when the user is unknown", async () => {

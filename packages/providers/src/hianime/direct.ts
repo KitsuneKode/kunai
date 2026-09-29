@@ -5,6 +5,7 @@ import {
   type CoreProviderModule,
 } from "@kunai/core";
 import type {
+  ProviderArtworkInfo,
   ProviderEpisodeOption,
   ProviderFailure,
   ProviderResolveInput,
@@ -16,6 +17,7 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { formatAnimeEpisodeLabel } from "../shared/anime-metadata";
@@ -60,9 +62,12 @@ export {
 } from "./parsers";
 export {
   clearHianimeCachesForTest,
+  cloudflareBlockMessage,
   fetchHianimeEpisodeCatalog,
   fetchHianimeServers,
+  hianimeFetchText,
   hianimeCurlFailureMessage,
+  hianimeUrlLabel,
   hianimeEmbedReferer,
   hianimeMalIdFromEmbedUrl,
   HianimeEmbedDecodeError,
@@ -96,15 +101,15 @@ function buildHianimeSourceInventory(
       serverLabel: HIANIME_SUPPORTED_SERVER,
       subtitleMode: "soft",
     });
+    const status: ProviderSourceCandidate["status"] =
+      audioMode === selectedMode ? "probing" : "available";
     return {
       id: sourceId,
       providerId: HIANIME_PROVIDER_ID,
       kind: "provider-api" as const,
       label,
       host: "hianime.at",
-      status: (audioMode === selectedMode
-        ? "probing"
-        : "available") as ProviderSourceCandidate["status"],
+      status,
       confidence: 0.85,
       requiresRuntime: "direct-http" as const,
       cachePolicy,
@@ -131,6 +136,11 @@ function buildHianimeSourceInventory(
   });
 }
 
+type HianimeCandidateSet = {
+  readonly streams: StreamCandidate[];
+  readonly variants: ProviderVariantCandidate[];
+};
+
 function linksToCandidates(
   links: readonly HianimeStreamLink[],
   input: {
@@ -138,9 +148,11 @@ function linksToCandidates(
     readonly subtitleLanguages?: readonly string[];
     readonly hasExternalSubtitles: boolean;
     readonly timing?: Record<string, { readonly start: number; readonly end: number }>;
+    /** Episode poster and scrub-preview sprite from the embed payload. */
+    readonly artwork?: ProviderArtworkInfo;
   },
   cachePolicy: ReturnType<typeof createProviderCachePolicy>,
-): { readonly streams: StreamCandidate[]; readonly variants: ProviderVariantCandidate[] } {
+): HianimeCandidateSet {
   const streams: StreamCandidate[] = [];
   const variants: ProviderVariantCandidate[] = [];
   const sourceId = `source:${HIANIME_PROVIDER_ID}:${input.audioMode}`;
@@ -190,6 +202,7 @@ function linksToCandidates(
       flavorArchetype: archetype,
       flavorLabel,
       serverName: HIANIME_SUPPORTED_SERVER,
+      ...(input.artwork && { artwork: input.artwork }),
       confidence: 0.9,
       cachePolicy,
       languageEvidence: [
@@ -233,6 +246,7 @@ function linksToCandidates(
       flavorArchetype: archetype,
       flavorLabel,
       streamIds: [streamId],
+      ...(input.artwork && { artwork: input.artwork }),
       confidence: 0.9,
     });
   }
@@ -336,7 +350,7 @@ export const hianimeProviderModule: CoreProviderModule = {
       (entry): ProviderEpisodeOption => ({
         index: entry.number,
         label: formatAnimeEpisodeLabel(entry.number, entry.title),
-        ...(entry.title ? { name: entry.title } : {}),
+        ...(entry.title && { name: entry.title }),
         detail: `Episode ${entry.number}`,
         totalEpisodeCount: catalog.length,
         providerEpisodeIdentity: { providerId: HIANIME_PROVIDER_ID, value: entry.episodeId },
@@ -535,13 +549,27 @@ export const hianimeProviderModule: CoreProviderModule = {
         ),
       ];
       const subtitles = toSubtitleCandidates(requested.subtitles, sourceId, cachePolicy);
+      // The embed ships a poster frame and a sprite-sheet VTT (seek-bar
+      // previews). Parsed but previously dropped — surface both via the
+      // standard artwork slot so Tracks/source views can render them.
+      const artwork: ProviderArtworkInfo | undefined =
+        requested.poster || requested.spriteVtt
+          ? {
+              ...(requested.poster && {
+                posterUrl: requested.poster,
+                thumbnailUrl: requested.poster,
+              }),
+              ...(requested.spriteVtt && { seekBarVttUrl: requested.spriteVtt }),
+            }
+          : undefined;
       const { streams, variants } = linksToCandidates(
         requested.links,
         {
           audioMode,
           subtitleLanguages: subtitleLanguages.length > 0 ? subtitleLanguages : undefined,
           hasExternalSubtitles: subtitles.length > 0,
-          ...(Object.keys(timing).length > 0 ? { timing } : null),
+          ...(Object.keys(timing).length > 0 && { timing }),
+          ...(artwork && { artwork }),
         },
         cachePolicy,
       );
@@ -637,14 +665,18 @@ export const hianimeProviderModule: CoreProviderModule = {
       }
       const message = error instanceof Error ? error.message : String(error);
       const gone = /hianime fetch HTTP (404|410)\b/.test(message);
-      let code: ProviderFailure["code"] = "network-error";
+      /* A status-bearing error carries its own verdict — a bare 403 whose body
+       * never said "cloudflare" is still blocked, and a 429 is a rate limit,
+       * not a retryable network blip (#458). */
+      const structured = error instanceof ProviderHttpError ? error : undefined;
+      let code: ProviderFailure["code"] = structured && !gone ? structured.code : "network-error";
       if (gone) code = "not-found";
       else if (/cloudflare|just a moment/i.test(message)) code = "blocked";
       const failure: ProviderFailure = {
         providerId: HIANIME_PROVIDER_ID,
         code,
         message,
-        retryable: !gone,
+        retryable: gone ? false : (structured?.retryable ?? true),
         at: context.now(),
       };
       failures.push(failure);

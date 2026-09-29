@@ -9,8 +9,6 @@
 // Poster rendering goes through the real capability gate and is disabled here.
 // =============================================================================
 
-process.env.KUNAI_POSTER = "0";
-
 import { LibraryShell } from "@/app-shell/library-shell";
 import type { Container } from "@/container";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
@@ -47,7 +45,7 @@ function entry(job: Partial<OfflineLibraryEntry["job"]>): OfflineLibraryEntry {
   } as OfflineLibraryEntry;
 }
 
-const POPULATED_ENTRIES: readonly OfflineLibraryEntry[] = [
+export const POPULATED_ENTRIES: readonly OfflineLibraryEntry[] = [
   entry({
     id: "dune-2",
     titleId: "dune-2",
@@ -75,7 +73,7 @@ const POPULATED_ENTRIES: readonly OfflineLibraryEntry[] = [
 ];
 
 /** A container whose only async read is held open until the caller settles it. */
-function gatedContainer(entries: readonly OfflineLibraryEntry[]) {
+export function gatedLibraryContainer(entries: readonly OfflineLibraryEntry[]) {
   let open!: () => void;
   const gate = new Promise<void>((resolve) => {
     open = resolve;
@@ -127,21 +125,22 @@ function gatedContainer(entries: readonly OfflineLibraryEntry[]) {
   };
 }
 
-await captureSurfaceSettled("library-empty", () => {
-  const { container, settle } = gatedContainer([]);
-  return {
-    node: <LibraryShell container={container} onClose={() => undefined} />,
-    settle,
+/** The settled-capture factory both the script and the live-diff test share. */
+export function libraryCaptureFixture(entries: readonly OfflineLibraryEntry[]) {
+  return () => {
+    const { container, settle } = gatedLibraryContainer(entries);
+    return {
+      node: <LibraryShell container={container} onClose={() => undefined} />,
+      settle,
+    };
   };
-});
+}
 
-await captureSurfaceSettled("library-populated", () => {
-  const { container, settle } = gatedContainer(POPULATED_ENTRIES);
-  return {
-    node: <LibraryShell container={container} onClose={() => undefined} />,
-    settle,
-  };
-});
+if (import.meta.main) {
+  process.env.KUNAI_POSTER = "0";
+  await captureSurfaceSettled("library-empty", libraryCaptureFixture([]));
+  await captureSurfaceSettled("library-populated", libraryCaptureFixture(POPULATED_ENTRIES));
 
-console.log("captured library empty + populated");
-process.exit(0);
+  console.log("captured library empty + populated");
+  process.exit(0);
+}

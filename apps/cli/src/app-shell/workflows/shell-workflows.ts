@@ -2211,6 +2211,9 @@ async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
 async function handleWatchlist(container: Container): Promise<"handled"> {
   const { listService, historyRepository, releaseProgressCache } = container;
   const actionContext = buildPickerActionContext({ container, taskLabel: "Watchlist" });
+  // History cannot change inside this picker — read it once instead of per
+  // dialog iteration.
+  const history = readLatestHistoryByTitle(historyRepository);
 
   while (true) {
     const items = listService.getWatchlist();
@@ -2219,7 +2222,6 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     const progressMap = new Map<string, string>();
     const nextEpisodeMap = new Map<string, string>();
     const newEpisodeMap = new Map<string, number>();
-    const history = readLatestHistoryByTitle(historyRepository);
     const releaseProjections = releaseProgressCache.getByTitleIds(
       items.map((item) => item.titleId),
     );

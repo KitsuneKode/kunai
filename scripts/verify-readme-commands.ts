@@ -8,9 +8,12 @@
 //     --binary apps/cli/dist/bin/kunai-linux-x64
 // =============================================================================
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
+import { isMuslEnvironmentSync } from "../apps/cli/src/services/update/native-installer/musl";
+import { resolveHostReleaseBinaryTarget } from "../apps/cli/src/services/update/platform-assets";
 import {
   allReadmeCommandsPassed,
   verifyReadmeCommands,
@@ -60,58 +63,57 @@ function parseArgs(argv: readonly string[]): {
     throw new Error(`unknown argument: ${arg}`);
   }
 
-  if (!mode && version && binary) usage();
+  if (!mode || !version || !binary) usage();
   return { mode, version, binary };
 }
 
 /**
- * Defaults for a bare `bun run verify:readme:commands`.
- *
- * The root package script passes no arguments, so before this the command
- * exited 2 on every invocation while looking like working coverage — and no
- * doc anywhere showed the argument form. Defaults are derived rather than
- * hardcoded: the version comes from the CLI manifest, which is the same source
- * the release notes use, and the binary from the host build path.
- *
- * Anything still missing produces the usage message naming what to run, rather
- * than a bare exit code.
+ * Bare `bun run verify:readme:commands` must do something real — the root
+ * script passes no arguments, so it exited 2 for everyone who ran it while CI
+ * (which passes the full arg form) looked covered. Defaults: fixture mode,
+ * the CLI package's own version, and the host binary a local
+ * `bun run build:binary:host` produces.
  */
-function withDefaults(parsed: { mode?: ReadmeCommandMode; version?: string; binary?: string }): {
+export async function resolveDefaultInvocation(): Promise<{
   mode: ReadmeCommandMode;
   version: string;
   binary: string;
-} {
-  const repoRoot = resolve(import.meta.dirname, "..");
-  // Synchronous on purpose: `BunFile.json()` is async, and an un-awaited read
-  // here silently yields `undefined` — which is indistinguishable from a
-  // manifest that has no version, and fails the same way.
-  let version = parsed.version;
-  if (version === undefined) {
-    try {
-      const raw = readFileSync(resolve(repoRoot, "apps/cli/package.json"), "utf8");
-      version = (JSON.parse(raw) as { version?: string }).version;
-    } catch {
-      version = undefined;
-    }
+}> {
+  const cliPackage = JSON.parse(
+    await readFile(join(import.meta.dirname, "../apps/cli/package.json"), "utf8"),
+  ) as { version?: string };
+  if (!cliPackage.version) {
+    throw new Error("could not read version from apps/cli/package.json");
   }
-  const binary =
-    parsed.binary ??
-    `apps/cli/dist/bin/kunai-${process.platform === "darwin" ? "darwin" : "linux"}-${process.arch === "arm64" ? "arm64" : "x64"}`;
+  const hostLibc = process.platform === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu";
+  const target = resolveHostReleaseBinaryTarget({ libc: hostLibc });
+  return {
+    mode: "fixture-assets",
+    version: cliPackage.version,
+    // Repo-relative POSIX form — the value is also a stable contract string
+    // for tests; `resolve`/`existsSync` translate `/` on Windows fine.
+    binary: `apps/cli/dist/bin/${target.out}`,
+  };
+}
 
-  if (!version || !Bun.file(resolve(repoRoot, binary)).exists()) {
-    console.error(
-      `verify:readme:commands needs a host binary to drive.\n` +
-        `  Build one:  bun run build:binary:host\n` +
-        `  Or pass it:  bun run verify:readme:commands -- --mode fixture-assets --version <semver> --binary <path>\n`,
+export function assertInvocationBinary(binary: string, repoRoot: string): void {
+  if (!existsSync(resolve(repoRoot, binary))) {
+    throw new Error(
+      `no host binary at ${binary}. ` +
+        `Build it first: bun run build:binary:host — or pass --binary <path>.`,
     );
-    process.exit(2);
   }
-  return { mode: parsed.mode ?? "fixture-assets", version, binary };
 }
 
 async function main(): Promise<void> {
-  const { mode, version, binary } = withDefaults(parseArgs(process.argv.slice(2)));
+  const argv = process.argv.slice(2);
   const repoRoot = resolve(import.meta.dirname, "..");
+  // Explicit args are validated by parseArgs (usage error on miss). With no
+  // args the defaults apply, and the binary they resolve is checked here so the
+  // message can say how to produce one.
+  const { mode, version, binary } =
+    argv.length === 0 ? await resolveDefaultInvocation() : parseArgs(argv);
+  if (argv.length === 0) assertInvocationBinary(binary, repoRoot);
   const report = await verifyReadmeCommands({
     mode,
     version,
@@ -134,7 +136,9 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error: unknown) => {
-  console.error(`[readme-commands] ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error: unknown) => {
+    console.error(`[readme-commands] ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}

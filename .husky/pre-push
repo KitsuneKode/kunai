@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Pre-push verification.
 #
 # 1. Generated docs metadata freshness first — a committed
@@ -27,8 +28,13 @@ done
 # wins; this only supplies the default.
 export KUNAI_TEST_TIMEOUT_MS="${KUNAI_TEST_TIMEOUT_MS:-60000}"
 
+# Full local gate, not just tests — matches the four blocking CI legs plus the
+# doc verifiers (#467: a tools/-only or install.sh-only change used to reach
+# main unformatted and untyped). Branch pushes keep the affected scope the PR
+# jobs use; the zero-affected fallback inside ci-affected-run.ts keeps a
+# root-files-only diff from running nothing.
 if [ "$targets_main" -eq 1 ]; then
-  bunx turbo run test --summarize
+  bun run ci
 else
-  bunx turbo run test --affected --summarize
+  bun run ci:affected
 fi

@@ -28,6 +28,7 @@ import {
   parseSkipPromptDurationMs,
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
+import { discoverMpvInvocation } from "./mpv-discovery";
 import { computeInProcessReconnectSeek } from "./mpv-in-process-reconnect";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
@@ -615,7 +616,11 @@ export class PersistentMpvSession {
     };
     this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
 
-    if (!this.runtime.which("mpv")) {
+    const mpvInvocation = discoverMpvInvocation({
+      which: this.runtime.which,
+      ...(this.runtime.exists && { exists: this.runtime.exists }),
+    });
+    if (!mpvInvocation) {
       this.currentCycleOptions().onPlaybackEvent?.({
         type: "ipc-command-failed",
         command: "spawn",
@@ -625,7 +630,7 @@ export class PersistentMpvSession {
       return;
     }
 
-    const proc = this.runtime.spawn(["mpv", ...args], {
+    const proc = this.runtime.spawn([...mpvInvocation.argv, ...args], {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
@@ -1217,7 +1222,7 @@ export class PersistentMpvSession {
       title: ctx.title,
       episode: ctx.episode,
       providerId: ctx.providerId,
-      ...(position > 0 ? { startSeconds: position } : {}),
+      ...(position > 0 && { startSeconds: position }),
     });
     ctx.onCopied?.(result);
   }

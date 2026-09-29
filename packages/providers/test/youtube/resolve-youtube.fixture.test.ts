@@ -32,6 +32,12 @@ function buildResolveInput(): ProviderResolveInput {
   };
 }
 
+// Binary presence is what the resolve path gates on; metadata is injected
+// so the binary is never invoked. skipIf keeps a missing binary a visible
+// skip instead of a silent pass (#468).
+const hasYtDlp = () => Boolean(Bun.which("yt-dlp"));
+const ytdlpTest = test.skipIf(!hasYtDlp());
+
 describe("resolveYoutube", () => {
   test("configureYoutubeProvider replaces previous runtime config", () => {
     configureYoutubeProvider({
@@ -44,11 +50,7 @@ describe("resolveYoutube", () => {
     expect(getYoutubeProviderConfig().sponsorblockRemove).toBeUndefined();
   });
 
-  test("returns yt-dlp-missing when yt-dlp is absent", async () => {
-    if (Bun.which("yt-dlp")) {
-      return;
-    }
-
+  test.skipIf(hasYtDlp())("returns yt-dlp-missing when yt-dlp is absent", async () => {
     const resolve = youtubeProviderModule.resolve;
     if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
 
@@ -57,11 +59,7 @@ describe("resolveYoutube", () => {
     expect(result.failures.some((failure) => failure.code === "yt-dlp-missing")).toBe(true);
   });
 
-  test("resolves watch URL candidates with requiresYtdl from metadata cache", async () => {
-    if (!Bun.which("yt-dlp")) {
-      return;
-    }
-
+  ytdlpTest("resolves watch URL candidates with requiresYtdl from metadata cache", async () => {
     const cache = new Map<string, unknown>();
     configureYoutubeProvider({
       metadataCache: {
@@ -125,8 +123,7 @@ describe("resolveYoutube", () => {
       } as never;
     }
 
-    test("one source per configured client, each carrying only its own client", async () => {
-      if (!Bun.which("yt-dlp")) return;
+    ytdlpTest("one source per configured client, each carrying only its own client", async () => {
       configureYoutubeProvider({
         metadataCache: seedMetadataCache(),
         extractorArgs: "youtube:player_client=mweb,tv_simply",
@@ -153,26 +150,27 @@ describe("resolveYoutube", () => {
       expect(args.some((value) => value?.includes(","))).toBe(false);
     });
 
-    test("each quality variant lists every lane so a chosen quality can still fail over", async () => {
-      if (!Bun.which("yt-dlp")) return;
-      configureYoutubeProvider({
-        metadataCache: seedMetadataCache(),
-        extractorArgs: "youtube:player_client=mweb,tv_simply",
-      });
+    ytdlpTest(
+      "each quality variant lists every lane so a chosen quality can still fail over",
+      async () => {
+        configureYoutubeProvider({
+          metadataCache: seedMetadataCache(),
+          extractorArgs: "youtube:player_client=mweb,tv_simply",
+        });
 
-      const resolve = youtubeProviderModule.resolve;
-      if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
-      const result = await resolve(buildResolveInput(), TEST_CONTEXT);
+        const resolve = youtubeProviderModule.resolve;
+        if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
+        const result = await resolve(buildResolveInput(), TEST_CONTEXT);
 
-      expect(result.variants?.length).toBeGreaterThan(0);
-      for (const variant of result.variants ?? []) {
-        expect(variant.streamIds).toHaveLength(2);
-        expect(new Set(variant.streamIds).size).toBe(2);
-      }
-    });
+        expect(result.variants?.length).toBeGreaterThan(0);
+        for (const variant of result.variants ?? []) {
+          expect(variant.streamIds).toHaveLength(2);
+          expect(new Set(variant.streamIds).size).toBe(2);
+        }
+      },
+    );
 
-    test("a single configured client stays a single source", async () => {
-      if (!Bun.which("yt-dlp")) return;
+    ytdlpTest("a single configured client stays a single source", async () => {
       configureYoutubeProvider({
         metadataCache: seedMetadataCache(),
         extractorArgs: "youtube:player_client=mweb",

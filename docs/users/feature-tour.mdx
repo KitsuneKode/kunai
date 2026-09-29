@@ -16,25 +16,25 @@ in the same session.
 Common launch patterns. For the full flag list synced from `kunai --help`, see
 [CLI reference](/docs/users/cli-reference).
 
-| Invocation | What it does |
-| --- | --- |
-| `kunai` | Open the shell — search, browse, or pick from history |
-| `kunai -S "Title"` | Search and show results |
-| `kunai -S "Title" --jump 1` | Search, auto-select first result |
-| `kunai -S "Title" -q` | Quick mode — same as `--jump 1` with search |
-| `kunai -a -S "Anime"` | Anime mode (anime providers) |
-| `kunai -i 438631 -t movie` | Open a specific TMDB ID directly |
-| `kunai --continue` | Jump to the newest unfinished history entry |
-| `kunai --history` | Open watch history first |
-| `kunai --offline` | Open completed offline library first |
-| `kunai --discover` | Open recommendations first |
-| `kunai --calendar` | Open release calendar first |
-| `kunai --random` | Open random picks tray first |
-| `kunai --open <url>` | Play a shared `kunai://` link (trusted launch) |
-| `kunai --setup` | Run setup wizard |
-| `kunai --download -S "Title"` | Download-only flow for a title (no shell queue UI) |
-| `kunai --zen` | Minimal chrome mode |
-| `kunai --debug` | Verbose logging to `./logs.txt` |
+| Invocation                    | What it does                                          |
+| ----------------------------- | ----------------------------------------------------- |
+| `kunai`                       | Open the shell — search, browse, or pick from history |
+| `kunai -S "Title"`            | Search and show results                               |
+| `kunai -S "Title" --jump 1`   | Search, auto-select first result                      |
+| `kunai -S "Title" -q`         | Quick mode — same as `--jump 1` with search           |
+| `kunai -a -S "Anime"`         | Anime mode (anime providers)                          |
+| `kunai -i 438631 -t movie`    | Open a specific TMDB ID directly                      |
+| `kunai --continue`            | Jump to the newest unfinished history entry           |
+| `kunai --history`             | Open watch history first                              |
+| `kunai --offline`             | Open completed offline library first                  |
+| `kunai --discover`            | Open recommendations first                            |
+| `kunai --calendar`            | Open release calendar first                           |
+| `kunai --random`              | Open random picks tray first                          |
+| `kunai --open <url>`          | Play a shared `kunai://` link (trusted launch)        |
+| `kunai --setup`               | Run setup wizard                                      |
+| `kunai --download -S "Title"` | Download-only flow for a title (no shell queue UI)    |
+| `kunai --zen`                 | Minimal chrome mode                                   |
+| `kunai --debug`               | Verbose logging to `./logs.txt`                       |
 
 ### Download vs queue
 
@@ -97,23 +97,23 @@ Live registry — same table as [Providers](/docs/users/providers#active-provide
 
 ## Hotkeys
 
-| Context | Keys | Action |
-| --- | --- | --- |
-| Anywhere | `/` | Open command palette |
-| Browse results | `Tab` | Cycle catalog mode (series / anime / YouTube) |
-| Browse results | `Ctrl+F` | Narrow loaded results |
-| Browse results | `Enter` | Open or play selected result |
-| Browse results | `Shift+Enter` / `i` | Open title details |
-| Browse results | `/filters` | Open the filter surface |
-| Browse results | `Ctrl+D` | Queue for download |
-| Browse / pickers | `Esc` | Clear, close, or go back |
-| Playback | `r` | Recover current stream |
-| Playback | `⇧F` | Try next compatible provider |
-| Playback | `d` | Open diagnostics |
-| Playback | `o` | Choose source |
-| Playback | `k` | Choose quality |
-| Playback | `n` / `p` | Next / previous episode |
-| Playback | `a` / `u` | Toggle autoplay / autoskip |
+| Context          | Keys                | Action                                        |
+| ---------------- | ------------------- | --------------------------------------------- |
+| Anywhere         | `/`                 | Open command palette                          |
+| Browse results   | `Tab`               | Cycle catalog mode (series / anime / YouTube) |
+| Browse results   | `Ctrl+F`            | Narrow loaded results                         |
+| Browse results   | `Enter`             | Open or play selected result                  |
+| Browse results   | `Shift+Enter` / `i` | Open title details                            |
+| Browse results   | `/filters`          | Open the filter surface                       |
+| Browse results   | `Ctrl+D`            | Queue for download                            |
+| Browse / pickers | `Esc`               | Clear, close, or go back                      |
+| Playback         | `r`                 | Recover current stream                        |
+| Playback         | `⇧F`                | Try next compatible provider                  |
+| Playback         | `d`                 | Open diagnostics                              |
+| Playback         | `o`                 | Choose source                                 |
+| Playback         | `k`                 | Choose quality                                |
+| Playback         | `n` / `p`           | Next / previous episode                       |
+| Playback         | `a` / `u`           | Toggle autoplay / autoskip                    |
 
 ## Diagnostics flow
 
@@ -132,20 +132,20 @@ See [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) for the u
 
 Release binaries via `install.sh` (Linux/macOS) and `install.ps1` (Windows) embed the Bun runtime — you do not need Bun installed to run them. **Linux is supported**; macOS and Windows x64 are **beta**; Windows ARM64 is **experimental**. Unsigned binaries may trigger SmartScreen or Gatekeeper on first run; see [Install and update](/docs/users/install-and-update). Keep installs current with `kunai upgrade`.
 
-| Platform | Install | Playback | Downloads | Poster previews |
-| --- | --- | --- | --- | --- |
-| Linux (supported) | `install.sh` or bun/npm global | mpv | yt-dlp + ffprobe | Kitty / iTerm2 / Sixel / half-block (no install) |
-| macOS (beta) | `install.sh` or bun/npm global | mpv | yt-dlp + ffprobe | iTerm2 / Sixel / half-block (no install) |
-| Windows x64 (beta) | `install.ps1` or bun/npm global | mpv | yt-dlp | iTerm2 / Sixel / half-block (no install) |
-| Windows ARM64 (experimental) | `install.ps1` | mpv | yt-dlp | iTerm2 / Sixel / half-block (no install) |
+| Platform                     | Install                         | Playback | Downloads        | Poster previews                                  |
+| ---------------------------- | ------------------------------- | -------- | ---------------- | ------------------------------------------------ |
+| Linux (supported)            | `install.sh` or bun/npm global  | mpv      | yt-dlp + ffprobe | Kitty / iTerm2 / Sixel / half-block (no install) |
+| macOS (beta)                 | `install.sh` or bun/npm global  | mpv      | yt-dlp + ffprobe | iTerm2 / Sixel / half-block (no install)         |
+| Windows x64 (beta)           | `install.ps1` or bun/npm global | mpv      | yt-dlp           | iTerm2 / Sixel / half-block (no install)         |
+| Windows ARM64 (experimental) | `install.ps1`                   | mpv      | yt-dlp           | iTerm2 / Sixel / half-block (no install)         |
 
 ## Storage architecture
 
-| Store | Type | Contents |
-| --- | --- | --- |
-| Config | JSON | `~/.config/kunai/config.json`, provider overrides |
-| Data DB | SQLite | History, lists, playlists, notifications, downloads |
-| Cache DB | SQLite | Stream URLs, provider health, schedules |
-| Logs | File | `./logs.txt` when `--debug` is enabled |
+| Store    | Type   | Contents                                            |
+| -------- | ------ | --------------------------------------------------- |
+| Config   | JSON   | `~/.config/kunai/config.json`, provider overrides   |
+| Data DB  | SQLite | History, lists, playlists, notifications, downloads |
+| Cache DB | SQLite | Stream URLs, provider health, schedules             |
+| Logs     | File   | `./logs.txt` when `--debug` is enabled              |
 
 <SyncedAt />

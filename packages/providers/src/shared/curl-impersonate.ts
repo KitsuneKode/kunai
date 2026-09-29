@@ -75,8 +75,8 @@ function parseWrapper(entry: string): ParsedWrapper | null {
   if (mobile) return null;
   const family = rawFamily.toLowerCase();
   if (!FAMILY_RANK.includes(family as (typeof FAMILY_RANK)[number])) return null;
+  // rawVersion is `\d+` from WRAPPER_PATTERN, so parseInt cannot yield NaN here.
   const version = Number.parseInt(rawVersion, 10);
-  if (!Number.isFinite(version)) return null;
   return { name: entry, family, version, revision: revision.toLowerCase() };
 }
 

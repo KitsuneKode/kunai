@@ -8,14 +8,17 @@ lastReviewed: "2026-09-13"
 > Agent-facing (L3). Live material: responses recorded 2026-09-13 against
 > `hianime.at` with plain curl + Chrome 124 UA. No browser, no auth, no account.
 
-Parity reference: ani-cli `5.1.2` (`/home/kitsunekode/Projects/osc/ani-cli`,
-single `ani-cli` shell script). Kunai previously used `anidb.app` for the
+Parity reference: ani-cli `5.1.4` (`/home/kitsunekode/Projects/osc/ani-cli`,
+single `ani-cli` shell script; pinned in `scripts/parity-references.json`).
+Kunai previously used `anidb.app` for the
 ani-cli-shaped lane; ani-cli has since moved its primary to HiAnime, so this
 provider restores that parity on the new upstream. The 5.1.1 → 5.1.2 delta is
 one commit (`#1902`: `hianime_curl` names the failed layer — `no HTTP
 response` vs `HTTP NNN` — instead of a bare curl exit), ported into
 `splitCurlHttpTrailer` / `hianimeCurlFailureMessage` plus the curl-path HTTP
-status check.
+status check. 5.1.3 → 5.1.4 carried no hianime-lane changes (#1908 filename
+sanitization, #1912 sed label fix, #1927 docs — all already covered or
+not-applicable here).
 
 ## Request Summary
 

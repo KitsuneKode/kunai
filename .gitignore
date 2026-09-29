@@ -2,6 +2,11 @@
 node_modules
 .worktrees
 
+# Release pipeline scratch — npm tarballs and bare clones produced by the
+# candidate/packaging scripts. Hundreds of MB, never meant to be committed.
+.release-candidate/
+.delta/
+
 # Local diagnostic/audit exports. Current audit truth lives in .plans/roadmap.md.
 kunai-diagnostics-report-*
 docs/agents/kunai-audit-handoff.html
@@ -17,7 +22,9 @@ next-env.d.ts
 out
 dist
 *.tgz
-apps/cli/test/vhs/golden/
+# VHS tape outputs — screen recordings for docs/issues, never verified
+# baselines. Named `captures/`, not `golden/`, because nothing diffs them.
+apps/cli/test/vhs/captures/
 kunai-demo.tape
 
 

@@ -1,5 +1,8 @@
+import { providerHttpErrorForStatus } from "@kunai/types";
+
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { markInvidiousInstanceFailure, pickInvidiousInstance } from "./invidious-instance-pool";
+import { YOUTUBE_PROVIDER_ID } from "./manifest";
 
 const INVIDIOUS_FETCH_TIMEOUT_MS = 15_000;
 
@@ -179,7 +182,12 @@ async function requestInvidiousJson<T>(
       headers: { Accept: "application/json" },
     });
     if (!response.ok) {
-      throw new Error(`Invidious request failed (${response.status})`);
+      throw providerHttpErrorForStatus({
+        status: response.status,
+        message: `Invidious request failed (${response.status})`,
+        providerId: YOUTUBE_PROVIDER_ID,
+        stage: "instance-request",
+      });
     }
     return (await response.json()) as T;
   } catch (error) {

@@ -5,13 +5,13 @@ import type {
   ProviderResolveResult,
   ProviderRuntimeContext,
 } from "@kunai/types";
-
 import {
-  isRetryableStatus,
+  httpStatusIsRetryable,
+  httpStatusToResolveErrorCode,
   ProviderHttpError,
-  providerFetch,
-  statusToResolveErrorCode,
-} from "../runtime/fetch";
+} from "@kunai/types";
+
+import { providerFetch } from "../runtime/fetch";
 import {
   directStreamFetchSignal,
   resolveDirectStreamSource,
@@ -107,8 +107,8 @@ function vidlinkHttpError(status: number, endpoint: string, stage: string): Prov
     stage,
     status,
     message: `${endpoint} returned HTTP ${status}`,
-    code: statusToResolveErrorCode(status),
-    retryable: isRetryableStatus(status),
+    code: httpStatusToResolveErrorCode(status),
+    retryable: httpStatusIsRetryable(status),
   });
 }
 
@@ -406,6 +406,7 @@ async function encryptTmdbId(
       if (!response.ok) {
         throw vidlinkHttpError(response.status, ENC_DEC_ENDPOINT, "enc-dec");
       }
+      // SAFETY: response.json() resolves to the parsed document; result is checked optional.
       const data = (await response.json()) as { result?: string };
       if (!data?.result) {
         throw new Error("enc-dec.app did not return an encrypted id");

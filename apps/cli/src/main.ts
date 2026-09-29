@@ -52,7 +52,7 @@ import {
   type ShutdownRuntime,
 } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
-import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
+import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
 import {
   parseKunaiShareUrl,
@@ -642,7 +642,18 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   // Parse CLI arguments before acquiring the versioned lifetime lock so short
   // paths (--help / --version / protocol install) never leave lock residue.
-  const args = parseArgs(argv);
+  let args: CliArgs;
+  try {
+    args = parseArgs(argv);
+  } catch (error) {
+    // Usage errors exit 2 — the code `kunai completion` already uses — so a
+    // wrapper script can tell "I typo'd a flag" apart from a real failure.
+    if (error instanceof CliUsageError) {
+      process.stderr.write(`kunai: ${error.message}\nRun "kunai --help" for usage.\n`);
+      process.exit(2);
+    }
+    throw error;
+  }
   if (args.help) {
     process.stdout.write(buildHelpText());
     return;
@@ -881,6 +892,27 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
   let bootstrapEpisode: EpisodeInfo | null = null;
   let autoPickSearchResultIndex = bootstrapIntent.autoPickSearchResultIndex;
+
+  // Untrusted handoffs confirm before any share resolution: mapping an anime
+  // catalog anchor makes provider network calls, and applying the resolved
+  // target dispatches session state — neither may run on external input alone.
+  if (protocolHandoff && !pendingShareLaunch?.trusted) {
+    const { confirmProtocolHandoff } = await import("./app-shell/workflows");
+    const confirmed = await confirmProtocolHandoff(protocolHandoff);
+    if (!confirmed) {
+      container.diagnosticsService.record({
+        category: "session",
+        message: "Protocol handoff cancelled by local confirmation",
+        context: {
+          action: protocolHandoff.action,
+          anchor: protocolHandoff.ref.anchor.by,
+        },
+      });
+      await disposeContainer(container);
+      if (process.stdin.isTTY) process.stdin.unref();
+      return;
+    }
+  }
 
   if (pendingShareLaunch) {
     const shareBootstrap = await applyShareRefLaunch(container, pendingShareLaunch);
@@ -1187,24 +1219,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         await container.syncService.drain(25, signal ? { signal } : undefined);
       },
     });
-  }
-  if (protocolHandoff && !pendingShareLaunch?.trusted) {
-    const { confirmProtocolHandoff } = await import("./app-shell/workflows");
-    const confirmed = await confirmProtocolHandoff(protocolHandoff);
-    if (!confirmed) {
-      container.diagnosticsService.record({
-        category: "session",
-        message: "Protocol handoff cancelled by local confirmation",
-        context: {
-          action: protocolHandoff.action,
-          anchor: protocolHandoff.ref.anchor.by,
-        },
-      });
-      await shutdownShell();
-      await disposeContainer(container);
-      if (process.stdin.isTTY) process.stdin.unref();
-      return;
-    }
   }
   await maybeRunStartupSetup({
     force: args.setup,

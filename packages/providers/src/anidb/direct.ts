@@ -15,6 +15,7 @@ import type {
   ProviderVariantCandidate,
   StreamCandidate,
 } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
@@ -40,6 +41,7 @@ import {
   ANIDB_REFERER,
   ANIDB_USER_AGENT,
   AnidbBlockedError,
+  AnidbHttpStatusError,
   anidbNumericId,
   chooseAnidbSearchMatch,
   fetchAnidbEpisodeCatalog,
@@ -668,13 +670,24 @@ export const anidbProviderModule: CoreProviderModule = {
       // any fallback is considered, so an unconditional `true` here spends half
       // the resolve budget on a request that cannot succeed. The message test
       // stays as a floor for a challenge that arrives from a path that has not
-      // been converted to the typed error yet.
-      const blocked = error instanceof AnidbBlockedError || /cloudflare/i.test(message);
+      // been converted to the typed error yet. A blocked verdict is only
+      // produced after the inner Bun/fetch → curl sequence is spent, so a
+      // second engine attempt cannot succeed — the same
+      // "retryable: !captchaBlocked" policy allmanga already states.
+      const cloudflare = /cloudflare/i.test(message);
+      const blocked = error instanceof AnidbBlockedError || cloudflare;
+      // A status-bearing error carries its own verdict — a bare 403 whose body
+      // never said "cloudflare" is still blocked, and a 429 is a rate limit,
+      // not a retryable network blip (#458).
+      const structured =
+        error instanceof AnidbHttpStatusError || error instanceof ProviderHttpError
+          ? error
+          : undefined;
       const failure: ProviderFailure = {
         providerId: ANIDB_PROVIDER_ID,
-        code: blocked ? "blocked" : "network-error",
+        code: blocked ? "blocked" : (structured?.code ?? "network-error"),
         message,
-        retryable: !blocked,
+        retryable: blocked ? false : (structured?.retryable ?? true),
         at: context.now(),
       };
       failures.push(failure);

@@ -7,11 +7,25 @@ import type { JsonValue } from "@kunai/types";
 export { VIDEASY_DB_BASE as TMDB_PROXY_BASE };
 
 export const TMDB_DIRECT_BASE = "https://api.themoviedb.org/3";
+/**
+ * Official TMDB hostname alias on the same CDN and data. ISP-level DNS
+ * interference tends to target `api.themoviedb.org` specifically — measured
+ * live: the canonical host resolves to a sinkhole address while this alias
+ * still resolves to CloudFront. Same API key, same payloads.
+ */
+export const TMDB_ALT_BASE = "https://api.tmdb.org/3";
 /** Public TMDB API key (same as used in the luffy reference project). */
 export const TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
 
 const DEFAULT_TIMEOUT_MS = 6_000;
 const SESSION_CACHE_MS = 2 * 60 * 1_000;
+/**
+ * After a host fails to answer it is skipped for this long. `api.videasy.to`
+ * has gone NXDOMAIN before, and without the breaker every request pays a dead
+ * DNS/TCP attempt (up to `timeoutMs`) before the next host in the chain runs.
+ * The window is short so a resurrected host resumes without an app restart.
+ */
+const HOST_RETRY_AFTER_MS = 5 * 60 * 1_000;
 
 type SessionCacheEntry = {
   readonly expiresAt: number;
@@ -19,8 +33,43 @@ type SessionCacheEntry = {
 };
 
 const SESSION_CACHE_MAX = 500;
+
+type TmdbHost = {
+  readonly base: string;
+  /** Direct TMDB hosts need the api_key query param; the videasy proxy does not. */
+  readonly needsApiKey: boolean;
+};
+
+/**
+ * Walk order matters: the proxy mirrors are free of the API key and
+ * historically primary; the two direct hosts are the same upstream on
+ * different DNS names so hostname-targeted interference cannot take out the
+ * whole lane.
+ */
+const TMDB_PROXY_HOSTS: readonly TmdbHost[] = VIDEASY_DB_BASES.map((base) => ({
+  base,
+  needsApiKey: false,
+}));
+const TMDB_DIRECT_HOST: TmdbHost = { base: TMDB_DIRECT_BASE, needsApiKey: true };
+const TMDB_ALT_HOST: TmdbHost = { base: TMDB_ALT_BASE, needsApiKey: true };
+
+const TMDB_HOSTS: readonly TmdbHost[] = [...TMDB_PROXY_HOSTS, TMDB_DIRECT_HOST, TMDB_ALT_HOST];
+
+/** A host answered with a non-2xx status — the API itself responded. */
+class TmdbHttpError extends Error {
+  constructor(
+    readonly status: number,
+    url: string,
+  ) {
+    super(`${status} ${url}`);
+    this.name = "TmdbHttpError";
+  }
+}
+
 const sessionCache = new Map<string, SessionCacheEntry>();
 const inflightRequests = new Map<string, Promise<JsonValue>>();
+/** Epoch ms until which each host is skipped; absent/0 means eligible. */
+const hostRetryAfter = new Map<string, number>();
 
 function sessionCacheWrite(key: string, entry: SessionCacheEntry): void {
   // Writes land after async fetches, so insertion order is not age order —
@@ -47,10 +96,11 @@ function normalizePath(path: string): string {
 export function clearTmdbSessionCache(): void {
   sessionCache.clear();
   inflightRequests.clear();
+  hostRetryAfter.clear();
 }
 
 /**
- * Proxy + direct fallback with in-flight dedup and a short session cache so
+ * Proxy + mirror chain with in-flight dedup and a short session cache so
  * trending/recommendations/search do not repeat identical TMDB calls.
  */
 export async function fetchTmdbJsonCached(
@@ -91,15 +141,9 @@ export async function fetchTmdbProxyJson(
   // Mirror chain: api.videasy.to went NXDOMAIN while db.wingsdatabase.com
   // serves the same /3 contract — walk the live-first list so one dead host
   // never burns the whole proxy leg.
-  for (const base of VIDEASY_DB_BASES) {
-    const url = `${base}${normalized}`;
+  for (const host of TMDB_PROXY_HOSTS) {
     try {
-      return await observeOnlineIfBound("search-error", async () => {
-        const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
-        if (!res.ok) throw new Error(`${res.status} ${url}`);
-        // SAFETY: Response.json() resolves to the parsed JSON document.
-        return res.json() as Promise<JsonValue>;
-      });
+      return await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
     } catch (error) {
       // A caller abort stops the chain; a per-request timeout still earns the
       // next mirror its attempt.
@@ -110,24 +154,63 @@ export async function fetchTmdbProxyJson(
   throw lastError;
 }
 
+export async function fetchTmdbDirectJson(
+  path: string,
+  signal?: AbortSignal,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<JsonValue> {
+  return fetchTmdbHostJson(TMDB_DIRECT_HOST, normalizePath(path), signal, timeoutMs);
+}
+
+async function fetchTmdbHostJson(
+  host: TmdbHost,
+  normalizedPath: string,
+  signal?: AbortSignal,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<JsonValue> {
+  const joiner = host.needsApiKey ? (normalizedPath.includes("?") ? "&" : "?") : "";
+  const url = host.needsApiKey
+    ? `${host.base}${normalizedPath}${joiner}api_key=${TMDB_API_KEY}`
+    : `${host.base}${normalizedPath}`;
+  return observeOnlineIfBound("search-error", async () => {
+    const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
+    if (!res.ok) throw new TmdbHttpError(res.status, url);
+    // SAFETY: Response.json() resolves to the parsed JSON document.
+    return res.json() as Promise<JsonValue>;
+  });
+}
+
+/**
+ * Walks the TMDB host chain. Every host serves the same upstream data, so the
+ * only answers worth failing over on are availability failures:
+ *
+ * - transport error or 5xx → the host is unreachable or broken; mark its
+ *   breaker and try the next host.
+ * - caller abort → not a host failure; rethrow without marking anything.
+ * - 4xx → a definitive upstream answer identical on every host; rethrow so
+ *   callers see the real status instead of paying every host for one 404.
+ */
 export async function fetchTmdbJsonWithFallback(
   path: string,
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<JsonValue> {
   const normalized = normalizePath(path);
-  try {
-    return await fetchTmdbProxyJson(normalized, signal, timeoutMs);
-  } catch {
-    const joiner = normalized.includes("?") ? "&" : "?";
-    const directUrl = `${TMDB_DIRECT_BASE}${normalized}${joiner}api_key=${TMDB_API_KEY}`;
-    return observeOnlineIfBound("search-error", async () => {
-      const res = await fetch(directUrl, { signal: withTimeoutSignal(signal, timeoutMs) });
-      if (!res.ok) throw new Error(`${res.status} ${directUrl}`);
-      // SAFETY: Response.json() resolves to the parsed JSON document.
-      return res.json() as Promise<JsonValue>;
-    });
+  const now = Date.now();
+  let lastError: Error | null = null;
+
+  for (const host of TMDB_HOSTS) {
+    if (now < (hostRetryAfter.get(host.base) ?? 0)) continue;
+    try {
+      return await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
+    } catch (error) {
+      if (signal?.aborted === true) throw error;
+      if (error instanceof TmdbHttpError && error.status < 500) throw error;
+      hostRetryAfter.set(host.base, Date.now() + HOST_RETRY_AFTER_MS);
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
   }
+  throw lastError ?? new Error("no TMDB hosts available");
 }
 
 export function isTmdbNetworkError(error: unknown): boolean {

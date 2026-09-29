@@ -1,3 +1,5 @@
+import { isJsonObject, isJsonString } from "@kunai/types";
+
 import type { KunaiDatabase } from "../sqlite";
 import { isExpired } from "../ttl";
 
@@ -78,11 +80,22 @@ export class SourceInventoryRepository {
       .query("UPDATE source_inventory SET last_accessed_at = ? WHERE inventory_key = ?")
       .run(accessedAt, inventoryKey);
 
+    // Same contract as stream-cache reads: a row whose inventory shape is
+    // corrupt is not a hit — throw so the service layer records it as a cache
+    // failure instead of handing garbage downstream. The repository is generic,
+    // so the check is structural: the fields consumers read must be arrays of
+    // objects with string ids when they exist at all.
+    const parsed: unknown = JSON.parse(row.inventory_json);
+    if (!isSourceInventoryRecord(parsed)) {
+      throw new Error(`invalid source_inventory row for ${row.inventory_key}`);
+    }
+
     return {
       inventoryKey: row.inventory_key,
       providerId: row.provider_id,
       titleId: row.title_id,
-      inventory: JSON.parse(row.inventory_json) as TInventory,
+      // SAFETY: rows are validated by the inventory shape check before this cast runs.
+      inventory: parsed as TInventory,
       expiresAt: row.expires_at,
       createdAt: row.created_at,
       lastAccessedAt: accessedAt,
@@ -99,4 +112,26 @@ export class SourceInventoryRepository {
       .run(providerId);
     return result.changes ?? 0;
   }
+}
+
+/**
+ * The narrow structure downstream actually reads: an object whose `streams`,
+ * `sources`, `variants`, and `subtitles` — when present — are arrays, and
+ * whose stream urls, when present, are strings. Looser than a schema on
+ * purpose: the repository is generic over the stored payload.
+ */
+function isSourceInventoryRecord<T>(value: T): boolean {
+  if (!isJsonObject(value)) return false;
+  for (const key of ["streams", "sources", "variants", "subtitles"] as const) {
+    const field = value[key];
+    if (field !== undefined && !Array.isArray(field)) return false;
+    if (key === "streams" && Array.isArray(field)) {
+      for (const stream of field) {
+        if (!isJsonObject(stream)) return false;
+        const url = stream.url;
+        if (url !== undefined && !isJsonString(url)) return false;
+      }
+    }
+  }
+  return true;
 }

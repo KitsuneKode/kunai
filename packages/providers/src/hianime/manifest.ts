@@ -11,7 +11,8 @@ export const hianimeManifest = defineProviderManifest({
   aliases: ["hianime.at"],
   description: "Anime episodes in sub and dub via HiAnime (ani-cli parity lane)",
   domain: "hianime.at",
-  recommended: false,
+  // The shipped anime-lane default — anidb.app answers 503 at the origin.
+  recommended: true,
   mediaKinds: ["anime"],
   catalogIdentity: "provider-native",
   capabilities: [
@@ -65,9 +66,9 @@ export const hianimeManifest = defineProviderManifest({
     // (ZokoAnime is the only resolved server), so they stay out.
     upstreamHosts: ["hianime.at", "zokoanime.video", "aniwatchtv.uk"],
   },
-  status: "candidate",
+  status: "production",
   notes: [
-    "Parity with ani-cli v5.1.2 (2026-09): /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902.",
+    "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
     "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
     "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
     "Each season is a separate provider-native slug; there is no in-provider season routing.",

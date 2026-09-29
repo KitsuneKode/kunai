@@ -86,4 +86,32 @@ describe("playback target ref codec", () => {
   it("rejects empty search queries", () => {
     expect(parsePlaybackTargetRef("kunai://play?q=&kind=anime")).toBeNull();
   });
+
+  it("caps optional text fields the way the query anchor is capped", () => {
+    const longTitle = "t".repeat(500);
+    const longSource = "s".repeat(300);
+    const longQuality = "4".repeat(300);
+    const ref = parsePlaybackTargetRef(
+      `kunai://play?cat=tmdb:99&kind=movie&n=${longTitle}&src=${longSource}&sq=${longQuality}`,
+    );
+    expect(ref?.title).toBe("t".repeat(256));
+    expect(ref?.hint?.providerId).toBe("s".repeat(64));
+    expect(ref?.hint?.quality).toBe("4".repeat(64));
+  });
+
+  it("caps oversized catalog ids instead of keeping them whole", () => {
+    // The bound is generous (512) because the web/query fallback exists for
+    // identities too large for the compact codec — a legitimately long
+    // provider id must survive intact. Anything past the cap is still cut.
+    const ref = parsePlaybackTargetRef(`kunai://play?cat=tmdb:${"9".repeat(600)}&kind=movie`);
+    expect(ref?.anchor).toEqual({ by: "catalog", ns: "tmdb", id: "9".repeat(512) });
+  });
+
+  it("keeps a legitimately long catalog id intact through the cap", () => {
+    const longId = "episode/".repeat(40);
+    const ref = parsePlaybackTargetRef(
+      `kunai://play?cat=youtube:${encodeURIComponent(longId)}&kind=movie`,
+    );
+    expect(ref?.anchor).toEqual({ by: "catalog", ns: "youtube", id: longId });
+  });
 });

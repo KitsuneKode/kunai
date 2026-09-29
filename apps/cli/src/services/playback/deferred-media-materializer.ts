@@ -29,7 +29,7 @@ export async function materializeDeferredMediaForPlayback(
     }
     const dir = await createPrivateTempDir("media");
     const mpdPath = join(dir, "stream.mpd");
-    await writeFile(mpdPath, buildAllMangaAkMpd(descriptor));
+    await writeFile(mpdPath, buildAllMangaAkMpd(descriptor), { mode: 0o600 });
     return {
       stream: {
         ...stream,

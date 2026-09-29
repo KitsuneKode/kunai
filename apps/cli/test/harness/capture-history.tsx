@@ -47,9 +47,12 @@ const view = buildHistoryView({
   context: {},
 });
 
-await captureSurface(
-  "history-continue",
-  <HistoryShell view={view} columns={140} listWidth={96} rowWidth={92} />,
-);
-console.log("captured history continue tab");
-process.exit(0);
+export function historyContinueNode() {
+  return <HistoryShell view={view} columns={140} listWidth={96} rowWidth={92} />;
+}
+
+if (import.meta.main) {
+  await captureSurface("history-continue", historyContinueNode());
+  console.log("captured history continue tab");
+  process.exit(0);
+}

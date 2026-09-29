@@ -1,6 +1,6 @@
 # Setup wizard walkthrough — network-free, renders from local capability state.
 # Run via: bun run --cwd apps/cli test:vhs:setup
-Output test/vhs/golden/setup.gif
+Output test/vhs/captures/setup.gif
 
 Set Width 1600
 Set Height 900

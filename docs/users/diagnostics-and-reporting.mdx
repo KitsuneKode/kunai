@@ -8,14 +8,14 @@ Diagnostics are local-first. Kunai records enough runtime context to explain fai
 
 ## Quick reference
 
-| Command / flag | Purpose |
-| --- | --- |
-| `/diagnostics` | Runtime panel — provider timeline, cache, mpv, network |
-| `/export-diagnostics` | Redacted JSON bundle near cwd |
-| `/report-issue` | GitHub issue flow with bundle guidance |
-| `--debug` | Verbose logging to `./logs.txt` |
-| `--debug-json` | Structured JSONL event stream |
-| `--debug-session` | Full session trace with path printed on stderr |
+| Command / flag        | Purpose                                                |
+| --------------------- | ------------------------------------------------------ |
+| `/diagnostics`        | Runtime panel — provider timeline, cache, mpv, network |
+| `/export-diagnostics` | Redacted JSON bundle near cwd                          |
+| `/report-issue`       | GitHub issue flow with bundle guidance                 |
+| `--debug`             | Verbose logging to `./logs.txt`                        |
+| `--debug-json`        | Structured JSONL event stream                          |
+| `--debug-session`     | Full session trace with path printed on stderr         |
 
 Launch example:
 
@@ -69,7 +69,9 @@ It must **not** include:
 - Private home-directory paths (redacted to placeholders)
 
 <Callout type="warning" title="Review before sharing">
-Open the exported JSON locally before attaching to a public issue or chat. If something sensitive slipped through, redact it manually and note the omission in your report. Never paste cookie file contents into the issue body — point to a redacted bundle path only.
+  Open the exported JSON locally before attaching to a public issue or chat. If something sensitive
+  slipped through, redact it manually and note the omission in your report. Never paste cookie file
+  contents into the issue body — point to a redacted bundle path only.
 </Callout>
 
 ## Reporting an issue
@@ -182,13 +184,13 @@ Support bundles align with [Reliability and privacy](/docs/users/reliability-and
 
 ## When to use which tool
 
-| Situation | Tool |
-| --- | --- |
-| Quick state while in app | `/diagnostics` |
-| Shareable artifact for a bug | `/export-diagnostics` |
+| Situation                         | Tool                                |
+| --------------------------------- | ----------------------------------- |
+| Quick state while in app          | `/diagnostics`                      |
+| Shareable artifact for a bug      | `/export-diagnostics`               |
 | Compare two runs programmatically | `--debug-json` or `--debug-session` |
-| GitHub issue with guidance | `/report-issue` |
-| Verbose text log | `--debug` → `./logs.txt` |
+| GitHub issue with guidance        | `/report-issue`                     |
+| Verbose text log                  | `--debug` → `./logs.txt`            |
 
 Symptom index: [Troubleshooting](/docs/users/troubleshooting).
 

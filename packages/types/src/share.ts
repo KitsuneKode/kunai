@@ -38,6 +38,11 @@ const MAX_SHORT_CODE_LENGTH = 2_048;
 const MAX_DECODED_PAYLOAD_BYTES = 3_072;
 const MAX_COMPACT_TEXT_BYTES = 256;
 const MAX_POSTER_URL_LENGTH = 2_048;
+// The `cat` anchor carries provider-native path ids that are legitimately long
+// (the query/web fallback exists precisely for identities too big for the
+// compact codec) — bound it for input hygiene, but never tight enough to
+// silently rewrite a share target.
+const MAX_CATALOG_ANCHOR_LENGTH = 512;
 const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const CATALOG_NS: ReadonlySet<string> = new Set(["tmdb", "anilist", "mal", "imdb", "youtube"]);
 const PARAM_ORDER = ["cat", "q", "kind", "s", "e", "abs", "t", "src", "sq", "n"] as const;
@@ -266,9 +271,9 @@ function parseKunaiProtocolUrl(value: string): ParsedKunaiShare | null {
   const episode = readInt(url.searchParams.get("e"));
   const absoluteEpisode = readInt(url.searchParams.get("abs"));
   const startSeconds = parseTimestampToSeconds(url.searchParams.get("t"));
-  const src = url.searchParams.get("src")?.trim();
-  const quality = url.searchParams.get("sq")?.trim();
-  const title = url.searchParams.get("n")?.trim();
+  const src = url.searchParams.get("src")?.trim().slice(0, 64);
+  const quality = url.searchParams.get("sq")?.trim().slice(0, 64);
+  const title = url.searchParams.get("n")?.trim().slice(0, 256);
 
   return {
     action,
@@ -345,7 +350,10 @@ function readAnchor(params: URLSearchParams): ShareAnchor | null {
     const colon = cat.indexOf(":");
     if (colon <= 0) return null;
     const ns = cat.slice(0, colon).trim();
-    const id = cat.slice(colon + 1).trim();
+    const id = cat
+      .slice(colon + 1)
+      .trim()
+      .slice(0, MAX_CATALOG_ANCHOR_LENGTH);
     if (!CATALOG_NS.has(ns) || !id) return null;
     return { by: "catalog", ns: ns as CatalogNs, id };
   }

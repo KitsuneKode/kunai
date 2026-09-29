@@ -9,6 +9,8 @@ export type ProviderCycleFailureClass =
   | "candidate-parse"
   | "candidate-unsupported"
   | "candidate-user-cancelled"
+  | "candidate-rate-limited"
+  | "candidate-server-error"
   | "candidate-unknown";
 
 export type ProviderCycleIntent =

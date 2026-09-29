@@ -18,13 +18,14 @@ export type MaterializedPlaybackMedia = MaterializedDeferredMedia & {
 export async function materializePlaybackMediaForPlayback(
   stream: StreamInfo,
   onHlsSkipped?: (reason: HlsMaterializeSkipReason, detail?: string, httpStatus?: number) => void,
+  callerSignal?: AbortSignal,
 ): Promise<MaterializedPlaybackMedia> {
   const deferred = await materializeDeferredMediaForPlayback(stream);
   if (stream.deferredLocator) {
     return { ...deferred, kind: "dash-mpd" };
   }
 
-  const hls = await materializeHlsManifestForPlayback(deferred.stream, onHlsSkipped);
+  const hls = await materializeHlsManifestForPlayback(deferred.stream, onHlsSkipped, callerSignal);
   if (hls) {
     return { ...hls, kind: "hls-manifest" };
   }

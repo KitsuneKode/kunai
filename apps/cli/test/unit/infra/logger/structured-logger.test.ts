@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -112,6 +120,66 @@ describe("StructuredLogger", () => {
       expect(contents).toContain("[redacted]");
       expect(contents).not.toContain("super-secret");
       expect(contents).not.toContain("also-secret");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("creates the file sink owner-only", () => {
+    if (process.platform === "win32") return; // POSIX mode bits do not apply
+    const directory = mkdtempSync(join(tmpdir(), "kunai-structured-log-"));
+    const file = join(directory, "logs.txt");
+    try {
+      const logger = new StructuredLogger({ debug: true, console: false, file });
+      logger.info("anything");
+
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("tightens a pre-existing world-readable log instead of leaving it", () => {
+    if (process.platform === "win32") return;
+    const directory = mkdtempSync(join(tmpdir(), "kunai-structured-log-"));
+    const file = join(directory, "logs.txt");
+    try {
+      writeFileSync(file, "stale log\n", { mode: 0o644 });
+      chmodSync(file, 0o644);
+
+      const logger = new StructuredLogger({ debug: true, console: false, file });
+      logger.info("fresh line");
+
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(readFileSync(file, "utf8")).toContain("stale log");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("rotates the file at the byte cap, keeping at most one old generation", () => {
+    const directory = mkdtempSync(join(tmpdir(), "kunai-structured-log-"));
+    const file = join(directory, "logs.txt");
+    try {
+      const logger = new StructuredLogger({
+        debug: true,
+        console: false,
+        file,
+        fileMaxBytes: 256,
+      });
+
+      for (let i = 0; i < 40; i++) {
+        logger.warn(`line ${String(i).padStart(3, "0")} ${"x".repeat(64)}`);
+      }
+
+      const live = statSync(file).size;
+      const rotated = statSync(`${file}.old`).size;
+      expect(live).toBeLessThanOrEqual(256 + 128);
+      expect(rotated).toBeGreaterThan(0);
+      expect(existsSync(`${file}.old.old`)).toBe(false);
+      if (process.platform !== "win32") {
+        expect(statSync(`${file}.old`).mode & 0o777).toBe(0o600);
+      }
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

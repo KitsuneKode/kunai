@@ -27,7 +27,7 @@ primary action is a bare `kunai://` href:
 ```
 
 `kunai://` resolves only when the protocol handler is registered — which is
-precisely what a *new* recipient does not have. For them the click is a dead
+precisely what a _new_ recipient does not have. For them the click is a dead
 control: no error, no toast, no state change. The install commands are already
 on the page, but nothing connects "I clicked" to "it didn't work → install
 below". The page knows this audience exists — the "New to Kunai?" section is
@@ -60,20 +60,22 @@ on every successful handoff):
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Focused tests | `bun run --cwd apps/docs test` | all pass |
-| Docs build | `bun run --cwd apps/docs build` | exits 0 |
-| Full gates | `bun run typecheck --force && bun run test --force` | exit 0 |
+| Purpose       | Command                                             | Expected |
+| ------------- | --------------------------------------------------- | -------- |
+| Focused tests | `bun run --cwd apps/docs test`                      | all pass |
+| Docs build    | `bun run --cwd apps/docs build`                     | exits 0  |
+| Full gates    | `bun run typecheck --force && bun run test --force` | exit 0   |
 
 ## Scope
 
 **In scope:**
+
 - `apps/docs/app/w/[code]/page.tsx`
 - A new small client component (e.g. `components/share/open-in-kunai.tsx`) for
   the click-state — the page itself stays server-rendered
 
 **Out of scope:**
+
 - Protocol-handler detection claims — there is no honest API; the copy says
   "if nothing happened", never "we detected it's missing".
 - Changing the share grammar or `encodePlaybackTargetRef`.
@@ -86,15 +88,17 @@ on every successful handoff):
 Replace the bare `<a>` with a client component wrapping it: on click, set
 `clicked` → render the helper line under the button (and keep the link
 re-clickable — returning users re-fire the handler). Copy must not promise the
-app opened; it says the browser *tried* to open Kunai.
+app opened; it says the browser _tried_ to open Kunai.
 
 ```tsx
-{clicked ? (
-  <p className="text-sm text-[var(--color-fd-muted-foreground)]">
-    Nothing opened? Install Kunai below, then click again — the link carries
-    the title, so it will still work.
-  </p>
-) : null}
+{
+  clicked ? (
+    <p className="text-sm text-[var(--color-fd-muted-foreground)]">
+      Nothing opened? Install Kunai below, then click again — the link carries the title, so it will
+      still work.
+    </p>
+  ) : null;
+}
 ```
 
 ### Step 2: Copyable deep link
@@ -120,7 +124,7 @@ the deep-link copy target carries the exact `appUrl`.
 - [ ] Clicking the CTA reveals persistent "install below" guidance
 - [ ] The raw `kunai://` link is copyable from the page
 - [ ] No detection claims in copy; JS-off still shows the working href +
-  install commands (the SSR anchor stays a real link)
+      install commands (the SSR anchor stays a real link)
 - [ ] `bun run --cwd apps/docs test` exits 0
 
 ## STOP conditions

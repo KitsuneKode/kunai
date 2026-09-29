@@ -5,6 +5,7 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
+import { providerHttpErrorForStatus } from "../runtime/fetch";
 import {
   directStreamFetchSignal,
   resolveDirectStreamSource,
@@ -59,7 +60,14 @@ export function resolveRgshowsDirect(
         signal: directStreamFetchSignal(ctx.signal, RGSHOWS_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
-        throw new Error(`RGShows API returned HTTP ${response.status}`);
+        // Status attached so a 429/5xx classifies structurally instead of
+        // string-matching the message into a retryable network blip (#458).
+        throw providerHttpErrorForStatus({
+          status: response.status,
+          message: `RGShows API returned HTTP ${response.status}`,
+          providerId: RGSHOWS_PROVIDER_ID,
+          stage: "direct-stream",
+        });
       }
 
       const data = (await response.json()) as RgshowsResponse;

@@ -619,8 +619,8 @@ recommended interface.
 Kunai can talk to these third-party adapters; they are unaffiliated, may break
 or disappear, and Kunai does not host what they serve.
 
-- **videasy**, **rivestream**, **vidlink** — series and movies (Videasy first)
-- **miruro**, **kickassanime**, **animegg**, **anidb**, **allanime** (shown as AllManga), **hianime** — anime (Miruro first); every registered anime provider is tried automatically
+- **vidlink**, **rivestream**, **videasy** — series and movies (VidLink first)
+- **hianime**, **miruro**, **kickassanime**, **animegg**, **anidb**, **allanime** (shown as AllManga) — anime (HiAnime first); every registered anime provider is tried automatically
 - **youtube** — YouTube mode (Invidious search + yt-dlp)
 
 Availability varies by title, region, subtitle track, and source mirror. Some

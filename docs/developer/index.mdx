@@ -10,7 +10,8 @@ description: "Debug Kunai with evidence rather than guesswork: traces and diagno
 />
 
 <Callout type="warn" title="Live provider traffic is manual">
-Provider scrapers hit real third-party endpoints. Live checks belong in explicit smoke scripts and local debugging — not in docs builds, CI, or background jobs triggered by reading documentation.
+  Provider scrapers hit real third-party endpoints. Live checks belong in explicit smoke scripts and
+  local debugging — not in docs builds, CI, or background jobs triggered by reading documentation.
 </Callout>
 
 ## Guides
@@ -25,11 +26,11 @@ Provider scrapers hit real third-party endpoints. Live checks belong in explicit
 
 ## Docs toolchain
 
-| Task | Command |
-| --- | --- |
-| Sync CLI metadata into docs | `bun run --cwd apps/docs generate` |
-| Typecheck docs app | `bun run --cwd apps/docs typecheck` |
-| Drift + render tests | `bun run --cwd apps/docs test` |
-| Production build | `bun run --cwd apps/docs build` |
+| Task                        | Command                             |
+| --------------------------- | ----------------------------------- |
+| Sync CLI metadata into docs | `bun run --cwd apps/docs generate`  |
+| Typecheck docs app          | `bun run --cwd apps/docs typecheck` |
+| Drift + render tests        | `bun run --cwd apps/docs test`      |
+| Production build            | `bun run --cwd apps/docs build`     |
 
 Codegen keeps provider ids, command counts, and help tables aligned with `apps/cli` — see [Docs maintenance](/docs/developer/docs-maintenance) for the full workflow.

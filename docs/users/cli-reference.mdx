@@ -29,18 +29,18 @@ From a repo clone (contributor-oriented), use `bun run dev -- <flags>` so Bun fo
 
 ## Lifecycle maintenance
 
-| Command                     | What it does                                     |
-| --------------------------- | ------------------------------------------------ |
-| `kunai install`             | Install or reinstall (binary default)            |
-| `kunai upgrade`             | Primary channel-aware update                     |
-| `kunai upgrade --check`     | Report whether an update is available            |
-| `kunai rollback`            | Roll back to the previous verified local version |
-| `kunai rollback --list`     | List local verified rollback candidates          |
-| `kunai rollback --to <ver>` | Roll back to an explicit verified version        |
-| `kunai doctor`              | Read-only install health (PATH, ownership)       |
-| `kunai doctor --json`       | Same report as JSON                              |
-| `kunai uninstall`           | Ownership-aware removal                          |
-| `kunai uninstall --purge`   | Also delete config/history/cache                 |
+| Command                     | What it does                                        |
+| --------------------------- | --------------------------------------------------- |
+| `kunai install`             | Install or reinstall (binary default)               |
+| `kunai upgrade`             | Primary channel-aware update                        |
+| `kunai upgrade --check`     | Report whether an update is available               |
+| `kunai rollback`            | Roll back to the previous verified local version    |
+| `kunai rollback --list`     | List local verified rollback candidates             |
+| `kunai rollback --to <ver>` | Roll back to an explicit verified version           |
+| `kunai doctor`              | Read-only install health (PATH, ownership)          |
+| `kunai doctor --json`       | Same report as JSON                                 |
+| `kunai uninstall`           | Ownership-aware removal                             |
+| `kunai uninstall --purge`   | Also delete config/history/cache                    |
 | `kunai diagnostics recent`  | Print recent redacted diagnostics from the cache DB |
 
 ### `kunai diagnostics recent`
@@ -100,16 +100,16 @@ For a quick trial without installing, evaluate it in the current session —
 
 ## Share links
 
-| Flag / command                     | What it does                                     |
-| ---------------------------------- | ------------------------------------------------ |
-| `kunai --open "kunai://play?..."`  | Resolve and play a shared catalog link           |
-| `kunai --install-protocol-handler` | Register `kunai://` with the OS (**Linux-only**) |
-| `/share`                           | Copy an HTTPS link for current playback context  |
+| Flag / command                     | What it does                                      |
+| ---------------------------------- | ------------------------------------------------- |
+| `kunai --open "kunai://play?..."`  | Resolve and play a shared catalog link            |
+| `kunai --install-protocol-handler` | Register `kunai://` with the OS (**Linux-only**)  |
+| `/share`                           | Copy an HTTPS link for current playback context   |
 | `/share --qr`                      | Show an HTTPS QR and copy the full link           |
 | `/watch`                           | Open HTTPS, compact, or `kunai://` clipboard data |
-| `/up-next`                         | Current playback order                           |
-| `/downloads`                       | Download queue overlay                           |
-| `/library`                         | Offline library                                  |
+| `/up-next`                         | Current playback order                            |
+| `/downloads`                       | Download queue overlay                            |
+| `/library`                         | Offline library                                   |
 
 More: [Share links](/docs/users/share-links).
 

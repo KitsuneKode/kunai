@@ -40,6 +40,25 @@ describe("truncateAtWord", () => {
     expect(truncateAtWord("anything", 1)).toBe("…");
     expect(truncateAtWord("anything", 0)).toBe("");
   });
+  test("measures the budget in columns, not UTF-16 code units", () => {
+    // Each CJK char is 2 columns: a 12-col budget fits 5 chars + ellipsis, not
+    // 11 chars. The old code-unit slice emitted nearly twice the width.
+    const truncated = truncateAtWord("葬送のフリーレン さらに続く物語", 12);
+
+    expect(measureColumns(truncated)).toBeLessThanOrEqual(12);
+    expect(truncated.endsWith("…")).toBe(true);
+  });
+  test("never splits a surrogate pair", () => {
+    const truncated = truncateAtWord("a 🍜 ramen story that keeps going", 6);
+
+    // A lone UTF-16 surrogate half is the signature of a code-unit slice that
+    // cut an emoji in two.
+    const loneSurrogate =
+      /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(truncated);
+    expect(loneSurrogate).toBe(false);
+
+    expect(measureColumns(truncated)).toBeLessThanOrEqual(6);
+  });
 });
 
 describe("terminal column text helpers", () => {

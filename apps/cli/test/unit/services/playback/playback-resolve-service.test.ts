@@ -4,7 +4,9 @@ import { MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS } from "@/domain/playback/in-memory-
 import { bindNetworkObserver } from "@/services/network/network-observation";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { PlaybackResolveService } from "@/services/playback/PlaybackResolveService";
+import type { ProviderHealthEvidence } from "@/services/playback/ProviderHealthEvidence";
 import { StreamHealthService } from "@/services/playback/StreamHealthService";
+import type { CountableTitleProviderFailure } from "@/services/playback/TitleProviderHealthService";
 import type { ProviderEngine, ProviderEngineResolveOutput } from "@kunai/core";
 import type {
   ProviderHealth,
@@ -565,6 +567,192 @@ test("PlaybackResolveService reuses source inventory before a provider resolve",
 
   expect(result.stream?.url).toBe("https://inventory.example/stream.m3u8");
   expect(providerCalls).toBe(0);
+});
+
+test("PlaybackResolveService skips the health probe for a fresh inventory entry", async () => {
+  let providerCalls = 0;
+  let probes = 0;
+  const inventory = {
+    get: async () => null,
+    getEntry: async () => ({
+      inventory: {
+        status: "resolved",
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        providerId: "primary" as ProviderId,
+        streams: [
+          {
+            id: "stream:inventory:fresh",
+            // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+            providerId: "primary" as ProviderId,
+            url: "https://inventory.example/fresh.m3u8",
+            protocol: "hls" as const,
+            confidence: 0.9,
+            cachePolicy: {
+              ttlClass: "stream-manifest" as const,
+              scope: "local" as const,
+              keyParts: [],
+            },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:inventory",
+          startedAt: new Date().toISOString(),
+          title: { id: "12345", kind: "movie" as const, title: "Test Movie" },
+          cacheHit: true,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      } satisfies ProviderResolveResult,
+      createdAt: new Date().toISOString(),
+      inventoryKey: "inventory:test",
+      providerId: "primary",
+      titleId: "12345",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      lastAccessedAt: new Date().toISOString(),
+    }),
+    set: async () => {},
+    delete: async () => {},
+  };
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    { onCandidateIds: () => (providerCalls += 1) },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    sourceInventory: inventory,
+    streamHealthService: new StreamHealthService({
+      fetchImpl: async () => {
+        probes += 1;
+        return new Response(null, { status: 200 });
+      },
+    }),
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  // The row was just written — the staleness window must apply and the probe
+  // must not fire; this is the pre-fix `force: true` behavior made honest.
+  expect(result.stream?.url).toBe("https://inventory.example/fresh.m3u8");
+  expect(probes).toBe(0);
+  expect(providerCalls).toBe(0);
+});
+
+test("PlaybackResolveService probes a stale inventory entry and a get-only port", async () => {
+  const inventoryResult: ProviderResolveResult = {
+    status: "resolved",
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    providerId: "primary" as ProviderId,
+    streams: [
+      {
+        id: "stream:inventory:stale",
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        providerId: "primary" as ProviderId,
+        url: "https://inventory.example/stale.m3u8",
+        protocol: "hls",
+        confidence: 0.9,
+        cachePolicy: {
+          ttlClass: "stream-manifest" as const,
+          scope: "local" as const,
+          keyParts: [],
+        },
+      },
+    ],
+    subtitles: [],
+    trace: {
+      id: "trace:inventory",
+      startedAt: new Date().toISOString(),
+      title: { id: "12345", kind: "movie" as const, title: "Test Movie" },
+      cacheHit: true,
+      steps: [],
+      failures: [],
+    },
+    failures: [],
+  };
+
+  // Stale row: real age past staleAfterMs → the plan must probe.
+  let staleProbes = 0;
+  const staleService = new PlaybackResolveService({
+    engine: createMockEngine({ result: null, providerId: null, attempts: [] }),
+    cacheStore: createMemoryCache(null),
+    sourceInventory: {
+      get: async () => null,
+      getEntry: async () => ({
+        inventory: inventoryResult,
+        createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+        inventoryKey: "inventory:test",
+        providerId: "primary",
+        titleId: "12345",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        lastAccessedAt: new Date().toISOString(),
+      }),
+      set: async () => {},
+      delete: async () => {},
+    },
+    streamHealthService: new StreamHealthService({
+      fetchImpl: async (url) => {
+        staleProbes += 1;
+        if (url.endsWith(".m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:6.0,\nseg-1.ts\n", { status: 200 });
+        }
+        return new Response(new Uint8Array(2048), { status: 200 });
+      },
+    }),
+  });
+  const staleResult = await staleService.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+  expect(staleResult.stream?.url).toBe("https://inventory.example/stale.m3u8");
+  expect(staleProbes).toBeGreaterThan(0);
+
+  // A port without getEntry cannot report the row's age — force stays on and
+  // the probe still fires even though the entry would read as fresh.
+  let legacyProbes = 0;
+  const legacyService = new PlaybackResolveService({
+    engine: createMockEngine({ result: null, providerId: null, attempts: [] }),
+    cacheStore: createMemoryCache(null),
+    sourceInventory: {
+      get: async () => inventoryResult,
+      set: async () => {},
+      delete: async () => {},
+    },
+    streamHealthService: new StreamHealthService({
+      fetchImpl: async (url) => {
+        legacyProbes += 1;
+        if (url.endsWith(".m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:6.0,\nseg-1.ts\n", { status: 200 });
+        }
+        return new Response(new Uint8Array(2048), { status: 200 });
+      },
+    }),
+  });
+  const legacyResult = await legacyService.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+  expect(legacyResult.stream?.url).toBe("https://inventory.example/stale.m3u8");
+  expect(legacyProbes).toBeGreaterThan(0);
 });
 
 test("PlaybackResolveService resolves fresh when cached inventory lacks an explicit source choice", async () => {
@@ -2000,6 +2188,88 @@ test("PlaybackResolveService still counts provider failures when the uplink is h
   }
 });
 
+test("PlaybackResolveService records no provider health from a cancelled resolve", async () => {
+  // A caller abort is a decision, not evidence. An attempt that settled while
+  // the abort raced can still arrive carrying a stale healthDelta/failure —
+  // without the abort guard this used to mark a healthy provider down.
+  const providerHealth = createMemoryProviderHealth();
+  const titleFailures: string[] = [];
+  const controller = new AbortController();
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+  const engine = {
+    modules: [],
+    get: () => undefined,
+    getProviderIds: () => [],
+    getManifest: () => undefined,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    resolve: async () => ({}) as ProviderResolveResult,
+    resolveWithFallback: async (): Promise<ProviderEngineResolveOutput> => {
+      controller.abort();
+      return {
+        result: null,
+        providerId: null,
+        attempts: [
+          {
+            // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+            providerId: "primary" as ProviderId,
+            failure: {
+              // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+              providerId: "primary" as ProviderId,
+              code: "timeout",
+              message: "attempt settled while the caller cancelled",
+              retryable: true,
+              at: new Date().toISOString(),
+            },
+            result: {
+              // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+              ...createEmptyProviderResult("primary" as ProviderId),
+              healthDelta: {
+                // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+                providerId: "primary" as ProviderId,
+                outcome: "failure" as const,
+                resolveMs: 50,
+                at: new Date().toISOString(),
+              },
+            },
+          },
+        ],
+      };
+    },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+  } as never;
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    providerHealth: providerHealth as never,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    titleProviderHealth: {
+      recordFailure: (
+        _titleId: string,
+        _providerId: string,
+        _fallbackId: string | undefined,
+        kind: CountableTitleProviderFailure | ProviderHealthEvidence,
+      ) => titleFailures.push(String(kind)),
+      recordCleanSuccess: (_titleId: string, providerId: string) =>
+        titleFailures.push(`clean:${providerId}`),
+    } as never,
+  });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: controller.signal,
+  });
+
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+  expect(providerHealth.get("primary" as ProviderId)).toBeUndefined();
+  expect(titleFailures).toEqual([]);
+});
+
 test("PlaybackResolveService passes abort signal into stale cache health checks", async () => {
   const staleStream = {
     ...stream,
@@ -2029,7 +2299,11 @@ test("PlaybackResolveService passes abort signal into stale cache health checks"
     signal: controller.signal,
   });
 
-  expect(observedSignal).toBe(controller.signal);
+  // The probe receives the resolve's deadline-wrapped signal, not the raw
+  // caller signal — what must hold is that the caller's abort still reaches it.
+  expect(observedSignal).toBeDefined();
+  controller.abort();
+  expect(observedSignal?.aborted).toBe(true);
 });
 
 test("PlaybackResolveService stops a stalling provider fan-out at its total deadline", async () => {

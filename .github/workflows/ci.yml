@@ -145,6 +145,11 @@ jobs:
         if: github.event_name == 'push'
         run: bunx turbo run fmt:check --summarize
 
+      # Root-owned files (workflows, scripts/, root configs, docs/) are not in
+      # any workspace, so turbo never checks them — this must always run.
+      - name: Format check (root files)
+        run: bun run fmt:root:check
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -209,6 +214,16 @@ jobs:
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: test
+
+      # YouTube-provider resolve tests gate on `Bun.which("yt-dlp")` — the
+      # resolve path requires the binary even though every test injects its
+      # metadata service, so the binary is present but never invoked. Without
+      # it those tests used to report a vacuous pass (#468).
+      - name: Install yt-dlp (present-only; never invoked by tests)
+        run: |
+          sudo curl -sSfL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod +x /usr/local/bin/yt-dlp
+          yt-dlp --version
 
       - name: Test (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
@@ -577,6 +592,15 @@ jobs:
 
       - name: Package check (no dist/bin bloat)
         run: bun run pkg:check
+
+      # The class this suite covers — a compiled binary that exits 0 doing
+      # nothing — only reproduces on a compiled artifact, so release.yml alone
+      # was re-proving it. The host binary above is the artifact it runs
+      # (#468).
+      - name: Compiled binary smoke
+        env:
+          KUNAI_BINARY_SMOKE: "1"
+        run: bun run --cwd apps/cli test:file -- test/integration/compiled-binary-smoke.test.ts
 
   checks-docs:
     name: Docs build

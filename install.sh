@@ -9,6 +9,12 @@
 # PATH is persisted to your shell rc file unless --skip-path-update (or
 # KUNAI_SKIP_PATH_UPDATE=1) is set. The block is delimited and written once.
 #
+# Every flag also has an environment fallback for pipes and containers:
+# KUNAI_INSTALL_METHOD, KUNAI_INSTALL_VERSION, KUNAI_INSTALL_YES,
+# KUNAI_INSTALL_DRY_RUN, KUNAI_SKIP_DEPS, KUNAI_SKIP_PATH_UPDATE. Installing as
+# root is refused unless KUNAI_INSTALL_ALLOW_ROOT=1 — a sudo install lands in
+# /root and the user never gets kunai on PATH.
+#
 # Installs Kunai only. After install, use `kunai upgrade` and `kunai uninstall`
 # for lifecycle — the install script does not remove or update an install.
 #
@@ -88,15 +94,22 @@ else
 	CACHE_DIR="${KUNAI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kunai}"
 fi
 
-METHOD="binary"
-VERSION="latest"
-DRY=0
-YES=0
-SKIP_DEPS=0
+# Flag values fall back to the environment the way install.ps1's parameters do —
+# `irm | iex` and containers cannot pass switches, so both installers honor the
+# same variables (`KUNAI_INSTALL_*`, `KUNAI_SKIP_*`). Flags still win when both
+# are set.
+METHOD="${KUNAI_INSTALL_METHOD:-binary}"
+VERSION="${KUNAI_INSTALL_VERSION:-latest}"
+DRY="${KUNAI_INSTALL_DRY_RUN:-0}"
+YES="${KUNAI_INSTALL_YES:-0}"
+SKIP_DEPS="${KUNAI_SKIP_DEPS:-0}"
 # Parity with install.ps1's -SkipPathUpdate: managed and sandboxed environments
 # own PATH themselves and must not have their shell rc files written to.
 SKIP_PATH_UPDATE="${KUNAI_SKIP_PATH_UPDATE:-0}"
-case "$SKIP_PATH_UPDATE" in 1 | true | TRUE | yes | YES | y | Y) SKIP_PATH_UPDATE=1 ;; *) SKIP_PATH_UPDATE=0 ;; esac
+for _v in DRY YES SKIP_DEPS SKIP_PATH_UPDATE; do
+	case "${!_v}" in 1 | true | TRUE | yes | YES | y | Y) printf -v "$_v" 1 ;; *) printf -v "$_v" 0 ;; esac
+done
+unset _v
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 info() { printf '→ %s\n' "$*"; }
@@ -2196,8 +2209,26 @@ install_optional_deps() {
 usage() {
 	# Print the leading comment block by content, not by line number: a
 	# hardcoded range silently truncates the help text the moment a line is
-	# added above it.
-	sed -n '2,/^$/p' "$0" | sed 's/^#\s\{0,1\}//'
+	# added above it. Under `curl | bash -s -- --help`, $0 and BASH_SOURCE are
+	# `bash`, not the script — fall back to the flag list instead of sed's
+	# "can't read" error.
+	local self="${BASH_SOURCE[0]:-$0}"
+	if [[ -f "$self" ]] && grep -qm1 '^# Kunai installer' "$self" 2>/dev/null; then
+		sed -n '2,/^$/p' "$self" | sed 's/^#\s\{0,1\}//'
+	else
+		cat <<-'EOF'
+			Kunai installer — binary-first, channel-aware, cross-platform.
+
+			Usage:
+			  curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+			  ./install.sh [--method binary|npm|bun|source] [--version X.Y.Z] [--yes] [--dry-run]
+			               [--skip-deps] [--skip-path-update]
+
+			Environment fallbacks: KUNAI_INSTALL_METHOD, KUNAI_INSTALL_VERSION,
+			KUNAI_INSTALL_YES, KUNAI_INSTALL_DRY_RUN, KUNAI_SKIP_DEPS,
+			KUNAI_SKIP_PATH_UPDATE, KUNAI_INSTALL_ALLOW_ROOT.
+		EOF
+	fi
 }
 
 main() {
@@ -2245,6 +2276,22 @@ main() {
 			err "Invalid version: $VERSION (expected exact major.minor.patch)."
 			exit 1
 		}
+	fi
+
+	# Running as root lands Kunai in the wrong profile: sudo resolves the
+	# directories to /root (or root-owns the user's dirs when sudo preserves
+	# $HOME), and the user never gets `kunai` on PATH — with no error anywhere.
+	# Containers and deliberate system installs opt in via
+	# KUNAI_INSTALL_ALLOW_ROOT; a root --dry-run still prints the plan.
+	if [[ "$DRY" != 1 ]] && [[ "$(id -u)" == "0" ]]; then
+		case "${KUNAI_INSTALL_ALLOW_ROOT:-}" in
+		1 | true | TRUE | yes | YES | y | Y) ;;
+		*)
+			err "Refusing to install as root — Kunai would land in /root and your user never gets it on PATH."
+			info "Re-run without sudo as the user who will run kunai, or set KUNAI_INSTALL_ALLOW_ROOT=1 for a container/system install."
+			exit 1
+			;;
+		esac
 	fi
 
 	bold "Kunai installer"
