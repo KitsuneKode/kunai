@@ -38,7 +38,7 @@ export type ProviderHealthClass =
 
 /** Text that means the upstream never gave us a usable answer. */
 const UNREACHABLE_UPSTREAM =
-  /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket|maintenance|unavailable|http 5\d{2}|\b50[0234]\b/;
+  /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket|maintenance|unavailable|unreachable|cloudflare|just a moment|challenge|blocked by|http 5\d{2}|\b5\d{2}\b/;
 
 /** Text that means the upstream answered, but not with a route we can use. */
 const DRIFTED_ROUTE =

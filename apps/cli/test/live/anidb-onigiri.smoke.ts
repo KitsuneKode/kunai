@@ -42,13 +42,12 @@ if (!provider.search) {
 // would exit with a stack trace and no payload — which the matrix can only
 // report as `harness-failure`, hiding the very outage the throw exists to
 // surface. Report it as provider evidence instead.
-let searchResults: Awaited<ReturnType<NonNullable<typeof provider.search>>> = [];
+let searchResults: Awaited<ReturnType<NonNullable<typeof provider.search>>> = null;
 try {
-  searchResults =
-    (await provider.search(searchQuery, {
-      audioPreference: container.config.animeLanguageProfile.audio,
-      subtitlePreference: container.config.animeLanguageProfile.subtitle,
-    })) ?? [];
+  searchResults = await provider.search(searchQuery, {
+    audioPreference: container.config.animeLanguageProfile.audio,
+    subtitlePreference: container.config.animeLanguageProfile.subtitle,
+  });
 } catch (error) {
   console.log(
     JSON.stringify({
@@ -58,6 +57,23 @@ try {
       searchedProvider: "anidb",
       searchResults: 0,
       reason: error instanceof Error ? error.message : String(error),
+    }),
+  );
+  process.exit(1);
+}
+
+// `null` is the provider contract's transport-failure channel — unreachable
+// upstream, not an answer. Collapsing it into `[]` files an outage (the 503
+// maintenance page anidb.app served on 2026-09-29) as catalog drift.
+if (searchResults === null) {
+  console.log(
+    JSON.stringify({
+      ...providerSmokeProfilePayload(profile),
+      ok: false,
+      stage: "search",
+      searchedProvider: "anidb",
+      searchResults: 0,
+      reason: `anidb search transport failed for "${searchQuery}" (provider unreachable)`,
     }),
   );
   process.exit(1);

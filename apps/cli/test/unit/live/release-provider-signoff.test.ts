@@ -287,6 +287,35 @@ describe("release provider route derivation", () => {
     ).rejects.toThrow('Default anime provider "anidb" search returned zero results for "Onigiri"');
   });
 
+  test("default anime search returning null reports transport failure, not drift", async () => {
+    // `null` is the provider contract's transport-failure channel. Collapsing
+    // it into `[]` filed an anidb.app maintenance 503 as provider drift.
+    await expect(
+      resolveReleaseAnimeSearchTitle(
+        {
+          lane: "anime",
+          configuredProvider: "anidb",
+          mode: "anime",
+          searchQuery: "Onigiri",
+          expectedTitle: "Onigiri",
+          season: 1,
+          episode: 1,
+        },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        { search: async () => null } as never,
+        { audio: "original", subtitle: "en" },
+      ),
+    ).rejects.toThrow('Default anime provider "anidb" search transport failed for "Onigiri"');
+    expect(
+      classifyReleaseSignoffFailure({
+        resolved: false,
+        streamReachable: null,
+        error:
+          'Default anime provider "anidb" search transport failed for "Onigiri" (provider unreachable)',
+      }),
+    ).toBe("environment-network");
+  });
+
   test("default anime search selects the provider's own native result", async () => {
     const title = await resolveReleaseAnimeSearchTitle(
       {

@@ -156,7 +156,7 @@ export function classifyReleaseSignoffFailure(input: {
     // code: "anidb blocked by Cloudflare (try curl-impersonate)". Without them a
     // runner refused on TLS fingerprint was filed as provider drift, which sent
     // a release investigation at a provider that was healthy the whole time.
-    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket|cloudflare|just a moment|challenge|blocked by/.test(
+    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket|cloudflare|just a moment|challenge|blocked by|unreachable|unavailable|\b5\d\d\b/.test(
       haystack,
     )
   ) {

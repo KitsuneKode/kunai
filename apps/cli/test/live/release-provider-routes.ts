@@ -74,7 +74,8 @@ export function buildReleaseProviderRouteCases(
  * Search the configured anime default and turn its own result into the resolve
  * title. A zero-result search is provider drift, not a reason to fall back to a
  * hard-coded native id — that is exactly how a broken default route used to pass
- * signoff.
+ * signoff. Null is the provider contract's transport-failure channel, not an
+ * answer: collapsing it into `[]` files an upstream outage as catalog drift.
  */
 export async function resolveReleaseAnimeSearchTitle(
   route: Extract<ReleaseProviderRouteCase, { readonly lane: "anime" }>,
@@ -100,14 +101,18 @@ export async function resolveReleaseAnimeSearchTitle(
       `Default anime provider "${route.configuredProvider}" has no search capability and no compatible catalog`,
     );
   }
-  const results =
-    (provider.search
-      ? await provider.search(
-          route.searchQuery,
-          { audioPreference: language.audio, subtitlePreference: language.subtitle },
-          signal,
-        )
-      : await catalog?.search(route.searchQuery, signal)) ?? [];
+  const results = provider.search
+    ? await provider.search(
+        route.searchQuery,
+        { audioPreference: language.audio, subtitlePreference: language.subtitle },
+        signal,
+      )
+    : ((await catalog?.search(route.searchQuery, signal)) ?? null);
+  if (results === null) {
+    throw new Error(
+      `Default anime provider "${route.configuredProvider}" search transport failed for "${route.searchQuery}" (provider unreachable)`,
+    );
+  }
   if (results.length === 0) {
     throw new Error(
       `Default anime provider "${route.configuredProvider}" search returned zero results for "${route.searchQuery}"`,
