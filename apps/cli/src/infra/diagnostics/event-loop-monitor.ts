@@ -94,12 +94,14 @@ export function installEventLoopMonitor(
     }
     lastCpu = process.cpuUsage();
     scheduledAt = Date.now();
-    timer = setTimeout(tick, intervalMs);
-    (timer as unknown as { unref?: () => void }).unref?.();
+    const handle = setTimeout(tick, intervalMs);
+    timer = handle;
+    handle.unref?.();
   };
 
-  timer = setTimeout(tick, intervalMs);
-  (timer as unknown as { unref?: () => void }).unref?.();
+  const initialHandle = setTimeout(tick, intervalMs);
+  timer = initialHandle;
+  initialHandle.unref?.();
 
   return () => {
     stopped = true;

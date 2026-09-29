@@ -99,9 +99,11 @@ export function installMemoryWatchdog(): void {
     const url = URL.createObjectURL(
       new Blob([WATCHDOG_WORKER_SOURCE], { type: "text/javascript" }),
     );
-    const worker = new Worker(url);
-    // Never let the watchdog keep the process alive on its own.
-    (worker as unknown as { unref?: () => void }).unref?.();
+    const worker: { unref?: () => void } = new Worker(url);
+    // Never let the watchdog keep the process alive on its own. `unref` is a
+    // Bun/Node extension that the DOM `Worker` lib type does not declare, so
+    // the handle is held at the shape this function actually uses.
+    worker.unref?.();
   } catch {
     // Workers / Blob URLs unavailable in this runtime — skip silently.
   }

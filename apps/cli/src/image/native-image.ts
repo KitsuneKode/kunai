@@ -67,7 +67,7 @@ type NativeImage = {
 type NativeImageCtor = new (input: Uint8Array, options: NativeImageOptions) => NativeImage;
 
 function nativeImageCtor(): NativeImageCtor | null {
-  const candidate = (Bun as unknown as { Image?: unknown }).Image;
+  const candidate = (Bun as { Image?: unknown }).Image;
   return typeof candidate === "function" ? (candidate as NativeImageCtor) : null;
 }
 
