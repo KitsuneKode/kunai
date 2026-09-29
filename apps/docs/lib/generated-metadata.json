@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "b4305067629d9b21023055b94d4c73233e7cc5f9593a328a384e63828d50ff04",
-  "docsContentFingerprint": "06c6a8a5f239f5ab377b98d4675d37cfa3c523e50f9e16016c5f6f488d6c4827",
+  "cliSourceFingerprint": "939b851969a07c7d8830544e3319913a9ba2bfd297d65a4bb03d447226a2d1cf",
+  "docsContentFingerprint": "8fd5e8e8661a04c54b0ec04fdf4193d6f241582ca020ccd89d23bd89cb2a61d7",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "hianime", "miruro", "youtube"],
