@@ -355,6 +355,19 @@ function isDefinitiveNetworkError(message: string): boolean {
     lower.includes("unable to connect") ||
     lower.includes("certificate has expired") ||
     (lower.includes("certificate") && lower.includes("expired")) ||
+    /*
+      An unverifiable chain is as deterministic as an expired one: retrying
+      cannot heal it, and mpv's TLS stack fails the same way against the same
+      trust decision — so the stream must be rejected, not passed through
+      lenient as "maybe a slow CDN". Covers OpenSSL/BoringSSL phrasings:
+      "unable to verify the first certificate", "unable to verify leaf
+      signature", "unable to get local issuer certificate",
+      "self signed certificate in certificate chain".
+    */
+    lower.includes("unable to verify") ||
+    lower.includes("unable to get local issuer") ||
+    lower.includes("self signed certificate") ||
+    lower.includes("certificate verify failed") ||
     lower.includes("unsupported protocol") ||
     lower.includes("unknown scheme") ||
     lower.includes("url using bad/illegal format")

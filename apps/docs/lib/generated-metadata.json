@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "939b851969a07c7d8830544e3319913a9ba2bfd297d65a4bb03d447226a2d1cf",
+  "cliSourceFingerprint": "8bd6af4577f73832471b966bdfa539eccd3f093851eadb93035504e2e73e2cbb",
   "docsContentFingerprint": "8fd5e8e8661a04c54b0ec04fdf4193d6f241582ca020ccd89d23bd89cb2a61d7",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,

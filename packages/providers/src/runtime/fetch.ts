@@ -119,7 +119,7 @@ function isRequestInit(value: RequestInit | ProviderHttpRequestContext): value i
   );
 }
 
-function createProviderHttpError(
+export function createProviderHttpError(
   response: Response,
   requestContext: ProviderHttpRequestContext | undefined,
 ): ProviderHttpError {

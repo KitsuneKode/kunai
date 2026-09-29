@@ -141,7 +141,7 @@ if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")
 
 async function runMatrixEntry(entry) {
   const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(entry.command);
-  const parsed = parseJsonPayload(stdout);
+  const parsed = parseJsonPayload(stdout, stderr);
   if (!parsed) {
     const result = {
       provider: entry.provider,
@@ -284,21 +284,64 @@ async function runLiveSmoke(command) {
   });
 }
 
-function parseJsonPayload(stdout) {
-  try {
-    const value = JSON.parse(stdout);
-    return value && typeof value === "object" ? value : null;
-  } catch {
-    const start = stdout.indexOf("{");
-    const end = stdout.lastIndexOf("}");
-    if (start < 0 || end <= start) return null;
-    try {
-      const value = JSON.parse(stdout.slice(start, end + 1));
-      return value && typeof value === "object" ? value : null;
-    } catch {
-      return null;
+/*
+ * Smokes are allowed to print more than one JSON document — YouTube emits the
+ * resolve report, a quality-ladder check, and a shorts-search check back to
+ * back, and a dying smoke may leave its `{ok:false}` report on stderr while
+ * log noise fills stdout. Slicing from the first "{" to the last "}" spans
+ * every document at once and parses nothing, so scan for top-level objects
+ * instead and pick the one shaped like a provider report.
+ */
+function parseJsonPayload(...sources) {
+  const all = sources.flatMap((text) => extractJsonObjects(text));
+  const report = all.find(
+    (value) =>
+      "streamResolved" in value ||
+      "failureCodes" in value ||
+      "streamCandidates" in value ||
+      "isolatedProfile" in value,
+  );
+  if (report) return report;
+  // A lone object still classifies — a smoke that died before printing the
+  // report shape emits only the {ok:false, reason} stub.
+  return all.length === 1 ? all[0] : null;
+}
+
+function extractJsonObjects(text) {
+  const objects = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+    } else if (char === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        try {
+          const value = JSON.parse(text.slice(start, index + 1));
+          if (value && typeof value === "object") objects.push(value);
+        } catch {
+          // Brace noise in log output is not a document.
+        }
+        start = -1;
+      } else if (depth < 0) {
+        depth = 0;
+      }
     }
   }
+  return objects;
 }
 
 function booleanOrNull(value) {

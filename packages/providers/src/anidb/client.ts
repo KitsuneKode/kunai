@@ -1,5 +1,6 @@
 import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "@kunai/types";
 
+import { isRetryableStatus, statusToResolveErrorCode } from "../runtime/fetch";
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import {
   curlCipherArgs,
@@ -110,7 +111,7 @@ export type AnidbModeOutcome =
       readonly failure: {
         readonly code: ResolveErrorCode;
         readonly message: string;
-        readonly retryable: true;
+        readonly retryable: boolean;
       };
     };
 
@@ -729,20 +730,26 @@ export async function fetchAnidbMasterUrl(
 }
 
 /**
- * Resolves HLS ladder stream links for a single AniDB language embed.
+ * Resolves HLS ladder stream links for a single AniDB language embed. When the
+ * master host answered with a dead status, `deadHostStatus` carries it so the
+ * caller can classify the empty result honestly instead of guessing.
  */
 export async function resolveAnidbLanguageStreams(options: {
   readonly context?: ProviderRuntimeContext;
   readonly language: AnidbLanguageEntry;
   readonly audioMode: "sub" | "dub";
   readonly signal?: AbortSignal;
-}): Promise<readonly AnidbStreamLink[]> {
+}): Promise<{
+  readonly links: readonly AnidbStreamLink[];
+  readonly deadHostStatus?: number;
+}> {
+  const empty = (deadHostStatus?: number) => ({ links: [] as const, deadHostStatus });
   const masterUrl = await fetchAnidbMasterUrl(
     options.language.embedUrl,
     options.signal,
     options.context,
   );
-  if (!masterUrl) return [];
+  if (!masterUrl) return empty();
 
   const inventory = await expandHlsMasterInventory({
     fetch: async (url: string, init?: RequestInit) => {
@@ -773,14 +780,19 @@ export async function resolveAnidbLanguageStreams(options: {
   // the same dead URL.
   const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
 
-  return variants.map((variant) => ({
-    url: variant.url,
-    quality: variant.qualityLabel,
-    audioMode: options.audioMode,
-    referer: ANIDB_REFERER,
-    protocol: "hls" as const,
-    container: "m3u8" as const,
-  }));
+  return {
+    links: variants.map((variant) => ({
+      url: variant.url,
+      quality: variant.qualityLabel,
+      audioMode: options.audioMode,
+      referer: ANIDB_REFERER,
+      protocol: "hls" as const,
+      container: "m3u8" as const,
+    })),
+    deadHostStatus: isHlsDeadHostStatus(inventory.probe.httpStatus)
+      ? inventory.probe.httpStatus
+      : undefined,
+  };
 }
 
 /**
@@ -914,37 +926,47 @@ async function settleAnidbLanguage(options: {
   readonly callerSignal?: AbortSignal;
 }): Promise<AnidbModeOutcome> {
   try {
-    const links = await resolveAnidbLanguageStreams({
+    const resolution = await resolveAnidbLanguageStreams({
       context: options.context,
       language: options.language,
       audioMode: options.mode,
       signal: options.signal,
     });
     if (options.callerSignal?.aborted) throw options.callerSignal.reason;
+    const { links, deadHostStatus } = resolution;
     if (links.length > 0) return { mode: options.mode, status: "resolved", links };
+    // `not-found`/`provider-unavailable`, not `parse-failed`: an empty link
+    // list means the source exposed nothing playable (dead-host drop
+    // included) — nothing failed to decode. A gone route is terminal; a 5xx
+    // maintenance window may heal, so only it keeps a retry budget.
+    const upstreamDown = deadHostStatus !== undefined && deadHostStatus >= 500;
     return {
       mode: options.mode,
       status: "failed",
       links: [],
       failure: {
-        // `not-found`, not `parse-failed`: an empty link list means the source
-        // exposed nothing playable (dead-host drop included) — nothing failed
-        // to decode.
-        code: "not-found",
-        message: `AniDB ${options.mode} source did not expose a playable HLS stream`,
-        retryable: true,
+        code: upstreamDown ? "provider-unavailable" : "not-found",
+        message:
+          deadHostStatus !== undefined
+            ? `AniDB ${options.mode} master host answered HTTP ${deadHostStatus} — dead upstream`
+            : `AniDB ${options.mode} source did not expose a playable HLS stream`,
+        retryable: upstreamDown,
       },
     };
   } catch (error) {
     if (options.callerSignal?.aborted) throw error;
+    // A typed HTTP status (a missing playlist 404s permanently) keeps its own
+    // classification — flattening it to retryable network-error would spend a
+    // second resolve budget on a dead id.
+    const statusError = error instanceof AnidbHttpStatusError ? error : undefined;
     return {
       mode: options.mode,
       status: "failed",
       links: [],
       failure: {
-        code: "network-error",
+        code: statusError ? statusToResolveErrorCode(statusError.status) : "network-error",
         message: error instanceof Error ? error.message : `AniDB ${options.mode} source failed`,
-        retryable: true,
+        retryable: statusError ? isRetryableStatus(statusError.status) : true,
       },
     };
   }

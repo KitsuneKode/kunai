@@ -1,8 +1,9 @@
 import { createDecipheriv } from "node:crypto";
 
+import { isOfflineNetworkFailure } from "@kunai/core";
 import type { ProviderEpisodeIdentity, ProviderRuntimeContext } from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
+import { createProviderHttpError, ProviderHttpError, providerFetch } from "../runtime/fetch";
 import {
   allMangaEpisodeMetadataCacheKey,
   enrichEpisodeOptionsWithAnimeMetadata,
@@ -772,9 +773,29 @@ export async function resolveEpisodeSources(opts: {
           "x-build-id": material.buildId || ALLMANGA_BUILD_ID,
         },
       });
-      rawText = getRes.ok ? await getRes.text() : null;
-    } catch {
-      rawText = null;
+      if (!getRes.ok) {
+        throw createProviderHttpError(getRes, {
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+        });
+      }
+      rawText = await getRes.text();
+    } catch (error) {
+      if (error instanceof ProviderHttpError) throw error;
+      const message = error instanceof Error ? error.message : "AllManga source request failed";
+      const timedOut =
+        error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      // A dead connection must not read as an empty source list: offline
+      // signatures are non-retryable so the engine's offline budget caps the
+      // provider early instead of counting it as a catalog miss.
+      throw new ProviderHttpError({
+        providerId: ALLANIME_PROVIDER_ID,
+        stage: "episode-sources",
+        code: timedOut ? "timeout" : "network-error",
+        message,
+        retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
+        cause: error,
+      });
     }
 
     if (!rawText) return [];
@@ -788,7 +809,16 @@ export async function resolveEpisodeSources(opts: {
 
     if (rawText.includes("Too many requests")) {
       rateLimitRetries += 1;
-      if (rateLimitRetries > 2) return [];
+      if (rateLimitRetries > 2) {
+        throw new ProviderHttpError({
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+          status: 429,
+          code: "rate-limited",
+          message: "AllManga rate-limited the source request",
+          retryable: true,
+        });
+      }
       rawText = null;
       await retrySleep(3_200, signal);
       continue;
@@ -796,7 +826,15 @@ export async function resolveEpisodeSources(opts: {
 
     if (/AA_CRYPTO_(STALE|INVALID|MISSING)/.test(rawText)) {
       staleRefreshes += 1;
-      if (staleRefreshes > 2) return [];
+      if (staleRefreshes > 2) {
+        throw new ProviderHttpError({
+          providerId: ALLANIME_PROVIDER_ID,
+          stage: "episode-sources",
+          code: "provider-unavailable",
+          message: "AllManga crypto bootstrap stayed stale after refresh",
+          retryable: true,
+        });
+      }
       rawText = null;
       material = await refreshAllMangaCryptoMaterial(context, ua, signal);
       await retrySleep(400, signal);
@@ -864,15 +902,13 @@ export async function resolveEpisodeSources(opts: {
     if (isMp4UploadSource(source.sourceName, decoded)) {
       const sourceName = source.sourceName;
       apiJobs.push(
-        fetchMp4UploadLinks(decoded, referer, ua, context, adapterController.signal)
-          .then((links) =>
-            links.map((link) => ({
-              ...link,
-              quality: link.quality || sourceName,
-              sourceName: link.sourceName ?? sourceName,
-            })),
-          )
-          .catch(() => [] as StreamLink[]),
+        fetchMp4UploadLinks(decoded, referer, ua, context, adapterController.signal).then((links) =>
+          links.map((link) => ({
+            ...link,
+            quality: link.quality || sourceName,
+            sourceName: link.sourceName ?? sourceName,
+          })),
+        ),
       );
       continue;
     }
@@ -884,15 +920,13 @@ export async function resolveEpisodeSources(opts: {
     const sourceName = source.sourceName;
     const fetcher = sourceName === "Ak" ? fetchAkLinks : fetchStreamLinks;
     apiJobs.push(
-      fetcher(decoded, referer, ua, context, adapterController.signal)
-        .then((links) =>
-          links.map((link) => ({
-            ...link,
-            quality: link.quality || sourceName,
-            sourceName: link.sourceName ?? sourceName,
-          })),
-        )
-        .catch(() => [] as StreamLink[]),
+      fetcher(decoded, referer, ua, context, adapterController.signal).then((links) =>
+        links.map((link) => ({
+          ...link,
+          quality: link.quality || sourceName,
+          sourceName: link.sourceName ?? sourceName,
+        })),
+      ),
     );
   }
 
@@ -907,6 +941,30 @@ export async function resolveEpisodeSources(opts: {
   });
   signal?.removeEventListener("abort", abortAdapters);
   const apiLinks = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  /*
+    An adapter lane refusing is an upstream outage, not an empty source list.
+    When no lane produced links and none produced direct sources, a typed
+    refusal must reach the cycle even if other lanes merely fulfilled empty —
+    the refused lane may have been the only one holding the real source, and
+    blocked/unavailable must not be recorded as a catalog miss. A 404 is
+    different: it is scoped to that source's URL and is exactly how a real
+    lane empties, which is what the next lane (e.g. required Ak) exists to
+    catch — so 404-only rejections keep the empty result. Untyped rejections
+    stay flattened too: a generic error cannot classify the failure any
+    better than an empty list can.
+  */
+  if (settled.length > 0 && apiLinks.length === 0 && direct.length === 0) {
+    const refusal = settled
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => result.reason)
+      .find(
+        (reason): reason is ProviderHttpError =>
+          reason instanceof ProviderHttpError && reason.status !== 404,
+      );
+    if (refusal) {
+      throw refusal;
+    }
+  }
 
   const result = [...direct, ...apiLinks].sort(
     (left, right) => (parseInt(right.quality) || 0) - (parseInt(left.quality) || 0),
@@ -1190,7 +1248,10 @@ async function fetchStreamLinks(
     headers: { Referer: referer, "User-Agent": ua },
   });
   if (!response.ok) {
-    return [];
+    throw createProviderHttpError(response, {
+      providerId: ALLANIME_PROVIDER_ID,
+      stage: "episode-source-links",
+    });
   }
 
   let body = await response.text();
@@ -1256,7 +1317,10 @@ async function fetchStreamLinks(
       }
       return links;
     }
-  } catch {
+  } catch (error) {
+    // Typed upstream failures are the result, not a parse slip — the regex
+    // fallback exists for malformed JSON, not for hiding a 403 behind it.
+    if (error instanceof ProviderHttpError) throw error;
     // Fall through to regex fallback for ani-cli parity.
   }
 
@@ -1367,7 +1431,12 @@ async function fetchAkLinks(
     signal: createTimeoutSignal(signal, 15_000),
     headers: { Referer: referer, "User-Agent": ua },
   });
-  if (!response.ok) return [];
+  if (!response.ok) {
+    throw createProviderHttpError(response, {
+      providerId: ALLANIME_PROVIDER_ID,
+      stage: "episode-source-links",
+    });
+  }
 
   let body = await response.text();
   body = body.replace(/\\u002F/g, "/").replace(/\\\//g, "/");

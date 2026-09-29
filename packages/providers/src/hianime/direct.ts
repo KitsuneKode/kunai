@@ -286,10 +286,16 @@ async function resolveShowId(
 /**
  * Allowlist: a failure code added later must opt into retries explicitly
  * instead of inheriting them. Gone routes (not-found) and undecodable
- * payloads (parse-failed) never heal; transport errors and WAF blocks might.
+ * payloads (parse-failed) never heal; transport errors, WAF blocks, and
+ * upstream 5xx maintenance windows might.
  */
 function isRetryableHianimeStreamFailure(code: HianimeStreamFailureCode): boolean {
-  return code === "blocked" || code === "network-error";
+  return (
+    code === "blocked" ||
+    code === "network-error" ||
+    code === "provider-unavailable" ||
+    code === "timeout"
+  );
 }
 
 export const hianimeProviderModule: CoreProviderModule = {

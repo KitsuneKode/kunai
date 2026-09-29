@@ -3,6 +3,7 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -19,6 +20,7 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+import { ProviderHttpError } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   allmangaSubtitleMode,
@@ -73,6 +75,7 @@ export const ALLMANGA_QUALITY_FIRST_WAIT_BUDGET_MS = 4_000;
 // resolve — on timeout we return empty and the provider cycle fails fast to the
 // next provider instead of hanging ~12s. Only bites on truly bad Ak responses.
 export const ALLMANGA_AK_FALLBACK_TIMEOUT_MS = 4_000;
+const ALLMANGA_CANDIDATE_TIMEOUT_MS = 2_500;
 
 export async function collectAllMangaLinksForStartup(
   input: ProviderResolveInput,
@@ -634,7 +637,10 @@ export const allmangaProviderModule: CoreProviderModule = {
           now: context.now,
           emit: context.emit,
           maxAttemptsPerCandidate: 1,
-          candidateTimeoutMs: 2_500,
+          candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+            startupPriority,
+            ALLMANGA_CANDIDATE_TIMEOUT_MS,
+          ),
           resolveCandidate: async (candidate, cycleContext) => {
             const stream = streams.find((item) => item.id === candidate.streamId);
             if (!stream?.url && !stream?.deferredLocator) {
@@ -802,13 +808,22 @@ export const allmangaProviderModule: CoreProviderModule = {
       // reporting it as retryable network noise is what made this look like an
       // empty episode rather than a blocked request.
       const captchaBlocked = error instanceof AllMangaCaptchaError;
-      const failure: ProviderFailure = {
-        providerId: ALLANIME_PROVIDER_ID,
-        code: captchaBlocked ? "blocked" : "network-error",
-        message: error instanceof Error ? error.message : "AllManga API failed",
-        retryable: !captchaBlocked,
-        at: context.now(),
-      };
+      const failure: ProviderFailure =
+        error instanceof ProviderHttpError
+          ? {
+              providerId: ALLANIME_PROVIDER_ID,
+              code: error.code,
+              message: error.message,
+              retryable: error.retryable,
+              at: context.now(),
+            }
+          : {
+              providerId: ALLANIME_PROVIDER_ID,
+              code: captchaBlocked ? "blocked" : "network-error",
+              message: error instanceof Error ? error.message : "AllManga API failed",
+              retryable: !captchaBlocked,
+              at: context.now(),
+            };
       failures.push(failure);
 
       return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, failure);

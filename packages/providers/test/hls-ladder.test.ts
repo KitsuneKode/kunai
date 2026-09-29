@@ -55,6 +55,27 @@ describe("hls ladder", () => {
     ]);
   });
 
+  test("expandHlsMasterInventory reports transport failures in probe instead of throwing", async () => {
+    // A TLS failure collapsing into an "auto" ladder is how a dead CDN came
+    // back attested as a resolved stream (hls.aniwatch.al, 2026-10). The
+    // inventory API surfaces the failure in `probe` so callers can gate the
+    // fallback row on it instead of trusting a silent auto.
+    const inventory = await expandHlsMasterInventory({
+      masterUrl: "https://cdn.example/master.m3u8",
+      fetch: (async () => {
+        throw new TypeError("unable to verify the first certificate");
+      }) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    expect(inventory.probe).toEqual({ kind: "network" });
+    // The corpse row still exists — the probe is what tells callers not to
+    // attest it. `network` stays ambiguous on purpose: gatekept CDNs reject
+    // expansion fetches yet still play in mpv.
+    expect(inventory.variants).toEqual([
+      { url: "https://cdn.example/master.m3u8", qualityLabel: "auto", qualityRank: 0 },
+    ]);
+    expect(isHlsDeadHostStatus(inventory.probe.httpStatus)).toBe(false);
+  });
+
   test("looksLikeHlsMasterUrl detects master leaf names", () => {
     expect(looksLikeHlsMasterUrl("https://cdn.example/master.m3u8")).toBe(true);
     expect(looksLikeHlsMasterUrl("https://cdn.example/vod/index-v1-a1.m3u8")).toBe(false);

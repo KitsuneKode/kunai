@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import {
+  AnidbHttpStatusError,
   anidbNumericId,
   anidbProviderModule,
   chooseAnidbSearchMatch,
@@ -512,6 +513,29 @@ describe("anidb search delegation", () => {
     }
   });
 
+  test("searchAnidb surfaces an upstream 503 instead of an empty result set", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // anidb.app answered search with a 503 "Under Maintenance" page
+      // (2026-10): without status reporting it parsed cleanly to zero results
+      // and the outage posed as an empty catalog.
+      globalThis.fetch = (async () =>
+        new Response("<!doctype html><title>Under Maintenance</title>", {
+          status: 503,
+          statusText: "Service Unavailable",
+        })) as unknown as typeof fetch;
+      await expect(searchAnidb("solo leveling")).rejects.toBeInstanceOf(AnidbHttpStatusError);
+      await expect(searchAnidb("solo leveling")).rejects.toMatchObject({ status: 503 });
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
   test("does not claim audio or subtitle availability before an episode probe", async () => {
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
@@ -932,6 +956,76 @@ describe("anidb direct resolve season routing", () => {
     expect(result.status).toBe("exhausted");
     expect(result.failures[0]?.code).toBe("blocked");
     expect(result.failures[0]?.retryable).toBe(false);
+  });
+
+  /**
+   * A 404 on the stream playlist is a definitive miss — the upstream said the
+   * source is gone. Marking it retryable would spend a second 12s resolve
+   * budget re-fetching a route that cannot come back within the attempt.
+   */
+  test("a missing stream playlist is not-found and not retryable", async () => {
+    const inner = anidbFetchStub({
+      episodesByNumericId: { "700": [{ id: 70001, number: 1 }] },
+    });
+    const gonePlaylist = (async (input: unknown) => {
+      const url = String(
+        typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
+      );
+      if (url.includes("stream.m3u8")) {
+        return new Response("gone", { status: 404 });
+      }
+      return inner(input as Parameters<typeof fetch>[0]);
+    }) as typeof fetch;
+
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      gonePlaylist,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("not-found");
+    expect(result.failures[0]?.retryable).toBe(false);
+  });
+
+  /**
+   * A 5xx on the playlist is an upstream outage, not a missing source — it
+   * may heal, so the failure stays retryable and labeled
+   * `provider-unavailable` instead of conflating it with a gone route.
+   */
+  test("an upstream-down playlist is provider-unavailable and retryable", async () => {
+    const inner = anidbFetchStub({
+      episodesByNumericId: { "700": [{ id: 70001, number: 1 }] },
+    });
+    const maintenance = (async (input: unknown) => {
+      const url = String(
+        typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
+      );
+      if (url.includes("stream.m3u8")) {
+        return new Response("under maintenance", { status: 503 });
+      }
+      return inner(input as Parameters<typeof fetch>[0]);
+    }) as typeof fetch;
+
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      maintenance,
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]?.code).toBe("provider-unavailable");
+    expect(result.failures[0]?.retryable).toBe(true);
   });
 
   test("does not fall back to Japanese when a requested dub is unavailable", async () => {

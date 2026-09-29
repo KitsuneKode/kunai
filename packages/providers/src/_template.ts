@@ -2,6 +2,8 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  isAbortError,
+  isOfflineNetworkFailure,
   type CoreProviderModule,
   defineProviderManifest,
 } from "@kunai/core";
@@ -13,6 +15,8 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
+// When you add real fetching, also import providerJson from this module.
+import { ProviderHttpError } from "./runtime/fetch";
 import { createExhaustedResult, emitTraceEvent } from "./shared/resolve-helpers";
 
 // =====================================================================
@@ -55,7 +59,14 @@ export const templateManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
+  // Keep "experimental" until the adapter is proven on real traffic; peers
+  // promote to "candidate" before "production" (miruro/hianime/rivestream).
   status: "experimental",
+  // List every host the resolver can hit — the relay refuses anything else,
+  // and this list is what the deployed relay bakes in.
+  relayProfile: {
+    upstreamHosts: ["api.example.com"],
+  },
   notes: ["This is a community template. Copy and paste this file to start building."],
 });
 
@@ -101,20 +112,45 @@ export const templateProviderModule: CoreProviderModule = {
     });
 
     // -------------------------------------------------------------
-    // B. Fetch Logic (Wrap in try/catch and use context.signal!)
+    // B. Fetch Logic — always through the provider fetch port.
+    //
+    // `providerJson` goes through context.fetch (relay-aware transport),
+    // throws ProviderHttpError with the status already classified
+    // (408/504→timeout, 429→rate-limited, 401/403→blocked, 404→not-found,
+    // 5xx→provider-unavailable), and marks JSON drift "parse-failed".
+    // Never call bare fetch(): it bypasses the relay port and throws
+    // unclassified errors that read as network noise downstream.
     // -------------------------------------------------------------
     try {
       /*
        * YOUR API LOGIC GOES HERE
        * Example:
-       * const res = await fetch(`https://api.example.com/watch/${targetId}`, { signal: context.signal });
-       * const data = await res.json();
+       * const data = await providerJson<{ url: string; quality?: string }[]>(
+       *   context,
+       *   `https://api.example.com/watch/${targetId}`,
+       *   {
+       *     signal: context.signal,
+       *     headers: { "User-Agent": "…" },
+       *   },
+       *   { providerId: TEMPLATE_PROVIDER_ID, stage: "source-fetch" },
+       * );
        */
+
+      // Multi-candidate providers should race options through
+      // `runProviderCycle` instead of trying them inline — see the block at
+      // the bottom of this file. One rule that must never regress:
+      // `candidateTimeoutMs` goes through
+      // `providerCycleCandidateTimeoutMs(startupPriority, preferred)`; a raw
+      // constant silently never fires when it exceeds the attempt budget
+      // (this bug has shipped three times and is now test-gated).
 
       // Dummy Data for Template
       const rawSources = [{ url: `https://example.com/${targetId}/video.mp4`, quality: "1080p" }];
 
       if (rawSources.length === 0) {
+        // A real "the catalog has nothing" answer — NOT a transport failure.
+        // Upstream empties are allowed to read as empty; only transport,
+        // HTTP-status, and parse evidence must stay honest.
         throw new Error("No streams found on backend.");
       }
 
@@ -230,9 +266,20 @@ export const templateProviderModule: CoreProviderModule = {
       };
     } catch (error) {
       // -------------------------------------------------------------
-      // E. Catch Errors (Always handle user cancellation)
+      // E. Catch Errors — keep the classification honest.
+      //
+      // Order matters:
+      // 1. User cancellation is the caller's decision, not a failure.
+      // 2. ProviderHttpError already carries the classified code +
+      //    retryability from the fetch port — never flatten it to
+      //    "network-error" or, worse, "not-found".
+      // 3. Raw transport errors are "network-error"; when the message
+      //    carries an offline signature (ENOTFOUND, EAI_AGAIN, …) mark
+      //    them non-retryable so the engine's offline budget caps this
+      //    provider early instead of burning attempts on a dead link.
+      //    An offline machine must never read as an empty catalog.
       // -------------------------------------------------------------
-      if (context.signal?.aborted) {
+      if (context.signal?.aborted || isAbortError(error)) {
         return createExhaustedResult(input, context, TEMPLATE_PROVIDER_ID, {
           code: "cancelled",
           message: "Resolution was cancelled by the user",
@@ -240,16 +287,61 @@ export const templateProviderModule: CoreProviderModule = {
         });
       }
 
-      const failure: ProviderFailure = {
-        providerId: TEMPLATE_PROVIDER_ID,
-        code: "network-error",
-        message: error instanceof Error ? error.message : "API failed",
-        retryable: true,
-        at: context.now(),
-      };
+      const message = error instanceof Error ? error.message : "API failed";
+      const failure: ProviderFailure =
+        error instanceof ProviderHttpError
+          ? {
+              providerId: TEMPLATE_PROVIDER_ID,
+              code: error.code,
+              message: error.message,
+              retryable: error.retryable,
+              at: context.now(),
+            }
+          : {
+              providerId: TEMPLATE_PROVIDER_ID,
+              code: "network-error",
+              message,
+              retryable: !isOfflineNetworkFailure({ code: "network-error", message }),
+              at: context.now(),
+            };
       failures.push(failure);
 
       return createExhaustedResult(input, context, TEMPLATE_PROVIDER_ID, failure);
     }
   },
 };
+
+// =====================================================================
+// 3. MULTI-CANDIDATE PROVIDERS — runProviderCycle
+//
+// When your provider has several servers/lanes, do not try them inline.
+// `runProviderCycle` gives you per-candidate timeouts, transient-retry
+// backoff, hedging, offline early-exit, and ordered failure records for
+// free. The production shape (see miruro/direct.ts):
+//
+//   const cycleResult = await runProviderCycle({
+//     providerId: TEMPLATE_PROVIDER_ID,
+//     candidates: cycleCandidates,
+//     signal: context.signal,
+//     now: context.now,
+//     emit: context.emit,
+//     maxAttemptsPerCandidate: 1,
+//     candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+//       input.startupPriority ?? "balanced",
+//       TEMPLATE_CANDIDATE_TIMEOUT_MS,
+//     ),
+//     // If every candidate traverses ONE host, a host-wide failure repeats
+//     // identically for all of them — mirror miruro's early exit:
+//     shouldStopAfterFailure: (failure) => failure.failureClass === "candidate-blocked",
+//     resolveCandidate: async (candidate) => {
+//       // throw createProviderCycleFailureError(candidate, {
+//       //   failureClass: "candidate-empty" | "candidate-network" | …,
+//       //   message, retryable, at: context.now(),
+//       // });
+//     },
+//   });
+//
+// Candidate failure classes map onto resolve codes through
+// `providerFailureCodeFromCycleFailure` (shared/provider-cycle.ts) — use it
+// for the exhausted result instead of inventing a second mapping.
+// =====================================================================

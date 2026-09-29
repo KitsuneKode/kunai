@@ -5,6 +5,10 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  isAbortError,
+  isOfflineNetworkFailure,
+  ProviderCycleFailureError,
+  providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
@@ -79,6 +83,7 @@ const secretKeyCache = new TTLCache<string, string>(24 * 60 * 60 * 1000, {
   maxEntries: RIVESTREAM_SECRET_KEY_CACHE_LIMIT,
 });
 const RIVESTREAM_PROVIDER_SERVICES_TTL_MS = 24 * 60 * 60 * 1000;
+const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
 /**
  * Last-resort list for when service discovery is unreachable.
  *
@@ -409,7 +414,13 @@ export const rivestreamProviderModule: CoreProviderModule = {
         now: context.now,
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
-        candidateTimeoutMs: 10_000,
+        candidateTimeoutMs: providerCycleCandidateTimeoutMs(
+          input.startupPriority ?? "balanced",
+          RIVESTREAM_CANDIDATE_TIMEOUT_MS,
+        ),
+        // Every service is fetched through the same www.rivestream.app front
+        // door — a block there repeats identically for the rest, so stop early.
+        shouldStopAfterFailure: (failure) => failure.failureClass === "candidate-blocked",
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           const sourceDataPromise = prefetchedSources.get(provider);
@@ -433,16 +444,35 @@ export const rivestreamProviderModule: CoreProviderModule = {
               signal: candidateContext.signal,
             });
           } catch (error) {
+            // A user cancellation is the engine's call — let it classify the
+            // abort instead of wrapping it as a candidate failure.
+            if (isAbortError(error) && context.signal?.aborted) throw error;
+            if (error instanceof ProviderCycleFailureError) {
+              failures.push({
+                providerId: RIVESTREAM_PROVIDER_ID,
+                code: providerFailureCodeFromCycleFailure(error.failure.failureClass),
+                message: error.failure.message,
+                retryable: error.failure.retryable,
+                at: context.now(),
+              });
+              throw error;
+            }
             const providerError =
               error instanceof ProviderHttpError
                 ? error
                 : new ProviderHttpError({
                     providerId: RIVESTREAM_PROVIDER_ID,
                     stage: "source:start",
-                    code: isRivestreamAbortOrTimeoutError(error) ? "timeout" : "not-found",
+                    code: isRivestreamAbortOrTimeoutError(error) ? "timeout" : "network-error",
                     message:
                       error instanceof Error ? error.message : `Internal server ${provider} failed`,
-                    retryable: true,
+                    // Offline signatures (ENOTFOUND, EAI_AGAIN, …) are
+                    // non-retryable so the cycle's network-offline early-exit
+                    // fires; other transport errors stay transient.
+                    retryable: !isOfflineNetworkFailure({
+                      code: "network-error",
+                      message: error instanceof Error ? error.message : "",
+                    }),
                     cause: error,
                   });
             failures.push({

@@ -274,8 +274,12 @@ Source inventory and language normalization:
   stream-to-source/variant projection.
 - Use `packages/providers/src/shared/hls-ladder.ts` (`expandHlsMasterPlaylist`) to
   expand lone HLS master playlists into ranked quality candidates for Tracks
-  `/quality`. Wired for Miruro masters, AllManga `master.m3u8` links, and Vidlink
-  playlists.
+  `/quality`. Wired for Miruro masters, AllManga `master.m3u8` links, Vidlink
+  playlists, HiAnime and AniDB ladders. The `auto` fallback row only exists for
+  a fetched body that is not a master playlist (or a master with no variants) —
+  HTTP statuses and transport failures throw `ProviderHttpError` instead, so a
+  dead HLS host fails its candidate rather than attesting a stream mpv cannot
+  open.
 - Use strict ISO language fields for public stream/subtitle language data.
   Provider labels such as `Vietsub`, `H-SUB`, `HindiCast`, `FlowCast`, or
   site-specific server names belong in evidence/metadata, not in primary
@@ -526,7 +530,9 @@ only the contracts every provider must honour.
 | Miruro              | [miruro.md](./provider-dossiers/miruro.md)                                                                                                                        |
 | HiAnime             | [hianime.md](./provider-dossiers/hianime.md)                                                                                                                      |
 | Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
+| VidLink             | [vidlink.md](./provider-dossiers/vidlink.md)                                                                                                                      |
 | Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
+| YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
 | Cineby              | [cineby.md](./provider-dossiers/cineby.md) · [cineby-anime.md](./provider-dossiers/cineby-anime.md)                                                               |
 
 Active providers are registered in `apps/cli/src/container/bootstrap-providers.ts` via
