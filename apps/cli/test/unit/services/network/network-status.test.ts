@@ -21,6 +21,29 @@ describe("NetworkStatus", () => {
     expect(classifyNetworkFailure("Was there a typo in the url or port?")).toBe("offline");
   });
 
+  test("classifies the resolver's real phrasings as offline", () => {
+    // The forms curl, glibc, Windows and Bun actually emit. The bare `dns`
+    // token that used to stand in for all of these is gone; see the pattern
+    // list's comment for why it was a hazard.
+    expect(classifyNetworkFailure("curl: (6) Could not resolve host: anidb.app")).toBe("offline");
+    expect(classifyNetworkFailure("Name or service not known")).toBe("offline");
+    expect(classifyNetworkFailure("no such host")).toBe("offline");
+    expect(classifyNetworkFailure("dns lookup failed")).toBe("offline");
+  });
+
+  test("does not read a bare dns token as a network outage", () => {
+    // Two of these across distinct providers would trip
+    // DEFAULT_CONSECUTIVE_OFFLINE_THRESHOLD and halt every remaining live
+    // candidate — including the ones that are working.
+    expect(classifyNetworkFailure('anidb search returned zero results for "dns"')).not.toBe(
+      "offline",
+    );
+    expect(classifyNetworkFailure("Could not parse manifest at /tmp/dns/manifest.m3u8")).not.toBe(
+      "offline",
+    );
+    expect(classifyNetworkFailure("provider dns stream inventory empty")).not.toBe("offline");
+  });
+
   test("classifies single timeouts as limited instead of offline", () => {
     expect(classifyNetworkFailure("provider timed out")).toBe("limited");
   });
