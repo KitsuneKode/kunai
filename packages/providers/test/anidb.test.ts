@@ -7,6 +7,7 @@ import {
   anidbProviderModule,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
+  fetchAnidbExternalIds,
   fetchAnidbMalId,
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
@@ -1278,6 +1279,63 @@ describe("fetchAnidbMalId", () => {
       expect(await fetchAnidbMalId("flaky-1")).toBeUndefined();
       expect(await fetchAnidbMalId("flaky-1")).toBe(32612);
       expect(fetchCalls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+});
+
+describe("anidb external ids persistent cache (#205)", () => {
+  test("survives an in-memory clear — second call reads the port, not the network", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    const persisted = new Map<string, unknown>();
+
+    const context = {
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (input: string | URL) => {
+          fetchCalls++;
+          if (String(input).includes("/anime/persist-42")) {
+            return new Response(
+              '<html><body><a href="https://myanimelist.net/anime/32612/x">MAL</a>' +
+                '<a href="https://anilist.co/anime/999/x">AL</a></html>',
+              { status: 200 },
+            );
+          }
+          return new Response("Not found", { status: 404 });
+        },
+      },
+      cache: {
+        read: async <T>(ns: string, key: string): Promise<T | null> =>
+          (persisted.get(`${ns}:${key}`) as T) ?? null,
+        write: async (ns: string, key: string, value: unknown) => {
+          persisted.set(`${ns}:${key}`, value);
+        },
+      },
+    } as unknown as ProviderRuntimeContext;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () => {
+        fetchCalls++;
+        return new Response("Not found", { status: 404 });
+      }) as unknown as typeof fetch;
+
+      const first = await fetchAnidbExternalIds("persist-42", undefined, context);
+      expect(first?.malId).toBe(32612);
+      expect(fetchCalls).toBe(1);
+
+      // Process-restart equivalent: every in-memory layer is gone, the
+      // SQLite-backed port is not.
+      clearAnidbCachesForTest();
+      const second = await fetchAnidbExternalIds("persist-42", undefined, context);
+      expect(second?.malId).toBe(32612);
+      expect(second?.anilistId).toBe("999");
+      expect(fetchCalls).toBe(1);
     } finally {
       globalThis.fetch = originalFetch;
       Bun.which = originalWhich;
