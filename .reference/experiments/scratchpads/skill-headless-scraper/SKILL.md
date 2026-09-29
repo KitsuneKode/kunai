@@ -1,11 +1,11 @@
 ---
 name: headless-scraper-pro
-description: Guides the agent through reverse-engineering streaming websites and building 0-RAM headless scrapers (like ani-cli). Use this skill whenever the user wants to "scrape a provider", "reverse engineer a streaming site", "build a scraper for", "bypass obfuscation", or "crack a streaming API". It provides a step-by-step methodology for sniffing network traffic, deobfuscating JS/WASM, and writing pure HTTP fetch scripts to extract m3u8 streams without launching heavy headless browsers.
+description: Reverse-engineer a streaming site's stream-resolution path and port it to a pure-fetch extractor — sniff the hidden backend API, deobfuscate the JS/WASM that hides it, and reimplement the key derivation and payload decryption in TypeScript so the shipped scraper needs no headless browser. Use when adding a provider, or when an existing one breaks because the site changed its obfuscation.
 ---
 
 # Headless Scraper Pro
 
-This skill provides the ultimate playbook for reverse-engineering obfuscated streaming websites (like Vidking, Rivestream, HDToday, etc.) to build lightning-fast, 0-RAM, headless scrapers. The goal is to always extract the direct `.m3u8` or `.mp4` stream links using pure `fetch` and `cheerio`, bypassing the need for RAM-heavy headless browsers (like Playwright, Puppeteer, or JSDOM) in the final implementation.
+This skill is the playbook for reverse-engineering obfuscated streaming websites (like Vidking, Rivestream, HDToday, etc.) to build lightning-fast, 0-RAM, headless scrapers. The goal is to always extract the direct `.m3u8` or `.mp4` stream links using pure `fetch` and `cheerio`, bypassing the need for RAM-heavy headless browsers (like Playwright, Puppeteer, or JSDOM) in the final implementation.
 
 ## The 4 Phases of Cracking a Provider
 
@@ -21,6 +21,9 @@ import { chromium } from "playwright";
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
+    // Bump to a current desktop Chrome build before running this. A UA several
+    // majors behind is itself a bot signal on the strict-TLS sites in
+    // "Common Pitfalls" below.
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   });
