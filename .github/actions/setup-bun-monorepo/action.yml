@@ -23,8 +23,9 @@ runs:
       with:
         bun-version-file: package.json
 
-    - name: Cache Bun install store
-      uses: actions/cache@v5
+    - name: Restore Bun install store
+      uses: actions/cache/restore@v5
+      id: bun-store
       with:
         path: ~/.bun/install/cache
         # v2: the v1 windows store captured a truncated oxfmt@0.59.0 link entry
@@ -45,3 +46,25 @@ runs:
     - name: Install dependencies
       shell: bash
       run: bun install --frozen-lockfile
+
+    # A job that dies mid-install can still have its post-job cache save fire,
+    # which writes a partially linked store (this is how the truncated oxfmt
+    # link got persisted). Probe a bin that walks the store before letting
+    # anything save, and rebuild cold if the probe fails.
+    - name: Verify Bun install store
+      id: bun-store-ok
+      shell: bash
+      run: |
+        if ! bun x oxfmt --version >/dev/null 2>&1; then
+          echo "::warning::Bun install store failed the oxfmt probe; rebuilding cold"
+          rm -rf "$HOME/.bun/install/cache"
+          bun install --frozen-lockfile
+          bun x oxfmt --version
+        fi
+
+    - name: Save Bun install store
+      if: steps.bun-store.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-store-v2-${{ hashFiles('bun.lock') }}
