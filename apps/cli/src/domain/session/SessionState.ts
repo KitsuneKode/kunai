@@ -204,6 +204,13 @@ export interface SessionState {
   readonly watchTimeSummary: string | null;
   readonly playbackProblem: PlaybackProblem | null;
   readonly resolveRetryCount: number;
+  /**
+   * Providers already attempted in the current episode's resolve/fallback
+   * cycle. The footer's ⇧F availability and the fallback target picker both
+   * exclude these, so repeated presses walk the list instead of ping-ponging
+   * between the first two providers. Reset on episode selection.
+   */
+  readonly fallbackTriedProviderIds: readonly string[];
 
   readonly searchQuery: string;
   readonly searchResults: SearchResult[];
@@ -266,6 +273,7 @@ export type StateTransition =
   | { type: "SET_PLAYBACK_PROBLEM"; problem: PlaybackProblem }
   | { type: "CLEAR_PLAYBACK_PROBLEM" }
   | { type: "SET_RESOLVE_RETRY_COUNT"; count: number }
+  | { type: "RECORD_FALLBACK_TRIED_PROVIDERS"; providerIds: readonly string[] }
   | { type: "OPEN_OVERLAY"; overlay: OverlayState }
   | { type: "REPLACE_TOP_OVERLAY"; overlay: OverlayState }
   | {
@@ -345,6 +353,7 @@ export function createInitialState(
     watchTimeSummary: null,
     playbackProblem: null,
     resolveRetryCount: 0,
+    fallbackTriedProviderIds: [],
     searchQuery: "",
     searchResults: [],
     searchState: "idle",
@@ -491,6 +500,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         ...state,
         view: "playback",
         currentEpisode: transition.episode,
+        fallbackTriedProviderIds: [],
       };
 
     case "SET_CURRENT_ANIME_EPISODES":
@@ -580,6 +590,16 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         ...state,
         resolveRetryCount: Math.max(0, transition.count),
       };
+
+    case "RECORD_FALLBACK_TRIED_PROVIDERS": {
+      const known = new Set(state.fallbackTriedProviderIds);
+      const additions = transition.providerIds.filter((id) => id && !known.has(id));
+      if (additions.length === 0) return state;
+      return {
+        ...state,
+        fallbackTriedProviderIds: [...state.fallbackTriedProviderIds, ...additions],
+      };
+    }
 
     case "OPEN_OVERLAY":
       return {

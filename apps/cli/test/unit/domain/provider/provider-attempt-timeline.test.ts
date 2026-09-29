@@ -84,6 +84,35 @@ describe("ProviderAttemptTimeline", () => {
     expect(summary.primaryFailure).toBe("No stream was returned");
   });
 
+  test("records an aborted attempt without fabricating a provider failure", () => {
+    const timeline = createProviderAttemptTimeline({
+      traceId: "trace-aborted",
+      maxAttempts: 20,
+    });
+
+    timeline.record({
+      type: "attempt-started",
+      attemptId: "a1",
+      providerId: "vidking",
+      reason: "primary",
+      at: 1,
+    });
+    timeline.record({
+      type: "attempt-aborted",
+      attemptId: "a1",
+      providerId: "vidking",
+      at: 2,
+    });
+
+    const snapshot = timeline.snapshot();
+    const attempt = snapshot.attempts[0];
+    expect(attempt?.status).toBe("aborted");
+    // Cancellation must not masquerade as a provider fault.
+    expect(attempt?.failureClass).toBeUndefined();
+    expect(attempt?.userSummary).toBeUndefined();
+    expect(snapshot.events.map((event) => event.type)).toContain("attempt-aborted");
+  });
+
   test("caps attempts and events for long sessions", () => {
     const timeline = createProviderAttemptTimeline({
       traceId: "trace-long",

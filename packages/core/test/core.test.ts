@@ -1807,3 +1807,78 @@ test("a genuine attempt timeout is still recorded as endpoint evidence", async (
 
   expect(recorded).toEqual([{ endpoint: "too-slow-endpoint", class: "server-error" }]);
 });
+
+test("sequential fallback records the in-flight provider as aborted on cancel", async () => {
+  const engine = createProviderEngine({
+    modules: [healthReportingModule("slow-only", { delayMs: 5_000, succeeds: true })],
+    maxAttempts: 1,
+    attemptTimeoutMs: 60_000,
+  });
+
+  const controller = new AbortController();
+  const pending = engine.resolveWithFallback(
+    HEDGE_INPUT as never,
+    ["slow-only"] as never,
+    controller.signal,
+  );
+  await Bun.sleep(20);
+  controller.abort("playback-loading-command-fallback");
+
+  const output = await pending;
+  expect(output.result).toBeNull();
+  // The attempt was cancelled mid-flight — it must be visible as aborted, not
+  // silently dropped or rewritten as a provider failure.
+  expect(output.attempts).toEqual([{ providerId: "slow-only", aborted: true }] as never);
+});
+
+test("hedged fallback records the losing candidate as aborted, in candidate order", async () => {
+  const engine = createProviderEngine({
+    modules: [
+      healthReportingModule("slow-primary", { delayMs: 5_000, succeeds: true }),
+      healthReportingModule("fast-hedge", { delayMs: 20, succeeds: true }),
+    ],
+    maxAttempts: 1,
+    hedgeDelayMs: 30,
+  });
+
+  const output = await engine.resolveWithFallback(
+    HEDGE_INPUT as never,
+    ["slow-primary", "fast-hedge"] as never,
+  );
+
+  expect(output.providerId).toBe("fast-hedge" as never);
+  // slow-primary was in flight when fast-hedge won. Dropping it would hide the
+  // last act of the timeline from diagnostics and problem classification.
+  expect(output.attempts).toHaveLength(2);
+  expect(output.attempts[0]).toMatchObject({ providerId: "slow-primary", aborted: true });
+  expect(output.attempts[1]).toMatchObject({ providerId: "fast-hedge" });
+  expect(output.attempts[1]?.result?.status).toBe("resolved");
+});
+
+test("hedged fallback records every in-flight candidate as aborted on cancel", async () => {
+  const engine = createProviderEngine({
+    modules: [
+      healthReportingModule("slow-a", { delayMs: 5_000, succeeds: true }),
+      healthReportingModule("slow-b", { delayMs: 5_000, succeeds: true }),
+    ],
+    maxAttempts: 1,
+    hedgeDelayMs: 10,
+    attemptTimeoutMs: 60_000,
+  });
+
+  const controller = new AbortController();
+  const pending = engine.resolveWithFallback(
+    HEDGE_INPUT as never,
+    ["slow-a", "slow-b"] as never,
+    controller.signal,
+  );
+  await Bun.sleep(40);
+  controller.abort("provider-fallback-picker");
+
+  const output = await pending;
+  expect(output.result).toBeNull();
+  expect(output.attempts.map((attempt) => [attempt.providerId, attempt.aborted] as const)).toEqual([
+    ["slow-a", true],
+    ["slow-b", true],
+  ] as never);
+});

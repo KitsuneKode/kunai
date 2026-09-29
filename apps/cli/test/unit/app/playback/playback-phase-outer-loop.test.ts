@@ -206,6 +206,30 @@ describe("planEpisodeIterationDirective (resolve failure)", () => {
     ).toEqual({ kind: "exit", result: "back_to_results" });
   });
 
+  test("recover/recompute cancel during resolve restarts the iteration", () => {
+    // /recover and /recompute pressed mid-resolve cancel the work with a
+    // recover/recompute reason — the loop reads that as intent "retry" and
+    // restarts resolution instead of exiting back to results or dead-keying.
+    expect(
+      planEpisodeIterationDirective({
+        ...base,
+        resolveAborted: true,
+        resolveAbortIntent: "retry",
+      }),
+    ).toEqual({ kind: "restart", reason: "resolve-retry" });
+  });
+
+  test("retry intent wins over exit even when no fallback exists", () => {
+    expect(
+      planEpisodeIterationDirective({
+        ...base,
+        resolveAborted: true,
+        resolveAbortIntent: "retry",
+        hasCompatibleFallbackProvider: false,
+      }),
+    ).toEqual({ kind: "restart", reason: "resolve-retry" });
+  });
+
   test("resolve failure retry restarts; dismiss exits", () => {
     expect(
       planEpisodeIterationDirective({

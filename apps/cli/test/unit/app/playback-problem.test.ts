@@ -202,4 +202,68 @@ describe("playback problem model", () => {
     });
     expect(toErrorScenario(problem)).toEqual({ kind: "network-offline" });
   });
+
+  test("does not offer try-next-provider when every compatible provider already ran", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [{ failure: { code: "rate-limited", message: "429 from upstream" } }],
+      fallbackAvailable: false,
+    });
+
+    expect(problem.cause).toBe("provider-access");
+    expect(problem.recommendedAction).not.toBe("try-next-provider");
+    expect(problem.secondaryActions).not.toContain("try-next-provider");
+  });
+
+  test("does not offer pick-stream when no attempt produced streams", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [{ failure: { code: "provider-empty", message: "empty catalog" } }],
+      hasStreamCandidates: false,
+      fallbackAvailable: true,
+    });
+
+    // The stream picker would open on an empty list — the honest next step is
+    // the fallback provider, not a picker with nothing in it.
+    expect(problem.cause).toBe("no-stream");
+    expect(problem.recommendedAction).toBe("try-next-provider");
+    expect(problem.secondaryActions).not.toContain("pick-stream");
+  });
+
+  test("offers pick-stream when an attempt produced streams the picker can show", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [{ failure: { code: "provider-empty", message: "empty catalog" } }],
+      hasStreamCandidates: true,
+      fallbackAvailable: false,
+    });
+
+    expect(problem.recommendedAction).toBe("pick-stream");
+  });
+
+  test("names the failing provider in session-guard problems instead of a stale brand", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [
+        {
+          failure: {
+            providerId: "rivestream",
+            message: "Rivestream requires a valid browser session: session_missing",
+          },
+        },
+      ],
+    });
+
+    expect(problem.cause).toBe("provider-session");
+    expect(problem.userMessage).toContain("Rivestream");
+    expect(problem.userMessage).not.toContain("VidKing");
+  });
+
+  test("aborted attempts do not shadow the typed failure that exhausted the chain", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [
+        { failure: { code: "timeout", message: "videasy timed out after 15000ms" } },
+        {}, // aborted mid-flight — no failure attached
+      ],
+      fallbackAvailable: true,
+    });
+
+    expect(problem.cause).toBe("provider-timeout");
+  });
 });

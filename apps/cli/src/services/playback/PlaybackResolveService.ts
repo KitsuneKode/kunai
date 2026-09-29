@@ -722,6 +722,7 @@ export class PlaybackResolveService {
                 : null,
               result: a.result,
               failure: a.failure,
+              aborted: a.aborted,
             })),
             providerTimeline,
             cacheStatus: "miss",
@@ -755,6 +756,7 @@ export class PlaybackResolveService {
           stream: null,
           result: a.result,
           failure: a.failure,
+          aborted: a.aborted,
         })),
         providerTimeline,
         cacheStatus: "hit",
@@ -770,6 +772,7 @@ export class PlaybackResolveService {
         stream: null,
         result: a.result,
         failure: a.failure,
+        aborted: a.aborted,
       })),
       providerTimeline,
       cacheStatus: "miss",
@@ -1117,6 +1120,16 @@ function buildProviderTimeline(
       });
       lastFailureClass = null;
       lastFailedProviderId = null;
+      return;
+    }
+
+    if (attempt.aborted) {
+      timeline.record({
+        type: "attempt-aborted",
+        attemptId,
+        providerId: attempt.providerId,
+        at: nextTimelineOrder(),
+      });
       return;
     }
 

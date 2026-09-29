@@ -306,6 +306,9 @@ describe("playback provider switch", () => {
         ],
       },
       diagnosticsService: { record: () => {} },
+      workControl: {
+        cancelActive: () => false,
+      },
       playerControl: {
         recomputeCurrentPlayback: async (reason: string) => {
           recomputeReasons.push(reason);
@@ -324,6 +327,78 @@ describe("playback provider switch", () => {
     expect(currentProvider).toBe("vidlink");
     expect(deletedProviders.sort()).toEqual(["rivestream", "vidlink"]);
     expect(recomputeReasons).toEqual(["provider-picker-switch"]);
+  });
+
+  test("applyProviderPickerSelection cancels an in-flight resolve instead of recomputing", async () => {
+    let currentProvider = "vidking";
+    const state = {
+      provider: "vidking",
+      mode: "series",
+      playbackStatus: "loading",
+      currentEpisode: { season: 1, episode: 2 },
+      stream: {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+        providerResolveResult: {
+          providerId: "rivestream",
+        },
+      },
+    };
+    const cancelReasons: string[] = [];
+    const recomputeReasons: string[] = [];
+    const container = {
+      stateManager: {
+        getState: () => state,
+        dispatch: (transition: { type: string; provider?: string }) => {
+          if (transition.type === "SET_PROVIDER" && transition.provider) {
+            currentProvider = transition.provider;
+          }
+        },
+      },
+      config: {
+        getRaw: () => ({ ...config, titleProviderPreferences: {} }),
+        update: async () => {},
+        save: async () => {},
+      },
+      cacheStore: { delete: async () => {} },
+      sourceInventory: { delete: async () => {} },
+      titleProviderHealth: { clear: () => {} },
+      providerRegistry: {
+        getCompatible: () => [
+          { metadata: { id: "vidking" } },
+          { metadata: { id: "rivestream" } },
+          { metadata: { id: "vidlink" } },
+        ],
+      },
+      diagnosticsService: { record: () => {} },
+      workControl: {
+        cancelActive: (reason: string) => {
+          cancelReasons.push(reason);
+          return true;
+        },
+      },
+      playerControl: {
+        recomputeCurrentPlayback: async (reason: string) => {
+          recomputeReasons.push(reason);
+          return true;
+        },
+      },
+    } as never;
+
+    const result = await applyProviderPickerSelection({
+      container,
+      pickedProviderId: "vidlink",
+      reason: "provider-picker-switch",
+    });
+
+    expect(result).toEqual({ changed: true, recomputeRequested: false });
+    expect(currentProvider).toBe("vidlink");
+    // The resolve loop maps this reason to a provider-skip abort: the picked
+    // provider is what the restarted iteration resolves, and the old
+    // provider's late result is discarded instead of played.
+    expect(cancelReasons).toEqual(["provider-fallback-picker"]);
+    expect(recomputeReasons).toEqual([]);
   });
 
   test("clearTitleProviderPreference removes only the canonical title pin", async () => {

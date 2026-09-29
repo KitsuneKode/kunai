@@ -1216,6 +1216,13 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
           reason: "Start playback before provider fallback is available.",
         };
       }
+      if (state.stream && isLocalPlaybackStream(state.stream)) {
+        return {
+          enabled: false,
+          reason:
+            "Local playback has no provider to fall back from. /watch-online returns to providers.",
+        };
+      }
       return { enabled: true };
 
     case "play-local":
