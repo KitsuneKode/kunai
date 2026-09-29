@@ -109,4 +109,6 @@ export const DEFAULT_MAX_REQUEST_BODY_BYTES = 64 * 1024;
 export const DEFAULT_MAX_RESPONSE_BODY_BYTES = 2 * 1024 * 1024;
 export const DEFAULT_MAX_REDIRECTS = 5;
 export const DEFAULT_RELAY_TIMEOUT_MS = 20_000;
+export { RELAY_HOP_HEADER } from "@kunai/types";
+
 export const RELAY_ERROR_CODE_HEADER = "X-Kunai-Relay-Error-Code";
