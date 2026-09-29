@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-09-12"
 ---
 
 # Kunai — Repo Infrastructure
@@ -220,6 +220,14 @@ Open Windows parity backlog:
   updater parity is complete.
 
 **Local pipeline verification**
+
+The local build-cache gate reads the JSON summary path printed by that exact
+Turbo invocation. Both `@kitsunekode/kunai#build` and
+`@kitsunekode/kunai#build:binary:host` must occur once with cache status `HIT`;
+cached dependency typechecks cannot satisfy the gate. Missing or ambiguous
+summary announcements, unreadable/malformed summaries, duplicate required tasks,
+and either build missing the cache all fail verification. Historical summaries
+are never selected by timestamp.
 
 ```sh
 bun run verify:build-pipeline       # fast: build + pkg:check + turbo cache
