@@ -2,47 +2,72 @@ import { expect, test } from "bun:test";
 
 import { waitUntil } from "../../support/wait-until";
 
-test("returns as soon as the predicate holds, without burning the budget", async () => {
-  let calls = 0;
-  const started = Date.now();
-  await waitUntil(() => {
-    calls += 1;
-    return calls >= 2;
+test("returns after one tick when the predicate becomes ready", async () => {
+  let ticks = 0;
+  let elapsed = 0;
+  await waitUntil(() => ticks === 1, {
+    now: () => elapsed,
+    tick: async (ms) => {
+      expect(ms).toBe(5);
+      elapsed += ms;
+      ticks += 1;
+    },
   });
-  // A generous ceiling must cost nothing when the condition arrives early.
-  expect(Date.now() - started).toBeLessThan(1_000);
+  expect(ticks).toBe(1);
 });
 
-test("returns immediately when the predicate already holds", async () => {
-  const started = Date.now();
-  await waitUntil(() => true);
-  expect(Date.now() - started).toBeLessThan(100);
+test("does not tick when the predicate already holds", async () => {
+  let ticks = 0;
+  await waitUntil(() => true, {
+    now: () => 0,
+    tick: async () => {
+      ticks += 1;
+    },
+  });
+  expect(ticks).toBe(0);
 });
 
-/**
- * The property the unbounded `while (!cond) await Bun.sleep(1)` loops lacked:
- * they could not fail, only hang until the runner's global timeout, which
- * reports as a timeout rather than as the condition that never held.
- */
-test("a condition that never holds fails, and names what was waited for", async () => {
-  await expect(waitUntil(() => false, { timeoutMs: 50, label: "outbox drained" })).rejects.toThrow(
-    /waitUntil\(outbox drained\) timed out after 50ms/,
-  );
+test.each([
+  { label: "outbox drained", message: "waitUntil(outbox drained) timed out after 50ms" },
+  { label: undefined, message: "waitUntil timed out after 50ms" },
+])("a condition that never holds rejects: $message", async ({ label, message }) => {
+  let elapsed = 0;
+  let ticks = 0;
+  const waiting = waitUntil(() => false, {
+    now: () => elapsed,
+    timeoutMs: 50,
+    label,
+    tick: async (ms) => {
+      elapsed += ms;
+      ticks += 1;
+      // A missing clock seam must fail immediately, not spin until real time passes.
+      if (ticks > 10) throw new Error("polled past the injected deadline");
+    },
+  });
+  await expect(waiting).rejects.toThrow(message);
+  expect(ticks).toBe(10);
 });
 
-test("without a label it still reports a timeout rather than hanging", async () => {
-  await expect(waitUntil(() => false, { timeoutMs: 50 })).rejects.toThrow(
-    /waitUntil timed out after 50ms/,
-  );
-});
-
-test("a condition that becomes true on the deadline tick is not a failure", async () => {
-  // The loop can exit on the deadline in the same tick the condition flips;
-  // failing then would be its own flake.
+test("accepts readiness at the deadline without another tick", async () => {
+  let elapsed = 0;
   let ready = false;
-  setTimeout(() => {
-    ready = true;
-  }, 40);
-  await waitUntil(() => ready, { timeoutMs: 200, label: "late flip" });
-  expect(ready).toBe(true);
+  let ticks = 0;
+  let predicateCalls = 0;
+  await waitUntil(
+    () => {
+      predicateCalls += 1;
+      return ready;
+    },
+    {
+      now: () => elapsed,
+      timeoutMs: 50,
+      tick: async () => {
+        ticks += 1;
+        elapsed = 50;
+        ready = true;
+      },
+    },
+  );
+  expect(ticks).toBe(1);
+  expect(predicateCalls).toBe(2);
 });

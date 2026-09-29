@@ -27,6 +27,8 @@ export async function waitUntil(
   options: {
     readonly timeoutMs?: number;
     readonly label?: string;
+    /** Advance this clock with tick when testing deadline behavior deterministically. */
+    readonly now?: () => number;
     /**
      * How to yield between polls. Ink/React suites pass an `act()`-wrapped
      * sleep, because state updates flushed outside an act boundary make React
@@ -37,9 +39,10 @@ export async function waitUntil(
 ): Promise<void> {
   const timeoutMs = options.timeoutMs ?? 5_000;
   const tick = options.tick ?? ((ms: number) => Bun.sleep(ms));
-  const deadline = Date.now() + timeoutMs;
+  const now = options.now ?? Date.now;
+  const deadline = now() + timeoutMs;
 
-  while (Date.now() < deadline) {
+  while (now() < deadline) {
     if (predicate()) return;
     await tick(5);
   }

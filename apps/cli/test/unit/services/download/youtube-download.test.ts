@@ -136,21 +136,34 @@ describe("DownloadService youtube argv contract", () => {
   });
 
   test("abort calls runYtDlpProcess cancel handle", async () => {
+    const resolving = Promise.withResolvers<void>();
+    const releaseResolution = Promise.withResolvers<void>();
+    const processStarted = Promise.withResolvers<void>();
     const cancel = mock(() => {});
     let resolveCompleted!: (value: { exitCode: number; stderr: string }) => void;
     const completed = new Promise<{ exitCode: number; stderr: string }>((resolve) => {
       resolveCompleted = resolve;
     });
-    runYtDlpSpy.mockImplementation(() => ({
-      process: { kill: mock(() => {}) } as never,
-      completed,
-      cancel,
-    }));
+    runYtDlpSpy.mockImplementation(() => {
+      processStarted.resolve();
+      return {
+        process: {
+          kill: mock(() => {}),
+          exited: completed.then(({ exitCode }) => exitCode),
+        } as never,
+        completed,
+        cancel,
+      };
+    });
 
     const service = buildYoutubeService({
       repo,
       downloadPath: tempDir,
-      resolveDownloadStream: async () => youtubeResolveResult() as unknown as DownloadResolveResult,
+      resolveDownloadStream: async () => {
+        resolving.resolve();
+        await releaseResolution.promise;
+        return youtubeResolveResult() as unknown as DownloadResolveResult;
+      },
       abortGraceMs: 0,
     });
 
@@ -165,12 +178,20 @@ describe("DownloadService youtube argv contract", () => {
       mode: "youtube",
     });
     const processPromise = service.processQueue();
-    await Bun.sleep(20);
-    await service.abort(job.id);
+    await resolving.promise;
+    expect(repo.get(job.id)?.status).toBe("running");
+    expect(runYtDlpSpy).not.toHaveBeenCalled();
+    releaseResolution.resolve();
+    // The mock resolves this synchronously; the continuation resumes after
+    // executeYtDlpDownload has registered the returned process handle.
+    await processStarted.promise;
+    const aborting = service.abort(job.id);
     resolveCompleted({ exitCode: 1, stderr: "terminated" });
+    await aborting;
     await processPromise;
 
     expect(cancel).toHaveBeenCalled();
+    expect(repo.get(job.id)?.status).toBe("aborted");
   });
 });
 

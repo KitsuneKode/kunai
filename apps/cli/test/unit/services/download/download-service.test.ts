@@ -1388,6 +1388,7 @@ describe("DownloadService", () => {
   });
 
   test("aborts active process and marks job aborted", async () => {
+    const processStarted = Promise.withResolvers<void>();
     const service = buildService({
       repo,
       downloadsEnabled: true,
@@ -1400,18 +1401,18 @@ describe("DownloadService", () => {
       resolveExit = resolve;
     });
     const killSignals: unknown[] = [];
-    spawnSpy.mockImplementation(
-      () =>
-        ({
-          stdout: streamOf(""),
-          stderr: streamOf(""),
-          exited,
-          kill: (signal?: unknown) => {
-            killSignals.push(signal);
-            if (signal === "SIGKILL") resolveExit?.(1);
-          },
-        }) as never,
-    );
+    spawnSpy.mockImplementation(() => {
+      processStarted.resolve();
+      return {
+        stdout: streamOf(""),
+        stderr: streamOf(""),
+        exited,
+        kill: (signal?: unknown) => {
+          killSignals.push(signal);
+          if (signal === "SIGKILL") resolveExit?.(1);
+        },
+      } as never;
+    });
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1421,7 +1422,9 @@ describe("DownloadService", () => {
     });
 
     const running = service.processQueue();
-    await waitUntil(() => repo.get(job.id)?.status === "running");
+    // Await the spawn acknowledgment, not the earlier durable running lease.
+    // Registration finishes synchronously before this continuation resumes.
+    await processStarted.promise;
     await service.abort(job.id);
     await running;
 
@@ -1430,6 +1433,7 @@ describe("DownloadService", () => {
   });
 
   test("pauses active downloads for shutdown and leaves them retryable", async () => {
+    const processStarted = Promise.withResolvers<void>();
     const service = buildService({
       repo,
       downloadsEnabled: true,
@@ -1442,17 +1446,17 @@ describe("DownloadService", () => {
     const exited = new Promise<number>((resolve) => {
       resolveExit = resolve;
     });
-    spawnSpy.mockImplementation(
-      () =>
-        ({
-          stdout: streamOf(""),
-          stderr: streamOf(""),
-          exited,
-          kill: (signal?: unknown) => {
-            if (signal === "SIGKILL") resolveExit?.(1);
-          },
-        }) as never,
-    );
+    spawnSpy.mockImplementation(() => {
+      processStarted.resolve();
+      return {
+        stdout: streamOf(""),
+        stderr: streamOf(""),
+        exited,
+        kill: (signal?: unknown) => {
+          if (signal === "SIGKILL") resolveExit?.(1);
+        },
+      } as never;
+    });
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1462,7 +1466,7 @@ describe("DownloadService", () => {
     });
 
     const running = service.processQueue();
-    await waitUntil(() => repo.get(job.id)?.status === "running");
+    await processStarted.promise;
     await service.pauseActiveJobsForShutdown("download paused by test shutdown");
     await running;
 
@@ -2202,6 +2206,7 @@ describe("DownloadService", () => {
   });
 
   test("pauseActiveJobsForShutdown honors explicit shutdown wait budgets", async () => {
+    const processStarted = Promise.withResolvers<void>();
     const service = buildService({
       repo,
       downloadsEnabled: true,
@@ -2213,15 +2218,15 @@ describe("DownloadService", () => {
     const exited = new Promise<number>((resolve) => {
       exitProcess = resolve;
     });
-    spawnSpy.mockImplementation(
-      () =>
-        ({
-          stdout: streamOf(""),
-          stderr: streamOf(""),
-          exited,
-          kill: () => exitProcess(0),
-        }) as never,
-    );
+    spawnSpy.mockImplementation(() => {
+      processStarted.resolve();
+      return {
+        stdout: streamOf(""),
+        stderr: streamOf(""),
+        exited,
+        kill: () => exitProcess(0),
+      } as never;
+    });
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -2230,7 +2235,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
     });
     const running = service.processQueue();
-    await waitUntil(() => repo.get(job.id)?.status === "running");
+    await processStarted.promise;
 
     const startedAt = Date.now();
     await service.pauseActiveJobsForShutdown("download paused by shutdown", {
