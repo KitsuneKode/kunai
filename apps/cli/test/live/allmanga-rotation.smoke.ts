@@ -27,12 +27,17 @@ import {
   buildAllMangaBootToken,
   currentAllMangaEpochCandidates,
 } from "@kunai/providers";
+import { isJsonString } from "@kunai/types";
 
 const UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
 const SITE_HOST = new URL(ALLMANGA_SITE_ORIGIN).hostname;
 
-if (process.env.KUNAI_LIVE_ALLMANGA_ROTATION !== "1") {
+function rotationProbeEnabled(): boolean {
+  return process.env.KUNAI_LIVE_ALLMANGA_ROTATION === "1";
+}
+
+if (!rotationProbeEnabled()) {
   console.log(
     JSON.stringify(
       {
@@ -91,7 +96,9 @@ function extractBuildIdCandidates(chunk: string): string[] {
     for (const literal of literals) {
       let value: string;
       try {
-        value = JSON.parse(literal) as string;
+        const parsed = JSON.parse(literal);
+        if (!isJsonString(parsed)) continue;
+        value = parsed;
       } catch {
         continue;
       }
@@ -133,6 +140,7 @@ try {
     );
   }
 } catch (error) {
+  // SAFETY: fetch/json failures are Error instances; the note only needs the message string.
   notes.push(`static extraction failed: ${(error as Error).message}`);
 }
 

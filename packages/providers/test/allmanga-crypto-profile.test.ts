@@ -27,6 +27,7 @@ describe("allmanga crypto profile", () => {
     // Both the order and the separator rotate; a missing or duplicated part is
     // `invalid_boot_token` either way, so the set is asserted, not implied.
     expect([...ALLMANGA_CRYPTO_PROFILE.bootParts].sort()).toEqual(
+      // SAFETY: the literal list is the assertion's ground truth for the boot-part set.
       (["buildId", "epoch", "group", "host", "lane"] as AllMangaBootPart[]).sort(),
     );
   });
