@@ -323,7 +323,11 @@ describe("activation lock", () => {
       const enteredPath = join(process.env.KUNAI_TEST_LOCKS_DIR, \`activation-worker-entered-\${workerId}\`);
       const releasePath = join(process.env.KUNAI_TEST_LOCKS_DIR, \`activation-worker-release-\${workerId}\`);
       await writeFile(readyPath, "ready");
-      while (!existsSync(process.env.KUNAI_TEST_START_PATH)) await Bun.sleep(5);
+      const startDeadline = Date.now() + 15000;
+      while (!existsSync(process.env.KUNAI_TEST_START_PATH)) {
+        if (Date.now() > startDeadline) { console.error("worker-" + workerId + ": start sentinel never appeared"); process.exit(3); }
+        await Bun.sleep(5);
+      }
       const result = await withActivationLock(
         { locksDir: process.env.KUNAI_TEST_LOCKS_DIR },
         process.env.KUNAI_TEST_VERSION,
@@ -336,7 +340,11 @@ describe("activation lock", () => {
             await writeFile(process.env.KUNAI_TEST_VIOLATION_PATH, "overlap");
           }
           await writeFile(enteredPath, "entered");
-          while (!existsSync(releasePath)) await Bun.sleep(5);
+          const releaseDeadline = Date.now() + 15000;
+          while (!existsSync(releasePath)) {
+            if (Date.now() > releaseDeadline) { console.error("worker-" + workerId + ": release sentinel never appeared"); process.exit(3); }
+            await Bun.sleep(5);
+          }
           if (ownsSentinel) await rm(process.env.KUNAI_TEST_CRITICAL_PATH, { recursive: true });
         },
         { timeoutMs: Number(process.env.KUNAI_TEST_ACQUIRE_TIMEOUT_MS), pollMs: 1 },

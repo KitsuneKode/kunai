@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -13,6 +14,7 @@ import {
 import { migrateFlatInstall } from "@/services/update/native-installer/migrate-flat-install";
 
 import { describePosixOnly as describe } from "../../../../helpers/platform-gates";
+import { waitUntil } from "../../../../support/wait-until";
 
 const roots: string[] = [];
 
@@ -49,11 +51,7 @@ async function seedFlatInstall() {
 }
 
 async function waitForPath(path: string): Promise<void> {
-  const deadline = Date.now() + 2_000;
-  while (!(await Bun.file(path).exists())) {
-    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
-    await Bun.sleep(5);
-  }
+  await waitUntil(() => existsSync(path), { label: `path exists: ${path}` });
 }
 
 describe("migrateFlatInstall activation", () => {

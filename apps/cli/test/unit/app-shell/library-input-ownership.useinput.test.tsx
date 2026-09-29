@@ -6,6 +6,7 @@ import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import React, { act } from "react";
 
 import { render, stripAnsi } from "../../harness/render-capture";
+import { waitUntil } from "../../support/wait-until";
 
 type FixtureOptions = {
   readonly updates?: unknown[];
@@ -111,13 +112,15 @@ async function waitForFrame(
   handle: { lastFrame: () => string | undefined },
   needle: string,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (handle.lastFrame()?.includes(needle)) return;
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-  }
-  throw new Error(`frame never contained ${JSON.stringify(needle)}\n${handle.lastFrame() ?? ""}`);
+  await waitUntil(() => handle.lastFrame()?.includes(needle) ?? false, {
+    label: `frame containing ${JSON.stringify(needle)}`,
+    tick: (ms) =>
+      act(async () => {
+        await new Promise((r) => setTimeout(r, ms));
+      }),
+  }).catch(() => {
+    throw new Error(`frame never contained ${JSON.stringify(needle)}\n${handle.lastFrame() ?? ""}`);
+  });
 }
 
 async function pressEscape(handle: { stdin: { enqueue: (data: string) => void } }): Promise<void> {

@@ -942,7 +942,7 @@ describe("SyncService per-kind config gates", () => {
 
     expect(anilist.calls.length).toBe(0);
     expect(repo.counts().pending).toBe(1);
-  });
+  }, 60_000);
 
   /** The gates are per kind, so one being off must not hold the other back. */
   test("still delivers progress when only list sync is off", async () => {

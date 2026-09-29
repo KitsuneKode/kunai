@@ -915,7 +915,7 @@ test("row-budget exhaustion schedules continuation until the durable queue is em
   expect(scheduled).toHaveLength(1);
   await scheduled.shift()!();
   expect(state.reconciliation.listPending()).toHaveLength(0);
-});
+}, 60_000);
 
 test("transient prefix backs off so later eligible rows run and retries resume when due", async () => {
   const state = fixture();

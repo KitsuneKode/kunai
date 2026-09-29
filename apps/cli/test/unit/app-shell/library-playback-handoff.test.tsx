@@ -9,6 +9,7 @@ import React, { act } from "react";
 
 import { render } from "../../harness/render-capture";
 import { createContainerFixture } from "../../support/container-fixture";
+import { waitUntil } from "../../support/wait-until";
 
 const JOB = {
   id: "job-1",
@@ -40,13 +41,15 @@ async function waitForFrame(
   handle: { lastFrame: () => string | undefined },
   needle: string,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (handle.lastFrame()?.includes(needle)) return;
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-  }
-  throw new Error(`frame never contained ${JSON.stringify(needle)}\n${handle.lastFrame() ?? ""}`);
+  await waitUntil(() => handle.lastFrame()?.includes(needle) ?? false, {
+    label: `frame containing ${JSON.stringify(needle)}`,
+    tick: (ms) =>
+      act(async () => {
+        await new Promise((r) => setTimeout(r, ms));
+      }),
+  }).catch(() => {
+    throw new Error(`frame never contained ${JSON.stringify(needle)}\n${handle.lastFrame() ?? ""}`);
+  });
 }
 
 test("/library returns the selected offline episode to the session workflow", async () => {
