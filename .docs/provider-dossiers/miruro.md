@@ -57,6 +57,7 @@ this change to keep the release-hardening branches independently mergeable.
 - **Labels:** Hybrid — primary Tracks label is Gintama character (`Gintoki`, `Kagura`, …); detail is `Sub · hard sub` / `Dub · …` via `metadata.sourceDetail`. Emits `inventory:audio-modes` when the episode payload exposes sub and/or dub.
 - **HLS quality:** Lone Pipe `master.m3u8` rows expand through shared `expandHlsMasterPlaylist` ([`packages/providers/src/shared/hls-ladder.ts`](../../packages/providers/src/shared/hls-ladder.ts)) into multiple quality candidates for `/quality`.
 - **Live pipe (this environment):** `/api/secure/pipe` on `miruro.bz` / `miruro.ru` may return **HTTP 403 Cloudflare HTML**; fail-fast after 2 consecutive CF HTML mirrors.
+- **Escalation ladder (2026-09):** fetch → **one refetch after 400–800ms jitter on a challenged response** (the managed challenge is intermittent and clears inside the same attempt window often enough to be worth one cheap retry) → curl/curl-impersonate subprocess. `wafLikely` skips the refetch — a sibling mirror already saw a challenge, so a region-wide block is never re-polled. The per-call timeout signal bounds the whole leg including the retry.
 - **Recommended disposition:** keep **demoted from default**. (The default is now
   `animeProvider: "anidb"` with `animeProviderPriority: ["anidb", "allanime"]`; this
   line previously claimed `["allanime"]`.) Re-promote after opt-in live matrix passes.
