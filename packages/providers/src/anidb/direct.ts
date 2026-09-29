@@ -60,6 +60,7 @@ import { routeAnidbSeason } from "./season-routing";
 
 export { ANIDB_PROVIDER_ID };
 export {
+  AnidbHttpStatusError,
   anidbNumericId,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,

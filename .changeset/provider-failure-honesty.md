@@ -51,5 +51,27 @@ longer degrade to generic network noise or fake "empty" results.
   instead of empty.
 - VidLink: `HTTP ${status}` strings become `ProviderHttpError` so status
   fidelity survives to the failure record.
+- HLS ladder (`expandHlsMasterPlaylist`): transport and HTTP failures throw
+  `ProviderHttpError` instead of collapsing into a fake `auto` variant — a
+  dead HLS host no longer comes back attested as a resolved stream. The `auto`
+  row remains for fetched bodies that are not master playlists.
+- Stream probe: unverifiable TLS chains ("unable to verify the first
+  certificate", self-signed, missing local issuer) are definitive failures
+  like expired certs — a broken chain fails the resolve gate instead of
+  retrying and passing through.
+- HiAnime: `ProviderHttpError` keeps its fidelity through failure mapping
+  (`not-found`/`blocked`/`provider-unavailable` instead of generic
+  `network-error`), and `provider-unavailable` joins the retryable allowlist
+  since upstream 5xx maintenance windows heal.
+- AniDB: `searchAnidb` and the HLS ladder fetch report HTTP status, so a 503
+  maintenance page surfaces `provider-unavailable` instead of parsing as an
+  empty catalog; per-mode settles classify `AnidbHttpStatusError` by status.
+- AllManga: per-source link fetches throw classified `ProviderHttpError`, and
+  when every adapter lane refuses with a real status (403/429/5xx) the refusal
+  surfaces instead of an empty list; 404s stay lane-scoped so the required-Ak
+  fallback still fires.
+- Live matrix parser: multi-JSON stdout (YouTube emits report + ladder +
+  shorts checks) and stderr reports now parse instead of reading as harness
+  failures.
 - New conformance test bans raw `candidateTimeoutMs` literals — the clamp bug
   has shipped three times.

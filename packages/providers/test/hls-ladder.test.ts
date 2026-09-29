@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { ProviderHttpError } from "../src/runtime/fetch";
 import {
   expandHlsMasterInventory,
   expandHlsMasterPlaylist,
@@ -53,6 +54,37 @@ describe("hls ladder", () => {
         qualityRank: 0,
       },
     ]);
+  });
+
+  test("expandHlsMasterPlaylist propagates transport failures instead of faking auto", async () => {
+    // A TLS failure collapsing into an "auto" ladder is how a dead CDN came
+    // back attested as a resolved stream (hls.aniwatch.al, 2026-10).
+    const tlsError = new TypeError("unable to verify the first certificate");
+    await expect(
+      expandHlsMasterPlaylist({
+        masterUrl: "https://cdn.example/master.m3u8",
+        fetch: (async () => {
+          throw tlsError;
+        }) as ExpandHlsMasterPlaylistOptions["fetch"],
+      }),
+    ).rejects.toBe(tlsError);
+  });
+
+  test("expandHlsMasterPlaylist throws ProviderHttpError on non-OK status", async () => {
+    const attempt = expandHlsMasterPlaylist({
+      masterUrl: "https://cdn.example/master.m3u8",
+      fetch: (async () =>
+        new Response("Under Maintenance", {
+          status: 503,
+          statusText: "Service Unavailable",
+        })) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    await expect(attempt).rejects.toBeInstanceOf(ProviderHttpError);
+    await expect(attempt).rejects.toMatchObject({
+      status: 503,
+      code: "provider-unavailable",
+      stage: "hls-ladder",
+    });
   });
 
   test("looksLikeHlsMasterUrl detects master leaf names", () => {

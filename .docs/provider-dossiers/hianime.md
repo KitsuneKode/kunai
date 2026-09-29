@@ -198,8 +198,10 @@ title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
   routes never retry), and `ladder:fallback` when the HLS ladder collapses to
   the single `auto` row.
 - Failure classification: `not-found` (404/410) and `parse-failed` are
-  non-retryable; only `blocked` and `network-error` retry. Retryability is an
-  allowlist — a future code must opt in.
+  non-retryable; `blocked`, `network-error`, and `provider-unavailable` (typed
+  5xx, e.g. the HLS host's maintenance window) retry. `ProviderHttpError` from
+  the ladder fetch keeps its status fidelity instead of flattening to
+  `network-error`. Retryability is an allowlist — a future code must opt in.
 - Caching: title-query → slug lookups share the episode catalog's 30-minute
   memory TTL (hits only, never empty); native-id resolves bypass it.
 

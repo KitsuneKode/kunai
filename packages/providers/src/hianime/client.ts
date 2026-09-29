@@ -9,6 +9,7 @@
 
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
+import { ProviderHttpError } from "../runtime/fetch";
 import {
   curlCipherArgs,
   isCloudflareChallengeText,
@@ -399,7 +400,12 @@ function isSupportedServer(serverName: string): boolean {
   );
 }
 
-export type HianimeStreamFailureCode = "blocked" | "network-error" | "parse-failed" | "not-found";
+export type HianimeStreamFailureCode =
+  | "blocked"
+  | "network-error"
+  | "parse-failed"
+  | "provider-unavailable"
+  | "not-found";
 
 type HianimeStreamFailure = {
   readonly code: HianimeStreamFailureCode;
@@ -410,6 +416,30 @@ function failureOf(error: unknown): HianimeStreamFailure {
   const message = error instanceof Error ? error.message : String(error);
   if (error instanceof HianimeEmbedDecodeError) {
     return { code: "parse-failed", message: `hianime embed decode failed: ${error.code}` };
+  }
+  // Typed upstream failures keep their status fidelity — the ladder fetch and
+  // other typed throws must not collapse into a generic network-error, or a
+  // 404 reads identical to a refused connection.
+  if (error instanceof ProviderHttpError) {
+    const status = error.status;
+    if (status === 404 || status === 410 || error.code === "not-found") {
+      return { code: "not-found", message };
+    }
+    if (error.code === "parse-failed") {
+      return { code: "parse-failed", message };
+    }
+    if (
+      status === 401 ||
+      status === 403 ||
+      error.code === "blocked" ||
+      error.code === "rate-limited"
+    ) {
+      return { code: "blocked", message };
+    }
+    if (error.code === "provider-unavailable" || (status !== undefined && status >= 500)) {
+      return { code: "provider-unavailable", message };
+    }
+    return { code: "network-error", message };
   }
   // Structural before textual: a 404/410 page can carry any body, but the
   // status means the route is gone — retrying cannot heal it.
@@ -517,11 +547,12 @@ export async function resolveHianimeEpisodeStreams({
       };
     }
     const malId = hianimeMalIdFromEmbedUrl(embedUrl);
-    // The ladder helper is total: it returns the single `auto` fallback row
-    // (pointing at the master URL, rank 0) whenever the master is
-    // unreachable or unparseable. That shape is the fallback's alone — a
-    // parsed variant never points at the master with rank 0 — so flag it for
-    // the trace instead of letting it pose as a genuine single rung.
+    // The ladder still returns the single `auto` fallback row (pointing at
+    // the master URL, rank 0) when the fetched body is not a master playlist
+    // — transport failures throw instead, and never reach this line. That
+    // shape is the fallback's alone: a parsed variant never points at the
+    // master with rank 0, so flag it for the trace instead of letting it
+    // pose as a genuine single rung.
     const ladderFallback =
       links.length === 1 &&
       links[0]?.url === payload.src &&

@@ -212,6 +212,45 @@ describe("stream reachability", () => {
     expect(isStreamReachableForResolve(probe)).toBe(false);
   });
 
+  test("unverifiable TLS chain is definitive, not a retryable transport blip", async () => {
+    // hls.aniwatch.al served a chain OpenSSL could not verify (2026-10): the
+    // probe used to retry then pass the dead stream through leniently, and
+    // mpv's TLS stack failed on the exact same trust decision.
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/master.m3u8",
+      fetchImpl: async () => {
+        throw new TypeError("unable to verify the first certificate");
+      },
+      timeoutMs: 50,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.definitive).toBe(true);
+    }
+    expect(isStreamReachableForResolve(probe)).toBe(false);
+  });
+
+  test("self-signed and issuer-chain failures are definitive too", async () => {
+    for (const message of [
+      "self signed certificate in certificate chain",
+      "unable to get local issuer certificate",
+      "certificate verify failed",
+    ]) {
+      const probe = await probeStreamReachability({
+        url: "https://cdn.example/stream.m3u8",
+        fetchImpl: async () => {
+          throw new TypeError(message);
+        },
+        timeoutMs: 50,
+      });
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") {
+        expect(probe.definitive).toBe(true);
+      }
+    }
+  });
+
   test("playback preflight stays lenient on timeout", async () => {
     const probe = { status: "timeout" } as const;
     expect(isStreamReachableForResolve(probe)).toBe(true);

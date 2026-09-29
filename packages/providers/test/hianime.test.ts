@@ -414,6 +414,56 @@ describe("hianime module resolve", () => {
     expect(selected?.url).toBe("https://hls2.aniwatchtv.uk/v/demo/sub/360/index.m3u8");
   });
 
+  test("a 503 ladder fetch fails provider-unavailable instead of attesting a dead auto stream", async () => {
+    clearHianimeCachesForTest();
+    // hls.aniwatch.al broke its TLS chain / served errors while the embed page
+    // still resolved: the old ladder swallowed the failure into a fake "auto"
+    // row and the stream died in mpv instead of failing the candidate.
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        if (url.endsWith("master.m3u8")) {
+          return new Response("Under Maintenance", { status: 503 });
+        }
+        return happyRouter(url);
+      }),
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({
+      code: "provider-unavailable",
+      retryable: true,
+    });
+  });
+
+  test("a thrown transport error in the ladder keeps its classification", async () => {
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        if (url.endsWith("master.m3u8")) {
+          return new Response("gone", { status: 404 });
+        }
+        return happyRouter(url);
+      }),
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "not-found", retryable: false });
+  });
+
   test("flags a collapsed ladder in the trace", async () => {
     clearHianimeCachesForTest();
     const result = await hianimeProviderModule.resolve(

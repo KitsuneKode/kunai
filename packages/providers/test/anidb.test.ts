@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import {
+  AnidbHttpStatusError,
   anidbNumericId,
   anidbProviderModule,
   chooseAnidbSearchMatch,
@@ -506,6 +507,29 @@ describe("anidb search delegation", () => {
       globalThis.fetch = (async () =>
         new Response(page, { status: 200 })) as unknown as typeof fetch;
       expect(await searchAnidb("solo leveling")).toEqual(parseAnidbBrowseHtml(page));
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("searchAnidb surfaces an upstream 503 instead of an empty result set", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // anidb.app answered search with a 503 "Under Maintenance" page
+      // (2026-10): without status reporting it parsed cleanly to zero results
+      // and the outage posed as an empty catalog.
+      globalThis.fetch = (async () =>
+        new Response("<!doctype html><title>Under Maintenance</title>", {
+          status: 503,
+          statusText: "Service Unavailable",
+        })) as unknown as typeof fetch;
+      await expect(searchAnidb("solo leveling")).rejects.toBeInstanceOf(AnidbHttpStatusError);
+      await expect(searchAnidb("solo leveling")).rejects.toMatchObject({ status: 503 });
     } finally {
       globalThis.fetch = originalFetch;
       Bun.which = originalWhich;
