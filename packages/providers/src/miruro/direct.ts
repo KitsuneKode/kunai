@@ -99,7 +99,7 @@ export const MIRURO_PIPE_BASE_URLS = MIRURO_KNOWN_PIPE_BASE_URLS;
  * full request to learn the same thing. Deliberately not raised alongside the
  * mirror list: more mirrors makes fail-fast worth more, not less.
  */
-const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
+export const MIRURO_WAF_FAIL_FAST_THRESHOLD = MIRURO_PIPE_BASE_URLS.length;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
