@@ -158,6 +158,34 @@ export interface ProviderSourceEvidence {
   readonly metadata?: Record<string, unknown>;
 }
 
+/**
+ * One edge in a title's relation graph — how this entry connects to a sibling
+ * catalog entry. `kind` is normalized across sources: AniList `SEQUEL`/`PREQUEL`
+ * and AniDB `Sequel`/`Prequel` links both land here; continuation-of-a-season
+ * (AniList does not type PART edges — "Season 3 Part 2" is a `sequel` whose
+ * title carries the marker) is distinguished downstream by the season-entry
+ * resolver, which never counts a continuation as a new season.
+ */
+export type TitleRelationKind =
+  | "sequel"
+  | "prequel"
+  | "season-part"
+  | "side-story"
+  | "alternative"
+  | "adaptation"
+  | "summary"
+  | "other";
+
+export interface TitleRelationEdge {
+  readonly kind: TitleRelationKind;
+  /** Catalog id of the related entry — `anilist:<id>` or a provider-native id. */
+  readonly targetId: string;
+  readonly targetTitle?: string;
+  readonly targetYear?: number;
+  /** Which catalog asserted the edge — corroboration between sources matters. */
+  readonly source: "anilist" | "anidb" | "tmdb";
+}
+
 export interface TitleIdentity {
   readonly id: string;
   readonly kind: MediaKind;
@@ -168,6 +196,17 @@ export interface TitleIdentity {
   readonly imdbId?: string;
   readonly malId?: string;
   readonly externalIds?: ProviderExternalIds;
+  /**
+   * Known alias titles (english/romaji/native/synonyms). Providers match on
+   * these instead of re-guessing from the display title alone.
+   */
+  readonly aliases?: readonly string[];
+  /**
+   * Relation edges for this entry, populated on the anime lane. A provider
+   * asking "which entry is season N" must use the season-entry resolver over
+   * this graph — never a title-string ordinal guess.
+   */
+  readonly relations?: readonly TitleRelationEdge[];
 }
 
 /** Exact provider-owned episode identity selected from a provider episode catalog. */
