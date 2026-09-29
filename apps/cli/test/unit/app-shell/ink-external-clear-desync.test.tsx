@@ -44,6 +44,7 @@ const countOf = (haystack: string, needle: string) => haystack.split(needle).len
 async function renderThenExternallyClear(): Promise<string> {
   const stdout = new RecordingStdout();
   const instance = render(<Frame rows={12} />, {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     stdout: stdout as never,
     patchConsole: false,
     exitOnCtrlC: false,

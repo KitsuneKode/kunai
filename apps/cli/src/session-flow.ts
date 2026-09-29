@@ -194,7 +194,7 @@ function createPickerActionContext(
     ? buildPickerActionContext({
         container,
         taskLabel,
-        ...(allowed ? { allowed } : {}),
+        ...(allowed ? { allowed } : null),
       })
     : undefined;
 }

@@ -719,7 +719,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
             value: row.provider_episode_value,
           }
         : undefined,
-    providerId: row.provider_id as ProviderId,
+    providerId: row.provider_id,
     mode: row.mode ?? undefined,
     subLang: row.sub_lang ?? undefined,
     animeLang: row.anime_lang ?? undefined,
@@ -750,7 +750,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     failureKind: row.failure_kind ?? undefined,
     artifactStatus: row.artifact_status ?? "pending",
     repairMetadataJson: row.repair_metadata_json ?? undefined,
-    lastResolvedProviderId: (row.last_resolved_provider_id as ProviderId | null) ?? undefined,
+    lastResolvedProviderId: row.last_resolved_provider_id ?? undefined,
     lastValidatedAt: row.last_validated_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

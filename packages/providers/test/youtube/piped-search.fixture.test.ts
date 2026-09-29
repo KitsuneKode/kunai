@@ -11,7 +11,7 @@ describe("mapPipedSearchItem", () => {
       isShort: true,
     });
 
-    expect(mapped?.contentShape).toBe("short");
+    expect(mapped?.resultKind).toBe("short");
   });
 
   test("maps Piped video rows with metadata source", () => {

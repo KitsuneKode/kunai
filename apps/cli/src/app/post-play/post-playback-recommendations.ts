@@ -17,7 +17,7 @@ export interface PostPlaybackRecommendationItem {
   readonly externalIds?: SearchResult["externalIds"];
   readonly channelId?: string;
   readonly channelTitle?: string;
-  readonly contentShape?: SearchResult["contentShape"];
+  readonly resultKind?: SearchResult["resultKind"];
 }
 
 /** Map post-play items into the shell rail shape (structurally compatible). */
@@ -37,7 +37,7 @@ export function postPlaybackRecommendationItemsToRailItems(
     ...(item.externalIds ? { externalIds: item.externalIds } : {}),
     ...(item.channelId ? { channelId: item.channelId } : {}),
     ...(item.channelTitle ? { channelTitle: item.channelTitle } : {}),
-    ...(item.contentShape ? { contentShape: item.contentShape } : {}),
+    ...(item.resultKind ? { resultKind: item.resultKind } : {}),
   }));
 }
 
@@ -354,7 +354,7 @@ function dedupeRecommendationItems(
       ...(item.externalIds ? { externalIds: item.externalIds } : {}),
       ...(item.channelId ? { channelId: item.channelId } : {}),
       ...(item.channelTitle ? { channelTitle: item.channelTitle } : {}),
-      ...(item.contentShape ? { contentShape: item.contentShape } : {}),
+      ...(item.resultKind ? { resultKind: item.resultKind } : {}),
     });
     if (out.length >= 8) break;
   }

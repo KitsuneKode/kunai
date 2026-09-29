@@ -10,7 +10,7 @@ function result(id: string, title: string, kind?: "movie"): AnidbSearchResult {
     id,
     title,
     numericId,
-    ...(kind ? { kind } : {}),
+    ...(kind ? { kind } : null),
     seasonEvidence: parseAnidbSeasonEvidence(title),
   };
 }

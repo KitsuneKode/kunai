@@ -334,12 +334,12 @@ function buildMoviePanel(
 function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   const meta = ctx.videoMeta ?? undefined;
   const views = formatViewCount(meta?.viewCount);
-  const isChannel = meta?.contentShape === "channel";
-  const isPlaylist = meta?.contentShape === "playlist";
+  const isChannel = meta?.resultKind === "channel";
+  const isPlaylist = meta?.resultKind === "playlist";
   // Shape comes from the provider (`is_short` / a `/shorts/` URL), never from
   // duration: YouTube raised the Shorts ceiling to three minutes in Oct 2024, so
   // a length test both mislabels short videos and misses long Shorts.
-  const isShort = meta?.contentShape === "short";
+  const isShort = meta?.resultKind === "short";
   const secondary = meta?.channelTitle || undefined;
 
   const facts: MediaPanelFact[] = [];
@@ -376,12 +376,12 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   }
   const nextLabel = ctx.nextEpisodeLabel ?? ctx.queueNextLabel;
   if (nextLabel) {
-    const shaped = isPlaylist || isChannel;
+    const isContainerKind = isPlaylist || isChannel;
     miniCards.push({
       kind: "next",
       section: "up next",
       label: nextLabel,
-      meta: shaped ? (isChannel ? "channel" : "playlist") : isShort ? "short" : "related",
+      meta: isContainerKind ? (isChannel ? "channel" : "playlist") : isShort ? "short" : "related",
       thumbUrl: ctx.nextEpisodeThumbUrl,
     });
   }

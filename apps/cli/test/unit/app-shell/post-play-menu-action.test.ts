@@ -50,6 +50,7 @@ describe("post-play menu actions", () => {
     expect(isPostPlayPlaybackRestartResult("resume")).toBe(true);
     expect(isPostPlayPlaybackRestartResult("next")).toBe(true);
     expect(isPostPlayPlaybackRestartResult("search")).toBe(false);
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     expect(isPostPlayPlaybackRestartResult({ type: "track-selection", pick: {} as never })).toBe(
       false,
     );

@@ -2,13 +2,18 @@ import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 
 import type { TitleInfo } from "@/domain/types";
 
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const invidiousGetVideo = mock(async () => null as never);
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const invidiousGetChannelVideos = mock(async () => null as never);
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const invidiousGetTrending = mock(async () => [] as never);
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const mapInvidiousRecommendedVideos = mock((items: unknown) => items as never);
 const mapInvidiousSearchItem = mock(
   (_item?: { videoId?: string; title?: string }) => null as null | Record<string, unknown>,
 );
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const mapInvidiousTrendingVideos = mock((items: unknown[]) => items as never);
 const getYoutubeProviderConfig = mock(() => ({ invidiousInstanceUrl: undefined }));
 
@@ -57,6 +62,7 @@ function relatedBatch(count: number) {
 
 describe("loadYoutubeRecommendations", () => {
   it("skips channel fan-out when related already fills the rail", async () => {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     mapInvidiousRecommendedVideos.mockImplementation(() => relatedBatch(8) as never);
     invidiousGetVideo.mockResolvedValue({
       authorId: "UCmine",
@@ -87,6 +93,7 @@ describe("loadYoutubeRecommendations", () => {
   });
 
   it("does not treat an unrelated history channel as the current channel", async () => {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     mapInvidiousRecommendedVideos.mockImplementation(() => relatedBatch(1) as never);
     invidiousGetVideo.mockResolvedValue({
       recommendedVideos: [{}],

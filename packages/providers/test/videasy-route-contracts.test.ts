@@ -77,9 +77,11 @@ describe("videasy series coordinates", () => {
 
   function variantsFor(episode: { season?: number; episode?: number } | undefined) {
     return buildQueryVariants({
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       title: TITLE as never,
       mediaKind: "series",
       tmdbId: 1399,
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       episode: episode as never,
       singleVariant: true,
     });

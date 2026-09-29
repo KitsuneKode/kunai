@@ -26,6 +26,7 @@ describe("playback provider switch", () => {
     });
     state = reduceState(state, {
       type: "SET_STREAM",
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       stream: { url: "https://example/stream.m3u8" } as never,
     });
 
@@ -342,6 +343,7 @@ describe("playback provider switch", () => {
       },
     };
     const cleared = await clearTitleProviderPreference(
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container as never,
       { id: "anilist:1", type: "series", isAnime: true },
       "anime",

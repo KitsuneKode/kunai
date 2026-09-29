@@ -49,7 +49,9 @@ export function providerResolveResultToStreamInfo(
   const pickedSubtitle =
     subtitlePreference === "none"
       ? null
-      : selectAutomaticSubtitle(subtitleList as never, subtitlePreference);
+      : // SAFETY: subtitleCandidateToTrack produces tracks carrying the fields
+        // selectAutomaticSubtitle reads (url, language).
+        selectAutomaticSubtitle(subtitleList as never, subtitlePreference);
 
   const subtitleSource = resolveSubtitleSource(result.subtitles, subtitleList);
   const liveMetadata = selected.metadata as

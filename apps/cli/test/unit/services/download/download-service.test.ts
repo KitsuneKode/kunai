@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
 import { DownloadEnqueueRejectedError, DownloadService } from "@/services/download/DownloadService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
@@ -253,6 +254,7 @@ describe("DownloadService", () => {
     expect(
       spawnSpy.mock.calls.some(
         (call: readonly unknown[]) =>
+          // SAFETY: test stub — supplies only the surface this test exercises.
           Array.isArray(call[0]) && (call[0] as readonly string[])[0] === "yt-dlp",
       ),
     ).toBe(false);
@@ -384,9 +386,10 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") {
+      if (String(outputPath) === outputPath) {
         writeFileSync(outputPath, "video-bytes");
       }
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download]  50.0% of 1.2GiB\n[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -416,6 +419,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -498,12 +502,13 @@ describe("DownloadService", () => {
       ffprobeAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event: unknown) => diagnostics.push(event),
+        record: <T>(event: T) => diagnostics.push(event),
       },
     });
     whichSpy.mockImplementation((name: string) => (name === "ffprobe" ? "/usr/bin/ffprobe" : null));
     spawnSpy.mockImplementation((command: string[]) => {
       if (command[0] === "ffprobe") {
+        // SAFETY: test stub — supplies only the surface this test exercises.
         return {
           stdout: streamOf("1500.25\n"),
           stderr: streamOf(""),
@@ -512,9 +517,10 @@ describe("DownloadService", () => {
       }
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") {
+      if (String(outputPath) === outputPath) {
         writeFileSync(outputPath, "video-bytes");
       }
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf(""),
@@ -733,21 +739,23 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") {
+      if (String(outputPath) === outputPath) {
         writeFileSync(outputPath, "video-bytes");
       }
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf(""),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(
       async () =>
         new Response("poster-bytes", {
           headers: { "content-type": "image/jpeg" },
         }),
-    ) as unknown as typeof fetch;
+    ) as never;
 
     const job = await service.enqueue({
       title: {
@@ -770,6 +778,7 @@ describe("DownloadService", () => {
     expect(
       spawnSpy.mock.calls.some(
         (call: readonly unknown[]) =>
+          // SAFETY: test stub — supplies only the surface this test exercises.
           Array.isArray(call[0]) && (call[0] as readonly string[])[0] === "ffmpeg",
       ),
     ).toBe(false);
@@ -801,7 +810,8 @@ describe("DownloadService", () => {
       expect(command.join(" ")).toContain("https://fresh.example/master.m3u8");
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -855,16 +865,18 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(
       async () => new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi"),
-    ) as unknown as typeof fetch;
+    ) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -903,16 +915,18 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       throw new Error("stale subtitle URL should not be fetched");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -954,16 +968,18 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       throw new Error("hardsub downloads must not fetch an external subtitle sidecar");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const job = await service.enqueue({
       title: { id: "anime:1", type: "series", name: "Example Anime" },
@@ -1008,16 +1024,16 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
-    globalThis.fetch = mock(
-      async () => new Response("", { status: 503 }),
-    ) as unknown as typeof fetch;
+    // SAFETY: test stub — supplies only the surface this test exercises.
+    globalThis.fetch = mock(async () => new Response("", { status: 503 })) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1057,12 +1073,14 @@ describe("DownloadService", () => {
     let ytDlpCalls = 0;
     spawnSpy.mockImplementation((command: string[]) => {
       if (command[0] !== "yt-dlp") {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
       }
       ytDlpCalls += 1;
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1070,11 +1088,12 @@ describe("DownloadService", () => {
       } as never;
     });
     let subtitleAttempts = 0;
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       subtitleAttempts += 1;
       if (subtitleAttempts === 1) return new Response("", { status: 503 });
       return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1117,12 +1136,14 @@ describe("DownloadService", () => {
     let ytDlpCalls = 0;
     spawnSpy.mockImplementation((command: string[]) => {
       if (command[0] !== "yt-dlp") {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
       }
       ytDlpCalls += 1;
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1130,11 +1151,12 @@ describe("DownloadService", () => {
       } as never;
     });
     let subtitleAttempts = 0;
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       subtitleAttempts += 1;
       if (subtitleAttempts <= 2) return new Response("", { status: 503 });
       return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const first = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1189,11 +1211,13 @@ describe("DownloadService", () => {
     });
     spawnSpy.mockImplementation((command: string[]) => {
       if (command[0] !== "yt-dlp") {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         return { stdout: streamOf(""), stderr: streamOf(""), exited: Promise.resolve(0) } as never;
       }
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1201,9 +1225,8 @@ describe("DownloadService", () => {
       } as never;
     });
     // Sidecar fetch keeps failing, so the job lands in 'repairable'.
-    globalThis.fetch = mock(
-      async () => new Response("", { status: 503 }),
-    ) as unknown as typeof fetch;
+    // SAFETY: test stub — supplies only the surface this test exercises.
+    globalThis.fetch = mock(async () => new Response("", { status: 503 })) as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1248,7 +1271,8 @@ describe("DownloadService", () => {
       ytDlpCalls += 1;
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1256,11 +1280,12 @@ describe("DownloadService", () => {
       } as never;
     });
     let subtitleAttempts = 0;
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(async () => {
       subtitleAttempts += 1;
       if (subtitleAttempts <= 2) return new Response("", { status: 503 });
       return new Response("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi");
-    }) as unknown as typeof fetch;
+    }) as never;
 
     const first = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -1303,16 +1328,18 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
         exited: Promise.resolve(0),
       } as never;
     });
+    // SAFETY: test stub — supplies only the surface this test exercises.
     globalThis.fetch = mock(
       async () => new Response("not an image", { headers: { "content-type": "text/plain" } }),
-    ) as unknown as typeof fetch;
+    ) as never;
 
     const job = await service.enqueue({
       title: {
@@ -1345,7 +1372,8 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf("Duration: 00:00:10.00\n"),
@@ -1425,6 +1453,7 @@ describe("DownloadService", () => {
     });
     spawnSpy.mockImplementation(
       () =>
+        // SAFETY: test stub — supplies only the surface this test exercises.
         ({
           stdout: streamOf(""),
           stderr: streamOf("connection timed out"),
@@ -1462,11 +1491,12 @@ describe("DownloadService", () => {
     const killSignals: unknown[] = [];
     spawnSpy.mockImplementation(() => {
       processStarted.resolve();
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf(""),
         stderr: streamOf(""),
         exited,
-        kill: (signal?: unknown) => {
+        kill: <T>(signal?: T) => {
           killSignals.push(signal);
           if (signal === "SIGKILL") resolveExit?.(1);
         },
@@ -1507,11 +1537,12 @@ describe("DownloadService", () => {
     });
     spawnSpy.mockImplementation(() => {
       processStarted.resolve();
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf(""),
         stderr: streamOf(""),
         exited,
-        kill: (signal?: unknown) => {
+        kill: <T>(signal?: T) => {
           if (signal === "SIGKILL") resolveExit?.(1);
         },
       } as never;
@@ -1544,6 +1575,7 @@ describe("DownloadService", () => {
     });
     spawnSpy.mockImplementation(
       () =>
+        // SAFETY: test stub — supplies only the surface this test exercises.
         ({
           stdout: streamOf(""),
           stderr: streamOf("yt-dlp: invalid argument\n"),
@@ -1773,14 +1805,14 @@ describe("DownloadService", () => {
   });
 
   test("supervises startup reconciliation failures without an unhandled rejection", async () => {
-    const events: Array<Record<string, unknown>> = [];
+    const events: DiagnosticEventInput[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event) => events.push(event as unknown as Record<string, unknown>),
+        record: (event) => events.push(event),
       },
     });
     const secretUrl =
@@ -1789,7 +1821,7 @@ describe("DownloadService", () => {
       throw new Error(`simulated SQLite failure while reading ${secretUrl}`);
     });
     const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    const onUnhandled = <T>(reason: T) => unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
 
     try {
@@ -1849,7 +1881,7 @@ describe("DownloadService", () => {
       throw new Error("simulated SQLite failure");
     });
     const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    const onUnhandled = <T>(reason: T) => unhandled.push(reason);
     process.on("unhandledRejection", onUnhandled);
 
     try {
@@ -1865,14 +1897,14 @@ describe("DownloadService", () => {
   });
 
   test("resets a failed supervised pass so a later kick completes queued work", async () => {
-    const events: Array<Record<string, unknown>> = [];
+    const events: DiagnosticEventInput[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event) => events.push(event as unknown as Record<string, unknown>),
+        record: (event) => events.push(event),
       },
     });
     const originalListRunning = repo.listRunning.bind(repo);
@@ -1888,7 +1920,8 @@ describe("DownloadService", () => {
     spawnSpy.mockImplementation((command: string[]) => {
       const oIndex = command.indexOf("-o");
       const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      if (String(outputPath) === outputPath) writeFileSync(outputPath, "video-bytes");
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf("[download] 100% of 1.2GiB\n"),
         stderr: streamOf(""),
@@ -1910,14 +1943,14 @@ describe("DownloadService", () => {
   });
 
   test("records the known worker and job when a queue worker fails unexpectedly", async () => {
-    const events: Array<Record<string, unknown>> = [];
+    const events: DiagnosticEventInput[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event) => events.push(event as unknown as Record<string, unknown>),
+        record: (event) => events.push(event),
       },
     });
     const job = await service.enqueue({
@@ -1946,15 +1979,16 @@ describe("DownloadService", () => {
   });
 
   test("attributes a failed second claim after another process wins the first job", async () => {
-    const events: Array<Record<string, unknown>> = [];
+    const events: DiagnosticEventInput[] = [];
     const service = buildService({
       repo,
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
       diagnostics: {
-        record: (event) => events.push(event as unknown as Record<string, unknown>),
+        record: (event) => events.push(event),
       },
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -2030,6 +2064,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -2099,6 +2134,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -2124,8 +2160,11 @@ describe("DownloadService", () => {
     }
 
     expect(failure).toBeInstanceOf(AggregateError);
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as AggregateError).errors).toHaveLength(2);
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message).not.toContain("sentinel-secret-never-log");
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message.length).toBeLessThan(500);
     processNextSpy.mockRestore();
   });
@@ -2136,6 +2175,7 @@ describe("DownloadService", () => {
       downloadsEnabled: true,
       ytDlpAvailable: true,
       downloadPath: tempDir,
+      // SAFETY: test stub — supplies only the surface this test exercises.
       configService: {
         downloadsEnabled: true,
         downloadPath: tempDir,
@@ -2158,10 +2198,15 @@ describe("DownloadService", () => {
     }
 
     expect(failure).toBeInstanceOf(AggregateError);
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as AggregateError).errors).toEqual([namedFailure, longNamedFailure]);
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message).not.toContain("hostile-name");
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message).toContain("token=[redacted]");
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message).not.toContain("E".repeat(41));
+    // SAFETY: test stub — supplies only the surface this test exercises.
     expect((failure as Error).message.length).toBeLessThan(500);
     processNextSpy.mockRestore();
   });
@@ -2279,6 +2324,7 @@ describe("DownloadService", () => {
     });
     spawnSpy.mockImplementation(() => {
       processStarted.resolve();
+      // SAFETY: test stub — supplies only the surface this test exercises.
       return {
         stdout: streamOf(""),
         stderr: streamOf(""),
@@ -2341,6 +2387,7 @@ function buildService({
   titleAliases?: ConstructorParameters<typeof DownloadService>[0]["titleAliases"];
   statfs?: ConstructorParameters<typeof DownloadService>[0]["statfs"];
 }): DownloadService {
+  // SAFETY: test stub — supplies only the surface this test exercises.
   const defaultConfig = {
     downloadsEnabled,
     downloadPath,

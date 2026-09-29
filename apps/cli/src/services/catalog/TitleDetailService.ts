@@ -569,8 +569,8 @@ async function fetchTmdbDetail(
     source: "tmdb",
     poster: posterPath ? tmdbImage(posterPath, "w500") : undefined,
     backdrop: backdropPath ? tmdbImage(backdropPath, "w780") : undefined,
-    ...(seasonPosters ? { seasonPosters } : {}),
-    ...(episodeThumbnails ? { episodeThumbnails } : {}),
+    ...(seasonPosters ? { seasonPosters } : null),
+    ...(episodeThumbnails ? { episodeThumbnails } : null),
   };
 
   // External IDs
@@ -642,8 +642,8 @@ async function fetchTmdbDetail(
     artwork,
     externalIds: {
       tmdbId: tmdbIdStr,
-      ...(imdbId ? { imdbId } : {}),
-      ...(anilistId ? { anilistId } : {}),
+      ...(imdbId ? { imdbId } : null),
+      ...(anilistId ? { anilistId } : null),
     },
     score,
     trailerUrl,
@@ -824,7 +824,7 @@ async function fetchAniListDetail(
     source: "anilist",
     poster: posterUrl,
     backdrop: backdropUrl,
-    ...(Object.keys(episodeThumbnails).length ? { episodeThumbnails } : {}),
+    ...(Object.keys(episodeThumbnails).length ? { episodeThumbnails } : null),
   };
 
   const rawStatus = readString(media.status).toLowerCase();
@@ -883,7 +883,7 @@ async function fetchAniListDetail(
     artwork,
     externalIds: {
       anilistId: anilistIdStr,
-      ...(malId ? { malId } : {}),
+      ...(malId ? { malId } : null),
     },
     score,
     trailerUrl,

@@ -81,9 +81,7 @@ export async function searchTitles(
           {
             audioPreference: youtubeProfile.audio,
             subtitlePreference: youtubeProfile.subtitle,
-            ...(isContentShapeType(intent.filters.type)
-              ? { contentShape: intent.filters.type }
-              : {}),
+            ...(isResultKind(intent.filters.type) ? { resultKind: intent.filters.type } : {}),
           },
           context.signal,
         )
@@ -450,7 +448,7 @@ function getLocalFilterKeys(intent: SearchIntent, sourceId: string): readonly st
   // must never be claimed as local (that would empty the list dishonestly).
   const catalogType =
     sourceId === "tmdb" || sourceId === "anilist"
-      ? isContentShapeType(intent.filters.type)
+      ? isResultKind(intent.filters.type)
         ? undefined
         : intent.filters.type
       : intent.filters.type;
@@ -485,9 +483,7 @@ function getUnsupportedFilterKeys(intent: SearchIntent, sourceId: string): reado
       : null,
     // A YouTube content shape typed against a TMDB/AniList catalog cannot be
     // honored — report it as unsupported rather than silently emptying results.
-    (sourceId === "tmdb" || sourceId === "anilist") && isContentShapeType(filters.type)
-      ? "type"
-      : null,
+    (sourceId === "tmdb" || sourceId === "anilist") && isResultKind(filters.type) ? "type" : null,
     filters.provider ? "provider" : null,
     filters.audio ? "audio" : null,
     filters.subtitles ? "subtitles" : null,
@@ -507,11 +503,11 @@ function applyLocalSearchFilters(
   let filtered = results;
   if (localKeys.has("type") && intent.filters.type && intent.filters.type !== "all") {
     const type = intent.filters.type;
-    if (isContentShapeType(type)) {
+    if (isResultKind(type)) {
       // Only narrow by content shape when the result set actually carries shape
       // facts; otherwise skip the dimension instead of emptying every row.
-      if (results.some((result) => typeof result.contentShape === "string")) {
-        filtered = filtered.filter((result) => result.contentShape === type);
+      if (results.some((result) => typeof result.resultKind === "string")) {
+        filtered = filtered.filter((result) => result.resultKind === type);
       }
     } else {
       filtered = filtered.filter((result) => result.type === type);
@@ -532,7 +528,7 @@ function applyLocalSearchFilters(
   return filtered;
 }
 
-function isContentShapeType(
+function isResultKind(
   type: SearchIntent["filters"]["type"],
 ): type is "video" | "short" | "playlist" | "channel" {
   return type === "video" || type === "short" || type === "playlist" || type === "channel";

@@ -107,7 +107,7 @@ export function titleFromHistorySelection(selection: HistoryLaunchSelection): Ti
       type: historyContentType(entry),
       externalIds: {
         ...entry.externalIds,
-        ...(youtubeId ? { youtubeId } : {}),
+        ...(youtubeId ? { youtubeId } : null),
       },
     };
   }
@@ -151,7 +151,7 @@ export async function prepareReplayTitleForProvider(
   const provider = container.providerRegistry.get(activeProvider);
   if (provider?.metadata.catalogIdentity === "anilist") return title;
 
-  const storedNative = title.externalIds?.providerNativeIds?.[activeProvider as ProviderId];
+  const storedNative = title.externalIds?.providerNativeIds?.[activeProvider];
   if (storedNative) {
     return {
       ...title,

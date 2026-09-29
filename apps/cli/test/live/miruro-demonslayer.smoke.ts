@@ -96,7 +96,7 @@ const payload = {
     stream,
     resolveDurationMs,
   }),
-  ...(resolveError ? providerSmokeError(resolveError) : {}),
+  ...(resolveError ? providerSmokeError(resolveError) : null),
   failureCodes,
   failureMessages,
   streamCandidates,

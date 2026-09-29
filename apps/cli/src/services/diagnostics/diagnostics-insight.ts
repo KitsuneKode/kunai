@@ -226,7 +226,7 @@ export function buildDiagnosticsInsight(input: BuildDiagnosticsInsightInput): Di
     currentProvider: input.state.provider,
     memorySnapshot: input.memorySnapshot,
     memorySamples: input.memorySamples,
-    persistedProviderHealth: input.getProviderHealth?.(input.state.provider as ProviderId),
+    persistedProviderHealth: input.getProviderHealth?.(input.state.provider),
   });
 
   const healthRows = buildHealthRows(input, runtimeHealth);

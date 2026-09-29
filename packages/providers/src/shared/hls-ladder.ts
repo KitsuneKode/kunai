@@ -304,7 +304,7 @@ export function parseHlsMasterRenditions(
     const track: HlsRenditionTrack = {
       url,
       groupId: attrs["GROUP-ID"] ?? "",
-      ...(language ? { language } : {}),
+      ...(language ? { language } : null),
       label: attrs["NAME"]?.trim() || language || url,
       isDefault: attrs["DEFAULT"]?.toUpperCase() === "YES",
     };

@@ -34,6 +34,7 @@ describe("recommendation cache", () => {
     globalThis.fetch = createFetchDouble(async () => new Response("{}", { status: 503 }));
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getTrending();
 
@@ -50,6 +51,7 @@ describe("recommendation cache", () => {
     globalThis.fetch = createFetchDouble(async () => new Response("{}", { status: 503 }));
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getForTitle("438631", "movie");
 
@@ -72,6 +74,7 @@ describe("recommendation cache", () => {
     );
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getTrending();
 
@@ -115,6 +118,7 @@ describe("recommendation cache", () => {
     });
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getPersonalizedByHistory([
         {
@@ -152,6 +156,7 @@ describe("recommendation cache", () => {
     globalThis.fetch = createFetchDouble(async () => new Response("{}", { status: 503 }));
 
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       const service = new RecommendationServiceImpl(cache as never);
       const section = await service.getForTitle("438631", "movie");
 

@@ -36,10 +36,10 @@ export function mergeHistoryWatchState(
 
   return {
     positionSeconds: completed ? 0 : Math.max(survivor.positionSeconds, dropped.positionSeconds),
-    ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+    ...(durationSeconds !== undefined ? { durationSeconds } : null),
     watchedSeconds: Math.max(survivor.watchedSeconds ?? 0, dropped.watchedSeconds ?? 0),
     completed,
-    ...(completedAt !== undefined ? { completedAt } : {}),
+    ...(completedAt !== undefined ? { completedAt } : null),
     lastWatchedAt: laterIso(survivor.lastWatchedAt, dropped.lastWatchedAt),
     createdAt: earlierIso(survivor.createdAt, dropped.createdAt),
   };

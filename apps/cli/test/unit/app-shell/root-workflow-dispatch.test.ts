@@ -72,6 +72,7 @@ test("a workflow with no playback result leaves the browse session mounted", asy
   await runRootWorkflowSafely({
     container: noopContainer,
     action: "sync",
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     loadWorkflow: async () => ({ runShellWorkflowFromOverlay: async () => "handled" }) as never,
   });
   await Promise.resolve();

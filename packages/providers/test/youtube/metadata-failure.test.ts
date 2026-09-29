@@ -42,6 +42,7 @@ describe("youtube metadata failure classification", () => {
   ])("%s is terminal", (stderr, code, fragment) => {
     const classified = classifyYoutubeMetadataFailure(new Error(stderr));
     expect(classified.terminal).toBe(true);
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     expect(classified.code).toBe(code as never);
     expect(classified.message.toLowerCase()).toContain(fragment.toLowerCase());
   });
@@ -64,6 +65,7 @@ describe("youtube metadata failure classification", () => {
   ])("%s stays transient", (stderr, code) => {
     const classified = classifyYoutubeMetadataFailure(new Error(stderr));
     expect(classified.terminal).toBe(false);
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     expect(classified.code).toBe(code as never);
   });
 

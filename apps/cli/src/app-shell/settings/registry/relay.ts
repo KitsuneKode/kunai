@@ -44,7 +44,7 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
         providerRelay: {
           ...config.providerRelay,
           baseUrl: value.trim(),
-          ...(config.providerRelay.baseUrl?.trim() ? {} : { enabled: true }),
+          ...(config.providerRelay.baseUrl?.trim() ? null : { enabled: true }),
         },
       }),
       validate: (value) =>

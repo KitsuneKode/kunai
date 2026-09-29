@@ -77,7 +77,7 @@ export function createExhaustedResult(
     // aborted when the user backs out. `unsupported-title` is the same: it says
     // this title is out of scope, not that the provider is unhealthy.
     ...(isProviderHealthNeutral(providerFailure.code)
-      ? {}
+      ? null
       : {
           healthDelta: {
             providerId,

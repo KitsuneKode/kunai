@@ -449,6 +449,8 @@ export class SyncOutboxRepository {
            AND claim_token = ?
            AND state = 'claimed'`,
       )
+      // SAFETY: params are the SQL bindings assembled for the SET clause above,
+      // in placeholder order; bun:sqlite accepts the runtime values verbatim.
       .run(...(params as never[]), item.id, item.generation, item.claimToken).changes;
     return changes > 0 ? "applied" : this.classifyMiss(item);
   }

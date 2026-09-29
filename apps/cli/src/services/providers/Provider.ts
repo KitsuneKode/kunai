@@ -6,7 +6,7 @@ import type {
   ShellMode,
   StreamInfo,
   TitleInfo,
-  YouTubeContentShape,
+  YouTubeResultKind,
 } from "@/domain/types";
 import type { CoreProviderManifest, CoreProviderModule } from "@kunai/core";
 import { resolveProviderCatalogIdentity, resolveProviderLaneFromModule } from "@kunai/core";
@@ -49,7 +49,7 @@ export interface Provider {
     opts: {
       audioPreference: string;
       subtitlePreference: string;
-      contentShape?: YouTubeContentShape;
+      resultKind?: YouTubeResultKind;
     },
     signal?: AbortSignal,
   ): Promise<import("@/domain/types").SearchResult[] | null>;

@@ -14,6 +14,7 @@ describe("resolveHeaderDestination", () => {
       resolveHeaderDestination({
         state: baseState,
         rootOverlay: { type: "settings" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         rootContent: { id: 1, kind: "browse", element: null as never },
         browseDestinationLabel: "Search",
         playbackActive: false,
@@ -23,6 +24,7 @@ describe("resolveHeaderDestination", () => {
       resolveHeaderDestination({
         state: baseState,
         rootOverlay: { type: "library", view: "queue" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         rootContent: { id: 1, kind: "browse", element: null as never },
         browseDestinationLabel: "Search",
         playbackActive: false,
@@ -32,6 +34,7 @@ describe("resolveHeaderDestination", () => {
       resolveHeaderDestination({
         state: baseState,
         rootOverlay: { type: "diagnostics" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         rootContent: { id: 1, kind: "browse", element: null as never },
         browseDestinationLabel: "Trending",
         playbackActive: false,
@@ -48,6 +51,7 @@ describe("resolveHeaderDestination", () => {
           id: 2,
           kind: "picker",
           headerLabel: "Stats",
+          // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
           element: null as never,
         },
         browseDestinationLabel: "Browse",
@@ -61,6 +65,7 @@ describe("resolveHeaderDestination", () => {
       resolveHeaderDestination({
         state: baseState,
         rootOverlay: null,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         rootContent: { id: 1, kind: "browse", element: null as never },
         browseDestinationLabel: "Trending",
         playbackActive: false,

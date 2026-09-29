@@ -106,6 +106,8 @@ export class PlaybackResolveWorkService {
       abortController,
       consumers,
       ledger,
+      // SAFETY: the placeholder promise is replaced by the coordinator's real
+      // resolve via Object.assign a few lines below; it only seeds the entry shape.
       promise: Promise.resolve(null as never),
     } as InFlightResolve;
 

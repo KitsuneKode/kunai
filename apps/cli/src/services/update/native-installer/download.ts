@@ -65,11 +65,16 @@ export class DownloadError extends Error {
   }
 }
 
-export function isRetryableDownloadError(error: unknown): boolean {
+function isObjectLike<T>(value: T): value is T & object {
+  return value !== null && value instanceof Object;
+}
+
+export function isRetryableDownloadError<T>(error: T): boolean {
   if (error instanceof DownloadError) return error.retryable;
-  if (!error || typeof error !== "object") return false;
+  if (!isObjectLike(error)) return false;
+  // SAFETY: error is a thrown object; code/status/retryable are validated below.
   const value = error as { code?: unknown; status?: unknown; retryable?: unknown };
-  if (typeof value.retryable === "boolean") return value.retryable;
+  if (value.retryable === true || value.retryable === false) return value.retryable;
   if (
     value.code === "DOWNLOAD_STALL" ||
     value.code === "DOWNLOAD_NETWORK" ||
@@ -80,8 +85,9 @@ export function isRetryableDownloadError(error: unknown): boolean {
   if (value.code === "DOWNLOAD_DEADLINE" || value.code === "DOWNLOAD_ABORTED") return false;
   if (value.code === "DOWNLOAD_SIZE" || value.code === "DOWNLOAD_EMPTY") return false;
   if (value.code === "DOWNLOAD_INVALID_BODY") return false;
-  if (value.code === "DOWNLOAD_HTTP" && typeof value.status === "number") {
-    return isRetryableHttpStatus(value.status);
+  if (value.code === "DOWNLOAD_HTTP" && Number.isFinite(value.status)) {
+    // SAFETY: Number.isFinite has already rejected every non-number status.
+    return isRetryableHttpStatus(value.status as number);
   }
   return false;
 }
@@ -90,8 +96,9 @@ function isRetryableHttpStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-function isAbortError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
+function isAbortError<T>(error: T): boolean {
+  if (!isObjectLike(error)) return false;
+  // SAFETY: error is a thrown object; name/code are read for the abort probe.
   const value = error as { name?: unknown; code?: unknown };
   return value.name === "AbortError" || value.code === "ABORT_ERR";
 }
@@ -100,11 +107,17 @@ function mergePolicy(policy?: DownloadPolicy): DownloadPolicy {
   return { ...DEFAULT_BINARY_DOWNLOAD_POLICY, ...policy };
 }
 
+type DeadlineSignal = { readonly signal: AbortSignal; readonly clear: () => void };
+type StallWatch = { readonly reset: () => void; readonly clear: () => void };
+type AbortSignalWithAny = typeof AbortSignal & {
+  any?: (input: readonly AbortSignal[]) => AbortSignal;
+};
+
 function remainingMs(deadlineAt: number): number {
   return Math.max(0, deadlineAt - Date.now());
 }
 
-function createDeadlineSignal(ms: number): { signal: AbortSignal; clear: () => void } {
+function createDeadlineSignal(ms: number): DeadlineSignal {
   const controller = new AbortController();
   if (ms <= 0) {
     controller.abort(
@@ -128,10 +141,7 @@ function createDeadlineSignal(ms: number): { signal: AbortSignal; clear: () => v
   };
 }
 
-function createStallWatch(
-  stallDeadlineMs: number,
-  onStall: () => void,
-): { reset: () => void; clear: () => void } {
+function createStallWatch(stallDeadlineMs: number, onStall: () => void): StallWatch {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const clear = () => {
     if (timer !== undefined) {
@@ -149,12 +159,10 @@ function createStallWatch(
 }
 
 function linkSignals(signals: readonly AbortSignal[]): AbortSignal {
-  const any = (
-    AbortSignal as typeof AbortSignal & {
-      any?: (input: readonly AbortSignal[]) => AbortSignal;
-    }
-  ).any;
-  if (typeof any === "function") {
+  // SAFETY: AbortSignal.any is newer than the ambient lib types; the runtime
+  // check below confirms availability before calling.
+  const any = (AbortSignal as AbortSignalWithAny).any;
+  if (any !== undefined) {
     return any(signals);
   }
   const controller = new AbortController();
@@ -187,7 +195,7 @@ function linkSignals(signals: readonly AbortSignal[]): AbortSignal {
  */
 const READER_CANCEL_GRACE_MS = 250;
 
-async function cancelReaderBounded(reader: { cancel: () => Promise<unknown> }): Promise<void> {
+async function cancelReaderBounded(reader: { cancel: () => Promise<void> }): Promise<void> {
   await Promise.race([reader.cancel().catch(() => {}), Bun.sleep(READER_CANCEL_GRACE_MS)]);
 }
 

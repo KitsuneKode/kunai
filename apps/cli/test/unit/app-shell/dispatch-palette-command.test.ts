@@ -65,6 +65,7 @@ describe("dispatchPaletteCommand", () => {
     const browseResult = await dispatchPaletteCommand(
       "browse",
       "setup",
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container as never,
       undefined,
       port,
@@ -72,6 +73,7 @@ describe("dispatchPaletteCommand", () => {
     const playbackResult = await dispatchPaletteCommand(
       "playback",
       "setup",
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container as never,
       undefined,
       port,
@@ -91,6 +93,7 @@ describe("dispatchPaletteCommand", () => {
     const result = await dispatchPaletteCommand(
       "playback",
       "provider",
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       {} as never,
       undefined,
       port,
@@ -104,15 +107,18 @@ describe("dispatchPaletteCommand", () => {
     const container = { stateManager: { dispatch: () => {} } };
 
     await expect(
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       dispatchPaletteCommand("browse", "up-next", container as never, undefined, port),
     ).resolves.toBe("handled");
     expect(openRootOwnedOverlay).toHaveBeenCalledWith(container, { type: "queue" });
     expect(handleShellAction).not.toHaveBeenCalled();
 
     await expect(
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       dispatchPaletteCommand("browse", "playlists", container as never, undefined, port),
     ).resolves.toBe("handled");
     await expect(
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       dispatchPaletteCommand("browse", "playlist", container as never, undefined, port),
     ).resolves.toBe("handled");
     expect(handleShellAction).toHaveBeenCalledTimes(2);
@@ -122,6 +128,7 @@ describe("dispatchPaletteCommand", () => {
   test("diagnostics routes through the shared overlay opener", async () => {
     const container = { stateManager: { dispatch: () => {} } };
     await expect(
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       dispatchPaletteCommand("browse", "diagnostics", container as never, undefined, port),
     ).resolves.toBe("handled");
     expect(openDiagnosticsOverlay).toHaveBeenCalledWith(container, "diagnostics-palette");
@@ -145,6 +152,7 @@ describe("dispatchPaletteCommand", () => {
     const result = await dispatchPaletteCommand(
       "browse",
       "up-next",
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container as never,
       undefined,
       port,

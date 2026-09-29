@@ -4301,6 +4301,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           stream.subtitleList,
           result.list as unknown as SubtitleTrack[],
         );
+        // SAFETY: mergeSubtitleTracks returns the provider track shape, which carries
+        // every field selectAutomaticSubtitle reads (url, language).
         const selected = selectAutomaticSubtitle(mergedSubtitleList as never, requestedSubLang);
         const selectedUrl = selected?.url ?? result.selected ?? null;
         if (!selectedUrl) {

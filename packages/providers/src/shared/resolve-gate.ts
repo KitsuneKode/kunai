@@ -147,8 +147,8 @@ export async function selectVerifiedStream<
     const verdict = await verifyCandidateStream({
       stream,
       context,
-      ...(signal === undefined ? {} : { signal }),
-      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(signal === undefined ? null : { signal }),
+      ...(timeoutMs === undefined ? null : { timeoutMs }),
     });
     if (verdict.accepted) {
       return { accepted: true, stream, verified: verdict.verified, refusedHosts };

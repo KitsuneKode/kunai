@@ -476,7 +476,7 @@ export class PlaybackResolveService {
           ? this.deps.titleProviderHealth.getSwitchSuggestion(input.title.id, input.providerId)
           : null;
     const candidatePlan = planProviderCandidates({
-      primaryProviderId: input.providerId as ProviderId,
+      primaryProviderId: input.providerId,
       mediaKind: resolveInput.mediaKind,
       recoveryMode,
       modules: this.getPriorityOrderedModules(),
@@ -807,7 +807,7 @@ export class PlaybackResolveService {
       input.providerId,
       input.selectedSourceId,
     )) {
-      if (!this.deps.endpointHealth.isQuarantined(input.providerId as ProviderId, endpoint)) {
+      if (!this.deps.endpointHealth.isQuarantined(input.providerId, endpoint)) {
         continue;
       }
       await this.deps.titlePlaybackSource

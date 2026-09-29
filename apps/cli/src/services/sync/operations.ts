@@ -121,7 +121,7 @@ export function parseTrackerOperation(value: unknown): TrackerOperationParseResu
         target,
         progress: payload.progress,
         status: payload.status,
-        ...(payload.watchedAt === undefined ? {} : { watchedAt: payload.watchedAt }),
+        ...(payload.watchedAt === undefined ? null : { watchedAt: payload.watchedAt }),
       },
     };
   }

@@ -37,32 +37,61 @@ export type InstallTransactionInspection =
 
 const KINDS = new Set(["install", "upgrade", "rollback", "uninstall"]);
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
+type TransactionRecordInput = {
+  readonly schemaVersion?: unknown;
+  readonly id?: unknown;
+  readonly kind?: unknown;
+  readonly pid?: unknown;
+  readonly startedAt?: unknown;
+  readonly version?: unknown;
+  readonly stagingDir?: unknown;
+};
+
+type MutableTransactionRecord = {
+  -readonly [K in keyof InstallTransactionRecord]: InstallTransactionRecord[K];
+};
+
+function isObjectLike<T>(value: T): value is T & object {
+  return value !== null && !Array.isArray(value) && value instanceof Object;
 }
 
-function parseRecord(raw: unknown): InstallTransactionRecord | null {
-  if (!raw || typeof raw !== "object") return null;
-  const value = raw as Record<string, unknown>;
+function isStringValue<T>(value: T): value is T & string {
+  return Object.prototype.toString.call(value) === "[object String]";
+}
+
+function isNonEmptyString<T>(value: T): value is T & string {
+  return isStringValue(value) && value.length > 0;
+}
+
+function isIntegerValue<T>(value: T): value is T & number {
+  return Number.isInteger(value);
+}
+
+function parseRecord<T>(raw: T): InstallTransactionRecord | null {
+  if (!isObjectLike(raw)) return null;
+  // SAFETY: raw is a parsed JSON object; every field is validated before use.
+  const value = raw as TransactionRecordInput;
   if (value.schemaVersion !== 1) return null;
   if (!isNonEmptyString(value.id)) return null;
-  if (typeof value.kind !== "string" || !KINDS.has(value.kind)) return null;
-  if (typeof value.pid !== "number" || !Number.isInteger(value.pid)) return null;
+  if (!isStringValue(value.kind) || !KINDS.has(value.kind)) return null;
+  if (!isIntegerValue(value.pid)) return null;
   if (!isNonEmptyString(value.startedAt) || Number.isNaN(Date.parse(value.startedAt))) {
     return null;
   }
   if (value.version !== undefined && !isNonEmptyString(value.version)) return null;
   if (value.stagingDir !== undefined && !isNonEmptyString(value.stagingDir)) return null;
 
-  return {
+  const record: MutableTransactionRecord = {
     schemaVersion: 1,
     id: value.id,
+    // SAFETY: KINDS holds exactly the transaction kind union members.
     kind: value.kind as InstallTransactionRecord["kind"],
     pid: value.pid,
-    ...(value.version !== undefined ? { version: value.version } : {}),
-    ...(value.stagingDir !== undefined ? { stagingDir: value.stagingDir } : {}),
     startedAt: value.startedAt,
   };
+  if (value.version !== undefined) record.version = value.version;
+  if (value.stagingDir !== undefined) record.stagingDir = value.stagingDir;
+  return record;
 }
 
 function newTransactionId(): string {
@@ -74,15 +103,15 @@ export async function beginInstallTransaction(
   input: BeginInstallTransactionInput,
 ): Promise<InstallTransactionRecord> {
   await mkdir(layout.transactionsDir, { recursive: true });
-  const record: InstallTransactionRecord = {
+  const record: MutableTransactionRecord = {
     schemaVersion: 1,
     id: input.id ?? newTransactionId(),
     kind: input.kind,
     pid: input.pid ?? process.pid,
-    ...(input.version !== undefined ? { version: input.version } : {}),
-    ...(input.stagingDir !== undefined ? { stagingDir: input.stagingDir } : {}),
     startedAt: input.startedAt ?? new Date().toISOString(),
   };
+  if (input.version !== undefined) record.version = input.version;
+  if (input.stagingDir !== undefined) record.stagingDir = input.stagingDir;
   await writeAtomicJson(transactionFilePath(layout, record.id), record);
   return record;
 }
@@ -115,6 +144,7 @@ export async function listInstallTransactions(
   layout: Pick<InstallLayoutPaths, "transactionsDir">,
 ): Promise<readonly InstallTransactionRecord[]> {
   if (!existsSync(layout.transactionsDir)) return [];
+  // SAFETY: readdir failure recovers as an empty listing of .json names.
   const entries = await readdir(layout.transactionsDir).catch(() => [] as string[]);
   const records: InstallTransactionRecord[] = [];
   for (const entry of entries) {

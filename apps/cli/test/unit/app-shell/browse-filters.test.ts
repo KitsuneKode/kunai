@@ -175,13 +175,13 @@ describe("browse filters", () => {
         value: "v",
         label: "Video",
         previewMeta: ["Video"],
-        localFilterFacts: { contentShape: "video" as const },
+        localFilterFacts: { resultKind: "video" as const },
       },
       {
         value: "p",
         label: "Playlist",
         previewMeta: ["Playlist"],
-        localFilterFacts: { contentShape: "playlist" as const },
+        localFilterFacts: { resultKind: "playlist" as const },
       },
     ];
     const filtered = applyBrowseResultFilters(

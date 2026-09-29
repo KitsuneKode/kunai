@@ -91,7 +91,7 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
       liveStatus: mapLiveStatus(item),
       premium: item.premium,
       paid: item.paid,
-      contentShape: item.isShort === true || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
+      resultKind: item.isShort === true || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
       externalIds: {
         youtubeId: item.videoId,
         youtubeChannelId: item.authorId,
@@ -114,7 +114,7 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
       episodeCount: item.videoCount,
       channelTitle: item.author,
       channelId: item.authorId,
-      contentShape: "playlist",
+      resultKind: "playlist",
       externalIds: {
         youtubePlaylistId: item.playlistId,
         youtubeChannelId: item.authorId,
@@ -138,7 +138,7 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
       episodeCount: item.videoCount,
       channelTitle: item.author,
       channelId: item.authorId,
-      contentShape: "channel",
+      resultKind: "channel",
       externalIds: {
         youtubeChannelId: item.authorId,
       },
@@ -174,7 +174,7 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
     viewCount: item.views,
     publishedAt: uploadedMs ? new Date(uploadedMs).toISOString() : undefined,
     liveStatus: mapPipedLiveStatus(item),
-    contentShape: item.isShort || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
+    resultKind: item.isShort || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
     externalIds: {
       youtubeId: videoId,
       ...(channelId ? { youtubeChannelId: channelId } : {}),
@@ -234,7 +234,7 @@ export function mapInvidiousRecommendedVideo(
     viewCount: item.viewCount,
     publishedAt: publishedAtFromEpochSeconds(item.published),
     liveStatus: mapLiveStatus(item),
-    contentShape: item.isShort === true || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
+    resultKind: item.isShort === true || /\/shorts\//i.test(item.url ?? "") ? "short" : "video",
     externalIds: {
       youtubeId: videoId,
       ...(item.authorId ? { youtubeChannelId: item.authorId } : {}),

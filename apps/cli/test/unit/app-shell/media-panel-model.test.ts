@@ -305,7 +305,7 @@ describe("buildMediaPanel — video", () => {
           viewCount: 1_200_000,
           publishedAt: new Date(Date.now() - 800 * 86_400_000).toISOString(),
           durationSeconds: 1_325,
-          contentShape: "video",
+          resultKind: "video",
         },
       }),
     );
@@ -332,7 +332,7 @@ describe("buildMediaPanel — video", () => {
       ctx({
         contentKind: "video",
         title: "Shorts clip",
-        videoMeta: { durationSeconds: 45, contentShape: "short" },
+        videoMeta: { durationSeconds: 45, resultKind: "short" },
       }),
     );
     expect(model.kindBadge).toBe("short");
@@ -348,19 +348,19 @@ describe("buildMediaPanel — video", () => {
       ctx({
         contentKind: "video",
         title: "Brief clip",
-        videoMeta: { durationSeconds: 45, contentShape: "video" },
+        videoMeta: { durationSeconds: 45, resultKind: "video" },
       }),
     );
     expect(model.kindBadge).toBe("video");
     expect(model.facts).toContainEqual({ label: "length", value: "0:45" });
   });
 
-  test("badges playlist contentShape distinctly from video", () => {
+  test("badges playlist resultKind distinctly from video", () => {
     const model = buildMediaPanel(
       ctx({
         contentKind: "video",
         title: "Example Playlist",
-        videoMeta: { channelTitle: "Creator", contentShape: "playlist" },
+        videoMeta: { channelTitle: "Creator", resultKind: "playlist" },
         nextEpisodeLabel: "Play",
       }),
     );
@@ -389,7 +389,7 @@ describe("buildMediaPanel — video", () => {
       ctx({
         contentKind: "video",
         title: "Empty Playlist",
-        videoMeta: { contentShape: "playlist", videoCount: 0 },
+        videoMeta: { resultKind: "playlist", videoCount: 0 },
       }),
     );
     // Zero is a fact about the playlist, not an absence of one.
@@ -399,18 +399,18 @@ describe("buildMediaPanel — video", () => {
       ctx({
         contentKind: "video",
         title: "One Video Playlist",
-        videoMeta: { contentShape: "playlist", videoCount: 1 },
+        videoMeta: { resultKind: "playlist", videoCount: 1 },
       }),
     );
     expect(single.facts).toContainEqual({ label: "videos", value: "1 video" });
   });
 
-  test("badges channel contentShape distinctly from video", () => {
+  test("badges channel resultKind distinctly from video", () => {
     const model = buildMediaPanel(
       ctx({
         contentKind: "video",
         title: "Example Channel",
-        videoMeta: { channelTitle: "Example Channel", contentShape: "channel" },
+        videoMeta: { channelTitle: "Example Channel", resultKind: "channel" },
         nextEpisodeLabel: "#2 · Upload",
       }),
     );
@@ -423,7 +423,7 @@ describe("buildMediaPanel — video", () => {
       ctx({
         contentKind: "video",
         title: "Quick clip",
-        videoMeta: { contentShape: "short" },
+        videoMeta: { resultKind: "short" },
       }),
     );
     expect(model.kindBadge).toBe("short");

@@ -38,6 +38,7 @@ function createResolverContainer(
                   id === "allanime" || (id === providerId && overrides.isAnimeProvider === true),
                 ...(id === "allanime" ? { catalogIdentity: "anilist" as const } : {}),
               },
+              // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
               capabilities: {} as never,
               canHandle: () => true,
               resolveStream: async () => null,

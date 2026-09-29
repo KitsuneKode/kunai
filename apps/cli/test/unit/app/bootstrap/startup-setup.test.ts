@@ -32,6 +32,7 @@ describe("startup setup policy", () => {
     const result = await maybeRunStartupSetup({
       force: false,
       config: { onboardingVersion: 2, downloadOnboardingDismissed: true },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container: {} as never,
       loadSetupWorkflow: async () => {
         loads += 1;
@@ -49,6 +50,7 @@ describe("startup setup policy", () => {
     const result = await maybeRunStartupSetup({
       force: false,
       config: { onboardingVersion: 1, downloadOnboardingDismissed: false },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container: {} as never,
       // The default reads the real stdin, which is not a TTY under the test
       // runner. Stating it keeps this test about the onboarding gate.
@@ -77,6 +79,7 @@ describe("startup setup policy", () => {
     const result = await maybeRunStartupSetup({
       force: true,
       config: { onboardingVersion: 0, downloadOnboardingDismissed: false },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container: {} as never,
       interactive: false,
       loadSetupWorkflow: async () => {

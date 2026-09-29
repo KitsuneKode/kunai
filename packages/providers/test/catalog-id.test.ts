@@ -8,14 +8,14 @@ const movie = (id: string, tmdbId?: string): TitleIdentity => ({
   id,
   kind: "movie",
   title: "Bloodhounds",
-  ...(tmdbId === undefined ? {} : { tmdbId }),
+  ...(tmdbId === undefined ? null : { tmdbId }),
 });
 
 const series = (id: string, tmdbId?: string): TitleIdentity => ({
   id,
   kind: "series",
   title: "Bloodhounds",
-  ...(tmdbId === undefined ? {} : { tmdbId }),
+  ...(tmdbId === undefined ? null : { tmdbId }),
 });
 
 describe("resolveTmdbCatalogId", () => {

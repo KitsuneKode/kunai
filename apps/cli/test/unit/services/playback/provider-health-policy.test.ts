@@ -16,7 +16,7 @@ function health(
   consecutiveFailures = 0,
 ): ProviderHealth {
   return {
-    providerId: "miruro" as ProviderId,
+    providerId: "miruro",
     status,
     checkedAt,
     consecutiveFailures,
@@ -77,7 +77,7 @@ describe("provider-health-policy", () => {
 
 function rateHealth(overrides: Partial<ProviderHealth>): ProviderHealth {
   return {
-    providerId: "vidlink" as ProviderId,
+    providerId: "vidlink",
     status: "healthy",
     checkedAt: NOW.toISOString(),
     consecutiveFailures: 0,

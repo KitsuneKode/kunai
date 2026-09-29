@@ -280,6 +280,7 @@ describe("release provider route derivation", () => {
           season: 1,
           episode: 1,
         },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         { search: async () => [] } as never,
         { audio: "original", subtitle: "en" },
       ),

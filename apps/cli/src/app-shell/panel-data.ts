@@ -721,9 +721,7 @@ export function buildProviderMemoryPanelLines(input: {
   ];
 
   for (const provider of laneProviders) {
-    const effective = resolveEffectiveProviderHealth(
-      input.getProviderHealth(provider.id as ProviderId),
-    );
+    const effective = resolveEffectiveProviderHealth(input.getProviderHealth(provider.id));
     const badge = formatProviderHealthBadge(effective ?? undefined);
     const fallbackNote =
       effective && !isProviderFallbackEligible(effective) ? " · skipped in auto-fallback" : "";
@@ -764,7 +762,7 @@ export function buildProviderPickerOptions({
 }): readonly ShellPickerOption<string>[] {
   return providers.map((provider) => {
     const effective = getProviderHealth
-      ? resolveEffectiveProviderHealth(getProviderHealth(provider.id as ProviderId))
+      ? resolveEffectiveProviderHealth(getProviderHealth(provider.id))
       : undefined;
     const healthBadge = formatProviderHealthBadge(effective ?? undefined);
     const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined);

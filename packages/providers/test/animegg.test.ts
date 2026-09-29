@@ -221,6 +221,7 @@ describe("locateAnimeggShow", () => {
       },
     }) as never;
   const fromAnilist = (name: string) =>
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     ({ id: "21", kind: "anime", title: name, externalIds: { anilistId: "21" } }) as never;
 
   test("matches a title found elsewhere by name, and remembers it", async () => {

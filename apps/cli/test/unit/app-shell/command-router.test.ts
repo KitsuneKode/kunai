@@ -68,6 +68,7 @@ describe("routePlaybackShellAction", () => {
   test("returns post-playback episode picker intent without opening a local picker", async () => {
     const result = await routePlaybackShellAction({
       action: "pick-episode",
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container: {} as never,
     });
 
@@ -78,12 +79,14 @@ describe("routePlaybackShellAction", () => {
     await expect(
       routeSearchShellAction({
         action: "calendar",
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         container: {} as never,
       }),
     ).resolves.toBe("handled");
     await expect(
       routeSearchShellAction({
         action: "random",
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         container: {} as never,
       }),
     ).resolves.toBe("handled");
@@ -102,6 +105,7 @@ describe("routePlaybackShellAction", () => {
 
     const result = await routeSearchShellAction({
       action: "notifications",
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container: container as never,
     });
 
@@ -118,6 +122,7 @@ describe("routePlaybackShellAction", () => {
     const actions: string[] = [];
     const result = await routeSearchShellAction({
       action: "stats",
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       container: {} as never,
       // Spread the real port so growing it does not break this test; only the
       // members this route actually exercises are stubbed.

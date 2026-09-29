@@ -52,7 +52,7 @@ export async function resolveShareTarget(
     return {
       title,
       mode,
-      ...(episode ? { episode } : {}),
+      ...(episode ? { episode } : null),
       ...(ref.startSeconds !== undefined ? { startSeconds: ref.startSeconds } : {}),
       ...(download ? { download: true } : {}),
       ...(joinNotes(hintNote, mappingNote) ? { note: joinNotes(hintNote, mappingNote) } : {}),
@@ -63,7 +63,7 @@ export async function resolveShareTarget(
   return {
     title,
     mode,
-    ...(episode ? { episode } : {}),
+    ...(episode ? { episode } : null),
     ...(ref.startSeconds !== undefined ? { startSeconds: ref.startSeconds } : {}),
     ...(download ? { download: true } : {}),
     ...(hintNote ? { note: hintNote } : {}),

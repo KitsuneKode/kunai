@@ -47,6 +47,7 @@ describe("workflows characterization", () => {
       overlay: { type: "history" },
     });
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const pending = waitForOverlayClose(stateManager as never, "history");
     closeTopOverlay();
 

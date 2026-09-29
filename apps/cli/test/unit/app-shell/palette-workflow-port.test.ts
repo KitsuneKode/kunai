@@ -22,6 +22,7 @@ test("stats loads only the shell workflow module", async () => {
     },
   });
 
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   await expect(port.runAction("stats", {} as never)).resolves.toBe("handled");
   expect(loaded).toEqual(["shell"]);
   expect(actions).toEqual(["stats"]);
@@ -40,6 +41,7 @@ test("setup loads only the focused setup module", async () => {
     },
   });
 
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   await expect(port.runSetup({} as never)).resolves.toBe("handled");
   expect(loaded).toEqual(["setup"]);
 });

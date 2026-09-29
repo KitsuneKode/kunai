@@ -107,6 +107,7 @@ describe("ConfigServiceImpl", () => {
   test("normalizes invalid stored startup priority to balanced", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         startupPriority: "turbo" as never,
       }),
     );
@@ -209,6 +210,7 @@ describe("ConfigServiceImpl", () => {
   test("normalizes unknown recovery modes to guided", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         recoveryMode: "surprise-me" as never,
       }),
     );
@@ -481,6 +483,7 @@ describe("youtubeMetadata normalization", () => {
     // hand-edited config.json can put a number where a string belongs. `.trim()` on
     // that used to throw inside load(), taking down startup.
     const store = new MemoryConfigStore({
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       youtubeMetadata: { poToken: 42, extractorArgs: { nested: true } } as never,
     });
     const service = await ConfigServiceImpl.load(store);

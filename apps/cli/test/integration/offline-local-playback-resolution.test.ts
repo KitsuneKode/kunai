@@ -105,6 +105,7 @@ function createHarness(input: {
   assets.adoptCompletedJob(completed);
 
   const library = new OfflineLibraryService({
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     downloadService: { getJob: (id: string) => jobs.get(id) } as never,
     historyRepository: {
       upsertProgress: () => {},

@@ -340,12 +340,12 @@ healthy instances.
 Third lane provider for standalone videos, Shorts, playlists, and channels.
 
 - **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail (a `type:short` query leads with yt-dlp instead, see below). Badges distinguish active live streams (`● LIVE`), premieres (`Upcoming`), archived streams (`Was Live`), Shorts, playlists, and channels.
-- Search results preserve a `contentShape` of `video`, `short`, `playlist`, or
+- Search results preserve a `resultKind` of `video`, `short`, `playlist`, or
   `channel`; `liveStatus` separately identifies `live`, `upcoming`, and
-  `post_live`. The browse UI labels these shapes before playback, so channels,
+  `post_live`. The browse UI labels these kinds before playback, so channels,
   playlists, Shorts, and live entries cannot be mistaken for ordinary videos.
-  Invidious forks that omit a shape/status signal are labelled conservatively.
-  Shape comes from the provider — `is_short` or a `/shorts/` URL — never from
+  Invidious forks that omit a kind/status signal are labelled conservatively.
+  Kind comes from the provider — `is_short` or a `/shorts/` URL — never from
   duration: YouTube raised the Shorts ceiling to three minutes in October 2024,
   so a length test both mislabels brief videos and misses long Shorts.
 - `type:short` is YouTube-only and runs its own search rather than filtering one.

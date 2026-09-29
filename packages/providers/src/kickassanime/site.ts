@@ -7,6 +7,15 @@
  * contract is pinned by fixtures (see `.docs/provider-dossiers/kickassanime.md`).
  */
 
+import {
+  isJsonNumber,
+  isJsonObject,
+  isJsonString,
+  type AstroValue,
+  type JsonObject,
+  type JsonValue,
+} from "../shared/json-value";
+
 export type KaaSearchResult = {
   readonly slug: string;
   readonly title: string;
@@ -44,20 +53,20 @@ export type KaaPlayerPayload = {
   }[];
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isRecord<T>(value: T): value is T & JsonObject {
+  return isJsonObject(value);
 }
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+function text<T>(value: T): string | undefined {
+  return isJsonString(value) && value.trim() ? value.trim() : undefined;
 }
 
-function positiveInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+function positiveInteger<T>(value: T): number | undefined {
+  return isJsonNumber(value) && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 /** `POST /api/fsearch` → `{ result: [...] }`. */
-export function parseKaaSearchResults(body: unknown): KaaSearchResult[] {
+export function parseKaaSearchResults<T>(body: T): KaaSearchResult[] {
   if (!isRecord(body) || !Array.isArray(body.result)) return [];
   const results: KaaSearchResult[] = [];
   for (const row of body.result) {
@@ -67,30 +76,28 @@ export function parseKaaSearchResults(body: unknown): KaaSearchResult[] {
     if (!slug || !title) continue;
     // Announced shows are listed with no audio and nowhere to watch; offering
     // one would only lead to an empty episode list.
-    const locales = Array.isArray(row.locales)
-      ? row.locales.filter((l): l is string => typeof l === "string")
-      : [];
+    const locales = Array.isArray(row.locales) ? row.locales.filter(isJsonString) : [];
     if (locales.length === 0 && row.watch_uri === null) continue;
     const englishTitle = text(row.title_en);
     const posterKey = isRecord(row.poster) ? text(row.poster.hq) : undefined;
     results.push({
       slug,
       title,
-      ...(englishTitle && englishTitle !== title ? { englishTitle } : {}),
-      ...(text(row.type) ? { type: text(row.type) } : {}),
-      ...(positiveInteger(row.year) ? { year: positiveInteger(row.year) } : {}),
+      ...(englishTitle && englishTitle !== title ? { englishTitle } : null),
+      ...(text(row.type) ? { type: text(row.type) } : null),
+      ...(positiveInteger(row.year) ? { year: positiveInteger(row.year) } : null),
       ...(positiveInteger(row.episode_count)
         ? { episodeCount: positiveInteger(row.episode_count) }
-        : {}),
+        : null),
       locales,
-      ...(posterKey ? { posterKey } : {}),
+      ...(posterKey ? { posterKey } : null),
     });
   }
   return results;
 }
 
 /** `GET /api/show/<slug>/episodes?ep=<page>&lang=<locale>`. */
-export function parseKaaEpisodePage(body: unknown): KaaEpisodePage {
+export function parseKaaEpisodePage<T>(body: T): KaaEpisodePage {
   if (!isRecord(body)) return { pages: [], episodes: [] };
   const pages: { number: number; eps: number[] }[] = [];
   for (const page of Array.isArray(body.pages) ? body.pages : []) {
@@ -98,7 +105,7 @@ export function parseKaaEpisodePage(body: unknown): KaaEpisodePage {
     const number = positiveInteger(page.number);
     if (!number) continue;
     const eps = (Array.isArray(page.eps) ? page.eps : []).filter(
-      (ep): ep is number => typeof ep === "number" && Number.isInteger(ep) && ep > 0,
+      (ep: JsonValue): ep is number => isJsonNumber(ep) && Number.isInteger(ep) && ep > 0,
     );
     pages.push({ number, eps });
   }
@@ -114,8 +121,8 @@ export function parseKaaEpisodePage(body: unknown): KaaEpisodePage {
     episodes.push({
       slug,
       number,
-      ...(title ? { title } : {}),
-      ...(thumbnailKey ? { thumbnailKey } : {}),
+      ...(title ? { title } : null),
+      ...(thumbnailKey ? { thumbnailKey } : null),
     });
   }
   return { pages, episodes };
@@ -132,7 +139,7 @@ export function kaaPageForEpisode(page: KaaEpisodePage, episode: number): number
 }
 
 /** `GET /api/show/<slug>/episode/ep-<n>-<epSlug>` → `{ servers: [{name, src}] }`. */
-export function parseKaaServers(body: unknown): KaaServer[] {
+export function parseKaaServers<T>(body: T): KaaServer[] {
   if (!isRecord(body) || !Array.isArray(body.servers)) return [];
   const servers: KaaServer[] = [];
   for (const row of body.servers) {
@@ -159,15 +166,20 @@ function decodeEntities(value: string): string {
  * an array of tagged items. Only those two tags appear in the player props; any
  * other tag is a type this parser does not claim to read.
  */
-export function decodeAstroProp(value: unknown): unknown {
-  if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== "number") return value;
-  const [tag, payload] = value as [number, unknown];
+export function decodeAstroProp<T>(value: T): AstroValue {
+  if (!Array.isArray(value) || value.length !== 2 || !Number.isFinite(value[0])) {
+    // SAFETY: callers pass JSON.parse output; non-tuple values are already JSON.
+    return value as AstroValue;
+  }
+  const [tag, payload] = value;
   if (tag === 1) return Array.isArray(payload) ? payload.map(decodeAstroProp) : [];
   if (tag !== 0) return undefined;
   if (isRecord(payload)) {
     return Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, decodeAstroProp(v)]));
   }
-  return payload;
+  // SAFETY: tag 0 wraps the plain JSON payload; the return type is the boundary
+  // contract rather than the erased input type.
+  return payload as AstroValue;
 }
 
 /**

@@ -190,7 +190,9 @@ describe("launch entry helpers", () => {
     };
     await prepareReplayTitleForProvider(
       {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         config: {} as never,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         historyRepository: {} as never,
         providerRegistry: {
           get: () => ({ metadata: { catalogIdentity: "anilist" } }),

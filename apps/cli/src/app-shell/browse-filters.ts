@@ -58,7 +58,7 @@ function browseFiltersFromState(state: FilterState, ignoredFilterCount = 0): Bro
     state,
     type,
     ...(state.genres.length ? { genres: state.genres } : {}),
-    ...(year ? { year } : {}),
+    ...(year ? { year } : null),
     ...(typeof state.minRating === "number" ? { minRating: state.minRating } : {}),
     ...(state.mode ? { mode: state.mode } : {}),
     ...(state.provider ? { provider: state.provider } : {}),
@@ -66,7 +66,7 @@ function browseFiltersFromState(state: FilterState, ignoredFilterCount = 0): Bro
     ...(state.watched ? { watched: state.watched } : {}),
     ...(state.release ? { release: state.release } : {}),
     ...(state.sort ? { sort: state.sort } : {}),
-    ...(ignoredFilterCount ? { ignoredFilterCount } : {}),
+    ...(ignoredFilterCount ? { ignoredFilterCount } : null),
   };
 }
 
@@ -126,7 +126,7 @@ function canApplyTypeFilterAtBrowse<T>(
 ): boolean {
   if (wanted === "all") return true;
   if (wanted === "video" || wanted === "short" || wanted === "playlist" || wanted === "channel") {
-    return options.some((option) => option.localFilterFacts?.contentShape !== undefined);
+    return options.some((option) => option.localFilterFacts?.resultKind !== undefined);
   }
   return options.some(
     (option) => option.localFilterFacts?.mediaType !== undefined || getLegacyPreviewType(option),
@@ -247,7 +247,7 @@ function getOptionTypeFilterMatch<T>(
   if (wanted === "all") return true;
   const facts = option.localFilterFacts;
   if (wanted === "video" || wanted === "short" || wanted === "playlist" || wanted === "channel") {
-    return facts?.contentShape === wanted;
+    return facts?.resultKind === wanted;
   }
   if (wanted === "movie" || wanted === "series") {
     return (facts?.mediaType ?? getLegacyPreviewType(option)) === wanted;

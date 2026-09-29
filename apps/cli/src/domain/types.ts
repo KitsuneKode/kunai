@@ -36,7 +36,7 @@ export type ContentType = "movie" | "series";
 export type ShellMode = "series" | "anime" | "youtube";
 export type ProviderLane = "anime" | "series" | "youtube";
 export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
-export type YouTubeContentShape = "video" | "short" | "playlist" | "channel";
+export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 
 /**
  * YouTube/video metadata captured from the originating {@link SearchResult} at
@@ -50,7 +50,7 @@ export interface VideoMeta {
   readonly viewCount?: number;
   readonly publishedAt?: string;
   readonly durationSeconds?: number;
-  readonly contentShape?: YouTubeContentShape;
+  readonly resultKind?: YouTubeResultKind;
   readonly liveStatus?: YouTubeLiveStatus;
   readonly videoCount?: number;
   readonly premium?: boolean;
@@ -196,7 +196,7 @@ export interface SearchResult {
   readonly liveStatus?: YouTubeLiveStatus;
   readonly premium?: boolean;
   readonly paid?: boolean;
-  readonly contentShape?: YouTubeContentShape;
+  readonly resultKind?: YouTubeResultKind;
   /** Lane that produced this row at the search-routing boundary (selection prefers this over shell mode). */
   readonly resolvedLane?: ProviderLane;
 }

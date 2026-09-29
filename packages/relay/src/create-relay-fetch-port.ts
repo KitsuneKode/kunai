@@ -105,7 +105,7 @@ async function toRelayRequest(
     method,
     upstreamUrl,
     headers,
-    ...(body !== undefined ? { body } : {}),
+    ...(body !== undefined ? { body } : null),
   };
 }
 

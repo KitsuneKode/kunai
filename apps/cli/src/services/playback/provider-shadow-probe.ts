@@ -55,5 +55,5 @@ export function selectShadowProbeTarget(input: ShadowProbeInput): ProviderId | n
     .filter((row) => row.ageMs >= MIN_REPROBE_AGE_MS)
     .sort((left, right) => right.ageMs - left.ageMs);
 
-  return (stale[0]?.providerId as ProviderId | undefined) ?? null;
+  return stale[0]?.providerId ?? null;
 }

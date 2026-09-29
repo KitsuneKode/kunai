@@ -143,12 +143,12 @@ export async function applyProviderHealthResetScope(
     container.providerRegistry
       .getAll()
       .filter((provider) => provider.metadata.isAnimeProvider === isAnime)
-      .map((provider) => provider.metadata.id as ProviderId);
+      .map((provider) => provider.metadata.id);
 
   switch (scope) {
     case "current-provider":
-      clearedGlobal = container.providerHealth.delete(state.provider as ProviderId);
-      clearedEndpoints = container.endpointHealth.deleteByProvider(state.provider as ProviderId);
+      clearedGlobal = container.providerHealth.delete(state.provider);
+      clearedEndpoints = container.endpointHealth.deleteByProvider(state.provider);
       break;
     case "current-title":
       if (title) {
@@ -163,10 +163,7 @@ export async function applyProviderHealthResetScope(
       if (title) {
         container.titleProviderHealth.clear(title.id, state.provider);
         clearedTitle = 1;
-        clearedEndpoints = container.endpointHealth.clearTitle(
-          title.id,
-          state.provider as ProviderId,
-        );
+        clearedEndpoints = container.endpointHealth.clearTitle(title.id, state.provider);
       }
       break;
     case "anime-lane":
@@ -219,10 +216,7 @@ export function buildEffectiveHealthByProviderId(
 ): Map<string, ReturnType<typeof resolveEffectiveProviderHealth>> {
   const map = new Map<string, ReturnType<typeof resolveEffectiveProviderHealth>>();
   for (const provider of providers) {
-    const effective = resolveEffectiveProviderHealth(
-      getStoredHealth(provider.id as ProviderId),
-      now,
-    );
+    const effective = resolveEffectiveProviderHealth(getStoredHealth(provider.id), now);
     if (effective) map.set(provider.id, effective);
   }
   return map;

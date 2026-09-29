@@ -875,6 +875,7 @@ describe("episode counts are whole numbers", () => {
         fatal: () => {},
       }),
     };
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     initLogger(true, capture as never);
     const restore = mockFetch((url) => {
       if (url.includes("graphql.anilist.co"))

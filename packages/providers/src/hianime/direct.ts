@@ -541,7 +541,7 @@ export const hianimeProviderModule: CoreProviderModule = {
           audioMode,
           subtitleLanguages: subtitleLanguages.length > 0 ? subtitleLanguages : undefined,
           hasExternalSubtitles: subtitles.length > 0,
-          ...(Object.keys(timing).length > 0 ? { timing } : {}),
+          ...(Object.keys(timing).length > 0 ? { timing } : null),
         },
         cachePolicy,
       );

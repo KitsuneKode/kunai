@@ -56,6 +56,7 @@ import {
   isHlsDeadHostStatus,
   looksLikeHlsMasterUrl,
 } from "../shared/hls-ladder";
+import { isJsonNumber, isJsonObject, isJsonString, type JsonObject } from "../shared/json-value";
 import { TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
@@ -275,12 +276,11 @@ type MiruroProviderEpisodes = {
 };
 
 type MiruroProviderEntry = {
-  readonly meta?: Record<string, unknown>;
   readonly episodes?: MiruroProviderEpisodes;
 };
 
 export type MiruroEpisodesResponse = {
-  readonly mappings?: Record<string, unknown>;
+  readonly mappings?: JsonObject;
   readonly providers?: Record<string, MiruroProviderEntry | undefined>;
 };
 
@@ -289,6 +289,7 @@ type MiruroCycleCandidateMetadata = {
   readonly episodeId: string;
   readonly serverId: MiruroServerKey;
   readonly subtitleDelivery: MiruroSubtitleDelivery;
+  readonly sourceDetail?: string;
 };
 
 function base64urlToBytes(s: string): Uint8Array {
@@ -431,6 +432,8 @@ export async function createMiruroResultFromPayload({
         return "https://www.miruro.bz";
       }
     })();
+    // SAFETY: `subtitleDelivery` is already a MiruroSubtitleDelivery; the
+    // literal union is the wire spelling of the same domain.
     const streamSubtitleDelivery =
       subtitleDelivery === "unknown"
         ? undefined
@@ -608,10 +611,17 @@ function firstMiruroThumbnailUrl(
   return thumbnail?.url ?? thumbnail?.file;
 }
 
+type MiruroTimingSegment = { readonly start: number; readonly end: number };
+
+type MiruroTimingMetadata = {
+  intro?: MiruroTimingSegment;
+  outro?: MiruroTimingSegment;
+};
+
 function createMiruroTimingMetadata(
   sourceData: MiruroSourcesResponse,
-): Record<string, unknown> | null {
-  const metadata: Record<string, unknown> = {};
+): MiruroTimingMetadata | null {
+  const metadata: MiruroTimingMetadata = {};
   const intro = normalizeMiruroTimingSegment(sourceData.intro);
   const outro = normalizeMiruroTimingSegment(sourceData.outro);
   if (intro) metadata.intro = intro;
@@ -620,8 +630,8 @@ function createMiruroTimingMetadata(
 }
 
 function normalizeMiruroTimingSegment(
-  segment: { readonly start: number; readonly end: number } | undefined,
-): { readonly start: number; readonly end: number } | null {
+  segment: MiruroTimingSegment | undefined,
+): MiruroTimingSegment | null {
   if (!segment) return null;
   if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end)) return null;
   if (segment.end <= segment.start) return null;
@@ -632,6 +642,7 @@ function sortMiruroProviderEntries(
   entries: readonly (readonly [string, MiruroProviderEntry | undefined])[],
 ): readonly (readonly [string, MiruroProviderEntry | undefined])[] {
   const rank = (key: string): number => {
+    // SAFETY: indexOf only checks membership; a non-member returns -1.
     const index = MIRURO_SERVER_TRY_ORDER.indexOf(key as (typeof MIRURO_SERVER_TRY_ORDER)[number]);
     return index >= 0 ? index : MIRURO_SERVER_TRY_ORDER.length;
   };
@@ -749,7 +760,9 @@ function buildMiruroSourceInventoryCandidates(
     if (!sourceId || seen.has(sourceId)) return [];
     seen.add(sourceId);
 
-    const metadata = candidate.metadata ?? {};
+    // SAFETY: this candidate was built by miruro's own cycle path; the metadata
+    // keys read below are the ones writeMiruroCycleCandidateMetadata wrote.
+    const metadata = (candidate.metadata ?? {}) as MiruroCycleCandidateMetadata;
     const audioCategory = metadata.audioCategory === "dub" ? "dub" : "sub";
     const serverId = String(candidate.serverId ?? metadata.serverId ?? "");
     const subtitleDelivery =
@@ -761,12 +774,11 @@ function buildMiruroSourceInventoryCandidates(
     const label = candidate.label ?? miruroCharacterLabel(serverId, audioCategory);
     const serverLabel = candidate.nativeLabel ?? miruroTechnicalServerLabel(serverId);
     const sourceDetail =
-      typeof metadata.sourceDetail === "string"
-        ? metadata.sourceDetail
-        : formatAnimeSourceDetail({
-            audio: audioCategory,
-            subtitleMode: miruroSubtitleDeliveryToMode(subtitleDelivery),
-          });
+      metadata.sourceDetail ??
+      formatAnimeSourceDetail({
+        audio: audioCategory,
+        subtitleMode: miruroSubtitleDeliveryToMode(subtitleDelivery),
+      });
     const host = miruroInventoryHost();
 
     return [
@@ -845,8 +857,8 @@ function parseMiruroCycleCandidateMetadata(
   const serverId = metadata.serverId;
   if (
     (audioCategory !== "sub" && audioCategory !== "dub") ||
-    typeof episodeId !== "string" ||
-    typeof serverId !== "string" ||
+    !isJsonString(episodeId) ||
+    !isJsonString(serverId) ||
     serverId.length === 0
   ) {
     throw createProviderCycleFailureError(candidate, {
@@ -923,7 +935,7 @@ async function expandMiruroPipeStreams(
     if (!stream.url || stream.type === "embed") continue;
     if (
       stream.type === "mp4" ||
-      (typeof stream.quality === "string" && isNumericQualityLabel(stream.quality))
+      (isJsonString(stream.quality) && isNumericQualityLabel(stream.quality))
     ) {
       push(stream);
       continue;
@@ -943,7 +955,7 @@ async function expandMiruroPipeStreams(
 
   const results = await Promise.allSettled(
     expandable.map(async ({ url, referer }) => {
-      const fetchHeaders: Record<string, string> = {
+      const fetchHeaders = {
         "User-Agent": USER_AGENT,
         Referer: referer,
         Origin: (() => {
@@ -1062,16 +1074,18 @@ function createMiruroServerProfile(
   };
 }
 
-function resolveMiruroSubtitlePresentation(
-  audioCategory: MiruroAudioCategory,
-  sourceData: MiruroSourcesResponse,
-  preferredSubtitleLanguage?: string,
-): {
+type MiruroSubtitlePresentation = {
   readonly subtitleDelivery: MiruroSubtitleDelivery;
   readonly hardSubLanguage?: string;
   readonly subtitleLanguages?: readonly string[];
   readonly includeExternalSubtitles: boolean;
-} {
+};
+
+function resolveMiruroSubtitlePresentation(
+  audioCategory: MiruroAudioCategory,
+  sourceData: MiruroSourcesResponse,
+  preferredSubtitleLanguage?: string,
+): MiruroSubtitlePresentation {
   const pipeSubtitles = (sourceData.subtitles ?? []).filter(
     (subtitle) => subtitle.url || subtitle.file,
   );
@@ -1245,8 +1259,8 @@ function parsePipeKey(keyHex: string | undefined): Uint8Array | null {
   return new Uint8Array((keyHex.match(/.{2}/g) ?? []).map((byte) => parseInt(byte, 16)));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isRecord<T>(value: T): value is T & JsonObject {
+  return isJsonObject(value);
 }
 
 const MIRURO_EPISODES_KEYS = ["providers", "mappings"] as const;
@@ -1259,7 +1273,7 @@ const MIRURO_SOURCES_KEYS = [
   "download",
 ] as const;
 
-function isMiruroEpisodesResponse(value: unknown): value is MiruroEpisodesResponse {
+function isMiruroEpisodesResponse<T>(value: T): value is T & MiruroEpisodesResponse {
   if (!isRecord(value)) return false;
   if (MIRURO_SOURCES_KEYS.some((key) => key in value)) return false;
   if (!MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
@@ -1268,12 +1282,12 @@ function isMiruroEpisodesResponse(value: unknown): value is MiruroEpisodesRespon
   return true;
 }
 
-function isMiruroSearchResponse(value: unknown): value is readonly MiruroSearchMedia[] {
+function isMiruroSearchResponse<T>(value: T): value is T & readonly MiruroSearchMedia[] {
   // An empty list is a legitimate "no matches", not a shape failure.
-  return Array.isArray(value) && value.every((row) => isRecord(row) && typeof row.id === "number");
+  return Array.isArray(value) && value.every((row) => isRecord(row) && isJsonNumber(row.id));
 }
 
-function isMiruroSourcesResponse(value: unknown): value is MiruroSourcesResponse {
+function isMiruroSourcesResponse<T>(value: T): value is T & MiruroSourcesResponse {
   if (!isRecord(value)) return false;
   if (MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
   if (!MIRURO_SOURCES_KEYS.some((key) => key in value)) return false;
@@ -1311,6 +1325,8 @@ export function decodeMiruroPipePayload(input: {
   let json: string;
   try {
     const decrypted = xorDecrypt(encrypted, key);
+    // SAFETY: decrypted.buffer is the Uint8Array's own backing buffer, which
+    // gunzipSync requires as an ArrayBuffer.
     json =
       decrypted[0] === 31 && decrypted[1] === 139
         ? new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer))
@@ -1439,6 +1455,8 @@ export async function getMiruroEpisodesResponse(
   const cacheKey = `episodes:${anilistId}`;
 
   // 1. In-memory: instant within a session.
+  // SAFETY: this cache key namespace only ever holds MiruroEpisodesResponse
+  // values written by pipeCall below.
   const memoryHit = episodeCache.get(cacheKey) as MiruroEpisodesResponse | null;
   if (memoryHit) return memoryHit;
 
@@ -1493,10 +1511,10 @@ function selectMiruroEpisodeCatalogEntries(
   return (kiwiSub?.length ? kiwiSub : kiwiDub) ?? [];
 }
 
-function readMiruroMappingMalId(mappings: Record<string, unknown> | undefined): string | undefined {
+function readMiruroMappingMalId(mappings: JsonObject | undefined): string | undefined {
   const malId = mappings?.malId;
-  if (typeof malId === "number" && malId > 0) return String(malId);
-  if (typeof malId === "string" && malId.trim()) return malId.trim();
+  if (isJsonNumber(malId) && malId > 0) return String(malId);
+  if (isJsonString(malId) && malId.trim()) return malId.trim();
   return undefined;
 }
 
@@ -1580,7 +1598,7 @@ export function describeMiruroPipeFailure(status: number, body: string): string 
   return `HTTP ${status}`;
 }
 
-function buildMiruroPipeHeaders(baseUrl: string, referer?: string): Record<string, string> {
+function buildMiruroPipeHeaders(baseUrl: string, referer?: string) {
   const origin = baseUrl.replace(/\/$/, "");
   return {
     "User-Agent": USER_AGENT,
@@ -1615,11 +1633,13 @@ const MIRURO_CURL_CONNECT_SECONDS = 5;
  * and the decoder then reported that transport failure as `pipe-xor-gunzip-failed`.
  * A non-zero exit means the body is partial — refuse it.
  */
+type MiruroCurlResult = { readonly status: number; readonly text: string };
+
 export function interpretMiruroCurlResult(input: {
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
-}): { readonly status: number; readonly text: string } {
+}): MiruroCurlResult {
   if (input.exitCode !== 0) {
     throw new Error(input.stderr.trim() || `curl exit ${input.exitCode}`);
   }
@@ -1856,13 +1876,11 @@ async function pipeCall(
 
   const payload = { path, method: "GET" as const, query: q, body: null, version: "0.2.0" };
   const encoded = bytesToBase64url(new TextEncoder().encode(JSON.stringify(payload)));
-  let lastError: unknown;
+  let lastError: Error | undefined;
   let wafHits = 0;
 
   const anilistId =
-    typeof query.anilistId === "number" || typeof query.anilistId === "string"
-      ? String(query.anilistId)
-      : null;
+    isJsonNumber(query.anilistId) || isJsonString(query.anilistId) ? String(query.anilistId) : null;
 
   const baseUrls = miruroPipeBaseUrls({
     fetchImpl: context.fetch?.fetch.bind(context.fetch),
@@ -1910,14 +1928,14 @@ async function pipeCall(
       // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
     } catch (error) {
       if (error instanceof MiruroPipeDecodeError) throw error;
-      lastError = error;
+      lastError = error instanceof Error ? error : new Error("pipe request failed");
       if (error instanceof Error && isMiruroWafBlockError(error)) {
         throw error;
       }
     }
   }
 
-  const message = lastError instanceof Error ? lastError.message : "request failed";
+  const message = lastError?.message ?? "request failed";
   throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
 }
 
@@ -1953,11 +1971,13 @@ function isMiruroWafBlockError(error: Error): boolean {
  * Map a pipe exception onto a distinct resolve failure. Decode drift is not a
  * network fault and is not retryable; a WAF block is neither of those.
  */
-function classifyMiruroPipeError(error: unknown): {
+type MiruroPipeFailure = {
   readonly code: ResolveErrorCode;
   readonly message: string;
   readonly retryable: boolean;
-} {
+};
+
+function classifyMiruroPipeError<T>(error: T): MiruroPipeFailure {
   if (error instanceof MiruroPipeDecodeError) {
     return {
       code: "parse-failed",
@@ -2125,7 +2145,7 @@ function stripSearchDescription(value: string | null | undefined): string {
  * language data, not availability — the One Piece manga lists eleven dubs.
  */
 export function mapMiruroSearchMedia(media: MiruroSearchMedia): ProviderSearchResult | null {
-  if (typeof media.id !== "number" || !Number.isInteger(media.id) || media.id <= 0) return null;
+  if (!isJsonNumber(media.id) || !Number.isInteger(media.id) || media.id <= 0) return null;
   if (media.type && media.type !== "ANIME") return null;
   if (media.isAdult === true) return null;
   if (media.status === "NOT_YET_RELEASED") return null;
@@ -2138,44 +2158,44 @@ export function mapMiruroSearchMedia(media: MiruroSearchMedia): ProviderSearchRe
 
   const anilistId = String(media.id);
   const malId =
-    typeof media.idMal === "number" && Number.isInteger(media.idMal) && media.idMal > 0
+    isJsonNumber(media.idMal) && Number.isInteger(media.idMal) && media.idMal > 0
       ? String(media.idMal)
       : undefined;
   const posterUrl = media.coverImage?.extraLarge ?? media.coverImage?.large ?? undefined;
   const year = media.startDate?.year ?? media.seasonYear ?? undefined;
   const episodeCount =
-    typeof media.episodes === "number" && media.episodes > 0 ? media.episodes : undefined;
+    isJsonNumber(media.episodes) && media.episodes > 0 ? media.episodes : undefined;
   const altNames = romaji && romaji !== title ? [romaji] : [];
 
   return {
     id: anilistId,
     type: miruroSearchContentType(media.format, media.episodes),
     title,
-    ...(year ? { year: String(year) } : {}),
+    ...(year ? { year: String(year) } : null),
     overview: stripSearchDescription(media.description),
     posterPath: posterUrl ?? null,
     // The catalog data is AniList's, relayed by Miruro. Declaring it lets search
     // routing skip a redundant AniList enrichment pass — which is the call that
     // fails when AniList's API is down, the case this search exists for.
     metadataSource: "AniList",
-    rating: typeof media.averageScore === "number" ? media.averageScore / 10 : null,
-    popularity: typeof media.popularity === "number" ? media.popularity : null,
-    ...(episodeCount ? { episodeCount } : {}),
-    ...(typeof media.duration === "number" && media.duration > 0
+    rating: isJsonNumber(media.averageScore) ? media.averageScore / 10 : null,
+    popularity: isJsonNumber(media.popularity) ? media.popularity : null,
+    ...(episodeCount ? { episodeCount } : null),
+    ...(isJsonNumber(media.duration) && media.duration > 0
       ? { durationSeconds: media.duration * 60 }
-      : {}),
-    ...(english && english !== title ? { englishTitle: english } : {}),
-    ...(native ? { nativeTitle: native } : {}),
-    ...(altNames.length > 0 ? { altNames } : {}),
-    externalIds: { anilistId, ...(malId ? { malId } : {}) },
+      : null),
+    ...(english && english !== title ? { englishTitle: english } : null),
+    ...(native ? { nativeTitle: native } : null),
+    ...(altNames.length > 0 ? { altNames } : null),
+    externalIds: { anilistId, ...(malId ? { malId } : null) },
     ...(posterUrl || media.bannerImage
       ? {
           artwork: {
-            ...(posterUrl ? { posterUrl, thumbnailUrl: posterUrl } : {}),
-            ...(media.bannerImage ? { backdropUrl: media.bannerImage } : {}),
+            ...(posterUrl ? { posterUrl, thumbnailUrl: posterUrl } : null),
+            ...(media.bannerImage ? { backdropUrl: media.bannerImage } : null),
           },
         }
-      : {}),
+      : null),
   };
 }
 
@@ -2367,6 +2387,8 @@ export const miruroProviderModule: CoreProviderModule = {
             metadata.audioCategory,
           );
           const srcCacheKey = `sources:${metadata.episodeId}:${metadata.audioCategory}:${metadata.serverId}`;
+          // SAFETY: the sources: key namespace only ever holds
+          // MiruroSourcesResponse values written by pipeCall.
           let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
           if (!srcData) {
             srcData = await pipeCall(

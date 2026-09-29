@@ -29,6 +29,7 @@ describe("soft fallback promote after engage", () => {
   test("soft hop before engage does not persist title preference", async () => {
     const container = makeContainer();
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await promoteSoftFallbackAfterEngage(container as never, {
       title,
       mode: "anime",
@@ -43,6 +44,7 @@ describe("soft fallback promote after engage", () => {
   test("engage after soft hop promotes durable preference", async () => {
     const container = makeContainer();
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     await promoteSoftFallbackAfterEngage(container as never, {
       title,
       mode: "anime",

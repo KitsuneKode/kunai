@@ -771,6 +771,7 @@ describe("PlayerServiceImpl shutdown", () => {
       },
       launchMpv: async (options) => {
         lifecycle.push("launch-local");
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         options.onControlReady?.({ id: "local" } as never);
         options.onControlReady?.(null);
         return result;

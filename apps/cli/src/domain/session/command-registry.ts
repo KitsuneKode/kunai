@@ -1032,10 +1032,12 @@ function resolveCommandPresentation(command: AppCommand, state: SessionState): A
   return command;
 }
 
-function resolveCommandState(
-  id: AppCommandId,
-  state: SessionState,
-): { enabled: boolean; reason?: string } {
+type ResolvedCommandState = {
+  readonly enabled: boolean;
+  readonly reason?: string;
+};
+
+function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCommandState {
   const hasEpisode = state.currentEpisode !== null;
   const inSeriesContext = state.currentTitle?.type === "series" && hasEpisode;
   const resolving =

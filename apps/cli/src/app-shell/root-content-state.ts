@@ -191,7 +191,7 @@ export function mountRootContent<TResult>({
     id: sessionId,
     kind,
     element: renderContent(settle),
-    ...(headerLabel ? { headerLabel } : {}),
+    ...(headerLabel ? { headerLabel } : null),
   });
 
   return {

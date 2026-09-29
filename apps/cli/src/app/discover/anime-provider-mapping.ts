@@ -31,7 +31,7 @@ export async function mapAnimeDiscoveryResultToProviderNative(
     return result;
   }
 
-  const storedNative = result.externalIds?.providerNativeIds?.[context.providerId as ProviderId];
+  const storedNative = result.externalIds?.providerNativeIds?.[context.providerId];
   if (storedNative) {
     return { ...result, id: storedNative };
   }

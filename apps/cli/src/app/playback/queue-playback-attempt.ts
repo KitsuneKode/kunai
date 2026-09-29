@@ -49,7 +49,7 @@ export function createQueuePlaybackAttempt(
         code,
         stage,
         at: now(),
-        ...(detail !== undefined ? { detail } : {}),
+        ...(detail !== undefined ? { detail } : null),
       });
     },
   };

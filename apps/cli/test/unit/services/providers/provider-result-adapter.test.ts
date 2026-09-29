@@ -225,7 +225,7 @@ function makeStream(
     id,
     providerId: "test-provider",
     sourceId,
-    ...(url ? { url } : {}),
+    ...(url ? { url } : null),
     protocol: "hls",
     container: "m3u8",
     qualityLabel: `${qualityRank}p`,
