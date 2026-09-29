@@ -442,6 +442,25 @@ describe("DownloadService", () => {
     expect(reloaded?.errorMessage).toContain("offline safety reserve");
   });
 
+  test("rejects enqueue when the injected volume reports no free space", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      statfs: async () => ({ bavail: 0, bsize: 4096 }),
+    });
+
+    await expect(
+      service.enqueue({
+        title: { id: "tmdb:full-disk", type: "movie", name: "Full Disk" },
+        stream: { url: "https://example.com/full.m3u8", headers: {}, timestamp: 0 },
+        providerId: "vidking",
+        mode: "series",
+      }),
+    ).rejects.toMatchObject({ code: "insufficient-disk" });
+  });
+
   test("persists provider source and stream selection for exact re-resolve", async () => {
     const service = buildService({
       repo,
@@ -2242,6 +2261,7 @@ function buildService({
   logger,
   configService,
   titleAliases = { upsertAliases() {} },
+  statfs,
 }: {
   repo: DownloadJobsRepository;
   downloadsEnabled: boolean;
@@ -2255,6 +2275,7 @@ function buildService({
   logger?: ConstructorParameters<typeof DownloadService>[0]["logger"];
   configService?: ConfigService;
   titleAliases?: ConstructorParameters<typeof DownloadService>[0]["titleAliases"];
+  statfs?: ConstructorParameters<typeof DownloadService>[0]["statfs"];
 }): DownloadService {
   const defaultConfig = {
     downloadsEnabled,
@@ -2283,6 +2304,10 @@ function buildService({
     resolveDownloadStream,
     abortGraceMs,
     ffprobeDeadline,
+    // Default to a volume with 1 TiB free so admission checks are deterministic
+    // regardless of the host's actual disk headroom. Tests that exercise the
+    // reserve inject their own statfs or reserveBytes.
+    statfs: statfs ?? (async () => ({ bavail: 2 ** 40 / 4096, bsize: 4096 })),
   });
 }
 

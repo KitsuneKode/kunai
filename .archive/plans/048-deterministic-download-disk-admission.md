@@ -61,12 +61,12 @@ default — same shape as `ffprobeDeadline?: DeadlineFactory` and
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Focused test | `bun run --cwd apps/cli test:file test/unit/services/download/download-service.test.ts` | all pass |
-| Full suite | `bun run test --force` | 0 failures |
-| Typecheck | `bun run typecheck --force` | exit 0 |
-| Lint/fmt | `bun run lint --force && bun run fmt` | exit 0 |
+| Purpose      | Command                                                                                 | Expected   |
+| ------------ | --------------------------------------------------------------------------------------- | ---------- |
+| Focused test | `bun run --cwd apps/cli test:file test/unit/services/download/download-service.test.ts` | all pass   |
+| Full suite   | `bun run test --force`                                                                  | 0 failures |
+| Typecheck    | `bun run typecheck --force`                                                             | exit 0     |
+| Lint/fmt     | `bun run lint --force && bun run fmt`                                                   | exit 0     |
 
 Use `bun run test`, never `bun test` at the root. `--force` bypasses the turbo
 cache — a green cached replay is not evidence (AGENTS.md hazard #2).
@@ -74,10 +74,12 @@ cache — a green cached replay is not evidence (AGENTS.md hazard #2).
 ## Scope
 
 **In scope:**
+
 - `apps/cli/src/services/download/DownloadService.ts`
 - `apps/cli/test/unit/services/download/download-service.test.ts`
 
 **Out of scope:**
+
 - The reserve policy itself (`offlineFreeSpaceReserveBytes`, `estimateAllowedNewAssets`) — correct as-is.
 - `packages/storage` — no repository changes needed.
 - Any other test file. If other tests are discovered to depend on host disk, note them in the PR body but do not expand scope.
@@ -109,7 +111,7 @@ the returned-shape use (`diskStats.bavail * diskStats.bsize`) unchanged.
 
 In `download-service.test.ts`, add a `statfs` parameter to `buildService` and
 forward it into `new DownloadService({...})`. Default it to a stub returning a
-large volume — e.g. `{ bavail: 1 << 40, bsize: 4096 }` — so *every* unit test
+large volume — e.g. `{ bavail: 1 << 40, bsize: 4096 }` — so _every_ unit test
 runs against deterministic headroom, not just the one that failed. Tests that
 exercise the reserve (e.g. "rechecks disk capacity before starting queued
 work", ~:411) already control `reserveBytes` through `configService` and are
