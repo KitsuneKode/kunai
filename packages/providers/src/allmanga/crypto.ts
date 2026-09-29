@@ -11,8 +11,8 @@ import { readJsonObjectBody } from "../shared/json-body";
  * Upstream left the ani-cli `72d7f72` "no buildId / scrape epoch+partB from HTML"
  * path — and as of ani-cli `a6ac602` (v5) there is no upstream AllAnime path at
  * all to check parity against. Live mkissa:
- * - ships a rotating `buildId` (`81` → `119` → `140` → `166` → `171`) plus four
- *   base64 mask fragments in the app chunk
+ * - ships a rotating `buildId` (`81` → `119` → `140` → `166` → `171` → `177`)
+ *   plus four base64 mask fragments in the app chunk
  * - boots keys via `GET /client-crypto/v1/bootstrap?buildId=&k=` with
  *   `x-build-id` + HMAC `x-aa-boot`
  * - signs `aaReq` as AES-GCM over `{v,ts,epoch,buildId,qh,k}` with IV
@@ -32,6 +32,16 @@ import { readJsonObjectBody } from "../shared/json-body";
  * build 166 is rejected `unknown_build_id` — verified against the live
  * endpoint.
  *
+ * The build-177 profile (extracted 2026-10-13, verified by a live bootstrap
+ * 200 + `tobeparsed` round-trip decrypt) adds three fields to upstream's
+ * config object: `v:1`, `omitEmptyLane:false`, and `envXor:223`. `envXor` is
+ * XORed into every mask-key byte only when upstream's `Xk()` browser-env
+ * probe passes — our requests take the non-browser path, so the raw mask is
+ * correct here (probing with the XOR applied returns `invalid_boot_token`).
+ * They are documented but deliberately not carried into the profile object:
+ * nothing on our request path consumes them, and a field nothing reads is a
+ * lie waiting for the next extractor to copy it.
+ *
  * Everything that rotates therefore lives in one {@link ALLMANGA_CRYPTO_PROFILE}
  * object, so the next rotation is a single replacement that cannot be applied
  * halfway. `apps/cli/test/live/allmanga-rotation.smoke.ts` re-extracts the live
@@ -41,7 +51,9 @@ import { readJsonObjectBody } from "../shared/json-body";
  * read the constants back out of the obfuscated chunk — is in
  * [the AllManga dossier](../../../../.docs/provider-dossiers/allmanga.md).
  *
- * The episode persisted-query hash is unchanged by these rotations.
+ * The episode persisted-query hash rotates with the app build — it changed
+ * again for 177 and is re-hashed from the chunk's query template on every
+ * rotation (see the dossier).
  */
 
 /** A part of the `x-aa-boot` second-HMAC message, in upstream's order. */
@@ -70,19 +82,20 @@ export type AllMangaCryptoProfile = {
 };
 
 /**
- * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/`
- * on 2026-09-16 and confirmed by a successful bootstrap (HTTP 200, epoch 2958).
+ * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/RD7DzHLl.js`
+ * on 2026-10-13 and confirmed by a successful bootstrap (HTTP 200, epoch 2960)
+ * plus a `tobeparsed` decrypt round-trip.
  */
 export const ALLMANGA_CRYPTO_PROFILE: AllMangaCryptoProfile = {
-  buildId: "171",
-  saltMul: 48,
-  saltAdd: 35,
-  fragMul: 241,
-  fragAdd: 122,
-  bootPrefix: "OFs9AwZvw:",
+  buildId: "177",
+  saltMul: 20,
+  saltAdd: 73,
+  fragMul: 10,
+  fragAdd: 195,
+  bootPrefix: "I5AgJjIcVH:",
   bootJoin: "/",
-  bootParts: ["lane", "epoch", "host", "group", "buildId"],
-  maskFragments: ["l6wLXtFBb/4=", "AxhuiL0mzuE=", "lhrBc5MPXWI=", "26xOf/HD8sY="],
+  bootParts: ["group", "lane", "host", "buildId", "epoch"],
+  maskFragments: ["yWOoNgubFtM=", "KSFXIy3z700=", "wnO0Sm9WX3A=", "aFA1PCbg7Dg="],
 };
 
 export const ALLMANGA_BUILD_ID = ALLMANGA_CRYPTO_PROFILE.buildId;
@@ -91,11 +104,12 @@ export const ALLMANGA_BUILD_ID = ALLMANGA_CRYPTO_PROFILE.buildId;
  * sha256 of the episode persisted-query document, which rotates with the app
  * build. It is a true persisted query: the text is never sent, so a stale hash
  * comes back as `PersistedQueryNotFound` and every resolve returns no streams.
- * Recover it by re-hashing the document in the crypto chunk (`iK`, with its
- * `Mi` / `Kt` / `en()` fragments expanded) — see the AllManga dossier.
+ * Recover it by re-hashing the document in the crypto chunk (the builder's
+ * name rotates with the build — `iK`/`Dj`/`…` — find the template containing
+ * `episode(` and expand its `Oi`/`Kt`/`Zr()` fragments; see the dossier).
  */
 export const ALLMANGA_QUERY_HASH =
-  "1c836a5028e04275c6bc618aa4d1f0ea2290a73bc056ba6a8b93fe72ef42fd04";
+  "670bbf38d0868f446e2346c1e956ca2c40c416e733ca248fd54e04f1c8b99145";
 /** Episode GraphQL lane (`Lf` → `k7`). */
 export const ALLMANGA_CONTENT_LANE_EPISODE = "k7";
 export const ALLMANGA_KEY_GROUP = "mkissa";
@@ -126,8 +140,8 @@ export type AllMangaCryptoMaterial = {
 };
 
 /**
- * Last-known-good material when bootstrap fails (epoch 2958, build 171),
- * captured from a live bootstrap on 2026-09-16. It must be derived under the
+ * Last-known-good material when bootstrap fails (epoch 2960, build 177),
+ * captured from a live bootstrap on 2026-10-13. It must be derived under the
  * same profile as {@link ALLMANGA_CRYPTO_PROFILE}: a key left over from an
  * older build is not a degraded fallback, it is a guaranteed decrypt failure.
  * `allmanga.test.ts` pins that relationship.
@@ -137,8 +151,8 @@ export type AllMangaCryptoMaterial = {
  * that quietly runs on a fallback two epochs old looks exactly like a dead
  * provider.
  */
-export const ALLMANGA_KEY_HEX = "29f65d91ec588d32262f1905ae4a7d1cfe3f5ab61e77604ca24912c1772ce2e6";
-export const ALLMANGA_EPOCH = 2958;
+export const ALLMANGA_KEY_HEX = "64642f3d5c51401e26207d3649a6753fb4264069563b547270cb98cb051bd04a";
+export const ALLMANGA_EPOCH = 2960;
 
 export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   keyHex: ALLMANGA_KEY_HEX,
