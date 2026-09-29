@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { cacheMigrations, dataMigrations } from "@kunai/storage";
 
+import { whichLive } from "../../infra/os/which";
 import type { DiagnosticsSupportBundle, DiagnosticsBundleEnvironment } from "./support-bundle";
 
 export const SUPPORT_BUNDLE_FILE_PREFIX = "kunai-support-bundle-";
@@ -73,7 +74,7 @@ export function resolveTerminalName(input?: {
 
 /** Best-effort local mpv version probe. Never throws; safe for CLI export path. */
 export async function probeMpvVersion(): Promise<string | null> {
-  if (!Bun.which("mpv")) return null;
+  if (!whichLive("mpv")) return null;
   try {
     const proc = Bun.spawn(["mpv", "--version"], {
       stdout: "pipe",

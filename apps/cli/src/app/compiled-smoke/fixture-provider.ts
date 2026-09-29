@@ -1,3 +1,9 @@
+import type { SearchResult } from "@/domain/types";
+import type {
+  SearchDeps,
+  SearchService,
+  SearchServiceDefinition,
+} from "@/services/search/SearchService";
 import {
   createProviderCachePolicy,
   createResolveTrace,
@@ -92,33 +98,55 @@ function resolvedResult(providerId: "videasy" | "allanime", url: string, titleId
   };
 }
 
+const SMOKE_ORIGIN = "https://smoke.kunai.test";
+
+/**
+ * Test-only seam: repoint fixture stream URLs at a harness-provided origin
+ * (the agent-verification real-mpv tier serves a generated mp4 on 127.0.0.1).
+ * Read at resolve time, not module load, so the harness may set it per run.
+ * No-op when unset — production never sets it, and this file only loads under
+ * `KUNAI_COMPILED_SMOKE=1` in the first place.
+ */
+function remapSmokeOrigin(url: string): string {
+  const base = process.env.KUNAI_SMOKE_MEDIA_BASE?.trim().replace(/\/+$/, "");
+  if (!base) return url;
+  if (!base.startsWith("http://") && !base.startsWith("https://")) {
+    throw new Error(`KUNAI_SMOKE_MEDIA_BASE must be an http(s) URL (got ${JSON.stringify(base)})`);
+  }
+  return url.replace(SMOKE_ORIGIN, base);
+}
+
 function pickUrl(input: {
   title: { id: string };
   episode?: { season?: number; episode?: number; absoluteEpisode?: number };
 }): string {
   const id = input.title.id;
-  if (id === COMPILED_SMOKE_FIXTURES.movie.titleId) return COMPILED_SMOKE_FIXTURES.movie.streamUrl;
+  if (id === COMPILED_SMOKE_FIXTURES.movie.titleId)
+    return remapSmokeOrigin(COMPILED_SMOKE_FIXTURES.movie.streamUrl);
   if (id === COMPILED_SMOKE_FIXTURES.series.titleId)
-    return COMPILED_SMOKE_FIXTURES.series.streamUrl;
-  if (id === COMPILED_SMOKE_FIXTURES.anime.titleId) return COMPILED_SMOKE_FIXTURES.anime.streamUrl;
+    return remapSmokeOrigin(COMPILED_SMOKE_FIXTURES.series.streamUrl);
+  if (id === COMPILED_SMOKE_FIXTURES.anime.titleId)
+    return remapSmokeOrigin(COMPILED_SMOKE_FIXTURES.anime.streamUrl);
   if (id === COMPILED_SMOKE_FIXTURES.queueManual.claimedTitleId) {
-    return COMPILED_SMOKE_FIXTURES.queueManual.streamUrl;
+    return remapSmokeOrigin(COMPILED_SMOKE_FIXTURES.queueManual.streamUrl);
   }
   if (id === COMPILED_SMOKE_FIXTURES.autoNext.titleId) {
-    return input.episode?.absoluteEpisode === 2
-      ? COMPILED_SMOKE_FIXTURES.autoNext.secondStreamUrl
-      : COMPILED_SMOKE_FIXTURES.autoNext.firstStreamUrl;
+    return remapSmokeOrigin(
+      input.episode?.absoluteEpisode === 2
+        ? COMPILED_SMOKE_FIXTURES.autoNext.secondStreamUrl
+        : COMPILED_SMOKE_FIXTURES.autoNext.firstStreamUrl,
+    );
   }
   if (id === COMPILED_SMOKE_FIXTURES.failedHandoff.titleId) {
-    return COMPILED_SMOKE_FIXTURES.failedHandoff.streamUrl;
+    return remapSmokeOrigin(COMPILED_SMOKE_FIXTURES.failedHandoff.streamUrl);
   }
   if (id === COMPILED_SMOKE_FIXTURES.shutdownRestore.titleId) {
-    return COMPILED_SMOKE_FIXTURES.shutdownRestore.streamUrl;
+    return remapSmokeOrigin(COMPILED_SMOKE_FIXTURES.shutdownRestore.streamUrl);
   }
   if (id === COMPILED_SMOKE_FIXTURES.returnToShell.titleId) {
-    return COMPILED_SMOKE_FIXTURES.returnToShell.streamUrl;
+    return remapSmokeOrigin(COMPILED_SMOKE_FIXTURES.returnToShell.streamUrl);
   }
-  return `https://smoke.kunai.test/${encodeURIComponent(id)}.mp4`;
+  return remapSmokeOrigin(`${SMOKE_ORIGIN}/${encodeURIComponent(id)}.mp4`);
 }
 
 const videasyManifest = defineProviderManifest({
@@ -257,4 +285,128 @@ export const allanimeSmokeProviderModule: CoreProviderModule = {
 export const providerModules: readonly CoreProviderModule[] = [
   videasySmokeProviderModule,
   allanimeSmokeProviderModule,
+];
+
+// ---------------------------------------------------------------------------
+// Fixture search services
+//
+// Provider modules alone do not cover the typed-search path: the session's
+// catalog queries go through `searchRegistry` (TMDB/AniList), a separate seam
+// from `providerRegistry`. These definitions register under the SAME ids the
+// session looks up ("tmdb" as the default, "anilist" for anime-lane routing)
+// and answer from COMPILED_SMOKE_FIXTURES, so `type query → Enter` runs the
+// real search pipeline with deterministic results and no network.
+// ---------------------------------------------------------------------------
+
+function fixtureResult(input: {
+  id: string;
+  type: "movie" | "series";
+  title: string;
+  overview: string;
+  availableAudioModes?: readonly ("sub" | "dub")[];
+}): SearchResult {
+  return {
+    id: input.id,
+    type: input.type,
+    title: input.title,
+    year: "2026",
+    overview: input.overview,
+    posterPath: null,
+    metadataSource: "Smoke",
+    ...(input.availableAudioModes ? { availableAudioModes: input.availableAudioModes } : {}),
+  };
+}
+
+function tmdbLaneResults(query: string): SearchResult[] {
+  const q = query.toLowerCase();
+  const out: SearchResult[] = [];
+  if (COMPILED_SMOKE_FIXTURES.movie.title.toLowerCase().includes(q) || q.includes("movie")) {
+    out.push(
+      fixtureResult({
+        id: COMPILED_SMOKE_FIXTURES.movie.titleId,
+        type: "movie",
+        title: COMPILED_SMOKE_FIXTURES.movie.title,
+        overview: "Compiled smoke movie",
+      }),
+    );
+  }
+  if (COMPILED_SMOKE_FIXTURES.series.title.toLowerCase().includes(q) || q.includes("series")) {
+    out.push(
+      fixtureResult({
+        id: COMPILED_SMOKE_FIXTURES.series.titleId,
+        type: "series",
+        title: COMPILED_SMOKE_FIXTURES.series.title,
+        overview: "Compiled smoke series",
+      }),
+    );
+  }
+  if (
+    COMPILED_SMOKE_FIXTURES.returnToShell.title.toLowerCase().includes(q) ||
+    q.includes("shell")
+  ) {
+    out.push(
+      fixtureResult({
+        id: COMPILED_SMOKE_FIXTURES.returnToShell.titleId,
+        type: "movie",
+        title: COMPILED_SMOKE_FIXTURES.returnToShell.title,
+        overview: "Compiled smoke shell return",
+      }),
+    );
+  }
+  return out;
+}
+
+function anilistLaneResults(query: string): SearchResult[] {
+  const q = query.toLowerCase();
+  if (!(COMPILED_SMOKE_FIXTURES.anime.title.toLowerCase().includes(q) || q.includes("anime"))) {
+    return [];
+  }
+  return [
+    fixtureResult({
+      id: COMPILED_SMOKE_FIXTURES.anime.titleId,
+      type: "series",
+      title: COMPILED_SMOKE_FIXTURES.anime.title,
+      overview: "Compiled smoke anime",
+      availableAudioModes: ["sub"],
+    }),
+  ];
+}
+
+function createFixtureSearchService(
+  id: "tmdb" | "anilist",
+  name: string,
+  compatibleProviders: readonly string[],
+  resultsFor: (query: string) => SearchResult[],
+): SearchServiceDefinition {
+  return {
+    id,
+    metadata: { id, name, description: "Compiled-smoke fixture catalog" },
+    compatibleProviders: [...compatibleProviders],
+    factory: (_deps: SearchDeps): SearchService => ({
+      metadata: { id, name, description: "Compiled-smoke fixture catalog" },
+      compatibleProviders: [...compatibleProviders],
+      async search(query) {
+        return resultsFor(query);
+      },
+      async getTitleDetails() {
+        // Fixture rows carry full details — same contract as TMDBSearchService.
+        return null;
+      },
+    }),
+  };
+}
+
+/**
+ * Search-service definitions covering both lanes. Registered under the real
+ * service ids so `getDefault()` and `getForProvider(providerId)` resolve the
+ * same way production does.
+ */
+export const searchServiceDefinitions: readonly SearchServiceDefinition[] = [
+  createFixtureSearchService("tmdb", "Smoke TMDB", ["videasy"], tmdbLaneResults),
+  createFixtureSearchService(
+    "anilist",
+    "Smoke AniList",
+    ["anidb", "allanime", "allmanga", "miruro", "hianime"],
+    anilistLaneResults,
+  ),
 ];

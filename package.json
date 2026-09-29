@@ -66,6 +66,8 @@
     "lint": "turbo run lint",
     "lint:anti-slop": "oxlint --config .oxlintrc.anti-slop.json .",
     "lint:anti-slop:changed": "bun run scripts/anti-slop-changed.ts",
+    "lint:anti-slop:baseline": "bun run scripts/anti-slop-baseline.ts",
+    "lint:anti-slop:baseline:update": "bun run scripts/anti-slop-baseline.ts --update",
     "fmt": "turbo run fmt",
     "fmt:check": "turbo run fmt:check",
     "test": "turbo run test",
@@ -138,6 +140,7 @@
     "prototype:layout-fixtures": "bun run apps/cli/scripts/export-list-row-layout-fixtures.ts",
     "test:unit": "turbo run test:unit",
     "test:integration": "turbo run test:integration",
+    "test:agent": "turbo run test:agent",
     "build:npm-platform": "bun run --cwd apps/cli build:npm-platform",
     "release:publish": "bun run scripts/publish-npm-release.ts",
     "release:publish:check": "bun run scripts/publish-npm-release.ts"

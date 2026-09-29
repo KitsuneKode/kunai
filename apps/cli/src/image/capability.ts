@@ -1,3 +1,4 @@
+import { whichLive } from "../infra/os/which";
 import { debugImage } from "./debug";
 import { getProbedGraphicsSupport } from "./probe";
 import type { ImageCapability, ImageProtocol, ImageRendererId, TerminalId } from "./types";
@@ -125,7 +126,7 @@ function normalizeProtocol(value: string | undefined): ProtocolOverride | "inval
 
 const runtime = {
   isStdoutTty: (): boolean => Boolean(process.stdout.isTTY),
-  which: (command: string): string | null => Bun.which(command),
+  which: (command: string): string | null => whichLive(command),
 };
 
 const capabilityMemo = new Map<string, ImageCapability>();

@@ -1,5 +1,7 @@
 import { dirname } from "node:path";
 
+import { whichLive } from "./which";
+
 export type ExternalOpenTarget =
   | { readonly kind: "url"; readonly url: string }
   | { readonly kind: "path"; readonly path: string };
@@ -67,7 +69,7 @@ export function isExternalOpenDisabled(env: NodeJS.ProcessEnv = process.env): bo
 
 export const defaultExternalOpenRuntime: ExternalOpenRuntime = {
   platform: process.platform,
-  which: (command) => Bun.which(command),
+  which: (command) => whichLive(command),
   spawn: (command, options) =>
     Bun.spawn(command, {
       stdout: "ignore",

@@ -4,6 +4,7 @@ import { isHlsPlaylistUrl, resolveHlsSegmentUrl } from "@kunai/core";
 import type { Server } from "bun";
 
 import { curlSupportsHttp2 } from "../os/curl-features";
+import { whichLive } from "../os/which";
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
 
 /**
@@ -393,7 +394,7 @@ export function startHlsRelay(
   streamHeaders: Readonly<Record<string, string>>,
   options: StartHlsRelayOptions = {},
 ): HlsRelayHandle {
-  if (!Bun.which("curl")) {
+  if (!whichLive("curl")) {
     throw new Error("curl is required for HLS relay (CDN blocks non-curl TLS fingerprints)");
   }
 

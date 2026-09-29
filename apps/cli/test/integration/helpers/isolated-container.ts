@@ -44,8 +44,8 @@ export function createIsolatedCliProfile(label: string): IsolatedCliProfile {
 }
 
 export function applyIsolatedCliProfile(profile: IsolatedCliProfile): void {
-  // Must run before FileStorage is first imported: that module bakes PATHS from
-  // homedir()/env at load time.
+  // Must run before the container is created: storage paths resolve from env
+  // at container construction.
   Object.assign(process.env, profile.env);
 }
 

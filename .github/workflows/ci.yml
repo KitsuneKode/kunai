@@ -171,6 +171,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bun run lint:anti-slop:changed
 
+      - name: Anti-slop count baseline
+        run: bun run lint:anti-slop:baseline
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -214,6 +217,26 @@ jobs:
       - name: Test (full on main)
         if: github.event_name == 'push'
         run: bunx turbo run test --summarize
+
+      - name: Test agent verification loop
+        # L2 in-process wiring checks — real AppRoot + real SessionController +
+        # real container, no tmux/mpv needed (the real-mpv tier self-gates).
+        # ~3s. Deliberately not folded into `test`: it owns its own timeout
+        # semantics and should stay visibly separate in job output.
+        timeout-minutes: 5
+        run: bun run test:agent
+
+      - name: Agent verification with real mpv
+        # The L3 tier that proves playback end-to-end: real main.ts under tmux,
+        # real mpv decoding generated media over loopback, asserted by two
+        # witnesses (mpv IPC time-pos advancing + the committed history row).
+        # Push-only: the apt install costs a couple of minutes, too heavy for
+        # every PR — the L2 suite above covers PRs.
+        if: github.event_name == 'push'
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq mpv ffmpeg tmux
+          KUNAI_REAL_MPV=1 bun run test:agent
 
   analytics-postgres:
     name: Analytics Postgres suites

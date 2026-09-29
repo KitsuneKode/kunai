@@ -789,9 +789,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
   });
 
-  const { loadCompiledSmokeProviderOverride } =
+  const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
     await import("./container/compiled-smoke-provider-override");
-  const providerModulesOverride = await loadCompiledSmokeProviderOverride();
+  const [providerModulesOverride, searchServiceDefinitions] = await Promise.all([
+    loadCompiledSmokeProviderOverride(),
+    loadCompiledSmokeSearchDefinitions(),
+  ]);
 
   // Bootstrap the DI container
   const container = await createContainer({
@@ -803,6 +806,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     capabilitySnapshot,
     appVersion: KUNAI_VERSION,
     providerModulesOverride,
+    searchServiceDefinitions,
   });
   globalContainer = container;
   const { logger, config, stateManager } = container;
