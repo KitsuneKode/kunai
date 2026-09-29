@@ -6,7 +6,9 @@
 version: 2
 
 secret:
-  ignored-paths:
+  # ggshield's key is `ignored_paths` (snake_case) — the previous `ignored-paths`
+  # spelling was silently ignored, so the Postgres exception never applied.
+  ignored_paths:
     # The throwaway Postgres for `bun run --cwd apps/analytics-ingest test:pg`.
     # `kunai:kunai` guards a container that binds loopback only, stores its
     # data in tmpfs, and is destroyed when the run ends — it protects nothing

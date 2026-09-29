@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
-import { initLogger } from "@/logger";
+import { dbg, initLogger } from "@/logger";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
@@ -73,9 +73,14 @@ import { ResolveTraceSink } from "../services/diagnostics/ResolveTraceSink";
 import type { ConfigService } from "../services/persistence/ConfigService";
 import { ConfigServiceImpl } from "../services/persistence/ConfigServiceImpl";
 import { ConfigStoreImpl } from "../services/persistence/ConfigStoreImpl";
+import { createCredentialVault } from "../services/persistence/credential-vault-backends";
+import {
+  migrateSyncTokensToVault,
+  vaultSyncTokenFileIo,
+} from "../services/persistence/credential-vault-io";
 import { SqliteCacheStoreImpl } from "../services/persistence/SqliteCacheStoreImpl";
 import { StorageMaintenanceService } from "../services/persistence/StorageMaintenanceService";
-import { SyncTokenStore } from "../services/persistence/SyncTokenStore";
+import { realSyncTokenFileIo, SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
 import { MediaTrackService } from "../services/playback/MediaTrackService";
 import { ProviderEndpointHealthService } from "../services/playback/ProviderEndpointHealthService";
@@ -381,7 +386,11 @@ export async function bootstrapPersistence(
   const queueService = new QueueService(queueRepository, sessionId);
   const statsService = new StatsService(dataDb);
   const statsFormatter = new StatsFormatter();
-  const config = await ConfigServiceImpl.load(configStore);
+  const credentialVault = await createCredentialVault({
+    paths,
+    onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
+  });
+  const config = await ConfigServiceImpl.load(configStore, credentialVault);
   if (config.videasyAppIdMigratedOnLoad) {
     const { invalidateVideasyProviderCaches } =
       await import("@/app/playback/videasy-cache-invalidation");
@@ -406,7 +415,13 @@ export async function bootstrapPersistence(
     tmdb: tmdbAuth.availability,
   };
 
-  const syncTokenStore = new SyncTokenStore(paths);
+  await migrateSyncTokensToVault({ paths, vault: credentialVault });
+  const syncTokenStore = new SyncTokenStore(
+    paths,
+    credentialVault.backend === "file"
+      ? realSyncTokenFileIo
+      : vaultSyncTokenFileIo(credentialVault),
+  );
   const anilistAdapter = new AniListAdapter(syncTokenStore, undefined, anilistAuth);
   const tmdbAdapter = new TmdbAdapter(syncTokenStore, tmdbAuth.apiKey ?? "");
   await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
