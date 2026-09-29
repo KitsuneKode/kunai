@@ -17,8 +17,9 @@ import {
   resolveDirectStreamSource,
   type DirectStreamInput,
   type DirectStreamPayload,
+  type DirectSubtitleInput,
 } from "../shared/direct-stream-source";
-import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
+import { expandHlsMasterInventory, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -167,6 +168,7 @@ export function resolveVidlinkDirect(
       if (!stream) return null;
 
       const streams: DirectStreamInput[] = [];
+      const manifestSubtitles: DirectSubtitleInput[] = [];
       if (stream.type === "file" && stream.qualities) {
         for (const [quality, file] of Object.entries(stream.qualities)) {
           if (file?.url) streams.push({ url: file.url, qualityHint: quality });
@@ -181,7 +183,7 @@ export function resolveVidlinkDirect(
           ...stream.headers,
         };
         if (looksLikeHlsMasterUrl(stream.playlist) || /\.m3u8(?:[?#]|$)/i.test(stream.playlist)) {
-          const variants = await expandHlsMasterPlaylist({
+          const inventory = await expandHlsMasterInventory({
             fetch: (url: string, init?: RequestInit) =>
               providerFetch(ctx, url, {
                 ...init,
@@ -195,8 +197,22 @@ export function resolveVidlinkDirect(
             headers: playlistHeaders,
             signal: ctx.signal,
           });
-          for (const variant of variants) {
-            streams.push({ url: variant.url, qualityHint: variant.qualityLabel });
+          for (const variant of inventory.variants) {
+            streams.push({
+              url: variant.url,
+              qualityHint: variant.qualityLabel,
+              audioLanguages:
+                inventory.audioLanguages.length > 0 ? inventory.audioLanguages : undefined,
+            });
+          }
+          // Rendition playlists the provider didn't list in `captions` still
+          // belong in subtitle inventory — the Tracks panel reads it.
+          for (const track of inventory.subtitleTracks) {
+            manifestSubtitles.push({
+              url: track.url,
+              language: track.language,
+              label: track.label,
+            });
           }
         } else {
           // A DASH manifest is one adaptive URL: mpv switches renditions inside
@@ -212,11 +228,16 @@ export function resolveVidlinkDirect(
 
       const payload: DirectStreamPayload = {
         streams,
-        subtitles: (stream.captions ?? []).map((caption) => ({
-          url: caption.url,
-          language: caption.language,
-          type: caption.type,
-        })),
+        // Provider captions first, then master-manifest rendition subs —
+        // normalizeSubtitles dedupes by URL so overlapping entries collapse.
+        subtitles: [
+          ...(stream.captions ?? []).map((caption) => ({
+            url: caption.url,
+            language: caption.language,
+            type: caption.type,
+          })),
+          ...manifestSubtitles,
+        ],
         headers: {
           referer: VIDLINK_REFERER,
           origin: VIDLINK_ORIGIN,
