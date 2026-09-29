@@ -647,19 +647,38 @@ export class DownloadJobsRepository {
       .map(mapRow);
   }
 
+  /**
+   * Terminal failures only.
+   *
+   * 'repairable' is deliberately absent. `markRepairable` sets
+   * progress_percent = 100 and stamps completed_at: the media downloaded and is
+   * playable, only the sidecars failed. It is a completed download carrying
+   * repair work, not a failure, so it belongs in {@link listCompleted} and is
+   * swept through {@link listRepairable}. Listing it in both places is what made
+   * the download manager render one job as two rows sharing an id, so
+   * index-based selection acted on a phantom.
+   */
   listFailed(limit = 100): readonly DownloadJobRecord[] {
     return this.db
       .query<DownloadJobRow, [number]>(
         `
-          -- KNOWN ISSUE: 'repairable' is also returned by listCompleted, so a
-          -- repairable job appears in both result sets and the download manager
-          -- renders it as two rows sharing an id (index-based selection then
-          -- acts on a phantom). It cannot simply be dropped here: the repair
-          -- sweep in DownloadService uses listFailed to find repairable work.
-          -- The fix is a dedicated listRepairable() for the sweep, then removing
-          -- 'repairable' from this clause -- not a one-line edit.
           SELECT * FROM download_jobs
-          WHERE status IN ('failed', 'aborted', 'repairable')
+          WHERE status IN ('failed', 'aborted')
+          ORDER BY updated_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(limit)
+      .map(mapRow);
+  }
+
+  /** Jobs whose media landed but whose sidecars need another pass. */
+  listRepairable(limit = 100): readonly DownloadJobRecord[] {
+    return this.db
+      .query<DownloadJobRow, [number]>(
+        `
+          SELECT * FROM download_jobs
+          WHERE status = 'repairable'
           ORDER BY updated_at DESC
           LIMIT ?
         `,

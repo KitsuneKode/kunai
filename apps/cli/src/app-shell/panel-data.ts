@@ -136,7 +136,13 @@ export type DiagnosticsPanelLineInput = {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   capabilitySnapshot?: CapabilitySnapshot | null;
-  downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  downloadSummary?: {
+    active: number;
+    completed: number;
+    failed?: number;
+    /** Completed downloads whose sidecars still need a pass; not counted in `failed`. */
+    repairable?: number;
+  } | null;
   releaseSummary?: { titleCount: number; episodeCount: number } | null;
   releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   presenceSnapshot?: PresenceSnapshot | null;
