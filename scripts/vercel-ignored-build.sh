@@ -48,7 +48,15 @@ if [ -z "$previous" ]; then
   exit 1
 fi
 if ! git rev-parse --verify --quiet "$previous^{commit}" >/dev/null; then
-  previous="HEAD^"
+  # Vercel's shallow clone often lacks the previous deployment commit.
+  # HEAD^ is not a substitute — an earlier commit may have touched a
+  # watched path while the final one did not. Deepen and retry; when the
+  # SHA still cannot be resolved, build rather than risk a stale deploy.
+  git fetch --depth=50 origin "$previous" >/dev/null 2>&1 || true
+fi
+if ! git rev-parse --verify --quiet "$previous^{commit}" >/dev/null; then
+  echo "vercel-ignored-build: previous deployment commit unavailable; building"
+  exit 1
 fi
 
 if git diff --quiet "$previous" HEAD -- "$@" 2>/dev/null; then

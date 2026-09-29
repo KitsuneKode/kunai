@@ -427,7 +427,20 @@ export const anidbProviderModule: CoreProviderModule = {
       });
     }
 
-    const baseShow = await resolveAnidbShow(input, context.signal, context);
+    let baseShow: Awaited<ReturnType<typeof resolveAnidbShow>>;
+    try {
+      baseShow = await resolveAnidbShow(input, context.signal, context);
+    } catch (error) {
+      // Same rule as listEpisodes: a browse outage is a retryable transport
+      // failure, not an exhausted search — and a caller cancel is a decision
+      // that keeps propagating rather than a provider failure.
+      if (context.signal?.aborted === true) throw error;
+      return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
+        code: "provider-unavailable",
+        message: `AniDB browse unreachable: ${error instanceof Error ? error.message : String(error)}`,
+        retryable: true,
+      });
+    }
     if (!baseShow) {
       return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
         code: "unsupported-title",
