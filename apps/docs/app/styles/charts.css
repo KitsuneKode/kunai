@@ -166,6 +166,17 @@ table.kunai-chart tr.kunai-chart-row:hover th {
   background-color: color-mix(in oklab, var(--kunai-chart-series) 8%, transparent);
 }
 
+/*
+ * Chart → table sync: the row the chart pointer is on. Stronger than :hover
+ * because it is a *located* row, not one under the local cursor — the
+ * reader's eyes need to find it after scrolling it into view.
+ */
+table.kunai-chart tr.kunai-chart-row[data-hovered="true"] td,
+table.kunai-chart tr.kunai-chart-row[data-hovered="true"] th {
+  color: inherit;
+  background-color: color-mix(in oklab, var(--kunai-chart-series) 16%, transparent);
+}
+
 /* Column widths: labels and values are fixed so the plot keeps the remainder. */
 .kunai-chart-col-label {
   width: 5.5rem;

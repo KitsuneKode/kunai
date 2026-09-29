@@ -17,6 +17,8 @@ import {
 import type { DocsAnalyticsMetrics } from "@/lib/analytics-metrics";
 import type { DocsAnalyticsSeries } from "@/lib/analytics-series";
 import { IconMinus, IconTrendingDown, IconTrendingUp } from "@tabler/icons-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
 
 /**
  * The four figures the page leads with.
@@ -47,7 +49,7 @@ function StatCard({
   readonly label: string;
   readonly value: string;
   readonly badge?: { readonly text: string; readonly direction: TrendDirection };
-  readonly headline: string;
+  readonly headline: ReactNode;
   readonly detail: string;
 }) {
   const TrendIcon = badge ? TREND_ICON[badge.direction] : null;
@@ -148,7 +150,19 @@ export function SectionCards({
       <StatCard
         label="Reporting window"
         value={points.length > 0 ? `${points.length} days` : "—"}
-        headline={series ? `${series.from} → ${series.to}` : "History not published yet"}
+        headline={
+          /*
+            The tile summarizes the day-by-day card lower on the page; an
+            in-page anchor makes it navigate there instead of just describe it.
+          */
+          series ? (
+            <Link href="#day-by-day" className="underline-offset-4 hover:underline">
+              {`${series.from} → ${series.to}`}
+            </Link>
+          ) : (
+            "History not published yet"
+          )
+        }
         detail="Daily rollups, never pruned"
       />
       <StatCard
