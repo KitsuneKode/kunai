@@ -75,18 +75,9 @@ const DEFAULT_MAX_VARIANTS = 12;
 
 /**
  * Fetch a master HLS playlist and expand `#EXT-X-STREAM-INF` rows into ranked
- * variant URLs for the Tracks quality picker. Media playlists / parse failures
- * fall back to a single `auto` row pointing at the original URL.
- */
-export async function expandHlsMasterPlaylist(
-  options: ExpandHlsMasterPlaylistOptions,
-): Promise<readonly HlsLadderVariant[]> {
-  return (await expandHlsMasterInventory(options)).variants;
-}
-
-/**
- * Same fetch + fallback contract as `expandHlsMasterPlaylist`, but also parses
- * `#EXT-X-MEDIA` rendition groups into audio/subtitle track inventory.
+ * variant URLs for the Tracks quality picker, alongside the `#EXT-X-MEDIA`
+ * rendition groups as audio/subtitle track inventory. Media playlists / parse
+ * failures fall back to a single `auto` row pointing at the original URL.
  */
 export async function expandHlsMasterInventory(
   options: ExpandHlsMasterPlaylistOptions,
