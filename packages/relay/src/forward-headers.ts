@@ -10,6 +10,11 @@ const METADATA_HEADER_ALLOWLIST = new Set([
   "user-agent",
   "x-build-id",
   "x-aa-boot",
+  // VidLink answers `deliveryType: "file"` without this — bcdn MP4s flagged
+  // `requiresProxy` that 429 every non-browser client, so a relayed lane
+  // resolved and then could not play. Dropping it made the relay the only
+  // difference between a playable DASH manifest and a dead one.
+  "x-playback-environment",
   "x-obfuscated",
   "x-session-token",
 ]);

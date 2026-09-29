@@ -26,7 +26,7 @@ describe("download-quality-policy", () => {
 
   test("ytDlpFormatSelectorForQuality prefers DASH merge for height caps", () => {
     expect(ytDlpFormatSelectorForQuality("1080p")).toBe(
-      "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b",
+      "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b/ba",
     );
     expect(ytDlpFormatSelectorForQuality("best")).toBeUndefined();
   });

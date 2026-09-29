@@ -34,6 +34,11 @@ describe("youtube metadata failure classification", () => {
       "blocked",
       "your country",
     ],
+    [
+      "ERROR: [youtube] abc: This video requires payment to watch. Available for purchase or rental.",
+      "blocked",
+      "payment or rental",
+    ],
   ])("%s is terminal", (stderr, code, fragment) => {
     const classified = classifyYoutubeMetadataFailure(new Error(stderr));
     expect(classified.terminal).toBe(true);
