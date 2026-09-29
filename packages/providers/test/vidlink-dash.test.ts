@@ -78,8 +78,8 @@ function recordingEndpointHealth(quarantined: readonly string[] = []) {
 }
 
 const HLS_MASTER = `#EXTM3U
-#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",LANGUAGE="en",DEFAULT=YES,URI="audio/en.m3u8"
-#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="日本語",LANGUAGE="ja",URI="audio/ja.m3u8"
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="English",LANGUAGE="en",DEFAULT=YES
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="日本語",LANGUAGE="ja"
 #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",URI="subs/en.m3u8"
 #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Español",LANGUAGE="es",URI="subs/es.m3u8"
 #EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=1280x720,AUDIO="aud",SUBTITLES="subs"
@@ -347,5 +347,34 @@ describe("vidlink enc-dec persistent cache (#205)", () => {
     } as unknown as ProviderRuntimeContext;
     const result = await resolveVidlinkDirect(INPUT, ctx);
     expect(result.status).toBe("resolved");
+  });
+
+  test("a 200 with a null body is no source, not a crash", async () => {
+    // What VidLink actually answers for every title while its backend has
+    // nothing (2026-09-12). Reading `.stream` off it threw `null is not an
+    // object`, so the lane reported an internal error instead of stepping aside.
+    const context = {
+      providerId: "vidlink",
+      now: () => new Date().toISOString(),
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (url: string) =>
+          url.includes("enc-dec.app")
+            ? new Response(JSON.stringify({ result: "ENCRYPTED" }), { status: 200 })
+            : new Response("null", {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+      },
+      // SAFETY: partial ProviderRuntimeContext stub — only providerId/now/fetch are read by resolveVidlinkDirect.
+    } as never;
+
+    const result = await resolveVidlinkDirect(INPUT, context);
+
+    expect(result.status).toBe("exhausted");
+    expect(result.streams).toEqual([]);
+    expect(result.failures.map((failure) => failure.message).join(" ")).not.toContain(
+      "is not an object",
+    );
   });
 });

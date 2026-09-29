@@ -119,6 +119,21 @@ export async function expandHlsMasterInventory(
     if (!isHlsMasterPlaylist(text)) {
       return empty({ kind: "not-master", httpStatus: response.status });
     }
+    // A variant whose audio group points at a separate playlist gets its sound
+    // (or its other languages) from there, and its own playlist is often
+    // video-only. Handing mpv one variant would then play silent video or drop
+    // the dub, so such a master stays whole and mpv picks. Losing the quality
+    // picker is the worst this can cost. A group whose renditions carry no URI
+    // only labels audio already muxed into each variant, so it does not trip
+    // this.
+    if (masterVariantsNeedSeparateAudio(text)) {
+      const renditions = parseHlsMasterRenditions(text, masterUrl);
+      return {
+        variants: [fallback],
+        ...renditions,
+        probe: { kind: "ok", httpStatus: response.status },
+      };
+    }
 
     const variants = parseHlsMasterVariants(text, masterUrl);
     if (variants.length === 0) {
@@ -163,6 +178,31 @@ export function parseHlsMasterAudioRenditions(manifestText: string): HlsAudioRen
     });
   }
   return renditions;
+}
+
+/**
+ * True when a variant's AUDIO group has a rendition with its own `URI`.
+ *
+ * A group whose renditions carry no `URI` only labels audio already muxed into
+ * each variant (RFC 8216 §4.3.4.2.1), so one variant alone keeps its sound. A
+ * single addressed rendition in the group is enough to need the master: it is
+ * either the only audio or a language the muxed track does not have.
+ */
+export function masterVariantsNeedSeparateAudio(manifestText: string): boolean {
+  const lines = manifestText.split(/\r?\n/).map((line) => line.trim());
+  const addressedGroups = new Set<string>();
+  for (const line of lines) {
+    if (!line.startsWith("#EXT-X-MEDIA:")) continue;
+    if (hlsAttribute(line, "TYPE")?.toUpperCase() !== "AUDIO") continue;
+    const groupId = hlsAttribute(line, "GROUP-ID");
+    if (groupId && hlsAttribute(line, "URI")) addressedGroups.add(groupId);
+  }
+  if (addressedGroups.size === 0) return false;
+  return lines.some((line) => {
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) return false;
+    const group = hlsAttribute(line, "AUDIO");
+    return group !== undefined && addressedGroups.has(group);
+  });
 }
 
 /**

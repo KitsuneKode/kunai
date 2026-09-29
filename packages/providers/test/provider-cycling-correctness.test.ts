@@ -76,12 +76,14 @@ function buildContext(
 }
 
 describe("provider cycling correctness", () => {
-  test("miruro fail-fast budget tracks the mirror list instead of a hardcoded 2", async () => {
-    // One pipe URL per base, and the fail-fast threshold equals the mirror
-    // count: adding a mirror raises the budget automatically, or the cycle
-    // aborts with healthy mirrors untried.
+  test("miruro fail-fast budget stays capped at two mirror refusals", async () => {
+    // One pipe URL per base; the fail-fast threshold deliberately does not
+    // track the mirror count. Two different mirror domains returning CF HTML
+    // is already evidence the block follows the client, and each extra mirror
+    // would cost a full request to learn the same thing.
     expect(createMiruroPipeRequestUrls("probe").length).toBe(MIRURO_PIPE_BASE_URLS.length);
-    expect(MIRURO_WAF_FAIL_FAST_THRESHOLD).toBe(MIRURO_PIPE_BASE_URLS.length);
+    expect(MIRURO_WAF_FAIL_FAST_THRESHOLD).toBe(2);
+    expect(MIRURO_WAF_FAIL_FAST_THRESHOLD).toBeLessThan(MIRURO_PIPE_BASE_URLS.length);
   });
 
   test("rivestream consults endpoint health and skips a quarantined mirror", async () => {

@@ -39,11 +39,15 @@ export {
   BUNDLED_ALLMANGA_CRYPTO,
   buildAllMangaAaReq,
   buildAllMangaBootToken,
+  classifyAllMangaBootstrapFailure,
   currentAllMangaEpochCandidates,
   deriveKeyFromPartB,
   deriveMaskKey,
+  getLastAllMangaRotationSignal,
   hashBuildId,
+  resetAllMangaRotationSignalForTest,
   type AllMangaCryptoMaterial,
+  type AllMangaRotationSignal,
 } from "./crypto";
 
 export type AllMangaSearchResult = {
