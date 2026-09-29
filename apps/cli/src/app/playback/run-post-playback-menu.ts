@@ -34,6 +34,7 @@ import {
 } from "@/app/playback/playback-recommendation-actions";
 import type { PlaybackRunState } from "@/app/playback/playback-run-state";
 import {
+  didPlaybackStart,
   resolvePostPlaybackSessionAction,
   type PlaybackSessionPhaseEvent,
   type PlaybackSessionState,
@@ -390,8 +391,12 @@ export async function runPostPlaybackMenu(
       };
       deps.updatePlaybackFeedback({ detail: null, note: null });
     }
-    const playbackStarted =
-      result.endReason === "eof" || result.watchedSeconds >= 30 || resumeSeconds > 10;
+    // One policy answers this, shared with the recovery panel and the history
+    // ledger. The threshold that used to live here (`eof || watchedSeconds >= 30
+    // || resumeSeconds > 10`) required proof of success and read its absence as
+    // proof of failure, so a short watch — or one whose stats never arrived —
+    // was reported to the user as "playback didn't start".
+    const playbackStarted = didPlaybackStart(result);
     const postPlayInput = buildPostPlayInputFromPlaybackContext({
       title,
       currentEpisode,

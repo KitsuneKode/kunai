@@ -7,6 +7,7 @@ import {
   resolveAutoplayAdvanceEpisode,
   transitionPlaybackSessionPhase,
   didPlaybackFailToStart,
+  didPlaybackStart,
   resolvePlaybackResultDecision,
   resolvePostPlaybackSessionAction,
   syncPlaybackSessionState,
@@ -237,6 +238,51 @@ describe("resolvePlaybackResultDecision", () => {
 
     expect(decision.shouldRefreshSource).toBe(true);
     expect(decision.shouldFallbackProvider).toBe(false);
+  });
+
+  test("didPlaybackStart calls a short watch a start, not a failure", () => {
+    // The post-play hero used to answer this with a success threshold —
+    // `eof || watchedSeconds >= 30 || resumeSeconds > 10` — so a real but short
+    // session was reported as "playback didn't start". That is a claim about the
+    // app failing, and it needs evidence rather than the absence of evidence.
+    expect(
+      didPlaybackStart({
+        watchedSeconds: 12,
+        duration: 5000,
+        endReason: "quit",
+        lastTrustedProgressSeconds: 12,
+      }),
+    ).toBe(true);
+
+    // Stats can go missing (no IPC sample) on a session that genuinely played.
+    // Unknown duration is not proof of a failure to start.
+    expect(
+      didPlaybackStart({
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "quit",
+        playerExitedCleanly: true,
+      }),
+    ).toBe(true);
+
+    expect(didPlaybackStart({ watchedSeconds: 1400, duration: 1400, endReason: "eof" })).toBe(true);
+  });
+
+  test("didPlaybackStart still reports the cases with real evidence of no start", () => {
+    // mpv exited non-zero without ever reporting progress.
+    expect(
+      didPlaybackStart({ watchedSeconds: 0, duration: 0, endReason: "error", playerExitCode: 1 }),
+    ).toBe(false);
+
+    // The file loaded — duration is known — and playback never advanced.
+    expect(
+      didPlaybackStart({
+        watchedSeconds: 0,
+        duration: 1400,
+        endReason: "quit",
+        lastTrustedProgressSeconds: 0,
+      }),
+    ).toBe(false);
   });
 
   test("didPlaybackFailToStart detects load failures without treating user quit as failure", () => {

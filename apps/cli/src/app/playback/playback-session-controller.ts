@@ -1,5 +1,6 @@
 import {
   didPlaybackFailToStart,
+  didPlaybackStart,
   explainAutoplayBlockReason,
   explainAutoplayNoNextEpisodeCatalogHint,
   resolveAutoplayAdvanceEpisode,
@@ -58,6 +59,7 @@ export type { AutoAdvanceArgs, AutoAdvanceBlockReason };
 
 export {
   didPlaybackFailToStart,
+  didPlaybackStart,
   explainAutoplayBlockReason,
   explainAutoplayNoNextEpisodeCatalogHint,
   resolveAutoplayAdvanceEpisode,

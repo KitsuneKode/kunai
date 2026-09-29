@@ -11,6 +11,10 @@ import {
   type PlaybackEndPolicy,
   DEFAULT_PLAYBACK_END_POLICY,
 } from "@/domain/playback/playback-policy";
+import {
+  isDidNotStartProgress,
+  trustedProgressFromPlaybackResult,
+} from "@/domain/playback/progress-engage-policy";
 import type {
   EpisodeInfo,
   PlaybackResult,
@@ -49,6 +53,33 @@ export type AutoAdvanceArgs = {
 };
 
 /** True when mpv never meaningfully started (load failure, dead URL, immediate exit). */
+/**
+ * Did this playback session actually start?
+ *
+ * Answered from evidence, never from how much was watched. "Nothing was
+ * recorded for this title" and "playback didn't start" are different claims,
+ * and only the second one tells the user the app failed — so it has to be
+ * proven, by one of:
+ *
+ * - a failure the player reported (`didPlaybackFailToStart`), or
+ * - a file that loaded with a known duration and never advanced
+ *   (`isDidNotStartProgress`, the same policy the history ledger uses).
+ *
+ * Everything else started. A twelve-second watch is a short session; a session
+ * whose IPC stats never arrived is unmeasured. Neither is a failure to start,
+ * and reporting them as one is what teaches a user to distrust every status
+ * the app shows afterwards.
+ */
+export function didPlaybackStart(result: PlaybackResult): boolean {
+  if (didPlaybackFailToStart(result)) return false;
+  // mpv reaching the end of the file is direct evidence that it played it, and
+  // outranks a missing progress sample: `isDidNotStartProgress` reads a known
+  // duration with no trusted progress as "never advanced", which is exactly the
+  // shape an EOF with no IPC samples takes.
+  if (result.endReason === "eof") return true;
+  return !isDidNotStartProgress(trustedProgressFromPlaybackResult(result));
+}
+
 export function didPlaybackFailToStart(result: PlaybackResult): boolean {
   if (result.endReason === "eof" || result.endReason === "quit") {
     return false;
