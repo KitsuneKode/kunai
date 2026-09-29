@@ -36,6 +36,7 @@ import {
 import { upgradeContentTypeFromAniListFormat } from "@/domain/media/anilist-format";
 import type { ContentType } from "@/domain/types";
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { dbg } from "@/logger";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   filterPlayableEpisodes,
@@ -463,7 +464,10 @@ async function fetchTmdbDetail(
         playableSeasons.push({
           season: seasonNum,
           name: readString(seasonMeta.name) || `Season ${seasonNum}`,
-          episodeCount: readEpisodeCount(seasonMeta.episode_count),
+          episodeCount: readEpisodeCount(seasonMeta.episode_count, {
+            site: "tmdb-season",
+            titleId: tmdbId,
+          }),
           year: seasonAirDate.split("-")[0] || undefined,
           posterUrl: posterPath ? tmdbImage(posterPath, "w342") : undefined,
         });
@@ -826,7 +830,10 @@ async function fetchAniListDetail(
   const rawStatus = readString(media.status).toLowerCase();
   const status = mapAniListStatus(rawStatus);
 
-  const episodeCount = readEpisodeCount(media.episodes);
+  const episodeCount = readEpisodeCount(media.episodes, {
+    site: "anilist-media",
+    titleId: String(media.id ?? "unknown"),
+  });
   const runtimeMinutes = typeof media.duration === "number" ? media.duration : undefined;
   const format = readString(media.format) || undefined;
 
@@ -948,9 +955,25 @@ function extractAnilistId(id: string): string | null {
  * is not a positive integer is dropped so the row is omitted, which reads as
  * "unknown" rather than as a wrong fact.
  */
-function readEpisodeCount(value: unknown): number | undefined {
+function readEpisodeCount(
+  value: unknown,
+  provenance?: { readonly site: "tmdb-season" | "anilist-media"; readonly titleId: string },
+): number | undefined {
   const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) return undefined;
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    // A present-but-invalid count is upstream corruption — log the provenance
+    // (site + raw value + title) so the producer can be named. #273 rendered
+    // "episodes 448.2"; this record is how the next one gets traced.
+    if (value !== undefined && value !== null && value !== "") {
+      dbg("title-detail", "episodeCount rejected: non-integer upstream value", {
+        site: provenance?.site,
+        titleId: provenance?.titleId,
+        valueType: typeof value,
+        value: String(value).slice(0, 64),
+      });
+    }
+    return undefined;
+  }
   return parsed;
 }
 

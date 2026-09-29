@@ -22,7 +22,7 @@ The details rail rendered `episodes 448.2` for Ozark. #271 (landed) added
 mis-populated somewhere upstream, and other consumers of `episodeCount` may
 still read the bad value. The issue's own analysis: TMDB season sums can't
 produce a fraction, AniList `media.episodes` is documented integer, and
-`448.2` is *one* field (not two colliding cells — Ozark has 44 episodes,
+`448.2` is _one_ field (not two colliding cells — Ozark has 44 episodes,
 rating 8.2, which is suggestive but unproven).
 
 ## Current state
@@ -40,24 +40,25 @@ function readEpisodeCount(value: unknown): number | undefined { ... }
 
 The guard drops non-integers at ingestion — meaning the corruption happens
 **at or before** those reads: either upstream payload, or the path that
-*produces* `seasonMeta.episode_count`/`media.episodes` (sums, merges, a
+_produces_ `seasonMeta.episode_count`/`media.episodes` (sums, merges, a
 `+ rating` style concat in a field builder). Suspicion ranked by the issue:
 TMDB detail/season aggregation first (Ozark is a TMDB-lane title), then any
 code that mixes episode count with rating/vote fields.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| CLI unit | `bun run --cwd apps/cli test:unit` | all pass |
+| Purpose   | Command                                                                  | Expected                     |
+| --------- | ------------------------------------------------------------------------ | ---------------------------- |
+| CLI unit  | `bun run --cwd apps/cli test:unit`                                       | all pass                     |
 | Debug run | `KUNAI_LOG_LEVEL=debug bun run dev -- "Ozark"` (or `-i 46952 -t series`) | trace written under diag dir |
 
 ## Scope
 
 **In scope:**
+
 - A bounded debug capture of the raw upstream value when the guard rejects —
   one log/diagnostic record, never the whole payload to logs (redaction rules
-  apply; log *field provenance*, not content)
+  apply; log _field provenance_, not content)
 - `TitleDetailService.ts` — likely one line of instrumentation at each guard
   site: when `readEpisodeCount` drops a value, record `typeof`, the raw value,
   and which ingestion point (tmdb vs anilist) — through the diagnostics/log
@@ -65,6 +66,7 @@ code that mixes episode count with rating/vote fields.
 - The actual fix once the source is identified (expected to be small)
 
 **Out of scope:**
+
 - Re-opening the display guard — keep it.
 - Bulk refactors of the detail pipeline.
 
