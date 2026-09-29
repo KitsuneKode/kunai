@@ -35,8 +35,8 @@ function buildResolveInput(): ProviderResolveInput {
 // Binary presence is what the resolve path gates on; metadata is injected
 // so the binary is never invoked. skipIf keeps a missing binary a visible
 // skip instead of a silent pass (#468).
-const HAS_YTDLP = Boolean(Bun.which("yt-dlp"));
-const ytdlpTest = test.skipIf(!HAS_YTDLP);
+const hasYtDlp = () => Boolean(Bun.which("yt-dlp"));
+const ytdlpTest = test.skipIf(!hasYtDlp());
 
 describe("resolveYoutube", () => {
   test("configureYoutubeProvider replaces previous runtime config", () => {
@@ -50,7 +50,7 @@ describe("resolveYoutube", () => {
     expect(getYoutubeProviderConfig().sponsorblockRemove).toBeUndefined();
   });
 
-  test.skipIf(HAS_YTDLP)("returns yt-dlp-missing when yt-dlp is absent", async () => {
+  test.skipIf(hasYtDlp())("returns yt-dlp-missing when yt-dlp is absent", async () => {
     const resolve = youtubeProviderModule.resolve;
     if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
 

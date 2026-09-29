@@ -220,6 +220,7 @@ async function createExclusiveTemp(
       return tmp;
     } catch (error) {
       lastError = error;
+      // SAFETY: Node fs errors carry a string .code; non-errno throws just read undefined.
       if ((error as NodeJS.ErrnoException)?.code === "EEXIST") continue;
       await unlink(tmp).catch(() => {});
       throw error;

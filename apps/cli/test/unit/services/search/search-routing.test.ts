@@ -8,6 +8,7 @@ import { SEARCH_SERVICE_DEFINITIONS } from "@/services/search/definitions/index"
 import { TMDBSearchService } from "@/services/search/definitions/tmdb";
 import { SearchRegistryImpl } from "@/services/search/SearchRegistry";
 import { searchTitles } from "@/services/search/SearchRoutingService";
+import type { ProviderSearchInput } from "@kunai/types";
 
 describe("searchTitles", () => {
   test("uses provider-native anime search for anime providers", async () => {
@@ -45,6 +46,7 @@ describe("searchTitles", () => {
       mode: "anime",
       providerId: "allanime",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       searchRegistry: searchRegistry as any,
       providerRegistry,
       enrichAnimeMetadata: false,
@@ -71,6 +73,7 @@ describe("searchTitles", () => {
 
   test("preserves provider-native metadata v2 fields during anime search normalization", async () => {
     const provider: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "allanime",
         name: "AllAnime",
@@ -112,6 +115,7 @@ describe("searchTitles", () => {
       providerId: "allanime",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
       searchRegistry: createSearchRegistry({}) as any,
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       providerRegistry: { get: () => provider, getAll: () => [provider] } as any,
       enrichAnimeMetadata: false,
     });
@@ -124,6 +128,7 @@ describe("searchTitles", () => {
 
   test("fails over to the next anime provider when the configured provider's search throws", async () => {
     const failing: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "anidb",
         name: "AniDB",
@@ -138,6 +143,7 @@ describe("searchTitles", () => {
       },
     };
     const surviving: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "allanime",
         name: "AllAnime",
@@ -154,6 +160,7 @@ describe("searchTitles", () => {
       mode: "anime",
       providerId: "anidb",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       searchRegistry: createSearchRegistry({}) as any,
       providerRegistry: {
         get: (id: string) => (id === "anidb" ? failing : undefined),
@@ -172,6 +179,7 @@ describe("searchTitles", () => {
 
   test("falls through to the registry catalog when every anime provider fails", async () => {
     const makeFailing = (id: string): any => ({
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id,
         name: id,
@@ -205,6 +213,7 @@ describe("searchTitles", () => {
       mode: "anime",
       providerId: "anidb",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       searchRegistry: searchRegistry as any,
       providerRegistry: {
         get: (id: string) => (id === "anidb" ? failing : undefined),
@@ -225,6 +234,7 @@ describe("searchTitles", () => {
   test("an honest empty provider answer keeps the registry verdict instead of shopping the lane", async () => {
     let survivorCalls = 0;
     const empty: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "anidb",
         name: "AniDB",
@@ -237,6 +247,7 @@ describe("searchTitles", () => {
       search: async () => [],
     };
     const surviving: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "allanime",
         name: "AllAnime",
@@ -256,7 +267,9 @@ describe("searchTitles", () => {
       mode: "anime",
       providerId: "anidb",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       searchRegistry: createSearchRegistry({}) as any,
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       providerRegistry: {
         get: (id: string) => (id === "anidb" ? empty : undefined),
         getAll: () => [empty, surviving],
@@ -272,6 +285,7 @@ describe("searchTitles", () => {
   test("a cancelled provider search propagates instead of failing over", async () => {
     const controller = new AbortController();
     const failing: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "anidb",
         name: "AniDB",
@@ -281,7 +295,7 @@ describe("searchTitles", () => {
         providerLane: "anime",
         domain: "anidb.app",
       } as ProviderMetadata,
-      search: async (_query: string, _opts: unknown, _signal?: AbortSignal) => {
+      search: async (_query: string, _opts: ProviderSearchInput, _signal?: AbortSignal) => {
         controller.abort();
         const error = new Error("aborted");
         error.name = "AbortError";
@@ -289,6 +303,7 @@ describe("searchTitles", () => {
       },
     };
     const surviving: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "allanime",
         name: "AllAnime",
@@ -306,7 +321,9 @@ describe("searchTitles", () => {
         mode: "anime",
         providerId: "anidb",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: createSearchRegistry({}) as any,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerRegistry: {
           get: (id: string) => (id === "anidb" ? failing : undefined),
           getAll: () => [failing, surviving],
@@ -351,6 +368,7 @@ describe("searchTitles", () => {
       mode: "series",
       providerId: "vidking",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       searchRegistry: searchRegistry as any,
       providerRegistry,
     });
@@ -402,6 +420,7 @@ describe("searchTitles", () => {
       mode: "series",
       providerId: "vidking",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       searchRegistry: searchRegistry as any,
       providerRegistry,
     });
@@ -418,6 +437,7 @@ describe("searchTitles", () => {
   test("uses AniList-backed registry search for advanced anime filters before provider-native search", async () => {
     let providerNativeCalls = 0;
     const provider: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "allanime",
         name: "AllAnime",
@@ -525,6 +545,7 @@ describe("searchTitles", () => {
         mode: "series",
         providerId: "vidking",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: searchRegistry as any,
         providerRegistry,
       },
@@ -584,6 +605,7 @@ describe("searchTitles", () => {
         mode: "series",
         providerId: "vidking",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: searchRegistry as any,
         providerRegistry,
       },
@@ -642,6 +664,7 @@ describe("searchTitles", () => {
         mode: "anime",
         providerId: "allanime",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: searchRegistry as any,
         providerRegistry,
       },
@@ -656,6 +679,7 @@ describe("searchTitles", () => {
     let providerNativeCalls = 0;
     let searchedProvider: string | undefined;
     const provider: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "youtube",
         name: "YouTube",
@@ -691,6 +715,7 @@ describe("searchTitles", () => {
         providerId: "youtube",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
         youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: createSearchRegistry({
           defaultResults: [
             {
@@ -706,6 +731,7 @@ describe("searchTitles", () => {
             searchedProvider = providerId;
           },
         }) as any,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerRegistry: { get: () => provider } as any,
       },
     );
@@ -725,6 +751,7 @@ describe("searchTitles", () => {
   test("routes mode youtube filters through the youtube provider from series mode", async () => {
     let providerNativeCalls = 0;
     const provider: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "youtube",
         name: "YouTube",
@@ -759,7 +786,9 @@ describe("searchTitles", () => {
         mode: "series",
         providerId: "vidking",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: createSearchRegistry({}) as any,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerRegistry: {
           get: (id: string) => (id === "youtube" ? provider : undefined),
           getDefaultForMode: (mode: string) => {
@@ -779,6 +808,7 @@ describe("searchTitles", () => {
   test("coerces stale non-youtube provider ids when session mode is youtube", async () => {
     let providerNativeCalls = 0;
     const youtubeProvider: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "youtube",
         name: "YouTube",
@@ -802,6 +832,7 @@ describe("searchTitles", () => {
       },
     };
     const videasyProvider: any = {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       metadata: {
         id: "videasy",
         name: "Videasy",
@@ -818,6 +849,7 @@ describe("searchTitles", () => {
       providerId: "videasy",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
       youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       searchRegistry: createSearchRegistry({
         defaultResults: [
           {
@@ -830,6 +862,7 @@ describe("searchTitles", () => {
           },
         ],
       }) as any,
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       providerRegistry: {
         get: (id: string) => (id === "youtube" ? youtubeProvider : videasyProvider),
         getDefaultForMode: (mode: string) => {
@@ -893,6 +926,7 @@ describe("searchTitles", () => {
         mode: "series",
         providerId: "vidking",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: searchRegistry as any,
         providerRegistry,
       },
@@ -961,6 +995,7 @@ describe("searchTitles", () => {
         providerId: "youtube",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
         youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: searchRegistry as any,
         providerRegistry,
       },
@@ -1033,6 +1068,7 @@ describe("searchTitles", () => {
         providerId: "youtube",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
         youtubeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: searchRegistry as any,
         providerRegistry,
       },
@@ -1086,6 +1122,7 @@ describe("searchTitles", () => {
         mode: "series",
         providerId: "vidking",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: searchRegistry as any,
         providerRegistry,
       },
@@ -1150,6 +1187,7 @@ describe("searchTitles", () => {
 
   test("uses explicitly compatible AniList search for advanced AniDB filters", async () => {
     let defaultCalls = 0;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const provider = {
       metadata: {
         id: "anidb",
@@ -1220,6 +1258,7 @@ describe("searchTitles", () => {
         mode: "anime",
         providerId: "native-without-catalog",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: {
           getForProvider: () => undefined,
           getDefault: () => {
@@ -1227,6 +1266,7 @@ describe("searchTitles", () => {
             throw new Error("default TMDB fallback must not run");
           },
         } as never,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerRegistry: {
           get: () => ({
             metadata: {
@@ -1264,6 +1304,7 @@ describe("searchTitles", () => {
         mode: "anime",
         providerId: "native-with-search",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: {
           getForProvider: () => undefined,
           getDefault: () => {
@@ -1271,6 +1312,7 @@ describe("searchTitles", () => {
             throw new Error("default TMDB fallback must not run");
           },
         } as never,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerRegistry: {
           get: () => ({
             metadata: { id: "native-with-search", name: "Native search", isAnimeProvider: true },
@@ -1321,6 +1363,7 @@ describe("anime search when the catalog service is down", () => {
   }
 
   const siblingWithSearch: any = {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     metadata: {
       id: "anidb",
       name: "AniDB",
@@ -1334,6 +1377,7 @@ describe("anime search when the catalog service is down", () => {
 
   // No `search`, exactly like the real Miruro manifest.
   const laneProvider: any = {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     metadata: {
       id: "miruro",
       name: "Miruro",
@@ -1349,7 +1393,9 @@ describe("anime search when the catalog service is down", () => {
       mode: "anime",
       providerId: "miruro",
       animeLanguageProfile: { audio: "original", subtitle: "en" },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       searchRegistry: downAniListRegistry() as any,
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       providerRegistry: {
         get: (id: string) => (id === "miruro" ? laneProvider : undefined),
         getAll: () => [laneProvider, siblingWithSearch],
@@ -1368,7 +1414,9 @@ describe("anime search when the catalog service is down", () => {
         mode: "anime",
         providerId: "miruro",
         animeLanguageProfile: { audio: "original", subtitle: "en" },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         searchRegistry: downAniListRegistry() as any,
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerRegistry: {
           get: (id: string) => (id === "miruro" ? laneProvider : undefined),
           getAll: () => [laneProvider],

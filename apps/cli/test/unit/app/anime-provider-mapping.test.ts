@@ -29,6 +29,7 @@ const discovery: SearchResult = {
   episodeCount: 12,
 };
 
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const allanimeProviderRegistry = {
   get: () => ({
     metadata: {
@@ -60,6 +61,7 @@ const allanimeProviderRegistry = {
   getCompatible: () => [],
 } as never;
 
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const anidbProviderRegistry = {
   get: () => ({
     metadata: {
@@ -90,6 +92,7 @@ const anidbProviderRegistry = {
   getCompatible: () => [],
 } as never;
 
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const miruroProviderRegistry = {
   get: () => ({
     metadata: {
@@ -238,6 +241,7 @@ test("leaves ordinary provider-native anime search results unchanged", async () 
     mode: "anime",
     providerId: "allanime",
     animeLanguageProfile: { audio: "original", subtitle: "en" },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     providerRegistry: {
       get: () => {
         throw new Error("provider search should not run");
@@ -279,6 +283,7 @@ test("AniDB mapping rejects a non-AniDB native result and retains catalog identi
     mode: "anime",
     providerId: "anidb",
     animeLanguageProfile: { audio: "original", subtitle: "en" },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     providerRegistry: {
       get: () => ({
         metadata: {
@@ -318,6 +323,7 @@ test("an unmapped title does not re-pay the serial provider search on reselectio
     mode: "anime",
     providerId: "anidb",
     animeLanguageProfile: { audio: "original", subtitle: "en" },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     providerRegistry: {
       get: () => ({
         metadata: {
@@ -329,6 +335,7 @@ test("an unmapped title does not re-pay the serial provider search on reselectio
           isAnimeProvider: true,
           catalogIdentity: "provider-native" as const,
         },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         capabilities: {} as never,
         canHandle: () => true,
         resolveStream: async () => null,
@@ -362,6 +369,7 @@ test("an aborted mapping does not pin an unmapped marker", async () => {
     providerId: "anidb",
     animeLanguageProfile: { audio: "original", subtitle: "en" },
     signal: controller.signal,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     providerRegistry: {
       get: () => ({
         metadata: {
@@ -373,6 +381,7 @@ test("an aborted mapping does not pin an unmapped marker", async () => {
           isAnimeProvider: true,
           catalogIdentity: "provider-native" as const,
         },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         capabilities: {} as never,
         canHandle: () => true,
         resolveStream: async () => null,

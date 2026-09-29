@@ -5,8 +5,11 @@ import type {
   ProviderResolveResult,
   ProviderRuntimeContext,
 } from "@kunai/types";
-
-import { httpStatusIsRetryable, httpStatusToResolveErrorCode, ProviderHttpError } from "@kunai/types";
+import {
+  httpStatusIsRetryable,
+  httpStatusToResolveErrorCode,
+  ProviderHttpError,
+} from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
 import {
@@ -403,6 +406,7 @@ async function encryptTmdbId(
       if (!response.ok) {
         throw vidlinkHttpError(response.status, ENC_DEC_ENDPOINT, "enc-dec");
       }
+      // SAFETY: response.json() resolves to the parsed document; result is checked optional.
       const data = (await response.json()) as { result?: string };
       if (!data?.result) {
         throw new Error("enc-dec.app did not return an encrypted id");

@@ -172,6 +172,7 @@ export class PersistentMpvPropertyRouter {
       if (id >= 0) {
         this.deps.getCurrentOptions().onPlaybackEvent?.({
           type: "track-changed",
+          // SAFETY: the trackMatch regex alternation only captures "audio" or "sub".
           trackType: trackMatch[1] as "audio" | "sub",
           id,
         });

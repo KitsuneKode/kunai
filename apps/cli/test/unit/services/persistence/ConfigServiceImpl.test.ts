@@ -346,7 +346,7 @@ describe("ConfigServiceImpl", () => {
       for (const priority of [undefined, ["anidb"], ["anidb", "allanime"]]) {
         const store = new MemoryConfigStore({
           animeProvider: "anidb",
-          ...(priority ? { animeProviderPriority: priority } : {}),
+          ...(priority && { animeProviderPriority: priority }),
         });
         const service = await ConfigServiceImpl.load(store);
 
@@ -451,7 +451,7 @@ describe("ConfigServiceImpl", () => {
       for (const priority of [undefined, ["rivestream", "vidlink"]]) {
         const store = new MemoryConfigStore({
           provider: "videasy",
-          ...(priority ? { providerPriority: priority } : {}),
+          ...(priority && { providerPriority: priority }),
         });
         const service = await ConfigServiceImpl.load(store);
 
@@ -565,6 +565,7 @@ describe("youtubeMetadata normalization", () => {
     // hand-edited config.json can put a number where a string belongs. `.trim()` on
     // that used to throw inside load(), taking down startup.
     const store = new MemoryConfigStore({
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       youtubeMetadata: { poToken: 42, extractorArgs: { nested: true } } as never,
     });
     const service = await ConfigServiceImpl.load(store);

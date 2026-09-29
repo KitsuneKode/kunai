@@ -197,7 +197,7 @@ export async function fetchTmdbJsonWithFallback(
 ): Promise<JsonValue> {
   const normalized = normalizePath(path);
   const now = Date.now();
-  let lastError: unknown = new Error("no TMDB hosts configured");
+  let lastError: Error | null = null;
 
   for (const host of TMDB_HOSTS) {
     if (now < (hostRetryAfter.get(host.base) ?? 0)) continue;
@@ -207,10 +207,10 @@ export async function fetchTmdbJsonWithFallback(
       if (signal?.aborted === true) throw error;
       if (error instanceof TmdbHttpError && error.status < 500) throw error;
       hostRetryAfter.set(host.base, Date.now() + HOST_RETRY_AFTER_MS);
-      lastError = error;
+      lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
-  throw lastError;
+  throw lastError ?? new Error("no TMDB hosts available");
 }
 
 export function isTmdbNetworkError(error: unknown): boolean {

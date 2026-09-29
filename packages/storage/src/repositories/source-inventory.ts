@@ -1,3 +1,5 @@
+import { isJsonObject, isJsonString } from "@kunai/types";
+
 import type { KunaiDatabase } from "../sqlite";
 import { isExpired } from "../ttl";
 
@@ -84,7 +86,7 @@ export class SourceInventoryRepository {
     // so the check is structural: the fields consumers read must be arrays of
     // objects with string ids when they exist at all.
     const parsed: unknown = JSON.parse(row.inventory_json);
-    if (!this.isSourceInventoryShape(parsed)) {
+    if (!isSourceInventoryRecord(parsed)) {
       throw new Error(`invalid source_inventory row for ${row.inventory_key}`);
     }
 
@@ -92,6 +94,7 @@ export class SourceInventoryRepository {
       inventoryKey: row.inventory_key,
       providerId: row.provider_id,
       titleId: row.title_id,
+      // SAFETY: rows are validated by the inventory shape check before this cast runs.
       inventory: parsed as TInventory,
       expiresAt: row.expires_at,
       createdAt: row.created_at,
@@ -103,32 +106,32 @@ export class SourceInventoryRepository {
     this.db.query("DELETE FROM source_inventory WHERE inventory_key = ?").run(inventoryKey);
   }
 
-  /**
-   * The narrow shape downstream actually reads: an object whose `streams`,
-   * `sources`, `variants`, and `subtitles` — when present — are arrays, and
-   * whose stream urls, when present, are strings. Looser than a schema on
-   * purpose: the repository is generic over the stored payload.
-   */
-  private isSourceInventoryShape(value: unknown): boolean {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-    for (const key of ["streams", "sources", "variants", "subtitles"] as const) {
-      const field = (value as Record<string, unknown>)[key];
-      if (field !== undefined && !Array.isArray(field)) return false;
-      if (key === "streams" && Array.isArray(field)) {
-        for (const stream of field) {
-          if (typeof stream !== "object" || stream === null) return false;
-          const url = (stream as { url?: unknown }).url;
-          if (url !== undefined && typeof url !== "string") return false;
-        }
-      }
-    }
-    return true;
-  }
-
   deleteByProvider(providerId: string): number {
     const result = this.db
       .query("DELETE FROM source_inventory WHERE provider_id = ?")
       .run(providerId);
     return result.changes ?? 0;
   }
+}
+
+/**
+ * The narrow structure downstream actually reads: an object whose `streams`,
+ * `sources`, `variants`, and `subtitles` — when present — are arrays, and
+ * whose stream urls, when present, are strings. Looser than a schema on
+ * purpose: the repository is generic over the stored payload.
+ */
+function isSourceInventoryRecord<T>(value: T): boolean {
+  if (!isJsonObject(value)) return false;
+  for (const key of ["streams", "sources", "variants", "subtitles"] as const) {
+    const field = value[key];
+    if (field !== undefined && !Array.isArray(field)) return false;
+    if (key === "streams" && Array.isArray(field)) {
+      for (const stream of field) {
+        if (!isJsonObject(stream)) return false;
+        const url = stream.url;
+        if (url !== undefined && !isJsonString(url)) return false;
+      }
+    }
+  }
+  return true;
 }

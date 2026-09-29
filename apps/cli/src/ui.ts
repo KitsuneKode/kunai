@@ -16,6 +16,7 @@ import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
+import { isJsonString } from "@kunai/types";
 
 import { whichLive } from "./infra/os/which";
 
@@ -81,7 +82,7 @@ type CapabilityNoticeState = {
 // Resolved per call, never at module load: a module-level `getKunaiPaths()`
 // bakes whatever env happened to be set at import time, which is how this
 // file used to write to the developer's real config dir under test isolation.
-function capabilityNoticePaths(): { readonly dir: string; readonly file: string } {
+function capabilityNoticePaths() {
   const dir = getKunaiPaths().configDir;
   return { dir, file: join(dir, "capability-notice.json") };
 }
@@ -99,8 +100,10 @@ async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null
   try {
     const file = Bun.file(capabilityNoticePaths().file);
     if (!(await file.exists())) return null;
+    // SAFETY: the file is JSON we wrote; unknown fields are tolerated and the
+    // two fields we read are validated by the checks below.
     const parsed = (await file.json()) as Partial<CapabilityNoticeState>;
-    if (typeof parsed.version !== "string" || typeof parsed.fingerprint !== "string") {
+    if (!isJsonString(parsed.version) || !isJsonString(parsed.fingerprint)) {
       return null;
     }
     return { version: parsed.version, fingerprint: parsed.fingerprint };
@@ -156,7 +159,7 @@ export async function probeCapabilities(
   const mpv = Boolean(
     discoverMpvInvocation({
       which,
-      ...(options.exists ? { exists: options.exists } : {}),
+      ...(options.exists && { exists: options.exists }),
     }),
   );
   const ffprobe = Boolean(which("ffprobe"));
@@ -167,7 +170,7 @@ export async function probeCapabilities(
   // over-reports one carrying only plain curl.
   const resolvedCurl = resolveAnidbCurl({
     which,
-    ...(options.listPathEntries ? { listPathEntries: options.listPathEntries } : {}),
+    ...(options.listPathEntries && { listPathEntries: options.listPathEntries }),
   });
   const curl: CurlCapability = {
     present: resolvedCurl !== null,

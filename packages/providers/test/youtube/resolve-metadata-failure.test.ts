@@ -18,8 +18,8 @@ const VIDEO_ID = "jNQXAC9IVRw";
 // The resolve path requires the binary even though every test injects its
 // metadata service — presence is the whole contract. skipIf keeps absence a
 // visible skip instead of a vacuous pass (#468).
-const HAS_YTDLP = Boolean(Bun.which("yt-dlp"));
-const ytdlpTest = test.skipIf(!HAS_YTDLP);
+const hasYtDlp = () => Boolean(Bun.which("yt-dlp"));
+const ytdlpTest = test.skipIf(!hasYtDlp());
 
 function buildInput(qualityPreference = "best"): ProviderResolveInput {
   return {

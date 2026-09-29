@@ -618,7 +618,7 @@ export class PersistentMpvSession {
 
     const mpvInvocation = discoverMpvInvocation({
       which: this.runtime.which,
-      ...(this.runtime.exists ? { exists: this.runtime.exists } : {}),
+      ...(this.runtime.exists && { exists: this.runtime.exists }),
     });
     if (!mpvInvocation) {
       this.currentCycleOptions().onPlaybackEvent?.({
@@ -1222,7 +1222,7 @@ export class PersistentMpvSession {
       title: ctx.title,
       episode: ctx.episode,
       providerId: ctx.providerId,
-      ...(position > 0 ? { startSeconds: position } : {}),
+      ...(position > 0 && { startSeconds: position }),
     });
     ctx.onCopied?.(result);
   }

@@ -28,6 +28,8 @@ describe("hls manifest materializer", () => {
 
   test("reports the HTTP status when a manifest request is rejected", async () => {
     const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async () =>
       new Response("forbidden", { status: 403 })) as unknown as typeof fetch;
     const skipped: Array<{ reason: string; detail?: string; status?: number }> = [];
@@ -52,9 +54,11 @@ describe("hls manifest materializer", () => {
     };
     const originalFetch = globalThis.fetch;
     let fetched = false;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     globalThis.fetch = (async () => {
       fetched = true;
       return new Response("#EXTM3U\n", { status: 200 });
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     }) as unknown as typeof fetch;
     try {
       expect(await materializeHlsManifestForPlayback(stream)).toBeNull();
@@ -67,6 +71,7 @@ describe("hls manifest materializer", () => {
   test("materializes a fetched manifest into a local playlist file", async () => {
     const manifest = ["#EXTM3U", "#EXTINF:3,", "/mirror/seg-1.jpg"].join("\n");
     const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     globalThis.fetch = (async (input: string | URL | Request) => {
       const url = String(input);
       const parsedUrl = new URL(url);
@@ -77,7 +82,8 @@ describe("hls manifest materializer", () => {
         });
       }
       return originalFetch(input);
-    }) as typeof fetch;
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    }) as unknown as typeof fetch;
 
     const stream: StreamInfo = {
       url: "https://light.goldweather.net/token/index.m3u8",
@@ -124,6 +130,8 @@ describe("hls manifest materializer", () => {
       },
     });
     const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async () =>
       new Response(oversized, { status: 200 })) as unknown as typeof fetch;
     const skipped: Array<{ reason: string; detail?: string }> = [];
@@ -143,9 +151,12 @@ describe("hls manifest materializer", () => {
   test("a caller abort cancels the manifest fetch", async () => {
     const originalFetch = globalThis.fetch;
     let observedSignal: AbortSignal | undefined;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       observedSignal = init?.signal as AbortSignal | undefined;
       throw new DOMException("The operation was aborted.", "AbortError");
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     }) as unknown as typeof fetch;
     const caller = new AbortController();
     caller.abort();

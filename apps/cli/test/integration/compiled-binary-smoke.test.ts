@@ -20,12 +20,12 @@ import {
 const CLI_ROOT = join(import.meta.dirname, "../..");
 const BIN_DIR = join(CLI_ROOT, "dist/bin");
 const GLIBC_BIN = resolveHostBinary();
-const REQUIRE_BINARY = process.env.KUNAI_BINARY_SMOKE === "1";
+const requireBinary = () => process.env.KUNAI_BINARY_SMOKE === "1";
 // The exact-18 contract only holds where `build:binaries` ran for every target
 // (release.yml). The PR job builds the host binary alone, so it proves the
 // smoke class there and leaves the full-set assertion to the release gate that
 // also runs this file with KUNAI_BINARY_SMOKE_FULL_SET=1.
-const FULL_RELEASE_SET = process.env.KUNAI_BINARY_SMOKE_FULL_SET === "1";
+const fullReleaseSet = () => process.env.KUNAI_BINARY_SMOKE_FULL_SET === "1";
 
 function runBinary(args: readonly string[]) {
   return Bun.spawnSync([GLIBC_BIN, ...args], {
@@ -39,7 +39,7 @@ function runBinary(args: readonly string[]) {
   });
 }
 
-const describeBinary = REQUIRE_BINARY ? describe : describe.skip;
+const describeBinary = requireBinary() ? describe : describe.skip;
 const profiles: Array<ReturnType<typeof createCompiledSmokeProfile>> = [];
 
 afterEach(() => {
@@ -81,7 +81,7 @@ describeBinary("compiled linux binary smoke", () => {
     expect(result.stdout.toString().trim()).toMatch(/^kunai \d+\.\d+\.\d+/);
   });
 
-  test.skipIf(!FULL_RELEASE_SET)(
+  test.skipIf(!fullReleaseSet())(
     "dist/bin satisfies the exact 18-file release asset contract",
     () => {
       assertCompleteReleaseAssetSet(listRegularReleaseFiles(BIN_DIR));

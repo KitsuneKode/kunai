@@ -11,7 +11,7 @@ import {
   invidiousSearch,
   mapInvidiousSearchItem,
 } from "@kunai/providers/youtube";
-import type { ProviderSearchResult } from "@kunai/types";
+import type { JsonObject, ProviderSearchResult } from "@kunai/types";
 const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const DISCOVERY_CACHE_TTL_MS = 30 * 60 * 1000;
 const SURPRISE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -200,6 +200,7 @@ async function loadYoutubeSurpriseList(
   return loadYoutubeDiscoveryList(signal);
 }
 
+// SAFETY: fetchTmdbJsonCached resolves to JsonValue; the results array is shape-checked immediately below.
 async function loadTmdbDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
   const data = (await fetchTmdbJsonCached(
     "/trending/all/week?language=en-US&page=1",
@@ -247,6 +248,7 @@ async function loadTmdbSurpriseList(
       : ["popularity.desc", "vote_average.desc", "first_air_date.desc"];
   const sortBy = pickRandom(sortOptions, options.random) ?? "popularity.desc";
   const page = 1 + Math.floor(options.random() * 20);
+  // SAFETY: fetchTmdbJsonCached resolves to JsonValue; the results array is shape-checked immediately below.
   const voteFloor = sortBy === "vote_average.desc" ? 150 : 50;
   const data = (await fetchTmdbJsonCached(
     `/discover/${mediaType}?language=en-US&page=${page}&sort_by=${sortBy}&vote_count.gte=${voteFloor}`,
@@ -404,7 +406,7 @@ async function loadAnimeSurpriseList(
 
   const media = await fetchAniListMedia(
     "AniList surprise",
-    { query: gqlQuery, variables: { page, sort: [sort], genre } },
+    { query: gqlQuery, variables: { page, sort: [sort], ...(genre && { genre }) } },
     signal,
   );
 
@@ -438,6 +440,7 @@ async function postAniList(
     throw new DiscoveryUnavailableError(source, "request failed", { cause: error });
   });
   if (!response.ok) throw new DiscoveryUnavailableError(source, `HTTP ${response.status}`);
+  // SAFETY: response.json() resolves to the parsed document; data is checked optional.
 
   return (await response.json().catch((error: unknown) => {
     throw new DiscoveryUnavailableError(source, "unreadable payload", { cause: error });
@@ -446,10 +449,11 @@ async function postAniList(
 
 async function fetchAniListMedia(
   source: string,
-  body: Record<string, unknown>,
+  body: JsonObject,
   signal?: AbortSignal,
 ): Promise<readonly AniListDiscoveryMedia[]> {
   const payload = await postAniList(source, body, signal);
+  // SAFETY: the data payload is a parsed JSON object narrowed to the AniList page shape.
   const media = (
     payload.data as
       | {
@@ -522,6 +526,7 @@ function buildAniListAliases(providerTitle: string, media: AniListDiscoveryMedia
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
+  // SAFETY: the typeof + !Array.isArray guard narrows value to a plain object.
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};

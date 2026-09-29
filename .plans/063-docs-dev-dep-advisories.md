@@ -25,7 +25,7 @@ daily.
 The deeper issue is that nothing watches this. There is no dependabot, no
 renovate, no scheduled audit — advisories accumulate until someone happens to
 run the command. Meanwhile CI pins every Action to a SHA and gates release
-provenance, so the *release* supply chain is locked down while the *install*
+provenance, so the _release_ supply chain is locked down while the _install_
 supply chain accepts a package published 30 seconds ago. The outcome this plan
 is buying: advisories get fixed once, then a weekly job surfaces new ones
 before they pile up, and a release-age floor blunts the fresh-publish attack
@@ -33,14 +33,14 @@ window entirely.
 
 ## Current state
 
-| Package | Severity | Fix version | Reachable via |
-|---|---|---|---|
-| fast-uri | high ×4 | ≥3.1.6 | `apps/docs > shadcn > @modelcontextprotocol/sdk > ajv` |
-| browserslist | high ×2 | >4.28.6 | `apps/docs > shadcn` |
-| js-yaml | high ×2 | ≥4.3.2 / ≥3.15.2 | `shadcn > cosmiconfig`; `@changesets/cli > @manypkg/get-packages > read-yaml-file` |
-| hono | moderate ×3 | ≥4.13.5 | `mcp-sdk > @hono/node-server` |
-| qs | moderate ×2 | ≥6.16.0 | `mcp-sdk > express > body-parser` |
-| baseline-browser-mapping | moderate | ≥2.11.0 | `next`; `shadcn > browserslist` |
+| Package                  | Severity    | Fix version      | Reachable via                                                                      |
+| ------------------------ | ----------- | ---------------- | ---------------------------------------------------------------------------------- |
+| fast-uri                 | high ×4     | ≥3.1.6           | `apps/docs > shadcn > @modelcontextprotocol/sdk > ajv`                             |
+| browserslist             | high ×2     | >4.28.6          | `apps/docs > shadcn`                                                               |
+| js-yaml                  | high ×2     | ≥4.3.2 / ≥3.15.2 | `shadcn > cosmiconfig`; `@changesets/cli > @manypkg/get-packages > read-yaml-file` |
+| hono                     | moderate ×3 | ≥4.13.5          | `mcp-sdk > @hono/node-server`                                                      |
+| qs                       | moderate ×2 | ≥6.16.0          | `mcp-sdk > express > body-parser`                                                  |
+| baseline-browser-mapping | moderate    | ≥2.11.0          | `next`; `shadcn > browserslist`                                                    |
 
 No `bunfig.toml` exists at root (verified absent) — `bun install` has no
 `minimumReleaseAge` guard despite the pinned-CI posture. No dependabot or
@@ -50,17 +50,18 @@ a weekly audit job fits that pattern exactly.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Repro | `bun audit` | lists the table above |
-| Fix pass | `bun audit fix` then re-run `bun audit` | count drops; 0 ideal |
-| Remaining fixes | `bun update <pkg>` in the owning workspace, or a targeted `overrides` entry when a parent range pins an old major | audit clean |
-| Docs sanity | `bun run --cwd apps/docs build` | exits 0 |
-| Full gates | `bun run typecheck --force && bun run test --force` | exit 0 |
+| Purpose         | Command                                                                                                           | Expected              |
+| --------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------- |
+| Repro           | `bun audit`                                                                                                       | lists the table above |
+| Fix pass        | `bun audit fix` then re-run `bun audit`                                                                           | count drops; 0 ideal  |
+| Remaining fixes | `bun update <pkg>` in the owning workspace, or a targeted `overrides` entry when a parent range pins an old major | audit clean           |
+| Docs sanity     | `bun run --cwd apps/docs build`                                                                                   | exits 0               |
+| Full gates      | `bun run typecheck --force && bun run test --force`                                                               | exit 0                |
 
 ## Scope
 
 **In scope:**
+
 - `bun.lock` (regenerated), `apps/docs/package.json` + root `package.json` if
   overrides/ranges must move
 - New `bunfig.toml` with `[install] minimumReleaseAge`
@@ -68,8 +69,9 @@ a weekly audit job fits that pattern exactly.
 - `.docs/repo-infrastructure.md` — document the floor and the job
 
 **Out of scope:**
+
 - Making `bun audit` a blocking PR gate — advisory feeds flap; a red gate that
-  fails on a *newly disclosed* vuln in a pinned lockfile trains people to
+  fails on a _newly disclosed_ vuln in a pinned lockfile trains people to
   ignore it. Scheduled + informational is the right shape.
 - Upgrading `next`/`shadcn`/`@changesets/cli` themselves for features — only
   as far as advisory fixes require.
@@ -140,9 +142,9 @@ overrides need an advisory-id comment.
 ## Done criteria
 
 - [ ] `bunfig.toml` exists with `minimumReleaseAge` (or a recorded reason it
-  cannot ship)
+      cannot ship)
 - [ ] `bun audit` is clean, or remaining items are waived with the blocking
-  range named
+      range named
 - [ ] `dep-audit.yml` runs weekly and posts a readable summary
 - [ ] Docs build and full gates pass
 - [ ] `repo-infrastructure.md` documents the floor and the job

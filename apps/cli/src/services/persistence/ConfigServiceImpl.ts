@@ -11,7 +11,7 @@ import {
 } from "@/services/download/StorageBudgetPolicy";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
-import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
+import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@kunai/types";
 
 import type {
   ConfigService,
@@ -722,6 +722,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   async update(partial: Partial<KitsuneConfig>): Promise<void> {
+    // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
       if (key in this.sessionOverrides) delete this.sessionOverrides[key];
     }
@@ -911,7 +912,7 @@ function normalizeStringList(values: readonly string[] | undefined): readonly st
 }
 
 function normalizeOptionalSecret<T>(value: T): string {
-  return typeof value === "string" ? value.trim() : "";
+  return isJsonString(value) ? value.trim() : "";
 }
 
 function normalizeVideasySessionExpiresAt<T, U>(value: T, token?: U): number {

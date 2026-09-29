@@ -144,10 +144,12 @@ const CURL_TIMEOUT_EXIT_CODE = 28;
  * Only one trailing line is ever cut, so a body that naturally ends in
  * `\nNNN` keeps its bytes.
  */
-export function splitCurlHttpTrailer(stdout: string): {
+export type CurlHttpTrailer = {
   readonly body: string;
   readonly httpCode: number | null;
-} {
+};
+
+export function splitCurlHttpTrailer(stdout: string): CurlHttpTrailer {
   const match = /\n(\d{3})$/.exec(stdout);
   if (!match?.[1]) return { body: stdout, httpCode: null };
   const code = Number(match[1]);
@@ -314,7 +316,6 @@ export async function hianimeFetchText(
   // them died to nobody. The layer name and curl exit already ride along on
   // the transport-failure path; this is the same courtesy for the status path.
   // Parity: ani-cli's `hianime_curl` names the URL on both exits.
-  const blocked = isCloudflareChallengeText(body);
   if (httpCode !== null && (httpCode < 200 || httpCode > 299)) {
     if (isCloudflareChallengeText(body)) {
       throw new Error(cloudflareBlockMessage(curl.impersonates));
@@ -627,13 +628,13 @@ export async function resolveHianimeEpisodeStreams({
         status: "resolved",
         links,
         subtitles: payload.subtitles,
-        ...(malId ? { malId } : null),
-        ...(payload.intro ? { intro: payload.intro } : {}),
-        ...(payload.outro ? { outro: payload.outro } : {}),
-        ...(payload.poster ? { poster: payload.poster } : {}),
-        ...(payload.spriteVtt ? { spriteVtt: payload.spriteVtt } : {}),
+        ...(malId && { malId }),
+        ...(payload.intro && { intro: payload.intro }),
+        ...(payload.outro && { outro: payload.outro }),
+        ...(payload.poster && { poster: payload.poster }),
+        ...(payload.spriteVtt && { spriteVtt: payload.spriteVtt }),
         embedReferer,
-        ...(ladderFallback ? { ladderFallback: true as const } : {}),
+        ...(ladderFallback && { ladderFallback: true as const }),
       },
     };
   } catch (error) {

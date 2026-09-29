@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ProviderRuntimeContext } from "@kunai/types";
+import type { LooseJsonValue, ProviderRuntimeContext } from "@kunai/types";
 
 import {
   chooseHianimeSearchMatch,
@@ -31,7 +31,7 @@ import { HIANIME_PROVIDER_ID, hianimeManifest } from "../src/hianime/manifest";
 
 const NOW = "2026-09-13T00:00:00.000Z";
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: LooseJsonValue, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -293,6 +293,7 @@ describe("hianime embed decoding", () => {
     expect(JSON.parse(deobfuscateHianimeEmbedBlob(blob ?? ""))).toMatchObject({
       src: SUB_PAYLOAD.src,
     });
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const { default: _ignored, ...subTrack } = SUB_PAYLOAD.subtitles[0] as Record<string, unknown>;
     expect(decodeHianimeEmbedPage(page)).toMatchObject({
       src: SUB_PAYLOAD.src,
@@ -647,7 +648,10 @@ describe("hianime http failures", () => {
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
     try {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
       globalThis.fetch = fetchImpl as unknown as typeof fetch;
       return await run();
     } finally {
@@ -658,6 +662,7 @@ describe("hianime http failures", () => {
 
   test("maps 404/410 to not-found at the stream layer", async () => {
     const resolution = await withoutCurl(httpStatus(404), () =>
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       resolveHianimeEpisodeStreams({
         context: { now: () => NOW },
         episodeId: "22676",
@@ -734,6 +739,8 @@ describe("hianime http failures", () => {
         throw new Error("network must not be touched on a persistent hit");
       }),
       cache: {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- unknown hop required: cast target is an unresolved generic
         read: async <T>(): Promise<T | null> => [...cached] as unknown as T,
         write: async (): Promise<void> => {
           writes += 1;
@@ -770,9 +777,13 @@ describe("hianime module search and episodes", () => {
       const originalWhich = Bun.which;
       const originalFetch = globalThis.fetch;
       try {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
         globalThis.fetch = (async () => {
           throw new Error("boom");
+          // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
         }) as unknown as typeof fetch;
         return await hianimeProviderModule.search?.({ query: "naruto" }, { now: () => NOW });
       } finally {
@@ -840,16 +851,20 @@ describe("hianime relay routing (#460)", () => {
     // keeps resolveCurlCandidate() empty so fetch is the only fallback.
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     Bun.which = (() => null) as typeof Bun.which;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async () => {
       throw new Error("SENTINEL: direct upstream request happened");
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     }) as unknown as typeof fetch;
     try {
       const thrown = await hianimeFetchText("https://hianime.at/search?keyword=x", {
         context,
       }).then(
         () => null,
-        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+        (error) => (error instanceof Error ? error.message : String(error)),
       );
       expect(thrown).toContain("via relay");
       expect(thrown).not.toContain("SENTINEL");
@@ -873,16 +888,20 @@ describe("hianime relay routing (#460)", () => {
 
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     Bun.which = (() => null) as typeof Bun.which;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async () => {
       throw new Error("SENTINEL: direct upstream request happened");
+      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     }) as unknown as typeof fetch;
     try {
       const thrown = await hianimeFetchText("https://hianime.at/search?keyword=x", {
         context,
       }).then(
         () => null,
-        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+        (error) => (error instanceof Error ? error.message : String(error)),
       );
       expect(thrown).toContain("Cloudflare");
       expect(thrown).not.toContain("SENTINEL");
@@ -906,7 +925,10 @@ describe("hianime relay routing (#460)", () => {
 
     const originalWhich = Bun.which;
     const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     Bun.which = (() => null) as typeof Bun.which;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
     globalThis.fetch = (async () => new Response("direct answer")) as unknown as typeof fetch;
     try {
       const text = await hianimeFetchText("https://hianime.at/search?keyword=x", { context });

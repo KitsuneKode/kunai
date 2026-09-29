@@ -110,7 +110,6 @@ import {
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 import { warmTopAnimeEpisodeCache } from "@/services/providers/warm-episode-cache";
 
-
 export { SEARCH_BROWSE_COMMAND_IDS };
 
 /** Projection-only display title from cached aliases — does not hit providers. */

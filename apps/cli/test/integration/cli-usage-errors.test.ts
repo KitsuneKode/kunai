@@ -14,7 +14,7 @@ import { removeTempDir } from "../support/remove-temp-dir";
 
 const repoRoot = resolve(import.meta.dir, "../../../..");
 
-function runKunai(...argv: string[]): { status: number; stderr: string } {
+function runKunai(...argv: string[]) {
   const root = mkdtempSync(join(tmpdir(), "kunai-usage-err-"));
   try {
     const result = spawnSync("bun", ["apps/cli/src/main.ts", ...argv], {

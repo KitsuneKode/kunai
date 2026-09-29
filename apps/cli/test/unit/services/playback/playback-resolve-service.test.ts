@@ -4,7 +4,9 @@ import { MAX_IN_MEMORY_STREAM_REPLAY_AGE_MS } from "@/domain/playback/in-memory-
 import { bindNetworkObserver } from "@/services/network/network-observation";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { PlaybackResolveService } from "@/services/playback/PlaybackResolveService";
+import type { ProviderHealthEvidence } from "@/services/playback/ProviderHealthEvidence";
 import { StreamHealthService } from "@/services/playback/StreamHealthService";
+import type { CountableTitleProviderFailure } from "@/services/playback/TitleProviderHealthService";
 import type { ProviderEngine, ProviderEngineResolveOutput } from "@kunai/core";
 import type {
   ProviderHealth,
@@ -575,10 +577,12 @@ test("PlaybackResolveService skips the health probe for a fresh inventory entry"
     getEntry: async () => ({
       inventory: {
         status: "resolved",
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerId: "primary" as ProviderId,
         streams: [
           {
             id: "stream:inventory:fresh",
+            // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
             providerId: "primary" as ProviderId,
             url: "https://inventory.example/fresh.m3u8",
             protocol: "hls" as const,
@@ -647,10 +651,12 @@ test("PlaybackResolveService skips the health probe for a fresh inventory entry"
 test("PlaybackResolveService probes a stale inventory entry and a get-only port", async () => {
   const inventoryResult: ProviderResolveResult = {
     status: "resolved",
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     providerId: "primary" as ProviderId,
     streams: [
       {
         id: "stream:inventory:stale",
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         providerId: "primary" as ProviderId,
         url: "https://inventory.example/stale.m3u8",
         protocol: "hls",
@@ -2189,11 +2195,13 @@ test("PlaybackResolveService records no provider health from a cancelled resolve
   const providerHealth = createMemoryProviderHealth();
   const titleFailures: string[] = [];
   const controller = new AbortController();
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   const engine = {
     modules: [],
     get: () => undefined,
     getProviderIds: () => [],
     getManifest: () => undefined,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     resolve: async () => ({}) as ProviderResolveResult,
     resolveWithFallback: async (): Promise<ProviderEngineResolveOutput> => {
       controller.abort();
@@ -2202,8 +2210,10 @@ test("PlaybackResolveService records no provider health from a cancelled resolve
         providerId: null,
         attempts: [
           {
+            // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
             providerId: "primary" as ProviderId,
             failure: {
+              // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
               providerId: "primary" as ProviderId,
               code: "timeout",
               message: "attempt settled while the caller cancelled",
@@ -2211,8 +2221,10 @@ test("PlaybackResolveService records no provider health from a cancelled resolve
               at: new Date().toISOString(),
             },
             result: {
+              // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
               ...createEmptyProviderResult("primary" as ProviderId),
               healthDelta: {
+                // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
                 providerId: "primary" as ProviderId,
                 outcome: "failure" as const,
                 resolveMs: 50,
@@ -2223,14 +2235,22 @@ test("PlaybackResolveService records no provider health from a cancelled resolve
         ],
       };
     },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- unknown hop required: partial stub cannot overlap the full ProviderEngine contract
   } as unknown as ProviderEngine;
   const service = new PlaybackResolveService({
     engine,
     cacheStore: createMemoryCache(null),
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     providerHealth: providerHealth as never,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     titleProviderHealth: {
-      recordFailure: (_titleId: string, _providerId: string, _fallbackId: unknown, kind: unknown) =>
-        titleFailures.push(String(kind)),
+      recordFailure: (
+        _titleId: string,
+        _providerId: string,
+        _fallbackId: string | undefined,
+        kind: CountableTitleProviderFailure | ProviderHealthEvidence,
+      ) => titleFailures.push(String(kind)),
       recordCleanSuccess: (_titleId: string, providerId: string) =>
         titleFailures.push(`clean:${providerId}`),
     } as never,
@@ -2246,6 +2266,7 @@ test("PlaybackResolveService records no provider health from a cancelled resolve
     signal: controller.signal,
   });
 
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   expect(providerHealth.get("primary" as ProviderId)).toBeUndefined();
   expect(titleFailures).toEqual([]);
 });

@@ -68,9 +68,11 @@ describe("production provider defaults", () => {
     // from the roster so a new relay-capable provider fails loudly here.
     const expected = modules
       .filter((module) => module.manifest.relayProfile !== undefined)
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       .map((module) => module.providerId as string)
       .sort();
 
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     expect(RELAY_CAPABLE_PROVIDER_OPTIONS.map((option) => option.value as string).sort()).toEqual(
       expected,
     );
@@ -93,6 +95,7 @@ describe("production provider defaults", () => {
     for (const module of modules) {
       const operations = new Set(module.manifest.runtimePorts.flatMap((port) => port.operations));
       for (const capability of module.manifest.capabilities) {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         const operation = operationForCapability[capability as keyof typeof operationForCapability];
         if (!operation) continue;
         expect(

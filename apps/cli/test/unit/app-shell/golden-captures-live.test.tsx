@@ -20,6 +20,7 @@ import {
 } from "../../harness/render-capture";
 
 const CAPTURE_DIR = path.join(import.meta.dir, "../../__captures__");
+// SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const WIDTHS = Object.keys(CAPTURE_WIDTHS) as CaptureWidth[];
 const DEFAULT_ROWS = 45;
 

@@ -30,7 +30,7 @@ reverse (table row → chart crosshair) has no clean recharts hook and buys
 little; note it as deliberately out.
 
 One subtlety that makes this more than a highlight: under 064's chunked
-reveal, an old day may not be *rendered* yet. Hovering it on the chart should
+reveal, an old day may not be _rendered_ yet. Hovering it on the chart should
 auto-expand chunks until the row exists, then scroll to it — the chart becomes
 a range selector for the table.
 
@@ -45,15 +45,16 @@ a range selector for the table.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Focused tests | `bun run --cwd apps/docs test` | all pass |
-| Docs build | `bun run --cwd apps/docs build` | exits 0 |
-| Full gates | `bun run typecheck --force && bun run test --force` | exit 0 |
+| Purpose       | Command                                             | Expected |
+| ------------- | --------------------------------------------------- | -------- |
+| Focused tests | `bun run --cwd apps/docs test`                      | all pass |
+| Docs build    | `bun run --cwd apps/docs build`                     | exits 0  |
+| Full gates    | `bun run typecheck --force && bun run test --force` | exit 0   |
 
 ## Scope
 
 **In scope:**
+
 - `apps/docs/components/analytics/trend-section.tsx` — a small client wrapper
   (`trend-sync.tsx`) owning `hoveredDay` state, wrapping `ChartInstalls` and
   `TrendTable`
@@ -62,6 +63,7 @@ a range selector for the table.
   chunk auto-expansion
 
 **Out of scope:**
+
 - Table → chart direction (no clean imperative tooltip API in recharts; the
   table is already the accessible path — it doesn't need the chart to read).
 - `ShareOverTime` — same pattern could apply later; keep this to the installs

@@ -198,14 +198,14 @@ test("CatalogDiscoveryService never caches a failed surprise load", async () => 
 function captureRejection(promise: Promise<unknown>): Promise<unknown> {
   return promise.then(
     () => null,
-    (error: unknown) => error,
+    (error) => error,
   );
 }
 
 test("loadAnimeRecommendationsForMedia maps the Media.recommendations edge", async () => {
   let seenBody = "";
   globalThis.fetch = Object.assign(
-    async (_input: unknown, init?: RequestInit) => {
+    async (_input: string | URL | Request, init?: RequestInit) => {
       seenBody = String(init?.body ?? "");
       return new Response(
         JSON.stringify({

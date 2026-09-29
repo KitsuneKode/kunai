@@ -55,15 +55,16 @@ two missed runs should.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Focused tests | `bun run --cwd apps/docs test` | all pass |
-| Docs build | `bun run --cwd apps/docs build` | exits 0 |
-| Full gates | `bun run typecheck --force && bun run test --force` | exit 0 |
+| Purpose       | Command                                             | Expected |
+| ------------- | --------------------------------------------------- | -------- |
+| Focused tests | `bun run --cwd apps/docs test`                      | all pass |
+| Docs build    | `bun run --cwd apps/docs build`                     | exits 0  |
+| Full gates    | `bun run typecheck --force && bun run test --force` | exit 0   |
 
 ## Scope
 
 **In scope:**
+
 - `apps/docs/components/analytics/share-bars.tsx` (version rows → links)
 - `apps/docs/components/analytics/section-cards.tsx` + `trend-section.tsx`
   (anchor + id)
@@ -71,7 +72,8 @@ two missed runs should.
 - Tests: `apps/docs/test/`
 
 **Out of scope:**
-- The share-over-time *legend* — linking legend items is fiddly for little
+
+- The share-over-time _legend_ — linking legend items is fiddly for little
   gain; the bars are the comparison surface. Revisit only if 066.1 lands well.
 - Ingest-side changes — staleness is derived from the existing `updatedAt`.
 - `apps/docs/components/ui/separator.tsx` has zero consumers — dead primitive;

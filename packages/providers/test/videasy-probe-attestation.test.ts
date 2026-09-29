@@ -39,6 +39,7 @@ describe("videasy resolve-gate attestation (#361)", () => {
    * health checks re-probe instead of replaying a false green for 5 minutes.
    */
   test("a reachable probe does not set streamReachabilityVerified", async () => {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     const fixture = JSON.parse(
       readFileSync(join(import.meta.dir, "fixtures/videasy/wings-enc2-neon2.json"), "utf8"),
     ) as { mediaId: number; seed: string; cipher: string };
@@ -51,7 +52,7 @@ describe("videasy resolve-gate attestation (#361)", () => {
       endpointHealth: passthroughEndpointHealth,
       fetch: {
         runtime: "direct-http" as const,
-        fetch: async (input: string | URL, init?: RequestInit) => {
+        fetch: async (input: string | URL) => {
           const url = String(input);
           if (url.includes("/seed?")) {
             return new Response(JSON.stringify({ seed: fixture.seed, ttlMs: 30_000 }));

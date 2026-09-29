@@ -751,11 +751,13 @@ export function classifyEndpointFailureFromCycleFailure(
   }
 }
 
-export function classifyProviderCycleError(error: unknown): {
+export type ProviderCycleErrorClassification = {
   readonly failureClass: ProviderCycleFailureClass;
   readonly message: string;
   readonly retryable: boolean;
-} {
+};
+
+export function classifyProviderCycleError(error: unknown): ProviderCycleErrorClassification {
   const message =
     error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   if (isAbortError(error)) {
@@ -821,7 +823,7 @@ export function classifyProviderCycleError(error: unknown): {
 function providerHttpCycleFailureClass(error: ProviderHttpError): ProviderCycleFailureClass {
   const { code, status } = error;
   if (code === "rate-limited" || status === 429) return "candidate-rate-limited";
-  if (code === "provider-unavailable" || (typeof status === "number" && status >= 500)) {
+  if (code === "provider-unavailable" || (status !== undefined && status >= 500)) {
     return "candidate-server-error";
   }
   if (code === "blocked" || status === 401 || status === 403) return "candidate-blocked";

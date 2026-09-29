@@ -39,11 +39,11 @@ the capability probe must precede the first poster render). Measure first.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| Instrumented cold run | `KUNAI_LOOP_MONITOR=1 <sandboxed-env> bun run dev` | loop-monitor.log written |
-| Warm run | same, second launch in same sandbox | comparative numbers |
-| Verify no regression risk | `bun run --cwd apps/cli typecheck` | 0 (no code change expected) |
+| Purpose                   | Command                                            | Expected                    |
+| ------------------------- | -------------------------------------------------- | --------------------------- |
+| Instrumented cold run     | `KUNAI_LOOP_MONITOR=1 <sandboxed-env> bun run dev` | loop-monitor.log written    |
+| Warm run                  | same, second launch in same sandbox                | comparative numbers         |
+| Verify no regression risk | `bun run --cwd apps/cli typecheck`                 | 0 (no code change expected) |
 
 Sandbox rule: use `storageRootEnv`-style isolation (sandboxed HOME/XDG/
 APPDATA) for any run that creates config/state — never your live profile.
@@ -70,8 +70,8 @@ container bootstrap / analytics init / first Ink render.
 ### Step 3: Write the finding
 
 Record numbers + the attribution table in the issue (or a `.docs/research/`
-note if it becomes a reference doc). The output is *which of the four costs
-dominates* — that answer decides whether plan 006 unblocks, whether a
+note if it becomes a reference doc). The output is _which of the four costs
+dominates_ — that answer decides whether plan 006 unblocks, whether a
 different defer wins, or whether the cost is somewhere nobody suspected
 (e.g. sqlite import per the `.docs/` warning).
 

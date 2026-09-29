@@ -30,6 +30,7 @@ type ParityReference = {
   readonly localCheckout: string;
 };
 
+// SAFETY: the pin file is repo-owned and shape-checked by the reference validation below.
 const PIN_FILE = JSON.parse(readFileSync(join(ROOT, "scripts/parity-references.json"), "utf8")) as {
   readonly references: Record<string, ParityReference>;
 };

@@ -21,7 +21,7 @@ step by hand. These two gaps are what that process costs: nothing errors, the
 Windows user just silently gets a different install than they asked for.
 
 The two fixes are a morning's work. The reason this plan exists is the third
-step: today there is no artifact that *says* what the contract is, so the next
+step: today there is no artifact that _says_ what the contract is, so the next
 env seam or post-install step added to install.sh will drift the same way. The
 pwsh suite already regex-extracts functions from both scripts — a parity
 assertion over the `KUNAI_*` env sets is the same mechanic, and turns
@@ -89,29 +89,31 @@ to be.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
-| ps1 syntax check | `pwsh -NoProfile -Command '$null = [scriptblock]::Create((Get-Content -Raw ./install.ps1))'` | no parse errors |
-| Focused tests | `bun run --cwd apps/cli test:file test/integration/install-scripts-pwsh.test.ts` | all pass (pwsh-gated: skipped on hosts without pwsh — check the skip line, not just failures) |
-| Bash twin | `bun run --cwd apps/cli test:file test/integration/install-scripts.test.ts` | all pass |
-| Full gates | `bun run typecheck --force && bun run test --force` | exit 0 |
+| Purpose          | Command                                                                                      | Expected                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| ps1 syntax check | `pwsh -NoProfile -Command '$null = [scriptblock]::Create((Get-Content -Raw ./install.ps1))'` | no parse errors                                                                               |
+| Focused tests    | `bun run --cwd apps/cli test:file test/integration/install-scripts-pwsh.test.ts`             | all pass (pwsh-gated: skipped on hosts without pwsh — check the skip line, not just failures) |
+| Bash twin        | `bun run --cwd apps/cli test:file test/integration/install-scripts.test.ts`                  | all pass                                                                                      |
+| Full gates       | `bun run typecheck --force && bun run test --force`                                          | exit 0                                                                                        |
 
 ## Scope
 
 **In scope:**
+
 - `install.ps1` (env seam + method gate)
 - `apps/cli/test/integration/install-scripts-pwsh.test.ts` and/or
   `install-scripts.test.ts` (coverage + the parity assertion)
 
 **Out of scope:**
+
 - `install.sh` — already correct on both points; it is the reference.
 - The `Invoke-Expression $command` path at `install.ps1:1618` — reviewed and
   safe today (`$missing` is a closed literal set: `'mpv'`, `'yt-dlp'`,
   `'curl'`). The `default` branch of `Get-PackageInstallCommand` (:1564)
-  interpolates `$Package`, which is a latent footgun for a *future* caller
+  interpolates `$Package`, which is a latent footgun for a _future_ caller
   passing user-derived names — not reachable today, not this plan's job. If a
   later change widens the input set, that is a security review.
-- Semantic (behavioral) parity — this contract asserts seam *names* and
+- Semantic (behavioral) parity — this contract asserts seam _names_ and
   method coverage, not that both scripts do the same thing with them.
 
 ## Steps
@@ -167,9 +169,9 @@ Also assert the method-coverage invariant directly: the script tail invokes
 
 - [ ] `install.ps1` reads `KUNAI_REPO` with the upstream default
 - [ ] `Install-OptionalDeps` is invoked for all four methods (or the split is
-  made, with a comment recording the deliberate binary-scope)
+      made, with a comment recording the deliberate binary-scope)
 - [ ] The `KUNAI_*` seam sets of both scripts are asserted equal modulo a
-  reviewed exception list
+      reviewed exception list
 - [ ] `bun run test --force` exits 0
 
 ## STOP conditions

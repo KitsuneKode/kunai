@@ -678,6 +678,7 @@ export async function fetchAnidbEpisodeCatalog(
   }
   let parsed: { episodes?: readonly Record<string, unknown>[] };
   try {
+    // SAFETY: JSON.parse resolves to the parsed document; the episodes field is shape-checked below.
     parsed = JSON.parse(text) as { episodes?: readonly Record<string, unknown>[] };
   } catch {
     // Unparseable is not the same as absent: the id may be fine and the body
@@ -739,6 +740,7 @@ export async function fetchAnidbLanguages(
   }
   let parsed: { languages?: readonly Record<string, unknown>[] };
   try {
+    // SAFETY: JSON.parse resolves to the parsed document; the languages field is shape-checked below.
     parsed = JSON.parse(text) as { languages?: readonly Record<string, unknown>[] };
   } catch {
     return [];

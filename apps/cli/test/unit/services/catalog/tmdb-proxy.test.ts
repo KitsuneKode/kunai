@@ -107,7 +107,7 @@ describe("fetchTmdbJsonCached", () => {
     // calls straight to TMDB.
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
-      async (input: unknown) => {
+      async (input: string | URL | Request) => {
         const url = String(input);
         urls.push(url);
         if (isTmdbApiUrl(url)) {
@@ -131,7 +131,7 @@ describe("fetchTmdbJsonCached", () => {
   test("falls through to the tmdb.org alias when all earlier hosts fail", async () => {
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
-      async (input: unknown) => {
+      async (input: string | URL | Request) => {
         const url = String(input);
         urls.push(url);
         if (isTmdbAltUrl(url)) {
@@ -160,7 +160,7 @@ describe("fetchTmdbJsonCached", () => {
   test("a 4xx is a definitive answer — no mirror hop, no breaker", async () => {
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
-      async (input: unknown) => {
+      async (input: string | URL | Request) => {
         const url = String(input);
         urls.push(url);
         return new Response("{}", {
@@ -180,7 +180,7 @@ describe("fetchTmdbJsonCached", () => {
   test("a 5xx is an availability failure and advances the chain", async () => {
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
-      async (input: unknown) => {
+      async (input: string | URL | Request) => {
         const url = String(input);
         urls.push(url);
         if (isTmdbAltUrl(url)) {
@@ -202,7 +202,7 @@ describe("fetchTmdbJsonCached", () => {
   test("a caller abort does not trip the proxy breaker or fire a fallback request", async () => {
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
-      async (input: unknown, init?: RequestInit) => {
+      async (input: string | URL | Request, init?: RequestInit) => {
         const url = String(input);
         urls.push(url);
         if (init?.signal?.aborted === true) {
