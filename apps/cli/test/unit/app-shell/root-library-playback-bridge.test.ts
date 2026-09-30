@@ -13,6 +13,7 @@ test("closing Library settles the active playback waiter without leaving a stale
 
   const next = waitForRootLibraryPlaybackLaunch();
   resolveRootLibraryPlaybackLaunch({
+    jobId: "job-2",
     title: {
       id: "title-2",
       type: "movie",
@@ -22,6 +23,7 @@ test("closing Library settles the active playback waiter without leaving a stale
   });
 
   await expect(next).resolves.toEqual({
+    jobId: "job-2",
     title: {
       id: "title-2",
       type: "movie",

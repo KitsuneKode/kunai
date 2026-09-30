@@ -74,17 +74,11 @@ export function findNextReadyEpisode(
         asset.episode !== null &&
         asset.episode !== undefined,
     );
-  if (
-    !next ||
-    next.season === null ||
-    next.season === undefined ||
-    next.episode === null ||
-    next.episode === undefined
-  ) {
+  if (!next || next.episode === null || next.episode === undefined) {
     return null;
   }
   return {
-    season: next.season,
+    season: next.season ?? 1,
     episode: next.episode,
     providerEpisodeIdentity: next.providerEpisodeIdentity,
   };
@@ -100,18 +94,11 @@ export function findReadyJobIdForEpisode(
     readonly providerEpisodeIdentity?: ProviderEpisodeIdentity;
   } = {},
 ): string | undefined {
-  return offlineAssetService
-    .listTitleAssets(titleId)
-    .find(
-      (asset) =>
-        asset.state === "ready" &&
-        (options.mediaKind === "movie" || options.mediaKind === "video"
-          ? asset.mediaKind === options.mediaKind
-          : asset.season === season && asset.episode === episode) &&
-        (options.providerEpisodeIdentity === undefined ||
-          providerEpisodeIdentitiesEqual(
-            asset.providerEpisodeIdentity,
-            options.providerEpisodeIdentity,
-          )),
-    )?.originJobId;
+  return offlineAssetService.findReadyOriginJobId(
+    titleId,
+    season,
+    episode,
+    options.mediaKind,
+    options.providerEpisodeIdentity,
+  );
 }

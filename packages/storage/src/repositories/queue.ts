@@ -269,7 +269,7 @@ export class QueueRepository {
   getUnplayed(sessionId: string): QueueEntry[] {
     return this.db
       .query<QueueEntryRow, [string]>(
-        `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
+        `SELECT * FROM playlist_queue WHERE session_id = ? AND status = 'pending'
          ORDER BY ${QUEUE_ORDER_BY}`,
       )
       .all(sessionId)
@@ -279,7 +279,7 @@ export class QueueRepository {
   peekNext(sessionId: string): QueueEntry | undefined {
     const row = this.db
       .query<QueueEntryRow, [string]>(
-        `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
+        `SELECT * FROM playlist_queue WHERE session_id = ? AND status = 'pending'
          ORDER BY ${QUEUE_ORDER_BY} LIMIT 1`,
       )
       .get(sessionId);
@@ -386,7 +386,7 @@ export class QueueRepository {
   countUnplayed(sessionId: string): number {
     const row = this.db
       .query<{ count: number }, [string]>(
-        "SELECT COUNT(*) AS count FROM playlist_queue WHERE session_id = ? AND played_at IS NULL",
+        "SELECT COUNT(*) AS count FROM playlist_queue WHERE session_id = ? AND status = 'pending'",
       )
       .get(sessionId);
     return row?.count ?? 0;

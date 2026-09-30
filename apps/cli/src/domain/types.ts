@@ -79,6 +79,8 @@ export interface TitleInfo {
   readonly isAnime?: boolean;
   readonly episodeCount?: number;
   readonly launchSource?: "search" | "history" | "continue" | "offline-library";
+  /** The downloaded file this launch asked to play, when two ready copies exist. */
+  readonly offlineJobId?: string;
   /** Exact queue handoff identity when playback was claimed from the Up Next queue. */
   readonly queuePlaybackIntent?: QueuePlaybackIntent;
 }

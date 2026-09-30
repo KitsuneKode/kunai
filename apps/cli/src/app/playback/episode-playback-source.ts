@@ -34,6 +34,22 @@ export async function resolveLocalEpisodePlayback(
 ): Promise<LocalEpisodePlaybackResolution | null> {
   if (options.forceOnline) return null;
 
+  if (title.offlineJobId) {
+    const pinned = await container.offlineLibraryService.getPlayableSource(title.offlineJobId);
+    if (pinned.status !== "ready") return null;
+    if (options.forceLocal) return buildLocalEpisodeResolution(pinned);
+    const decision = createSourceSelectionEngine().decide({
+      entrypoint: options.entrypoint ?? "offline-library",
+      local: { status: "ready", jobId: title.offlineJobId },
+      networkAvailable: container.connectivity.isOnline(),
+      preference: mapContinuePreferenceToSourcePreference(
+        container.config.continueSourcePreference,
+      ),
+    });
+    if (decision.source !== "local") return null;
+    return buildLocalEpisodeResolution(pinned);
+  }
+
   const mode = container.stateManager.getState().mode;
   const mediaKind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
   const jobId = findReadyJobIdForEpisode(

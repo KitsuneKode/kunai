@@ -172,6 +172,23 @@ export class DownloadJobsRepository {
         .get(outputPath, jobId, outputPath, jobId)?.conflict === 1
     );
   }
+
+  /** Another finished job still points at this subtitle or thumbnail. */
+  sharesReadySidecar(jobId: string, path: string): boolean {
+    if (!path) return false;
+    return (
+      this.db
+        .query<{ conflict: number }, [string, string, string]>(
+          `SELECT EXISTS (
+            SELECT 1 FROM download_jobs
+            WHERE id <> ?
+              AND status IN ('completed', 'completed-with-notes', 'repairable')
+              AND (subtitle_path = ? OR thumbnail_path = ?)
+          ) AS conflict`,
+        )
+        .get(jobId, path, path)?.conflict === 1
+    );
+  }
   constructor(
     private readonly db: KunaiDatabase,
     private readonly platform: NodeJS.Platform = process.platform,
@@ -526,8 +543,8 @@ export class DownloadJobsRepository {
       .run(message, retryAt, updatedAt, id);
   }
 
-  pause(id: string, message: string, retryAt: string, updatedAt: string): void {
-    this.db
+  pause(id: string, message: string, retryAt: string, updatedAt: string): boolean {
+    const result = this.db
       .query(
         `
           UPDATE download_jobs
@@ -536,10 +553,11 @@ export class DownloadJobsRepository {
               failure_kind = 'interrupted',
               next_retry_at = ?,
               updated_at = ?
-          WHERE id = ?
+          WHERE id = ? AND status = 'running'
         `,
       )
       .run(message, retryAt, updatedAt, id);
+    return result.changes > 0;
   }
 
   requeue(id: string, updatedAt: string): void {

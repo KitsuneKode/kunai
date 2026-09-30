@@ -67,6 +67,23 @@ describe("resolveLocalEpisodePlayback", () => {
           requestedTitleIds.push(titleId);
           return assetsById(titleId);
         },
+        findReadyOriginJobId: (
+          titleId: string,
+          _season: number,
+          _episode: number,
+          _mediaKind: string | undefined,
+          identity: { readonly providerId: string; readonly value: string } | undefined,
+        ) => {
+          requestedTitleIds.push(titleId);
+          return assetsById(titleId).find((asset) => {
+            if (asset.state !== "ready") return false;
+            if (!identity) return true;
+            return (
+              asset.providerEpisodeIdentity?.providerId === identity.providerId &&
+              asset.providerEpisodeIdentity?.value === identity.value
+            );
+          })?.originJobId;
+        },
       },
       offlineLibraryService: {
         getPlayableSource: async () => {

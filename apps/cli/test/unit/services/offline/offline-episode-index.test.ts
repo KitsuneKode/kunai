@@ -47,9 +47,31 @@ function asset(
 function repositoryStub(
   overrides: Partial<OfflineAssetRepositoryPort> = {},
 ): OfflineAssetRepositoryPort {
+  const listTitleAssets = overrides.listTitleAssets ?? (() => []);
+  const findReadyOriginJobId: OfflineAssetRepositoryPort["findReadyOriginJobId"] = (
+    titleId,
+    season,
+    episode,
+    mediaKind,
+    identity,
+  ) =>
+    listTitleAssets(titleId).find((asset) => {
+      if (asset.state !== "ready") return false;
+      if (
+        identity &&
+        (asset.providerEpisodeIdentity?.providerId !== identity.providerId ||
+          asset.providerEpisodeIdentity?.value !== identity.value)
+      ) {
+        return false;
+      }
+      if (mediaKind === "movie" || mediaKind === "video") return asset.mediaKind === mediaKind;
+      return (
+        asset.episode === episode &&
+        (asset.season === season || (asset.season == null && season === 1))
+      );
+    })?.originJobId;
   return {
     get: () => undefined,
-    listTitleAssets: () => [],
     listByTitleIds: () => [],
     listNextReadyByTitleCursors: () => [],
     markValidation: () => {},
@@ -57,6 +79,8 @@ function repositoryStub(
     deleteOrphaned: () => 0,
     upsertPlayable: () => asset({ titleId: "test-title" }),
     ...overrides,
+    listTitleAssets,
+    findReadyOriginJobId: overrides.findReadyOriginJobId ?? findReadyOriginJobId,
   };
 }
 

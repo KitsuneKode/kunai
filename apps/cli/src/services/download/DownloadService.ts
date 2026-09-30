@@ -1062,21 +1062,36 @@ export class DownloadService {
     if (job.status === "running" || this.activeProcesses.has(jobId)) {
       await this.abort(jobId);
     }
-    await rm(job.tempPath, { force: true }).catch(() => {});
+    await rm(job.tempPath, { force: true }).catch(() => undefined);
     const ownsArtifact =
       ["completed", "completed-with-notes", "repairable"].includes(job.status) &&
       !this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath);
     if (opts.deleteArtifact && ownsArtifact) {
-      await rm(job.outputPath, { force: true }).catch(() => {});
-      if (job.subtitlePath) await rm(job.subtitlePath, { force: true }).catch(() => {});
-      if (job.thumbnailPath) await rm(job.thumbnailPath, { force: true }).catch(() => {});
+      try {
+        await rm(job.outputPath, { force: true });
+      } catch {
+        return;
+      }
+      if (job.subtitlePath && !this.deps.repo.sharesReadySidecar(job.id, job.subtitlePath)) {
+        await rm(job.subtitlePath, { force: true }).catch(() => undefined);
+      }
+      if (job.thumbnailPath && !this.deps.repo.sharesReadySidecar(job.id, job.thumbnailPath)) {
+        await rm(job.thumbnailPath, { force: true }).catch(() => undefined);
+      }
       const derivedThumbnailPath = resolveThumbnailArtifactPath(job.outputPath);
-      if (derivedThumbnailPath !== job.thumbnailPath) {
-        await rm(derivedThumbnailPath, { force: true }).catch(() => {});
+      if (
+        derivedThumbnailPath !== job.thumbnailPath &&
+        !this.deps.repo.sharesReadySidecar(job.id, derivedThumbnailPath)
+      ) {
+        await rm(derivedThumbnailPath, { force: true }).catch(() => undefined);
       }
       const posterPath = resolveOfflinePosterArtifactPath(job);
-      if (posterPath !== job.thumbnailPath && posterPath !== derivedThumbnailPath) {
-        await rm(posterPath, { force: true }).catch(() => {});
+      if (
+        posterPath !== job.thumbnailPath &&
+        posterPath !== derivedThumbnailPath &&
+        !this.deps.repo.sharesReadySidecar(job.id, posterPath)
+      ) {
+        await rm(posterPath, { force: true }).catch(() => undefined);
       }
     }
     // Emit before deleting the row, not after. `offline_assets.origin_job_id` is

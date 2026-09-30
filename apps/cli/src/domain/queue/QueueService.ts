@@ -87,18 +87,6 @@ export class QueueService {
     return this.repo.restoreInFlightToPending(intent.queueEntryId, this.sessionId, failure);
   }
 
-  /**
-   * @deprecated Head-based consumption. Prefer beginPlayback(id) with exact queue identity.
-   * Retained until PlaybackPhase auto-next migrates (S3 Task 4).
-   */
-  advance(): QueueEntry | undefined {
-    const current = this.repo.peekNext(this.sessionId);
-    if (current) {
-      this.repo.markPlayed(current.id);
-    }
-    return this.repo.peekNext(this.sessionId);
-  }
-
   getStatus(): QueueStatus {
     const unplayedCount = this.repo.countUnplayed(this.sessionId);
     const nextItem = this.repo.peekNext(this.sessionId);

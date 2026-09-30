@@ -76,12 +76,14 @@ describe("requestUnifiedOfflinePlayback", () => {
     );
 
     expect(launch).toEqual({
+      jobId: "job-1",
       title: {
         id: "anilist:181053",
         type: "movie",
         name: "Infinity Castle",
         isAnime: true,
         launchSource: "offline-library",
+        offlineJobId: "job-1",
       },
       episode: undefined,
     });
