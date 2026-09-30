@@ -2154,14 +2154,15 @@ function stripSearchDescription(value: string | null | undefined): string {
     (value ?? "")
       .replace(/<br\s*\/?>/gi, " ")
       .replace(/<[^>]*>/g, "")
-      // A lone '<' can only be a truncated tag remnant; real descriptions write
-      // it as &lt;. Drop it before the entity decodes below.
-      .replace(/</g, " ")
-      .replace(/&quot;/g, '"')
-      .replace(/&#0?39;/g, "'")
       // `&amp;` decodes last: decoding it first would let `&amp;quot;` or
       // `&amp;#39;` double-unescape into a quote the author deliberately hid.
+      .replace(/&quot;/g, '"')
+      .replace(/&#0?39;/g, "'")
       .replace(/&amp;/g, "&")
+      // After every decode, a lone '<' can only be a truncated tag remnant;
+      // real descriptions write it as &lt;, which this deliberately never
+      // decodes. Nothing after this line can put a '<' back.
+      .replace(/</g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 240)

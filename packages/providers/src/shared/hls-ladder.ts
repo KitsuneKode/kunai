@@ -354,15 +354,25 @@ export function parseHlsMasterRenditions(
  */
 function parseHlsTagAttributes(input: string): Record<string, string> {
   const attrs: Record<string, string> = {};
-  // Attribute names are hyphen-joined segments, so a run of '-' fails the
-  // segment start immediately instead of backtracking [A-Z0-9-]+ per position.
-  const re = /([A-Z0-9]+(?:-[A-Z0-9]+)*)\s*=\s*("([^"]*)"|[^,]*)/gi;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(input)) !== null) {
-    const key = match[1]?.toUpperCase();
-    if (!key) continue;
-    const value = match[2] ?? "";
-    attrs[key] = value.startsWith('"') ? (match[3] ?? "") : value.trim();
+  // Split on commas outside quotes in a single pass. A regex over the same
+  // shape backtracks per position on hostile input (a long run of '-' fails
+  // the '=' every time), and a hostile playlist is exactly what this parses.
+  let start = 0;
+  let inQuotes = false;
+  const push = (end: number) => {
+    const segment = input.slice(start, end);
+    start = end + 1;
+    const eq = segment.indexOf("=");
+    if (eq < 0) return;
+    const key = segment.slice(0, eq).trim().toUpperCase();
+    if (!/^[A-Z0-9-]+$/.test(key)) return;
+    const raw = segment.slice(eq + 1).trim();
+    const quoted = raw.startsWith('"') ? /^"([^"]*)"/.exec(raw) : null;
+    attrs[key] = raw.startsWith('"') ? (quoted?.[1] ?? "") : raw;
+  };
+  for (let i = 0; i <= input.length; i++) {
+    if (input[i] === '"') inQuotes = !inQuotes;
+    if (i === input.length || (input[i] === "," && !inQuotes)) push(i);
   }
   return attrs;
 }

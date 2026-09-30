@@ -49,20 +49,27 @@ const NEXT_SEARCH_ANCHOR = /<a\s+href="\/series\//i;
 export function parseAnimeggSearchResults(html: string): AnimeggSearchResult[] {
   const results: AnimeggSearchResult[] = [];
   const seen = new Set<string>();
-  // One `[^>]*` run per match; the class check happens on the finished tag.
-  // Two interleaved runs in a single pattern backtrack quadratically on a
-  // hostile page full of near-miss anchors.
-  const anchor = /<a\s+href="\/series\/([^"#?]+)"[^>]*>/gi;
-
-  let match: RegExpExecArray | null;
-  while ((match = anchor.exec(html)) !== null) {
-    if (!/\bclass="mse"/i.test(match[0])) continue;
-    const slug = match[1]?.trim();
-    if (!slug || seen.has(slug)) continue;
+  // indexOf tag scan, not a pattern: interleaved `[^>]*` runs backtrack
+  // quadratically on a page full of near-miss anchors, and the page is
+  // upstream-controlled input.
+  let pos = 0;
+  while ((pos = html.indexOf("<a", pos)) !== -1) {
+    // `<a` needs whitespace before its attributes — `<abbr` is not an anchor.
+    const open = html.charCodeAt(pos + 2);
+    if (open !== 32 && open !== 9 && open !== 10 && open !== 13) {
+      pos += 2;
+      continue;
+    }
+    const end = html.indexOf(">", pos + 2);
+    if (end === -1) break;
+    const tagHtml = html.slice(pos, end + 1);
+    pos = end + 1;
+    const slug = /\bhref="\/series\/([^"#?]+)"/i.exec(tagHtml)?.[1]?.trim();
+    if (!slug || !/\bclass="mse"/i.test(tagHtml) || seen.has(slug)) continue;
     // Bound the record at the next result anchor, not at a fixed width: a hit
     // with no <h2> would otherwise borrow the following hit's title and pair it
     // with this slug.
-    const next = anchor.lastIndex;
+    const next = pos;
     const following = NEXT_SEARCH_ANCHOR.exec(html.slice(next));
     const block = html.slice(next, following ? next + following.index : undefined);
 
@@ -122,20 +129,32 @@ export function parseAnimeggEpisodeNumbers(html: string, slug: string): number[]
 export function parseAnimeggEpisodeTabs(html: string): AnimeggEpisodeTab[] {
   const tabs: AnimeggEpisodeTab[] = [];
   const seen = new Set<string>();
-  // Match each tag once, then read its three attributes separately: three lazy
-  // `[^>]*?` spans in one pattern backtrack quadratically on repeat data-ids.
-  const tag = /<[a-z][^>]*>/gi;
+  // indexOf tag scan, not a pattern — `[^>]` happily eats `<`, so a regex tag
+  // loop rescanning near-miss markup goes quadratic on upstream-controlled
+  // input. Each attribute read is a single bounded run on the finished tag.
   const embedIdRe = /\bdata-id=['"](\d+)['"]/i;
   const mirrorRe = /\bdata-mirror=['"]([^'"]+)['"]/i;
   const versionRe = /\bdata-version=['"]([^'"]+)['"]/i;
 
-  let match: RegExpExecArray | null;
-  while ((match = tag.exec(html)) !== null) {
-    const embedId = embedIdRe.exec(match[0])?.[1] ?? "";
+  let pos = 0;
+  while ((pos = html.indexOf("<", pos)) !== -1) {
+    const open = html.charCodeAt(pos + 1);
+    const isTag = (open >= 65 && open <= 90) || (open >= 97 && open <= 122);
+    if (!isTag) {
+      // A bare '<' in text does not own the next '>' — stepping past it would
+      // swallow a real tag sitting between them.
+      pos += 1;
+      continue;
+    }
+    const end = html.indexOf(">", pos + 1);
+    if (end === -1) break;
+    const tagHtml = html.slice(pos, end + 1);
+    pos = end + 1;
+    const embedId = embedIdRe.exec(tagHtml)?.[1] ?? "";
     if (!embedId || seen.has(embedId)) continue;
-    const version = versionRe.exec(match[0])?.[1]?.trim().toLowerCase();
+    const version = versionRe.exec(tagHtml)?.[1]?.trim().toLowerCase();
     if (version !== "subbed" && version !== "dubbed") continue;
-    const mirror = mirrorRe.exec(match[0])?.[1];
+    const mirror = mirrorRe.exec(tagHtml)?.[1];
     if (!mirror) continue;
     seen.add(embedId);
     tabs.push({ embedId, mirror: clean(mirror) || "Animegg", version });
