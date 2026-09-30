@@ -366,6 +366,9 @@ function LibraryTab({
         // rather than typing into the filter.
         if (input === "/" && !key.ctrl && !key.meta) return;
         if (input.length === 1 && !key.ctrl && !key.meta) {
+          // The Filter row only renders with rows present — capturing letters
+          // into a filter that isn't on screen would swallow them invisibly.
+          if (totalRows === 0) return;
           setFilterQuery((query) => query + input);
           return;
         }
@@ -373,10 +376,10 @@ function LibraryTab({
       }
 
       // List zone — bare-letter actions are live here. `c` opens the cleanup
-      // review only while the banner advertises it; with no candidates it
-      // falls through inert like any unclaimed letter.
+      // review unconditionally: with no candidates the picker shows the same
+      // empty-state explanation `/cleanup-downloads` does, matching the
+      // downloads tab instead of leaving `c` a dead key.
       if (input === "c" || input === "C") {
-        if (!cleanupSummary) return;
         void import("@/app-shell/workflows/download-cleanup-review").then(
           ({ openDownloadCleanupReview }) =>
             openDownloadCleanupReview(container).then(() => refreshEntries()),

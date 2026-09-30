@@ -73,6 +73,15 @@ export type BrowseOverlay =
       filterQuery: string;
       selectedIndex: number;
       busy?: boolean;
+    }
+  | {
+      type: "list-picker";
+      title: string;
+      subtitle: string;
+      options: readonly ShellPickerOption<string>[];
+      filterQuery: string;
+      selectedIndex: number;
+      busy?: boolean;
     };
 
 export function getOverlayPickerPreviewImageUrl(overlay: BrowseOverlay): string | undefined {
@@ -151,7 +160,8 @@ export function OverlayPanel({
   const isPickerOverlay =
     overlay.type === "provider" ||
     overlay.type === "history-picker" ||
-    overlay.type === "episode-picker";
+    overlay.type === "episode-picker" ||
+    overlay.type === "list-picker";
   const isLineOverlay =
     overlay.type === "help" ||
     overlay.type === "about" ||

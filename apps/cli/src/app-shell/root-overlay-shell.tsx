@@ -772,7 +772,8 @@ export function RootOverlayShell({
       overlay.type === "season_picker" ||
       overlay.type === "episode_picker" ||
       overlay.type === "subtitle_picker" ||
-      overlay.type === "recommendation_picker"
+      overlay.type === "recommendation_picker" ||
+      overlay.type === "list_picker"
         ? buildRootGenericPickerOptions(overlay)
         : [],
     [overlay],
@@ -1775,7 +1776,8 @@ export function RootOverlayShell({
         overlay.type === "season_picker" ||
         overlay.type === "episode_picker" ||
         overlay.type === "subtitle_picker" ||
-        overlay.type === "recommendation_picker"
+        overlay.type === "recommendation_picker" ||
+        overlay.type === "list_picker"
       ) {
         const picked = filteredGenericPickerOptions[pickerSelectedIndex]?.value ?? null;
         if (!picked || !overlay.id) return;
@@ -2015,21 +2017,36 @@ export function RootOverlayShell({
                 ),
                 busy: false,
               }
-            : overlay.type === "help" || overlay.type === "about" || overlay.type === "diagnostics"
+            : overlay.type === "list_picker"
               ? {
-                  type: overlay.type,
+                  type: "list-picker",
                   title,
                   subtitle: effectiveSubtitle,
-                  lines,
-                  scrollIndex,
+                  options: filteredGenericPickerOptions,
+                  filterQuery: pickerFilterQuery,
+                  selectedIndex: Math.min(
+                    pickerSelectedIndex,
+                    Math.max(filteredGenericPickerOptions.length - 1, 0),
+                  ),
+                  busy: false,
                 }
-              : {
-                  type: "help",
-                  title: "Help",
-                  subtitle: "Global commands, editing, filtering, and shell behavior",
-                  lines: buildHelpPanelLines(),
-                  scrollIndex: 0,
-                };
+              : overlay.type === "help" ||
+                  overlay.type === "about" ||
+                  overlay.type === "diagnostics"
+                ? {
+                    type: overlay.type,
+                    title,
+                    subtitle: effectiveSubtitle,
+                    lines,
+                    scrollIndex,
+                  }
+                : {
+                    type: "help",
+                    title: "Help",
+                    subtitle: "Global commands, editing, filtering, and shell behavior",
+                    lines: buildHelpPanelLines(),
+                    scrollIndex: 0,
+                  };
 
   if (overlay.type === "downloads") {
     return wrapOverlayLayout(

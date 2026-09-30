@@ -18,6 +18,7 @@ export function isRootChoiceOverlay(
   | { type: "episode_picker" }
   | { type: "subtitle_picker" }
   | { type: "recommendation_picker" }
+  | { type: "list_picker" }
 > {
   return (
     overlay.type === "provider_picker" ||
@@ -37,12 +38,14 @@ export function isRootMediaPickerOverlay(
   | { type: "episode_picker" }
   | { type: "subtitle_picker" }
   | { type: "recommendation_picker" }
+  | { type: "list_picker" }
 > {
   return (
     overlay.type === "season_picker" ||
     overlay.type === "episode_picker" ||
     overlay.type === "subtitle_picker" ||
-    overlay.type === "recommendation_picker"
+    overlay.type === "recommendation_picker" ||
+    overlay.type === "list_picker"
   );
 }
 
@@ -63,6 +66,7 @@ export function buildRootGenericPickerOptions(
     | { type: "episode_picker" }
     | { type: "subtitle_picker" }
     | { type: "recommendation_picker" }
+    | { type: "list_picker" }
   >,
 ): readonly ShellPickerOption<string>[] {
   return overlay.options.map((option) => ({
@@ -92,6 +96,7 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionSt
   if (overlay.type === "episode_picker") return "Choose episode";
   if (overlay.type === "subtitle_picker") return "Choose subtitles";
   if (overlay.type === "recommendation_picker") return "Recommendations";
+  if (overlay.type === "list_picker") return overlay.title;
   if (overlay.type === "tracks_panel") return "Tracks";
   return "Provider";
 }
@@ -150,6 +155,7 @@ export function getRootOverlaySubtitle({
   if (overlay.type === "subtitle_picker") return `${overlay.options.length} tracks available`;
   if (overlay.type === "recommendation_picker")
     return `${overlay.options.length} picks based on your watch history`;
+  if (overlay.type === "list_picker") return overlay.subtitle ?? "";
   if (overlay.type === "tracks_panel") {
     const provider = state.provider;
     return provider ? `Provider ${provider}` : "Choose source, quality, or audio";
