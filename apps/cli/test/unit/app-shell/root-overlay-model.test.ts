@@ -74,4 +74,32 @@ describe("root overlay picker model", () => {
       "Frieren: Beyond Journey's End  ·  S02  ·  2 eps  ·  50% complete  ·  s season  ·  m watched  ·  Esc to filter",
     );
   });
+
+  test("list picker carries its own title and subtitle instead of episode chrome", () => {
+    const overlay = {
+      type: "list_picker" as const,
+      title: "Clean up watched downloads",
+      subtitle: "2 eligible · about 2.0 GiB recoverable",
+      options: [{ value: "cleanup:all", label: "Clean up all", tone: "error" as const }],
+    };
+    // SAFETY: partial SessionState fixture — list-picker strings come from the
+    // overlay itself; no state fields are read.
+    const state = {} as SessionState;
+
+    expect(getRootOverlayTitle(overlay, state)).toBe("Clean up watched downloads");
+    expect(
+      getRootOverlaySubtitle({
+        overlay,
+        state,
+        settingsDraft: null,
+        // SAFETY: subtitle rendering reads no config fields — the empty literal
+        // only satisfies the parameter type.
+        config: {} as KitsuneConfig,
+        settingsError: null,
+      }),
+    ).toBe("2 eligible · about 2.0 GiB recoverable");
+    // List-picker rows are generic — they must not synthesize preview art.
+    const options = buildRootGenericPickerOptions(overlay);
+    expect(options[0]?.previewImageUrl).toBeUndefined();
+  });
 });

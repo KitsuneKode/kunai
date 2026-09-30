@@ -150,6 +150,25 @@ describe("library input ownership", () => {
     }
   });
 
+  test("empty library does not capture printable input into an invisible filter", async () => {
+    const handle = render(
+      <LibraryShell container={fixture({ entries: [] })} onClose={() => {}} />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "No offline titles yet");
+      handle.stdin.enqueue("claire");
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      });
+      // With zero rows there is no filter bar — keystrokes must not vanish into
+      // a query the user cannot see or clear.
+      expect(stripAnsi(handle.lastFrame())).not.toContain("Filter:");
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("Enter opens detail and Esc returns once without closing the shell", async () => {
     let closeCount = 0;
     const handle = render(
