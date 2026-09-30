@@ -26,7 +26,7 @@ export function titleInfoFromDownloadJob(job: DownloadJobRecord): TitleInfo {
       job.contentType ??
       (job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series"),
     name: job.titleName,
-    posterUrl: job.posterUrl,
+    ...(job.posterUrl ? { posterUrl: job.posterUrl } : {}),
     isAnime: job.mediaKind === "anime" || job.mode === "anime",
     launchSource: "offline-library",
     offlineJobId: job.id,

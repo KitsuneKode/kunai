@@ -119,6 +119,7 @@ test("/library returns the selected offline episode to the session workflow", as
         name: "Dune: Prophecy",
         isAnime: false,
         launchSource: "offline-library",
+        offlineJobId: "job-1",
       },
       episode: { season: 1, episode: 2 },
     });
