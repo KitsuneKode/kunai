@@ -543,6 +543,27 @@ export class DownloadJobsRepository {
       .run(message, retryAt, updatedAt, id);
   }
 
+  /**
+   * A start-time deferral. The row is still queued because the worker has not
+   * taken the running lease, so `pause` — which only moves a running job —
+   * would leave `next_retry_at` empty and the same pass would pick it again.
+   */
+  deferQueued(id: string, message: string, retryAt: string, updatedAt: string): boolean {
+    const result = this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET error_message = ?,
+              failure_kind = 'interrupted',
+              next_retry_at = ?,
+              updated_at = ?
+          WHERE id = ? AND status = 'queued'
+        `,
+      )
+      .run(message, retryAt, updatedAt, id);
+    return result.changes > 0;
+  }
+
   pause(id: string, message: string, retryAt: string, updatedAt: string): boolean {
     const result = this.db
       .query(

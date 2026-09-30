@@ -672,7 +672,7 @@ export class DownloadService {
       this.claimedJobIds.delete(next.id);
       const detail = error instanceof Error ? error.message : String(error);
       const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
-      this.deps.repo.pause(
+      this.deps.repo.deferQueued(
         next.id,
         `Download paused because the download folder is unavailable: ${detail}`,
         retryAt,
@@ -691,7 +691,7 @@ export class DownloadService {
     if (!storage.allowed) {
       this.claimedJobIds.delete(next.id);
       const retryAt = new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString();
-      this.deps.repo.pause(
+      this.deps.repo.deferQueued(
         next.id,
         this.formatInsufficientDiskMessage(storage.requiredBytes),
         retryAt,

@@ -225,7 +225,10 @@ export class QueueService {
    * closed. Never emits notifications — startup recovery owns signals.
    */
   prepareForShutdown(at = new Date().toISOString()): "recoverable" | "closed" {
-    if (this.repo.countUnplayed(this.sessionId) > 0) {
+    const outstanding = this.repo
+      .getAll(this.sessionId)
+      .some((entry) => entry.status === "pending" || entry.status === "in-flight");
+    if (outstanding) {
       this.repo.markQueueSessionRecoverable(this.sessionId, at);
       return "recoverable";
     }

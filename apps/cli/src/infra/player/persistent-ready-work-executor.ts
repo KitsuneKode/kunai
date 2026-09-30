@@ -80,6 +80,7 @@ export class PersistentReadyWorkExecutor {
     if (!cycle) return;
     const isCurrent = () => this.deps.isGenerationCurrent(generation);
     if (!isCurrent()) return;
+    this.deps.subtitleManager.noteEpisodeFileLoaded();
 
     if (!cycle.playerReadyNotified) {
       cycle.playerReadyNotified = true;

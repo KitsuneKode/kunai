@@ -214,6 +214,7 @@ describe("PersistentSubtitleManager", () => {
     manager.updateTrackList([{ id: 2, type: "sub", external: true }]);
     manager.beginEpisodeSubtitleChange();
     await manager.removeExternalSubtitles(ipc);
+    manager.noteEpisodeFileLoaded();
     manager.updateTrackList([{ id: 9, type: "sub", external: true, "external-filename": arrived }]);
 
     await manager.replaceSubtitleInventory(ipc, arrived, undefined, undefined);

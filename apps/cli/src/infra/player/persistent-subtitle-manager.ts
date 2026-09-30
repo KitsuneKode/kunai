@@ -37,21 +37,31 @@ export class PersistentSubtitleManager {
   private lastTrackList: unknown = null;
   private externalSubtitleIds: number[] = [];
   private episodeChangeOpen = false;
+  private fileTracksFrozen = false;
   private removableExternalIds: number[] = [];
 
   /**
-   * Snapshot the tracks that belong to the file being replaced. A track-list
-   * that arrives after this is the new episode and must not be removed.
+   * Opens the replacement window. Track lists that arrive before the new file
+   * loads still belong to the cleanup cache. `noteEpisodeFileLoaded` freezes
+   * that cache; a list after the freeze is the new episode.
    */
   beginEpisodeSubtitleChange(): void {
     this.episodeChangeOpen = true;
+    this.fileTracksFrozen = false;
     this.removableExternalIds = extractExternalSubtitleIds(this.lastTrackList);
     this.externalSubtitleIds = [...this.removableExternalIds];
+  }
+
+  noteEpisodeFileLoaded(): void {
+    if (!this.episodeChangeOpen || this.fileTracksFrozen) return;
+    this.fileTracksFrozen = true;
+    this.removableExternalIds = [...this.externalSubtitleIds];
   }
 
   settleEpisodeSubtitleChange(): void {
     if (!this.episodeChangeOpen) return;
     this.episodeChangeOpen = false;
+    this.fileTracksFrozen = false;
     this.removableExternalIds = [];
     this.externalSubtitleIds = extractExternalSubtitleIds(this.lastTrackList);
   }
@@ -59,7 +69,7 @@ export class PersistentSubtitleManager {
   updateTrackList(trackList: unknown): void {
     this.lastTrackList = trackList;
     const ids = extractExternalSubtitleIds(trackList);
-    if (!this.episodeChangeOpen) {
+    if (!this.episodeChangeOpen || !this.fileTracksFrozen) {
       this.externalSubtitleIds = ids;
       return;
     }
