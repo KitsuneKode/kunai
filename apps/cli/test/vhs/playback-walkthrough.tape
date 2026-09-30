@@ -1,4 +1,4 @@
-# Series + anime playback walkthrough — network-free fixture harness.
+# Series + anime playback walkthrough, network-free fixture harness.
 # Typed session: search → arrow results → episode list → resolve → play →
 # post-play → /anime → repeat. Playback in the app is 1×; PlaybackSpeed below
 # only speeds up the gif/mp4 because a two-lane typed tape is long.
@@ -59,7 +59,7 @@ Sleep 900ms
 Down
 Sleep 800ms
 
-# Back to search, then the palette — same gestures as the command-palette tape
+# Back to search, then the palette, same gestures as the command-palette tape
 Type "s"
 Wait+Screen /Search for a title/
 Sleep 700ms

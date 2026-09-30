@@ -4,7 +4,7 @@
  * The Ink app is an interactive state machine over these view-models. VHS types
  * into the real browse / episode / loading / post-play shells. Playback progress
  * advances at 1× media time. If the typed session is long, the tape may set
- * `Set PlaybackSpeed` on the encode only — the app never advertises a demo rate.
+ * `Set PlaybackSpeed` on the encode only; the app never advertises a demo rate.
  */
 
 import type { PostPlayShellProps } from "@/app-shell/post-play-shell";
@@ -133,7 +133,7 @@ export function browseResultsFor(
 
 /**
  * Rank fixture rows so the typed query sits first, then the rest of the lane
- * catalog — enough list to arrow through without calling a provider.
+ * catalog, enough list to arrow through without calling a provider.
  */
 export function searchResultsFor(
   lane: WalkthroughLane,

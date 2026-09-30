@@ -3,7 +3,7 @@
  *
  * Interactive: VHS types into BrowseShell, arrows the episode list, waits out
  * resolve, supervises playing at 1×, then `q` to post-play and `/anime` to
- * switch lanes. Fixtures only — no providers, mpv, or analytics.
+ * switch lanes. Fixtures only: no providers, mpv, or analytics.
  */
 
 import { BrowseShell } from "@/app-shell/browse-shell";

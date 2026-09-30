@@ -1,12 +1,6 @@
 ---
 status: current
-<<<<<<< HEAD
-lastReviewed: "2026-09-19"
-||||||| parent of d246fb4ef (Add a 1.5× series and anime playback walkthrough demo)
-lastReviewed: "2026-09-01"
-=======
 lastReviewed: "2026-09-30"
->>>>>>> d246fb4ef (Add a 1.5× series and anime playback walkthrough demo)
 ---
 
 # Kunai — Testing Strategy
@@ -450,9 +444,8 @@ Best target for:
 - browse shell snapshots
 - help and diagnostics overlays
 - command palette discoverability
-- series and anime playback walkthroughs (`test:vhs:playback`) — typed
-  fixture session, not a live provider run — typed
-  fixture session, not a live provider run
+- series and anime playback walkthroughs (`test:vhs:playback`), a typed
+  fixture session rather than a live provider run
 - before and after UX comparison for major shell redesign passes
 
 Use VHS for terminal UX capture and review, not as the only proof that behavior works.
