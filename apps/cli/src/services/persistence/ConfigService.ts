@@ -51,6 +51,11 @@ export interface ConfigService extends KitsuneConfig {
   save(): Promise<void>;
   /** Persist any debounced pending save immediately (shutdown path). */
   flushPending(): Promise<void>;
+  /**
+   * Re-read config.json and adopt disk state for every key this process has not
+   * modified. No-op when the file is missing or unreadable.
+   */
+  reloadFromDisk(): Promise<void>;
   reset(): Promise<void>;
 }
 

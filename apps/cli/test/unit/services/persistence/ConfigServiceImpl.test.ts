@@ -1,8 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { FileStorage } from "@/infra/storage/FileStorage";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type ConfigStore } from "@/services/persistence/ConfigStore";
+import { ConfigStoreImpl } from "@/services/persistence/ConfigStoreImpl";
 
 class MemoryConfigStore implements ConfigStore {
   constructor(private loaded: Partial<KitsuneConfig> = {}) {}
@@ -756,4 +761,194 @@ describe("session overrides", () => {
     expect(service.zenMode).toBe(false);
     expect((await store.load()).zenMode).toBe(false);
   });
+
+  for (const key of ["zenMode", "minimalMode", "offlineMode"] as const) {
+    test(`${key} override is visible to readers but never persisted`, async () => {
+      const store = new MemoryConfigStore();
+      const service = await ConfigServiceImpl.load(store);
+      expect(service[key]).toBe(false);
+
+      service.applySessionOverrides({ [key]: true });
+
+      // Getter and raw view agree — this is what main.ts's offline/analytics
+      // gates read, so the flag has to be indistinguishable from the setting.
+      expect(service[key]).toBe(true);
+      expect(service.getRaw()[key]).toBe(true);
+
+      await service.save();
+      await service.flushPending();
+
+      const persisted = await store.load();
+      expect(persisted[key]).toBeFalsy();
+    });
+  }
+});
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  while (tempDirs.length) {
+    const dir = tempDirs.pop();
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
+});
+
+describe("concurrent config saves merge onto disk", () => {
+  /**
+   * A store both "processes" share. Unlike MemoryConfigStore it clones on both
+   * sides so a write one instance made cannot alias the object another holds.
+   */
+  class SharedConfigStore implements ConfigStore {
+    private disk: Partial<KitsuneConfig>;
+    onSave?: () => Promise<void>;
+
+    constructor(initial: Partial<KitsuneConfig> = {}) {
+      this.disk = structuredClone(initial);
+    }
+
+    async load(): Promise<Partial<KitsuneConfig>> {
+      return structuredClone(this.disk);
+    }
+
+    async save(config: KitsuneConfig): Promise<void> {
+      await this.onSave?.();
+      this.disk = structuredClone(config);
+    }
+
+    async reset(): Promise<void> {
+      this.disk = {};
+    }
+  }
+
+  test("a stale process cannot resurrect keys another process changed", async () => {
+    const installId = "11111111-1111-4111-8111-111111111111";
+    const store = new SharedConfigStore({
+      analytics: "enabled",
+      installId,
+      analyticsNoticeShown: true,
+    });
+    const a = await ConfigServiceImpl.load(store);
+    const b = await ConfigServiceImpl.load(store);
+
+    await b.update({ analytics: "disabled", installId: "" });
+    await b.save();
+    await b.flushPending();
+
+    // A's write touches an unrelated bookkeeping key; before the merge it
+    // rewrote its whole stale snapshot and re-enabled analytics.
+    await a.update({ lastUpdateCheckAt: 1 });
+    await a.save();
+    await a.flushPending();
+
+    const disk = await store.load();
+    expect(disk.analytics).toBe("disabled");
+    expect(disk.installId).toBe("");
+    expect(disk.lastUpdateCheckAt).toBe(1);
+    // The merge also lands in memory — readers see the other process's choice.
+    expect(a.getRaw().analytics).toBe("disabled");
+    expect(a.getRaw().installId).toBe("");
+  });
+
+  test("a key changed during an in-flight write stays dirty and lands on the next save", async () => {
+    // Non-empty disk so the write takes the merge path, not the full-write path.
+    const store = new SharedConfigStore({ analyticsNoticeShown: true });
+    const service = await ConfigServiceImpl.load(store);
+    await service.update({ subLang: "en" });
+
+    const gate = Promise.withResolvers<void>();
+    store.onSave = () => gate.promise;
+    const pending = service.save();
+    const flush = service.flushPending();
+
+    // Dirtied while the write above waits on the store: it must keep its
+    // memory value and reach disk on the following save.
+    await service.update({ footerHints: "minimal" });
+    gate.resolve();
+    await pending;
+    await flush;
+
+    expect((await store.load()).footerHints).toBe(DEFAULT_CONFIG.footerHints);
+    expect(service.footerHints).toBe("minimal");
+
+    await service.save();
+    await service.flushPending();
+    expect((await store.load()).footerHints).toBe("minimal");
+  });
+
+  test("a missing or unreadable file falls back to writing the full memory config", async () => {
+    const store = new SharedConfigStore();
+    const service = await ConfigServiceImpl.load(store);
+    await service.update({ subLang: "fr", footerHints: "minimal" });
+    await service.save();
+    await service.flushPending();
+
+    const disk = await store.load();
+    expect(disk.subLang).toBe("fr");
+    expect(disk.footerHints).toBe("minimal");
+    expect(disk.provider).toBe(DEFAULT_CONFIG.provider);
+  });
+
+  test("repeats the analytics clobber end to end through a real FileStorage file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-config-merge-"));
+    tempDirs.push(dir);
+    const installId = "11111111-1111-4111-8111-111111111111";
+    const storageA = new FileStorage({ config: join(dir, "config.json") });
+    const storageB = new FileStorage({ config: join(dir, "config.json") });
+    await storageA.write("config", {
+      analytics: "enabled",
+      installId,
+      analyticsNoticeShown: true,
+    });
+
+    const a = await ConfigServiceImpl.load(new ConfigStoreImpl(storageA));
+    const b = await ConfigServiceImpl.load(new ConfigStoreImpl(storageB));
+
+    await b.update({ analytics: "disabled", installId: "" });
+    await b.save();
+    await b.flushPending();
+
+    await a.update({ lastUpdateCheckAt: 1 });
+    await a.save();
+    await a.flushPending();
+
+    const raw = await storageA.read<Partial<KitsuneConfig>>("config");
+    expect(raw?.analytics).toBe("disabled");
+    expect(raw?.installId).toBe("");
+    expect(raw?.lastUpdateCheckAt).toBe(1);
+    expect(a.getRaw().analytics).toBe("disabled");
+  });
+});
+
+type ConfigValueClass = "string" | "number" | "boolean" | "array" | "object" | "null";
+
+function valueClass(value: unknown): ConfigValueClass {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  const kind = typeof value;
+  if (kind === "string" || kind === "number" || kind === "boolean") return kind;
+  return kind === "object" ? "object" : "null";
+}
+
+describe("malformed config values never crash load", () => {
+  const fuzzValues: readonly unknown[] = [null, 42, "str", { a: 1 }, ["x"], [1], true];
+  const getterNames = Object.entries(Object.getOwnPropertyDescriptors(ConfigServiceImpl.prototype))
+    .filter(([, descriptor]) => typeof descriptor.get === "function")
+    .map(([name]) => name);
+
+  for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
+    for (const value of fuzzValues) {
+      test(`${key} = ${JSON.stringify(value)} loads, reads, and keeps the default's shape`, async () => {
+        const store = new MemoryConfigStore({ [key]: value });
+        const service = await ConfigServiceImpl.load(store);
+        for (const getter of getterNames) {
+          expect(() => (service as unknown as Record<string, unknown>)[getter]).not.toThrow();
+        }
+        const expected = valueClass(DEFAULT_CONFIG[key]);
+        const actual = valueClass(service.getRaw()[key]);
+        const accepted =
+          expected === "null" ? actual === "null" || actual === "string" : actual === expected;
+        expect(accepted).toBe(true);
+      });
+    }
+  }
 });

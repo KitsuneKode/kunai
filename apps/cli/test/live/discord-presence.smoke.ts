@@ -33,6 +33,7 @@ function createConfig(): ConfigService {
     applySessionOverrides: () => undefined,
     save: async () => undefined,
     flushPending: async () => undefined,
+    reloadFromDisk: async () => undefined,
     reset: async () => undefined,
   };
 }

@@ -82,6 +82,7 @@ type AnalyticsConfig = {
   getRaw(): KitsuneConfig;
   update(partial: Partial<KitsuneConfig>): Promise<void>;
   save(): Promise<void>;
+  reloadFromDisk(): Promise<void>;
 };
 
 export type UsageAnalyticsServiceDeps = {
@@ -220,6 +221,10 @@ export class UsageAnalyticsService {
    * contract breach rather than a bug.
    */
   async maybePing(options: { readonly isInteractive: boolean }): Promise<void> {
+    // Another Kunai process can change consent between this session's load and
+    // now — re-read the file so a disable made elsewhere is honoured before any
+    // send, not just before the local write-back below.
+    await this.deps.config.reloadFromDisk();
     const config = this.deps.config.getRaw();
     const state = resolveConsentState({
       env: this.env,

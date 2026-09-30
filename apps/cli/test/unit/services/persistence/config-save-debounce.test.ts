@@ -88,6 +88,9 @@ describe("ConfigService.save debounce", () => {
     // Stands in for the debounce timer firing: the write starts and
     // `savePending` is cleared.
     const started = service.flushPending();
+    // The write re-reads the file before saving (the cross-process merge), so
+    // `store.save` is called one async hop after flushPending returns.
+    await drainMicrotasks();
     expect(saves).toBe(1);
 
     let lateFlushSettled = false;
@@ -127,6 +130,8 @@ describe("ConfigService.save debounce", () => {
       () => null,
       (error: unknown) => error as Error,
     );
+    // The write re-reads the file first, so `store.save` runs a hop later.
+    await drainMicrotasks();
     rejectSave(new Error("disk full"));
 
     expect((await saved)?.message).toBe("disk full");

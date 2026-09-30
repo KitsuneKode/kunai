@@ -2,6 +2,7 @@
 // Config Service Implementation
 // =============================================================================
 
+import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
 import {
@@ -30,35 +31,44 @@ import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
-function normalizeSeriesProvider(value: string | undefined): string {
-  const normalized = value?.trim();
+function normalizeSeriesProvider<T>(value: T): string {
+  const normalized = isJsonString(value) ? value.trim() : "";
   if (!normalized) return DEFAULT_CONFIG.provider;
   return migrateLegacyProviderId(normalized);
 }
 
-function normalizeProviderIdList(
-  values: readonly string[] | undefined,
+function normalizeProviderIdList<T>(
+  values: readonly T[] | T | undefined,
   fallback: readonly string[] = [],
 ): readonly string[] {
   if (!Array.isArray(values)) return fallback.map(migrateLegacyProviderId);
-  return [...new Set(values.map((value) => migrateLegacyProviderId(value.trim())).filter(Boolean))];
+  // SAFETY: `values` is narrowed by Array.isArray; items may be non-strings in a
+  // hand-edited config, so each item is checked before `.trim()`.
+  return [
+    ...new Set(
+      (values as readonly unknown[])
+        .map((value) => (isJsonString(value) ? migrateLegacyProviderId(value.trim()) : ""))
+        .filter(Boolean),
+    ),
+  ];
 }
 
-function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
+function normalizeDefaultSubtitleLanguage<T>(subLang: T): string {
+  if (!isJsonString(subLang)) return DEFAULT_CONFIG.subLang;
   if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
     return DEFAULT_CONFIG.subLang;
   }
   return subLang;
 }
 
-function normalizeSubtitlePreference(value: string | undefined): string {
-  if (!value) return "none";
+function normalizeSubtitlePreference<T>(value: T): string {
+  if (!isJsonString(value) || !value) return "none";
   if (value === "fzf") return "interactive";
   return value;
 }
 
-function normalizeQualityPreference(value: string | undefined): string {
-  const normalized = value?.trim().toLowerCase();
+function normalizeQualityPreference<T>(value: T): string {
+  const normalized = isJsonString(value) ? value.trim().toLowerCase() : "";
   if (!normalized || normalized === "auto") return "best";
   return normalized;
 }
@@ -66,9 +76,11 @@ function normalizeQualityPreference(value: string | undefined): string {
 function normalizeLanguageProfile(
   profile: KitsuneConfig["animeLanguageProfile"] | undefined,
 ): KitsuneConfig["animeLanguageProfile"] {
-  if (!profile) return { audio: "original", subtitle: "none", quality: "best" };
+  if (!profile || typeof profile !== "object") {
+    return { audio: "original", subtitle: "none", quality: "best" };
+  }
   return {
-    audio: profile.audio,
+    audio: isJsonString(profile.audio) && profile.audio ? profile.audio : "original",
     subtitle: normalizeSubtitlePreference(profile.subtitle),
     quality: normalizeQualityPreference(profile.quality),
   };
@@ -146,15 +158,223 @@ function normalizeYoutubeMetadata(
   ) as KitsuneConfig["youtubeMetadata"];
 }
 
+type ConfigValueClass = "string" | "number" | "boolean" | "array" | "object" | "null";
+
+function configValueClass(value: unknown): ConfigValueClass {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  const kind = typeof value;
+  if (kind === "string" || kind === "number" || kind === "boolean") return kind;
+  return kind === "object" ? "object" : "null";
+}
+
+/**
+ * Top-level shape guard for a hand-edited config.json. The store's schema only
+ * validates `providerRelay`, so a `{"provider": 42}` survives parsing and used
+ * to crash the first per-field normalizer that called `.trim()` on it.
+ *
+ * Every key present in both the file and `DEFAULT_CONFIG` must match the
+ * default's value class (a `null` default also accepts a string — the nullable
+ * string fields); anything else is dropped so the default applies. Only key
+ * names are reported — never values, which may be user data.
+ */
+function sanitizeLoadedConfig(loaded: Partial<KitsuneConfig>): {
+  sanitized: Partial<KitsuneConfig>;
+  droppedKeys: string[];
+} {
+  const droppedKeys: string[] = [];
+  const sanitized: Record<string, unknown> = { ...loaded };
+  for (const key of Object.keys(sanitized)) {
+    if (!(key in DEFAULT_CONFIG)) continue;
+    // SAFETY: guarded by `key in DEFAULT_CONFIG` — key is a known config field.
+    const expected = configValueClass(DEFAULT_CONFIG[key as keyof typeof DEFAULT_CONFIG]);
+    const actual = configValueClass(sanitized[key]);
+    const accepted =
+      expected === "null"
+        ? actual === "null" || actual === "string"
+        : expected === "number"
+          ? actual === "number" && Number.isFinite(sanitized[key])
+          : actual === expected;
+    if (!accepted) {
+      delete sanitized[key];
+      droppedKeys.push(key);
+    }
+  }
+  // SAFETY: only wrong-typed values were removed; every surviving key keeps the
+  // class its `KitsuneConfig` field declares.
+  return { sanitized: sanitized as Partial<KitsuneConfig>, droppedKeys };
+}
+
+/**
+ * Everything `load()` does to turn raw store bytes into `service.config`: the
+ * shape guard, the per-field normalizers, and the analytics-consent and
+ * provider-default migrations. Vault hydration and the resave stay in `load()`
+ * — this function is pure so `persistPendingSave()` and `reloadFromDisk()` can
+ * adopt a fresh disk state without re-running side effects.
+ *
+ * `needsResave` is the same flag set `load()` persists on: every migration or
+ * repair it performed OR'd together.
+ */
+function normalizeLoadedConfig(loaded: Partial<KitsuneConfig>): {
+  config: KitsuneConfig;
+  needsResave: boolean;
+  migratedVideasyAppId: boolean;
+  droppedKeys: string[];
+} {
+  const { sanitized, droppedKeys } = sanitizeLoadedConfig(loaded);
+  // Configs written before explicit consent had no notice marker. Their
+  // enabled value was opt-out state, not evidence of a current opt-in, so
+  // revoke it and erase the old local identifier before startup can send.
+  const requiresExplicitAnalyticsConsent =
+    sanitized.analytics === "enabled" && typeof sanitized.analyticsNoticeShown !== "boolean";
+  const normalizedAnalytics = requiresExplicitAnalyticsConsent
+    ? "unset"
+    : normalizeAnalyticsPreference(sanitized.analytics);
+  const normalizedInstallId =
+    normalizedAnalytics === "enabled" && typeof sanitized.installId === "string"
+      ? sanitized.installId.trim()
+      : "";
+  const repairedAnalyticsIdentity =
+    sanitized.installId !== undefined && sanitized.installId !== normalizedInstallId;
+  const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(sanitized);
+  const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(sanitized);
+  const config: KitsuneConfig = {
+    ...DEFAULT_CONFIG,
+    ...sanitized,
+    ...(migratedSeriesDefaults
+      ? {
+          provider: DEFAULT_CONFIG.provider,
+          providerPriority: [...DEFAULT_CONFIG.providerPriority],
+        }
+      : {
+          provider: normalizeSeriesProvider(sanitized.provider),
+          providerPriority: normalizeProviderIdList(
+            sanitized.providerPriority,
+            DEFAULT_CONFIG.providerPriority,
+          ),
+        }),
+    ...(migratedAnimeDefaults
+      ? {
+          animeProvider: DEFAULT_CONFIG.animeProvider,
+          animeProviderPriority: [...DEFAULT_CONFIG.animeProviderPriority],
+        }
+      : {
+          animeProviderPriority: normalizeProviderIdList(
+            sanitized.animeProviderPriority,
+            DEFAULT_CONFIG.animeProviderPriority,
+          ),
+        }),
+    providerDefaultsRevision: Math.max(
+      readProviderDefaultsRevision(sanitized),
+      CURRENT_PROVIDER_DEFAULTS_REVISION,
+    ),
+    youtubeProvider:
+      normalizeSeriesProvider(sanitized.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
+    youtubeProviderPriority: normalizeProviderIdList(
+      sanitized.youtubeProviderPriority,
+      DEFAULT_CONFIG.youtubeProviderPriority,
+    ),
+    youtubeLanguageProfile: normalizeLanguageProfile(
+      sanitized.youtubeLanguageProfile ?? DEFAULT_CONFIG.youtubeLanguageProfile,
+    ),
+    youtubeMetadata: normalizeYoutubeMetadata(sanitized.youtubeMetadata),
+    subLang: normalizeDefaultSubtitleLanguage(sanitized.subLang),
+    animeLanguageProfile: normalizeLanguageProfile(sanitized.animeLanguageProfile),
+    seriesLanguageProfile: normalizeLanguageProfile(sanitized.seriesLanguageProfile),
+    movieLanguageProfile: normalizeLanguageProfile(sanitized.movieLanguageProfile),
+    autoDownload: "off",
+    autoDownloadNextCount: normalizeAutoDownloadNextCount(sanitized.autoDownloadNextCount),
+    offlineFreeSpaceReserveBytes: normalizeBytes(
+      sanitized.offlineFreeSpaceReserveBytes,
+      DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
+    ),
+    offlineUnknownEpisodeEstimateBytes: normalizeBytes(
+      sanitized.offlineUnknownEpisodeEstimateBytes,
+      DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
+    ),
+    offlineDefaultRunwayTarget: normalizeRunwayTarget(sanitized.offlineDefaultRunwayTarget),
+    protectedDownloadJobIds: normalizeStringList(sanitized.protectedDownloadJobIds),
+    recoveryMode: normalizeRecoveryMode(sanitized.recoveryMode),
+    continueSourcePreference: normalizeContinueSourcePreference(sanitized.continueSourcePreference),
+    startupPriority: normalizeStartupPriority(sanitized.startupPriority),
+    mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
+      sanitized.mpvInProcessStreamReconnectMaxAttempts,
+    ),
+    videasySessionToken: normalizeOptionalSecret(sanitized.videasySessionToken),
+    videasySessionExpiresAt: normalizeVideasySessionExpiresAt(
+      sanitized.videasySessionExpiresAt,
+      sanitized.videasySessionToken,
+    ),
+    videasyAppId: normalizeVideasyAppId(
+      sanitized.videasyAppId,
+      normalizeOptionalSecret(sanitized.videasySessionToken),
+    ),
+    providerRelay: normalizeProviderRelayConfig(sanitized.providerRelay),
+    titleProviderPreferences: normalizeTitleProviderPreferences(sanitized.titleProviderPreferences),
+    analytics: normalizedAnalytics,
+    analyticsNoticeShown: sanitized.analyticsNoticeShown === true,
+    installId: normalizedInstallId,
+    lastAnalyticsPingAt:
+      typeof sanitized.lastAnalyticsPingAt === "number" &&
+      Number.isFinite(sanitized.lastAnalyticsPingAt)
+        ? Math.max(0, sanitized.lastAnalyticsPingAt)
+        : 0,
+    analyticsRetryAfter:
+      typeof sanitized.analyticsRetryAfter === "number" &&
+      Number.isFinite(sanitized.analyticsRetryAfter)
+        ? Math.max(0, sanitized.analyticsRetryAfter)
+        : 0,
+    analyticsEndpoint:
+      typeof sanitized.analyticsEndpoint === "string" ? sanitized.analyticsEndpoint.trim() : "",
+  };
+  const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(sanitized, config);
+  return {
+    config,
+    needsResave:
+      requiresExplicitAnalyticsConsent ||
+      repairedAnalyticsIdentity ||
+      migratedVideasyAppId ||
+      migratedAnimeDefaults ||
+      migratedSeriesDefaults,
+    migratedVideasyAppId,
+    droppedKeys,
+  };
+}
+
+/**
+ * One debug line for keys the shape guard removed. Key names only — the values
+ * are user data and `dbg` is the same channel FileStorage's load warnings use.
+ */
+function logDroppedConfigKeys(droppedKeys: readonly string[]): void {
+  if (droppedKeys.length === 0) return;
+  dbg("config", "Dropped wrong-typed keys from config.json; defaults are in use", {
+    keys: droppedKeys.join(", "),
+  });
+}
+
 export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
   /**
-   * Transient launch-flag overrides (`--zen`, `-m`). Held apart from `config` so
-   * `save()` — which persists the whole object, and which UpdateService and
-   * UsageAnalyticsService both call unconditionally on startup — can never bake a
-   * one-run flag into the user's config file.
+   * Transient launch-flag overrides (`--zen`, `-m`, `--offline`). Held apart
+   * from `config` so `save()` — which persists only keys dirtied through
+   * `update()`, and which UpdateService and UsageAnalyticsService both call
+   * unconditionally on startup — can never bake a one-run flag into the user's
+   * config file.
    */
   private sessionOverrides: Partial<KitsuneConfig> = {};
+  /**
+   * Memoized `{ ...config, ...sessionOverrides }` every accessor reads, so a
+   * session override behaves like the setting for this run while never
+   * reaching the file. Rebuilt whenever `config` or `sessionOverrides` is
+   * reassigned.
+   */
+  private effectiveView: KitsuneConfig | null = null;
+  /**
+   * Keys changed through `update()` since the last successful write. Saves
+   * merge only these into what is on disk, so a second Kunai process's changes
+   * are not clobbered by a stale in-memory snapshot.
+   */
+  private dirtyKeys = new Set<keyof KitsuneConfig>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
@@ -167,118 +387,20 @@ export class ConfigServiceImpl implements ConfigService {
     this.config = { ...DEFAULT_CONFIG };
   }
 
+  private effective(): KitsuneConfig {
+    this.effectiveView ??= { ...this.config, ...this.sessionOverrides };
+    return this.effectiveView;
+  }
+
   /** Whether the vault holds the videasy token — hydrated or migrated this session. */
   private videasyTokenVaulted = false;
 
   static async load(store: ConfigStore, vault?: CredentialVaultPort): Promise<ConfigServiceImpl> {
     const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
-    // Configs written before explicit consent had no notice marker. Their
-    // enabled value was opt-out state, not evidence of a current opt-in, so
-    // revoke it and erase the old local identifier before startup can send.
-    const requiresExplicitAnalyticsConsent =
-      loaded.analytics === "enabled" && typeof loaded.analyticsNoticeShown !== "boolean";
-    const normalizedAnalytics = requiresExplicitAnalyticsConsent
-      ? "unset"
-      : normalizeAnalyticsPreference(loaded.analytics);
-    const normalizedInstallId =
-      normalizedAnalytics === "enabled" && typeof loaded.installId === "string"
-        ? loaded.installId.trim()
-        : "";
-    const repairedAnalyticsIdentity =
-      loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
-    const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
-    const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
-    service.config = {
-      ...DEFAULT_CONFIG,
-      ...loaded,
-      ...(migratedSeriesDefaults
-        ? {
-            provider: DEFAULT_CONFIG.provider,
-            providerPriority: [...DEFAULT_CONFIG.providerPriority],
-          }
-        : {
-            provider: normalizeSeriesProvider(loaded.provider),
-            providerPriority: normalizeProviderIdList(
-              loaded.providerPriority,
-              DEFAULT_CONFIG.providerPriority,
-            ),
-          }),
-      ...(migratedAnimeDefaults
-        ? {
-            animeProvider: DEFAULT_CONFIG.animeProvider,
-            animeProviderPriority: [...DEFAULT_CONFIG.animeProviderPriority],
-          }
-        : {
-            animeProviderPriority: normalizeProviderIdList(
-              loaded.animeProviderPriority,
-              DEFAULT_CONFIG.animeProviderPriority,
-            ),
-          }),
-      providerDefaultsRevision: Math.max(
-        readProviderDefaultsRevision(loaded),
-        CURRENT_PROVIDER_DEFAULTS_REVISION,
-      ),
-      youtubeProvider:
-        normalizeSeriesProvider(loaded.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
-      youtubeProviderPriority: normalizeProviderIdList(
-        loaded.youtubeProviderPriority,
-        DEFAULT_CONFIG.youtubeProviderPriority,
-      ),
-      youtubeLanguageProfile: normalizeLanguageProfile(
-        loaded.youtubeLanguageProfile ?? DEFAULT_CONFIG.youtubeLanguageProfile,
-      ),
-      youtubeMetadata: normalizeYoutubeMetadata(loaded.youtubeMetadata),
-      subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
-      animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
-      seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
-      movieLanguageProfile: normalizeLanguageProfile(loaded.movieLanguageProfile),
-      autoDownload: "off",
-      autoDownloadNextCount: normalizeAutoDownloadNextCount(loaded.autoDownloadNextCount),
-      offlineFreeSpaceReserveBytes: normalizeBytes(
-        loaded.offlineFreeSpaceReserveBytes,
-        DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
-      ),
-      offlineUnknownEpisodeEstimateBytes: normalizeBytes(
-        loaded.offlineUnknownEpisodeEstimateBytes,
-        DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
-      ),
-      offlineDefaultRunwayTarget: normalizeRunwayTarget(loaded.offlineDefaultRunwayTarget),
-      protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
-      recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
-      continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
-      startupPriority: normalizeStartupPriority(loaded.startupPriority),
-      mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
-        loaded.mpvInProcessStreamReconnectMaxAttempts,
-      ),
-      videasySessionToken: normalizeOptionalSecret(loaded.videasySessionToken),
-      videasySessionExpiresAt: normalizeVideasySessionExpiresAt(
-        loaded.videasySessionExpiresAt,
-        loaded.videasySessionToken,
-      ),
-      videasyAppId: normalizeVideasyAppId(
-        loaded.videasyAppId,
-        normalizeOptionalSecret(loaded.videasySessionToken),
-      ),
-      providerRelay: normalizeProviderRelayConfig(loaded.providerRelay),
-      titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
-      analytics: normalizedAnalytics,
-      analyticsNoticeShown: loaded.analyticsNoticeShown === true,
-      installId: normalizedInstallId,
-      lastAnalyticsPingAt:
-        typeof loaded.lastAnalyticsPingAt === "number" &&
-        Number.isFinite(loaded.lastAnalyticsPingAt)
-          ? Math.max(0, loaded.lastAnalyticsPingAt)
-          : 0,
-      analyticsRetryAfter:
-        typeof loaded.analyticsRetryAfter === "number" &&
-        Number.isFinite(loaded.analyticsRetryAfter)
-          ? Math.max(0, loaded.analyticsRetryAfter)
-          : 0,
-      analyticsEndpoint:
-        typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
-    };
-    const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
+    const normalized = normalizeLoadedConfig(loaded);
+    logDroppedConfigKeys(normalized.droppedKeys);
+    service.config = normalized.config;
     // Vault lane: hydrate the in-memory token from the vault when config.json
     // no longer carries it, or migrate plaintext that predates the vault. The
     // scrubbed write below is what removes it from disk — the in-memory config
@@ -304,16 +426,9 @@ export class ConfigServiceImpl implements ConfigService {
         // Vault write/read failed — keep the plaintext and retry next launch.
       }
     }
-    if (
-      requiresExplicitAnalyticsConsent ||
-      repairedAnalyticsIdentity ||
-      migratedVideasyAppId ||
-      videasyVaultResave ||
-      migratedAnimeDefaults ||
-      migratedSeriesDefaults
-    ) {
+    if (normalized.needsResave || videasyVaultResave) {
       await service.persistConfig(service.config);
-      service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
+      service.videasyAppIdMigratedOnLoad = normalized.migratedVideasyAppId;
     }
     return service;
   }
@@ -349,367 +464,367 @@ export class ConfigServiceImpl implements ConfigService {
 
   // Accessors
   get provider(): string {
-    return this.config.provider;
+    return this.effective().provider;
   }
 
   get defaultMode(): KitsuneConfig["defaultMode"] {
-    return this.config.defaultMode;
+    return this.effective().defaultMode;
   }
 
   get animeProvider(): string {
-    return this.config.animeProvider;
+    return this.effective().animeProvider;
   }
 
   get youtubeProvider(): string {
-    return this.config.youtubeProvider;
+    return this.effective().youtubeProvider;
   }
 
   get youtubeProviderPriority(): readonly string[] {
-    return [...this.config.youtubeProviderPriority];
+    return [...this.effective().youtubeProviderPriority];
   }
 
   get youtubeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.youtubeLanguageProfile;
+    return this.effective().youtubeLanguageProfile;
   }
 
   get youtubeMetadata(): KitsuneConfig["youtubeMetadata"] {
-    return { ...this.config.youtubeMetadata };
+    return { ...this.effective().youtubeMetadata };
   }
 
   get providerPriority(): readonly string[] {
-    return [...this.config.providerPriority];
+    return [...this.effective().providerPriority];
   }
 
   get animeProviderPriority(): readonly string[] {
-    return [...this.config.animeProviderPriority];
+    return [...this.effective().animeProviderPriority];
   }
 
   get subLang(): string {
-    return this.config.subLang;
+    return this.effective().subLang;
   }
 
   get wyzieApiKey(): string {
-    return this.config.wyzieApiKey;
+    return this.effective().wyzieApiKey;
   }
 
   get animeLang(): "sub" | "dub" {
-    return this.config.animeLang;
+    return this.effective().animeLang;
   }
 
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.animeLanguageProfile;
+    return this.effective().animeLanguageProfile;
   }
 
   get seriesLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.seriesLanguageProfile;
+    return this.effective().seriesLanguageProfile;
   }
 
   get movieLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.movieLanguageProfile;
+    return this.effective().movieLanguageProfile;
   }
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
-    return this.config.animeTitlePreference;
+    return this.effective().animeTitlePreference;
   }
 
   get headless(): boolean {
-    return this.config.headless;
+    return this.effective().headless;
   }
 
   get showMemory(): boolean {
-    return this.config.showMemory;
+    return this.effective().showMemory;
   }
 
   get autoNext(): boolean {
-    return this.config.autoNext;
+    return this.effective().autoNext;
   }
 
   get autoplayRecommendations(): boolean {
-    return this.config.autoplayRecommendations;
+    return this.effective().autoplayRecommendations;
   }
 
   get favoriteSources(): readonly string[] {
-    return this.config.favoriteSources;
+    return this.effective().favoriteSources;
   }
 
   get resumeStartChoicePrompt(): boolean {
-    return this.config.resumeStartChoicePrompt;
+    return this.effective().resumeStartChoicePrompt;
   }
 
   get skipRecap(): boolean {
-    return this.config.skipRecap;
+    return this.effective().skipRecap;
   }
 
   get skipIntro(): boolean {
-    return this.config.skipIntro;
+    return this.effective().skipIntro;
   }
 
   get skipPreview(): boolean {
-    return this.config.skipPreview;
+    return this.effective().skipPreview;
   }
 
   get skipCredits(): boolean {
-    return this.config.skipCredits;
+    return this.effective().skipCredits;
   }
 
   get footerHints(): "detailed" | "minimal" {
-    return this.config.footerHints;
+    return this.effective().footerHints;
   }
 
   get quitNearEndBehavior(): QuitNearEndBehavior {
-    return this.config.quitNearEndBehavior;
+    return this.effective().quitNearEndBehavior;
   }
 
   get quitNearEndThresholdMode(): QuitNearEndThresholdMode {
-    return this.config.quitNearEndThresholdMode;
+    return this.effective().quitNearEndThresholdMode;
   }
 
   get mpvKunaiScriptPath(): string {
-    return this.config.mpvKunaiScriptPath;
+    return this.effective().mpvKunaiScriptPath;
   }
 
   get mpvKunaiScriptOpts(): Record<string, string> {
-    return { ...this.config.mpvKunaiScriptOpts };
+    return { ...this.effective().mpvKunaiScriptOpts };
   }
 
   get mpvInProcessStreamReconnect(): boolean {
-    return this.config.mpvInProcessStreamReconnect;
+    return this.effective().mpvInProcessStreamReconnect;
   }
 
   get mpvInProcessStreamReconnectMaxAttempts(): number {
-    return this.config.mpvInProcessStreamReconnectMaxAttempts;
+    return this.effective().mpvInProcessStreamReconnectMaxAttempts;
   }
 
   get presenceProvider(): PresenceProvider {
-    return this.config.presenceProvider;
+    return this.effective().presenceProvider;
   }
 
   get presencePrivacy(): PresencePrivacy {
-    return this.config.presencePrivacy;
+    return this.effective().presencePrivacy;
   }
 
   get presenceDiscordClientId(): string {
-    return this.config.presenceDiscordClientId;
+    return this.effective().presenceDiscordClientId;
   }
 
   get presenceDiscordOpenUrl(): string {
-    return this.config.presenceDiscordOpenUrl;
+    return this.effective().presenceDiscordOpenUrl;
   }
 
   get videasySessionToken(): string {
-    if (isExpiredVideasySession(this.config.videasySessionExpiresAt)) return "";
-    return this.config.videasySessionToken;
+    if (isExpiredVideasySession(this.effective().videasySessionExpiresAt)) return "";
+    return this.effective().videasySessionToken;
   }
 
   get providerRelay(): ProviderRelayConfig {
     return {
-      ...this.config.providerRelay,
-      providers: { ...this.config.providerRelay.providers },
+      ...this.effective().providerRelay,
+      providers: { ...this.effective().providerRelay.providers },
     };
   }
 
   get videasySessionExpiresAt(): number {
-    return this.config.videasySessionExpiresAt;
+    return this.effective().videasySessionExpiresAt;
   }
 
   get videasyAppId(): KitsuneConfig["videasyAppId"] {
-    return this.config.videasyAppId;
+    return this.effective().videasyAppId;
   }
 
   get downloadsEnabled(): boolean {
-    return this.config.downloadsEnabled;
+    return this.effective().downloadsEnabled;
   }
 
   get offlineMode(): boolean {
-    return this.config.offlineMode;
+    return this.effective().offlineMode;
   }
 
   get autoDownload(): AutoDownloadMode {
-    return this.config.autoDownload;
+    return this.effective().autoDownload;
   }
 
   get autoDownloadNextCount(): number {
-    return this.config.autoDownloadNextCount;
+    return this.effective().autoDownloadNextCount;
   }
 
   get maxConcurrentDownloads(): number {
-    return normalizeMaxConcurrentDownloads(this.config.maxConcurrentDownloads);
+    return normalizeMaxConcurrentDownloads(this.effective().maxConcurrentDownloads);
   }
 
   get defaultDownloadQuality(): string {
-    return normalizeQualityPreference(this.config.defaultDownloadQuality);
+    return normalizeQualityPreference(this.effective().defaultDownloadQuality);
   }
 
   get autoCleanupWatched(): boolean {
-    return this.config.autoCleanupWatched;
+    return this.effective().autoCleanupWatched;
   }
 
   get recoveryMode(): RecoveryMode {
-    return this.config.recoveryMode;
+    return this.effective().recoveryMode;
   }
 
   get continueSourcePreference(): KitsuneConfig["continueSourcePreference"] {
-    return this.config.continueSourcePreference;
+    return this.effective().continueSourcePreference;
   }
 
   get startupPriority(): StartupPriority {
-    return this.config.startupPriority;
+    return this.effective().startupPriority;
   }
 
   get artworkPreviewsEnabled(): boolean {
-    return this.config.artworkPreviewsEnabled;
+    return this.effective().artworkPreviewsEnabled;
   }
 
   get offlineArtworkCacheEnabled(): boolean {
-    return this.config.offlineArtworkCacheEnabled;
+    return this.effective().offlineArtworkCacheEnabled;
   }
 
   get offlineFreeSpaceReserveBytes(): number {
-    return this.config.offlineFreeSpaceReserveBytes;
+    return this.effective().offlineFreeSpaceReserveBytes;
   }
 
   get offlineUnknownEpisodeEstimateBytes(): number {
-    return this.config.offlineUnknownEpisodeEstimateBytes;
+    return this.effective().offlineUnknownEpisodeEstimateBytes;
   }
 
   get offlineDefaultRunwayTarget(): number {
-    return this.config.offlineDefaultRunwayTarget;
+    return this.effective().offlineDefaultRunwayTarget;
   }
 
   get autoCleanupGraceDays(): number {
-    return this.config.autoCleanupGraceDays;
+    return this.effective().autoCleanupGraceDays;
   }
 
   get protectedDownloadJobIds(): readonly string[] {
-    return [...this.config.protectedDownloadJobIds];
+    return [...this.effective().protectedDownloadJobIds];
   }
 
   get titleProviderPreferences(): Record<string, string> {
-    return { ...this.config.titleProviderPreferences };
+    return { ...this.effective().titleProviderPreferences };
   }
 
   get onboardingVersion(): number {
-    return this.config.onboardingVersion;
+    return this.effective().onboardingVersion;
   }
 
   get downloadPath(): string {
-    return this.config.downloadPath;
+    return this.effective().downloadPath;
   }
 
   get downloadOnboardingDismissed(): boolean {
-    return this.config.downloadOnboardingDismissed;
+    return this.effective().downloadOnboardingDismissed;
   }
 
   get playbackKeysSessionsSeen(): number {
-    return this.config.playbackKeysSessionsSeen;
+    return this.effective().playbackKeysSessionsSeen;
   }
 
   get analytics(): KitsuneConfig["analytics"] {
-    return this.config.analytics;
+    return this.effective().analytics;
   }
 
   get analyticsNoticeShown(): boolean {
-    return this.config.analyticsNoticeShown;
+    return this.effective().analyticsNoticeShown;
   }
 
   get installId(): string {
-    return this.config.installId;
+    return this.effective().installId;
   }
 
   get lastAnalyticsPingAt(): number {
-    return this.config.lastAnalyticsPingAt;
+    return this.effective().lastAnalyticsPingAt;
   }
 
   get analyticsRetryAfter(): number {
-    return this.config.analyticsRetryAfter;
+    return this.effective().analyticsRetryAfter;
   }
 
   get analyticsEndpoint(): string {
-    return this.config.analyticsEndpoint;
+    return this.effective().analyticsEndpoint;
   }
 
   get updateChecksEnabled(): boolean {
-    return this.config.updateChecksEnabled;
+    return this.effective().updateChecksEnabled;
   }
 
   get autoApplyBinaryUpdates(): boolean {
-    return this.config.autoApplyBinaryUpdates;
+    return this.effective().autoApplyBinaryUpdates;
   }
 
   get updateCheckIntervalDays(): number {
-    return this.config.updateCheckIntervalDays;
+    return this.effective().updateCheckIntervalDays;
   }
 
   get updateSnoozedUntil(): number {
-    return this.config.updateSnoozedUntil;
+    return this.effective().updateSnoozedUntil;
   }
 
   get lastUpdateCheckAt(): number {
-    return this.config.lastUpdateCheckAt;
+    return this.effective().lastUpdateCheckAt;
   }
 
   get lastUpdateCheckFailedAt(): number {
-    return this.config.lastUpdateCheckFailedAt;
+    return this.effective().lastUpdateCheckFailedAt;
   }
 
   get lastKnownLatestVersion(): string {
-    return this.config.lastKnownLatestVersion;
+    return this.effective().lastKnownLatestVersion;
   }
 
   get discoverShowOnStartup(): boolean {
-    return this.config.discoverShowOnStartup;
+    return this.effective().discoverShowOnStartup;
   }
 
   get discoverMode(): "auto" | "unified" | "anime-only" | "series-only" {
-    return this.config.discoverMode;
+    return this.effective().discoverMode;
   }
 
   get discoverItemLimit(): number {
-    return this.config.discoverItemLimit;
+    return this.effective().discoverItemLimit;
   }
 
   get recommendationRailEnabled(): boolean {
-    return this.config.recommendationRailEnabled;
+    return this.effective().recommendationRailEnabled;
   }
 
   get showWatchTimeStats(): boolean {
-    return this.config.showWatchTimeStats;
+    return this.effective().showWatchTimeStats;
   }
 
   get lastCalendarVisitAt(): number {
-    return this.config.lastCalendarVisitAt;
+    return this.effective().lastCalendarVisitAt;
   }
 
   get minimalMode(): boolean {
-    return this.sessionOverrides.minimalMode ?? this.config.minimalMode;
+    return this.effective().minimalMode;
   }
 
   get zenMode(): boolean {
-    return this.sessionOverrides.zenMode ?? this.config.zenMode;
+    return this.effective().zenMode;
   }
 
   get powerSaverMode(): boolean {
-    return this.config.powerSaverMode;
+    return this.effective().powerSaverMode;
   }
 
   get powerSaverAllowManualArtwork(): boolean {
-    return this.config.powerSaverAllowManualArtwork;
+    return this.effective().powerSaverAllowManualArtwork;
   }
 
   get tuning(): TuningConfig {
-    return resolveTuning(this.config.tuningOverrides);
+    return resolveTuning(this.effective().tuningOverrides);
   }
 
   get sync(): KitsuneConfig["sync"] {
-    return this.config.sync;
+    return this.effective().sync;
   }
 
   get lastWeeklyDigestShownAt(): string | null | undefined {
-    return this.config.lastWeeklyDigestShownAt;
+    return this.effective().lastWeeklyDigestShownAt;
   }
 
   getRaw(): KitsuneConfig {
-    return { ...this.config, ...this.sessionOverrides };
+    return { ...this.effective() };
   }
 
   /**
@@ -720,11 +835,13 @@ export class ConfigServiceImpl implements ConfigService {
    */
   applySessionOverrides(partial: Partial<KitsuneConfig>): void {
     this.sessionOverrides = { ...this.sessionOverrides, ...partial };
+    this.effectiveView = null;
   }
 
   async update(partial: Partial<KitsuneConfig>): Promise<void> {
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
+      this.dirtyKeys.add(key);
       if (key in this.sessionOverrides) delete this.sessionOverrides[key];
     }
     this.config = {
@@ -825,6 +942,7 @@ export class ConfigServiceImpl implements ConfigService {
           }
         : null),
     };
+    this.effectiveView = null;
   }
 
   private savePending: Promise<void> | null = null;
@@ -889,10 +1007,45 @@ export class ConfigServiceImpl implements ConfigService {
     // that every later `flushPending()` would await.
     this.saveInFlight = pending;
     void (async () => {
+      // Snapshot the keys this write is responsible for, then merge them onto
+      // what is actually on disk — a second Kunai process may have written
+      // since this one loaded (e.g. disabling analytics), and writing the whole
+      // in-memory config would resurrect its stale values.
+      // Residual race: two processes whose saves land inside one load→write
+      // window can still interleave and last-writer-wins. There is deliberately
+      // no cross-process lock — the merge only shrinks the window it used to be
+      // (whole-process-lifetime staleness down to a single write).
+      const writing = new Set(this.dirtyKeys);
+      this.dirtyKeys.clear();
       try {
-        await this.persistConfig(this.config);
+        const disk = await this.store.load();
+        let next: KitsuneConfig;
+        if (Object.keys(disk).length === 0) {
+          // Missing or unreadable file — same full write as before.
+          next = this.config;
+        } else {
+          const normalized = normalizeLoadedConfig(disk);
+          logDroppedConfigKeys(normalized.droppedKeys);
+          const base = normalized.config;
+          if (this.videasyTokenVaulted) {
+            // The file holds "" for a vaulted token; keep the in-memory secret.
+            base.videasySessionToken = this.config.videasySessionToken;
+          }
+          next = { ...base };
+          for (const key of writing) {
+            // SAFETY: `key` is a KitsuneConfig field; `next` gets the field's
+            // own type from `this.config`.
+            (next as Record<keyof KitsuneConfig, unknown>)[key] = this.config[key];
+          }
+        }
+        await this.persistConfig(next);
+        // Keys dirtied while the write was in flight keep their newer memory
+        // value; they stay in `dirtyKeys` and land on the next save.
+        this.config = { ...next, ...pickConfigKeys(this.config, this.dirtyKeys) };
+        this.effectiveView = null;
         resolve?.();
       } catch (error) {
+        for (const key of writing) this.dirtyKeys.add(key);
         reject?.(error instanceof Error ? error : String(error));
       } finally {
         if (this.saveInFlight === pending) this.saveInFlight = null;
@@ -901,15 +1054,49 @@ export class ConfigServiceImpl implements ConfigService {
     return pending;
   }
 
+  /**
+   * Re-read config.json and adopt it for every key this process has not
+   * touched. Lets a long-running session observe another process's changes —
+   * most importantly an analytics opt-out — instead of overwriting or ignoring
+   * them. Session overrides are untouched; they are never on disk anyway.
+   */
+  async reloadFromDisk(): Promise<void> {
+    const disk = await this.store.load();
+    if (Object.keys(disk).length === 0) return;
+    const normalized = normalizeLoadedConfig(disk);
+    logDroppedConfigKeys(normalized.droppedKeys);
+    const base = normalized.config;
+    if (this.videasyTokenVaulted) {
+      base.videasySessionToken = this.config.videasySessionToken;
+    }
+    this.config = { ...base, ...pickConfigKeys(this.config, this.dirtyKeys) };
+    this.effectiveView = null;
+  }
+
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
+    this.dirtyKeys.clear();
+    this.effectiveView = null;
     await this.persistConfig(this.config);
   }
 }
 
-function normalizeStringList(values: readonly string[] | undefined): readonly string[] {
+function pickConfigKeys(
+  config: KitsuneConfig,
+  keys: ReadonlySet<keyof KitsuneConfig>,
+): Partial<KitsuneConfig> {
+  const picked: Partial<Record<keyof KitsuneConfig, unknown>> = {};
+  for (const key of keys) picked[key] = config[key];
+  // SAFETY: every assigned member comes from `config[key]` for a known key, so
+  // each field keeps its declared type.
+  return picked as Partial<KitsuneConfig>;
+}
+
+function normalizeStringList<T>(values: readonly T[] | T | undefined): readonly string[] {
   if (!Array.isArray(values)) return [];
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+  return [
+    ...new Set(values.map((value) => (isJsonString(value) ? value.trim() : "")).filter(Boolean)),
+  ];
 }
 
 function normalizeOptionalSecret<T>(value: T): string {

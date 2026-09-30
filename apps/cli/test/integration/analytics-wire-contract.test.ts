@@ -41,6 +41,7 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
       raw = { ...raw, ...partial };
     },
     async save() {},
+    async reloadFromDisk() {},
     get rawRef() {
       return raw;
     },
