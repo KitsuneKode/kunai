@@ -9,6 +9,7 @@ import {
   DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
+import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
 import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@kunai/types";
@@ -1091,8 +1092,10 @@ function normalizeRunwayTarget<T>(value: T): number {
 }
 
 function normalizeMpvReconnectAttempts<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 1;
-  return Math.max(0, Math.min(1, Math.trunc(value)));
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS;
+  }
+  return Math.max(0, Math.min(MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS, Math.trunc(value)));
 }
 
 function normalizeMaxConcurrentDownloads<T>(value: T): number {

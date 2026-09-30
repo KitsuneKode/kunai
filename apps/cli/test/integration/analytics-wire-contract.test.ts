@@ -88,7 +88,7 @@ describe("CLI → ingest → docs wire contract", () => {
     const config = makeConfig({ analytics: "enabled", installId: "" });
     const { service, results } = wireCliToIngest({ store, config });
 
-    await service.maybePing();
+    await service.maybePing({ isInteractive: true });
 
     expect(results).toHaveLength(1);
     // `stored` reports whether the day's global write budget admitted the ping,
@@ -109,7 +109,7 @@ describe("CLI → ingest → docs wire contract", () => {
     for (const machine of fleet) {
       const config = makeConfig({ analytics: "enabled", installId: "" });
       const { service } = wireCliToIngest({ store, ...machine, config });
-      await service.maybePing();
+      await service.maybePing({ isInteractive: true });
     }
 
     const rollup = await store.rollUpDay(utcDayKey(NOW));
@@ -123,7 +123,7 @@ describe("CLI → ingest → docs wire contract", () => {
     const store = createMemoryAnalyticsStore();
     const config = makeConfig({ analytics: "enabled", installId: "" });
     const { service } = wireCliToIngest({ store, config });
-    await service.maybePing();
+    await service.maybePing({ isInteractive: true });
 
     const rollup = await store.rollUpDay(utcDayKey(NOW));
     const published = buildPublicMetrics({ ...rollup, computedAt: new Date(NOW).toISOString() });
@@ -143,7 +143,7 @@ describe("CLI → ingest → docs wire contract", () => {
     const store = createMemoryAnalyticsStore();
     const config = makeConfig({ analytics: "enabled", installId: "" });
     const { service } = wireCliToIngest({ store, config, os: "win32", arch: "arm64" });
-    await service.maybePing();
+    await service.maybePing({ isInteractive: true });
 
     const published = buildPublicMetrics(await store.rollUpDay(utcDayKey(NOW)));
 
@@ -180,7 +180,7 @@ describe("CLI → ingest → docs wire contract", () => {
     const config = makeConfig({ analytics: "disabled", installId: "" });
     const { service, results } = wireCliToIngest({ store, config });
 
-    await service.maybePing();
+    await service.maybePing({ isInteractive: true });
     await service.onSessionStart({ isInteractive: true });
 
     expect(results).toEqual([]);
