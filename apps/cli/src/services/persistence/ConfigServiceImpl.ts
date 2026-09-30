@@ -388,6 +388,14 @@ export class ConfigServiceImpl implements ConfigService {
   private dirtyKeys = new Set<keyof KitsuneConfig>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
+  /**
+   * Values snapshot when a save begins, kept for the duration of its
+   * load→write window. `dirtyKeys` is cleared up front, so without this a
+   * concurrent `reloadFromDisk()` would see the in-flight keys as untouched
+   * and swap their values back to whatever disk holds — the save would then
+   * write stale data over the user's change.
+   */
+  private inFlightValues: Partial<KitsuneConfig> | null = null;
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
   videasyAppIdMigratedOnLoad = false;
 
@@ -1027,13 +1035,18 @@ export class ConfigServiceImpl implements ConfigService {
       // no cross-process lock — the merge only shrinks the window it used to be
       // (whole-process-lifetime staleness down to a single write).
       const writing = new Set(this.dirtyKeys);
+      // Snapshot the values now — `await store.load()` below can interleave
+      // with `reloadFromDisk()`, which swaps `this.config` values for keys it
+      // sees as untouched (dirtyKeys is already cleared) back to disk data.
+      const writingValues = pickConfigKeys(this.config, writing);
+      this.inFlightValues = writingValues;
       this.dirtyKeys.clear();
       try {
         const disk = await this.store.load();
         let next: KitsuneConfig;
         if (Object.keys(disk).length === 0) {
           // Missing or unreadable file — same full write as before.
-          next = this.config;
+          next = { ...this.config, ...writingValues };
         } else {
           const normalized = normalizeLoadedConfig(disk);
           logDroppedConfigKeys(normalized.droppedKeys);
@@ -1042,13 +1055,7 @@ export class ConfigServiceImpl implements ConfigService {
             // The file holds "" for a vaulted token; keep the in-memory secret.
             base.videasySessionToken = this.config.videasySessionToken;
           }
-          next = { ...base };
-          for (const key of writing) {
-            // SAFETY: `key` is a KitsuneConfig field; `next` gets the field's
-            // own type from `this.config`.
-            (next as Record<keyof KitsuneConfig, KitsuneConfig[keyof KitsuneConfig]>)[key] =
-              this.config[key];
-          }
+          next = { ...base, ...writingValues };
         }
         await this.persistConfig(next);
         // Keys dirtied while the write was in flight keep their newer memory
@@ -1057,9 +1064,14 @@ export class ConfigServiceImpl implements ConfigService {
         this.effectiveView = null;
         resolve?.();
       } catch (error) {
+        // A mid-flight reload may have swapped these keys to disk values —
+        // restore the snapshot before re-dirtying so the retry writes them.
+        this.config = { ...this.config, ...writingValues };
+        this.effectiveView = null;
         for (const key of writing) this.dirtyKeys.add(key);
         reject?.(error instanceof Error ? error : String(error));
       } finally {
+        this.inFlightValues = null;
         if (this.saveInFlight === pending) this.saveInFlight = null;
       }
     })();
@@ -1081,13 +1093,20 @@ export class ConfigServiceImpl implements ConfigService {
     if (this.videasyTokenVaulted) {
       base.videasySessionToken = this.config.videasySessionToken;
     }
-    this.config = { ...base, ...pickConfigKeys(this.config, this.dirtyKeys) };
+    // In-flight save values come before dirty keys: a key dirtied after the
+    // save's snapshot holds the newer memory value and must win.
+    this.config = {
+      ...base,
+      ...this.inFlightValues,
+      ...pickConfigKeys(this.config, this.dirtyKeys),
+    };
     this.effectiveView = null;
   }
 
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
     this.dirtyKeys.clear();
+    this.inFlightValues = null;
     this.effectiveView = null;
     await this.persistConfig(this.config);
   }
