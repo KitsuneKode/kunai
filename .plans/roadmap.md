@@ -46,26 +46,32 @@ archive and put only the residue here.
 
 ### Playback and providers
 
-| Track                        | Remaining                                                                                                          | Plan                                                                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mobile terminal runtime      | Node/a-Shell host proofs implemented; physical qualification, catalog/providers, installers, and publishing remain | [runtime](../.docs/mobile-terminal-runtime.md) · [device lab](../.docs/mobile-device-lab.md) · [mobile app design](./mobile-app-runtime.md) |
-| Provider playback resilience | Miruro gate budget, scheduled crypto freshness check                                                               | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                        |
-| Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration                                            | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                                                            |
-| Provider hardening           | Research and scraper capability roadmap                                                                            | [provider-hardening.md](./provider-hardening.md)                                                                                            |
-| Provider result contract     | Contract work before broad `@kunai/core` extraction                                                                | [provider-result-contract.md](./provider-result-contract.md)                                                                                |
-| Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                                                         | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                                                            |
-| Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                                                                 | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                                                          |
+| Track                        | Remaining                                                                                                              | Plan                                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mobile terminal runtime      | Node/a-Shell host proofs implemented; physical qualification, catalog/providers, installers, and publishing remain     | [runtime](../.docs/mobile-terminal-runtime.md) · [device lab](../.docs/mobile-device-lab.md) · [mobile app design](./mobile-app-runtime.md) |
+| Provider playback resilience | Miruro gate budget, scheduled crypto freshness check                                                                   | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                        |
+| Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration                                                | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                                                            |
+| Provider hardening           | Research and scraper capability roadmap                                                                                | [provider-hardening.md](./provider-hardening.md)                                                                                            |
+| Provider result contract     | Contract work before broad `@kunai/core` extraction                                                                    | [provider-result-contract.md](./provider-result-contract.md)                                                                                |
+| Beta UI/provider hardening   | Tasks 8–10: input routing, subtitle calls, display honesty                                                             | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)                                                            |
+| Resolve UX and Playwright    | Pick up during a browser/provider reliability pass                                                                     | [resolve-ux-and-playwright-lifecycle.md](./resolve-ux-and-playwright-lifecycle.md)                                                          |
+| Provider runtime port        | Inject `fetch`/`which`/clock/`env` through the resolve context; retires test-global leaks, unblocks mobile portability | [provider-runtime-port.md](./provider-runtime-port.md)                                                                                      |
 
 ### Offline and release stability
 
-| Track                          | Remaining                                                                                            | Plan                                                                                                 |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                   | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
-| Provider-independent offline   | Keep downloads playable after provider retirement                                                    | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
-| Offline artwork cache          | Library previews                                                                                     | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
-| Boundary + downloads           | Reviewed adaptive-download design, not started                                                       | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |
-| Poster release smokes          | Real-terminal Kitty, iTerm2, Sixel, and multiplexer pass                                             | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)                             |
-| Setup wizard release hardening | Independent media language profiles, cancellable OAuth, then real-terminal restore-point walkthrough | [2026-08-27-release-setup-and-oauth-hardening.md](./2026-08-27-release-setup-and-oauth-hardening.md) |
+| Track                          | Remaining                                                                                                        | Plan                                                                                                 |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                               | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
+| Provider-independent offline   | Keep downloads playable after provider retirement                                                                | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
+| Offline artwork cache          | Library previews                                                                                                 | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
+| Boundary + downloads           | Reviewed adaptive-download design, not started                                                                   | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |
+| Poster release smokes          | Real-terminal Kitty, iTerm2, Sixel, and multiplexer pass                                                         | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)                             |
+| Setup wizard release hardening | Independent media language profiles, cancellable OAuth, then real-terminal restore-point walkthrough             | [2026-08-27-release-setup-and-oauth-hardening.md](./2026-08-27-release-setup-and-oauth-hardening.md) |
+| Auto-update signing            | Ed25519 signature verify before self-replace + staged/delayed apply; **key-generation decision is a human gate** | [auto-update-signing.md](./auto-update-signing.md)                                                   |
+| Credential vault argv          | 052 residue: native Keychain binding kills `security -w` argv exposure; provider key material behind the vault   | [credential-vault-argv-secrets.md](./credential-vault-argv-secrets.md)                               |
+| SQLite pragmas                 | `synchronous = NORMAL` on both DBs + benchmark note (WAL/busy_timeout already set)                               | [sqlite-pragmas.md](./sqlite-pragmas.md)                                                             |
+| DownloadService split          | 2316-line file → queue/process management vs yt-dlp execution halves; characterization net first                 | [download-service-decomposition.md](./download-service-decomposition.md)                             |
+| Mid-download URL refresh       | Fragment-auth (403) storm → re-resolve via persisted intent → resume with `--continue`; bound at N re-resolves   | [mid-download-url-refresh.md](./mid-download-url-refresh.md)                                         |
 
 ### Analytics
 
@@ -83,9 +89,10 @@ archive and put only the residue here.
 
 ### Verification and CI
 
-| Track                | Remaining                                                                                         | Plan                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Test and CI maturity | Native crash diagnosis, merge enforcement, measured CI cost, coverage and agent verification gaps | [2026-09-12-test-ci-audit.md](./2026-09-12-test-ci-audit.md) |
+| Track                            | Remaining                                                                                         | Plan                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Test and CI maturity             | Native crash diagnosis, merge enforcement, measured CI cost, coverage and agent verification gaps | [2026-09-12-test-ci-audit.md](./2026-09-12-test-ci-audit.md) |
+| Anti-slop gate convention (#472) | Baseline ratchet + owner codified in contributing docs; gate itself is live                       | [anti-slop-gate-decision.md](./anti-slop-gate-decision.md)   |
 
 ### Structure
 
@@ -97,6 +104,7 @@ archive and put only the residue here.
 | Search/catalog service       | Active design; implementation stays pragmatic                                                                                                                                                                                                                          | [search-service.md](./search-service.md)                                                               |
 | Duplicated domain types      | `ProviderLane` declared identically in `apps/cli/src/domain/types.ts` and `packages/types/src/index.ts`; neither marked canonical. `MediaKind` was the same shape and is now single-source in `packages/types`; do the same here. Pick one owner, re-export the other. | [turborepo-and-package-boundaries.md](./turborepo-and-package-boundaries.md)                           |
 | Agent verification loop      | L2 replay + L3 tmux + real-mpv tier + fresh-profile onboarding landed with `verify-kunai` skill; real-mpv CI leg runs push-only. Remaining: advertised-key coverage-map spike                                                                                          | [2026-08-31-agent-verification-harness.md](../.archive/plans/2026-08-31-agent-verification-harness.md) |
+| TypeScript version alignment | `apps/relay-server` + `catalog:web` pin 5.9.3 but hoist-resolve to 7.0.2 — align to one version (or make a divergence real)                                                                                                                                            | [typescript-version-alignment.md](./typescript-version-alignment.md)                                   |
 
 ### Production readiness — external audit
 
@@ -159,6 +167,7 @@ did not fit a row above:
   contract + pure resolver only; ordinal guessing is still what runs today.
 - **052 follow-ups** — native Keychain binding to remove the `security -w`
   argv exposure; vault spawns off the first-paint path (measure under 060).
+  Tracked live in [credential-vault-argv-secrets.md](./credential-vault-argv-secrets.md).
 - **056 residue** — `imdb:` is accepted by the grammar but nothing resolves
   imdb→tmdb (`TitleDetailService` only _reads_ `imdb_id` from TMDB). Reject or
   add `/find` before advertising it in `--help`.

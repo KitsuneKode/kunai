@@ -91,7 +91,7 @@
     "lint": "oxlint .",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "check": "bun run typecheck && bun run lint && bun run fmt",
+    "check": "bun run typecheck && bun run lint && bun run fmt:check",
     "clean": "rm -rf dist",
     "build": "bun run scripts/build.ts",
     "build:watch": "bun --watch run scripts/build.ts",

@@ -8,6 +8,7 @@ import {
 import {
   classifyProviderFailure,
   isOfflineNetworkFailure,
+  isTransportNetworkFailure,
 } from "../src/provider-failure-classifier";
 
 const HTTP_503_FAILURE = {
@@ -171,6 +172,69 @@ test("isOfflineNetworkFailure only matches bounded reliable signatures", () => {
       message: "parse failed: missing sources",
     }),
   ).toBe(false);
+});
+
+test("isOfflineNetworkFailure covers the resolver phrasings every stack emits", () => {
+  for (const message of [
+    "curl: (6) Could not resolve host: anidb.app",
+    "Name or service not known",
+    "no such host",
+    "dns lookup failed",
+    "nodename nor servname provided",
+    // Bun fetch collapses refused *and* unreachable connects into these.
+    "Unable to connect. Is the computer able to access the url?",
+    "FailedToOpenSocket",
+    "Was there a typo in the url or port?",
+  ]) {
+    expect(isOfflineNetworkFailure({ code: "network-error", message })).toBe(true);
+  }
+});
+
+test("a connection reset is a transport failure, not offline evidence", () => {
+  // The audit-4 fix: ECONNRESET must not vote the uplink dead — but it is a
+  // transport death, so retryability/probe bookkeeping still sees it.
+  const reset = { code: "network-error" as const, message: "fetch failed: ECONNRESET" };
+  expect(isTransportNetworkFailure(reset)).toBe(true);
+  expect(isOfflineNetworkFailure(reset)).toBe(false);
+});
+
+test("isTransportNetworkFailure covers refused, reset, timeout, and TLS without HTTP answers", () => {
+  for (const message of [
+    "connect ECONNREFUSED 1.2.3.4:443",
+    "connection refused",
+    "socket hang up",
+    "request timed out",
+    "certificate verify failed",
+    "unable to get local issuer certificate",
+    "self signed certificate in certificate chain",
+    "getaddrinfo ENOTFOUND api.example.test",
+  ]) {
+    expect(isTransportNetworkFailure({ code: "network-error", message })).toBe(true);
+  }
+
+  // Refused and reset are endpoint-local: the host answered, so the uplink is
+  // not evidence-dead. TLS refusals are a trust decision about one endpoint.
+  for (const message of [
+    "connect ECONNREFUSED 1.2.3.4:443",
+    "fetch failed: ECONNRESET",
+    "socket hang up",
+    "certificate verify failed",
+    "provider request timed out",
+  ]) {
+    expect(isOfflineNetworkFailure({ code: "network-error", message })).toBe(false);
+  }
+});
+
+test("isTransportNetworkFailure still refuses non-transport messages", () => {
+  for (const message of [
+    'anidb search returned zero results for "dns"',
+    "Could not parse manifest at /tmp/dns/manifest.m3u8",
+    "HTTP 403 from https://dns.cdn.example/v/1.m3u8",
+    "provider returned empty episode list",
+  ]) {
+    expect(isTransportNetworkFailure({ code: "network-error", message })).toBe(false);
+    expect(isOfflineNetworkFailure({ code: "network-error", message })).toBe(false);
+  }
 });
 
 test("ENOTFOUND from one provider does not stop cross-provider fallback", async () => {

@@ -6,7 +6,7 @@ import {
   createResolveTrace,
   createTraceStep,
   isAbortError,
-  isOfflineNetworkFailure,
+  isTransportNetworkFailure,
   ProviderCycleFailureError,
   providerCycleCandidateTimeoutMs,
   runProviderCycle,
@@ -532,12 +532,15 @@ export const rivestreamProviderModule: CoreProviderModule = {
                         : "network-error",
                     message:
                       error instanceof Error ? error.message : `Internal server ${provider} failed`,
-                    // Offline signatures (ENOTFOUND, EAI_AGAIN, …) are
-                    // non-retryable so the cycle's network-offline early-exit
-                    // fires; other transport errors stay transient.
+                    // A dead socket (refused, reset, TLS refusal) does not
+                    // deserve a same-endpoint retry; a timeout can be a slow
+                    // edge, so it stays transient. Whether the failure also
+                    // counts as *offline* evidence is the cycle engine's
+                    // message-level check, not this flag.
                     retryable: refusal
                       ? false
-                      : !isOfflineNetworkFailure({
+                      : isRivestreamAbortOrTimeoutError(error) ||
+                        !isTransportNetworkFailure({
                           code: "network-error",
                           message: error instanceof Error ? error.message : "",
                         }),

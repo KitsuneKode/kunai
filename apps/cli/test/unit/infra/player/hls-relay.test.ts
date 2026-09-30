@@ -6,6 +6,7 @@ import {
   fromB64Url,
   looksLikeHlsPlaylist,
   rewriteHlsPlaylistForRelay,
+  startHlsRelay,
   streamNeedsHlsRelay,
   toB64Url,
 } from "@/infra/player/hls-relay";
@@ -471,8 +472,132 @@ describe("rewriteHlsPlaylistForRelay", () => {
     expect(fromB64Url(b64)).toBe("https://vault-06.uwucdn.top/path/to/1080/index.m3u8");
   });
 
+  test("a relay base with a token segment rewrites URIs under it", () => {
+    // startHlsRelay passes `origin + "/" + token` as the rewrite base, so every
+    // playlist URI inherits the token — a segment fetch without it must 404.
+    const input = ["#EXTM3U", "seg001.ts", "1080/index.m3u8"].join("\n");
+    const out = rewriteHlsPlaylistForRelay(input, BASE, `${RELAY}/tok-abc`);
+    const lines = out.split("\n");
+    expect(lines[1]!.startsWith(`${RELAY}/tok-abc/s/`)).toBe(true);
+    expect(lines[2]!.startsWith(`${RELAY}/tok-abc/p/`)).toBe(true);
+  });
+
   test("rejects non-allowlisted upstream hosts in playlist URIs", () => {
     const input = ["#EXTM3U", "https://evil.example/seg.ts"].join("\n");
     expect(() => rewriteHlsPlaylistForRelay(input, BASE, RELAY)).toThrow(/not allowlisted/);
+  });
+});
+
+/**
+ * The relay's routes were `/p/<b64>` and `/s/<b64>` where the whole secret was
+ * the upstream URL itself — a same-host process that knew an allowlisted CDN
+ * URL could compute the path and drive the relay with Kunai's headers. The
+ * per-relay token segment makes every path unguessable; these run the real
+ * server against a loopback "upstream" so the check covers the path the player
+ * actually requests, not just the rewrite helpers.
+ *
+ * The curl check lives inside each test, not in `describe.skipIf` at module
+ * load — `Bun.which` is a host-env read and the anti-slop rule bans freezing
+ * it at load. A curl-less host passes these vacuously; CI has curl.
+ */
+describe("hls-relay session token", () => {
+  const SEGMENT_BYTES = Buffer.from([0x47, 0x40, 0x11, 0x10, 0xaa, 0xbb]);
+
+  /** startHlsRelay throws without curl; a vacuous pass beats a false red. */
+  const curlMissing = () => Bun.which("curl") === null;
+
+  async function withRelay<T>(
+    run: (args: { proxyUrl: string; origin: string; playlistB64: string }) => Promise<T>,
+  ): Promise<T> {
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(req) {
+        const path = new URL(req.url).pathname;
+        if (path === "/index.m3u8") {
+          return new Response("#EXTM3U\nseg.ts\n", {
+            headers: { "Content-Type": "application/vnd.apple.mpegurl" },
+          });
+        }
+        if (path === "/seg.ts") {
+          return new Response(SEGMENT_BYTES, { headers: { "Content-Type": "video/mp2t" } });
+        }
+        return new Response("nope", { status: 404 });
+      },
+    });
+    try {
+      const playlistB64 = toB64Url(Buffer.from(`http://127.0.0.1:${upstream.port}/index.m3u8`));
+      // No allowlisted CDN resolves to loopback, so the live path needs the
+      // injected gate — narrower than production's (loopback only), never wider.
+      const relay = startHlsRelay(
+        `http://127.0.0.1:${upstream.port}/index.m3u8`,
+        {},
+        {
+          isUpstreamAllowed: (hostname) => hostname === "127.0.0.1",
+        },
+      );
+      try {
+        return await run({
+          proxyUrl: relay.proxyUrl,
+          origin: new URL(relay.proxyUrl).origin,
+          playlistB64,
+        });
+      } finally {
+        relay.stop();
+      }
+    } finally {
+      upstream.stop(true);
+    }
+  }
+
+  test("the handed-to-player URL carries a random token segment", async () => {
+    if (curlMissing()) return;
+    await withRelay(async ({ proxyUrl, playlistB64 }) => {
+      const url = new URL(proxyUrl);
+      const segments = url.pathname.split("/").filter(Boolean);
+      // /<token>/p/<b64>.m3u8 — a 36-char UUID token, then the old shape.
+      expect(segments.length).toBe(3);
+      expect(segments[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(segments[1]).toBe("p");
+      expect(segments[2]).toBe(`${playlistB64}.m3u8`);
+    });
+  });
+
+  test("untokened and wrong-token paths 404 without revealing the routes", async () => {
+    if (curlMissing()) return;
+    await withRelay(async ({ origin, playlistB64 }) => {
+      for (const path of [
+        `/p/${playlistB64}.m3u8`,
+        `/bogus-token/p/${playlistB64}.m3u8`,
+        `/s/${toB64Url(Buffer.from("http://127.0.0.1:9/x.ts"))}`,
+        `/`,
+      ]) {
+        const response = await fetch(`${origin}${path}`);
+        expect(response.status, path).toBe(404);
+        await response.text();
+      }
+    });
+  });
+
+  test("the token reaches the upstream fetch and the rewritten segment path", async () => {
+    if (curlMissing()) return;
+    await withRelay(async ({ proxyUrl, origin }) => {
+      const playlist = await fetch(proxyUrl);
+      expect(playlist.status).toBe(200);
+      const body = await playlist.text();
+      expect(body).toContain("#EXTM3U");
+
+      // The rewritten segment URI must carry the same token, or the player's
+      // segment fetches would land outside the session gate.
+      const token = new URL(proxyUrl).pathname.split("/")[1]!;
+      const segmentLine = body.split("\n").find((line) => line.includes("/s/"));
+      expect(segmentLine).toBeDefined();
+      expect(segmentLine!.startsWith(`${origin}/${token}/s/`)).toBe(true);
+
+      // And the tokened segment URL is the one that actually serves bytes.
+      const segment = await fetch(segmentLine!);
+      expect(segment.status).toBe(200);
+      expect(Buffer.from(await segment.arrayBuffer())).toEqual(SEGMENT_BYTES);
+    });
   });
 });

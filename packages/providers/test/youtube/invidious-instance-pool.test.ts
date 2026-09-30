@@ -6,6 +6,10 @@ import {
   pickInvidiousInstance,
 } from "@kunai/providers/youtube";
 
+import { installGlobalRestore } from "../helpers/restore-globals";
+
+installGlobalRestore();
+
 describe("invidious instance reachability", () => {
   // Upstream now reports every working clearnet instance as `api: false`, while
   // every `api: null` entry is a non-routable overlay-network address. Selecting

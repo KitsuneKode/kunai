@@ -271,7 +271,15 @@ export async function runProviderCycle<TResolved>(
           };
         }
 
-        if (failure.failureClass === "candidate-network" && !failure.retryable) {
+        // Offline evidence is a message-level judgment, not a retryability
+        // one: a non-retryable transport failure (ECONNRESET, a TLS refusal)
+        // says something about this endpoint, not the uplink — only the
+        // uplink-evidence signatures in `isOfflineNetworkFailure` corroborate
+        // toward `network-offline`.
+        if (
+          failure.failureClass === "candidate-network" &&
+          isNetworkOfflineMessage(failure.message)
+        ) {
           offlineEvidenceServers.add(candidate.serverId ?? candidate.id);
           if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
             return {
@@ -543,7 +551,12 @@ async function runProviderCycleRaced<TResolved>(args: {
         };
       }
 
-      if (failure.failureClass === "candidate-network" && !failure.retryable) {
+      // Same evidence rule as the sequential walk: only uplink-evidence
+      // signatures corroborate — a non-retryable reset/TLS failure does not.
+      if (
+        failure.failureClass === "candidate-network" &&
+        isNetworkOfflineMessage(failure.message)
+      ) {
         offlineEvidenceServers.add(entry.candidate.serverId ?? entry.candidate.id);
         if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
           abortAll();

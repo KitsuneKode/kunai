@@ -1,5 +1,5 @@
 {
-  "$schema": "https://v2-10-0.turborepo.dev/schema.json",
+  "$schema": "https://turborepo.dev/schema.json",
   // Lockfile + root manifest are inputs to every task hash. Without this a
   // dependency-only change (bun install after a catalog bump, no package file
   // touched) replays a cached `build` that still embeds the old versions —
@@ -10,12 +10,11 @@
       "dependsOn": ["^transit"]
     },
     "typecheck": {
-      "cache": false,
-      "dependsOn": ["transit"],
       // The one blocking-chain task that was cacheable: a green typecheck
       // could be a .turbo/TURBO_TOKEN replay instead of a run (AGENTS.md
       // hazard #2). lint/fmt/test are already cache:false — this joins them.
       "cache": false,
+      "dependsOn": ["transit"],
       "outputs": []
     },
     "lint": {
@@ -108,7 +107,10 @@
       "env": ["KUNAI_BUILD_ANALYZE"]
     },
     "check": {
-      "dependsOn": ["typecheck", "lint", "fmt"],
+      // Read-only gate: the writing `fmt` task must not run under `check`,
+      // or `bun run check` would mutate the tree it was asked to verify.
+      "cache": false,
+      "dependsOn": ["typecheck", "lint", "fmt:check"],
       "outputs": []
     },
     "clean": {

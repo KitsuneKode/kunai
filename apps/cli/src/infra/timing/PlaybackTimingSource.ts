@@ -1,4 +1,5 @@
 import type { EpisodeInfo, PlaybackTimingMetadata, TitleInfo } from "@/domain/types";
+import { isOfflineNetworkFailure } from "@kunai/core";
 
 export type TimingContentMode = "series" | "anime" | "movie";
 
@@ -56,25 +57,22 @@ export interface PlaybackTimingSource {
   }): Promise<PlaybackTimingSourceFetchResult>;
 }
 
-const OFFLINE_PATTERNS = [
-  "enotfound",
-  "eai_again",
-  "enetunreach",
-  "network is unreachable",
-  "err_internet_disconnected",
-  "err_name_not_resolved",
-] as const;
-
 export function isTimingAbortError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const name = "name" in error ? String(error.name) : "";
   return name === "AbortError" || name === "TimeoutError";
 }
 
+/**
+ * Timing-source offline detection rides the shared uplink-evidence check in
+ * `@kunai/core` — a timing source seeing DNS/routing evidence reports
+ * "offline"; endpoint-local transport deaths (reset, refused, TLS) stay
+ * `http-error` here because a timing probe failure is never uplink evidence
+ * on its own.
+ */
 export function isTimingOfflineError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
-  const lower = message.toLowerCase();
-  return OFFLINE_PATTERNS.some((pattern) => lower.includes(pattern));
+  return isOfflineNetworkFailure({ code: "network-error", message });
 }
 
 export function classifyTimingHttpStatus(status: number): PlaybackTimingOutcomeClass {

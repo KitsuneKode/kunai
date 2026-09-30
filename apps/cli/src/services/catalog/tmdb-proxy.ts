@@ -1,6 +1,6 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
-import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
+import { isTransportNetworkFailure } from "@kunai/core";
 import { VIDEASY_DB_BASE, VIDEASY_DB_BASES } from "@kunai/providers";
 import type { JsonValue } from "@kunai/types";
 
@@ -215,13 +215,15 @@ export async function fetchTmdbJsonWithFallback(
 
 export function isTmdbNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  const message = error.message.toLowerCase();
   const name = error.name.toLowerCase();
+  // `isTransportNetworkFailure` reads the message for socket-level phrasings;
+  // Bun also puts `FailedToOpenSocket` in the *name*, and an AbortError from
+  // the per-request timeout is a dead transport for the caller's purposes.
   return (
     name.includes("failedtoopensocket") ||
     name.includes("aborterror") ||
-    message.includes("network") ||
-    classifyNetworkFailure(message) !== "unknown"
+    error.message.toLowerCase().includes("network") ||
+    isTransportNetworkFailure({ code: "network-error", message: error.message })
   );
 }
 

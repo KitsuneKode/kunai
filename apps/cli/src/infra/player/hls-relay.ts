@@ -70,7 +70,17 @@ export function isHlsRelayUpstreamHost(hostname: string): boolean {
   return CDN_APEX_HOSTNAMES.some((apex) => hostname === apex || hostname.endsWith(`.${apex}`));
 }
 
-function assertRelayUpstreamUrl(url: string): URL {
+/**
+ * Hostname gate applied to every upstream URL the relay will request. The
+ * default is the CDN allowlist; tests inject a narrower gate (loopback only)
+ * because no allowlisted CDN resolves to 127.0.0.1.
+ */
+export type UpstreamHostGate = (hostname: string) => boolean;
+
+function assertRelayUpstreamUrl(
+  url: string,
+  isUpstreamAllowed: UpstreamHostGate = isHlsRelayUpstreamHost,
+): URL {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -80,7 +90,7 @@ function assertRelayUpstreamUrl(url: string): URL {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("upstream URL must be http(s)");
   }
-  if (!isHlsRelayUpstreamHost(parsed.hostname)) {
+  if (!isUpstreamAllowed(parsed.hostname)) {
     throw new Error(`upstream host not allowlisted for HLS relay: ${parsed.hostname}`);
   }
   return parsed;
@@ -112,6 +122,7 @@ export type HlsRelayFetchOptions = {
   readonly maxResponseBytes?: number;
   readonly curlTimeoutMs?: number;
   readonly watchdogTimeoutMs?: number;
+  readonly isUpstreamAllowed?: UpstreamHostGate;
 };
 
 export type HlsRelayUpstreamResponse = HlsRelayCurlResponse & {
@@ -142,7 +153,7 @@ export async function fetchHlsRelayUpstream(
   let currentUrl = url;
   for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
     assertWithinDeadline();
-    const current = assertRelayUpstreamUrl(currentUrl);
+    const current = assertRelayUpstreamUrl(currentUrl, options.isUpstreamAllowed);
     const response = await request(current.href, {
       maxResponseBytes: remainingResponseBytes,
       bodyLimitBytes,
@@ -164,7 +175,10 @@ export async function fetchHlsRelayUpstream(
     if (redirectCount === 3) {
       throw new Error("upstream redirected too many times");
     }
-    const redirect = assertRelayUpstreamUrl(new URL(response.redirectUrl, current).href);
+    const redirect = assertRelayUpstreamUrl(
+      new URL(response.redirectUrl, current).href,
+      options.isUpstreamAllowed,
+    );
     if (current.protocol === "https:" && redirect.protocol === "http:") {
       throw new Error("HTTPS upstream cannot redirect to HTTP");
     }
@@ -217,8 +231,9 @@ function curlFetchOnce(
   referer: string,
   origin: string,
   budget: HlsRelayCurlBudget,
+  isUpstreamAllowed: UpstreamHostGate,
 ): Promise<HlsRelayCurlResponse> {
-  assertRelayUpstreamUrl(url);
+  assertRelayUpstreamUrl(url, isUpstreamAllowed);
   return new Promise((resolve, reject) => {
     const proc = spawn(
       "curl",
@@ -317,9 +332,12 @@ function curlFetch(
   url: string,
   referer: string,
   origin: string,
+  isUpstreamAllowed: UpstreamHostGate,
 ): Promise<HlsRelayUpstreamResponse> {
-  return fetchHlsRelayUpstream(url, (currentUrl, budget) =>
-    curlFetchOnce(currentUrl, referer, origin, budget),
+  return fetchHlsRelayUpstream(
+    url,
+    (currentUrl, budget) => curlFetchOnce(currentUrl, referer, origin, budget, isUpstreamAllowed),
+    { isUpstreamAllowed },
   );
 }
 
@@ -346,6 +364,7 @@ export function rewriteHlsPlaylistForRelay(
   text: string,
   baseUrl: string,
   relayOrigin: string,
+  isUpstreamAllowed: UpstreamHostGate = isHlsRelayUpstreamHost,
 ): string {
   return text
     .split(/\r?\n/)
@@ -356,12 +375,12 @@ export function rewriteHlsPlaylistForRelay(
         if (!/URI="/i.test(t)) return line;
         return line.replace(/URI="([^"]+)"/gi, (_m: string, uri: string) => {
           const full = resolveHlsSegmentUrl(baseUrl, uri);
-          assertRelayUpstreamUrl(full);
+          assertRelayUpstreamUrl(full, isUpstreamAllowed);
           return `URI="${relayPathForUpstream(full, relayOrigin)}"`;
         });
       }
       const full = resolveHlsSegmentUrl(baseUrl, t);
-      assertRelayUpstreamUrl(full);
+      assertRelayUpstreamUrl(full, isUpstreamAllowed);
       return relayPathForUpstream(full, relayOrigin);
     })
     .join("\n");
@@ -382,6 +401,13 @@ export type StartHlsRelayOptions = {
     readonly host: string;
     readonly message: string;
   }) => void;
+  /**
+   * Test seam: replaces the CDN allowlist for this relay only, so a loopback
+   * upstream can exercise the real server/curl/playlist path. Production
+   * callers must never set it — a wider gate turns the relay into an open
+   * same-host fetch proxy with provider headers attached.
+   */
+  readonly isUpstreamAllowed?: UpstreamHostGate;
 };
 
 /**
@@ -398,13 +424,25 @@ export function startHlsRelay(
     throw new Error("curl is required for HLS relay (CDN blocks non-curl TLS fingerprints)");
   }
 
-  const upstream = assertRelayUpstreamUrl(originalUrl);
+  const isUpstreamAllowed = options.isUpstreamAllowed ?? isHlsRelayUpstreamHost;
+  const upstream = assertRelayUpstreamUrl(originalUrl, isUpstreamAllowed);
   // Same normalization the mpv path uses: case-insensitive lookup plus CR/LF
   // stripping, so provider-supplied values can't smuggle extra curl headers.
   const normalized = normalizeStreamHttpHeaders(streamHeaders);
   const referer = normalized.referer ?? "https://kwik.cx/";
   const origin = normalized.origin ?? new URL(referer).origin;
   const playlistB64 = toB64Url(Buffer.from(originalUrl));
+  /**
+   * Per-relay bearer token baked into every served path.
+   *
+   * The routes were `/p/<b64>` and `/s/<b64>` — and the "secret" is the
+   * upstream URL itself, base64'd: any same-host process (or any page that can
+   * reach 127.0.0.1) that knows an allowlisted CDN URL could compute the path
+   * and drive the relay with Kunai's referer/origin headers. A random token
+   * minted per `startHlsRelay` makes every path unguessable without ever
+   * leaving the handed-to-mpv URL.
+   */
+  const sessionToken = crypto.randomUUID();
 
   let idleTimer: Timer | null = null;
   let stopped = false;
@@ -428,19 +466,30 @@ export function startHlsRelay(
       const path = new URL(req.url).pathname;
       const relayOrigin = `http://127.0.0.1:${server.port}`;
 
-      if (path.startsWith("/p/")) {
-        const rawB64 = path.slice(3).replace(/\.m3u8$/i, "");
+      // Token first: a wrong or absent token answers the same 404 as an
+      // unknown route, so probing cannot tell the routes exist at all.
+      const tokenPrefix = `/${sessionToken}`;
+      if (!path.startsWith(`${tokenPrefix}/`)) {
+        return new Response("not found", { status: 404 });
+      }
+      const inner = path.slice(tokenPrefix.length);
+      // Every URI rewritten into a playlist must carry the token too, or mpv's
+      // segment fetches would 404. `relayBase` is origin + token prefix.
+      const relayBase = `${relayOrigin}${tokenPrefix}`;
+
+      if (inner.startsWith("/p/")) {
+        const rawB64 = inner.slice(3).replace(/\.m3u8$/i, "");
         let srcUrl: string;
         try {
           srcUrl = fromB64Url(rawB64);
-          assertRelayUpstreamUrl(srcUrl);
+          assertRelayUpstreamUrl(srcUrl, isUpstreamAllowed);
         } catch {
           // Body stays generic on purpose: the exception text can carry the
           // upstream URL, and this response crosses a process boundary.
           return new Response("invalid upstream URL", { status: 403 });
         }
         try {
-          const r = await curlFetch(srcUrl, referer, origin);
+          const r = await curlFetch(srcUrl, referer, origin, isUpstreamAllowed);
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
@@ -453,7 +502,8 @@ export function startHlsRelay(
             const rewritten = rewriteHlsPlaylistForRelay(
               r.body.toString("utf-8"),
               r.effectiveUrl,
-              relayOrigin,
+              relayBase,
+              isUpstreamAllowed,
             );
             return new Response(rewritten, {
               headers: { "Content-Type": "application/vnd.apple.mpegurl" },
@@ -472,17 +522,17 @@ export function startHlsRelay(
         }
       }
 
-      if (path.startsWith("/s/")) {
+      if (inner.startsWith("/s/")) {
         let srcUrl: string;
         try {
-          srcUrl = fromB64Url(path.slice(3));
-          assertRelayUpstreamUrl(srcUrl);
+          srcUrl = fromB64Url(inner.slice(3));
+          assertRelayUpstreamUrl(srcUrl, isUpstreamAllowed);
         } catch {
           // See above: never echo exception text into a relay response body.
           return new Response("invalid upstream URL", { status: 403 });
         }
         try {
-          const r = await curlFetch(srcUrl, referer, origin);
+          const r = await curlFetch(srcUrl, referer, origin, isUpstreamAllowed);
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
@@ -496,7 +546,8 @@ export function startHlsRelay(
             const rewritten = rewriteHlsPlaylistForRelay(
               r.body.toString("utf-8"),
               r.effectiveUrl,
-              relayOrigin,
+              relayBase,
+              isUpstreamAllowed,
             );
             return new Response(rewritten, {
               headers: { "Content-Type": "application/vnd.apple.mpegurl" },
@@ -516,11 +567,11 @@ export function startHlsRelay(
         }
       }
 
-      return new Response("use /p/<b64url>.m3u8 or /s/<b64url>", { status: 404 });
+      return new Response("not found", { status: 404 });
     },
   });
 
-  const proxyUrl = `http://127.0.0.1:${server.port}/p/${playlistB64}.m3u8`;
+  const proxyUrl = `http://127.0.0.1:${server.port}/${sessionToken}/p/${playlistB64}.m3u8`;
 
   const stop = (reason: HlsRelayStopReason = "playback-end") => {
     if (stopped) return;

@@ -52,6 +52,11 @@ import {
   setAllMangaRetrySleepForTest,
 } from "../src/index";
 import { ProviderHttpError } from "../src/runtime/fetch";
+import { installGlobalRestore } from "./helpers/restore-globals";
+
+// A swapped `fetch`/`Bun.which` left standing after a failing test leaks into
+// every later file in the same test process — this restores them per test.
+installGlobalRestore();
 
 const TEST_KEY_HEX = ALLMANGA_KEY_HEX;
 const FIXTURE_BASE = new URL("./fixtures/allmanga/", import.meta.url);

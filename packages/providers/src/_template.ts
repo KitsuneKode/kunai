@@ -3,7 +3,7 @@ import {
   createResolveTrace,
   createTraceStep,
   isAbortError,
-  isOfflineNetworkFailure,
+  isTransportNetworkFailure,
   type CoreProviderModule,
   defineProviderManifest,
 } from "@kunai/core";
@@ -275,11 +275,13 @@ export const templateProviderModule: CoreProviderModule = {
       // 2. ProviderHttpError already carries the classified code +
       //    retryability from the fetch port — never flatten it to
       //    "network-error" or, worse, "not-found".
-      // 3. Raw transport errors are "network-error"; when the message
-      //    carries an offline signature (ENOTFOUND, EAI_AGAIN, …) mark
-      //    them non-retryable so the engine's offline budget caps this
-      //    provider early instead of burning attempts on a dead link.
-      //    An offline machine must never read as an empty catalog.
+      // 3. Raw transport errors are "network-error"; a dead socket
+      //    (refused, reset, TLS refusal) gets retryable=false — the dead
+      //    endpoint does not deserve a second attempt. Whether the
+      //    message is also *offline* evidence (ENOTFOUND, EAI_AGAIN, …)
+      //    is the cycle engine's own check, so an offline machine still
+      //    caps the provider early instead of reading as an empty
+      //    catalog.
       // -------------------------------------------------------------
       if (context.signal?.aborted || isAbortError(error)) {
         return createExhaustedResult(input, context, TEMPLATE_PROVIDER_ID, {
@@ -303,7 +305,7 @@ export const templateProviderModule: CoreProviderModule = {
               providerId: TEMPLATE_PROVIDER_ID,
               code: "network-error",
               message,
-              retryable: !isOfflineNetworkFailure({ code: "network-error", message }),
+              retryable: !isTransportNetworkFailure({ code: "network-error", message }),
               at: context.now(),
             };
       failures.push(failure);

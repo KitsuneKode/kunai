@@ -1,3 +1,5 @@
+import { isOfflineNetworkFailure, isTransportNetworkFailure } from "@kunai/core";
+
 export type NetworkStatus = "online" | "offline" | "limited" | "unknown";
 
 export type NetworkEvidence =
@@ -23,46 +25,25 @@ export type NetworkUserHint = {
 };
 
 /**
- * Substrings that identify a transport failure with no HTTP response behind it.
+ * Classify a thrown/recorded network message for the connectivity seam.
  *
- * Every entry must be a phrase the *transport* emits. A bare token like `dns`
- * used to be in this list and it was a live hazard: any provider message that
- * happened to contain those three letters — a title echoed into an error, a URL
- * with `dns` in a path — classified as `offline`, and
- * `DEFAULT_CONSECUTINE_OFFLINE_THRESHOLD = 2` across two distinct providers
- * then halts every remaining live candidate, including working ones. The
- * resolver's actual phrasings are enumerated instead.
+ * The shared classifiers in `@kunai/core` own the signature lists now:
+ * `isOfflineNetworkFailure` holds the uplink-evidence phrasings (resolver and
+ * routing failures, plus Bun's collapsed connect vocabulary), and
+ * `isTransportNetworkFailure` adds the endpoint-local transport deaths —
+ * refused, reset, timeout, TLS. Evidence maps to `offline`; a transport
+ * failure without evidence maps to `limited`, because a refused or reset
+ * connection proves the host answered — the uplink worked. That also keeps a
+ * single ECONNRESET from latching `Connectivity` into `offline`, which would
+ * have blocked every online code path on one middlebox.
+ *
+ * Bare tokens stay banned: `dns` alone used to match titles and URLs, so the
+ * shared list enumerates the phrasings transports actually emit.
  */
-const NETWORK_ERROR_PATTERNS = [
-  "enotfound",
-  "eai_again",
-  "econnrefused",
-  "enetunreach",
-  "network is unreachable",
-  "err_internet_disconnected",
-  "err_name_not_resolved",
-  "unable to connect",
-  "failedtoopensocket",
-  "was there a typo in the url or port",
-  // curl: "Could not resolve host: …" — the bare "could not resolve" prefix
-  // covers wget and other transports too.
-  "could not resolve",
-  // glibc resolver: "Name or service not known" / "Temporary failure in name resolution"
-  "name or service not known",
-  "temporary failure in name resolution",
-  // Windows resolver and Bun: "no such host"
-  "no such host",
-  // undici / Node: "dns lookup failed"; nslookup-flavoured: "dns query"
-  "dns lookup",
-  "dns query",
-  "getaddrinfo",
-  "nodename nor servname",
-];
-
 export function classifyNetworkFailure(message: string): NetworkStatus {
-  const normalized = message.toLowerCase();
-  if (NETWORK_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern))) return "offline";
-  if (normalized.includes("timeout") || normalized.includes("timed out")) return "limited";
+  const failure = { code: "network-error" as const, message };
+  if (isOfflineNetworkFailure(failure)) return "offline";
+  if (isTransportNetworkFailure(failure)) return "limited";
   return "unknown";
 }
 

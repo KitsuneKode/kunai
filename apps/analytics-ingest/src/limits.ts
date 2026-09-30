@@ -1,10 +1,13 @@
 /**
  * Cost and cardinality ceilings.
  *
- * Every number here exists because something on the write path is otherwise
- * unbounded, and an unbounded write path on a maintainer-funded database is a
- * denial-of-wallet vector rather than a scaling problem. None of them changes
- * what is collected — only how much of it a single day may create.
+ * The two daily ceilings bound what a single UTC day may write: an unbounded
+ * write path on a maintainer-funded database is a denial-of-wallet vector
+ * rather than a scaling problem. `lifetimeRetentionDays` is a different kind
+ * of bound — a retention window that keeps `install_lifetime`, which grows
+ * one row per client-minted id, from accumulating forever. None of them
+ * changes what is collected — only how much of it a day may add, and how
+ * long a row survives.
  */
 
 /**

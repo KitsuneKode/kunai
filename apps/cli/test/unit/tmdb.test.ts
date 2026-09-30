@@ -120,3 +120,40 @@ describe("TMDB series artwork", () => {
     expect(episodes?.[0]?.overview).toBe("The team faces a difficult choice.");
   });
 });
+
+describe("TMDB session caches are bounded", () => {
+  /**
+   * `epCache`/`seasonCache`/`showLanguageCache` were plain Maps — one entry per
+   * series browsed, kept forever. Now LRU-bounded at 500: filling past the
+   * ceiling evicts the oldest write, so re-reading it pays a fresh fetch while
+   * the newest entry still answers from memory.
+   */
+  test("an evicted episode entry refetches; a still-cached one does not", async () => {
+    const { fetchEpisodes } = await import("@/tmdb");
+    let fetches = 0;
+    setFetchRouter(() => {
+      fetches += 1;
+      // A complete episode row (real name + synopsis) keeps this to one fetch
+      // per key — no original-language enrichment pass.
+      return {
+        episodes: [
+          { episode_number: 1, name: "Aired", air_date: "2020-01-01", overview: "Synopsis." },
+        ],
+      };
+    });
+
+    // 501 distinct series — one past the ceiling.
+    for (let i = 0; i <= 500; i++) {
+      await fetchEpisodes(`bound-series-${i}`, 1);
+    }
+    const afterFill = fetches;
+
+    // The newest key still answers without a fetch.
+    await fetchEpisodes("bound-series-500", 1);
+    expect(fetches).toBe(afterFill);
+
+    // The oldest key was evicted — it must go back to the network.
+    await fetchEpisodes("bound-series-0", 1);
+    expect(fetches).toBeGreaterThan(afterFill);
+  });
+});

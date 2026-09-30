@@ -723,6 +723,47 @@ describe("youtubeMetadata normalization", () => {
   });
 });
 
+describe("youtubeProvider normalization", () => {
+  // The youtubeProvider field used to route through `normalizeSeriesProvider`,
+  // which falls back to `DEFAULT_CONFIG.provider` ("vidlink") — so an absent
+  // or non-string value silently became the *series* provider and the
+  // `|| DEFAULT_CONFIG.youtubeProvider` fallback at the call site could never
+  // fire. The youtube lane's own default is "youtube".
+  test("an absent youtubeProvider resolves to the youtube default, not the series provider", async () => {
+    const service = await ConfigServiceImpl.load(new MemoryConfigStore({}));
+    expect(service.youtubeProvider).toBe(DEFAULT_CONFIG.youtubeProvider);
+    expect(service.youtubeProvider).not.toBe(DEFAULT_CONFIG.provider);
+  });
+
+  test("a non-string youtubeProvider resolves to the youtube default, not the series provider", async () => {
+    const store = new MemoryConfigStore({
+      // SAFETY: deliberately malformed test stub — hand-edited config.json case.
+      youtubeProvider: 42 as never,
+    });
+    const service = await ConfigServiceImpl.load(store);
+    expect(service.youtubeProvider).toBe(DEFAULT_CONFIG.youtubeProvider);
+  });
+
+  test("a blank youtubeProvider resolves to the youtube default", async () => {
+    const service = await ConfigServiceImpl.load(new MemoryConfigStore({ youtubeProvider: "   " }));
+    expect(service.youtubeProvider).toBe(DEFAULT_CONFIG.youtubeProvider);
+  });
+
+  test("a well-formed but unknown youtubeProvider resolves to the youtube default", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({ youtubeProvider: "not-a-real-provider" }),
+    );
+    expect(service.youtubeProvider).toBe(DEFAULT_CONFIG.youtubeProvider);
+  });
+
+  test("a configured youtubeProvider survives normalization", async () => {
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({ youtubeProvider: "youtube" }),
+    );
+    expect(service.youtubeProvider).toBe("youtube");
+  });
+});
+
 describe("session overrides", () => {
   test("a session override never reaches the persisted config file", async () => {
     const store = new MemoryConfigStore();

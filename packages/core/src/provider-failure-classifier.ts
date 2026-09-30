@@ -7,21 +7,133 @@ import type {
   ResolveErrorCode,
 } from "@kunai/types";
 
-/** Reliable global-offline signatures only — not timeout, reset, HTTP, parse, or empty. */
+/**
+ * Signatures that count as *uplink* evidence: the machine itself could not
+ * reach the network.
+ *
+ * Two families qualify, plus one transport-vocabulary special case:
+ *
+ * - Resolver failures — every stack's spelling of "DNS could not answer":
+ *   `ENOTFOUND`, `EAI_AGAIN`, curl's "Could not resolve host", glibc's "Name or
+ *   service not known"/"Temporary failure in name resolution", Windows/Bun's
+ *   "no such host", undici's "dns lookup …", "getaddrinfo …", and
+ *   "nodename nor servname". A DNS failure on one provider's domain can be a
+ *   dead upstream, but the same signature on two *distinct* domains is what
+ *   `OfflineEvidenceTracker`/the cycle quorum turn into a verdict.
+ * - Routing failures — the kernel reports no path at all: `ENETUNREACH`,
+ *   `EHOSTUNREACH`, "network is unreachable", `ERR_INTERNET_DISCONNECTED`,
+ *   `ERR_ADDRESS_UNREACHABLE`.
+ * - Bun's collapsed connect phrasings. Bun's fetch reports a refused *or*
+ *   unreachable connect as "Unable to connect. Is the computer able to access
+ *   the url?"/"FailedToOpenSocket"/"Was there a typo in the url or port?" —
+ *   the dead-uplink case is indistinguishable in the message, so these count
+ *   as evidence too and the quorum does the disambiguation.
+ *
+ * What is deliberately absent: `ECONNREFUSED`/`connection refused` (a refusal
+ * proves the host was reached — the uplink worked), `ECONNRESET` and other
+ * torn-socket phrasings (one middlebox is not a dead uplink), timeouts, TLS
+ * failures, HTTP statuses, parse errors, and empty results. Those are
+ * transport failures — see {@link isTransportNetworkFailure} — not evidence
+ * that nothing can be reached.
+ */
 const OFFLINE_NETWORK_PATTERNS = [
   "enotfound",
   "eai_again",
+  "err_name_not_resolved",
+  "could not resolve",
+  "name or service not known",
+  "temporary failure in name resolution",
+  "no such host",
+  "dns lookup",
+  "dns query",
+  "getaddrinfo",
+  "nodename nor servname",
   "enetunreach",
+  "ehostunreach",
   "network is unreachable",
   "err_internet_disconnected",
-  "err_name_not_resolved",
+  "err_address_unreachable",
+  "unable to connect",
+  "failedtoopensocket",
+  "was there a typo in the url or port",
 ] as const;
 
+/**
+ * Signatures of a socket-level transport failure: the request never produced a
+ * usable HTTP answer. A superset of {@link OFFLINE_NETWORK_PATTERNS} — every
+ * uplink-evidence signature is also a transport failure, but the reverse is
+ * not true: a refused connection, a reset, a timeout, or a TLS refusal says
+ * something about one endpoint or one handshake, not about the machine's
+ * connectivity.
+ *
+ * Use this where the question is "did the transport die" — retryability,
+ * probe bookkeeping, "no HTTP response" bookkeeping. Use
+ * {@link isOfflineNetworkFailure} where the question is "does this count
+ * toward the machine being offline".
+ *
+ * Bare tokens are a hazard here: `dns` used to match titles and URLs, so the
+ * list enumerates the phrasings transports actually emit instead.
+ */
+const TRANSPORT_NETWORK_PATTERNS = [
+  ...OFFLINE_NETWORK_PATTERNS,
+  // Refused connect — TCP reached the host and it answered no.
+  "econnrefused",
+  "connection refused",
+  // Torn socket — the peer or a middlebox cut an established connection.
+  "econnreset",
+  "econnaborted",
+  "connection reset",
+  "socket hang up",
+  "failed to open socket",
+  "socket is closed",
+  "socket closed",
+  "broken pipe",
+  "epipe",
+  // undici/Bun's generic wrapper for a failed fetch.
+  "fetch failed",
+  // No answer inside the deadline.
+  "etimedout",
+  "timed out",
+  "timeout",
+  // TLS — the handshake or trust decision failed before HTTP answered.
+  "tls handshake",
+  "ssl routines",
+  "err_ssl_",
+  "err_cert_",
+  "unable to verify",
+  "unable to get local issuer",
+  "self signed certificate",
+  "self-signed certificate",
+  "certificate verify failed",
+  "certificate has expired",
+  "unsupported protocol",
+] as const;
+
+/**
+ * Offline-*evidence* check: does this failure count toward "the machine cannot
+ * reach the network"?
+ *
+ * Narrower than {@link isTransportNetworkFailure} on purpose — a single hit
+ * proves almost nothing either way, so the callers that turn evidence into a
+ * verdict (`OfflineEvidenceTracker`, the provider-cycle quorum) corroborate
+ * across distinct providers/servers first.
+ */
 export function isOfflineNetworkFailure(
   failure: Pick<ProviderFailure, "code" | "message">,
 ): boolean {
   const message = failure.message.toLowerCase();
   return OFFLINE_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+/**
+ * Transport-failure check: did the request die at the socket layer — DNS,
+ * connect refused/reset, timeout, TLS — with no usable HTTP answer behind it?
+ */
+export function isTransportNetworkFailure(
+  failure: Pick<ProviderFailure, "code" | "message">,
+): boolean {
+  const message = failure.message.toLowerCase();
+  return TRANSPORT_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
 }
 
 export function classifyProviderFailure(failure: unknown): ProviderFailureClassification {
