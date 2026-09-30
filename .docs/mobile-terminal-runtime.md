@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-03"
+lastReviewed: "2026-10-01"
 ---
 
 # Mobile terminal runtime
@@ -123,8 +123,9 @@ decision for the Node package actually used on-device.
 One session owns the state transaction from load through final commit. Android
 acquires an exclusive `session.lock` directory lazily; help/version do not lock.
 The iOS launcher locks before staging arguments or cleaning transport files.
-Normal exit releases ownership. An uncatchable termination can leave a lock;
-recovery is explicit rather than guessing whether another session is alive.
+Normal exit releases ownership. Android writes the owner pid into the lock.
+The next launch reclaims that lock when the pid is dead or the lock has no pid
+file, and refuses it when the pid is still alive. iOS recovery stays explicit.
 
 - Accept only absolute credential-free HTTPS URLs without fragments or control
   characters.
@@ -172,10 +173,13 @@ Android Emulator and iOS Simulator results are diagnostic only.
 
 This host-proof slice deliberately excludes catalog/search, anime and TMDB
 identity, provider resolution, episode/source/quality selection, playback
-progress, and supported distribution. Each future capability must enter through
-portable application contracts, make an explicit decision for both identity
-lanes and every provider, and repeat physical qualification with real resolved
-streams.
+progress, and supported distribution. AnimeGG search and resolve can run in
+`apps/mobile/test/unit/runtime/animegg-mobile-fixture.test.ts` against Android
+and a-Shell host fakes, with stream ids from `createStreamId`. That fixture is
+not wired into the mobile application and is not a physical-device pass. Each
+future capability must enter through portable application contracts, make an
+explicit decision for both identity lanes and every provider, and repeat
+physical qualification with real resolved streams.
 
 TV work remains deferred and is not implied by either mobile adapter.
 

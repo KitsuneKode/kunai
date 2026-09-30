@@ -80,6 +80,16 @@ export function createNodeStateStore(input: {
     },
     async commit(next) {
       await runtime.ensureDirectory(input.root);
+      // A failed restore can leave the only good copy in the backup. Promote it
+      // before this commit deletes either artifact. If the promote fails, the
+      // backup stays where it is so the next attempt can try again.
+      if ((await runtime.readText(currentPath)) === undefined) {
+        const backup = await runtime.readText(previousPath);
+        if (backup !== undefined) {
+          parseStateJson(backup);
+          await runtime.move(previousPath, currentPath);
+        }
+      }
       await runtime.remove(temporaryPath);
       await runtime.writeText(temporaryPath, JSON.stringify(next));
       const staged = await runtime.readText(temporaryPath);

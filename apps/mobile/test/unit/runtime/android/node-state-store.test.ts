@@ -122,6 +122,24 @@ describe("Node Android state store", () => {
     expect(fake.files.has(temporaryPath)).toBe(false);
   });
 
+  test("a repeated failed restore does not delete the last good backup", async () => {
+    const currentPath = join("/sandbox", "mobile-state.json");
+    const previousPath = `${currentPath}.previous`;
+    const previous = JSON.stringify({ schemaVersion: 1, hostProofRuns: 4 });
+    const fake = fakeRuntime({ [previousPath]: previous });
+    fake.failMoveFrom = previousPath;
+    const store = createNodeStateStore({ root: "/sandbox", runtime: fake.runtime });
+    const next = { schemaVersion: 1 as const, hostProofRuns: 9, lastResult: "failed" as const };
+
+    await expect(store.commit(next)).rejects.toThrow("move failed");
+    expect(fake.files.get(previousPath)).toBe(previous);
+    expect(fake.files.has(currentPath)).toBe(false);
+
+    await expect(store.commit(next)).rejects.toThrow("move failed");
+    expect(fake.files.get(previousPath)).toBe(previous);
+    expect(fake.files.has(currentPath)).toBe(false);
+  });
+
   test("recovers a staged first write when no prior state exists", async () => {
     const currentPath = join("/sandbox", "mobile-state.json");
     const temporaryPath = `${currentPath}.tmp`;
