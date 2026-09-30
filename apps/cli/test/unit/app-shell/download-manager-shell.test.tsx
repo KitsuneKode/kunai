@@ -42,6 +42,7 @@ function createContainerFixture() {
       zenMode: false,
       autoCleanupWatched: true,
       autoCleanupGraceDays: 2,
+      // SAFETY: widens the empty-array literal to the field's declared string[].
       protectedDownloadJobIds: [] as string[],
     },
     historyRepository: {

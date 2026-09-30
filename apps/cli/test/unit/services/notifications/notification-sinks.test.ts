@@ -81,6 +81,9 @@ describe("notification sinks", () => {
       spawn: (command, options) => {
         spawned.push({
           command,
+          // SAFETY: capture seam only — the real spawn options carry a string
+          // env map; the cast lets the fake record it without restating the
+          // runtime's full option surface.
           env: options?.env as Record<string, string> | undefined,
         });
         return { exited: Promise.resolve(0) };
