@@ -49,10 +49,14 @@ const NEXT_SEARCH_ANCHOR = /<a\s+href="\/series\//i;
 export function parseAnimeggSearchResults(html: string): AnimeggSearchResult[] {
   const results: AnimeggSearchResult[] = [];
   const seen = new Set<string>();
-  const anchor = /<a\s+href="\/series\/([^"#?]+)"[^>]*class="mse"[^>]*>/gi;
+  // One `[^>]*` run per match; the class check happens on the finished tag.
+  // Two interleaved runs in a single pattern backtrack quadratically on a
+  // hostile page full of near-miss anchors.
+  const anchor = /<a\s+href="\/series\/([^"#?]+)"[^>]*>/gi;
 
   let match: RegExpExecArray | null;
   while ((match = anchor.exec(html)) !== null) {
+    if (!/\bclass="mse"/i.test(match[0])) continue;
     const slug = match[1]?.trim();
     if (!slug || seen.has(slug)) continue;
     // Bound the record at the next result anchor, not at a fixed width: a hit
@@ -118,17 +122,23 @@ export function parseAnimeggEpisodeNumbers(html: string, slug: string): number[]
 export function parseAnimeggEpisodeTabs(html: string): AnimeggEpisodeTab[] {
   const tabs: AnimeggEpisodeTab[] = [];
   const seen = new Set<string>();
-  const pattern =
-    /data-id=['"](\d+)['"][^>]*?data-mirror=['"]([^'"]+)['"][^>]*?data-version=['"]([^'"]+)['"]/gi;
+  // Match each tag once, then read its three attributes separately: three lazy
+  // `[^>]*?` spans in one pattern backtrack quadratically on repeat data-ids.
+  const tag = /<[a-z][^>]*>/gi;
+  const embedIdRe = /\bdata-id=['"](\d+)['"]/i;
+  const mirrorRe = /\bdata-mirror=['"]([^'"]+)['"]/i;
+  const versionRe = /\bdata-version=['"]([^'"]+)['"]/i;
 
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(html)) !== null) {
-    const embedId = match[1] ?? "";
-    const version = (match[3] ?? "").trim().toLowerCase();
+  while ((match = tag.exec(html)) !== null) {
+    const embedId = embedIdRe.exec(match[0])?.[1] ?? "";
     if (!embedId || seen.has(embedId)) continue;
+    const version = versionRe.exec(match[0])?.[1]?.trim().toLowerCase();
     if (version !== "subbed" && version !== "dubbed") continue;
+    const mirror = mirrorRe.exec(match[0])?.[1];
+    if (!mirror) continue;
     seen.add(embedId);
-    tabs.push({ embedId, mirror: clean(match[2]) || "Animegg", version });
+    tabs.push({ embedId, mirror: clean(mirror) || "Animegg", version });
   }
   return tabs;
 }

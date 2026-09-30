@@ -189,11 +189,23 @@ export function decodeAstroProp<T>(value: T): AstroValue {
  * normalized through the URL parser rather than used as written.
  */
 export function parseKaaPlayerPage(html: string): KaaPlayerPayload | null {
-  const match = /<astro-island[^>]*\sprops="([^"]*manifest[^"]*)"/i.exec(html);
-  if (!match?.[1]) return null;
+  // One tag-shaped scan, then the attr read on the finished tag: a single
+  // pattern with interleaved `[^>]*`/`[^"]*` runs backtracks quadratically on
+  // a page dense with astro islands.
+  const island = /<astro-island\b[^>]*>/gi;
+  let propsAttr: string | undefined;
+  let tag: RegExpExecArray | null;
+  while ((tag = island.exec(html)) !== null) {
+    const value = /\sprops="([^"]*)"/i.exec(tag[0])?.[1];
+    if (value?.includes("manifest")) {
+      propsAttr = value;
+      break;
+    }
+  }
+  if (!propsAttr) return null;
   let raw: unknown;
   try {
-    raw = JSON.parse(decodeEntities(match[1]));
+    raw = JSON.parse(decodeEntities(propsAttr));
   } catch {
     return null;
   }

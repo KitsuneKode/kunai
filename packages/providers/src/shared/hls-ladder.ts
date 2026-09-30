@@ -354,7 +354,9 @@ export function parseHlsMasterRenditions(
  */
 function parseHlsTagAttributes(input: string): Record<string, string> {
   const attrs: Record<string, string> = {};
-  const re = /([A-Z0-9-]+)\s*=\s*("([^"]*)"|[^,]*)/gi;
+  // Attribute names are hyphen-joined segments, so a run of '-' fails the
+  // segment start immediately instead of backtracking [A-Z0-9-]+ per position.
+  const re = /([A-Z0-9]+(?:-[A-Z0-9]+)*)\s*=\s*("([^"]*)"|[^,]*)/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(input)) !== null) {
     const key = match[1]?.toUpperCase();
