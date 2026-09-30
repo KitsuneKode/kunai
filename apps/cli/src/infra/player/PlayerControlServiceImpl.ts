@@ -44,7 +44,7 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
     case "recompute":
       return "Kunai · Recomputing sources…";
     case "fallback":
-      return "Kunai · Trying another source…";
+      return "Kunai · Trying another provider…";
     case "pick-stream":
       return "Kunai · Select a stream in the terminal…";
     case "pick-source":

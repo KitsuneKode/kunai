@@ -361,6 +361,36 @@ describe("SessionState overlays", () => {
     expect(state.stopAfterCurrent).toBe(false);
   });
 
+  test("tracks tried fallback providers per episode so ⇧F walks forward instead of looping", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    state = reduceState(state, {
+      type: "RECORD_FALLBACK_TRIED_PROVIDERS",
+      providerIds: ["vidking", "rivestream"],
+    });
+    // Duplicates collapse — the engine emits the full attempt list each cycle.
+    state = reduceState(state, {
+      type: "RECORD_FALLBACK_TRIED_PROVIDERS",
+      providerIds: ["vidking", "miruro"],
+    });
+
+    expect(state.fallbackTriedProviderIds).toEqual(["vidking", "rivestream", "miruro"]);
+
+    // Picking a different episode starts a fresh cycle — the tried list is
+    // per-episode, not per-session, so ⇧F on the new episode offers every
+    // provider again.
+    state = reduceState(state, {
+      type: "SELECT_EPISODE",
+      episode: { season: 1, episode: 2 },
+    });
+
+    expect(state.fallbackTriedProviderIds).toEqual([]);
+  });
+
   test("Esc closes the top overlay when one is open", () => {
     let state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },

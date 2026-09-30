@@ -130,11 +130,20 @@ export async function dispatchActivePlaybackCommand(
     return "handled";
   }
   if (action === "recover") {
-    await deps.playerControl.recoverCurrentPlayback("playback-loading-command-recover");
+    // While a resolve is in flight there is no player to recover — cancel the
+    // work with a recover reason so the loop restarts resolution with fresh
+    // sources instead of silently ignoring the key.
+    const cancelledWork = deps.workControl.cancelActive("playback-loading-command-recover");
+    if (!cancelledWork) {
+      await deps.playerControl.recoverCurrentPlayback("playback-loading-command-recover");
+    }
     return "handled";
   }
   if (action === "recompute") {
-    await deps.playerControl.recomputeCurrentPlayback("playback-loading-command-recompute");
+    const cancelledWork = deps.workControl.cancelActive("playback-loading-command-recompute");
+    if (!cancelledWork) {
+      await deps.playerControl.recomputeCurrentPlayback("playback-loading-command-recompute");
+    }
     return "handled";
   }
   if (action === "fallback") {

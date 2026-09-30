@@ -70,6 +70,7 @@ import {
   type EpisodeCatalogLanguagePreferences,
 } from "@/app/playback/playback-profile-context";
 import {
+  isProviderIdFallbackEligible,
   pickCompatibleFallbackProvider,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
@@ -187,6 +188,10 @@ import {
   trustedProgressFromPlaybackResult,
 } from "@/domain/playback/progress-engage-policy";
 import {
+  describeProviderFallbackDetail,
+  describeProviderFallbackHaltedDetail,
+  describeProviderFallbackHaltedNote,
+  describeProviderHedgeNote,
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
 } from "@/domain/playback/provider-resolve-copy";
@@ -239,6 +244,10 @@ import {
   type PlaybackStartupStage,
   summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
+import {
+  isProviderFallbackEligible,
+  resolveEffectiveProviderHealth,
+} from "@/services/playback/provider-health-policy";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import {
   mergeSubtitleTracks,
@@ -249,7 +258,7 @@ import {
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
 import type { MediaKind } from "@kunai/types";
-import type { ProviderFailure } from "@kunai/types";
+import type { ProviderFailure, ProviderId } from "@kunai/types";
 
 // Re-exported for tests that import it from this module's public surface.
 export type { PlaybackOutcome } from "@/app/playback/playback-outcome";
@@ -1041,7 +1050,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         );
 
         const resolveController = new AbortController();
-        let resolveAbortIntent: "cancel" | "fallback" | null = null;
+        let resolveAbortIntent: "cancel" | "fallback" | "retry" | null = null;
         // Abort reasons ride on the signal (as AbortError so fetch-failure
         // classification is unchanged) — the resolve commit policy reads them
         // to decide whether a late result is kept or discarded.
@@ -1058,11 +1067,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (!context.signal.aborted) {
               this.updatePlaybackFeedback(context, {
                 detail:
-                  resolveAbortIntent === "fallback" ? "Skipping current provider…" : "Cancelling…",
+                  resolveAbortIntent === "fallback"
+                    ? "Skipping current provider…"
+                    : resolveAbortIntent === "retry"
+                      ? "Restarting resolve…"
+                      : "Cancelling…",
                 note:
                   resolveAbortIntent === "fallback"
                     ? "Trying the next compatible provider"
-                    : "Returning to results",
+                    : resolveAbortIntent === "retry"
+                      ? "Refreshing provider sources"
+                      : "Returning to results",
               });
             }
           },
@@ -1072,7 +1087,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           id: `playback-resolve:${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
           label: `${title.name} S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`,
           cancel: (reason) => {
-            resolveAbortIntent = reason?.includes("fallback") ? "fallback" : "cancel";
+            resolveAbortIntent = reason?.includes("fallback")
+              ? "fallback"
+              : reason?.includes("recover") || reason?.includes("recompute")
+                ? "retry"
+                : "cancel";
             abortResolve(reason ?? "user-requested");
           },
         });
@@ -1772,9 +1791,41 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     const suggestedName =
                       providerRegistry.get(event.suggestedProviderId)?.metadata.name ??
                       event.suggestedProviderId;
+                    const strugglingName =
+                      providerRegistry.get(event.providerId)?.metadata.name ?? event.providerId;
                     this.updatePlaybackFeedback(context, {
-                      note: `VidKing struggled on this title before. ${suggestedName} worked — switch providers or retry VidKing.`,
+                      note: `${strugglingName} struggled on this title before. ${suggestedName} worked — switch providers or retry ${strugglingName}.`,
                     });
+                    return;
+                  }
+
+                  if (event.type === "provider-engine-event") {
+                    // Live fallback progress — the post-hoc attempt/failure
+                    // replay below narrates history; this is what the screen
+                    // should say while the chain is still running.
+                    const engineEvent = event.event;
+                    const engineProviderName = (id: string) =>
+                      providerRegistry.get(id)?.metadata.name ?? id;
+                    if (engineEvent.type === "provider-fallback-started") {
+                      this.updatePlaybackFeedback(context, {
+                        detail: describeProviderFallbackDetail({
+                          fromProviderName: engineProviderName(engineEvent.fromProviderId),
+                          toProviderName: engineProviderName(engineEvent.toProviderId),
+                        }),
+                        note: "⇧F skips ahead if this provider stalls too.",
+                      });
+                    } else if (engineEvent.type === "provider-hedge-started") {
+                      this.updatePlaybackFeedback(context, {
+                        note: describeProviderHedgeNote({
+                          toProviderName: engineProviderName(engineEvent.toProviderId),
+                        }),
+                      });
+                    } else if (engineEvent.type === "provider-fallback-halted") {
+                      this.updatePlaybackFeedback(context, {
+                        detail: describeProviderFallbackHaltedDetail(),
+                        note: describeProviderFallbackHaltedNote(),
+                      });
+                    }
                     return;
                   }
 
@@ -1833,11 +1884,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stream = resolveResult.stream;
             resolvedProviderId = resolveResult.providerId;
             observeResolveNetworkOutcome(container, resolveResult);
+            // The per-title preference guards the resolve only when the engine
+            // landed somewhere the user did NOT ask for. A session-scoped
+            // provider (⇧F fallback, per-session /provider) is itself the
+            // current intent — resolving exactly it must not be rejected just
+            // because an older durable preference still names another provider.
             if (
               stream &&
               pendingUserProviderSwitch &&
               titlePreferredProviderId &&
-              resolvedProviderId !== titlePreferredProviderId
+              resolvedProviderId !== titlePreferredProviderId &&
+              resolvedProviderId !== stateManager.getState().provider
             ) {
               const preferredName =
                 providerRegistry.get(titlePreferredProviderId)?.metadata.name ??
@@ -1870,15 +1927,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     ? "fallback"
                     : "fresh";
             resolveAttempts = resolveResult.attempts;
+            if (resolveAttempts.length > 0) {
+              // Every provider the chain touched this cycle — successes,
+              // failures, and aborted in-flight candidates — is marked tried
+              // so a later ⇧F walks forward instead of looping back.
+              stateManager.dispatch({
+                type: "RECORD_FALLBACK_TRIED_PROVIDERS",
+                providerIds: resolveAttempts.map((attempt) => attempt.providerId),
+              });
+            }
             if (stream) recordStartupMark("resolve-complete", stream);
 
             for (const [attemptIndex, attempt] of resolveAttempts.entries()) {
               diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "provider",
-                message: attempt.stream
-                  ? "Provider resolve attempt succeeded"
-                  : "Provider resolve attempt failed",
+                message: attempt.aborted
+                  ? "Provider resolve attempt aborted"
+                  : attempt.stream
+                    ? "Provider resolve attempt succeeded"
+                    : "Provider resolve attempt failed",
                 context: {
                   stage: "provider-resolve",
                   attempt: attemptIndex + 1,
@@ -1976,18 +2044,37 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               streamSwitchAction === "pick-quality"
                 ? playerControl.consumePendingStreamSelection()
                 : null;
+            // Health-aware and tried-aware: a provider marked down or already
+            // attempted in this cycle is not a viable fallback target even
+            // though it stays selectable explicitly.
+            const triedProviderIds = new Set(stateManager.getState().fallbackTriedProviderIds);
+            const eligibleFallbackExists = providerRegistry
+              .getCompatible(title, stateManager.getState().mode)
+              .some(
+                (candidate) =>
+                  candidate.metadata.id !== currentProvider.metadata.id &&
+                  !triedProviderIds.has(candidate.metadata.id) &&
+                  isProviderFallbackEligible(
+                    resolveEffectiveProviderHealth(
+                      // SAFETY: candidate.metadata.id comes from a registered provider module — it is a ProviderId by contract.
+                      container.providerHealth?.get(candidate.metadata.id as ProviderId),
+                    ),
+                  ),
+              );
             const hasCompatibleFallbackProvider =
-              resolveAborted && resolveAbortIntent === "fallback"
-                ? providerRegistry
-                    .getCompatible(title, stateManager.getState().mode)
-                    .some((candidate) => candidate.metadata.id !== currentProvider.metadata.id)
-                : false;
+              resolveAborted && resolveAbortIntent === "fallback" ? eligibleFallbackExists : false;
 
             let problemAction: "dismiss" | "retry" | null = null;
             if (!resolveAborted) {
               const problem = buildProviderResolveProblem({
                 attempts: resolveAttempts,
                 capabilitySnapshot: container.capabilitySnapshot,
+                fallbackAvailable: eligibleFallbackExists,
+                hasStreamCandidates: resolveAttempts.some(
+                  (attempt) =>
+                    (attempt.result?.streams.length ?? 0) > 0 ||
+                    (attempt.result?.sources?.length ?? 0) > 0,
+                ),
               });
               run.playbackSession = this.transitionPlaybackSession(
                 context,
@@ -2046,12 +2133,31 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
 
               if (iterationDirective.reason === "provider-fallback-skip") {
-                const fallback = providerRegistry
-                  .getCompatible(title, stateManager.getState().mode)
-                  .find((candidate) => candidate.metadata.id !== currentProvider.metadata.id);
+                // An explicit provider choice made while the resolve was in
+                // flight (the picker dispatches SET_PROVIDER then cancels the
+                // work) outranks the automatic "next untried" walk — the user
+                // told us exactly where to go.
+                const configuredProviderNow = stateManager.getState().provider;
+                const explicitPick =
+                  configuredProviderNow !== currentProvider.metadata.id
+                    ? providerRegistry.get(configuredProviderNow)
+                    : undefined;
+                const fallback =
+                  explicitPick ??
+                  pickCompatibleFallbackProvider({
+                    providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
+                    currentProviderId: currentProvider.metadata.id,
+                    excludedProviderIds: triedProviderIds,
+                    isFallbackEligible: (providerId) =>
+                      isProviderIdFallbackEligible(container, providerId),
+                  });
                 if (fallback) {
                   run.sessionSoftProviderId = null;
-                  stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
+                  stateManager.dispatch({
+                    type: "SET_PROVIDER",
+                    provider: fallback.metadata.id,
+                    forceFreshResolve: !explicitPick,
+                  });
                   this.updatePlaybackFeedback(context, {
                     detail: `Trying ${fallback.metadata.name ?? fallback.metadata.id}…`,
                     note: "Fallback provider selected for the rest of this session",
@@ -2797,7 +2903,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               this.updatePlaybackFeedback(context, {
                 detail: "Could not start playback",
-                note: "Press o for sources, f for fallback, r to retry, or /diagnostics for details",
+                note: "Press o for sources, ⇧F for fallback, r to retry, or /diagnostics for details",
               });
               skipRefreshContinue = true;
             } else if (isAutoSourceRecover) {
@@ -2810,10 +2916,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 currentSourceId,
                 triedSourceIds: new Set(run.triedFailoverSourceIds),
                 hasFallbackProvider: Boolean(
-                  pickCompatibleFallbackProvider(
-                    providerRegistry.getCompatible(title, stateManager.getState().mode),
-                    resolvedProviderId,
-                  ),
+                  pickCompatibleFallbackProvider({
+                    providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
+                    currentProviderId: resolvedProviderId,
+                    excludedProviderIds: new Set(stateManager.getState().fallbackTriedProviderIds),
+                    isFallbackEligible: (providerId) =>
+                      isProviderIdFallbackEligible(container, providerId),
+                  }),
                 ),
                 failoverAttempts: run.autoSourceRecoverAttempts,
                 maxFailoverAttempts: MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
@@ -2868,7 +2977,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 }
                 this.updatePlaybackFeedback(context, {
                   detail: "Could not start playback",
-                  note: "Press o for sources, f for fallback, r to retry, or /diagnostics for details",
+                  note: "Press o for sources, ⇧F for fallback, r to retry, or /diagnostics for details",
                 });
                 skipRefreshContinue = true;
               }
@@ -2944,10 +3053,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 quitThresholdMode,
               ),
             });
-            const fallback = pickCompatibleFallbackProvider(
-              providerRegistry.getCompatible(title, stateManager.getState().mode),
-              resolvedProviderId,
-            );
+            const fallback = pickCompatibleFallbackProvider({
+              providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
+              currentProviderId: resolvedProviderId,
+              excludedProviderIds: new Set(stateManager.getState().fallbackTriedProviderIds),
+              isFallbackEligible: (providerId) =>
+                isProviderIdFallbackEligible(container, providerId),
+            });
 
             if (fallback) {
               run.sessionSoftProviderId = null;
@@ -3021,6 +3133,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 },
               }),
             );
+            this.updatePlaybackFeedback(context, {
+              note: "No untried provider left to fall back to. Press o for sources or /diagnostics.",
+            });
             // Keep the pending start intent for this episode; re-resolve instead of falling
             // through to auto-advance / post-playback with a poisoned resume offset.
             continue;

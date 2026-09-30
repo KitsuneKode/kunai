@@ -126,6 +126,15 @@ it toggles a favourite) and is deliberately unbound in the loading and player
 scopes, so a slipped shift cannot turn "favourite this" into "switch provider
 mid-session". `l` carries the favourite toggle on those screens instead.
 
+What `Shift+F` actually does: it hops to the next compatible provider for the
+rest of the session. It does not persist a per-title preference (that is what
+confirming a row in `/provider` is for), does not erase the title's provider
+health memory, and does not get offered during local file playback — a
+downloaded episode has no provider chain to fall back through. Each press walks
+forward through providers not yet tried this episode, skipping any marked
+`down`, so repeated presses never ping-pong between the same two. The footer
+shows the chord only when an untried, healthy candidate actually exists.
+
 ## Post-Playback
 
 | Key             | Action                                                                               |

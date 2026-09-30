@@ -106,9 +106,9 @@ export function classifyProviderResolveUserState(
   if (input.fallbackInProgress) {
     return {
       state: "trying-another-source",
-      title: "Trying another source",
+      title: "Trying another provider",
       detail:
-        "The previous source did not resolve cleanly. Kunai is trying a compatible alternative.",
+        "The previous provider did not resolve cleanly. Kunai is trying a compatible alternative.",
     };
   }
 

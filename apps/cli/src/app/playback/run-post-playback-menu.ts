@@ -24,6 +24,7 @@ import {
 } from "@/app/playback/playback-postplay-policy";
 import { alignPostPlayProviderRestart } from "@/app/playback/playback-provider-align";
 import {
+  isProviderIdFallbackEligible,
   pickCompatibleFallbackProvider,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
@@ -735,13 +736,22 @@ export async function runPostPlaybackMenu(
       break postPlayback;
     }
     if (routedAction === "fallback") {
-      const fallback = pickCompatibleFallbackProvider(
-        deps.getCompatibleProviders(),
-        resolvedProviderId,
-      );
+      const fallback = pickCompatibleFallbackProvider({
+        providers: deps.getCompatibleProviders(),
+        currentProviderId: resolvedProviderId,
+        excludedProviderIds: new Set(container.stateManager.getState().fallbackTriedProviderIds),
+        isFallbackEligible: (providerId) => isProviderIdFallbackEligible(container, providerId),
+      });
       if (!fallback) {
+        deps.updatePlaybackFeedback({
+          note: "No untried provider left to fall back to. Press o for sources or /diagnostics.",
+        });
         continue postPlayback;
       }
+      container.stateManager.dispatch({
+        type: "RECORD_FALLBACK_TRIED_PROVIDERS",
+        providerIds: [resolvedProviderId],
+      });
       const switched = await deps.switchPlaybackProviderFallback({
         container,
         fromProviderId: resolvedProviderId,

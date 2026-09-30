@@ -72,6 +72,13 @@ export interface ProviderEngineResolveAttempt {
   readonly providerId: ProviderId;
   readonly result?: ProviderResolveResult;
   readonly failure?: ProviderFailure;
+  /**
+   * The candidate was in flight when the resolve was cancelled — by the
+   * caller, by the deadline, or because a hedged sibling won first. It carries
+   * no failure because the provider never produced one; omitting the attempt
+   * entirely would hide the last thing that actually happened.
+   */
+  readonly aborted?: boolean;
 }
 
 export interface ProviderEngineResolveOutput {
@@ -79,6 +86,13 @@ export interface ProviderEngineResolveOutput {
   readonly providerId: ProviderId | null;
   readonly attempts: readonly ProviderEngineResolveAttempt[];
 }
+
+/** Writable draft of {@link ProviderEngineResolveAttempt} for staged construction. */
+type MutableFailureAttempt = {
+  providerId: ProviderId;
+  failure: ProviderFailure;
+  result?: ProviderResolveResult;
+};
 
 export type ProviderEngineEvent =
   | {
@@ -379,7 +393,10 @@ export class ProviderEngine {
         attempts.push({ providerId, result });
         return { result, providerId, attempts };
       } catch (error) {
-        if (signal?.aborted) break;
+        if (signal?.aborted) {
+          attempts.push({ providerId, aborted: true });
+          break;
+        }
 
         const failure: ProviderFailure =
           error instanceof ProviderResolveFailureError
@@ -483,9 +500,46 @@ export class ProviderEngine {
     const orderedAttempts = (): ProviderEngineResolveAttempt[] =>
       [...indexedAttempts].sort((left, right) => left.index - right.index).map((it) => it.attempt);
 
-    const abortAll = (reason?: unknown) => {
+    const hasAttemptAt = (index: number) => indexedAttempts.some((entry) => entry.index === index);
+
+    /**
+     * Aborts every in-flight candidate and hands back their settlement
+     * promises so the caller can await them and record what each candidate was
+     * doing when it got cancelled — the last act of the timeline is otherwise
+     * invisible to diagnostics and problem classification.
+     */
+    const abortAll = (reason?: unknown): Promise<Settlement>[] => {
+      const pending = [...inFlight.values()].map((entry) => entry.settled);
       for (const entry of inFlight.values()) entry.controller.abort(reason);
       inFlight.clear();
+      return pending;
+    };
+
+    const recordSettledAttempts = async (
+      pending: readonly Promise<Settlement>[],
+    ): Promise<void> => {
+      for (const settled of await Promise.allSettled(pending)) {
+        if (settled.status !== "fulfilled" || hasAttemptAt(settled.value.index)) continue;
+        const outcome = settled.value;
+        if (outcome.kind === "aborted") {
+          indexedAttempts.push({
+            index: outcome.index,
+            attempt: { providerId: outcome.providerId, aborted: true },
+          });
+        } else if (outcome.kind === "success") {
+          indexedAttempts.push({
+            index: outcome.index,
+            attempt: { providerId: outcome.providerId, result: outcome.result },
+          });
+        } else {
+          const attempt: MutableFailureAttempt = {
+            providerId: outcome.providerId,
+            failure: outcome.failure,
+          };
+          if (outcome.result) attempt.result = outcome.result;
+          indexedAttempts.push({ index: outcome.index, attempt });
+        }
+      }
     };
 
     /** Starts the next untried candidate, or returns null when none remain. */
@@ -533,7 +587,10 @@ export class ProviderEngine {
       return providerId;
     };
 
-    const onParentAbort = () => abortAll(signal?.reason);
+    let pendingFromAbort: Promise<Settlement>[] = [];
+    const onParentAbort = () => {
+      pendingFromAbort = abortAll(signal?.reason);
+    };
     signal?.addEventListener("abort", onParentAbort, { once: true });
 
     try {
@@ -581,14 +638,20 @@ export class ProviderEngine {
         inFlight.delete(outcome.index);
         const providerId = outcome.providerId;
 
-        if (outcome.kind === "aborted") continue;
+        if (outcome.kind === "aborted") {
+          indexedAttempts.push({
+            index: outcome.index,
+            attempt: { providerId, aborted: true },
+          });
+          continue;
+        }
 
         if (outcome.kind === "success") {
           indexedAttempts.push({
             index: outcome.index,
             attempt: { providerId, result: outcome.result },
           });
-          abortAll(new ProviderResolveAbortError());
+          await recordSettledAttempts(abortAll(new ProviderResolveAbortError()));
           return { result: outcome.result, providerId, attempts: orderedAttempts() };
         }
 
@@ -632,6 +695,10 @@ export class ProviderEngine {
         }
       }
 
+      await recordSettledAttempts([
+        ...pendingFromAbort,
+        ...abortAll(new ProviderResolveAbortError()),
+      ]);
       return { result: null, providerId: null, attempts: orderedAttempts() };
     } finally {
       signal?.removeEventListener("abort", onParentAbort);

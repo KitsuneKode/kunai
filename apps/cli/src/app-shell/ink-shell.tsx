@@ -11,7 +11,10 @@ import {
   latestPlaybackStartupStage,
 } from "@/app/playback/playback-bootstrap-presenter";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
-import { pickCompatibleFallbackProvider } from "@/app/playback/playback-provider-fallback";
+import {
+  isProviderIdFallbackEligible,
+  pickCompatibleFallbackProvider,
+} from "@/app/playback/playback-provider-fallback";
 import { resolveStreamProviderId } from "@/app/playback/playback-provider-switch";
 import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
 import {
@@ -890,13 +893,18 @@ export function AppRoot({ container }: { container: Container }) {
   // those differ, and excluding only the configured id made the footer offer a
   // fallback to the provider already playing while the engine — which excludes
   // the resolved id — switched to a different one. Same helper as the engine so
-  // the advertised target and the actual target cannot drift again.
+  // the advertised target and the actual target cannot drift again. Providers
+  // already tried in this cycle and providers marked down are both excluded —
+  // the footer must not offer a hop the execution side would refuse. Local
+  // playback has no provider chain to fall back through at all.
   const fallbackProvider =
-    state.currentTitle && state.currentEpisode
-      ? pickCompatibleFallbackProvider(
-          container.providerRegistry.getCompatible(state.currentTitle, state.mode),
-          resolveStreamProviderId(state.stream) ?? state.provider,
-        )
+    state.currentTitle && state.currentEpisode && !isLocalPlaybackStream(state.stream)
+      ? pickCompatibleFallbackProvider({
+          providers: container.providerRegistry.getCompatible(state.currentTitle, state.mode),
+          currentProviderId: resolveStreamProviderId(state.stream) ?? state.provider,
+          excludedProviderIds: new Set(state.fallbackTriedProviderIds),
+          isFallbackEligible: (providerId) => isProviderIdFallbackEligible(container, providerId),
+        })
       : undefined;
   const activeProvider = container.providerRegistry.get(state.provider);
   const hasStreamCandidates = Boolean(state.stream?.providerResolveResult);

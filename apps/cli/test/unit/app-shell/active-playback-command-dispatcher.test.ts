@@ -52,6 +52,76 @@ describe("dispatchActivePlaybackCommand", () => {
     ]);
   });
 
+  test("recover during an in-flight resolve cancels the work instead of dead-keying", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      workControl: {
+        cancelActive: (reason) => {
+          calls.push(`cancel:${reason}`);
+          return true;
+        },
+      },
+    });
+
+    await dispatchActivePlaybackCommand("recover", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    // No player exists during resolve — recoverCurrentPlayback would silently
+    // no-op, so the cancel must be the whole story. The loop maps the recover
+    // reason to a retry intent and restarts resolution.
+    expect(calls).toEqual(["cancel:playback-loading-command-recover"]);
+  });
+
+  test("recompute during an in-flight resolve cancels the work instead of dead-keying", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      workControl: {
+        cancelActive: (reason) => {
+          calls.push(`cancel:${reason}`);
+          return true;
+        },
+      },
+    });
+
+    await dispatchActivePlaybackCommand("recompute", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    expect(calls).toEqual(["cancel:playback-loading-command-recompute"]);
+  });
+
+  test("recover and recompute fall through to player control when no work is active", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls);
+
+    await dispatchActivePlaybackCommand("recover", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+    await dispatchActivePlaybackCommand("recompute", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    expect(calls).toEqual([
+      "cancel:playback-loading-command-recover",
+      "recover:playback-loading-command-recover",
+      "cancel:playback-loading-command-recompute",
+      "recompute:playback-loading-command-recompute",
+    ]);
+  });
+
   test("provider/source/quality/audio/subtitle commands share the stream selection picker seam", async () => {
     const calls: string[] = [];
     const deps = createDeps(calls);

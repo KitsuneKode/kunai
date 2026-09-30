@@ -30,11 +30,37 @@ export function describeProviderResolveAttemptNote({
     return "Final retry for this provider; fallback remains available.";
   }
 
-  return "f skips the remaining retries and tries the next provider.";
+  return "⇧F skips the remaining retries and tries the next provider.";
 }
 
 export function describeProviderResolveProviderNote(isFallback: boolean): string {
   return isFallback
-    ? "Trying another source."
+    ? "Trying the next provider."
     : "Recoverable provider failures retry before fallback.";
+}
+
+export function describeProviderFallbackDetail({
+  fromProviderName,
+  toProviderName,
+}: {
+  readonly fromProviderName: string;
+  readonly toProviderName: string;
+}): string {
+  return `${fromProviderName} did not resolve — trying ${toProviderName}`;
+}
+
+export function describeProviderHedgeNote({
+  toProviderName,
+}: {
+  readonly toProviderName: string;
+}): string {
+  return `Also trying ${toProviderName} in parallel to speed this up.`;
+}
+
+export function describeProviderFallbackHaltedDetail(): string {
+  return "Network looks offline — paused further provider fallback.";
+}
+
+export function describeProviderFallbackHaltedNote(): string {
+  return "The attempt already in flight is still running.";
 }

@@ -124,6 +124,26 @@ describe("command registry — full surface coverage", () => {
     expect(post).toContain("sync");
   });
 
+  test("fallback is disabled during local playback — there is no provider chain to hop", () => {
+    const enabled = resolveCommandContext(baseState(), "activePlayback").find(
+      (c) => c.id === "fallback",
+    );
+    expect(enabled?.enabled).toBe(true);
+
+    const local = resolveCommandContext(
+      baseState({
+        stream: {
+          url: "/downloads/demo-e1.mkv",
+          headers: {},
+          timestamp: 0,
+        },
+      }),
+      "activePlayback",
+    ).find((c) => c.id === "fallback");
+    expect(local?.enabled).toBe(false);
+    expect(local?.reason).toContain("/watch-online");
+  });
+
   test("post-playback never exposes destructive commands (quit, settings, clear-history)", () => {
     const post = resolveCommandContext(baseState(), "postPlayback").map((c) => c.id);
     expect(post).not.toContain("quit");
