@@ -117,7 +117,7 @@ export function clampComponent(
   limits: number | ComponentLimits = MAX_COMPONENT_BYTES,
 ): string {
   const { maxBytes, maxUtf16 } =
-    typeof limits === "number" ? { maxBytes: limits, maxUtf16: Number.POSITIVE_INFINITY } : limits;
+    limits instanceof Object ? limits : { maxBytes: limits, maxUtf16: Number.POSITIVE_INFINITY };
 
   if (utf8Length(name) <= maxBytes && name.length <= maxUtf16) return name;
 

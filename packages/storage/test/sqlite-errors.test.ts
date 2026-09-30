@@ -2,6 +2,10 @@ import { expect, test } from "bun:test";
 
 import { isSqliteCorruptionError } from "../src/sqlite-errors";
 
+function errorWithCode(code: string): Error {
+  return Object.assign(new Error("sqlite failure"), { code });
+}
+
 test.each([
   "SQLITE_CORRUPT",
   "SQLITE_CORRUPT_VTAB",
@@ -9,7 +13,7 @@ test.each([
   "SQLITE_CORRUPT_INDEX",
   "SQLITE_NOTADB",
 ])("recognizes %s as corruption", (code) => {
-  expect(isSqliteCorruptionError({ code })).toBe(true);
+  expect(isSqliteCorruptionError(errorWithCode(code))).toBe(true);
 });
 
 test.each([
@@ -23,18 +27,10 @@ test.each([
   "SQLITE_CORRUPT_UNKNOWN",
   "EACCES",
 ])("preserves files on %s", (code) => {
-  expect(isSqliteCorruptionError({ code, message: "database is corrupt" })).toBe(false);
+  expect(isSqliteCorruptionError(errorWithCode(code))).toBe(false);
 });
 
-test("unknown failures cannot authorize quarantine", () => {
-  for (const error of [
-    null,
-    undefined,
-    11,
-    "SQLITE_CORRUPT",
-    new Error("database is corrupt"),
-    { errno: 11 },
-  ]) {
-    expect(isSqliteCorruptionError(error)).toBe(false);
-  }
+test("errors without a recognized corruption code cannot authorize quarantine", () => {
+  expect(isSqliteCorruptionError(new Error("database is corrupt"))).toBe(false);
+  expect(isSqliteCorruptionError(Object.assign(new Error("io"), { errno: 11 }))).toBe(false);
 });

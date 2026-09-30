@@ -114,6 +114,7 @@ describe("DownloadService", () => {
       });
       spawnSpy.mockImplementation((command: string[]) => {
         writeFileSync(command[command.indexOf("-o") + 1]!, "published bytes");
+        // SAFETY: test stub — supplies only the surface this test exercises.
         return {
           stdout: streamOf(""),
           stderr: streamOf(""),
@@ -186,6 +187,7 @@ describe("DownloadService", () => {
       spawnSpy.mockImplementation((command: string[]) => {
         const path = command[command.indexOf("-o") + 1]!;
         writeFileSync(path, command.at(-1)!);
+        // SAFETY: test stub — supplies only the surface this test exercises.
         return {
           stdout: streamOf(""),
           stderr: streamOf(""),
@@ -225,6 +227,7 @@ describe("DownloadService", () => {
       writeFileSync(job.outputPath, "user-owned bytes");
       spawnSpy.mockImplementation((command: string[]) => {
         writeFileSync(command[command.indexOf("-o") + 1]!, "new bytes");
+        // SAFETY: test stub — supplies only the surface this test exercises.
         return {
           stdout: streamOf(""),
           stderr: streamOf(""),

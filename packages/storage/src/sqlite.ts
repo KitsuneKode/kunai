@@ -124,7 +124,7 @@ export function openKunaiDatabaseWithCorruptionRecovery(
     } catch {
       // The handle may itself be unusable; quarantine only needs the files.
     }
-    if (!isSqliteCorruptionError(error)) throw error;
+    if (!(error instanceof Error) || !isSqliteCorruptionError(error)) throw error;
     const moved = quarantineCorruptDatabaseFiles(path);
     if (moved.length === 0) {
       // Nothing could be moved aside (locked file, unwritable dir) — surface
