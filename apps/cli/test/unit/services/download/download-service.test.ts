@@ -2582,6 +2582,75 @@ describe("DownloadService", () => {
     expect(reloaded?.status).toBe("queued");
     expect(reloaded?.nextRetryAt).toBeDefined();
   });
+
+  test("fifty deferred pauses do not hide a download that is due now", async () => {
+    spawnSpy.mockImplementation(() => {
+      throw new Error("spawn blocked");
+    });
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const deferred: string[] = [];
+    for (let index = 0; index < 50; index += 1) {
+      const job = await service.enqueue({
+        title: { id: `tmdb:${index}`, type: "movie", name: `Later ${index}` },
+        stream: { url: "https://cdn.example/later.mp4", headers: {}, timestamp: 0 },
+        providerId: "vidking",
+      });
+      repo.scheduleRetry(job.id, "paused", "2099-01-01T00:00:00.000Z", new Date().toISOString());
+      deferred.push(job.id);
+    }
+    const due = await service.enqueue({
+      title: { id: "tmdb:due", type: "movie", name: "Due now" },
+      stream: { url: "https://cdn.example/due.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+
+    const started = await service.processNextQueued();
+
+    expect(started?.id).toBe(due.id);
+    for (const id of deferred) {
+      expect(repo.get(id)?.nextRetryAt).toBe("2099-01-01T00:00:00.000Z");
+    }
+  });
+
+  test("a failed subtitle delete keeps the download row", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:sidecar", type: "movie", name: "Sidecar" },
+      stream: { url: "https://cdn.example/sidecar.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const subtitlePath = join(tempDir, "sidecar.vtt");
+    writeFileSync(subtitlePath, "WEBVTT\n");
+    const updatedAt = new Date().toISOString();
+    repo.complete(job.id, updatedAt);
+    repo.updateOfflineMetadata(job.id, { subtitlePath }, updatedAt);
+    const events: string[] = [];
+    service.onEvent((event) => {
+      events.push(event.type);
+    });
+    const rmSpy = spyOn(fsPromises, "rm").mockImplementation(async (path) => {
+      if (String(path) === subtitlePath) throw new Error("eacces");
+    });
+    try {
+      await service.deleteJob(job.id, { deleteArtifact: true });
+    } finally {
+      rmSpy.mockRestore();
+    }
+
+    expect(repo.get(job.id)?.status).toBe("completed");
+    expect(events).not.toContain("deleted");
+    expect(events).toContain("failed");
+  });
 });
 
 function buildService({

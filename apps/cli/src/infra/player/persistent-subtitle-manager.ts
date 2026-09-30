@@ -22,13 +22,49 @@ export type SubtitleAttachmentResult =
       readonly failedTrack: "primary" | "additional";
     };
 
+function externalFilenames(trackList: unknown): ReadonlySet<string> {
+  if (!Array.isArray(trackList)) return new Set();
+  const names = new Set<string>();
+  for (const entry of trackList) {
+    if (!entry || typeof entry !== "object") continue;
+    const filename = (entry as Record<string, unknown>)["external-filename"];
+    if (typeof filename === "string" && filename.length > 0) names.add(filename);
+  }
+  return names;
+}
+
 export class PersistentSubtitleManager {
   private lastTrackList: unknown = null;
   private externalSubtitleIds: number[] = [];
+  private episodeChangeOpen = false;
+  private removableExternalIds: number[] = [];
+
+  /**
+   * Snapshot the tracks that belong to the file being replaced. A track-list
+   * that arrives after this is the new episode and must not be removed.
+   */
+  beginEpisodeSubtitleChange(): void {
+    this.episodeChangeOpen = true;
+    this.removableExternalIds = extractExternalSubtitleIds(this.lastTrackList);
+    this.externalSubtitleIds = [...this.removableExternalIds];
+  }
+
+  settleEpisodeSubtitleChange(): void {
+    if (!this.episodeChangeOpen) return;
+    this.episodeChangeOpen = false;
+    this.removableExternalIds = [];
+    this.externalSubtitleIds = extractExternalSubtitleIds(this.lastTrackList);
+  }
 
   updateTrackList(trackList: unknown): void {
     this.lastTrackList = trackList;
-    this.externalSubtitleIds = extractExternalSubtitleIds(trackList);
+    const ids = extractExternalSubtitleIds(trackList);
+    if (!this.episodeChangeOpen) {
+      this.externalSubtitleIds = ids;
+      return;
+    }
+    const removable = new Set(this.removableExternalIds);
+    this.externalSubtitleIds = ids.filter((id) => removable.has(id));
   }
 
   currentTrackList(): unknown {
@@ -44,9 +80,10 @@ export class PersistentSubtitleManager {
     isCurrent: () => boolean = () => true,
   ): Promise<boolean> {
     if (!ipcSession || !isCurrent()) return false;
-    if (this.externalSubtitleIds.length === 0) return true;
+    const ids = [...this.externalSubtitleIds];
+    if (ids.length === 0) return true;
 
-    for (const trackId of this.externalSubtitleIds) {
+    for (const trackId of ids) {
       if (!isCurrent()) return false;
       await ipcSession.send(["sub-remove", trackId], 1_000);
       if (!isCurrent()) return false;
@@ -66,8 +103,11 @@ export class PersistentSubtitleManager {
 
     if (!(await this.removeExternalSubtitles(ipcSession, isCurrent))) return;
 
+    const alreadyArrived = this.episodeChangeOpen ? externalFilenames(this.lastTrackList) : null;
     const safePrimary =
-      primarySubtitle && isAllowedMpvUrl(primarySubtitle, primarySubtitleKind)
+      primarySubtitle &&
+      isAllowedMpvUrl(primarySubtitle, primarySubtitleKind) &&
+      !alreadyArrived?.has(primarySubtitle)
         ? primarySubtitle
         : null;
     if (safePrimary) {
@@ -79,8 +119,14 @@ export class PersistentSubtitleManager {
       if (!result.ok || !isCurrent()) return;
     }
 
-    const additionalTracks = collectAdditionalSubtitleTracks(safePrimary, subtitleTracks).filter(
-      (track) => isAllowedMpvUrl(track.url, "remote"),
+    const additionalTracks = collectAdditionalSubtitleTracks(
+      primarySubtitle,
+      subtitleTracks,
+    ).filter(
+      (track) =>
+        isAllowedMpvUrl(track.url, "remote") &&
+        track.url !== safePrimary &&
+        !alreadyArrived?.has(track.url),
     );
     for (const track of additionalTracks) {
       if (!isCurrent()) return;

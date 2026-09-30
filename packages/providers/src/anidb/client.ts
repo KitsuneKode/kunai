@@ -222,6 +222,98 @@ function isFingerprintRetryableStatus(status: number): boolean {
   return status === 403 || status === 429;
 }
 
+const ANIDB_GUARDED_WRITE_OUT = ["-w", "\n%{http_code}\n%{redirect_url}"] as const;
+
+function splitAnidbGuardedStatus(stdout: string): {
+  readonly body: string;
+  readonly status: number;
+  readonly redirectUrl: string;
+} {
+  const redirectCut = stdout.lastIndexOf("\n");
+  const redirectUrl = redirectCut >= 0 ? stdout.slice(redirectCut + 1).trim() : "";
+  const rest = redirectCut >= 0 ? stdout.slice(0, redirectCut) : "";
+  const statusCut = rest.lastIndexOf("\n");
+  const status = Number.parseInt(statusCut >= 0 ? rest.slice(statusCut + 1) : rest, 10);
+  return {
+    body: statusCut >= 0 ? rest.slice(0, statusCut) : "",
+    status: Number.isFinite(status) ? status : 0,
+    redirectUrl,
+  };
+}
+
+/**
+ * Playlist fetch for the guarded HLS expander. The expander follows redirects
+ * itself, so this returns the real status and Location instead of a synthetic
+ * 200. A private redirect is then refused before a second request.
+ */
+export async function anidbGuardedFetch(
+  url: string,
+  init: RequestInit | undefined,
+  options: {
+    readonly context?: ProviderRuntimeContext;
+    readonly signal?: AbortSignal;
+  } = {},
+): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("user-agent")) headers.set("user-agent", ANIDB_USER_AGENT);
+  if (!headers.has("referer")) headers.set("referer", ANIDB_REFERER);
+  const signal = init?.signal instanceof AbortSignal ? init.signal : options.signal;
+
+  if (options.context?.fetch) {
+    try {
+      const response = await options.context.fetch.fetch(url, {
+        ...init,
+        headers,
+        signal,
+        redirect: "manual",
+      });
+      if (response.status >= 300 && response.status < 400) return response;
+      if (response.ok) {
+        const text = await response.clone().text();
+        if (isAnidbMaintenanceText(text)) return new Response(text, { status: 503 });
+        if (!isCloudflareChallengeText(text)) return response;
+      } else if (!isFingerprintRetryableStatus(response.status)) {
+        return response;
+      }
+    } catch (error) {
+      if (signal?.aborted === true) throw error;
+    }
+  }
+
+  const curl = resolveAnidbCurl();
+  if (!curl) {
+    return fetch(url, { ...init, headers, signal, redirect: "manual" });
+  }
+
+  const args = [
+    curl.path,
+    "-s",
+    "--max-redirs",
+    "0",
+    "-A",
+    headers.get("user-agent") ?? ANIDB_USER_AGENT,
+    "-H",
+    `Referer: ${headers.get("referer") ?? ANIDB_REFERER}`,
+    "--max-time",
+    "12",
+    ...anidbCipherArgs(curl.impersonates),
+    ...ANIDB_GUARDED_WRITE_OUT,
+    "--",
+    url,
+  ];
+  const stdout = await runAnidbCurlWithRetry(args, signal);
+  const parsed = splitAnidbGuardedStatus(stdout);
+  const responseHeaders = new Headers();
+  if (parsed.redirectUrl) responseHeaders.set("location", parsed.redirectUrl);
+  if (parsed.status >= 200 && parsed.status < 300 && isCloudflareChallengeText(parsed.body)) {
+    throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
+  }
+  return new Response(parsed.body, {
+    status: parsed.status || 502,
+    headers: responseHeaders,
+  });
+}
+
 /**
  * Fetches an AniDB page as text, or throws {@link AnidbHttpStatusError}.
  *
@@ -816,30 +908,22 @@ export async function resolveAnidbLanguageStreams(options: {
   if (!masterUrl) return empty();
 
   const inventory = await expandHlsMasterInventory({
-    fetch: async (url: string, init?: RequestInit) => {
-      try {
-        const text = await anidbFetchText(url, {
-          signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
-          context: options.context,
-        });
-        return new Response(text, {
-          status: 200,
-          headers: { "content-type": "application/vnd.apple.mpegurl" },
-        });
-      } catch (error) {
-        if (error instanceof AnidbHttpStatusError) {
-          return new Response(null, { status: error.status });
-        }
-        throw error;
-      }
-    },
+    fetch: (url: string | URL | Request, init?: RequestInit) =>
+      anidbGuardedFetch(String(url), init, {
+        context: options.context,
+        signal: options.signal,
+      }),
     masterUrl,
     headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
     signal: options.signal,
+    lookupImpl: probeLookupForPort(options.context?.fetch),
   });
   // Dead master host → drop the `auto` fallback row that would point mpv at
   // the same dead URL.
-  const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
+  const variants =
+    inventory.probe.kind === "blocked-target" || isHlsDeadHostStatus(inventory.probe.httpStatus)
+      ? []
+      : inventory.variants;
 
   return {
     links: variants.map((variant) => ({

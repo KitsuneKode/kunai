@@ -174,6 +174,7 @@ export class PersistentReadyWorkExecutor {
         isCurrent,
       );
     }
+    if (isCurrent()) this.deps.subtitleManager.settleEpisodeSubtitleChange();
     if (!isCurrent()) return;
     this.deps.setSubtitlesAttachedAtSpawn(false);
     await this.deps.syncChaptersFile?.(options.timing);

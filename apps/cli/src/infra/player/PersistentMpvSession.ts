@@ -428,6 +428,7 @@ export class PersistentMpvSession {
     const generation = this.advanceCycleGeneration();
     const fileLoadId = this.installPendingFileLoad(generation);
 
+    this.subtitleManager.beginEpisodeSubtitleChange();
     await this.subtitleManager.removeExternalSubtitles(this.ipcSession);
     options.onPlaybackEvent?.({ type: "resolving-playback" });
     this.queueReadyWork(options, { armFallback: false });
@@ -1772,6 +1773,7 @@ export class PersistentMpvSession {
         isCurrent,
       );
       if (!isCurrent()) return;
+      this.subtitleManager.settleEpisodeSubtitleChange();
 
       opts.onPlaybackEvent?.({
         type: "mpv-in-process-reconnect",

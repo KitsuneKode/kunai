@@ -1072,26 +1072,30 @@ export class DownloadService {
       } catch {
         return;
       }
-      if (job.subtitlePath && !this.deps.repo.sharesReadySidecar(job.id, job.subtitlePath)) {
-        await rm(job.subtitlePath, { force: true }).catch(() => undefined);
-      }
-      if (job.thumbnailPath && !this.deps.repo.sharesReadySidecar(job.id, job.thumbnailPath)) {
-        await rm(job.thumbnailPath, { force: true }).catch(() => undefined);
-      }
+      const retained: string[] = [];
+      const removeOwned = async (path: string | null | undefined) => {
+        if (!path || this.deps.repo.sharesReadySidecar(job.id, path)) return;
+        try {
+          await rm(path, { force: true });
+        } catch {
+          retained.push(path);
+        }
+      };
+      await removeOwned(job.subtitlePath);
+      await removeOwned(job.thumbnailPath);
       const derivedThumbnailPath = resolveThumbnailArtifactPath(job.outputPath);
-      if (
-        derivedThumbnailPath !== job.thumbnailPath &&
-        !this.deps.repo.sharesReadySidecar(job.id, derivedThumbnailPath)
-      ) {
-        await rm(derivedThumbnailPath, { force: true }).catch(() => undefined);
-      }
+      if (derivedThumbnailPath !== job.thumbnailPath) await removeOwned(derivedThumbnailPath);
       const posterPath = resolveOfflinePosterArtifactPath(job);
-      if (
-        posterPath !== job.thumbnailPath &&
-        posterPath !== derivedThumbnailPath &&
-        !this.deps.repo.sharesReadySidecar(job.id, posterPath)
-      ) {
-        await rm(posterPath, { force: true }).catch(() => undefined);
+      if (posterPath !== job.thumbnailPath && posterPath !== derivedThumbnailPath) {
+        await removeOwned(posterPath);
+      }
+      if (retained.length > 0) {
+        this.emit({
+          type: "failed",
+          jobId,
+          error: "artifact removal failed",
+        });
+        return;
       }
     }
     // Emit before deleting the row, not after. `offline_assets.origin_job_id` is
@@ -1773,13 +1777,17 @@ export class DownloadService {
   }
 
   private selectEligibleQueuedJob(nowIso: string): DownloadJobRecord | null {
-    const now = Date.parse(nowIso);
-    const queued = this.deps.repo.listQueued(50);
-    for (const job of queued) {
-      if (this.claimedJobIds.has(job.id)) continue;
-      if (!job.nextRetryAt) return job;
-      const retryAt = Date.parse(job.nextRetryAt);
-      if (Number.isFinite(retryAt) && retryAt <= now) return job;
+    const pageSize = 50;
+    let after: { readonly createdAt: string; readonly id: string } | undefined;
+    for (let page = 0; page < 20; page += 1) {
+      const queued = this.deps.repo.listDueQueued(nowIso, pageSize, after);
+      if (queued.length === 0) return null;
+      for (const job of queued) {
+        if (!this.claimedJobIds.has(job.id)) return job;
+      }
+      const last = queued.at(-1);
+      if (!last || queued.length < pageSize) return null;
+      after = { createdAt: last.createdAt, id: last.id };
     }
     return null;
   }
@@ -1787,15 +1795,14 @@ export class DownloadService {
   /**
    * Repair for an unparseable `next_retry_at`, not the ordinary resume path.
    *
-   * The ordinary case needs nothing from here: `selectEligibleQueuedJob` scans
-   * `listQueued`, which is unfiltered by retry time, and takes any job whose
-   * `next_retry_at` has elapsed. A shutdown pause (`next_retry_at = now`) is
-   * therefore already eligible on the next pass.
+   * The ordinary case needs nothing from here: `listDueQueued` already returns
+   * a queued row whose `next_retry_at` is null or no later than now. A shutdown
+   * pause (`next_retry_at = now`) is therefore eligible on the next pass.
    *
    * What it does do is narrow and load-bearing. `listPaused` compares
    * `next_retry_at` as a *string* in SQL, so a corrupt value like `not-a-date`
    * sorts greater than any timestamp and is returned here, while
-   * `selectEligibleQueuedJob` requires `Number.isFinite` and skips it forever.
+   * `listDueQueued` uses the same string comparison and never selects it.
    * Without this pass such a row is stranded for the life of the install.
    *
    * Verified against a real database rather than by reading: a future-dated

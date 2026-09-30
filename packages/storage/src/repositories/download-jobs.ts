@@ -654,6 +654,36 @@ export class DownloadJobsRepository {
       .map(mapRow);
   }
 
+  /**
+   * Due work only, ordered before the page limit. A page of deferred pauses
+   * must not hide a job whose retry time has already passed.
+   */
+  listDueQueued(
+    nowIso: string,
+    limit: number,
+    after?: { readonly createdAt: string; readonly id: string },
+  ): readonly DownloadJobRecord[] {
+    const due = `status = 'queued' AND (next_retry_at IS NULL OR next_retry_at <= ?)`;
+    if (!after) {
+      return this.db
+        .query<DownloadJobRow, [string, number]>(
+          `SELECT * FROM download_jobs WHERE ${due} ORDER BY created_at ASC, id ASC LIMIT ?`,
+        )
+        .all(nowIso, limit)
+        .map(mapRow);
+    }
+    return this.db
+      .query<DownloadJobRow, [string, string, string, string, number]>(
+        `SELECT * FROM download_jobs
+         WHERE ${due}
+           AND (created_at > ? OR (created_at = ? AND id > ?))
+         ORDER BY created_at ASC, id ASC
+         LIMIT ?`,
+      )
+      .all(nowIso, after.createdAt, after.createdAt, after.id, limit)
+      .map(mapRow);
+  }
+
   listPaused(limit = 200): readonly DownloadJobRecord[] {
     const now = new Date().toISOString();
     return this.db
