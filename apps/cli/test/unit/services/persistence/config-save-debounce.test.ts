@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
@@ -136,6 +137,50 @@ describe("ConfigService.save debounce", () => {
 
     expect((await saved)?.message).toBe("disk full");
     expect((await flushed)?.message).toBe("disk full");
+  });
+
+  test("a mid-flight reload cannot swap in-flight keys back to disk values", async () => {
+    // `maybePing` runs reloadFromDisk() while a save sits inside its
+    // load→write window. The save had already cleared `dirtyKeys`, so the
+    // reload saw the in-flight keys as untouched and replaced their values in
+    // `this.config` with disk data — the resumed write then persisted the old
+    // values and the local change was lost.
+    let releaseSaveLoad!: () => void;
+    let loadCalls = 0;
+    const written: KitsuneConfig[] = [];
+    const store = {
+      load: (): Promise<Partial<KitsuneConfig>> => {
+        loadCalls += 1;
+        // Call 1 boots the service; call 2 is the save's pre-write read and
+        // blocks on the latch; the reload's read resolves immediately.
+        if (loadCalls === 2) {
+          return new Promise<void>((resolve) => {
+            releaseSaveLoad = resolve;
+          }).then(() => ({ ...DEFAULT_CONFIG, analytics: "enabled" as const }));
+        }
+        return Promise.resolve({ ...DEFAULT_CONFIG, analytics: "enabled" as const });
+      },
+      save: (config: KitsuneConfig) => {
+        written.push(config);
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+    await service.update({ analytics: "disabled" });
+
+    const pending = service.save();
+    const started = service.flushPending();
+    await drainMicrotasks();
+    // The save is parked inside its pre-write load().
+
+    await service.reloadFromDisk();
+
+    releaseSaveLoad();
+    await Promise.all([pending, started]);
+
+    expect(service.analytics).toBe("disabled");
+    expect(written.at(-1)?.analytics).toBe("disabled");
   });
 
   test("a synchronous store throw does not strand the in-flight handle", async () => {
