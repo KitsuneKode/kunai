@@ -6,7 +6,8 @@ function main() {
   const outputs = needs.changes?.outputs ?? {};
   const errors = [];
   for (const key of ["cli", "installer", "docs", "doc-coverage", "analytics"]) {
-    if (!["true", "false"].includes(outputs[key])) errors.push(`Invalid or missing path filter: ${key}`);
+    if (!["true", "false"].includes(outputs[key]))
+      errors.push(`Invalid or missing path filter: ${key}`);
   }
   if (!["pull_request", "push"].includes(event)) errors.push(`Unsupported CI event: ${event}`);
   const onMain = event === "push";
