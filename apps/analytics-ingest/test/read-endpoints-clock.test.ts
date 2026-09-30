@@ -88,16 +88,20 @@ async function ask(
 ): Promise<Asked> {
   const asked: Asked = {};
   const handler = createHandler({ loadConfig: () => createConfig(asked), now: () => now });
+  // SAFETY: the handlers under test read only method/url/headers; the stub
+  // supplies exactly that surface.
   const req = {
     method: "GET",
     url,
     headers: authorization ? { authorization } : {},
-  } as unknown as IncomingMessage;
+  } as IncomingMessage;
+  // SAFETY: the handlers under test write only statusCode/setHeader/end; the
+  // stub supplies exactly that surface with the real parameter types.
   const res = {
     statusCode: 0,
-    setHeader: () => {},
+    setHeader: (_name: string, _value: number | string | readonly string[]) => {},
     end: () => {},
-  } as unknown as ServerResponse;
+  } as ServerResponse;
 
   await handler(req, res);
   return asked;

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-17"
+lastReviewed: "2026-09-30"
 ---
 
 # Analytics Privacy Contract
@@ -120,7 +120,7 @@ the next run rather than being lost.
 
 ### Where a day begins
 
-From `2026-09-14T18:30:00.000Z` — 00:00 IST on 15 September 2026 — a day ends at
+From `2026-09-14T18:30:00.000Z` (00:00 IST on 15 September 2026) a day ends at
 midnight IST. Before that instant it ends at midnight UTC. `analytics-day.ts` is
 the only place that turns an instant into a label, and a test fails if a second
 one appears, because ingest and the cron disagreeing means the cron rolls up a
@@ -141,7 +141,7 @@ Retention cutoffs are computed from the same labels they compare against, so
 around the seam a row may be held at most one extra day. That is the safe
 direction and costs storage only.
 
-The published JSON is unchanged by all of this — same eight keys, same
+The published JSON is unchanged by all of this: same eight keys, same
 `schemaVersion: 2`, same `YYYY-MM-DD` shape for `day`. The wire cannot announce
 a change of meaning, which is why it is stated here and in
 `docs/users/reliability-and-privacy.mdx`.
