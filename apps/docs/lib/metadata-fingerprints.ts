@@ -99,6 +99,7 @@ export function computeCliSourceFingerprint(root = DEFAULT_ROOT): string {
   const cliFiles = [
     "apps/cli/src/container.ts",
     "apps/cli/src/container/bootstrap-providers.ts",
+    "packages/providers/src/production.ts",
     "apps/cli/src/domain/session/command-registry.ts",
     "apps/cli/src/cli-args.ts",
     "apps/cli/src/app-shell/keybindings.ts",

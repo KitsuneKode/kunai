@@ -14,7 +14,7 @@ import { source } from "../lib/source";
 
 const ROOT = path.resolve(import.meta.dir, "../../..");
 const DOCS_ROOT = path.join(ROOT, "docs");
-const PROVIDER_BOOTSTRAP_PATH = path.join(ROOT, "apps/cli/src/container/bootstrap-providers.ts");
+const PROVIDER_ROSTER_PATH = path.join(ROOT, "packages/providers/src/production.ts");
 const REGISTRY_PATH = path.join(ROOT, "apps/cli/src/domain/session/command-registry.ts");
 const SYNC_SCRIPT_PATH = path.join(ROOT, "apps/docs/scripts/sync-code-metadata.ts");
 
@@ -56,10 +56,8 @@ function listDocFiles(dir: string): string[] {
   return files;
 }
 
-function parseContainerProviderModules(content: string): string[] {
-  const arrayMatch = content.match(/orderProviderModulesByPriority\(\s*\[([\s\S]*?)\]\s*,/);
-  if (!arrayMatch?.[1]) return [];
-  return [...arrayMatch[1].matchAll(/(\w+ProviderModule)/g)]
+function parseRosterProviderModules(content: string): string[] {
+  return [...content.matchAll(/\.then\(\(m\) => m\.(\w+ProviderModule)\)/g)]
     .map((match) => match[1])
     .filter((name): name is string => Boolean(name));
 }
@@ -70,9 +68,9 @@ function readMetaPages(metaPath: string): string[] {
 }
 
 describe("docs codegen drift", () => {
-  test("provider ids match provider bootstrap registration order", () => {
-    const providerBootstrap = fs.readFileSync(PROVIDER_BOOTSTRAP_PATH, "utf-8");
-    const modules = parseContainerProviderModules(providerBootstrap);
+  test("provider ids match production roster order", () => {
+    const roster = fs.readFileSync(PROVIDER_ROSTER_PATH, "utf-8");
+    const modules = parseRosterProviderModules(roster);
     const expectedIds = modules
       .map((module) => MODULE_TO_ID[module])
       .filter((id): id is string => Boolean(id));
@@ -81,10 +79,10 @@ describe("docs codegen drift", () => {
     expect(codeMetadata.providers.map((provider) => provider.id)).toEqual(expectedIds);
   });
 
-  test("sync script provider map covers every bootstrap module", () => {
-    const providerBootstrap = fs.readFileSync(PROVIDER_BOOTSTRAP_PATH, "utf-8");
+  test("sync script provider map covers every roster module", () => {
+    const roster = fs.readFileSync(PROVIDER_ROSTER_PATH, "utf-8");
     const syncScript = fs.readFileSync(SYNC_SCRIPT_PATH, "utf-8");
-    const modules = parseContainerProviderModules(providerBootstrap);
+    const modules = parseRosterProviderModules(roster);
 
     for (const moduleName of modules) {
       expect(syncScript).toContain(`${moduleName}:`);
