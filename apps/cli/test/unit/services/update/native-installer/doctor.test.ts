@@ -500,7 +500,11 @@ describe("storage probe against a real filesystem", () => {
     await chmod(locked, 0o555);
     const config = await probeLayoutWith(join(locked, "kunai"));
 
-    if (process.getuid && process.getuid() === 0) {
+    if (process.platform === "win32") {
+      // Windows ACLs don't honor POSIX mode bits — chmod 0555 does not revoke
+      // write access, so the probe legitimately reports writable.
+      expect(config?.writable).toBe(true);
+    } else if (process.getuid && process.getuid() === 0) {
       // Root ignores permission bits — the probe is allowed to say writable.
       expect(config?.writable).toBe(true);
     } else {
