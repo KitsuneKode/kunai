@@ -119,6 +119,8 @@ for (const [args, env, expected] of [
     const result = await run([...args], env);
     expect(result.code).toBe(0);
     const spawnLine = result.output.split(/\r?\n/).find((line) => line.startsWith("SPAWN="));
+    // SAFETY: SPAWN= lines are emitted by the test's own stubbed `bun` shim as
+    // JSON.stringify(argv); a non-array payload fails the equality below.
     const argv = JSON.parse(spawnLine!.slice(6)) as string[];
     expect(argv.filter((arg) => arg.startsWith("--timeout="))).toEqual([...expected]);
   });

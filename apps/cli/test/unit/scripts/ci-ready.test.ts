@@ -102,6 +102,8 @@ test("main requires native, docs and analytics even without matching paths", () 
 });
 
 test("aggregate waits for every job and runs after upstream failures", async () => {
+  // SAFETY: parses the repo's own committed ci.yml; a shape change fails the
+  // expectations below rather than corrupting state.
   const workflow = Bun.YAML.parse(
     await Bun.file(resolve(root, ".github/workflows/ci.yml")).text(),
   ) as { jobs: Record<string, { needs?: string[]; if?: string }> };
@@ -124,9 +126,13 @@ for (const [path, expected] of [
   [".github/workflows/ci.yml", ["cli", "docs", "installer", "analytics", "doc-coverage"]],
 ] as const) {
   test(`changed path selects required lanes: ${path}`, async () => {
+    // SAFETY: parses the repo's own committed ci.yml; a shape change fails the
+    // expectations below rather than corrupting state.
     const workflow = Bun.YAML.parse(
       await Bun.file(resolve(root, ".github/workflows/ci.yml")).text(),
     ) as { jobs: { changes: { steps: Array<{ id?: string; with?: { filters?: string } }> } } };
+    // SAFETY: the filters scalar is the same committed YAML, reparsed for its
+    // lane map; absent lanes surface as a failed expectation.
     const filters = Bun.YAML.parse(
       workflow.jobs.changes.steps.find((step) => step.id === "filter")?.with?.filters ?? "",
     ) as Record<string, string[]>;
@@ -136,6 +142,8 @@ for (const [path, expected] of [
 }
 
 test("release guard emits a check for docs-only PRs", async () => {
+  // SAFETY: parses the repo's own committed release-guard.yml; only the `on`
+  // key shape is assumed, and the expectation fails if it is absent.
   const workflow = Bun.YAML.parse(
     await Bun.file(resolve(root, ".github/workflows/release-guard.yml")).text(),
   ) as { on: { pull_request: unknown } };

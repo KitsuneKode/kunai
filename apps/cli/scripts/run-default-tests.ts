@@ -32,8 +32,10 @@ const extraArgs = process.argv.slice(2);
  * Raising the bound rather than special-casing tests keeps a genuine hang
  * failing — the job's own step timeout is the real ceiling.
  */
-const timeoutMs = process.env.KUNAI_TEST_TIMEOUT_MS;
-const timeoutArgs = timeoutMs ? ["--", `--timeout=${timeoutMs}`] : [];
+function timeoutArgs(): string[] {
+  const timeoutMs = process.env.KUNAI_TEST_TIMEOUT_MS;
+  return timeoutMs ? ["--", `--timeout=${timeoutMs}`] : [];
+}
 
 async function run(cmd: string[]): Promise<number> {
   const proc = Bun.spawn(cmd, {
@@ -88,22 +90,26 @@ if (extraArgs.length > 0) {
       break;
     }
   }
-  const cmd = hasPathFilter
-    ? ["bun", "test", ...extraArgs]
-    : ["bun", "test", "test/unit", "test/integration", ...extraArgs];
-  // Explicit CLI flags override the baseline; CI's environment override wins
-  // last, matching the no-argument suite path.
-  cmd.splice(2, 0, "--timeout=20000");
-  if (timeoutMs) {
-    const separator = cmd.indexOf("--", 2);
-    cmd.splice(separator < 0 ? cmd.length : separator, 0, `--timeout=${timeoutMs}`);
-  }
-  process.exit(await run(cmd));
+  const buildCmd = (): string[] => {
+    const cmd = hasPathFilter
+      ? ["bun", "test", ...extraArgs]
+      : ["bun", "test", "test/unit", "test/integration", ...extraArgs];
+    // Explicit CLI flags override the baseline; CI's environment override wins
+    // last, matching the no-argument suite path.
+    cmd.splice(2, 0, "--timeout=20000");
+    const timeoutMs = process.env.KUNAI_TEST_TIMEOUT_MS;
+    if (timeoutMs) {
+      const separator = cmd.indexOf("--", 2);
+      cmd.splice(separator < 0 ? cmd.length : separator, 0, `--timeout=${timeoutMs}`);
+    }
+    return cmd;
+  };
+  process.exit(await run(buildCmd()));
 }
 
-const unitCode = await run(["bun", "run", "test:unit", ...timeoutArgs]);
+const unitCode = await run(["bun", "run", "test:unit", ...timeoutArgs()]);
 if (unitCode !== 0) {
   process.exit(unitCode);
 }
 
-process.exit(await run(["bun", "run", "test:integration", ...timeoutArgs]));
+process.exit(await run(["bun", "run", "test:integration", ...timeoutArgs()]));

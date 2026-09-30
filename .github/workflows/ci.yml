@@ -868,7 +868,24 @@ jobs:
   ci-ready:
     name: CI ready
     if: ${{ always() }}
-    needs: [changes, fmt, lint, typecheck, test, analytics-postgres, windows-cli, macos-cli, installer-lint, build-cli, checks-docs, checks-doc-coverage, build-binaries, installer-docker, installer-scenarios]
+    needs:
+      [
+        changes,
+        fmt,
+        lint,
+        typecheck,
+        test,
+        analytics-postgres,
+        windows-cli,
+        macos-cli,
+        installer-lint,
+        build-cli,
+        checks-docs,
+        checks-doc-coverage,
+        build-binaries,
+        installer-docker,
+        installer-scenarios,
+      ]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
