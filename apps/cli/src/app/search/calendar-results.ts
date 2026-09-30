@@ -17,6 +17,7 @@ import {
   historyContentType,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
+import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
 import { activeNewEpisodeCount } from "@/services/release-reconciliation/release-notification-policy";
 import type { ReleaseProgressWriter } from "@/services/release-reconciliation/ReleaseProgressWriter";
 import type {
@@ -409,6 +410,30 @@ async function loadUnifiedCalendarWindow(
   // A fulfilled empty array IS a real successful source response — an honestly
   // quiet week stays success.
   return fulfilled.flat();
+}
+
+/**
+ * The sentence the calendar route shows when {@link loadCalendarResults} throws.
+ *
+ * "Could not reach" is only honest when every source failed at transport; a
+ * source that answered with an error or bad data is a different fix, so the
+ * copy must not blame the network for it.
+ */
+export function describeCalendarLoadFailure(error: unknown): string {
+  const reasons =
+    error instanceof AggregateError && error.errors.length > 0 ? [...error.errors] : [error];
+  const allTransport = reasons.every(
+    (reason) =>
+      reason instanceof Error &&
+      // classifyNetworkFailure reads the message; Bun also puts socket detail
+      // in `name`, so feed it both.
+      classifyNetworkFailure(`${reason.name} ${reason.message}`) !== "unknown",
+  );
+  return allTransport
+    ? "Could not reach the release schedule. Your library and search still work."
+    : // The residual bucket must not claim a cause it cannot see — only that
+      // none of the failures looked like connectivity.
+      "The release schedule failed, and not on the network. Your library and search still work.";
 }
 
 async function loadWindowForMode(

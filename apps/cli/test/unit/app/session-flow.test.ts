@@ -4,7 +4,7 @@ import { resolveNextHistoryEpisode } from "@/session-flow";
 
 describe("resolveNextHistoryEpisode", () => {
   test("crosses into the next season when the current one is finished", async () => {
-    const next = await resolveNextHistoryEpisode({
+    const { next } = await resolveNextHistoryEpisode({
       currentId: "demo-series",
       isAnime: false,
       history: {
@@ -40,7 +40,7 @@ describe("resolveNextHistoryEpisode", () => {
   });
 
   test("uses anime catalog data before falling back to a blind increment", async () => {
-    const next = await resolveNextHistoryEpisode({
+    const { next } = await resolveNextHistoryEpisode({
       currentId: "demo-anime",
       isAnime: true,
       history: {

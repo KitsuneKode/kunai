@@ -1219,6 +1219,32 @@ export function BrowseShell<T>({
   calendarWindowStartRef.current = calendarWindow.start;
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
+  // The companion card renders inside the shell's content band, which has a
+  // bounded height. A card taller than the band gets Yoga-compressed — children
+  // shrink to zero height and rows paint on top of each other — so the card is
+  // handed the real row budget and clamps itself (with a scroll affordance)
+  // instead of discovering the limit as overlap.
+  const renderedListRows =
+    (isCalendarView ? calendarWindow.end - calendarWindow.start : visibleOptions.length) +
+    ((isCalendarView ? calendarWindow.start : windowStart) > 0 ? 1 : 0) +
+    ((
+      isCalendarView
+        ? calendarWindow.end < calendarRenderRows.length
+        : windowEnd < displayOptions.length
+    )
+      ? 1
+      : 0);
+  // Beside the list the card owns the whole band; stacked below it the card gets
+  // what the list leaves, minus its own marginTop. Below the minimum the card
+  // could only show a header sliver — hide it like the narrow breakpoint does.
+  // Both paths shave a row or two of Ink reconciliation slack: a banner or late
+  // chrome row that materialises next frame must not push the card over the
+  // band edge and into overlap (the same reason the list reserves buffer rows).
+  const companionCardMinRows = 8;
+  const companionCardRows = companionBesideList
+    ? viewport.maxVisibleRows - 2
+    : viewport.maxVisibleRows - renderedListRows - 4;
+
   useInput((input, key) => {
     if (rootContentSuspended) return;
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
@@ -2043,15 +2069,16 @@ export function BrowseShell<T>({
                     }
                     reserveRows={PREVIEW_POSTER_ROWS}
                   />
-                ) : (
+                ) : companionCardRows >= companionCardMinRows ? (
                   <DetailsSheetUI
                     data={companionDetails}
                     lines={buildDetailsSheetLines(selectedOption, companionDetails.secondary)}
                     width={previewWidth}
                     scrollIndex={0}
                     maxVisibleLines={viewport.breakpoint === "wide" ? 14 : 10}
+                    maxHeight={companionCardRows}
                   />
-                )}
+                ) : null}
               </Box>
             ) : null}
           </Box>

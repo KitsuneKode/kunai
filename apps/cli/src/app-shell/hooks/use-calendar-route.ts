@@ -15,6 +15,7 @@
 import { createLatestRequestGate } from "@/app-shell/browse-async";
 import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import type { BrowseShellSearchResponse } from "@/app-shell/types";
+import { describeCalendarLoadFailure } from "@/app/search/calendar-results";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type CalendarRouteRequest = {
@@ -44,13 +45,9 @@ export type CalendarRouteState<T> =
       readonly message: string;
     };
 
-/**
- * User-facing failure copy. Source errors carry URLs, tokens, and stack noise;
- * the surface gets one bounded sentence and the detail continues through
- * structured diagnostics instead.
- */
-export const CALENDAR_ROUTE_ERROR_MESSAGE =
-  "Could not reach the release schedule. Your library and search still work.";
+// User-facing failure copy lives in `describeCalendarLoadFailure`: source
+// errors carry URLs, tokens, and stack noise, so the surface gets one bounded
+// sentence per cause and the detail continues through structured diagnostics.
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
@@ -151,7 +148,7 @@ export function useCalendarRoute<T>({
         setState({
           kind: "error",
           requestKey: activeRequest.requestKey,
-          message: CALENDAR_ROUTE_ERROR_MESSAGE,
+          message: describeCalendarLoadFailure(error),
         });
       }
     })();

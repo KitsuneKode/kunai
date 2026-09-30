@@ -56,7 +56,7 @@ const TMDB_ALT_HOST: TmdbHost = { base: TMDB_ALT_BASE, needsApiKey: true };
 const TMDB_HOSTS: readonly TmdbHost[] = [...TMDB_PROXY_HOSTS, TMDB_DIRECT_HOST, TMDB_ALT_HOST];
 
 /** A host answered with a non-2xx status — the API itself responded. */
-class TmdbHttpError extends Error {
+export class TmdbHttpError extends Error {
   constructor(
     readonly status: number,
     url: string,
@@ -223,6 +223,45 @@ export function isTmdbNetworkError(error: unknown): boolean {
     message.includes("network") ||
     classifyNetworkFailure(message) !== "unknown"
   );
+}
+
+/**
+ * Why a TMDB read produced no usable data. Callers used to get `null` for all
+ * of these alike and answer "check your connection" even when the catalog had
+ * answered — this is the vocabulary that keeps those stories apart.
+ */
+export type TmdbFetchFailureKind =
+  /** No host answered at all: DNS, socket, timeout — a connectivity problem. */
+  | "unreachable"
+  /** A host answered with an error status other than 404 (rate limit, 5xx). */
+  | "upstream"
+  /** The upstream says no such record exists — a definitive answer, not a failure. */
+  | "not-found"
+  /** A host answered, but the body could not be parsed as JSON. */
+  | "malformed"
+  /** Something else threw — report it without guessing at a cause. */
+  | "unknown";
+
+/** A 4xx answer is definitive: the upstream says the resource is not there. */
+export function isTmdbClientError(error: unknown): boolean {
+  return error instanceof TmdbHttpError && error.status >= 400 && error.status < 500;
+}
+
+export function classifyTmdbFetchFailure(error: unknown): TmdbFetchFailureKind {
+  if (error instanceof TmdbHttpError) {
+    return error.status === 404 ? "not-found" : "upstream";
+  }
+  // `res.json()` rejects with SyntaxError on a non-JSON body; that is the
+  // upstream answering something we cannot read, not a dead connection.
+  if (error instanceof SyntaxError) return "malformed";
+  // Thrown by fetchTmdbJsonWithFallback when every host is inside its breaker
+  // window — each skip was earned by a transport or 5xx failure, so the honest
+  // residue is "unreachable".
+  if (error instanceof Error && error.message === "no TMDB hosts available") {
+    return "unreachable";
+  }
+  if (isTmdbNetworkError(error)) return "unreachable";
+  return "unknown";
 }
 
 export function formatTmdbSearchError(error: unknown): Error {

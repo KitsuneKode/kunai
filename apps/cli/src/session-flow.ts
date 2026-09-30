@@ -20,9 +20,19 @@ import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { EpisodePickerOption } from "@/domain/types";
 import { cyan, dim, yellow } from "@/menu";
 import { formatEpisodePickerLabel } from "@/services/catalog/episode-display";
+import {
+  describeSeasonLoadFailure,
+  type SeasonLoadFailure,
+} from "@/services/catalog/season-load-failure";
+import { classifyTmdbFetchFailure } from "@/services/catalog/tmdb-proxy";
 import { isFinished } from "@/services/continuation/history-progress";
 import { formatTimestamp } from "@/services/continuation/history-progress";
-import { fetchEpisodes, fetchSeriesData, type EpisodeInfo as TmdbEpisodeInfo } from "@/tmdb";
+import {
+  fetchEpisodes,
+  fetchEpisodesOrThrow,
+  fetchSeriesData,
+  type EpisodeInfo as TmdbEpisodeInfo,
+} from "@/tmdb";
 import type { HistoryProgress } from "@kunai/storage";
 
 export type EpisodeSelection = {
@@ -281,7 +291,21 @@ async function pickAnimeEpisode(
 /** Catalog reads, injectable so the outcome mapping is testable without network or UI. */
 export type EpisodeSelectionLoaders = {
   readonly loadSeasons: typeof fetchSeriesData;
+  /**
+   * May reject with the classified TMDB failure or return `null` for an
+   * opaque failure — both reach the user as an honest unavailable reason.
+   */
+  readonly loadEpisodes?: (
+    tmdbId: string,
+    season: number,
+  ) => Promise<readonly TmdbEpisodeInfo[] | null>;
 };
+
+function offlinePosture(opts: { readonly container?: Container }): {
+  readonly offlineMode: boolean;
+} {
+  return { offlineMode: opts.container?.config.offlineMode === true };
+}
 
 async function pickEpisodeSelection(
   initSeason: number,
@@ -303,11 +327,15 @@ async function pickEpisodeSelection(
   }
 
   const loadSeasons = opts.loaders?.loadSeasons ?? fetchSeriesData;
-  const { seasons, episodes: initialEpisodes } = await loadSeasons(opts.currentId, initSeason);
+  const loadEpisodes = opts.loaders?.loadEpisodes ?? fetchEpisodesOrThrow;
+  const series = await loadSeasons(opts.currentId, initSeason);
+  const { seasons } = series;
   if (!seasons) {
-    return unavailable("Could not load season data for this title. Check your connection.");
+    return unavailable(describeSeasonLoadFailure(series.failure, offlinePosture(opts)));
   }
   let selectedSeason = initSeason;
+  // Seasons answered but the first episode list did not — same honesty rule.
+  let episodesFailure: SeasonLoadFailure | undefined = series.episodesFailure;
   while (true) {
     const season = await chooseSeasonFromOptions(
       seasons,
@@ -317,9 +345,35 @@ async function pickEpisodeSelection(
     );
     if (!season) return CANCELLED;
     selectedSeason = season;
-    const fetchedEpisodes =
-      season === initSeason ? initialEpisodes : await fetchEpisodes(opts.currentId, season);
-    const episodes = fetchedEpisodes ?? [];
+
+    let episodes: readonly TmdbEpisodeInfo[] | null;
+    if (season === initSeason) {
+      episodes = series.episodes;
+      episodesFailure = series.episodesFailure;
+    } else {
+      episodesFailure = undefined;
+      try {
+        episodes = await loadEpisodes(opts.currentId, season);
+      } catch (error) {
+        episodes = null;
+        episodesFailure = classifyTmdbFetchFailure(error);
+      }
+      // A loader honouring the older null contract still surfaces a reason.
+      if (episodes === null && episodesFailure === undefined) {
+        episodesFailure = "unknown";
+      }
+    }
+    if (episodes === null) {
+      // A failed episode read is not the user backing out — say so.
+      return unavailable(describeSeasonLoadFailure(episodesFailure, offlinePosture(opts)));
+    }
+    if (episodes.length === 0 && seasons.length <= 1) {
+      // The picker cannot open on an empty list; for a lone season that would
+      // read as a silent Esc. The catalog answered — nothing is out yet.
+      return unavailable(
+        `Season ${season} has no released episodes listed yet — the catalog fills them in once they air.`,
+      );
+    }
     const episode = await chooseEpisodeFromOptions(
       episodes,
       season,
@@ -374,7 +428,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
   const historySeason = history.season ?? 1;
   const historyEpisode = history.episode ?? history.absoluteEpisode ?? 1;
 
-  const nextEpisode = await resolveNextHistoryEpisode({
+  const { next: nextEpisode, catalogUnavailable } = await resolveNextHistoryEpisode({
     currentId: opts.currentId,
     isAnime: opts.isAnime,
     history,
@@ -478,7 +532,9 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
             : "⏭ Next episode unavailable",
           detail: nextEpisode
             ? withName("Advance to the next released episode", nextName)
-            : "No later released episode is available yet",
+            : catalogUnavailable
+              ? "The catalog could not be checked — retry, or pick an episode manually"
+              : "No later released episode is available yet",
         },
         {
           value: "pick" as const,
@@ -553,9 +609,18 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
   return pickEpisodeSelection(historySeason, historyEpisode, opts);
 }
 
+export type NextHistoryEpisodeResolution = {
+  readonly next: EpisodeSelection | null;
+  /**
+   * The catalog could not be checked at all — the caller must not present this
+   * as "no next episode exists".
+   */
+  readonly catalogUnavailable: boolean;
+};
+
 export async function resolveNextHistoryEpisode(
   args: NextHistoryEpisodeArgs,
-): Promise<EpisodeSelection | null> {
+): Promise<NextHistoryEpisodeResolution> {
   const loadSeriesData = args.loaders?.loadSeasons ?? fetchSeriesData;
   const loadEpisodes = args.loaders?.loadEpisodes ?? fetchEpisodes;
   const nextSelection = await resolveEpisodeAvailability({
@@ -581,12 +646,15 @@ export async function resolveNextHistoryEpisode(
     },
   });
 
-  return nextSelection.nextEpisode
-    ? {
-        season: nextSelection.nextEpisode.season,
-        episode: nextSelection.nextEpisode.episode,
-      }
-    : null;
+  return {
+    next: nextSelection.nextEpisode
+      ? {
+          season: nextSelection.nextEpisode.season,
+          episode: nextSelection.nextEpisode.episode,
+        }
+      : null,
+    catalogUnavailable: nextSelection.tmdbUnavailable,
+  };
 }
 
 export function describeHistoryEntry(entry: HistoryProgress): string {

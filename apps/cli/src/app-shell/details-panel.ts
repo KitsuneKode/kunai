@@ -306,12 +306,26 @@ export function buildPreviewMetaLine<T>(option: BrowseShellOption<T>): string {
   return parts.length > 0 ? parts.join("  ·  ") : "Provider result";
 }
 
+/**
+ * Rows `DetailsSheetUI` paints in its own header — the title, the
+ * type·year·genres line, and the synopsis block. The dossier model keeps them
+ * (a bare lines-list consumer has no header), but a sheet that also rendered
+ * them as body rows would show the same content twice.
+ */
+const SHEET_HEADER_LINE_LABELS = new Set(["Title", "At a glance", "─── Synopsis", "Overview"]);
+
 export function buildDetailsSheetLines<T>(
   option: BrowseShellOption<T> | undefined,
   secondary: DetailsPanelSecondary | null,
 ): readonly ShellPanelLine[] {
   const panel = buildBrowseDetailsPanel(option);
-  const lines: ShellPanelLine[] = [...panel.lines];
+  // Body rows only — see SHEET_HEADER_LINE_LABELS. The previous contract had
+  // the component count its rendered header and slice that many lines off the
+  // front, which silently ate the first real section whenever a synopsis
+  // existed.
+  const lines: ShellPanelLine[] = panel.lines.filter(
+    (line) => !SHEET_HEADER_LINE_LABELS.has(line.label),
+  );
 
   if (secondary?.nextAirDate) {
     lines.push({ label: "Next air", detail: secondary.nextAirDate });

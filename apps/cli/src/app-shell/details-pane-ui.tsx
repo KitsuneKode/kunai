@@ -45,12 +45,16 @@ function SecondaryZoneShimmer() {
 }
 
 const DETAIL_FACT_LABEL_WIDTH = 10;
+/** Text budget + one column of air — a full-width label still never touches its value. */
+const DETAIL_FACT_LABEL_CELL = DETAIL_FACT_LABEL_WIDTH + 1;
 
 function FactRow({ label, value, width }: { label: string; value: string; width: number }) {
   const labelWidth = Math.min(DETAIL_FACT_LABEL_WIDTH, Math.max(6, label.length + 1));
   return (
     <Box>
-      <Text color={palette.dim}>{padColumnsEnd(truncateLine(label, labelWidth), labelWidth)}</Text>
+      <Text color={palette.dim}>
+        {padColumnsEnd(truncateLine(label, labelWidth), labelWidth + 1)}
+      </Text>
       <Text color={palette.text}>{truncateLine(value, width - labelWidth - 2)}</Text>
     </Box>
   );
@@ -67,26 +71,61 @@ export function DetailsSheetUI({
   width = 48,
   scrollIndex = 0,
   maxVisibleLines = 12,
+  maxHeight,
 }: {
   readonly data: DetailsPanelData;
   readonly lines: readonly ShellPanelLine[];
   readonly width?: number;
   readonly scrollIndex?: number;
   readonly maxVisibleLines?: number;
+  /**
+   * Total rows the card may occupy, border included. The companion lives in a
+   * height-bounded flex row — content taller than the band is compressed by
+   * Yoga and paints rows on top of each other, so the card clamps itself to
+   * the budget the caller measured rather than discovering it via overlap.
+   */
+  readonly maxHeight?: number;
 }) {
   const { primary } = data;
-  const headerLines = [
-    primary.title,
-    [primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
-      .filter(Boolean)
-      .join(" · "),
-    primary.synopsis ? truncateAtWord(primary.synopsis, width * 2) : undefined,
-  ].filter((line): line is string => Boolean(line));
-  const bodyStart = headerLines.length;
-  const scrollable = lines.slice(bodyStart);
-  const maxScroll = Math.max(0, scrollable.length - maxVisibleLines);
+  // Border (2) + paddingX (2) leave width-4 content columns. Every budget below
+  // derives from that: a row priced at width-2 overflows by two, Yoga shrinks
+  // the label cell to compensate, and the padding that separates "Watchlist"
+  // from "Not saved" is exactly what gets eaten.
+  const innerWidth = Math.max(16, width - 4);
+  const metaLine = [primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
+    .filter(Boolean)
+    .join(" · ");
+  const allSynopsisLines = wrapSynopsis(primary.synopsis, innerWidth, 3);
+
+  // `lines` is the body only — buildDetailsSheetLines strips the rows this
+  // header paints itself (title, meta, synopsis). Counting rendered header rows
+  // here to re-derive the split is what ate the first body line whenever a
+  // synopsis was present.
+  const scrollable = lines;
+
+  // Row accounting against maxHeight, border included:
+  //   border(2) + title(1) + meta(0|1) + body marginTop(1) are fixed;
+  //   the synopsis block adds marginTop(1) + shown lines when it fits at all;
+  //   the scroll indicator adds 1 whenever it is shown.
+  const fixedRows = 2 + 1 + (metaLine ? 1 : 0) + 1;
+  const contentBudget =
+    maxHeight === undefined ? Number.POSITIVE_INFINITY : Math.max(0, maxHeight - fixedRows);
+  const synopsisDesired = Math.max(1, allSynopsisLines.length);
+  const synopsisShown = Math.min(synopsisDesired, Math.max(0, contentBudget - 1));
+  const synopsisRows = synopsisShown > 0 ? synopsisShown + 1 : 0;
+  const shownSynopsisLines = allSynopsisLines.slice(0, synopsisShown);
+  const synopsisClipped = shownSynopsisLines.length < allSynopsisLines.length;
+
+  const bodyBudget =
+    maxHeight === undefined ? maxVisibleLines : Math.max(0, contentBudget - synopsisRows);
+  let effectiveMax = Math.min(maxVisibleLines, bodyBudget);
+  if (maxHeight !== undefined && scrollable.length > effectiveMax) {
+    // A clipped body needs its last slot for the scroll affordance.
+    effectiveMax = Math.max(0, effectiveMax - 1);
+  }
+  const maxScroll = Math.max(0, scrollable.length - effectiveMax);
   const clampedScroll = Math.min(scrollIndex, maxScroll);
-  const visible = scrollable.slice(clampedScroll, clampedScroll + maxVisibleLines);
+  const visible = scrollable.slice(clampedScroll, clampedScroll + effectiveMax);
 
   return (
     <Box
@@ -97,40 +136,58 @@ export function DetailsSheetUI({
       paddingX={1}
     >
       <Text color={palette.text} bold>
-        {truncateLine(primary.title, width - 2)}
+        {truncateLine(primary.title, innerWidth)}
       </Text>
-      <Text color={palette.muted}>
-        {[primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
-          .filter(Boolean)
-          .join(" · ")}
-      </Text>
-      {primary.synopsis ? (
-        <Box marginTop={1}>
-          <Text color={palette.dim}>{truncateAtWord(primary.synopsis, width * 2)}</Text>
+      {metaLine ? <Text color={palette.muted}>{truncateLine(metaLine, innerWidth)}</Text> : null}
+      {synopsisRows > 0 ? (
+        <Box marginTop={1} flexDirection="column">
+          {shownSynopsisLines.length > 0 ? (
+            shownSynopsisLines.map(
+              (() => {
+                const seen = new Map<string, number>();
+                return (line, index) => {
+                  const count = seen.get(line) ?? 0;
+                  seen.set(line, count + 1);
+                  // The last kept line carries the ellipsis when the height
+                  // budget cut the synopsis short — clipped silently is a lie.
+                  const clipped = synopsisClipped && index === shownSynopsisLines.length - 1;
+                  return (
+                    <Text key={`synopsis:${line}:${count}`} color={palette.dim}>
+                      {clipped ? truncateLine(`${line} …`, innerWidth) : line}
+                    </Text>
+                  );
+                };
+              })(),
+            )
+          ) : (
+            <Text color={palette.dim} dimColor>
+              No synopsis available
+            </Text>
+          )}
         </Box>
       ) : null}
       <Box marginTop={1} flexDirection="column">
         {visible.map((line) =>
-          line.detail === "" && line.label.startsWith("───") ? (
+          !line.detail && line.label.startsWith("───") ? (
             <Text key={line.label} color={palette.muted}>
-              {line.label}
+              {truncateLine(line.label, innerWidth)}
             </Text>
           ) : (
             <Box key={`${line.label}:${line.detail ?? ""}`}>
               <Text color={palette.dim}>
                 {padColumnsEnd(
                   truncateLine(line.label, DETAIL_FACT_LABEL_WIDTH),
-                  DETAIL_FACT_LABEL_WIDTH,
+                  DETAIL_FACT_LABEL_CELL,
                 )}
               </Text>
               <Text color={sheetLineColor(line.tone)}>
-                {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 2)}
+                {truncateLine(line.detail ?? "", innerWidth - DETAIL_FACT_LABEL_CELL)}
               </Text>
             </Box>
           ),
         )}
       </Box>
-      {scrollable.length > maxVisibleLines ? (
+      {bodyBudget > 0 && scrollable.length > effectiveMax ? (
         <Text color={palette.dim} dimColor>
           {clampedScroll > 0 ? "▲ " : ""}
           {clampedScroll < maxScroll ? "▼ scroll" : ""}
@@ -279,7 +336,10 @@ function DetailFact({
   const displayValue = value === "—" ? value : truncateLine(value, valueWidth);
   return (
     <Box>
-      <Text color={palette.dim}>{padColumnsEnd(truncateLine(label, labelWidth), labelWidth)}</Text>
+      {/* +1: a label that fills its whole budget still never touches the value. */}
+      <Text color={palette.dim}>
+        {padColumnsEnd(truncateLine(label, labelWidth), labelWidth + 1)}
+      </Text>
       <Text color={value === "—" ? palette.dim : valueColor} dimColor={value === "—"}>
         {displayValue}
       </Text>
