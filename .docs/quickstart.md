@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-02"
+lastReviewed: "2026-09-30"
 ---
 
 # Kunai — Quickstart
@@ -11,7 +11,7 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 ## Prerequisites
 
-- Bun `>=1.4.0` for source installs during beta (matches `engines.bun` in the root `package.json`)
+- Bun `>=1.4.2` for source installs during beta (matches `engines.bun` in the root `package.json`)
 - `mpv` in `PATH`
 - No poster dependency: every renderer consumes one natively prepared image.
   Kitty/Ghostty get native Kitty graphics, iTerm2 and VSCode 1.80+ get inline
