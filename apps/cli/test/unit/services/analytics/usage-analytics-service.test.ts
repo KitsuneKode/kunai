@@ -131,7 +131,7 @@ describe("pending ping identity", () => {
             return response.promise;
           },
         });
-        const ping = service.maybePing();
+        const ping = service.maybePing({ isInteractive: true });
         await started.promise;
         if (change === "rotate") {
           // Same patch as the Settings rotation action, outside the service.
@@ -193,7 +193,7 @@ describe("pending ping identity", () => {
         },
         { fetchImpl: async () => new Response(null, { status: 204 }) },
       );
-      const ping = service.maybePing();
+      const ping = service.maybePing({ isInteractive: true });
       await updated.promise;
       await config.update({
         analytics: change === "disable" ? "disabled" : "enabled",
