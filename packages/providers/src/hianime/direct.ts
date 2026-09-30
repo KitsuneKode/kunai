@@ -627,7 +627,7 @@ export const hianimeProviderModule: CoreProviderModule = {
           { cachePolicy, events, failures, startedAt },
         );
       }
-      const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+      const shippedStreams = dropRefusedStreams(streams, gated.refusedFingerprints);
 
       const sources = finalizeCycleSourceInventory({
         sources: buildHianimeSourceInventory(resolution.availableModes, audioMode, cachePolicy),

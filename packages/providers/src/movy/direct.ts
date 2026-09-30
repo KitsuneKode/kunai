@@ -1,6 +1,7 @@
 import {
   ProviderCycleFailureError,
   createProviderCycleFailureError,
+  transportFailureIsRetryable,
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
@@ -579,14 +580,11 @@ export async function resolveMovyDirect(
                   failureClass: "candidate-parse" as const,
                 }
               : {
-                  // Raw transport errors (ENOTFOUND, ECONNRESET, fetch failed)
-                  // are offline-class evidence — non-retryable so the cycle's
-                  // offline early-exit can still trigger.
+                  // Offline errno is decided by the shared classifier from
+                  // error.code before the message. An unrecognized transport
+                  // error is not retryable.
                   code: "network-error" as const,
-                  retryable:
-                    !/enotfound|eai_again|enetunreach|econnrefused|econnreset|fetch failed|socket/i.test(
-                      message,
-                    ),
+                  retryable: transportFailureIsRetryable(error),
                   failureClass: "candidate-network" as const,
                 };
         failures.push({
@@ -707,7 +705,7 @@ export async function resolveMovyDirect(
   }
 
   const selectedStream = gated.stream;
-  const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+  const shippedStreams = dropRefusedStreams(streams, gated.refusedFingerprints);
   const selectedSource = {
     ...createSourceCandidateFromStream({
       providerId: MOVY_PROVIDER_ID,

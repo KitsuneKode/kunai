@@ -189,10 +189,14 @@ async function readRpcRequest(request: Request): Promise<RelayRpcRequest> {
   if (contentLength && Number(contentLength) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
     throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
   }
-  const text = await request.text();
-  if (byteLength(text) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
+  if (!request.body) {
+    throw new RelayValidationError("bad-request", "Relay request body must be JSON", 400);
+  }
+  const bytes = await readCappedStream(request.body, DEFAULT_MAX_REQUEST_BODY_BYTES);
+  if (bytes === "too-large") {
     throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
   }
+  const text = new TextDecoder().decode(bytes);
 
   let parsed: unknown;
   try {
@@ -331,8 +335,8 @@ async function relayUpstreamResponse(
     );
   }
 
-  const body = await upstream.arrayBuffer();
-  if (body.byteLength > maxResponseBytes) {
+  const body = await readCappedStream(upstream.body, maxResponseBytes);
+  if (body === "too-large") {
     return relayError(
       "response-too-large",
       providerId,
@@ -340,7 +344,42 @@ async function relayUpstreamResponse(
       502,
     );
   }
-  return new Response(body, { status: upstream.status, statusText: upstream.statusText, headers });
+  const copy = new ArrayBuffer(body.byteLength);
+  new Uint8Array(copy).set(body);
+  return new Response(copy, { status: upstream.status, statusText: upstream.statusText, headers });
+}
+
+async function readCappedStream(
+  body: ReadableStream<Uint8Array>,
+  maxBytes: number,
+): Promise<Uint8Array | "too-large"> {
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let cancelled = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        cancelled = true;
+        return "too-large";
+      }
+      chunks.push(value);
+    }
+  } finally {
+    if (!cancelled) reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 function filteredResponseHeaders(source: Headers): Headers {

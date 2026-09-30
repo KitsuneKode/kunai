@@ -1,6 +1,6 @@
 import { createDecipheriv } from "node:crypto";
 
-import { isOfflineNetworkFailure } from "@kunai/core";
+import { transportFailureIsRetryable } from "@kunai/core";
 import type { ProviderEpisodeIdentity, ProviderRuntimeContext } from "@kunai/types";
 
 import { createProviderHttpError, ProviderHttpError, providerFetch } from "../runtime/fetch";
@@ -851,7 +851,7 @@ export async function resolveEpisodeSources(opts: {
         stage: "episode-sources",
         code: timedOut ? "timeout" : "network-error",
         message,
-        retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
+        retryable: timedOut || transportFailureIsRetryable(error),
         cause: error,
       });
     }

@@ -2,7 +2,6 @@ import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "
 import {
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
-  isRelayedResponse,
   ProviderHttpError,
 } from "@kunai/types";
 
@@ -254,21 +253,14 @@ export async function anidbFetchText(
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
-      } else if (
-        !isFingerprintRetryableStatus(response.status) &&
-        !(response.status === 404 && isRelayedResponse(response))
-      ) {
+      } else if (!isFingerprintRetryableStatus(response.status)) {
         // Falling through to curl exists so a Cloudflare challenge gets a
         // second chance with a better TLS fingerprint. An upstream outage or
         // a genuine 404 is not a fingerprint problem, so it is answered here.
-        //
-        // A 404 that arrived over a relay hop is a different fact. A relay
-        // deployed before this provider existed answers `unknown-provider`
-        // with a 404 of its own, and reading that as anidb.app's verdict marks
-        // the catalogue permanently missing and caches the miss — which took
-        // the whole anime lane down behind a stale relay while the same id
-        // resolved fine over curl. Let curl settle it: a genuine 404 still
-        // throws below, one request later.
+        // A relay that does not know this provider sets its own error header
+        // and the fetch port turns that into a direct retry or a typed
+        // refusal before this function sees the response. A 404 that arrives
+        // here is the upstream's answer.
         throw new AnidbHttpStatusError(response.status);
       }
     } catch (error) {

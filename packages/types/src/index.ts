@@ -704,6 +704,26 @@ export interface ProviderTitleBridgePort {
   }): void;
 }
 
+/**
+ * Host operations a provider may need. The CLI passes Bun. Mobile passes its
+ * own fakes. Providers on that path do not call `Bun.*` themselves.
+ */
+export interface ProviderRuntimeHost {
+  which(name: string): string | null;
+  sleep(ms: number): Promise<void>;
+  hash(algorithm: "sha256", bytes: Uint8Array): Promise<string>;
+  gzip(bytes: Uint8Array): Promise<Uint8Array>;
+  gunzip(bytes: Uint8Array): Promise<Uint8Array>;
+  spawn(
+    command: readonly string[],
+    options?: { readonly cwd?: string; readonly env?: Record<string, string | undefined> },
+  ): Promise<{
+    readonly stdout: Uint8Array;
+    readonly stderr: Uint8Array;
+    readonly exitCode: number;
+  }>;
+}
+
 export interface ProviderRuntimeContext {
   readonly providerId?: ProviderId;
   readonly signal?: AbortSignal;
@@ -713,6 +733,7 @@ export interface ProviderRuntimeContext {
   readonly endpointHealth?: EndpointHealthPort;
   readonly titleBridge?: ProviderTitleBridgePort;
   readonly cache?: ProviderCachePort;
+  readonly host?: ProviderRuntimeHost;
   now(): string;
   emit?(event: ProviderTraceEvent): void;
 }

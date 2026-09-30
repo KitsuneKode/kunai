@@ -78,11 +78,22 @@ function providerSources(provider: string): string {
     .join("\n");
 }
 
+/** A comment that names the gate is not a call. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
 describe("resolve gate coverage", () => {
+  test("a comment that names verifyCandidateStream does not count as coverage", () => {
+    const commented = stripComments("/* verifyCandidateStream */\n// selectVerifiedStream\n");
+    expect(commented.includes("verifyCandidateStream")).toBe(false);
+    expect(commented.includes("selectVerifiedStream")).toBe(false);
+  });
+
   test.each(PRODUCTION_PROVIDERS.filter((provider) => !(provider in EXEMPT)))(
     "%s verifies a stream before reporting success",
     (provider) => {
-      const source = providerSources(provider);
+      const source = stripComments(providerSources(provider));
 
       expect(GATE_MARKERS.some((marker) => source.includes(marker))).toBe(true);
     },

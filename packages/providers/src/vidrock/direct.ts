@@ -12,6 +12,7 @@ import {
   type DirectStreamInput,
   type DirectStreamPayload,
 } from "../shared/direct-stream-source";
+import { fetchGuardedStreamTarget } from "../shared/stream-reachability";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { vidrockManifest, VIDROCK_PROVIDER_ID } from "./manifest";
 
@@ -202,11 +203,15 @@ async function fetchPlaylist(
   signal: AbortSignal | undefined,
   headers: Record<string, string>,
 ): Promise<{ url: string; resolution: string }[]> {
-  const response = await fetch(url, {
-    headers,
+  const outcome = await fetchGuardedStreamTarget({
+    fetchImpl: fetch,
+    url,
+    init: { headers },
     signal: directStreamFetchSignal(signal, VIDROCK_FETCH_TIMEOUT_MS),
+    timeoutMs: VIDROCK_FETCH_TIMEOUT_MS,
   });
-  if (!response.ok) return [];
+  if (outcome.kind !== "response" || !outcome.response.ok) return [];
+  const response = outcome.response;
   const data: unknown = await response.json();
   if (!Array.isArray(data)) return [];
   const out: { url: string; resolution: string }[] = [];

@@ -17,11 +17,43 @@ const OFFLINE_NETWORK_PATTERNS = [
   "err_name_not_resolved",
 ] as const;
 
-export function isOfflineNetworkFailure(
-  failure: Pick<ProviderFailure, "code" | "message">,
-): boolean {
-  const message = failure.message.toLowerCase();
+const OFFLINE_ERROR_CODES = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "ERR_INTERNET_DISCONNECTED",
+  "ERR_NAME_NOT_RESOLVED",
+]);
+
+export function isOfflineNetworkFailure(failure: {
+  readonly code?: string;
+  readonly message?: string;
+}): boolean {
+  const errno = failure.code?.toUpperCase();
+  if (errno && OFFLINE_ERROR_CODES.has(errno)) return true;
+  const message = (failure.message ?? "").toLowerCase();
   return OFFLINE_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+/**
+ * Transport retry policy. Offline errno is decided from `error.code` before
+ * the message. A failure this function does not recognize is not retryable.
+ */
+export function transportFailureIsRetryable(error: unknown): boolean {
+  const code = readErrorCode(error);
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (isOfflineNetworkFailure({ code, message })) return false;
+  if (code && TRANSIENT_ERROR_CODES.has(code.toUpperCase())) return true;
+  if (/etimedout|timed out|econnreset|socket hang up/i.test(message)) return true;
+  return false;
+}
+
+const TRANSIENT_ERROR_CODES = new Set(["ETIMEDOUT", "ECONNRESET", "UND_ERR_SOCKET"]);
+
+function readErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("code" in error)) return undefined;
+  const code = error.code;
+  return typeof code === "string" ? code : undefined;
 }
 
 export function classifyProviderFailure(failure: unknown): ProviderFailureClassification {

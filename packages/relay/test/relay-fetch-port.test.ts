@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { createRelayFetchPort } from "../src/create-relay-fetch-port";
+import { createRelayFetchPort, RelayRefusalError } from "../src/create-relay-fetch-port";
 import { handleRpcRequest, relayError } from "../src/handler";
 import { normalizeRelayBaseUrl } from "../src/normalize-relay-base-url";
 import { buildProviderRelayRegistry } from "../src/registry";
@@ -241,4 +241,57 @@ test("relay port declares local resolution so stream probes pin DNS", () => {
   });
 
   expect(port.resolvesLocally).toBe(true);
+});
+
+test("a relay-generated unknown-provider header falls back to direct, and an upstream 404 does not", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+    registry,
+    providerId: "allanime",
+    async fetch(input) {
+      calls.push(String(input));
+      if (String(input).includes("relay.example")) {
+        return new Response(JSON.stringify({ error: { code: "unknown-provider" } }), {
+          status: 404,
+          headers: { [RELAY_ERROR_CODE_HEADER]: "unknown-provider" },
+        });
+      }
+      return Response.json({ direct: true });
+    },
+  });
+
+  const response = await port.fetch("https://api.allanime.day/api");
+  expect(await response.json()).toEqual({ direct: true });
+  expect(calls).toEqual(["https://relay.example/rpc/allanime", "https://api.allanime.day/api"]);
+
+  const upstream = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+    registry,
+    providerId: "allanime",
+    async fetch() {
+      return new Response("missing", { status: 404 });
+    },
+  });
+  const upstreamResponse = await upstream.fetch("https://api.allanime.day/api");
+  expect(upstreamResponse.status).toBe(404);
+  expect(await upstreamResponse.text()).toBe("missing");
+});
+
+test("a relay-generated refusal throws when direct fallback is off", async () => {
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: false },
+    registry,
+    providerId: "allanime",
+    async fetch() {
+      return new Response("no", {
+        status: 404,
+        headers: { [RELAY_ERROR_CODE_HEADER]: "unknown-provider" },
+      });
+    },
+  });
+
+  await expect(port.fetch("https://api.allanime.day/api")).rejects.toBeInstanceOf(
+    RelayRefusalError,
+  );
 });

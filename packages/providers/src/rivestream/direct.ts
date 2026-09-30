@@ -6,7 +6,7 @@ import {
   createResolveTrace,
   createTraceStep,
   isAbortError,
-  isOfflineNetworkFailure,
+  transportFailureIsRetryable,
   ProviderCycleFailureError,
   providerCycleCandidateTimeoutMs,
   runProviderCycle,
@@ -524,13 +524,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
                     code: isRivestreamAbortOrTimeoutError(error) ? "timeout" : "network-error",
                     message:
                       error instanceof Error ? error.message : `Internal server ${provider} failed`,
-                    // Offline signatures (ENOTFOUND, EAI_AGAIN, …) are
-                    // non-retryable so the cycle's network-offline early-exit
-                    // fires; other transport errors stay transient.
-                    retryable: !isOfflineNetworkFailure({
-                      code: "network-error",
-                      message: error instanceof Error ? error.message : "",
-                    }),
+                    // Offline errno is decided by the shared classifier. An
+                    // unrecognized transport error is not retryable.
+                    retryable: transportFailureIsRetryable(error),
                     cause: error,
                   });
             failures.push({
@@ -1175,7 +1171,7 @@ async function resolveRivestreamProviderCandidate({
     });
   }
   // Keep the alternatives, drop the rungs the gate proved dead.
-  streams = dropRefusedStreams(streams, selection.refusedHosts);
+  streams = dropRefusedStreams(streams, selection.refusedFingerprints);
   variants = variants.filter((variant) =>
     streams.some((candidateStream) => candidateStream.variantId === variant.id),
   );

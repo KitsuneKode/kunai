@@ -8,6 +8,7 @@ import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
+  ProviderRuntimeHost,
   ProviderTitleBridgePort,
   ProviderTraceEvent,
 } from "@kunai/types";
@@ -43,6 +44,7 @@ export interface ProviderEngineOptions {
   readonly endpointHealth?: EndpointHealthPort;
   readonly cache?: ProviderCachePort;
   readonly titleBridge?: ProviderTitleBridgePort;
+  readonly host?: ProviderRuntimeHost;
   /**
    * How many consecutive providers must fail with reliable offline-evidence
    * before the engine abandons all remaining candidates.  On a glitchy network
@@ -182,6 +184,7 @@ export class ProviderEngine {
   private readonly endpointHealth?: EndpointHealthPort;
   private readonly cache?: ProviderCachePort;
   private readonly titleBridge?: ProviderTitleBridgePort;
+  private readonly host?: ProviderRuntimeHost;
   private readonly consecutiveOfflineThreshold: number;
   private readonly hedgeDelayMs: number;
   private readonly maxConcurrentCandidates: number;
@@ -204,6 +207,7 @@ export class ProviderEngine {
     this.endpointHealth = opts.endpointHealth;
     this.cache = opts.cache;
     this.titleBridge = opts.titleBridge;
+    this.host = opts.host;
 
     for (const module of opts.modules) {
       if (this.modulesById.has(module.providerId)) {
@@ -244,6 +248,7 @@ export class ProviderEngine {
         : undefined,
       titleBridge: this.titleBridge,
       cache: this.cache,
+      host: this.host,
     });
   }
 
@@ -740,6 +745,7 @@ export class ProviderEngine {
         : undefined,
       titleBridge: this.titleBridge,
       cache: this.cache,
+      host: this.host,
       emit: (event) => traceEvents.push(event),
     });
 

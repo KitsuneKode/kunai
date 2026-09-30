@@ -49,8 +49,11 @@ export function providerFailureCodeFromCycleFailure(
       return "unsupported-title";
     case "candidate-user-cancelled":
       return "cancelled";
+    case "candidate-rate-limited":
+      return "rate-limited";
+    case "candidate-server-error":
+      return "provider-unavailable";
     case "candidate-unknown":
-    default:
       return "unknown";
   }
 }

@@ -19,7 +19,7 @@ export async function handleRelayRequest(request: Request, env: RelayAppEnv): Pr
     return Response.json({
       ok: true,
       service: "kunai-relay",
-      providers: relayRegistry.providers.length,
+      providers: relayRegistry.providers.map((provider) => provider.providerId),
     });
   }
 

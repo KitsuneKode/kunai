@@ -9,7 +9,7 @@ export default function handler(_req: unknown, res: ServerResponse): void {
     JSON.stringify({
       ok: true,
       service: "kunai-relay",
-      providers: relayRegistry.providers.length,
+      providers: relayRegistry.providers.map((provider) => provider.providerId),
     }),
   );
 }

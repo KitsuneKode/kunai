@@ -346,7 +346,7 @@ export const animeggProviderModule: CoreProviderModule = {
     if (!gated.accepted) {
       return fail("not-found", `AnimeGG selected stream is unreachable (${gated.reason})`, true);
     }
-    const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+    const shippedStreams = dropRefusedStreams(streams, gated.refusedFingerprints);
 
     const inventory: ProviderSourceCandidate[] = [
       createSourceCandidateFromStream({

@@ -57,8 +57,10 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
           body: JSON.stringify(requestInfo),
           signal: init?.signal,
         });
-        if (fallbackToDirect && isRelayAuthorizationFailure(response)) {
-          return fetchImpl(input, init);
+        const refusal = relayGeneratedRefusal(response);
+        if (refusal) {
+          if (fallbackToDirect) return fetchImpl(input, init);
+          throw new RelayRefusalError(refusal, response.status);
         }
         return markRelayedResponse(response);
       } catch (error) {
@@ -87,12 +89,20 @@ function markRelayedResponse(response: Response): Response {
   });
 }
 
-function isRelayAuthorizationFailure(response: Response): boolean {
-  const code = response.headers.get(RELAY_ERROR_CODE_HEADER);
-  return (
-    (response.status === 503 && code === "relay-not-configured") ||
-    (response.status === 401 && code === "unauthorized")
-  );
+export class RelayRefusalError extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(code: string, status: number) {
+    super(`Relay refused the request (${code})`);
+    this.name = "RelayRefusalError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function relayGeneratedRefusal(response: Response): string | null {
+  return response.headers.get(RELAY_ERROR_CODE_HEADER);
 }
 
 async function toRelayRequest(

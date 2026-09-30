@@ -112,26 +112,21 @@ export type VerifiedStreamSelection<TStream> =
       readonly stream: TStream;
       readonly verified: boolean;
       /**
-       * Hosts proven dead during the walk. The caller must drop their streams:
-       * leaving a refused rung in the inventory lets selection ship the very
-       * stream the gate rejected.
+       * Request fingerprints proven dead during the walk. The caller must drop
+       * those streams. A sibling quality on the same host is a different
+       * request and stays.
        */
-      readonly refusedHosts: ReadonlySet<string>;
+      readonly refusedFingerprints: ReadonlySet<string>;
     }
   | { readonly accepted: false; readonly reason: string };
 
 /**
  * The first stream of a source that actually verifies.
  *
- * A refusal is evidence about *that stream*, not about the source: a candidate
- * often carries several qualities, and they do not always sit on the same host.
- * Rejecting the whole source on the first refusal throws away rungs that would
- * have played, so the walk continues and the source is refused only when every
- * distinct host has refused.
- *
- * One probe per host, because a host answers the same for every rung it serves
- * — the extra probes would cost latency inside the candidate's budget and tell
- * us nothing new.
+ * A refusal is evidence about *that request*, not about the host. A dead 1080p
+ * URL and a live 720p URL on the same CDN are different fingerprints: the 720p
+ * is probed and can win. The source is refused only when every fingerprint
+ * has refused.
  */
 export async function selectVerifiedStream<
   TStream extends Pick<StreamCandidate, "url" | "headers">,
@@ -147,11 +142,11 @@ export async function selectVerifiedStream<
   readonly timeoutMs?: number;
 }): Promise<VerifiedStreamSelection<TStream>> {
   let firstReason: string | undefined;
-  const refusedHosts = new Set<string>();
+  const refusedFingerprints = new Set<string>();
 
   for (const stream of streams) {
-    const host = streamHost(stream.url);
-    if (host && refusedHosts.has(host)) continue;
+    const fingerprint = streamRequestFingerprint(stream);
+    if (fingerprint && refusedFingerprints.has(fingerprint)) continue;
 
     const verdict = await verifyCandidateStream({
       stream,
@@ -160,36 +155,38 @@ export async function selectVerifiedStream<
       ...(timeoutMs === undefined ? null : { timeoutMs }),
     });
     if (verdict.accepted) {
-      return { accepted: true, stream, verified: verdict.verified, refusedHosts };
+      return { accepted: true, stream, verified: verdict.verified, refusedFingerprints };
     }
 
     firstReason ??= verdict.reason;
-    if (host) refusedHosts.add(host);
+    if (fingerprint) refusedFingerprints.add(fingerprint);
   }
 
   return { accepted: false, reason: firstReason ?? "candidate has no stream url" };
 }
 
 /**
- * Drop the streams whose host the gate proved dead.
+ * Drop the streams whose request the gate proved dead.
  *
- * The walk refuses a host, not a rung, so the caller cannot just remove the one
- * stream that failed — every rung on that host is equally gone. Leaving them in
- * lets startup selection ship the exact stream the gate rejected, which is
- * usually the highest quality and therefore the one it prefers.
+ * A sibling quality on the same host is a different request and stays. Leaving
+ * the refused request in the inventory lets startup selection ship the exact
+ * stream the gate rejected.
  */
-export function dropRefusedStreams<TStream extends Pick<StreamCandidate, "url">>(
+export function dropRefusedStreams<TStream extends Pick<StreamCandidate, "url" | "headers">>(
   streams: readonly TStream[],
-  refusedHosts: ReadonlySet<string>,
+  refusedFingerprints: ReadonlySet<string>,
 ): TStream[] {
-  if (refusedHosts.size === 0) return [...streams];
-  return streams.filter((stream) => !refusedHosts.has(streamHost(stream.url)));
+  if (refusedFingerprints.size === 0) return [...streams];
+  return streams.filter((stream) => !refusedFingerprints.has(streamRequestFingerprint(stream)));
 }
 
-function streamHost(url: string | undefined): string {
-  try {
-    return new URL(url ?? "").host.toLowerCase();
-  } catch {
-    return "";
-  }
+function streamRequestFingerprint(stream: Pick<StreamCandidate, "url" | "headers">): string {
+  const url = stream.url ?? "";
+  if (!url) return "";
+  const headers = stream.headers ?? {};
+  const headerKey = Object.keys(headers)
+    .sort()
+    .map((key) => `${key.toLowerCase()}:${headers[key]}`)
+    .join("\n");
+  return `${url}\n${headerKey}`;
 }

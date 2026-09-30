@@ -329,6 +329,41 @@ test("handleRpcRequest rejects oversized upstream metadata responses", async () 
   expect(await response.json()).toMatchObject({ error: { code: "response-too-large" } });
 });
 
+test("an upstream body over the cap is cancelled instead of buffered", async () => {
+  let pulls = 0;
+  let cancelled = false;
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "GET",
+      upstreamUrl: "https://api.allanime.day/api",
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport() {
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              pulls += 1;
+              controller.enqueue(new Uint8Array(200));
+              if (pulls > 8) controller.close();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/plain" } },
+        );
+      },
+    },
+  );
+
+  expect(response.status).toBe(502);
+  expect(cancelled).toBe(true);
+  expect(pulls).toBeLessThan(8);
+});
+
 test("handleRpcRequest does not read or return a body for HEAD responses", async () => {
   const response = await handleRpcRequest(
     rpcRequest({

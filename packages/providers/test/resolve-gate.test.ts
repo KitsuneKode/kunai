@@ -163,32 +163,40 @@ describe("selectVerifiedStream", () => {
     expect(result.accepted === false && result.reason).toContain("403");
   });
 
-  test("probes each host once, because a host answers the same for every rung", async () => {
-    // Counted by distinct URL, not by fetch: one probe of a direct stream is
-    // itself a HEAD plus a ranged GET, so raw request count measures the
-    // probe's internals rather than this walk.
-    const probed: string[] = [];
+  test("a dead 1080p url does not skip a live 720p on the same host, and the probe sends the candidate headers", async () => {
+    const probed: { url: string; headers: Headers }[] = [];
     const context = {
       fetch: {
         runtime: "direct-http" as const,
-        fetch: async (url: string) => {
-          probed.push(String(url));
-          return new Response("forbidden", { status: 403 });
+        fetch: async (url: string, init?: RequestInit) => {
+          probed.push({ url: String(url), headers: new Headers(init?.headers) });
+          return String(url).includes("1080")
+            ? new Response("forbidden", { status: 403 })
+            : new Response(null, { status: 200 });
         },
       },
     } as unknown as ProviderRuntimeContext;
 
-    await selectVerifiedStream({
+    const result = await selectVerifiedStream({
       streams: [
-        stream("a", "https://same.example/1080.mp4"),
-        stream("b", "https://same.example/720.mp4"),
-        stream("c", "https://same.example/480.mp4"),
+        {
+          id: "dead",
+          url: "https://cdn.example/1080.mp4",
+          headers: { Referer: "https://player.example/" },
+        },
+        {
+          id: "live",
+          url: "https://cdn.example/720.mp4",
+          headers: { Referer: "https://player.example/" },
+        },
       ],
       context,
     });
 
-    expect(new Set(probed).size).toBe(1);
-    expect(probed.every((url) => url.includes("1080"))).toBe(true);
+    expect(result.accepted).toBe(true);
+    expect(result.accepted === true && result.stream.id).toBe("live");
+    expect(probed.some((probe) => probe.url.includes("/720.mp4"))).toBe(true);
+    expect(probed[0]?.headers.get("referer")).toBe("https://player.example/");
   });
 
   test("rejects an empty candidate rather than reporting success", async () => {
