@@ -1,6 +1,6 @@
-import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
-import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
+import { openSessionPicker } from "@/app-shell/session-picker";
 import type { Container } from "@/container";
+import type { OverlayPickerOption } from "@/domain/session/SessionState";
 import { formatBytes } from "@/services/diagnostics/runtime-memory";
 import {
   collectDownloadCleanupCandidates,
@@ -11,7 +11,11 @@ import {
 } from "@/services/download/download-cleanup-candidates";
 import type { DownloadCleanupCandidate } from "@/services/download/download-cleanup-policy";
 
-type CleanupPick = { readonly type: "all" } | { readonly type: "job"; readonly jobId: string };
+const PICK_ALL = "cleanup:all";
+const PICK_JOB = "cleanup:job:";
+const PICK_BACK = "cleanup:back";
+const CONFIRM_DELETE = "cleanup:delete";
+const CONFIRM_KEEP = "cleanup:keep";
 
 function cleanupFeedback(container: Container, note: string): void {
   container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note });
@@ -19,22 +23,22 @@ function cleanupFeedback(container: Container, note: string): void {
 
 function buildReviewOptions(
   candidates: readonly DownloadCleanupCandidate[],
-): readonly ShellOption<CleanupPick>[] {
+): readonly OverlayPickerOption[] {
   const summary = summarizeDownloadCleanupCandidates(candidates);
   const size = formatCleanupSize(summary);
   return [
     {
-      value: { type: "all" },
+      value: PICK_ALL,
       label: `Clean up all ${summary.count} downloads`,
       detail: size
         ? `Delete every listed file after confirmation · frees about ${size}`
         : "Delete every listed file after confirmation",
-      destructive: true,
+      tone: "error",
     },
-    ...candidates.map((candidate): ShellOption<CleanupPick> => {
+    ...candidates.map((candidate): OverlayPickerOption => {
       const option = describeCleanupCandidate(candidate);
       return {
-        value: { type: "job", jobId: option.jobId },
+        value: `${PICK_JOB}${option.jobId}`,
         label: option.label,
         detail: option.detail,
       };
@@ -43,26 +47,26 @@ function buildReviewOptions(
 }
 
 async function confirmCleanup(
+  container: Container,
   title: string,
   subtitle: string,
   confirmLabel: string,
-  actionContext?: ListShellActionContext,
 ): Promise<boolean> {
-  const confirmed = await chooseFromListShell<boolean>({
+  const picked = await openSessionPicker(container.stateManager, {
+    type: "list_picker",
     title,
     subtitle,
-    actionContext,
     options: [
-      { value: false, label: "Keep files", detail: "Go back without deleting anything" },
+      { value: CONFIRM_KEEP, label: "Keep files", detail: "Go back without deleting anything" },
       {
-        value: true,
+        value: CONFIRM_DELETE,
         label: confirmLabel,
         detail: "Remove local files and queue records",
-        destructive: true,
+        tone: "error",
       },
     ],
   });
-  return confirmed === true;
+  return picked === CONFIRM_DELETE;
 }
 
 function reportDeleteOutcome(
@@ -101,41 +105,44 @@ function reportDeleteOutcome(
  * are handled by the same path as a manual queue delete. Picker rows re-list
  * after each deletion, so a candidate that disappeared underneath is simply
  * absent rather than a stale row.
+ *
+ * Rendered as a `list_picker` overlay rather than root content so it layers
+ * correctly when launched from inside the library/downloads overlay — a
+ * root-content mount would stay hidden behind the open modal.
  */
-export async function openDownloadCleanupReview(
-  container: Container,
-  actionContext?: ListShellActionContext,
-): Promise<void> {
+export async function openDownloadCleanupReview(container: Container): Promise<void> {
   let candidates = collectDownloadCleanupCandidates(container);
   if (candidates.length === 0) {
-    cleanupFeedback(
-      container,
-      container.config.autoCleanupWatched
+    await openSessionPicker(container.stateManager, {
+      type: "list_picker",
+      title: "Clean up watched downloads",
+      subtitle: container.config.autoCleanupWatched
         ? "No watched downloads are ready for cleanup right now."
-        : "Watched-download cleanup is off — enable autoCleanupWatched to get suggestions.",
-    );
+        : "Watched-download cleanup suggestions are off — enable autoCleanupWatched in settings to get them.",
+      options: [{ value: PICK_BACK, label: "Back", detail: "Close without changing anything" }],
+    });
     return;
   }
 
   while (candidates.length > 0) {
     const summary = summarizeDownloadCleanupCandidates(candidates);
     const size = formatCleanupSize(summary);
-    const picked = await chooseFromListShell<CleanupPick>({
+    const picked = await openSessionPicker(container.stateManager, {
+      type: "list_picker",
       title: "Clean up watched downloads",
       subtitle:
         `${summary.count} eligible${size ? ` · about ${size} recoverable` : ""} — ` +
         "nothing is deleted without confirmation",
       options: buildReviewOptions(candidates),
-      actionContext,
     });
-    if (!picked) return;
+    if (!picked || picked === PICK_BACK) return;
 
-    if (picked.type === "all") {
+    if (picked === PICK_ALL) {
       const confirmed = await confirmCleanup(
+        container,
         `Delete all ${summary.count} watched downloads?`,
         "Removes video, subtitle, and thumbnail files plus queue records — cannot be undone.",
         "Delete all listed downloads",
-        actionContext,
       );
       if (!confirmed) continue;
       const report = await deleteDownloadCleanupCandidates(container.downloadService, candidates);
@@ -143,7 +150,8 @@ export async function openDownloadCleanupReview(
       return;
     }
 
-    const candidate = candidates.find((item) => item.job.id === picked.jobId);
+    const jobId = picked.startsWith(PICK_JOB) ? picked.slice(PICK_JOB.length) : null;
+    const candidate = jobId ? candidates.find((item) => item.job.id === jobId) : undefined;
     if (!candidate) {
       // The job was deleted between listing and picking; re-list rather than
       // acting on a stale row.
@@ -152,10 +160,10 @@ export async function openDownloadCleanupReview(
     }
     const option = describeCleanupCandidate(candidate);
     const confirmed = await confirmCleanup(
+      container,
       `Delete ${option.label}?`,
       `${option.detail} — cannot be undone.`,
       "Delete download",
-      actionContext,
     );
     if (!confirmed) continue;
     const report = await deleteDownloadCleanupCandidates(container.downloadService, [candidate]);

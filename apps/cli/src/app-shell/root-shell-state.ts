@@ -22,6 +22,7 @@ export type RootOwnedOverlay = Extract<
       | "episode_picker"
       | "subtitle_picker"
       | "recommendation_picker"
+      | "list_picker"
       | "tracks_panel";
   }
 >;
@@ -50,6 +51,7 @@ function isRootOwnedOverlay(overlay: OverlayState | null | undefined): overlay i
     overlay?.type === "episode_picker" ||
     overlay?.type === "subtitle_picker" ||
     overlay?.type === "recommendation_picker" ||
+    overlay?.type === "list_picker" ||
     overlay?.type === "tracks_panel"
   );
 }

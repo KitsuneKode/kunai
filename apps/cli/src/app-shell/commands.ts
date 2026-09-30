@@ -74,7 +74,8 @@ function isMediaPickerOverlay(type: string): boolean {
     type === "season_picker" ||
     type === "episode_picker" ||
     type === "subtitle_picker" ||
-    type === "recommendation_picker"
+    type === "recommendation_picker" ||
+    type === "list_picker"
   );
 }
 
