@@ -2150,10 +2150,16 @@ function miruroSearchContentType(
 }
 
 function stripSearchDescription(value: string | null | undefined): string {
+  let text = (value ?? "").replace(/<br\s*\/?>/gi, " ");
+  // Strip tags to a fixpoint: one pass over `<<script>script>` leaves a
+  // re-formed `<script>` behind, so pass until nothing changes.
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, "");
+  } while (text !== previous);
   return (
-    (value ?? "")
-      .replace(/<br\s*\/?>/gi, " ")
-      .replace(/<[^>]*>/g, "")
+    text
       // `&amp;` decodes last: decoding it first would let `&amp;quot;` or
       // `&amp;#39;` double-unescape into a quote the author deliberately hid.
       .replace(/&quot;/g, '"')
