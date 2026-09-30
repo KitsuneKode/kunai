@@ -2236,6 +2236,16 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
+    // Due order is created_at, then id. Two enqueues in the same millisecond
+    // tie, and the id tie-break is not insertion order.
+    db.query("UPDATE download_jobs SET created_at = ? WHERE id = ?").run(
+      "2020-01-01T00:00:00.000Z",
+      firstJob.id,
+    );
+    db.query("UPDATE download_jobs SET created_at = ? WHERE id = ?").run(
+      "2020-01-01T00:00:01.000Z",
+      secondJob.id,
+    );
     const originalMarkRunning = repo.markRunning.bind(repo);
     const claimedJobIds: string[] = [];
     const markRunningSpy = spyOn(repo, "markRunning").mockImplementation((jobId, updatedAt) => {
