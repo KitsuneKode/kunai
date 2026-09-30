@@ -1,14 +1,17 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd ../.. && bun install --frozen-lockfile",
+  "buildCommand": "bun run vercel:bundle-api",
   "regions": ["iad1"],
   "rewrites": [
     { "source": "/health", "destination": "/api/health" },
     { "source": "/rpc/:providerId", "destination": "/api/rpc/:providerId" }
   ],
   "functions": {
-    "api/rpc/[providerId].ts": {
+    "api/rpc/[providerId].js": {
       "maxDuration": 30
     },
-    "api/health.ts": {
+    "api/health.js": {
       "maxDuration": 5
     }
   }

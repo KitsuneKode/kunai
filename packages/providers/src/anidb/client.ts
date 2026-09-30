@@ -412,6 +412,11 @@ export async function searchAnidb(
 ): Promise<readonly AnidbSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  // Status reporting is what separates "this title is not on AniDB" from
+  // "AniDB is down": a 503 hands back an error page, the browse parser finds
+  // no cards, and an origin outage is reported to the user as zero results for
+  // their query — and to the release signoff as provider drift. Every read now
+  // raises `AnidbHttpStatusError` for status >= 400, so the throw does the work.
   const page = await anidbFetchText(`${ANIDB_BASE}/browse?q=${encodeURIComponent(trimmed)}`, {
     signal,
     context,

@@ -21,11 +21,35 @@ When `KUNAI_RELAY_BASE_URL` is unset, the smoke exits successfully with a skippe
 
 ## Vercel Deployment
 
-Deploy from this directory:
+Handler sources live in `src/api/`, not `api/`. The `buildCommand` in
+`vercel.json` (`bun run vercel:bundle-api`) bundles them into `api/` as
+self-contained `.js` before Vercel's function builders run, so git-connected
+builds and `vercel build` produce identical output. Everything under `api/` is
+generated and gitignored — never edit it.
+
+The bundling is required because this app imports Bun workspace packages
+(`@kunai/relay`, `@kunai/providers`) that resolve to raw TypeScript source;
+Vercel's traced handlers leave those imports dangling and crash at runtime.
+
+For a git-connected project, set the root directory to `apps/relay-server` —
+install and build commands come from `vercel.json`. To avoid rebuilding on
+unrelated monorepo commits, configure the Ignored Build Step (Settings → Git)
+with the repo's change detector:
+
+```sh
+bash "$(git rev-parse --show-toplevel)/scripts/vercel-ignored-build.sh" \
+  apps/relay-server packages/relay packages/providers packages/core \
+  packages/types package.json bun.lock
+```
+
+This matters beyond build minutes: a provider manifest's
+`relayProfile.upstreamHosts` is baked into the deployed registry, so the gate
+must never skip a `packages/providers` change — it doesn't.
+
+For a manual prebuilt deploy, run from this directory:
 
 ```sh
 vercel build --yes
-bun run vercel:bundle-output
 vercel deploy --prebuilt
 ```
 
@@ -33,13 +57,8 @@ For production:
 
 ```sh
 vercel build --prod --yes
-bun run vercel:bundle-output
 vercel deploy --prebuilt --prod
 ```
-
-The bundle step is required because this app imports Bun workspace packages
-(`@kunai/relay`, `@kunai/providers`). It replaces Vercel's generated function
-handlers with standalone bundled handlers before `--prebuilt` upload.
 
 This app pins `typescript@5.9.3` in `package.json`: Vercel's `@vercel/node`
 builder crashes ("Cannot read properties of undefined (reading 'readFile')")

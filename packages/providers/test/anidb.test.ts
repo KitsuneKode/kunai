@@ -515,6 +515,82 @@ describe("chooseAnidbSearchMatch", () => {
   });
 });
 
+describe("anidb search reports an outage instead of an empty result set", () => {
+  /**
+   * A 503 from the origin used to reach the browse parser as an error page, the
+   * parser found no cards, and `search` returned `[]`. The user saw "No results
+   * for …" for a provider that was down, and the release signoff read the empty
+   * `failureCodes` and filed it as provider drift. `null` is the contract's
+   * transport-failure channel; `[]` is a real answer and must mean one.
+   */
+  test("search returns null when the provider answers 503", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    const search = anidbProviderModule.search;
+    if (!search) throw new Error("the anidb module must expose search");
+
+    try {
+      // SAFETY: the stub answers the one call shape Bun.which is asked for in
+      // this test — a command name in, a path-or-null out.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      // SAFETY: `as never` — the stub implements only the fetch call shape used
+      // under test; never is assignable to the write position without a chain.
+      globalThis.fetch = (async () =>
+        new Response("<html><body>503 Service Unavailable</body></html>", {
+          status: 503,
+        })) as never;
+
+      // SAFETY: `as never` — the search call reads only `signal` off the
+      // context in this path.
+      const results = await search({ query: "onigiri" }, {
+        signal: undefined,
+      } as never);
+
+      expect(results).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  /**
+   * Pins the mechanism, not just the symptom: the browse path now asks for the
+   * HTTP status, so a relay 404 is answered immediately instead of spending a
+   * curl request to be told the same thing. Before unconditional status reporting this fell
+   * through to the transport fallback.
+   */
+  test("a relay 404 is answered without falling through to a local transport", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    let transportFallbackUsed = false;
+
+    try {
+      // SAFETY: the stub records the lookup and answers the one call shape
+      // Bun.which is asked for in this test.
+      Bun.which = ((_cmd: string) => {
+        transportFallbackUsed = true;
+        return null;
+      }) as typeof Bun.which;
+
+      // SAFETY: `as never` — the stub supplies only the context fetch used by
+      // this path; never is assignable to the slot without a chain.
+      const context = {
+        fetch: {
+          fetch: async () => new Response("not found", { status: 404 }),
+        },
+      } as never;
+
+      await expect(searchAnidb("a title that does not exist", undefined, context)).rejects.toThrow(
+        /404/,
+      );
+      expect(transportFallbackUsed).toBe(false);
+    } finally {
+      Bun.which = originalWhich;
+    }
+  });
+});
+
 describe("anidb search delegation", () => {
   test("searchAnidb returns the shared browse parser contract", async () => {
     clearAnidbCachesForTest();

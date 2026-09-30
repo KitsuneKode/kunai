@@ -63,6 +63,16 @@ Cron runs at `5 0 * * *` (see `vercel.json`).
    DATABASE_URL="postgres://..." bun run --cwd apps/analytics-ingest migrate
    ```
 
+   For a git-connected project, set the root directory to
+   `apps/analytics-ingest`; install and functions config come from
+   `vercel.json`. To skip deploys on unrelated monorepo commits, set the
+   Ignored Build Step (Settings → Git) to:
+
+   ```sh
+   bash "$(git rev-parse --show-toplevel)/scripts/vercel-ignored-build.sh" \
+     apps/analytics-ingest package.json bun.lock
+   ```
+
 4. Deploy and run a live smoke. The CLI and docs ship Kunai-owned production
    defaults for the ping and public aggregate endpoints. Set `KUNAI_ANALYTICS_URL`
    or `KUNAI_ANALYTICS_METRICS_URL` only to override those defaults; CLI endpoint

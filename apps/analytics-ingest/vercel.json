@@ -1,4 +1,6 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd ../.. && bun install --frozen-lockfile",
   "regions": ["iad1"],
   "rewrites": [
     {

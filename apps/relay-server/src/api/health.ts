@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http";
 
-import { relayRegistry } from "../src/provider-registry";
+import { relayRegistry } from "../provider-registry";
 
 export default function handler(_req: unknown, res: ServerResponse): void {
   res.statusCode = 200;

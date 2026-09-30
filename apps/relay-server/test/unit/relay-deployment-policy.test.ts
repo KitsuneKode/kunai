@@ -6,7 +6,7 @@ import {
   type RelayTransport,
 } from "@kunai/relay";
 
-import handler, { createRelayRpcHandler } from "../../api/rpc/[providerId]";
+import handler, { createRelayRpcHandler } from "../../src/api/rpc/[providerId]";
 
 const registry = buildProviderRelayRegistry([
   {

@@ -10,7 +10,7 @@ import {
   type RelayTransport,
 } from "@kunai/relay";
 
-import { relayRegistry } from "../../src/provider-registry";
+import { relayRegistry } from "../../provider-registry";
 
 /**
  * The shared handler enforces the same ceiling, but only once it holds a

@@ -134,7 +134,16 @@ async function resolveAnidbShow(
     // trade a correct id for whatever the browse page happens to rank first.
     if (!catalog.missing) return direct;
 
-    const searched = await searchAnidb(query, signal, context);
+    let searched: readonly AnidbSearchResult[];
+    try {
+      searched = await searchAnidb(query, signal, context);
+    } catch (error) {
+      // Same rule as the catalog probe above: a caller cancel is a decision,
+      // while a Cloudflare/HTTP fault says nothing about whether the id is
+      // valid — keep it and let the caller surface something retryable.
+      if (signal?.aborted === true) throw error;
+      return direct;
+    }
     return (
       chooseAnidbSearchMatch(query, searched, { requireTitleEvidence: true }) ??
       // No titled match: the dead id is more honest than a guess. Resolve
@@ -319,9 +328,32 @@ export const anidbProviderModule: CoreProviderModule = {
   },
 
   async listEpisodes(input, context) {
-    const showId = (await resolveAnidbShow(input, context.signal, context))?.id;
+    let baseShow: Awaited<ReturnType<typeof resolveAnidbShow>>;
+    try {
+      baseShow = await resolveAnidbShow(input, context.signal, context);
+    } catch (error) {
+      // `searchAnidb` now reports HTTP status, so a browse outage throws here.
+      // Null is the contract's transport-failure channel (same as `search`) —
+      // unreachable provider, not "this title has no episodes". A cancelled
+      // caller is a decision and keeps propagating.
+      if (context.signal?.aborted === true) throw error;
+      return null;
+    }
+    const showId = baseShow?.id;
     if (!showId) return null;
-    const episodes = await fetchAnidbEpisodes(showId, context.signal, context);
+    let catalog: Awaited<ReturnType<typeof fetchAnidbEpisodeCatalog>>;
+    try {
+      catalog = await fetchAnidbEpisodeCatalog(showId, context.signal, context);
+    } catch (error) {
+      // Same null contract as the resolve leg above: transport failures are
+      // retryable, a cancelled caller keeps propagating.
+      if (context.signal?.aborted === true) throw error;
+      return null;
+    }
+    // A re-searched id that still 404s is gone for this resolve — null keeps
+    // it retryable; a present-but-empty catalog is the real empty list.
+    if (catalog.missing) return null;
+    const episodes = catalog.episodes;
     if (episodes.length === 0) return [];
 
     const suppliedMalId = input.title.externalIds?.malId ?? input.title.malId;
@@ -395,7 +427,20 @@ export const anidbProviderModule: CoreProviderModule = {
       });
     }
 
-    const baseShow = await resolveAnidbShow(input, context.signal, context);
+    let baseShow: Awaited<ReturnType<typeof resolveAnidbShow>>;
+    try {
+      baseShow = await resolveAnidbShow(input, context.signal, context);
+    } catch (error) {
+      // Same rule as listEpisodes: a browse outage is a retryable transport
+      // failure, not an exhausted search — and a caller cancel is a decision
+      // that keeps propagating rather than a provider failure.
+      if (context.signal?.aborted === true) throw error;
+      return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
+        code: "provider-unavailable",
+        message: `AniDB browse unreachable: ${error instanceof Error ? error.message : String(error)}`,
+        retryable: true,
+      });
+    }
     if (!baseShow) {
       return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
         code: "unsupported-title",

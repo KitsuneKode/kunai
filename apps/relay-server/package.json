@@ -11,9 +11,9 @@
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
     "test": "bun test test",
-    "vercel:bundle-output": "bun run scripts/bundle-vercel-output.ts",
-    "vercel:build": "vercel build --yes && bun run vercel:bundle-output",
-    "vercel:build:prod": "vercel build --prod --yes && bun run vercel:bundle-output",
+    "vercel:bundle-api": "bun run scripts/bundle-api.ts",
+    "vercel:build": "vercel build --yes",
+    "vercel:build:prod": "vercel build --prod --yes",
     "verify:deploy": "bun run scripts/verify-relay-deploy.ts"
   },
   "dependencies": {
