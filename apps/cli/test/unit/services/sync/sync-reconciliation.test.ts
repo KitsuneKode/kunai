@@ -385,7 +385,9 @@ test("service shutdown promptly cancels in-flight reconciliation enrichment", as
   await state.sync.shutdown();
   const phase = await Promise.race([
     run.then(() => "settled" as const),
-    Bun.sleep(50).then(() => "still-running" as const),
+    // Soft bound, not the assertion: a slow scheduler still releases the
+    // blocker below and the final expect pins the abort semantics.
+    Bun.sleep(1_000).then(() => "still-running" as const),
   ]);
   if (phase === "still-running") releaseEnrichment();
   const result = await run;

@@ -323,7 +323,11 @@ signalTest("dies by the same signal as the child, giving 128+n", async () => {
       stdout: "ignore",
       stderr: "ignore",
     });
-    await Bun.sleep(400);
+    // The launcher registers its handlers synchronously in main(); there is no
+    // readiness artifact to poll, so this is a bounded grace, not a sleep for
+    // correctness. 400ms flaked on loaded runners — 1.5s matches the sibling
+    // process-shutdown test's mount budget.
+    await Bun.sleep(1_500);
     process.kill(child.pid, signal);
     // Re-raising while a handler is still registered makes Node run the handler
     // instead of terminating — the launcher removes it first, and this pins that.

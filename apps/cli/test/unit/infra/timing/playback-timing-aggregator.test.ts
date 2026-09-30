@@ -7,6 +7,8 @@ import {
   type PlaybackTimingSourceOutcome,
 } from "@/infra/timing";
 
+import { waitUntil } from "../../../support/wait-until";
+
 const TITLE: TitleInfo = {
   id: "12345",
   type: "series",
@@ -15,12 +17,13 @@ const TITLE: TitleInfo = {
 
 const EPISODE: EpisodeInfo = { season: 1, episode: 1 };
 
-function hangingSource(name = "hang"): PlaybackTimingSource {
+function hangingSource(name = "hang", onFetch?: () => void): PlaybackTimingSource {
   return {
     name,
     canHandle: () => true,
-    fetch: ({ signal }) =>
-      new Promise<PlaybackTimingMetadata | null>((_resolve, reject) => {
+    fetch: ({ signal }) => {
+      onFetch?.();
+      return new Promise<PlaybackTimingMetadata | null>((_resolve, reject) => {
         if (signal?.aborted) {
           reject(new DOMException("The operation was aborted.", "AbortError"));
           return;
@@ -30,7 +33,8 @@ function hangingSource(name = "hang"): PlaybackTimingSource {
           () => reject(new DOMException("The operation was aborted.", "AbortError")),
           { once: true },
         );
-      }),
+      });
+    },
   };
 }
 
@@ -72,15 +76,20 @@ test("aggregate deadline fires while caller signal remains live", async () => {
 test("caller cancellation classifies sources as cancelled", async () => {
   const outcomes: PlaybackTimingSourceOutcome[] = [];
   const parent = new AbortController();
-  const aggregator = new PlaybackTimingAggregator([hangingSource("cancel-me")], {
-    sourceDeadlineMs: 5_000,
-    aggregateDeadlineMs: 5_000,
-  });
+  let dispatched = false;
+  const aggregator = new PlaybackTimingAggregator(
+    [
+      hangingSource("cancel-me", () => {
+        dispatched = true;
+      }),
+    ],
+    { sourceDeadlineMs: 5_000, aggregateDeadlineMs: 5_000 },
+  );
 
   const pending = aggregator.resolve(TITLE, EPISODE, "series", parent.signal, {
     onSourceOutcome: (outcome) => outcomes.push(outcome),
   });
-  await Bun.sleep(5);
+  await waitUntil(() => dispatched, { label: "source fetch dispatched" });
   parent.abort();
   const timing = await pending;
 

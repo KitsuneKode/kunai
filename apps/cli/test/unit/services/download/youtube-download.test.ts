@@ -9,6 +9,8 @@ import * as youtubeProviders from "@kunai/providers/youtube";
 import { configureYoutubeProvider, type RunYtDlpProcessOptions } from "@kunai/providers/youtube";
 import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
+import { waitUntil } from "../../../support/wait-until";
+
 describe("DownloadService youtube argv contract", () => {
   let tempDir: string;
   let db: ReturnType<typeof openKunaiDatabase>;
