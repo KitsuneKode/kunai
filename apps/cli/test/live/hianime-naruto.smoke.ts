@@ -42,11 +42,26 @@ if (!provider.search) {
   process.exit(1);
 }
 
-const searchResults =
-  (await provider.search(searchQuery, {
-    audioPreference: container.config.animeLanguageProfile.audio,
-    subtitlePreference: container.config.animeLanguageProfile.subtitle,
-  })) ?? [];
+const searchResults = await provider.search(searchQuery, {
+  audioPreference: container.config.animeLanguageProfile.audio,
+  subtitlePreference: container.config.animeLanguageProfile.subtitle,
+});
+
+// `null` is the provider contract's transport-failure channel — unreachable
+// upstream, not an answer. Collapsing it into `[]` files an outage as catalog
+// drift, which is the one distinction release evidence exists to keep.
+if (searchResults === null) {
+  console.error(
+    JSON.stringify({
+      ok: false,
+      stage: "search",
+      searchedProvider: "hianime",
+      searchResults: 0,
+      reason: `hianime search transport failed for "${searchQuery}" (provider unreachable)`,
+    }),
+  );
+  process.exit(1);
+}
 
 const normalizeTitle = (value: string) =>
   value
