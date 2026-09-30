@@ -24,5 +24,11 @@ export function onboardedConfig(): Record<string, unknown> {
     // the real shell raise the disclosure banner and schedule markNoticeShown.
     analytics: "disabled",
     installId: "",
+    // Hermetic post-play: the fixture stubs search but not the recommendation
+    // service, so a rail load reaches live TMDB and — with autoplay
+    // recommendations on — chain-plays real titles behind a 5s countdown each.
+    // That raced the post-play frame budget and flaked CI ~50/50.
+    autoplayRecommendations: false,
+    recommendationRailEnabled: false,
   };
 }
