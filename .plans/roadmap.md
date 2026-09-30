@@ -100,7 +100,7 @@ the K-reconciliation below and the commit history both cite them by id.
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
 | [006](./006-startup-defer-network-and-providers.md)               | Startup provider loading residue                                          | BLOCKED (engine registry is intentionally fixed)  |
 | [008](./008-tui-timer-and-poster-perf.md)                         | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
-| [010](./010-characterization-tests-for-giants.md)                 | Characterization net for private `AppRoot`                                | TODO (the agent harness unblocked it)             |
+| [010](./010-characterization-tests-for-giants.md)                 | Characterization net for private `AppRoot`                                | PARTIAL (shell-side net landed; harness exists)   |
 | [011](./011-split-shell-workflows.md)                             | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
 | [012](./012-decompose-playback-phase.md)                          | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
 | [013](./013-split-ink-shell-host-surface.md)                      | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
