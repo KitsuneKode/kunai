@@ -13,7 +13,6 @@ export type PresencePrivacy = "full" | "private";
 /** Opt-in usage ping. Fresh installs stay `unset` and never send network traffic. */
 export type AnalyticsPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
-export type AutoDownloadMode = "off" | "next" | "season";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
 
 /** Runtime tuning override bag; CLI tuning module resolves typed values. */
@@ -91,7 +90,6 @@ export interface KitsuneConfig {
   minimalMode: boolean;
   zenMode: boolean;
   powerSaverMode: boolean;
-  powerSaverAllowManualArtwork: boolean;
   skipRecap: boolean;
   skipIntro: boolean;
   skipPreview: boolean;
@@ -114,8 +112,6 @@ export interface KitsuneConfig {
   videasyAppId: "vidking" | "bc-frontend";
   downloadsEnabled: boolean;
   offlineMode: boolean;
-  autoDownload: AutoDownloadMode;
-  autoDownloadNextCount: number;
   maxConcurrentDownloads: number;
   defaultDownloadQuality: string;
   autoCleanupWatched: boolean;

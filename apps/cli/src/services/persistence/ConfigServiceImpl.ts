@@ -4,7 +4,6 @@
 
 import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
-import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   DEFAULT_OFFLINE_RUNWAY_TARGET,
@@ -24,7 +23,6 @@ import {
 import type {
   ConfigService,
   KitsuneConfig,
-  AutoDownloadMode,
   QuitNearEndBehavior,
   QuitNearEndThresholdMode,
   PresencePrivacy,
@@ -205,15 +203,39 @@ function configValueClass(value: KitsuneConfig[keyof KitsuneConfig] | undefined)
  * string fields); anything else is dropped so the default applies. Only key
  * names are reported — never values, which may be user data.
  */
+/**
+ * Settings that shipped once, never gained a runtime reader, and were removed
+ * from `KitsuneConfig`. The permissive parser still accepts files carrying
+ * them; this set is what scrubs them out on load (and on the next save) so a
+ * stale key cannot masquerade as a live setting. Wrong-typed known keys take
+ * the `droppedKeys` lane instead — different diagnosis, different log line.
+ */
+const RETIRED_CONFIG_KEYS = new Set([
+  "autoDownload",
+  "autoDownloadNextCount",
+  "powerSaverAllowManualArtwork",
+]);
+
 type SanitizedConfig = {
   readonly sanitized: Partial<KitsuneConfig>;
   readonly droppedKeys: string[];
+  readonly retiredKeys: string[];
 };
 
 function sanitizeLoadedConfig(loaded: Partial<KitsuneConfig>): SanitizedConfig {
   const droppedKeys: string[] = [];
+  const retiredKeys: string[] = [];
+  // `loaded` is the passthrough parser's output: it can carry keys that are no
+  // longer in `KitsuneConfig` (retired) or were never in it (unknown). Both
+  // survive `{...loaded}` at runtime, so the retired set is deleted explicitly
+  // and unknown keys keep flowing through untouched.
   const sanitized = { ...loaded };
   for (const key of Object.keys(sanitized)) {
+    if (RETIRED_CONFIG_KEYS.has(key)) {
+      delete sanitized[key as keyof KitsuneConfig];
+      retiredKeys.push(key);
+      continue;
+    }
     if (!(key in DEFAULT_CONFIG)) continue;
     // SAFETY: guarded by `key in DEFAULT_CONFIG` — key is a known config field.
     const configKey = key as keyof typeof DEFAULT_CONFIG;
@@ -230,7 +252,7 @@ function sanitizeLoadedConfig(loaded: Partial<KitsuneConfig>): SanitizedConfig {
       droppedKeys.push(key);
     }
   }
-  return { sanitized, droppedKeys };
+  return { sanitized, droppedKeys, retiredKeys };
 }
 
 /**
@@ -248,10 +270,11 @@ type NormalizedLoadedConfig = {
   readonly needsResave: boolean;
   readonly migratedVideasyAppId: boolean;
   readonly droppedKeys: string[];
+  readonly retiredKeys: string[];
 };
 
 function normalizeLoadedConfig(loaded: Partial<KitsuneConfig>): NormalizedLoadedConfig {
-  const { sanitized, droppedKeys } = sanitizeLoadedConfig(loaded);
+  const { sanitized, droppedKeys, retiredKeys } = sanitizeLoadedConfig(loaded);
   // Configs written before explicit consent had no notice marker. Their
   // enabled value was opt-out state, not evidence of a current opt-in, so
   // revoke it and erase the old local identifier before startup can send.
@@ -313,8 +336,6 @@ function normalizeLoadedConfig(loaded: Partial<KitsuneConfig>): NormalizedLoaded
     animeLanguageProfile: normalizeLanguageProfile(sanitized.animeLanguageProfile),
     seriesLanguageProfile: normalizeLanguageProfile(sanitized.seriesLanguageProfile),
     movieLanguageProfile: normalizeLanguageProfile(sanitized.movieLanguageProfile),
-    autoDownload: "off",
-    autoDownloadNextCount: normalizeAutoDownloadNextCount(sanitized.autoDownloadNextCount),
     offlineFreeSpaceReserveBytes: normalizeBytes(
       sanitized.offlineFreeSpaceReserveBytes,
       DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
@@ -365,9 +386,13 @@ function normalizeLoadedConfig(loaded: Partial<KitsuneConfig>): NormalizedLoaded
       repairedAnalyticsIdentity ||
       migratedVideasyAppId ||
       migratedAnimeDefaults ||
-      migratedSeriesDefaults,
+      migratedSeriesDefaults ||
+      // Scrub retired keys out of the file on the next save rather than
+      // carrying them forever.
+      retiredKeys.length > 0,
     migratedVideasyAppId,
     droppedKeys,
+    retiredKeys,
   };
 }
 
@@ -379,6 +404,18 @@ function logDroppedConfigKeys(droppedKeys: readonly string[]): void {
   if (droppedKeys.length === 0) return;
   dbg("config", "Dropped wrong-typed keys from config.json; defaults are in use", {
     keys: droppedKeys.join(", "),
+  });
+}
+
+/**
+ * Same debug-channel treatment as {@link logDroppedConfigKeys}, distinct
+ * message: the key was right-typed but no longer exists, so a user reading
+ * "wrong-typed" would go looking for a value problem that isn't there.
+ */
+function logRetiredConfigKeys(retiredKeys: readonly string[]): void {
+  if (retiredKeys.length === 0) return;
+  dbg("config", "Ignoring retired keys from config.json; they no longer do anything", {
+    keys: retiredKeys.join(", "),
   });
 }
 
@@ -430,6 +467,7 @@ export class ConfigServiceImpl implements ConfigService {
     const loaded = await store.load();
     const normalized = normalizeLoadedConfig(loaded);
     logDroppedConfigKeys(normalized.droppedKeys);
+    logRetiredConfigKeys(normalized.retiredKeys);
     service.config = normalized.config;
     // Vault lane: hydrate the in-memory token from the vault when config.json
     // no longer carries it, or migrate plaintext that predates the vault. The
@@ -669,14 +707,6 @@ export class ConfigServiceImpl implements ConfigService {
     return this.effective().offlineMode;
   }
 
-  get autoDownload(): AutoDownloadMode {
-    return this.effective().autoDownload;
-  }
-
-  get autoDownloadNextCount(): number {
-    return this.effective().autoDownloadNextCount;
-  }
-
   get maxConcurrentDownloads(): number {
     return normalizeMaxConcurrentDownloads(this.effective().maxConcurrentDownloads);
   }
@@ -837,10 +867,6 @@ export class ConfigServiceImpl implements ConfigService {
     return this.effective().powerSaverMode;
   }
 
-  get powerSaverAllowManualArtwork(): boolean {
-    return this.effective().powerSaverAllowManualArtwork;
-  }
-
   get tuning(): TuningConfig {
     return resolveTuning(this.effective().tuningOverrides);
   }
@@ -895,10 +921,6 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.movieLanguageProfile
         ? { movieLanguageProfile: normalizeLanguageProfile(partial.movieLanguageProfile) }
         : null),
-      ...(partial.autoDownloadNextCount !== undefined
-        ? { autoDownloadNextCount: normalizeAutoDownloadNextCount(partial.autoDownloadNextCount) }
-        : null),
-      ...(partial.autoDownload !== undefined ? { autoDownload: "off" as const } : null),
       ...(partial.offlineFreeSpaceReserveBytes !== undefined
         ? {
             offlineFreeSpaceReserveBytes: normalizeBytes(
@@ -1056,6 +1078,7 @@ export class ConfigServiceImpl implements ConfigService {
         } else {
           const normalized = normalizeLoadedConfig(disk);
           logDroppedConfigKeys(normalized.droppedKeys);
+          logRetiredConfigKeys(normalized.retiredKeys);
           const base = normalized.config;
           if (this.videasyTokenVaulted) {
             // The file holds "" for a vaulted token; keep the in-memory secret.
@@ -1096,6 +1119,7 @@ export class ConfigServiceImpl implements ConfigService {
     if (Object.keys(disk).length === 0) return;
     const normalized = normalizeLoadedConfig(disk);
     logDroppedConfigKeys(normalized.droppedKeys);
+    logRetiredConfigKeys(normalized.retiredKeys);
     const base = normalized.config;
     if (this.videasyTokenVaulted) {
       base.videasySessionToken = this.config.videasySessionToken;

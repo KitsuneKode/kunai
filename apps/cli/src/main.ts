@@ -67,10 +67,7 @@ import {
 } from "@/services/continuation/continuation-diagnostics";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { recordCliStartupMilestone } from "@/services/diagnostics/cli-startup-milestone";
-import {
-  parseOfflineTitleCleanupPreference,
-  selectDownloadCleanupCandidates,
-} from "@/services/download/download-cleanup-policy";
+import { collectDownloadCleanupCandidates } from "@/services/download/download-cleanup-candidates";
 import { updateSignalFromCheck } from "@/services/notifications/notification-update-signal";
 import { checkDeps } from "@/ui";
 import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
@@ -508,52 +505,21 @@ function searchResultFromTitle(title: TitleInfo): SearchResult {
 async function maybeRunAutoCleanupDownloads(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<void> {
-  const { config, downloadService, diagnosticsService, historyRepository, logger } = container;
-  if (!config.autoCleanupWatched) return;
+  const { diagnosticsService, logger } = container;
+  if (!container.config.autoCleanupWatched) return;
 
-  const graceDays = Math.max(0, config.autoCleanupGraceDays);
-  const nowMs = Date.now();
-  const jobs = downloadService.listCompleted(500);
-  const titleIds = new Set(jobs.map((job) => job.titleId));
-  const historyByTitle = new Map<string, import("@kunai/storage").HistoryProgress[]>();
-  const recentHistory = (() => {
-    try {
-      return historyRepository.listRecent(1_000);
-    } catch {
-      return [];
-    }
-  })();
-  for (const entry of recentHistory) {
-    if (!titleIds.has(entry.titleId)) continue;
-    const entries = historyByTitle.get(entry.titleId) ?? [];
-    entries.push(entry);
-    historyByTitle.set(entry.titleId, entries);
-  }
-  const titlePolicies = new Map(
-    container.offlineTitlePolicies
-      .listByTitleIds([...titleIds])
-      .map((policy) => [policy.titleId, parseOfflineTitleCleanupPreference(policy.cleanupJson)])
-      .filter(
-        (
-          entry,
-        ): entry is [string, NonNullable<ReturnType<typeof parseOfflineTitleCleanupPreference>>] =>
-          Boolean(entry[1]),
-      ),
-  );
-  const candidates = selectDownloadCleanupCandidates({
-    jobs,
-    historyByTitle,
-    nowMs,
-    graceDays,
-    pinnedJobIds: new Set(config.protectedDownloadJobIds),
-    titlePolicies,
-  });
+  // Same collection the `/cleanup-downloads` review, the library/download
+  // banners, and the low-disk hint read — one candidate list, one policy.
+  const candidates = collectDownloadCleanupCandidates(container);
   for (const candidate of candidates) {
+    const graceDays =
+      candidate.eligibility.kind === "grace" ? candidate.eligibility.graceDays : undefined;
     logger.info("Watched download cleanup candidate", {
       jobId: candidate.job.id,
       titleId: candidate.job.titleId,
       outputPath: candidate.job.outputPath,
       watchedAt: candidate.watchedAt,
+      eligibility: candidate.eligibility.kind,
       graceDays,
     });
     diagnosticsService.record({
@@ -568,6 +534,7 @@ async function maybeRunAutoCleanupDownloads(
         jobId: candidate.job.id,
         outputPath: candidate.job.outputPath,
         watchedAt: candidate.watchedAt,
+        eligibility: candidate.eligibility.kind,
         graceDays,
       },
     });

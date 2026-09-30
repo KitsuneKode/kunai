@@ -6,7 +6,7 @@ import {
   shouldSuppressBrowseLetterHotkeys,
 } from "@/app-shell/browse-focus-zone";
 import { footerKeyFromBinding, formatChord, KEYBINDINGS } from "@/app-shell/keybindings";
-import { shouldHistoryOverlayAcceptFilterInput } from "@/app-shell/overlay-input-safety";
+import { shouldOverlayAcceptFilterInput } from "@/app-shell/overlay-input-safety";
 import { handleHistoryOverlayInput } from "@/app-shell/use-history-overlay-input";
 
 describe("browse focus isolation", () => {
@@ -47,10 +47,12 @@ describe("browse focus isolation", () => {
 
   test("history confirm y does not fall through to browse search editor", () => {
     expect(
-      shouldHistoryOverlayAcceptFilterInput({
+      shouldOverlayAcceptFilterInput({
         overlayType: "history",
-        pendingDelete: { kind: "episode", key: "tmdb:1:1:2", label: "Demo · S01E02" },
-        sourceChoiceTitleId: null,
+        textZoneActive: true,
+        notificationActionPickerActive: false,
+        historyPendingDelete: { kind: "episode", key: "tmdb:1:1:2", label: "Demo · S01E02" },
+        historySourceChoiceTitleId: null,
       }),
     ).toBe(false);
 
@@ -86,6 +88,7 @@ describe("browse focus isolation", () => {
         ],
         historyPickerContext: {},
         selectedIndex: 0,
+        listFocused: false,
         sourceChoiceTitleId: null,
         sourcePreference: "auto",
         setSourceChoiceTitleId: () => {},

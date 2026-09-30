@@ -1,8 +1,14 @@
 import { mapPosterPreviewState } from "@/app-shell/browse-preview-rail";
+import type { DismissTimerOperations } from "@/app-shell/dismiss-timer-registry";
 import {
   buildDownloadManagerLayout,
   buildDownloadManagerRailModel,
 } from "@/app-shell/download-manager-view";
+import {
+  formatCleanupBannerText,
+  useDownloadCleanupSummary,
+} from "@/app-shell/hooks/use-download-cleanup-summary";
+import { usePressAgainConfirm } from "@/app-shell/hooks/use-press-again-confirm";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import {
@@ -164,12 +170,18 @@ export function DownloadManagerContent({
   onClose,
   onNavigateToLibrary,
   showSelectionHints = true,
+  confirmTimers,
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToLibrary?: () => void;
   /** When false, omit per-selection hint row (parent shell owns the footer). */
   showSelectionHints?: boolean;
+  /** Test seam: injected clock for the delete press-again window. */
+  confirmTimers?: DismissTimerOperations;
+  /** True while the root command palette owns input. */
+  commandMode?: boolean;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   // Inside a root-owned overlay the provider's content box is the width budget;
@@ -180,9 +192,13 @@ export function DownloadManagerContent({
   const [completedJobs, setCompletedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [failedJobs, setFailedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
+  // Delete is armed per job id — jobs re-sort between lists, so a bare index
+  // could confirm against a different row than the prompt named. The armed
+  // state expires after the shared press-again window.
+  const deleteConfirm = usePressAgainConfirm(confirmTimers);
   const [repairSweepStatus, setRepairSweepStatus] = useState<string | null>(null);
   const [repairSweepRunning, setRepairSweepRunning] = useState(false);
+  const cleanupSummary = useDownloadCleanupSummary(container);
 
   const refresh = useCallback(() => {
     const lists = refreshJobLists(container);
@@ -262,11 +278,24 @@ export function DownloadManagerContent({
   useInput(
     (input, key) => {
       if (key.escape) {
+        // Esc cancels an armed delete prompt before closing the surface —
+        // same unwind order as the queue and library shells.
+        if (deleteConfirm.armedToken !== null) {
+          deleteConfirm.disarm();
+          return;
+        }
         onClose();
         return;
       }
       if ((key.tab || input === "1" || input === "l") && onNavigateToLibrary) {
         onNavigateToLibrary();
+        return;
+      }
+      if (input === "c" || input === "C") {
+        void import("@/app-shell/workflows/download-cleanup-review").then(
+          ({ openDownloadCleanupReview }) =>
+            openDownloadCleanupReview(container).then(() => refresh()),
+        );
         return;
       }
       if (input.toLowerCase() === "a") {
@@ -299,13 +328,13 @@ export function DownloadManagerContent({
       }
       if (key.upArrow) {
         if (allJobs.length === 0) return;
-        setConfirmingDeleteIndex(null);
+        deleteConfirm.disarm();
         setSelectedIndex((current) => (current - 1 + allJobs.length) % allJobs.length);
         return;
       }
       if (key.downArrow) {
         if (allJobs.length === 0) return;
-        setConfirmingDeleteIndex(null);
+        deleteConfirm.disarm();
         setSelectedIndex((current) => (current + 1) % allJobs.length);
         return;
       }
@@ -316,22 +345,18 @@ export function DownloadManagerContent({
           void container.downloadService.abort(job.id);
           return;
         }
-        if (confirmingDeleteIndex === selectedIndex) {
-          setConfirmingDeleteIndex(null);
+        if (deleteConfirm.confirm(job.id)) {
           const deleteArtifact =
             job.status === "failed" ||
             job.status === "repairable" ||
             job.status === "completed" ||
             job.status === "completed-with-notes";
           void container.downloadService.deleteJob(job.id, { deleteArtifact });
-          return;
         }
-        setConfirmingDeleteIndex(selectedIndex);
         return;
       }
-      if (confirmingDeleteIndex !== null) {
-        setConfirmingDeleteIndex(null);
-      }
+      // Any non-confirming key cancels a pending delete.
+      deleteConfirm.disarm();
       if (input === "r" || key.return) {
         const job = allJobs[selectedIndex];
         if (!job) return;
@@ -369,7 +394,7 @@ export function DownloadManagerContent({
         return;
       }
     },
-    { isActive: true },
+    { isActive: !commandMode },
   );
 
   const { tooSmall, minColumns, minRows } = viewport;
@@ -392,8 +417,7 @@ export function DownloadManagerContent({
     20,
     shellWidth - 2 - queueLayout.stateWidth - queueLayout.progressWidth - queueLayout.metaWidth - 4,
   );
-  const isConfirming = (index: number) =>
-    confirmingDeleteIndex === index && selectedIndex === index;
+  const isConfirming = (index: number) => deleteConfirm.armedToken === allJobs[index]?.id;
 
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
@@ -485,14 +509,15 @@ export function DownloadManagerContent({
 
   const hasSummaryHeader =
     activeJobs.length > 0 || queuedJobs.length > 0 || failedAttentionCount > 0;
+  const cleanupBanner = cleanupSummary ? formatCleanupBannerText(cleanupSummary) : "";
   const hintRows =
-    (confirmingDeleteIndex !== null ? 1 : 0) +
+    (deleteConfirm.armedToken !== null ? 1 : 0) +
     (repairSweepStatus ? 1 : 0) +
     (allJobs.length > 0 ? 1 : 0);
   const chromeRows = getPickerChromeRows({
     hasSubtitle: false,
     commandMode: false,
-    extraRows: (hasSummaryHeader ? 1 : 0) + hintRows,
+    extraRows: (hasSummaryHeader ? 1 : 0) + (cleanupBanner ? 1 : 0) + hintRows,
   });
   const maxVisible = getPickerListMaxVisible(viewport.rows, chromeRows, ROOT_CHROME_ROWS + 1);
   const windowStart = getWindowStart(selectedIndex, allJobs.length, maxVisible);
@@ -529,6 +554,11 @@ export function DownloadManagerContent({
             queuedCount={queuedJobs.length}
             failedCount={failedAttentionCount}
           />
+          {cleanupBanner ? (
+            <Text color={palette.accentDeep}>
+              {cleanupBanner} · <Text color={palette.accent}>c</Text> to review
+            </Text>
+          ) : null}
           {windowStart > 0 ? (
             <Text color={palette.dim} dimColor>
               {"  "}more above
@@ -542,7 +572,7 @@ export function DownloadManagerContent({
           ) : null}
         </Box>
       )}
-      {confirmingDeleteIndex !== null ? (
+      {deleteConfirm.armedToken !== null ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
             {"⚠ "}Press x again to confirm delete · any other key cancels
@@ -571,6 +601,7 @@ export function DownloadManagerContent({
                 {failedJobs.some((job) => job.status === "repairable")
                   ? "  ·  a to repair all"
                   : ""}
+                {cleanupBanner ? "  ·  c cleanup review" : ""}
               </Text>
             </Box>
           ) : null;

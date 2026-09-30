@@ -41,6 +41,8 @@ describe("root overlay picker model", () => {
     } as SessionState;
 
     expect(getRootOverlayTitle(overlay, state)).toBe("Choose episode");
+    // Text zone (default): printable keys type into the filter, so the
+    // subtitle must not advertise s/m list actions.
     expect(
       getRootOverlaySubtitle({
         overlay,
@@ -50,7 +52,20 @@ describe("root overlay picker model", () => {
         settingsError: null,
       }),
     ).toBe(
-      "Frieren: Beyond Journey's End  ·  S02  ·  2 eps  ·  50% complete  ·  s season  ·  m watched",
+      "Frieren: Beyond Journey's End  ·  S02  ·  2 eps  ·  50% complete  ·  type to filter  ·  ↓ for actions",
+    );
+    // List zone: s/m are live and Esc unwinds back to the filter.
+    expect(
+      getRootOverlaySubtitle({
+        overlay,
+        state,
+        settingsDraft: null,
+        config: {} as KitsuneConfig,
+        settingsError: null,
+        episodePickerListFocused: true,
+      }),
+    ).toBe(
+      "Frieren: Beyond Journey's End  ·  S02  ·  2 eps  ·  50% complete  ·  s season  ·  m watched  ·  Esc to filter",
     );
   });
 });

@@ -5,6 +5,7 @@ import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { MediaKind } from "@kunai/types";
 
+import { formatCleanupRecoveryHint } from "./download-cleanup-candidates";
 import { DownloadEnqueueRejectedError } from "./DownloadService";
 
 export type OfflineCleanupPolicy =
@@ -192,6 +193,12 @@ export async function commitDownloadIntent(
         : error instanceof Error
           ? error.message
           : String(error);
+    // On a disk refusal, name the recovery path: how many watched downloads
+    // are eligible for cleanup and what they'd free. "" when there are none.
+    const recoveryHint =
+      error instanceof DownloadEnqueueRejectedError && error.code === "insufficient-disk"
+        ? formatCleanupRecoveryHint(container)
+        : "";
     container.diagnosticsService.record(
       buildDownloadDiagnosticEvent({
         operation: "download.intent.enqueue.failed",
@@ -207,8 +214,8 @@ export async function commitDownloadIntent(
       type: "SET_PLAYBACK_FEEDBACK",
       note:
         queuedCount > 0
-          ? `Queued ${queuedCount} download(s), then stopped: ${message}`
-          : `Download failed: ${message}`,
+          ? `Queued ${queuedCount} download(s), then stopped: ${message}${recoveryHint}`
+          : `Download failed: ${message}${recoveryHint}`,
     });
     if (queuedCount > 0) persistSeriesPolicy();
     container.downloadService.kickQueue("download-intent");

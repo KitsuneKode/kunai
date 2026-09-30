@@ -1,17 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  normalizeAutoDownloadNextCount,
-  selectEpisodesForDownloadScope,
-} from "@/services/download/download-scope-policy";
+import { selectEpisodesForDownloadScope } from "@/services/download/download-scope-policy";
 
 describe("download scope policy", () => {
-  test("clamps next-count to a bounded opt-in batch size", () => {
-    expect(normalizeAutoDownloadNextCount(-1)).toBe(1);
-    expect(normalizeAutoDownloadNextCount(200)).toBe(24);
-    expect(normalizeAutoDownloadNextCount(2.8)).toBe(2);
-  });
-
   test("selects the next N remaining season episodes in order", () => {
     expect(
       selectEpisodesForDownloadScope({

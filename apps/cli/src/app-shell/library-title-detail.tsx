@@ -52,6 +52,7 @@ export function LibraryTitleDetail({
   onBack,
   onNavigateToQueue,
   onEntriesChanged,
+  commandMode = false,
 }: {
   readonly container: Container;
   readonly group: OfflineLibraryShelfGroup;
@@ -59,6 +60,8 @@ export function LibraryTitleDetail({
   readonly onBack: () => void;
   readonly onNavigateToQueue?: () => void;
   readonly onEntriesChanged: () => void;
+  /** True while the root command palette owns input. */
+  readonly commandMode?: boolean;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const networkAvailable = useConnectivityOnline(container.connectivity);
@@ -246,7 +249,7 @@ export function LibraryTitleDetail({
         }
       })();
     },
-    { isActive: true },
+    { isActive: !commandMode },
   );
 
   const list = (
