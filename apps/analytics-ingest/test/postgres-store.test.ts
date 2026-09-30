@@ -44,9 +44,12 @@ test("the rollup is a single statement so its parts share one snapshot", () => {
   }
 });
 
-test("lifetime pruning and the retired counter move in one statement", () => {
+test("lifetime pruning records the hash so a return is not counted twice", () => {
   expect(PRUNE_LIFETIME_SQL).toContain("delete from install_lifetime where last_seen < $1::date");
-  expect(PRUNE_LIFETIME_SQL).toContain("update lifetime_retired set retired_installs");
+  expect(PRUNE_LIFETIME_SQL).toContain("insert into retired_install");
+  expect(PRUNE_LIFETIME_SQL).not.toContain("retired_installs +");
+  expect(RECORD_PING_SQL).toContain("delete from retired_install");
+  expect(ROLL_UP_DAY_SQL).toContain("count(*) from retired_install");
 });
 
 test("postgres suites mint disjoint install ids at the same n", () => {

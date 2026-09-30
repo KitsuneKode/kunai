@@ -61,28 +61,42 @@ export function withCommandPath(
 
 export function createInstallerSandbox(name: string) {
   const root = mkdtempSync(join(tmpdir(), `kunai-${name}-`));
+  const home = join(root, "home");
   const binDir = join(root, "bin");
   const dataDir = join(root, "data");
-  const configDir = join(root, "config");
   const cacheDir = join(root, "cache");
+  // Same parent for bash (XDG_CONFIG_HOME/kunai) and the PowerShell installer
+  // (APPDATA/kunai) so both scripts write the install record the sandbox reads.
+  // Darwin bash uses ~/Library/Application Support and ignores XDG.
+  const configParent = join(root, "config-parent");
+  const configDir =
+    process.platform === "darwin"
+      ? join(home, "Library", "Application Support", "kunai")
+      : join(configParent, "kunai");
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...windowsShellEnvDefaults(root),
+    HOME: home,
+    USERPROFILE: home,
+    XDG_CONFIG_HOME: configParent,
+    APPDATA: process.platform === "darwin" ? join(root, "appdata") : configParent,
+    KUNAI_BIN_DIR: binDir,
+    KUNAI_DATA_DIR: dataDir,
+    KUNAI_CACHE_DIR: cacheDir,
+    // Redirecting filesystem roots does not redirect HKCU\Environment. Every
+    // successful binary fixture used to append this temporary bin directory
+    // to the developer's real User PATH and then delete it during cleanup.
+    KUNAI_SKIP_PATH_UPDATE: "1",
+  };
+  // Not an install destination. A leaked shell value must not steer the script.
+  delete env.KUNAI_CONFIG_DIR;
   return {
     root,
     binDir,
     dataDir,
     configDir,
     cacheDir,
-    env: {
-      ...process.env,
-      ...windowsShellEnvDefaults(root),
-      KUNAI_BIN_DIR: binDir,
-      KUNAI_DATA_DIR: dataDir,
-      KUNAI_CONFIG_DIR: configDir,
-      KUNAI_CACHE_DIR: cacheDir,
-      // Redirecting filesystem roots does not redirect HKCU\Environment. Every
-      // successful binary fixture used to append this temporary bin directory
-      // to the developer's real User PATH and then delete it during cleanup.
-      KUNAI_SKIP_PATH_UPDATE: "1",
-    } as NodeJS.ProcessEnv,
+    env,
     cleanup: () => removeTempDir(root),
   };
 }

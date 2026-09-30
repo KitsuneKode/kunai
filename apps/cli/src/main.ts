@@ -44,6 +44,7 @@ import {
 import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
 import { mapAnimeTitleToProviderNative } from "@/app/bootstrap/resolve-share-target";
 import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
+import { isFatalRejection } from "@/app/session/fatal-rejection";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
 import {
@@ -1335,13 +1336,21 @@ function setupSignalHandlers(): void {
     });
   });
 
-  process.on("unhandledRejection", (e) => {
-    console.error("Unhandled rejection:", e);
-    void getShutdownCoordinator().request({
-      reason: "unhandled rejection",
-      exitCode: 1,
-      fatal: true,
-    });
+  process.on("unhandledRejection", (reason) => {
+    // Background work (settings persist, stats export, prefetch, presence,
+    // analytics flush) logs and continues. The playback session is awaited in
+    // startCli; a throw there still shuts down. A rejection marked fatal does
+    // too, so a playback promise that escapes the session loop can opt in.
+    if (isFatalRejection(reason)) {
+      console.error("Unhandled rejection:", reason);
+      void getShutdownCoordinator().request({
+        reason: "unhandled rejection",
+        exitCode: 1,
+        fatal: true,
+      });
+      return;
+    }
+    console.error("Unhandled rejection (background, continuing):", reason);
   });
 }
 

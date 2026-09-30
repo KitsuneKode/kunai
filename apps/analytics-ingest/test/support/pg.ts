@@ -49,7 +49,9 @@ export function testInstallId(n: number, suite: AnalyticsTestSuite): string {
 export async function resetAnalyticsTables(): Promise<void> {
   if (!TEST_DATABASE_URL) return;
   const sql = neon(TEST_DATABASE_URL);
-  await sql.query("truncate ping_day, install_lifetime, daily_rollup, ingest_budget");
+  await sql.query(
+    "truncate ping_day, install_lifetime, daily_rollup, ingest_budget, retired_install",
+  );
   await sql.query("update lifetime_retired set retired_installs = 0 where id = 1");
 }
 

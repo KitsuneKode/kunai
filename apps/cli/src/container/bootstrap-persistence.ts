@@ -391,6 +391,11 @@ export async function bootstrapPersistence(
     onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
   });
   const config = await ConfigServiceImpl.load(configStore, credentialVault);
+  if (config.repairedConfigFields.length > 0) {
+    logger.warn("Recovered malformed config fields to their defaults", {
+      fields: config.repairedConfigFields.join(","),
+    });
+  }
   if (config.videasyAppIdMigratedOnLoad) {
     const { invalidateVideasyProviderCaches } =
       await import("@/app/playback/videasy-cache-invalidation");

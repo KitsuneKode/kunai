@@ -13,6 +13,9 @@ function createCountingStore() {
     save: async () => {
       saves += 1;
     },
+    merge: async () => {
+      saves += 1;
+    },
     reset: async () => {},
   };
 }
@@ -21,9 +24,8 @@ describe("ConfigService.save debounce", () => {
   test("two rapid saves within the debounce window still persist exactly once", async () => {
     const store = createCountingStore();
     const service = await ConfigServiceImpl.load(store);
+    await service.update({ footerHints: "minimal" });
 
-    // Fire two saves back-to-back (the previous implementation cancelled the
-    // timer on the second call and never persisted).
     const first = service.save();
     const second = service.save();
 
@@ -36,7 +38,9 @@ describe("ConfigService.save debounce", () => {
     const store = createCountingStore();
     const service = await ConfigServiceImpl.load(store);
 
+    await service.update({ footerHints: "minimal" });
     await service.save();
+    await service.update({ footerHints: "detailed" });
     await service.save();
 
     expect(store.saves).toBe(2);
@@ -45,6 +49,7 @@ describe("ConfigService.save debounce", () => {
   test("flushPending persists a pending save immediately without the debounce wait", async () => {
     const store = createCountingStore();
     const service = await ConfigServiceImpl.load(store);
+    await service.update({ footerHints: "minimal" });
 
     const startedAt = Date.now();
     const pending = service.save();
@@ -74,7 +79,8 @@ describe("ConfigService.save debounce", () => {
     let saves = 0;
     const store = {
       load: async () => ({ ...DEFAULT_CONFIG }),
-      save: () => {
+      save: async () => {},
+      merge: () => {
         saves += 1;
         return new Promise<void>((resolve) => {
           releaseSave = resolve;
@@ -83,6 +89,7 @@ describe("ConfigService.save debounce", () => {
       reset: async () => {},
     };
     const service = await ConfigServiceImpl.load(store);
+    await service.update({ footerHints: "minimal" });
 
     const pending = service.save();
     // Stands in for the debounce timer firing: the write starts and
@@ -111,13 +118,15 @@ describe("ConfigService.save debounce", () => {
     let rejectSave!: (reason: unknown) => void;
     const store = {
       load: async () => ({ ...DEFAULT_CONFIG }),
-      save: () =>
+      save: async () => {},
+      merge: () =>
         new Promise<void>((_resolve, reject) => {
           rejectSave = reject;
         }),
       reset: async () => {},
     };
     const service = await ConfigServiceImpl.load(store);
+    await service.update({ footerHints: "minimal" });
 
     const saved = service.save().then(
       () => null,
@@ -141,7 +150,8 @@ describe("ConfigService.save debounce", () => {
     let saves = 0;
     const store = {
       load: async () => ({ ...DEFAULT_CONFIG }),
-      save: () => {
+      save: async () => {},
+      merge: () => {
         if (mode === "throw") throw new Error("disk full");
         saves += 1;
         return Promise.resolve();
@@ -149,6 +159,7 @@ describe("ConfigService.save debounce", () => {
       reset: async () => {},
     };
     const service = await ConfigServiceImpl.load(store);
+    await service.update({ footerHints: "minimal" });
 
     await service.save().then(
       () => null,

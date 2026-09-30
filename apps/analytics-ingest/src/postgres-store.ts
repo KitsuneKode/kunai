@@ -37,22 +37,27 @@ export const RECORD_PING_SQL = `with budget as (
   select decode($2, 'hex'), $1::date, $1::date from admitted
   on conflict (install_hash) do update set last_seen = excluded.last_seen
   where install_lifetime.last_seen < excluded.last_seen
+), unretire as (
+  delete from retired_install
+  where install_hash = decode($2, 'hex')
+    and exists (select 1 from admitted)
 )
-select (select count(*)::int from admitted) as admitted`;
+select (select count(*)::int from admitted) as admitted,
+       (select count(*)::int from unretire) as unretired`;
 
 /**
- * Delete unseen installs and add them to the retired counter in one statement,
- * so a crash between the two can never silently lower the lifetime total.
+ * Delete unseen installs and remember their hashes in one statement, so a
+ * later return is removed from the retired set instead of being counted twice.
+ * `lifetime_retired.retired_installs` is only the pre-migration residue.
  */
 export const PRUNE_LIFETIME_SQL = `with deleted as (
-  delete from install_lifetime where last_seen < $1::date returning 1
-), counted as (
-  select count(*)::int as n from deleted
-), bumped as (
-  update lifetime_retired set retired_installs = retired_installs + (select n from counted)
-  where id = 1
+  delete from install_lifetime where last_seen < $1::date returning install_hash
+), inserted as (
+  insert into retired_install (install_hash)
+  select install_hash from deleted
+  on conflict (install_hash) do nothing
 )
-select (select n from counted) as n`;
+select (select count(*)::int from deleted) as n`;
 
 /**
  * Top-N buckets for one dimension, tail folded into `other`, as a single jsonb
@@ -98,6 +103,7 @@ export const ROLL_UP_DAY_SQL = `with active as (
 ), lifetime as (
   select (
     (select count(*) from install_lifetime where first_seen <= $1::date)
+    + (select count(*) from retired_install)
     + (select coalesce(max(retired_installs), 0) from lifetime_retired)
   )::int as n
 ), ${bucketJsonCte("by_version", "version")},

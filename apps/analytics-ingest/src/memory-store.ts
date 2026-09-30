@@ -17,9 +17,9 @@ export function createMemoryAnalyticsStore(
   const raw = new Map<string, RecordPingInput>();
   /** installHash → { firstSeen, lastSeen }, mirroring install_lifetime. */
   const lifetime = new Map<string, { firstSeen: string; lastSeen: string }>();
+  const retiredHashes = new Set<string>();
   const rollups = new Map<string, DailyRollup>();
   const budget = new Map<string, number>();
-  let retired = 0;
 
   const keyOf = (day: string, hash: string) => `${day}::${hash}`;
 
@@ -30,8 +30,10 @@ export function createMemoryAnalyticsStore(
       if (attempts > limits.maxPingsPerDay) return { admitted: false };
 
       const seen = lifetime.get(input.installHash);
-      if (!seen) lifetime.set(input.installHash, { firstSeen: input.day, lastSeen: input.day });
-      else if (seen.lastSeen < input.day) seen.lastSeen = input.day;
+      if (!seen) {
+        lifetime.set(input.installHash, { firstSeen: input.day, lastSeen: input.day });
+        retiredHashes.delete(input.installHash);
+      } else if (seen.lastSeen < input.day) seen.lastSeen = input.day;
 
       const key = keyOf(input.day, input.installHash);
       if (!raw.has(key)) raw.set(key, input);
@@ -59,7 +61,8 @@ export function createMemoryAnalyticsStore(
         // As of `day`, never as of now: a later install must not retroactively
         // inflate an earlier day's lifetime figure.
         lifetimeInstalls:
-          [...lifetime.values()].filter((entry) => entry.firstSeen <= day).length + retired,
+          [...lifetime.values()].filter((entry) => entry.firstSeen <= day).length +
+          retiredHashes.size,
       };
       rollups.set(day, rollup);
       return rollup;
@@ -101,10 +104,10 @@ export function createMemoryAnalyticsStore(
       for (const [hash, entry] of lifetime) {
         if (entry.lastSeen < day) {
           lifetime.delete(hash);
+          retiredHashes.add(hash);
           removed += 1;
         }
       }
-      retired += removed;
       return { retired: removed };
     },
     rawCount: () => raw.size,

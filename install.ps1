@@ -62,7 +62,9 @@ $CurlImpersonateWin64Digest = if ($env:KUNAI_CURL_IMPERSONATE_SHA256) {
 } else {
   'f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5'
 }
-$ConfigDir = if ($env:KUNAI_CONFIG_DIR) { $env:KUNAI_CONFIG_DIR } else { Join-Path $env:APPDATA 'kunai' }
+# KUNAI_CONFIG_DIR is not a runtime override. install.json lives beside config.json,
+# which kunai resolves from APPDATA (getKunaiPaths on Windows).
+$ConfigDir = Join-Path $env:APPDATA 'kunai'
 $CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\cache' }
 $BinPath = Join-Path $BinDir 'kunai.exe'
 $VersionsDir = Join-Path $DataDir 'versions'

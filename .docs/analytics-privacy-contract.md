@@ -164,9 +164,7 @@ zero would hide every new release.
 The elimination guard runs per day on the surviving buckets, exactly as it does
 for the snapshot, so a closed dimension is never recoverable by subtraction.
 
-`lifetimeInstalls` is retention-adjusted and therefore **not monotonic**. It may
-fall when `lifetime_retired` absorbs pruned installs; a consumer charting it as
-a cumulative line will show a dip that is correct data, not a bug.
+`lifetimeInstalls` counts installs whose `first_seen` is on or before that day, plus pruned install hashes that have not come back, plus the pre-migration `lifetime_retired` counter. Pruning moves a hash; it does not lower the total. A later ping from that install deletes the hash, so the install is not counted both as live and as retired. A rollup for an earlier day still excludes installs first seen after it, so recomputing yesterday does not grow because of today's installs.
 
 The ingest body is capped at 512 bytes and a real install is limited by the
 `(day, install_hash)` primary key. Before production enablement, configure a

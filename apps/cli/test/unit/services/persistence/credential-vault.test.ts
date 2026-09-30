@@ -335,11 +335,17 @@ describe("vault read failures abort mutations", () => {
 describe("ConfigService vault lane (#179)", () => {
   function captureStore(initial: Record<string, unknown>) {
     const written: Array<Record<string, unknown>> = [];
+    let current: Record<string, unknown> = { ...DEFAULT_CONFIG, ...initial };
     const store = {
       written,
-      load: async () => ({ ...DEFAULT_CONFIG, ...initial }),
+      load: async () => ({ ...current }),
       save: async (config: Record<string, unknown>) => {
-        written.push(config);
+        current = { ...config };
+        written.push(current);
+      },
+      merge: async (patch: Record<string, unknown>) => {
+        current = { ...current, ...patch };
+        written.push(current);
       },
       reset: async () => {},
     };

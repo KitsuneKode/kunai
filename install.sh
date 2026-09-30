@@ -85,11 +85,13 @@ esac
 ((ACTIVATION_LOCK_POLL_MS > 0)) || ACTIVATION_LOCK_POLL_MS=1
 
 if [[ "$HOST_OS" == "darwin" ]]; then
-	CONFIG_DIR="${KUNAI_CONFIG_DIR:-$HOME/Library/Application Support/kunai}"
+	# KUNAI_CONFIG_DIR is not a runtime override and is not where install.json
+	# belongs. kunai reads config through HOME / XDG / APPDATA (getKunaiPaths).
+	CONFIG_DIR="$HOME/Library/Application Support/kunai"
 	DATA_DIR="${KUNAI_DATA_DIR:-$HOME/Library/Application Support/kunai}"
 	CACHE_DIR="${KUNAI_CACHE_DIR:-$HOME/Library/Caches/kunai}"
 else
-	CONFIG_DIR="${KUNAI_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kunai}"
+	CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/kunai"
 	DATA_DIR="${KUNAI_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/kunai}"
 	CACHE_DIR="${KUNAI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kunai}"
 fi

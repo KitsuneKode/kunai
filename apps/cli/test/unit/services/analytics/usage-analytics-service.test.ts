@@ -170,6 +170,9 @@ describe("pending ping identity", () => {
         save: async (value) => {
           persisted = { ...value };
         },
+        merge: async (patch) => {
+          persisted = { ...persisted, ...patch };
+        },
         reset: async () => {},
       });
       await config.update({ analytics: "enabled", installId: UUID });

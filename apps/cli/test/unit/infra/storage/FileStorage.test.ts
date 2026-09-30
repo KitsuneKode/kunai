@@ -229,4 +229,28 @@ describe("FileStorage", () => {
     await expect(recovered.read<{ ok: boolean }>("config")).resolves.toEqual({ ok: true });
     await expect(readFile(configPath, "utf8")).resolves.toContain('"ok": true');
   });
+
+  test("a lock left by a dead pid does not block the next merge", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({ analytics: "disabled", keep: true }));
+    await writeFile(`${configPath}.lock`, "999999\n");
+
+    const storage = new FileStorage({ config: configPath });
+    await storage.mutate("config", (current) => ({
+      ...current,
+      footerHints: "minimal",
+    }));
+
+    const saved = JSON.parse(await readFile(configPath, "utf8")) as {
+      analytics: string;
+      keep: boolean;
+      footerHints: string;
+    };
+    expect(saved.analytics).toBe("disabled");
+    expect(saved.keep).toBe(true);
+    expect(saved.footerHints).toBe("minimal");
+    await expect(Bun.file(`${configPath}.lock`).exists()).resolves.toBe(false);
+  });
 });

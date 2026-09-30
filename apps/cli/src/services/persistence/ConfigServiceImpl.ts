@@ -30,21 +30,52 @@ import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
-function normalizeSeriesProvider(value: string | undefined): string {
-  const normalized = value?.trim();
-  if (!normalized) return DEFAULT_CONFIG.provider;
+function asConfigString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function noteMalformed(repaired: string[] | undefined, field: string): void {
+  if (repaired && !repaired.includes(field)) repaired.push(field);
+}
+
+function normalizeSeriesProvider(
+  value: unknown,
+  fallback = DEFAULT_CONFIG.provider,
+  field?: string,
+  repaired?: string[],
+): string {
+  if (value !== undefined && typeof value !== "string")
+    noteMalformed(repaired, field ?? "provider");
+  const normalized = asConfigString(value)?.trim();
+  if (!normalized) return fallback;
   return migrateLegacyProviderId(normalized);
 }
 
 function normalizeProviderIdList(
-  values: readonly string[] | undefined,
+  values: unknown,
   fallback: readonly string[] = [],
+  field?: string,
+  repaired?: string[],
 ): readonly string[] {
-  if (!Array.isArray(values)) return fallback.map(migrateLegacyProviderId);
-  return [...new Set(values.map((value) => migrateLegacyProviderId(value.trim())).filter(Boolean))];
+  if (values === undefined) return fallback.map(migrateLegacyProviderId);
+  if (!Array.isArray(values)) {
+    noteMalformed(repaired, field ?? "providerPriority");
+    return fallback.map(migrateLegacyProviderId);
+  }
+  let droppedNonString = false;
+  const normalized = values.map((value) => {
+    if (typeof value !== "string") {
+      droppedNonString = true;
+      return "";
+    }
+    return migrateLegacyProviderId(value.trim());
+  });
+  if (droppedNonString) noteMalformed(repaired, field ?? "providerPriority");
+  return [...new Set(normalized.filter(Boolean))];
 }
 
-function normalizeDefaultSubtitleLanguage(subLang: string | undefined): string {
+function normalizeDefaultSubtitleLanguage(subLang: unknown): string {
+  if (typeof subLang !== "string") return DEFAULT_CONFIG.subLang;
   if (!subLang || subLang === "none" || subLang === "fzf" || subLang === "interactive") {
     return DEFAULT_CONFIG.subLang;
   }
@@ -57,8 +88,12 @@ function normalizeSubtitlePreference(value: string | undefined): string {
   return value;
 }
 
-function normalizeQualityPreference(value: string | undefined): string {
-  const normalized = value?.trim().toLowerCase();
+function normalizeQualityPreference(value: unknown, field?: string, repaired?: string[]): string {
+  if (value !== undefined && typeof value !== "string") {
+    noteMalformed(repaired, field ?? "defaultDownloadQuality");
+    return "best";
+  }
+  const normalized = asConfigString(value)?.trim().toLowerCase();
   if (!normalized || normalized === "auto") return "best";
   return normalized;
 }
@@ -149,12 +184,18 @@ function normalizeYoutubeMetadata(
 export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
   /**
-   * Transient launch-flag overrides (`--zen`, `-m`). Held apart from `config` so
-   * `save()` — which persists the whole object, and which UpdateService and
-   * UsageAnalyticsService both call unconditionally on startup — can never bake a
+   * Transient launch-flag overrides (`--zen`, `-m`, `--offline`). Held apart
+   * from `config` so a save applies only dirty keys and can never bake a
    * one-run flag into the user's config file.
    */
   private sessionOverrides: Partial<KitsuneConfig> = {};
+  /** Keys this process changed since the last successful merge onto disk. */
+  private dirtyKeys = new Set<keyof KitsuneConfig>();
+  /**
+   * Known fields whose JSON type was wrong at load. Recovered to the field
+   * default; the rest of the file is kept. Bootstrap logs this list.
+   */
+  repairedConfigFields: readonly string[] = [];
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
@@ -189,6 +230,7 @@ export class ConfigServiceImpl implements ConfigService {
       loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
     const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
+    const repaired: string[] = [];
     service.config = {
       ...DEFAULT_CONFIG,
       ...loaded,
@@ -198,10 +240,17 @@ export class ConfigServiceImpl implements ConfigService {
             providerPriority: [...DEFAULT_CONFIG.providerPriority],
           }
         : {
-            provider: normalizeSeriesProvider(loaded.provider),
+            provider: normalizeSeriesProvider(
+              loaded.provider,
+              DEFAULT_CONFIG.provider,
+              "provider",
+              repaired,
+            ),
             providerPriority: normalizeProviderIdList(
               loaded.providerPriority,
               DEFAULT_CONFIG.providerPriority,
+              "providerPriority",
+              repaired,
             ),
           }),
       ...(migratedAnimeDefaults
@@ -213,17 +262,25 @@ export class ConfigServiceImpl implements ConfigService {
             animeProviderPriority: normalizeProviderIdList(
               loaded.animeProviderPriority,
               DEFAULT_CONFIG.animeProviderPriority,
+              "animeProviderPriority",
+              repaired,
             ),
           }),
       providerDefaultsRevision: Math.max(
         readProviderDefaultsRevision(loaded),
         CURRENT_PROVIDER_DEFAULTS_REVISION,
       ),
-      youtubeProvider:
-        normalizeSeriesProvider(loaded.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
+      youtubeProvider: normalizeSeriesProvider(
+        loaded.youtubeProvider,
+        DEFAULT_CONFIG.youtubeProvider,
+        "youtubeProvider",
+        repaired,
+      ),
       youtubeProviderPriority: normalizeProviderIdList(
         loaded.youtubeProviderPriority,
         DEFAULT_CONFIG.youtubeProviderPriority,
+        "youtubeProviderPriority",
+        repaired,
       ),
       youtubeLanguageProfile: normalizeLanguageProfile(
         loaded.youtubeLanguageProfile ?? DEFAULT_CONFIG.youtubeLanguageProfile,
@@ -244,7 +301,17 @@ export class ConfigServiceImpl implements ConfigService {
         DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
       ),
       offlineDefaultRunwayTarget: normalizeRunwayTarget(loaded.offlineDefaultRunwayTarget),
-      protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
+      defaultDownloadQuality: normalizeQualityPreference(
+        loaded.defaultDownloadQuality,
+        "defaultDownloadQuality",
+        repaired,
+      ),
+      favoriteSources: normalizeStringList(loaded.favoriteSources, "favoriteSources", repaired),
+      protectedDownloadJobIds: normalizeStringList(
+        loaded.protectedDownloadJobIds,
+        "protectedDownloadJobIds",
+        repaired,
+      ),
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
@@ -278,6 +345,11 @@ export class ConfigServiceImpl implements ConfigService {
       analyticsEndpoint:
         typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
+    for (const key of Object.keys(loaded) as (keyof KitsuneConfig)[]) {
+      if (loaded[key] !== undefined && !configValuesEqual(loaded[key], service.config[key])) {
+        service.dirtyKeys.add(key);
+      }
+    }
     const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
     // Vault lane: hydrate the in-memory token from the vault when config.json
     // no longer carries it, or migrate plaintext that predates the vault. The
@@ -301,16 +373,21 @@ export class ConfigServiceImpl implements ConfigService {
           }
         }
       } catch {
-        // Vault write/read failed — keep the plaintext and retry next launch.
+        // Vault write/read failed — keep the plaintext. The next save must
+        // still write it; a dirty-key merge that omitted the token would drop
+        // it the moment some other key was saved.
+        if (service.config.videasySessionToken) service.dirtyKeys.add("videasySessionToken");
       }
     }
+    service.repairedConfigFields = repaired;
     if (
       requiresExplicitAnalyticsConsent ||
       repairedAnalyticsIdentity ||
       migratedVideasyAppId ||
       videasyVaultResave ||
       migratedAnimeDefaults ||
-      migratedSeriesDefaults
+      migratedSeriesDefaults ||
+      repaired.length > 0
     ) {
       await service.persistConfig(service.config);
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
@@ -347,365 +424,397 @@ export class ConfigServiceImpl implements ConfigService {
     await this.store.save(config);
   }
 
+  /** Vault the token when this save touches it, and keep it out of the merged patch. */
+  private async scrubVideasyTokenPatch(patch: Partial<KitsuneConfig>): Promise<void> {
+    if (!this.vault || this.vault.backend === "file") return;
+    const token = patch.videasySessionToken ?? "";
+    const key = CREDENTIAL_KEYS.videasySessionToken;
+    try {
+      if (token) {
+        await this.vault.set(key, token);
+        if ((await this.vault.get(key)) === token) {
+          this.videasyTokenVaulted = true;
+          patch.videasySessionToken = "";
+        }
+      } else if (this.videasyTokenVaulted) {
+        await this.vault.delete(key);
+        this.videasyTokenVaulted = false;
+      }
+    } catch {
+      // Vault unreachable — the patch keeps the plaintext rather than dropping it.
+    }
+  }
+
+  private read<K extends keyof KitsuneConfig>(key: K): KitsuneConfig[K] {
+    if (
+      Object.prototype.hasOwnProperty.call(this.sessionOverrides, key) &&
+      this.sessionOverrides[key] !== undefined
+    ) {
+      return this.sessionOverrides[key] as KitsuneConfig[K];
+    }
+    return this.config[key];
+  }
+
   // Accessors
   get provider(): string {
-    return this.config.provider;
+    return this.read("provider");
   }
 
   get defaultMode(): KitsuneConfig["defaultMode"] {
-    return this.config.defaultMode;
+    return this.read("defaultMode");
   }
 
   get animeProvider(): string {
-    return this.config.animeProvider;
+    return this.read("animeProvider");
   }
 
   get youtubeProvider(): string {
-    return this.config.youtubeProvider;
+    return this.read("youtubeProvider");
   }
 
   get youtubeProviderPriority(): readonly string[] {
-    return [...this.config.youtubeProviderPriority];
+    return [...this.read("youtubeProviderPriority")];
   }
 
   get youtubeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.youtubeLanguageProfile;
+    return this.read("youtubeLanguageProfile");
   }
 
   get youtubeMetadata(): KitsuneConfig["youtubeMetadata"] {
-    return { ...this.config.youtubeMetadata };
+    return { ...this.read("youtubeMetadata") };
   }
 
   get providerPriority(): readonly string[] {
-    return [...this.config.providerPriority];
+    return [...this.read("providerPriority")];
   }
 
   get animeProviderPriority(): readonly string[] {
-    return [...this.config.animeProviderPriority];
+    return [...this.read("animeProviderPriority")];
   }
 
   get subLang(): string {
-    return this.config.subLang;
+    return this.read("subLang");
   }
 
   get wyzieApiKey(): string {
-    return this.config.wyzieApiKey;
+    return this.read("wyzieApiKey");
   }
 
   get animeLang(): "sub" | "dub" {
-    return this.config.animeLang;
+    return this.read("animeLang");
   }
 
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.animeLanguageProfile;
+    return this.read("animeLanguageProfile");
   }
 
   get seriesLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.seriesLanguageProfile;
+    return this.read("seriesLanguageProfile");
   }
 
   get movieLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.movieLanguageProfile;
+    return this.read("movieLanguageProfile");
   }
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
-    return this.config.animeTitlePreference;
+    return this.read("animeTitlePreference");
   }
 
   get headless(): boolean {
-    return this.config.headless;
+    return this.read("headless");
   }
 
   get showMemory(): boolean {
-    return this.config.showMemory;
+    return this.read("showMemory");
   }
 
   get autoNext(): boolean {
-    return this.config.autoNext;
+    return this.read("autoNext");
   }
 
   get autoplayRecommendations(): boolean {
-    return this.config.autoplayRecommendations;
+    return this.read("autoplayRecommendations");
   }
 
   get favoriteSources(): readonly string[] {
-    return this.config.favoriteSources;
+    return this.read("favoriteSources");
   }
 
   get resumeStartChoicePrompt(): boolean {
-    return this.config.resumeStartChoicePrompt;
+    return this.read("resumeStartChoicePrompt");
   }
 
   get skipRecap(): boolean {
-    return this.config.skipRecap;
+    return this.read("skipRecap");
   }
 
   get skipIntro(): boolean {
-    return this.config.skipIntro;
+    return this.read("skipIntro");
   }
 
   get skipPreview(): boolean {
-    return this.config.skipPreview;
+    return this.read("skipPreview");
   }
 
   get skipCredits(): boolean {
-    return this.config.skipCredits;
+    return this.read("skipCredits");
   }
 
   get footerHints(): "detailed" | "minimal" {
-    return this.config.footerHints;
+    return this.read("footerHints");
   }
 
   get quitNearEndBehavior(): QuitNearEndBehavior {
-    return this.config.quitNearEndBehavior;
+    return this.read("quitNearEndBehavior");
   }
 
   get quitNearEndThresholdMode(): QuitNearEndThresholdMode {
-    return this.config.quitNearEndThresholdMode;
+    return this.read("quitNearEndThresholdMode");
   }
 
   get mpvKunaiScriptPath(): string {
-    return this.config.mpvKunaiScriptPath;
+    return this.read("mpvKunaiScriptPath");
   }
 
   get mpvKunaiScriptOpts(): Record<string, string> {
-    return { ...this.config.mpvKunaiScriptOpts };
+    return { ...this.read("mpvKunaiScriptOpts") };
   }
 
   get mpvInProcessStreamReconnect(): boolean {
-    return this.config.mpvInProcessStreamReconnect;
+    return this.read("mpvInProcessStreamReconnect");
   }
 
   get mpvInProcessStreamReconnectMaxAttempts(): number {
-    return this.config.mpvInProcessStreamReconnectMaxAttempts;
+    return this.read("mpvInProcessStreamReconnectMaxAttempts");
   }
 
   get presenceProvider(): PresenceProvider {
-    return this.config.presenceProvider;
+    return this.read("presenceProvider");
   }
 
   get presencePrivacy(): PresencePrivacy {
-    return this.config.presencePrivacy;
+    return this.read("presencePrivacy");
   }
 
   get presenceDiscordClientId(): string {
-    return this.config.presenceDiscordClientId;
+    return this.read("presenceDiscordClientId");
   }
 
   get presenceDiscordOpenUrl(): string {
-    return this.config.presenceDiscordOpenUrl;
+    return this.read("presenceDiscordOpenUrl");
   }
 
   get videasySessionToken(): string {
-    if (isExpiredVideasySession(this.config.videasySessionExpiresAt)) return "";
-    return this.config.videasySessionToken;
+    if (isExpiredVideasySession(this.read("videasySessionExpiresAt"))) return "";
+    return this.read("videasySessionToken");
   }
 
   get providerRelay(): ProviderRelayConfig {
+    const relay = this.read("providerRelay");
     return {
-      ...this.config.providerRelay,
-      providers: { ...this.config.providerRelay.providers },
+      ...relay,
+      providers: { ...relay.providers },
     };
   }
 
   get videasySessionExpiresAt(): number {
-    return this.config.videasySessionExpiresAt;
+    return this.read("videasySessionExpiresAt");
   }
 
   get videasyAppId(): KitsuneConfig["videasyAppId"] {
-    return this.config.videasyAppId;
+    return this.read("videasyAppId");
   }
 
   get downloadsEnabled(): boolean {
-    return this.config.downloadsEnabled;
+    return this.read("downloadsEnabled");
   }
 
   get offlineMode(): boolean {
-    return this.config.offlineMode;
+    return this.read("offlineMode");
   }
 
   get autoDownload(): AutoDownloadMode {
-    return this.config.autoDownload;
+    return this.read("autoDownload");
   }
 
   get autoDownloadNextCount(): number {
-    return this.config.autoDownloadNextCount;
+    return this.read("autoDownloadNextCount");
   }
 
   get maxConcurrentDownloads(): number {
-    return normalizeMaxConcurrentDownloads(this.config.maxConcurrentDownloads);
+    return normalizeMaxConcurrentDownloads(this.read("maxConcurrentDownloads"));
   }
 
   get defaultDownloadQuality(): string {
-    return normalizeQualityPreference(this.config.defaultDownloadQuality);
+    return normalizeQualityPreference(this.read("defaultDownloadQuality"));
   }
 
   get autoCleanupWatched(): boolean {
-    return this.config.autoCleanupWatched;
+    return this.read("autoCleanupWatched");
   }
 
   get recoveryMode(): RecoveryMode {
-    return this.config.recoveryMode;
+    return this.read("recoveryMode");
   }
 
   get continueSourcePreference(): KitsuneConfig["continueSourcePreference"] {
-    return this.config.continueSourcePreference;
+    return this.read("continueSourcePreference");
   }
 
   get startupPriority(): StartupPriority {
-    return this.config.startupPriority;
+    return this.read("startupPriority");
   }
 
   get artworkPreviewsEnabled(): boolean {
-    return this.config.artworkPreviewsEnabled;
+    return this.read("artworkPreviewsEnabled");
   }
 
   get offlineArtworkCacheEnabled(): boolean {
-    return this.config.offlineArtworkCacheEnabled;
+    return this.read("offlineArtworkCacheEnabled");
   }
 
   get offlineFreeSpaceReserveBytes(): number {
-    return this.config.offlineFreeSpaceReserveBytes;
+    return this.read("offlineFreeSpaceReserveBytes");
   }
 
   get offlineUnknownEpisodeEstimateBytes(): number {
-    return this.config.offlineUnknownEpisodeEstimateBytes;
+    return this.read("offlineUnknownEpisodeEstimateBytes");
   }
 
   get offlineDefaultRunwayTarget(): number {
-    return this.config.offlineDefaultRunwayTarget;
+    return this.read("offlineDefaultRunwayTarget");
   }
 
   get autoCleanupGraceDays(): number {
-    return this.config.autoCleanupGraceDays;
+    return this.read("autoCleanupGraceDays");
   }
 
   get protectedDownloadJobIds(): readonly string[] {
-    return [...this.config.protectedDownloadJobIds];
+    return [...this.read("protectedDownloadJobIds")];
   }
 
   get titleProviderPreferences(): Record<string, string> {
-    return { ...this.config.titleProviderPreferences };
+    return { ...this.read("titleProviderPreferences") };
   }
 
   get onboardingVersion(): number {
-    return this.config.onboardingVersion;
+    return this.read("onboardingVersion");
   }
 
   get downloadPath(): string {
-    return this.config.downloadPath;
+    return this.read("downloadPath");
   }
 
   get downloadOnboardingDismissed(): boolean {
-    return this.config.downloadOnboardingDismissed;
+    return this.read("downloadOnboardingDismissed");
   }
 
   get playbackKeysSessionsSeen(): number {
-    return this.config.playbackKeysSessionsSeen;
+    return this.read("playbackKeysSessionsSeen");
   }
 
   get analytics(): KitsuneConfig["analytics"] {
-    return this.config.analytics;
+    return this.read("analytics");
   }
 
   get analyticsNoticeShown(): boolean {
-    return this.config.analyticsNoticeShown;
+    return this.read("analyticsNoticeShown");
   }
 
   get installId(): string {
-    return this.config.installId;
+    return this.read("installId");
   }
 
   get lastAnalyticsPingAt(): number {
-    return this.config.lastAnalyticsPingAt;
+    return this.read("lastAnalyticsPingAt");
   }
 
   get analyticsRetryAfter(): number {
-    return this.config.analyticsRetryAfter;
+    return this.read("analyticsRetryAfter");
   }
 
   get analyticsEndpoint(): string {
-    return this.config.analyticsEndpoint;
+    return this.read("analyticsEndpoint");
   }
 
   get updateChecksEnabled(): boolean {
-    return this.config.updateChecksEnabled;
+    return this.read("updateChecksEnabled");
   }
 
   get autoApplyBinaryUpdates(): boolean {
-    return this.config.autoApplyBinaryUpdates;
+    return this.read("autoApplyBinaryUpdates");
   }
 
   get updateCheckIntervalDays(): number {
-    return this.config.updateCheckIntervalDays;
+    return this.read("updateCheckIntervalDays");
   }
 
   get updateSnoozedUntil(): number {
-    return this.config.updateSnoozedUntil;
+    return this.read("updateSnoozedUntil");
   }
 
   get lastUpdateCheckAt(): number {
-    return this.config.lastUpdateCheckAt;
+    return this.read("lastUpdateCheckAt");
   }
 
   get lastUpdateCheckFailedAt(): number {
-    return this.config.lastUpdateCheckFailedAt;
+    return this.read("lastUpdateCheckFailedAt");
   }
 
   get lastKnownLatestVersion(): string {
-    return this.config.lastKnownLatestVersion;
+    return this.read("lastKnownLatestVersion");
   }
 
   get discoverShowOnStartup(): boolean {
-    return this.config.discoverShowOnStartup;
+    return this.read("discoverShowOnStartup");
   }
 
   get discoverMode(): "auto" | "unified" | "anime-only" | "series-only" {
-    return this.config.discoverMode;
+    return this.read("discoverMode");
   }
 
   get discoverItemLimit(): number {
-    return this.config.discoverItemLimit;
+    return this.read("discoverItemLimit");
   }
 
   get recommendationRailEnabled(): boolean {
-    return this.config.recommendationRailEnabled;
+    return this.read("recommendationRailEnabled");
   }
 
   get showWatchTimeStats(): boolean {
-    return this.config.showWatchTimeStats;
+    return this.read("showWatchTimeStats");
   }
 
   get lastCalendarVisitAt(): number {
-    return this.config.lastCalendarVisitAt;
+    return this.read("lastCalendarVisitAt");
   }
 
   get minimalMode(): boolean {
-    return this.sessionOverrides.minimalMode ?? this.config.minimalMode;
+    return this.read("minimalMode");
   }
 
   get zenMode(): boolean {
-    return this.sessionOverrides.zenMode ?? this.config.zenMode;
+    return this.read("zenMode");
   }
 
   get powerSaverMode(): boolean {
-    return this.config.powerSaverMode;
+    return this.read("powerSaverMode");
   }
 
   get powerSaverAllowManualArtwork(): boolean {
-    return this.config.powerSaverAllowManualArtwork;
+    return this.read("powerSaverAllowManualArtwork");
   }
 
   get tuning(): TuningConfig {
-    return resolveTuning(this.config.tuningOverrides);
+    return resolveTuning(this.read("tuningOverrides"));
   }
 
   get sync(): KitsuneConfig["sync"] {
-    return this.config.sync;
+    return this.read("sync");
   }
 
   get lastWeeklyDigestShownAt(): string | null | undefined {
-    return this.config.lastWeeklyDigestShownAt;
+    return this.read("lastWeeklyDigestShownAt");
   }
 
   getRaw(): KitsuneConfig {
@@ -726,6 +835,7 @@ export class ConfigServiceImpl implements ConfigService {
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
       if (key in this.sessionOverrides) delete this.sessionOverrides[key];
+      this.dirtyKeys.add(key);
     }
     this.config = {
       ...this.config,
@@ -889,10 +999,15 @@ export class ConfigServiceImpl implements ConfigService {
     // that every later `flushPending()` would await.
     this.saveInFlight = pending;
     void (async () => {
+      const keys = [...this.dirtyKeys];
+      for (const key of keys) this.dirtyKeys.delete(key);
+      const patch = dirtyPatch(this.config, keys);
       try {
-        await this.persistConfig(this.config);
+        if ("videasySessionToken" in patch) await this.scrubVideasyTokenPatch(patch);
+        if (keys.length > 0) await this.store.merge(patch);
         resolve?.();
       } catch (error) {
+        for (const key of keys) this.dirtyKeys.add(key);
         reject?.(error instanceof Error ? error : String(error));
       } finally {
         if (this.saveInFlight === pending) this.saveInFlight = null;
@@ -903,13 +1018,65 @@ export class ConfigServiceImpl implements ConfigService {
 
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
+    this.sessionOverrides = {};
+    this.dirtyKeys.clear();
     await this.persistConfig(this.config);
   }
 }
 
-function normalizeStringList(values: readonly string[] | undefined): readonly string[] {
-  if (!Array.isArray(values)) return [];
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+function dirtyPatch(
+  config: KitsuneConfig,
+  keys: readonly (keyof KitsuneConfig)[],
+): Partial<KitsuneConfig> {
+  const patch: Partial<KitsuneConfig> = {};
+  for (const key of keys) assignDirty(patch, key, config[key]);
+  return patch;
+}
+
+function assignDirty<K extends keyof KitsuneConfig>(
+  patch: Partial<KitsuneConfig>,
+  key: K,
+  value: KitsuneConfig[K],
+): void {
+  patch[key] = value;
+}
+
+function configValuesEqual(left: unknown, right: unknown): boolean {
+  return stableConfigValue(left) === stableConfigValue(right);
+}
+
+function stableConfigValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableConfigValue).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableConfigValue(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function normalizeStringList(
+  values: unknown,
+  field?: string,
+  repaired?: string[],
+): readonly string[] {
+  if (values === undefined || values === null) return [];
+  if (!Array.isArray(values)) {
+    noteMalformed(repaired, field ?? "protectedDownloadJobIds");
+    return [];
+  }
+  let droppedNonString = false;
+  const normalized = values.map((value) => {
+    if (typeof value !== "string") {
+      droppedNonString = true;
+      return "";
+    }
+    return value.trim();
+  });
+  if (droppedNonString) noteMalformed(repaired, field ?? "protectedDownloadJobIds");
+  return [...new Set(normalized.filter(Boolean))];
 }
 
 function normalizeOptionalSecret<T>(value: T): string {
