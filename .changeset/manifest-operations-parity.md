@@ -1,6 +1,6 @@
 ---
 "@kunai/providers": patch
-"@kunai/cli": patch
+"@kitsunekode/kunai": patch
 ---
 
 test(cli): pin the production provider roster and capability↔operation parity

@@ -1,5 +1,5 @@
 ---
-"@kunai/cli": patch
+"@kitsunekode/kunai": patch
 ---
 
 fix(player): find mpv through Flatpak when PATH has no mpv

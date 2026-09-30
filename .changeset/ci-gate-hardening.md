@@ -1,5 +1,5 @@
 ---
-"@kunai/cli": patch
+"@kitsunekode/kunai": patch
 ---
 
 chore(ci): close the zero-task, cache-replay, and golden-capture gate holes

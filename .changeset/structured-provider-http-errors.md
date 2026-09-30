@@ -2,7 +2,7 @@
 "@kunai/types": patch
 "@kunai/core": patch
 "@kunai/providers": patch
-"kunai": patch
+"@kitsunekode/kunai": patch
 ---
 
 Classify provider HTTP failures structurally instead of by message text.
