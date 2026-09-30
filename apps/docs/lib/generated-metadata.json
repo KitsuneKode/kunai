@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "d7704d40918020507acefc3780ad7b627cee0a99fe58cffcf3c481f329dffb5e",
-  "docsContentFingerprint": "6842ff018b22489a04abb5b1ff37cd9724304ebf694f9263aefe1f2f073a4902",
+  "cliSourceFingerprint": "48edf6e3f51c283b713dc69d37366517415102b8911d6136f51932b8db757a04",
+  "docsContentFingerprint": "27c7a908e2425ab7a7f6747f5e7db6a797417aae1f10c209c09c026412bd439a",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": [
@@ -10,6 +10,7 @@
     "vidlink",
     "vidrock",
     "rivestream",
+    "movy",
     "anidb",
     "allanime",
     "hianime",
@@ -84,6 +85,22 @@
       "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
       "status": "candidate",
       "notes": ["Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js."]
+    },
+    {
+      "id": "movy",
+      "displayName": "Movy",
+      "description": "Movies and series via a multi-lane source aggregator",
+      "domain": "movy.sx",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked", "multi-source"],
+      "status": "candidate",
+      "notes": [
+        "Browserless: TMDB id gets a short-lived seed from api.wecollege.net/seed, then each named lane (atlanta, denver, miami, …) answers an encrypted `/{lane}/sources` payload that the client XOR-decrypts into {sources, subtitles}.",
+        "Each lane is a distinct upstream scraper (stillhaven, vidzy, workers.dev proxies, multi-language mirrors); lanes surface as individual sources so server switching and fallback cycling apply per lane.",
+        "Anime lane (anikoto/sources-id) is not wired yet — movies and series only.",
+        "External dependency: api.wecollege.net is movy.sx's own backend; if it moves or rate-limits, resolve degrades to the next provider."
+      ]
     },
     {
       "id": "anidb",
