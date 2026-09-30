@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+umask 077
+answer_file=".runtime/terminal-answer"
+trap 'rm -f "$answer_file.tmp"' EXIT HUP INT TERM
+IFS= read -r answer || exit 130
+printf '%s\n' "$answer" >"$answer_file.tmp"
+mv "$answer_file.tmp" "$answer_file"

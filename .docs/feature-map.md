@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-09-01"
 ---
 
 # Feature Map
@@ -14,7 +14,7 @@ answer "where does X live" without grepping the whole tree.
 owning code or the doc in the last column. If a row disagrees with the tree, the
 tree is right — fix the row.
 
-Verified against the tree on 2026-08-18. Paths are checked by
+Verified against the tree on 2026-09-01. Paths are checked by
 `bun run verify:doc-paths`.
 
 ## How a session flows
@@ -31,13 +31,14 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Launch surface
 
-| Feature                                                             | Owned by                                                               | Docs                                                                                                |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Flag parsing (33 flags)                                             | `apps/cli/src/cli-args.ts`, re-exported as `main.ts` `parseArgs()`     | `docs/users/cli-reference.mdx` (generated from `--help`)                                            |
-| Modes: `-a` anime, `-y` youtube, `-m` minimal, `-z` zen, `-q` quick | `apps/cli/src/app/session/*`                                           | [.plans/kunai-execution-passes-and-cli-modes.md](../.plans/kunai-execution-passes-and-cli-modes.md) |
-| Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                         | [download-offline-onboarding.md](./download-offline-onboarding.md)                                  |
-| `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts` | [share-links.md](./share-links.md)                                                                  |
-| Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                | [architecture.md](./architecture.md)                                                                |
+| Feature                                                             | Owned by                                                                  | Docs                                                                                                        |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Flag parsing (33 flags)                                             | `apps/cli/src/cli-args.ts`, re-exported as `main.ts` `parseArgs()`        | `docs/users/cli-reference.mdx` (generated from `--help`)                                                    |
+| Modes: `-a` anime, `-y` youtube, `-m` minimal, `-z` zen, `-q` quick | `apps/cli/src/app/session/*`                                              | [.plans/kunai-execution-passes-and-cli-modes.md](../.plans/kunai-execution-passes-and-cli-modes.md)         |
+| Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                            | [download-offline-onboarding.md](./download-offline-onboarding.md)                                          |
+| `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts`    | [share-links.md](./share-links.md)                                                                          |
+| Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                   | [architecture.md](./architecture.md)                                                                        |
+| Mobile terminal host proof                                          | `apps/mobile/src/entry.ts`, `application/*`, `runtime/{android,ashell}/*` | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md) · [mobile-device-lab.md](./mobile-device-lab.md) |
 
 ## Shell (Ink)
 
