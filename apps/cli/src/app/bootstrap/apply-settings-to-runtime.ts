@@ -24,7 +24,20 @@ export async function applySettingsToRuntime({
       : container.usageAnalytics.consentPatch(requested.analytics);
   const next = { ...requested, ...analyticsPatch };
 
-  await config.update(next);
+  // Only changed fields go to update() — the draft is a full getRaw() snapshot,
+  // so persisting it wholesale would mark session-override keys dirty and bake
+  // launch-flag values into config.json. An explicit edit to an overridden
+  // field still diffs dirty, so update() clears the override and persists it.
+  const patch: Partial<KitsuneConfig> = {};
+  for (const key of Object.keys(next) as (keyof KitsuneConfig)[]) {
+    const value = next[key];
+    if (value === before[key]) continue;
+    if (JSON.stringify(value ?? null) === JSON.stringify(before[key] ?? null)) continue;
+    // SAFETY: `key` is a KitsuneConfig field; `patch` gets the field's own
+    // type from `next`.
+    (patch as Record<keyof KitsuneConfig, KitsuneConfig[keyof KitsuneConfig]>)[key] = value;
+  }
+  await config.update(patch);
   await config.save();
 
   container.providerRegistry.setPriority(createProviderPrioritySnapshot(next));
