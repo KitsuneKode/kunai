@@ -91,5 +91,15 @@ done
 	fi
 )
 
+# A checksum file without its signature is a failed install. The key exists
+# only for this fixture; the private half is removed before the tree is served.
+sign_key="$(mktemp)"
+openssl genpkey -algorithm ED25519 -out "$sign_key"
+openssl pkey -in "$sign_key" -pubout -out "$OUT/ed25519-public.pem"
+for sums in SHA256SUMS SHA256SUMS.archives; do
+	openssl pkeyutl -sign -inkey "$sign_key" -rawin -in "$DL_DIR/$sums" -out "$DL_DIR/$sums.sig"
+done
+rm -f "$sign_key"
+
 cp "$DL_DIR"/* "$PINNED_DIR/"
 echo "fake release v$VERSION -> $OUT"

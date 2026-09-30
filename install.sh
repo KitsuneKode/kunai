@@ -375,7 +375,10 @@ MCowBQYDK2VwAyEAiJ7jdwwCejDY1gA90xbA+HSJI89eqI79y0qVOrdwiYw=
 -----END PUBLIC KEY-----
 EOF
 	fi
-	if ! openssl pkeyutl -verify -pubin -inkey "$pub" -rawin -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1; then
+	# Ed25519 verifies the file bytes directly. -rawin is OpenSSL 3 syntax that
+	# macOS LibreSSL rejects, and current OpenSSL accepts the same signature
+	# without it. One invocation covers both.
+	if ! openssl pkeyutl -verify -pubin -inkey "$pub" -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1; then
 		rm -f "$pub"
 		err "SHA256SUMS signature did not verify."
 		exit 1

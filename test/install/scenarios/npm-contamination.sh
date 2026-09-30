@@ -28,6 +28,7 @@ section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 section "setup: fake release + npm global install"
 
 /harness/make-fake-release.sh "$FAKE_VERSION" "$FAKE_RELEASE" >/dev/null
+export KUNAI_RELEASE_ED25519_PUBLIC_KEY="$(cat "$FAKE_RELEASE/ed25519-public.pem")"
 
 # A stand-in for a previously published npm build of the same package. npm can
 # exit non-zero on warnings alone, so the shim landing on PATH is the real

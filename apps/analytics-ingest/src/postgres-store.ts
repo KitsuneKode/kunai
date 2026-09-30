@@ -41,6 +41,7 @@ export const RECORD_PING_SQL = `with budget as (
   delete from retired_install
   where install_hash = decode($2, 'hex')
     and exists (select 1 from admitted)
+  returning install_hash
 )
 select (select count(*)::int from admitted) as admitted,
        (select count(*)::int from unretire) as unretired`;
