@@ -68,7 +68,7 @@ interface SweepFixture {
  * search their own catalog by the title string. allanime and anidb keep their
  * provider-native ids because their id spaces are not AniList's.
  */
-const SWEEP_FIXTURES: Record<string, SweepFixture> = {
+const SWEEP_FIXTURES = {
   videasy: { frontDoor: "https://api.videasy.to", input: MOVIE_INPUT },
   vidlink: { frontDoor: "https://vidlink.pro", input: MOVIE_INPUT },
   vidrock: { frontDoor: "https://vidrock.net", input: MOVIE_INPUT },
@@ -81,7 +81,9 @@ const SWEEP_FIXTURES: Record<string, SweepFixture> = {
   animegg: { frontDoor: "https://www.animegg.org", input: ONE_PIECE_ANILIST },
   kickassanime: { frontDoor: "https://kaa.lt", input: ONE_PIECE_ANILIST },
   youtube: { frontDoor: "https://www.youtube.com", input: YOUTUBE_INPUT },
-};
+} satisfies Record<string, SweepFixture>;
+
+const SWEEP_FIXTURE_BY_ID = new Map(Object.entries(SWEEP_FIXTURES));
 
 /**
  * A production provider may sit out the sweep only for a runtime reason
@@ -99,7 +101,7 @@ export interface SweepProbe {
 
 export const SWEEP_PROBES: readonly SweepProbe[] = PRODUCTION_PROVIDER_MODULES.flatMap((module) => {
   if (module.providerId in SWEEP_EXEMPTIONS) return [];
-  const fixture = SWEEP_FIXTURES[module.providerId];
+  const fixture = SWEEP_FIXTURE_BY_ID.get(module.providerId);
   // A production module with neither a fixture nor an exemption lands nowhere
   // — the coverage test is what makes that a loud failure instead of a quiet
   // missing row.

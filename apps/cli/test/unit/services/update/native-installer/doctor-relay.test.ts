@@ -10,6 +10,8 @@ import {
 } from "@/services/update/native-installer/doctor";
 import { probeRelayCoverage } from "@/services/update/native-installer/doctor-relay";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
+import type { RelayFetch } from "@kunai/relay";
+import type { JsonValue } from "@kunai/types";
 
 const RELAY_BASE_URL = "https://relay.example.test";
 const ALL_RELAY_IDS = RELAY_CAPABLE_PROVIDER_OPTIONS.map((option) => option.value);
@@ -33,7 +35,7 @@ async function makeConfigDir(config?: { providerRelay?: unknown }): Promise<stri
   return configDir;
 }
 
-function healthResponse(body: unknown, init?: ResponseInit): Response {
+function healthResponse(body: JsonValue, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { "content-type": "application/json" },
@@ -41,24 +43,24 @@ function healthResponse(body: unknown, init?: ResponseInit): Response {
   });
 }
 
-function fetchReturning(response: () => Response | Promise<Response>): typeof fetch {
-  return (() => Promise.resolve(response())) as unknown as typeof fetch;
+function fetchReturning(response: () => Response | Promise<Response>): RelayFetch {
+  return () => Promise.resolve(response());
 }
 
-function fetchRejecting(error: unknown): typeof fetch {
-  return (async () => {
+function fetchRejecting(error: Error): RelayFetch {
+  return async () => {
     throw error;
-  }) as unknown as typeof fetch;
+  };
 }
 
 describe("probeRelayCoverage", () => {
   test("skips without touching the network when no relay is configured", async () => {
     const configDir = await makeConfigDir();
     let fetched = false;
-    const fetchImpl = (() => {
+    const fetchImpl: RelayFetch = () => {
       fetched = true;
       return Promise.reject(new Error("must not be called"));
-    }) as unknown as typeof fetch;
+    };
 
     const coverage = await probeRelayCoverage(configDir, fetchImpl);
 
@@ -80,12 +82,12 @@ describe("probeRelayCoverage", () => {
     process.env.KUNAI_RELAY_BASE_URL = RELAY_BASE_URL;
 
     let requested = "";
-    const fetchImpl = ((input: Request | string | URL) => {
+    const fetchImpl: RelayFetch = (input) => {
       requested = String(input);
       return Promise.resolve(
         healthResponse({ ok: true, service: "kunai-relay", providerIds: ALL_RELAY_IDS }),
       );
-    }) as unknown as typeof fetch;
+    };
 
     const coverage = await probeRelayCoverage(configDir, fetchImpl);
 

@@ -1,8 +1,10 @@
 import {
+  isJsonObject,
+  isJsonString,
+  RELAY_ERROR_CODES,
   RELAYED_RESPONSE_HEADER,
   RelayRefusalError,
   type RelayErrorCode,
-  type RelayRpcErrorBody,
 } from "@kunai/types";
 
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
@@ -109,12 +111,25 @@ async function readRelayRefusal(
   readonly providerId?: string;
   readonly status: number;
 }> {
-  const body = (await response.json().catch(() => undefined)) as RelayRpcErrorBody | undefined;
+  const body = await response.json().catch(() => undefined);
+  const headerCode = response.headers.get(RELAY_ERROR_CODE_HEADER) ?? "";
   return {
-    relayCode: (response.headers.get(RELAY_ERROR_CODE_HEADER) || "bad-request") as RelayErrorCode,
-    providerId: body?.error?.providerId ?? fallbackProviderId,
+    relayCode: isRelayErrorCode(headerCode) ? headerCode : "bad-request",
+    providerId:
+      isJsonObject(body) && isJsonObject(body.error) && isJsonString(body.error.providerId)
+        ? body.error.providerId
+        : fallbackProviderId,
     status: response.status,
   };
+}
+
+/**
+ * Wire-side validation for the refusal code. `RELAY_ERROR_CODES` is the tuple
+ * `RelayErrorCode` derives from, so membership exactly tracks the contract; a
+ * header value outside it is a foreign or stale answer, not a named refusal.
+ */
+function isRelayErrorCode(code: string): code is RelayErrorCode {
+  return RELAY_ERROR_CODES.some((known) => known === code);
 }
 
 async function toRelayRequest(

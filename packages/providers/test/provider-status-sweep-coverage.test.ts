@@ -21,8 +21,9 @@ describe("provider status sweep coverage", () => {
   });
 
   test("every exemption names a production provider and a reason", () => {
+    const productionIds: readonly string[] = PRODUCTION_PROVIDER_IDS;
     for (const [providerId, reason] of Object.entries(SWEEP_EXEMPTIONS)) {
-      expect(PRODUCTION_PROVIDER_IDS as readonly string[]).toContain(providerId);
+      expect(productionIds).toContain(providerId);
       expect(reason.length).toBeGreaterThan(20);
     }
   });

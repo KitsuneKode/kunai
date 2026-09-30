@@ -32,6 +32,8 @@ export const PRODUCTION_PROVIDER_LOADERS = {
 
 export type ProductionProviderId = keyof typeof PRODUCTION_PROVIDER_LOADERS;
 
-export const PRODUCTION_PROVIDER_IDS = Object.keys(
-  PRODUCTION_PROVIDER_LOADERS,
-) as readonly ProductionProviderId[];
+export const PRODUCTION_PROVIDER_IDS =
+  // SAFETY: `ProductionProviderId` is `keyof typeof PRODUCTION_PROVIDER_LOADERS` —
+  // the loader map is the source of truth, so its own keys are exactly the
+  // union's members. `Object.keys` only loses that in its `string[]` return.
+  Object.keys(PRODUCTION_PROVIDER_LOADERS) as readonly ProductionProviderId[];
