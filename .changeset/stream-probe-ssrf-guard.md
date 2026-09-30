@@ -31,3 +31,8 @@ Redirects are followed by hand and each hop is resolved and pinned again
 (bounded at 3); credentials headers no longer cross origins on a redirect. A
 blocked target reports as a definitive unreachable probe, so the resolve gate
 rejects the candidate and the player never sees the URL.
+
+Guarded non-probe fetches (subtitle downloads, HLS ladder expansion, manifest
+materialization) share a real deadline with their caller's signal — the pin's
+lookup race used to run on a 1ms stub budget, which lost to any resolver with
+real latency and returned "timeout" without ever issuing the request.

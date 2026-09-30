@@ -115,6 +115,7 @@ export async function expandHlsMasterInventory(
         headers: headers ?? {},
       },
       signal: signal ?? AbortSignal.timeout(12_000),
+      timeoutMs: 12_000,
       lookupImpl: options.lookupImpl,
     });
     if (outcome.kind === "blocked") {

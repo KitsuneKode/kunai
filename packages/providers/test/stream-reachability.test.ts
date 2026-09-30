@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { HLS_SEGMENT_PROBE_MIN_BYTES } from "../src/shared/hls-manifest";
 import {
+  fetchGuardedStreamTarget,
   isStreamReachableForPlaybackPreflight,
   isStreamReachableForResolve,
   probeLookupForPort,
@@ -576,6 +577,49 @@ describe("stream reachability DNS pinning", () => {
 
     expect(probe).toEqual({ status: "reachable" });
     expect(seen).toEqual(["https://cdn.example/v.mp4"]);
+  });
+});
+
+describe("guarded stream fetches", () => {
+  test("a real resolver delay still reaches the pinned fetch", async () => {
+    const seen: { url: string; init: PinnedInit }[] = [];
+
+    // `dns.lookup` sits on a threadpool and never answers in ~1ms — a lookup
+    // with real latency must not lose the deadline race to a stub budget.
+    const outcome = await fetchGuardedStreamTarget({
+      fetchImpl: async (url, init) => {
+        // SAFETY: RequestInit does not declare Bun's `tls`/`proxy` fields; the
+        // assertion only exposes what the pin wrote onto the live init.
+        seen.push({ url, init: init as PinnedInit });
+        return response(200, "#EXTM3U\n");
+      },
+      url: "https://cdn.example/master.m3u8",
+      init: {},
+      timeoutMs: 5_000,
+      lookupImpl: async () => {
+        await Bun.sleep(50);
+        return ["93.184.216.34"];
+      },
+    });
+
+    expect(outcome.kind).toBe("response");
+    expect(seen[0]?.url).toBe("https://93.184.216.34/master.m3u8");
+    expect(new Headers(seen[0]?.init.headers).get("host")).toBe("cdn.example");
+  });
+
+  test("the shared budget still bounds a hung resolver", async () => {
+    const outcome = await fetchGuardedStreamTarget({
+      fetchImpl: async () => response(200),
+      url: "https://cdn.example/master.m3u8",
+      init: {},
+      timeoutMs: 40,
+      lookupImpl: async () => {
+        await Bun.sleep(5_000);
+        return ["93.184.216.34"];
+      },
+    });
+
+    expect(outcome.kind).toBe("timeout");
   });
 });
 

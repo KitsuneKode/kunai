@@ -1585,6 +1585,7 @@ export class DownloadService {
         url: job.subtitleUrl,
         init: { headers: policy.headers },
         signal: AbortSignal.timeout(15_000),
+        timeoutMs: 15_000,
       });
       if (outcome.kind === "blocked") {
         return buildRepairableSidecarResult(

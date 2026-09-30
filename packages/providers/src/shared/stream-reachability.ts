@@ -30,6 +30,9 @@ export type ProbeStreamReachabilityInput = {
 };
 
 const DEFAULT_PROBE_TIMEOUT_MS = 3_000;
+
+/** Guarded fetches (subtitles, playlists, manifests) get a wider budget than probes. */
+const DEFAULT_GUARDED_FETCH_TIMEOUT_MS = 20_000;
 const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
 const MAX_PROBE_REDIRECT_HOPS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -416,6 +419,13 @@ export function fetchGuardedStreamTarget(options: {
   readonly init: RequestInit;
   readonly signal?: AbortSignal;
   /**
+   * Shared budget for the DNS pin and the fetch itself. The signal still
+   * aborts sooner; this exists because `remaining` feeds the lookup race —
+   * a stub budget there starves the resolver and every hostname fetch times
+   * out without issuing a request.
+   */
+  readonly timeoutMs?: number;
+  /**
    * Passed by callers whose impl is a port that opens local sockets — the
    * relay fetch port's stream URLs always take its direct branch, so DNS
    * answers still need validating and pinning. Absent with an injected impl
@@ -423,11 +433,12 @@ export function fetchGuardedStreamTarget(options: {
    */
   readonly lookupImpl?: StreamReachabilityLookup;
 }): Promise<ProbeFetchOutcome> {
+  const deadline = Date.now() + (options.timeoutMs ?? DEFAULT_GUARDED_FETCH_TIMEOUT_MS);
   return fetchProbeTarget({
     fetchImpl: options.fetchImpl,
     url: options.url,
     init: { ...options.init, signal: options.signal },
-    remaining: () => 1, // the caller's signal owns the deadline
+    remaining: () => Math.max(0, deadline - Date.now()),
     parentSignal: options.signal,
     lookupImpl:
       options.lookupImpl ?? (options.fetchImpl === PLATFORM_FETCH ? systemDnsLookup : undefined),
