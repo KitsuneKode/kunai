@@ -35,6 +35,8 @@ describe("root overlay picker model", () => {
         { value: "2", label: "Episode 2" },
       ],
     };
+    // SAFETY: partial SessionState fixture — the subtitle builder reads only
+    // the fields set here; the rest is irrelevant to this render.
     const state = {
       currentTitle: { name: "Frieren: Beyond Journey's End" },
       provider: "vidking",
@@ -48,6 +50,8 @@ describe("root overlay picker model", () => {
         overlay,
         state,
         settingsDraft: null,
+        // SAFETY: subtitle rendering reads no config fields — the empty literal
+        // only satisfies the parameter type.
         config: {} as KitsuneConfig,
         settingsError: null,
       }),
@@ -60,6 +64,8 @@ describe("root overlay picker model", () => {
         overlay,
         state,
         settingsDraft: null,
+        // SAFETY: subtitle rendering reads no config fields — the empty literal
+        // only satisfies the parameter type.
         config: {} as KitsuneConfig,
         settingsError: null,
         episodePickerListFocused: true,

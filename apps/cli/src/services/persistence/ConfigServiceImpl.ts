@@ -232,6 +232,8 @@ function sanitizeLoadedConfig(loaded: Partial<KitsuneConfig>): SanitizedConfig {
   const sanitized = { ...loaded };
   for (const key of Object.keys(sanitized)) {
     if (RETIRED_CONFIG_KEYS.has(key)) {
+      // SAFETY: RETIRED_CONFIG_KEYS holds former config field names; keying by
+      // them is a best-effort delete — a non-key string is a harmless no-op.
       delete sanitized[key as keyof KitsuneConfig];
       retiredKeys.push(key);
       continue;

@@ -115,7 +115,7 @@ export function summarizeDownloadCleanupCandidates(
   let sizedCount = 0;
   for (const candidate of candidates) {
     const size = candidate.job.fileSize;
-    if (typeof size === "number" && Number.isFinite(size) && size > 0) {
+    if (size !== undefined && Number.isFinite(size) && size > 0) {
       totalBytes += size;
       sizedCount += 1;
     }
@@ -197,7 +197,7 @@ export function describeCleanupCandidate(
   const parts = [
     watchedAgoLabel(candidate.watchedAt, nowMs),
     eligibilityLabel(candidate),
-    typeof job.fileSize === "number" && job.fileSize > 0 ? formatBytes(job.fileSize) : null,
+    job.fileSize !== undefined && job.fileSize > 0 ? formatBytes(job.fileSize) : null,
     job.outputPath,
   ].filter((part): part is string => Boolean(part));
   return { jobId: job.id, label: candidateLabel(candidate), detail: parts.join(" · ") };

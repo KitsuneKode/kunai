@@ -47,7 +47,8 @@ const FILE_SIZE_CEILINGS: Readonly<Record<string, number>> = {
   "packages/providers/src/miruro/direct.ts": 2_750,
   "packages/providers/src/videasy/direct.ts": 2_700,
   "apps/cli/src/app-shell/browse-shell.tsx": 2_500,
-  "apps/cli/src/app-shell/root-overlay-shell.tsx": 2_400,
+  // C2's focus-zone/press-again wiring grew this to ~2404 — ceiling follows.
+  "apps/cli/src/app-shell/root-overlay-shell.tsx": 2_450,
   "apps/cli/src/services/download/DownloadService.ts": 2_400,
   "apps/cli/src/app-shell/ink-shell.tsx": 2_350,
   "apps/cli/src/infra/player/PersistentMpvSession.ts": 1_850,

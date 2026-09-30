@@ -48,16 +48,10 @@ const KNOWN_UNREAD_CONFIG_KEYS = new Set<string>([
   // Debt: `get headless` exists on ConfigService but nothing calls it —
   // headless operation is driven by argv in main.ts, not by this field.
   "headless",
-  // Debt: sibling of powerSaverMode, exposed but never consulted.
-  "powerSaverAllowManualArtwork",
   // Consumed inside ConfigServiceImpl itself to gate the session token
   // (isExpiredVideasySession) — the exposed getter is unused, but the field
   // drives behavior through the service, so this is baseline-not-bug.
   "videasySessionExpiresAt",
-  // Debt: forced to "off" during normalization — the field is load-bearing
-  // only as stored shape until the auto-download feature returns or is removed.
-  "autoDownload",
-  "autoDownloadNextCount",
   // Debt: written by the update-check cache, never read to change behavior.
   "lastUpdateCheckFailedAt",
 ]);

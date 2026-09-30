@@ -220,6 +220,8 @@ describe("ConfigServiceImpl", () => {
     // removed from KitsuneConfig after never gaining a runtime reader. A file
     // written by an older build must still parse, must not surface them on the
     // typed config, and must not carry them into the next persisted shape.
+    // SAFETY: the retired keys are deliberately not on KitsuneConfig anymore —
+    // the cast simulates a payload written by a build that still had them.
     const store = new MemoryConfigStore({
       autoDownload: "season",
       autoDownloadNextCount: 9,
