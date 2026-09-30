@@ -19,16 +19,47 @@ export function isOverlayCancelActive(input: {
   return true;
 }
 
-/** History filter typing is disabled while delete confirm or source choice owns focus. */
-export function shouldHistoryOverlayAcceptFilterInput(input: {
+/**
+ * Whether the overlay's shared line editor may consume this keystroke.
+ *
+ * Only surfaces that render a filter field may eat printable input. The queue
+ * and the notifications inbox have none, so letters there are actions or inert
+ * — feeding them to an unseen editor parked keystrokes in state nothing read,
+ * and made the first Esc clear an invisible filter instead of closing. The
+ * episode picker and history do render a filter, but only while their text
+ * zone owns printable keys (focus-zone model); in the list zone letters are
+ * actions. `y`/`l`/`s`/`x` while a history confirm owns focus must never reach
+ * the editor either.
+ */
+export function shouldOverlayAcceptFilterInput(input: {
   readonly overlayType: RootOwnedOverlay["type"];
-  readonly pendingDelete: HistoryDeletePending | null;
-  readonly sourceChoiceTitleId: string | null;
+  /** True while the surface's text zone owns printable keys. */
+  readonly textZoneActive: boolean;
+  /** Notifications: only the nested action picker renders a filter field. */
+  readonly notificationActionPickerActive: boolean;
+  readonly historyPendingDelete: HistoryDeletePending | null;
+  readonly historySourceChoiceTitleId: string | null;
 }): boolean {
-  if (input.overlayType !== "history") return true;
-  if (input.pendingDelete !== null) return false;
-  if (input.sourceChoiceTitleId !== null) return false;
-  return true;
+  switch (input.overlayType) {
+    case "provider_picker":
+    case "season_picker":
+    case "subtitle_picker":
+    case "recommendation_picker":
+      // No bare-letter actions on these pickers — the field is always live.
+      return true;
+    case "episode_picker":
+      return input.textZoneActive;
+    case "history":
+      return (
+        input.textZoneActive &&
+        input.historyPendingDelete === null &&
+        input.historySourceChoiceTitleId === null
+      );
+    case "notifications":
+      return input.notificationActionPickerActive;
+    default:
+      return false;
+  }
 }
 
 export function shouldHandleOverlayEscape(input: {

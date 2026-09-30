@@ -54,6 +54,12 @@ import {
   type ReactNode,
 } from "react";
 
+import {
+  browseFocusZoneReducer,
+  isBrowseListFocused,
+  type BrowseFocusZone,
+  type BrowseFocusZoneContext,
+} from "./browse-focus-zone";
 import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
 import { cancelRootOverlay } from "./cancel-root-overlay";
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
@@ -76,6 +82,7 @@ import {
   type HistoryTab,
   type HistoryTypeFilter,
 } from "./history-view";
+import { usePressAgainConfirm } from "./hooks/use-press-again-confirm";
 import { routeOverlayInput } from "./input-router";
 import { helpSections, helpSectionsForScope, type HelpSection, type KeyScope } from "./keybindings";
 import {
@@ -108,7 +115,7 @@ import {
 import {
   isOverlayCancelActive,
   shouldHandleOverlayEscape,
-  shouldHistoryOverlayAcceptFilterInput,
+  shouldOverlayAcceptFilterInput,
 } from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
 import { type BrowseOverlay, OverlayPanel } from "./overlay-panel";
@@ -165,8 +172,10 @@ import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-hist
 import {
   createNotificationsOverlayState,
   handleNotificationsOverlayInput,
+  notificationConfirmPrompt,
   type NotificationsOverlayState,
 } from "./use-notifications-overlay-input";
+import { handleQueueOverlayInput, queueConfirmPrompt } from "./use-queue-overlay-input";
 import { useShellDimensions } from "./use-viewport-policy";
 
 /** Stable empty favorites reference for non-tracks overlays (keeps effect deps referentially stable). */
@@ -572,6 +581,19 @@ export function RootOverlayShell({
   const [selectedIndex, setSelectedIndex] = useState(() =>
     overlay.type === "provider_picker" ? providerInitialIndex : overlayInitialIndex,
   );
+  // Focus-zone model shared with browse/library: surfaces that mix a filter
+  // field with bare-letter actions (history, episode picker) start in the text
+  // zone; ↓/↑ hand the list focus and Esc hands it back. Only the list zone
+  // runs the letter actions. Surfaces without a filter field (queue,
+  // notifications inbox) have no text zone — every letter is an action there.
+  // The component remounts per overlay (getRootOverlayResetKey), so this
+  // always starts in the text zone for a freshly opened surface.
+  const [overlayFocusZone, setOverlayFocusZone] = useState<BrowseFocusZone>("query");
+  const overlayListFocused = isBrowseListFocused(overlayFocusZone);
+  // Shared press-again state for the destructive bare-letter keys on this
+  // overlay (queue x/c/C, notifications d/C). Tokens are namespaced per
+  // surface, and unmount disposes the pending timer.
+  const pressAgain = usePressAgainConfirm();
   const [tracksNav, setTracksNav] = useState<TracksNavState>(() =>
     createInitialTracksNav({
       initialSectionIndex: tracksInitialSectionIndex,
@@ -802,6 +824,7 @@ export function RootOverlayShell({
     settingsDraft: null,
     config: container.config.getRaw(),
     settingsError: null,
+    episodePickerListFocused: overlay.type === "episode_picker" && overlayListFocused,
   });
   const effectiveSubtitle =
     (overlay.type === "notifications" ||
@@ -1332,6 +1355,31 @@ export function RootOverlayShell({
     })();
   };
 
+  const zonedOverlayHasResults =
+    overlay.type === "history"
+      ? historyView.flatRows.length > 0
+      : overlay.type === "episode_picker"
+        ? filteredGenericPickerOptions.length > 0
+        : false;
+  const overlayFocusZoneContext: BrowseFocusZoneContext = {
+    hasResults: zonedOverlayHasResults,
+    hasFilterBar: false,
+    canFocusIdle: false,
+  };
+  useEffect(() => {
+    if (overlay.type !== "history" && overlay.type !== "episode_picker") return;
+    if (zonedOverlayHasResults) return;
+    // The result set emptied under list focus (history delete, or a stored
+    // picker filter that matches nothing) — hand focus back to the text zone.
+    setOverlayFocusZone((zone) =>
+      browseFocusZoneReducer(
+        zone,
+        { type: "results-became-empty" },
+        { hasResults: false, hasFilterBar: false, canFocusIdle: false },
+      ),
+    );
+  }, [overlay.type, zonedOverlayHasResults]);
+
   useInput((input, key) => {
     if (commandMode) {
       return;
@@ -1473,17 +1521,33 @@ export function RootOverlayShell({
       return;
     }
     if (key.escape) {
+      // An armed press-again prompt unwinds before anything else: Esc cancels
+      // the pending destructive action, and a second Esc walks the back-stack.
+      if (pressAgain.armedToken !== null) {
+        pressAgain.disarm();
+        return;
+      }
+      const overlayConfirmationActive =
+        (overlay.type === "notifications" &&
+          Boolean(notificationPlayConfirm || notificationActionDedupKey)) ||
+        (overlay.type === "history" &&
+          (historySourceChoiceTitleId !== null || historyPendingDelete !== null));
+      // A list-focused surface hands focus back to its text zone rather than
+      // closing or clearing the filter; the next Esc (text zone) does that.
+      // Modal confirmations still cancel first regardless of zone.
+      if (!overlayConfirmationActive && overlayListFocused) {
+        setOverlayFocusZone((zone) =>
+          browseFocusZoneReducer(zone, { type: "escape" }, overlayFocusZoneContext),
+        );
+        return;
+      }
       const backAction = resolveOverlayBackStack({
         cancelActive: shouldHandleOverlayEscape({
           overlay,
           pickerFilterQuery,
         }),
         filterQuery: isRootMediaPickerOverlay(overlay) ? (overlay.filterQuery ?? "") : filterQuery,
-        confirmationActive:
-          (overlay.type === "notifications" &&
-            Boolean(notificationPlayConfirm || notificationActionDedupKey)) ||
-          (overlay.type === "history" &&
-            (historySourceChoiceTitleId !== null || historyPendingDelete !== null)),
+        confirmationActive: overlayConfirmationActive,
         pickerOverlay: isRootMediaPickerOverlay(overlay),
         surfaceOwnsEscape: overlay.type === "library" || overlay.type === "downloads",
       });
@@ -1541,6 +1605,7 @@ export function RootOverlayShell({
           historySelections,
           historyPickerContext,
           selectedIndex,
+          listFocused: overlayListFocused,
           sourceChoiceTitleId: historySourceChoiceTitleId,
           sourcePreference: continueSourcePreference,
           setSourceChoiceTitleId: setHistorySourceChoiceTitleId,
@@ -1596,79 +1661,48 @@ export function RootOverlayShell({
       }
     }
     if (overlay.type === "queue") {
-      // Handle queue management keys; let arrows / filtering fall through to the
+      // The queue surface has no filter field — every letter is an action key.
+      // The destructive ones (x remove, c clear-all, C clear-played) run
+      // through the shared press-again confirm; arrows fall through to the
       // generic choice handlers below (queue is in the optionCount switch).
-      const queueRows = queueView.rows;
-      const refresh = () => setQueueTick((tick) => tick + 1);
-      const sel = queueRows.length === 0 ? -1 : Math.min(selectedIndex, queueRows.length - 1);
-      const row = sel >= 0 ? queueRows[sel] : undefined;
-      if (key.return && row) {
-        // Claim exact row before handoff; failed CAS keeps the overlay open.
-        resolveQueueRowPlaySelection(
-          container.queueService,
-          row.id,
-          resolveRootQueueSelection,
-          () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
-        );
-        return;
-      }
-      if (input === "J" && row) {
-        if (container.queueService.moveDown(row.id))
-          setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
-        refresh();
-        return;
-      }
-      if (input === "K" && row) {
-        if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
-        refresh();
-        return;
-      }
-      if (input === "g" && row) {
-        container.queueService.moveToTop(row.id);
-        refresh();
-        return;
-      }
-      if (input === "G" && row) {
-        container.queueService.moveToBottom(row.id);
-        refresh();
-        return;
-      }
-      if (input.toLowerCase() === "x" && row) {
-        container.queueService.remove(row.id);
-        setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
-        refresh();
-        return;
-      }
-      if (input === "C") {
-        container.queueService.clearPlayed();
-        setSelectedIndex(0);
-        refresh();
-        return;
-      }
-      if (input === "c" && !key.ctrl) {
-        container.queueService.clear();
-        setSelectedIndex(0);
-        refresh();
-        return;
-      }
-      if (input.toLowerCase() === "r") {
-        const sessions = container.queueService.listRecoverableSessions();
-        // Sessions come back most-recent-first; naming the target in the status
-        // line is what makes this restore explicit rather than a silent guess.
-        const session = sessions[0];
-        if (!session) {
-          setOverlayStatus("No recoverable queue to restore");
-          return;
-        }
-        const restored = restoreQueueSessionWithResume(
-          buildQueueRestoreDeps(container),
-          session.id,
-        );
-        setOverlayStatus(buildQueueRestoreStatus(restored, sessions.length));
-        refresh();
-        return;
-      }
-      // No early return — arrows + filtering fall through.
+      const queueResult = handleQueueOverlayInput(input, key, {
+        rows: queueView.rows,
+        selectedIndex,
+        setSelectedIndex,
+        refresh: () => setQueueTick((tick) => tick + 1),
+        queueService: container.queueService,
+        onPlayRow: (row) => {
+          // Claim exact row before handoff; failed CAS keeps the overlay open.
+          resolveQueueRowPlaySelection(
+            container.queueService,
+            row.id,
+            resolveRootQueueSelection,
+            () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
+          );
+        },
+        onRestore: () => {
+          const sessions = container.queueService.listRecoverableSessions();
+          // Sessions come back most-recent-first; naming the target in the
+          // status line is what makes this restore explicit rather than a
+          // silent guess.
+          const session = sessions[0];
+          if (!session) {
+            setOverlayStatus("No recoverable queue to restore");
+            return;
+          }
+          const restored = restoreQueueSessionWithResume(
+            buildQueueRestoreDeps(container),
+            session.id,
+          );
+          setOverlayStatus(buildQueueRestoreStatus(restored, sessions.length));
+          setQueueTick((tick) => tick + 1);
+        },
+        pressConfirm: pressAgain.confirm,
+        disarmConfirm: pressAgain.disarm,
+        pendingConfirmToken: pressAgain.armedToken,
+      });
+      if (queueResult === "handled") return;
+      // "not-handled" — arrows fall through to the generic handlers below.
     }
     if (
       overlay.type === "notifications" &&
@@ -1687,6 +1721,9 @@ export function RootOverlayShell({
           runNotificationAction,
           setFilterQuery,
           setSelectedIndex,
+          pressConfirm: pressAgain.confirm,
+          disarmConfirm: pressAgain.disarm,
+          pendingConfirmToken: pressAgain.armedToken,
         }) === "handled"
       ) {
         return;
@@ -1798,6 +1835,21 @@ export function RootOverlayShell({
       return;
     }
     if (key.upArrow || key.downArrow) {
+      // Zoned surfaces: the first arrow press in the text zone hands the list
+      // focus (browse model); selection only moves once the list owns focus.
+      if (
+        (overlay.type === "history" || overlay.type === "episode_picker") &&
+        !overlayListFocused
+      ) {
+        setOverlayFocusZone((zone) =>
+          browseFocusZoneReducer(
+            zone,
+            { type: key.downArrow ? "arrow-down" : "arrow-up" },
+            overlayFocusZoneContext,
+          ),
+        );
+        return;
+      }
       if (isRootChoiceOverlay(overlay)) {
         if (isRootMediaPickerOverlay(overlay) && overlay.id) {
           container.stateManager.dispatch({
@@ -1834,10 +1886,11 @@ export function RootOverlayShell({
     if (isRootChoiceOverlay(overlay)) {
       // Episode picker: `m` TOGGLES the highlighted episode watched/unwatched
       // (writes completed history via the shared action router — single source of
-      // truth). Intercepted before the filter editor so it is an action, not a
-      // typed filter character.
+      // truth). Only live in the list zone — in the text zone `m` is a filter
+      // character, not an action.
       if (
         overlay.type === "episode_picker" &&
+        overlayListFocused &&
         input.toLowerCase() === "m" &&
         !key.ctrl &&
         !key.meta
@@ -1878,10 +1931,11 @@ export function RootOverlayShell({
       }
       // Episode picker: `s` jumps to the season picker without hunting for Esc.
       // Resolves the picker with a reserved value the opener maps to "switch
-      // season"; interception happens before the filter editor so it acts as a
-      // shortcut, not a typed filter character.
+      // season". List-zone only like `m` — in the text zone it types into the
+      // filter.
       if (
         overlay.type === "episode_picker" &&
+        overlayListFocused &&
         input.toLowerCase() === "s" &&
         !key.ctrl &&
         !key.meta &&
@@ -1895,10 +1949,12 @@ export function RootOverlayShell({
         return;
       }
       if (
-        shouldHistoryOverlayAcceptFilterInput({
+        shouldOverlayAcceptFilterInput({
           overlayType: overlay.type,
-          pendingDelete: historyPendingDelete,
-          sourceChoiceTitleId: historySourceChoiceTitleId,
+          textZoneActive: !overlayListFocused,
+          notificationActionPickerActive: notificationActionDedupKey !== null,
+          historyPendingDelete,
+          historySourceChoiceTitleId,
         }) &&
         filterEditor.handleInput(input, key)
       ) {
@@ -1982,6 +2038,7 @@ export function RootOverlayShell({
         <DownloadManagerContent
           container={container}
           onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+          commandMode={commandMode}
         />
         {commandMode ? (
           <CommandPalette
@@ -2009,6 +2066,7 @@ export function RootOverlayShell({
           container={container}
           onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
           initialView={overlay.view ?? "library"}
+          commandMode={commandMode}
         />
         {commandMode ? (
           <CommandPalette
@@ -2073,7 +2131,9 @@ export function RootOverlayShell({
           // that, so action feedback — including thrown failures — had nowhere
           // to land and a broken action was indistinguishable from an ignored
           // keypress. The status clears itself after 2.5s.
-          taskLabel={overlayStatus ?? "Notifications"}
+          taskLabel={
+            notificationConfirmPrompt(pressAgain.armedToken) ?? overlayStatus ?? "Notifications"
+          }
           actions={notificationsFooterActions({
             tab: notificationsState.tab,
             paginated: notificationsView.totalPages > 1,
@@ -2135,7 +2195,7 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel="Up Next"
+          taskLabel={queueConfirmPrompt(pressAgain.armedToken, queueView) ?? "Up Next"}
           actions={queueFooterActions()}
           mode="detailed"
           commandMode={commandMode}
@@ -2191,7 +2251,7 @@ export function RootOverlayShell({
                 ? "History · l local, s stream, Esc cancel"
                 : "History"
           }
-          actions={historyFooterActions()}
+          actions={historyFooterActions({ listFocused: overlayListFocused })}
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}

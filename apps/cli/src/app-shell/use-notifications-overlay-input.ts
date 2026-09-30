@@ -52,9 +52,37 @@ export type NotificationsOverlayInputContext = {
   readonly setFilterQuery: (query: string) => void;
   /** Generic picker index shared with the nested action/confirm pickers. */
   readonly setSelectedIndex: (update: (current: number) => number) => void;
+  /** Second matching press inside the confirm window → true and disarms. */
+  readonly pressConfirm: (token: string) => boolean;
+  /** Any non-confirm key drops an armed press-again. */
+  readonly disarmConfirm: () => void;
+  readonly pendingConfirmToken: string | null;
 };
 
 export type NotificationsOverlayInputResult = "handled" | "not-handled";
+
+const DELETE_PREFIX = "notification-delete:";
+const CLEAR_ARCHIVED_TOKEN = "notification-clear-archived";
+
+/** True when the keystroke could advance an armed notifications confirm. */
+function isNotificationConfirmTrigger(input: string): boolean {
+  return input === "d" || input === "C";
+}
+
+/**
+ * The affordance rendered in the inbox footer while a destructive key is
+ * armed. Returns null when nothing is pending so the normal label can show.
+ */
+export function notificationConfirmPrompt(token: string | null): string | null {
+  if (token === null) return null;
+  if (token === CLEAR_ARCHIVED_TOKEN) {
+    return "Press C again to clear archived notices · any other key cancels";
+  }
+  if (token.startsWith(DELETE_PREFIX)) {
+    return "Press d again to delete this notice · any other key cancels";
+  }
+  return null;
+}
 
 /**
  * Top-level Notifications inbox key map. Tab/sort/page/selection are pure state
@@ -68,6 +96,12 @@ export function handleNotificationsOverlayInput(
   ctx: NotificationsOverlayInputContext,
 ): NotificationsOverlayInputResult {
   const selectedKey = ctx.view.selectedRow?.dedupKey ?? null;
+
+  // Any key that cannot advance a confirm drops it — the "any other key
+  // cancels" half of the press-again idiom.
+  if (ctx.pendingConfirmToken !== null && !isNotificationConfirmTrigger(input)) {
+    ctx.disarmConfirm();
+  }
 
   if (key.tab) {
     ctx.setState((state) => ({
@@ -133,16 +167,21 @@ export function handleNotificationsOverlayInput(
     return "handled";
   }
   if (input === "d" && selectedKey) {
-    const nearest = nearestNotificationDedupKey(ctx.view.orderedDedupKeys, selectedKey);
-    ctx.setState((state) => ({ ...state, selectedDedupKey: nearest }));
-    ctx.container.notificationService.delete(selectedKey);
-    ctx.setOverlayStatus("Notification deleted");
+    // Delete is irreversible — press-again, like queue x / library x.
+    if (ctx.pressConfirm(`${DELETE_PREFIX}${selectedKey}`)) {
+      const nearest = nearestNotificationDedupKey(ctx.view.orderedDedupKeys, selectedKey);
+      ctx.setState((state) => ({ ...state, selectedDedupKey: nearest }));
+      ctx.container.notificationService.delete(selectedKey);
+      ctx.setOverlayStatus("Notification deleted");
+    }
     return "handled";
   }
   if (input === "C") {
-    const removed = ctx.container.notificationService.clearArchived();
-    ctx.setState((state) => ({ ...state, page: 0, selectedDedupKey: null }));
-    ctx.setOverlayStatus(removed > 0 ? `Cleared ${removed} archived` : "Nothing to clear");
+    if (ctx.pressConfirm(CLEAR_ARCHIVED_TOKEN)) {
+      const removed = ctx.container.notificationService.clearArchived();
+      ctx.setState((state) => ({ ...state, page: 0, selectedDedupKey: null }));
+      ctx.setOverlayStatus(removed > 0 ? `Cleared ${removed} archived` : "Nothing to clear");
+    }
     return "handled";
   }
   // Digits run the rail's numbered secondary actions. The rail lists them with

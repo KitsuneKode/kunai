@@ -33,6 +33,8 @@ type Harness = {
   view: NotificationsView;
   calls: string[];
   selectedIndexResets: number;
+  /** Mirrors usePressAgainConfirm: token armed on first press, confirmed on second. */
+  armedToken: string | null;
   press: (input: string, key?: Record<string, boolean>) => string;
 };
 
@@ -67,6 +69,7 @@ function harness(options?: {
     view: undefined as unknown as NotificationsView,
     calls,
     selectedIndexResets: 0,
+    armedToken: null,
     press: (input, key = {}) => {
       h.view = buildNotificationsView({
         records,
@@ -93,6 +96,18 @@ function harness(options?: {
         setSelectedIndex: () => {
           h.selectedIndexResets += 1;
         },
+        pressConfirm: (token) => {
+          if (h.armedToken === token) {
+            h.armedToken = null;
+            return true;
+          }
+          h.armedToken = token;
+          return false;
+        },
+        disarmConfirm: () => {
+          h.armedToken = null;
+        },
+        pendingConfirmToken: h.armedToken,
       });
     },
   };
@@ -305,7 +320,7 @@ describe("handleNotificationsOverlayInput", () => {
     expect(h.state.selectedDedupKey).toBe("k2");
   });
 
-  test("d selects the previous row when deleting the final row", () => {
+  test("d arms on first press and deletes on the matching second press", () => {
     const h = harness({
       state: {
         tab: "active",
@@ -316,11 +331,30 @@ describe("handleNotificationsOverlayInput", () => {
     });
 
     h.press("d");
+    expect(h.calls).toEqual([]);
+    expect(h.armedToken).toBe("notification-delete:k4");
+
+    h.press("d");
     expect(h.calls).toEqual(["delete:k4", "status:Notification deleted"]);
     expect(h.state.selectedDedupKey).toBe("k3");
+    expect(h.armedToken).toBeNull();
   });
 
-  test("C resets page and selected identity", () => {
+  test("a non-confirming key cancels an armed notification delete", () => {
+    const h = harness();
+    h.press("d");
+    expect(h.armedToken).not.toBeNull();
+
+    expect(h.press("z")).toBe("not-handled");
+    expect(h.armedToken).toBeNull();
+
+    // The delete is fully cancelled — a later d starts a fresh arm.
+    h.press("d");
+    expect(h.calls).toEqual([]);
+    expect(h.armedToken).toBe("notification-delete:k0");
+  });
+
+  test("C resets page and selected identity on the matching second press", () => {
     const h = harness({
       state: {
         tab: "archive",
@@ -329,6 +363,10 @@ describe("handleNotificationsOverlayInput", () => {
         selectedDedupKey: "k2",
       },
     });
+
+    h.press("C");
+    expect(h.calls).toEqual([]);
+    expect(h.armedToken).toBe("notification-clear-archived");
 
     h.press("C");
     expect(h.calls[0]).toBe("clearArchived");

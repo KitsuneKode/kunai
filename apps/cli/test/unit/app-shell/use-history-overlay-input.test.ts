@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import type { RootHistorySelection } from "@/app-shell/root-history-bridge";
-import { handleHistoryOverlayInput } from "@/app-shell/use-history-overlay-input";
+import {
+  handleHistoryOverlayInput,
+  type HistoryDeletePending,
+} from "@/app-shell/use-history-overlay-input";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import type { HistoryProgress } from "@kunai/storage";
 
@@ -44,6 +47,9 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
       historySelections: [{ titleId: "tmdb:1", entry: history() }],
       historyPickerContext: { projections: new Map([["tmdb:1", dualProjection]]) },
       selectedIndex: 0,
+      // These tests exercise the letter bindings — they only fire with the
+      // list zone focused.
+      listFocused: true,
       sourceChoiceTitleId: null,
       sourcePreference: "auto" as const,
       setSourceChoiceTitleId: () => {},
@@ -99,6 +105,7 @@ describe("handleHistoryOverlayInput", () => {
         historySelections: [{ titleId: "tmdb:1", entry: history() }],
         historyPickerContext: {},
         selectedIndex: 0,
+        listFocused: true,
         sourceChoiceTitleId: null,
         sourcePreference: "auto",
         setSourceChoiceTitleId: () => {},
@@ -189,5 +196,46 @@ describe("handleHistoryOverlayInput", () => {
     expect(handleHistoryOverlayInput("", { leftArrow: true }, ctx)).toBe("handled");
     // Both start from "all": forward lands on the first facet, back wraps to the last.
     expect(filters).toEqual(["anime", "youtube"]);
+  });
+
+  test("letter actions are inert while the filter text zone owns input", () => {
+    // Text zone = the user is typing a filter; q/m/w/x/X must not fire.
+    const { ctx, confirmations } = baseCtx({ listFocused: false });
+    const pending: HistoryDeletePending[] = [];
+    const armedCtx = {
+      ...ctx,
+      setPendingDelete: (next: HistoryDeletePending | null) => {
+        if (next) pending.push(next);
+      },
+    };
+    for (const letter of ["q", "m", "w", "x", "X", "l", "s"]) {
+      expect(handleHistoryOverlayInput(letter, {}, armedCtx)).toBe("not-handled");
+    }
+    expect(pending).toEqual([]);
+    expect(confirmations).toEqual([]);
+  });
+
+  test("pending delete modal still answers y/Esc from the text zone", () => {
+    // The modal owns its own keys regardless of which zone is focused.
+    const calls: string[] = [];
+    handleHistoryOverlayInput(
+      "y",
+      {},
+      {
+        ...baseCtx({ listFocused: false }).ctx,
+        pendingDelete: { kind: "episode", key: "tmdb:1:1:2", label: "Example · S01E02" },
+        container: {
+          historyRepository: {
+            deleteProgressByKey: (key: string) => calls.push(`episode:${key}`),
+            deleteTitle: () => calls.push("title"),
+          },
+        } as never,
+        setPendingDelete: (next) => {
+          if (next === null) calls.push("cleared");
+        },
+        onHistoryMutated: () => calls.push("mutated"),
+      },
+    );
+    expect(calls).toEqual(["episode:tmdb:1:1:2", "cleared", "mutated"]);
   });
 });
