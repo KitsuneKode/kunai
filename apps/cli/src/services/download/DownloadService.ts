@@ -1090,6 +1090,8 @@ export class DownloadService {
         await removeOwned(posterPath);
       }
       if (retained.length > 0) {
+        // The video may already be gone. Keep the completed row so a later
+        // delete can retry the sidecar, and do not report that as success.
         this.emit({
           type: "failed",
           jobId,
