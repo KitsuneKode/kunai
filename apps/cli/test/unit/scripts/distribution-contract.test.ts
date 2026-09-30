@@ -63,6 +63,13 @@ describe("distribution release-asset contract", () => {
 
   test("assertCompleteReleaseAssetSet accepts a complete non-empty set", () => {
     expect(() => assertCompleteReleaseAssetSet(completeSizedAssets())).not.toThrow();
+    expect(() =>
+      assertCompleteReleaseAssetSet([
+        ...completeSizedAssets(),
+        { name: "SHA256SUMS.sig", size: 64 },
+        { name: "SHA256SUMS.archives.sig", size: 64 },
+      ]),
+    ).not.toThrow();
   });
 
   test("rejects a zero-byte required asset", () => {

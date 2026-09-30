@@ -1,5 +1,3 @@
-import { TMDB_API_KEY } from "@/services/catalog/tmdb-proxy";
-
 /**
  * Whether a tracker's authorization flow can even be started, and if not, why.
  *
@@ -187,15 +185,14 @@ export function resolveAniListAuth(env: NodeJS.ProcessEnv = process.env): AniLis
 /**
  * Decide whether TMDB Connect may be offered.
  *
- * TMDB v3 uses a public application key, so Kunai ships one and this is usually
- * available. `tmdb-proxy` owns that literal — it was duplicated in bootstrap,
- * which is how two copies drift. An explicitly empty or placeholder override
- * fails closed rather than falling back, because it means the user set out to
- * configure something and did not finish.
+ * Direct TMDB hosts run only when `KUNAI_TMDB_API_KEY` is set. Kunai does not
+ * ship an application key. An explicitly empty or placeholder override fails
+ * closed, because it means the user set out to configure something and did
+ * not finish.
  */
 export function resolveTmdbAuth(
   env: NodeJS.ProcessEnv = process.env,
-  shippedApiKey: string | null = TMDB_API_KEY,
+  shippedApiKey: string | null = null,
 ): TmdbAuthResolution {
   const override = env.KUNAI_TMDB_API_KEY;
   if (override !== undefined) {

@@ -54,6 +54,7 @@ describe("fetchTmdbJsonCached", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     clearTmdbSessionCache();
+    delete process.env.KUNAI_TMDB_API_KEY;
   });
 
   test("dedupes concurrent requests for the same path", async () => {
@@ -100,7 +101,23 @@ describe("fetchTmdbJsonCached", () => {
     expect(fetchCount).toBe(1);
   });
 
+  test("without an environment key a dead proxy says catalog unavailable and never calls TMDB", async () => {
+    delete process.env.KUNAI_TMDB_API_KEY;
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        urls.push(String(input));
+        throw new Error("getaddrinfo ENOTFOUND");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await expect(fetchTmdbJsonCached("/movie/1")).rejects.toThrow("catalog unavailable");
+    expect(urls.some((url) => url.includes("themoviedb") || url.includes("api_key="))).toBe(false);
+  });
+
   test("skips the proxy after one failure instead of paying a dead request per call", async () => {
+    process.env.KUNAI_TMDB_API_KEY = "user-owned-key";
     // api.videasy.to has gone NXDOMAIN before — while it is dead every
     // proxied attempt is a stalled DNS/TCP miss in front of the real call.
     // Each mirror gets exactly one attempt, then the breaker sends later
@@ -129,6 +146,7 @@ describe("fetchTmdbJsonCached", () => {
   });
 
   test("falls through to the tmdb.org alias when all earlier hosts fail", async () => {
+    process.env.KUNAI_TMDB_API_KEY = "user-owned-key";
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
       async (input: string | URL | Request) => {
@@ -178,6 +196,7 @@ describe("fetchTmdbJsonCached", () => {
   });
 
   test("a 5xx is an availability failure and advances the chain", async () => {
+    process.env.KUNAI_TMDB_API_KEY = "user-owned-key";
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
       async (input: string | URL | Request) => {
@@ -226,5 +245,10 @@ describe("fetchTmdbJsonCached", () => {
     // the proxy is down.
     await expect(fetchTmdbJsonCached("/tv/2")).resolves.toEqual({ ok: true });
     expect(urls.some((url) => !isTmdbApiUrl(url))).toBe(true);
+  });
+
+  test("the shipped TMDB application key is not in the client", async () => {
+    const source = await Bun.file("src/services/catalog/tmdb-proxy.ts").text();
+    expect(source).not.toContain("653bb8af90162bd98fc7ee32bcbbfb3d");
   });
 });

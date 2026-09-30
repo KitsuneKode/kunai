@@ -3,7 +3,7 @@ import { Readable, Writable } from "node:stream";
 
 import type { CoreProviderManifest } from "@kunai/core";
 
-import { handleRpcRequest } from "../src/handler";
+import { handleRpcRequest, warnOnWildcardRelayCors } from "../src/handler";
 import { createPinnedRelayTransport, type RelayNodeRequest } from "../src/pinned-transport";
 import { buildProviderRelayRegistry } from "../src/registry";
 import type { RelayAuthorizationPolicy } from "../src/types";
@@ -1100,3 +1100,25 @@ function nodeResponse(
   }) as unknown as import("node:http").ClientRequest;
   return outgoing;
 }
+
+test("relay CORS has no browser origin until the operator opts in", async () => {
+  const request = new Request("https://relay.example/rpc/allanime", { method: "GET" });
+  const denied = await handleRpcRequest(request, {
+    providerId: "allanime",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+  });
+  expect(denied.headers.get("access-control-allow-origin")).toBeNull();
+
+  const open = await handleRpcRequest(request, {
+    providerId: "allanime",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+    corsOrigins: ["*"],
+  });
+  expect(open.headers.get("access-control-allow-origin")).toBe("*");
+
+  const warnings: string[] = [];
+  warnOnWildcardRelayCors(["*"], (message) => warnings.push(message));
+  expect(warnings[0]).toContain("every browser origin");
+});

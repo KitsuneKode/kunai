@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import { TMDB_API_KEY } from "@/services/catalog/tmdb-proxy";
 import {
   resolveAniListAuth,
   resolveTmdbAuth,
@@ -149,13 +148,13 @@ describe("resolveAniListAuth", () => {
 });
 
 describe("resolveTmdbAuth", () => {
-  test("uses the shipped key when no override is set", () => {
+  test("is unavailable when no environment key is set", () => {
     const resolution = resolveTmdbAuth({});
 
-    expect(resolution.apiKey).toBe(TMDB_API_KEY);
+    expect(resolution.apiKey).toBeNull();
     expect(resolution.availability).toEqual({
-      available: true,
-      apiKeySource: "shipped-fallback",
+      available: false,
+      reason: "api-key-missing",
     });
   });
 

@@ -1,5 +1,6 @@
 import {
   createRelayDevServerOptions,
+  resolveRelayCorsOrigins,
   resolveRelayDevelopmentPolicy,
 } from "../src/relay-runtime-policy";
 
@@ -8,7 +9,7 @@ const policy = resolveRelayDevelopmentPolicy({
   RELAY_HOST: process.env.RELAY_HOST,
   RELAY_TOKEN: process.env.RELAY_TOKEN,
 });
-const options = createRelayDevServerOptions(policy);
+const options = createRelayDevServerOptions(policy, resolveRelayCorsOrigins(process.env));
 
 Bun.serve(options);
 

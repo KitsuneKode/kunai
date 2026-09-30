@@ -81,7 +81,9 @@ If the metadata push fails under branch protection, recover manually with a cont
 
 - CHANGELOG entry via changesets (version PR)
 - Staged `.release/kunai-v*.json` / `.md` until promotion
-- Nine GitHub assets after publish (8 binaries + `SHA256SUMS`)
+- Nine GitHub assets after publish (8 binaries + `SHA256SUMS`), plus `SHA256SUMS.sig` and `SHA256SUMS.archives.sig`
+- The publish job signs both checksum files with `KUNAI_RELEASE_ED25519_PKCS8`. An empty secret fails the job. The private key is not in the repository.
+- Checksums without a valid signature are a failed update. Installers already published before this release still accept a checksum alone; this release's installer requires the signature on the next update.
 - `bun run release:notes:check` when available
 
 ## After release

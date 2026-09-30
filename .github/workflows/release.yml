@@ -251,6 +251,17 @@ jobs:
             apps/cli/dist/bin/SHA256SUMS.archives \
             .candidate-upload/native/
 
+      - name: Sign SHA256SUMS
+        env:
+          KUNAI_RELEASE_ED25519_PKCS8: ${{ secrets.KUNAI_RELEASE_ED25519_PKCS8 }}
+        run: |
+          set -euo pipefail
+          test -n "$KUNAI_RELEASE_ED25519_PKCS8"
+          bun scripts/sign-sha256sums.ts .candidate-upload/native/SHA256SUMS
+          bun scripts/sign-sha256sums.ts .candidate-upload/native/SHA256SUMS.archives
+          cp .candidate-upload/native/SHA256SUMS.sig apps/cli/dist/bin/SHA256SUMS.sig
+          cp .candidate-upload/native/SHA256SUMS.archives.sig apps/cli/dist/bin/SHA256SUMS.archives.sig
+
       - name: Emit candidate gate evidence
         run: |
           set -euo pipefail

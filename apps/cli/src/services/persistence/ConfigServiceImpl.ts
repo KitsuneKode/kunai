@@ -27,6 +27,7 @@ import type {
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
 import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
+import { hydrateOwnedSecrets, scrubOwnedSecretsForDisk } from "./owned-secrets";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
@@ -379,12 +380,15 @@ export class ConfigServiceImpl implements ConfigService {
         if (service.config.videasySessionToken) service.dirtyKeys.add("videasySessionToken");
       }
     }
+    const owned = await hydrateOwnedSecrets(service.config, vault);
+    service.config = owned.config;
     service.repairedConfigFields = repaired;
     if (
       requiresExplicitAnalyticsConsent ||
       repairedAnalyticsIdentity ||
       migratedVideasyAppId ||
       videasyVaultResave ||
+      owned.needsPersist ||
       migratedAnimeDefaults ||
       migratedSeriesDefaults ||
       repaired.length > 0
@@ -403,6 +407,7 @@ export class ConfigServiceImpl implements ConfigService {
    * never lost to a failed migration.
    */
   private async persistConfig(config: KitsuneConfig): Promise<void> {
+    let videasyScrubbed = false;
     if (this.vault && this.vault.backend !== "file") {
       const key = CREDENTIAL_KEYS.videasySessionToken;
       const token = config.videasySessionToken;
@@ -411,17 +416,30 @@ export class ConfigServiceImpl implements ConfigService {
           await this.vault.set(key, token);
           if ((await this.vault.get(key)) === token) {
             this.videasyTokenVaulted = true;
-            return await this.store.save({ ...config, videasySessionToken: "" });
+            videasyScrubbed = true;
           }
         } else if (this.videasyTokenVaulted) {
           await this.vault.delete(key);
           this.videasyTokenVaulted = false;
         }
       } catch {
-        // Vault unreachable — persist plaintext rather than drop the value.
+        // Videasy keeps plaintext when the vault cannot store it.
       }
     }
-    await this.store.save(config);
+    const owned = await scrubOwnedSecretsForDisk(config, this.vault);
+    if (owned.memory !== config) this.config = owned.memory;
+    const disk = videasyScrubbed ? { ...owned.disk, videasySessionToken: "" } : owned.disk;
+    await this.store.save(disk);
+  }
+
+  /** Vault owned secrets on this patch. A failed vault clears them instead of writing them back. */
+  private async scrubOwnedSecretPatch(patch: Partial<KitsuneConfig>): Promise<void> {
+    const merged = { ...this.config, ...patch };
+    const owned = await scrubOwnedSecretsForDisk(merged, this.vault);
+    if (owned.memory !== merged) this.config = owned.memory;
+    if ("wyzieApiKey" in patch) patch.wyzieApiKey = owned.disk.wyzieApiKey;
+    if ("providerRelay" in patch) patch.providerRelay = owned.disk.providerRelay;
+    if ("youtubeMetadata" in patch) patch.youtubeMetadata = owned.disk.youtubeMetadata;
   }
 
   /** Vault the token when this save touches it, and keep it out of the merged patch. */
@@ -1004,6 +1022,9 @@ export class ConfigServiceImpl implements ConfigService {
       const patch = dirtyPatch(this.config, keys);
       try {
         if ("videasySessionToken" in patch) await this.scrubVideasyTokenPatch(patch);
+        if ("wyzieApiKey" in patch || "providerRelay" in patch || "youtubeMetadata" in patch) {
+          await this.scrubOwnedSecretPatch(patch);
+        }
         if (keys.length > 0) await this.store.merge(patch);
         resolve?.();
       } catch (error) {

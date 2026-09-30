@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, verify } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -14,6 +14,39 @@ export function pickChecksum(sumsFile: string, assetName: string): string | null
 
 export function verifyChecksum(actual: string, expected: string): boolean {
   return actual.length > 0 && actual === expected;
+}
+
+/**
+ * Public half of the release signing key. The private half lives in CI
+ * (`KUNAI_RELEASE_ED25519_PKCS8`) and is not in this repository. The previous
+ * published installer still accepts a checksum alone; this build requires the
+ * signature, so the next release must publish `SHA256SUMS.sig`.
+ */
+export const RELEASE_ED25519_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAiJ7jdwwCejDY1gA90xbA+HSJI89eqI79y0qVOrdwiYw=
+-----END PUBLIC KEY-----`;
+
+export function verifyReleaseSignature(
+  message: Uint8Array,
+  signature: Uint8Array | undefined,
+  publicKeyPem = RELEASE_ED25519_PUBLIC_KEY,
+): boolean {
+  if (!signature || signature.byteLength === 0) return false;
+  try {
+    return verify(null, message, publicKeyPem, signature);
+  } catch {
+    return false;
+  }
+}
+
+export function assertReleaseSignature(
+  message: Uint8Array,
+  signature: Uint8Array | undefined,
+  publicKeyPem = RELEASE_ED25519_PUBLIC_KEY,
+): void {
+  if (!verifyReleaseSignature(message, signature, publicKeyPem)) {
+    throw new Error("checksum match without a valid signature is a failure");
+  }
 }
 
 async function sha256(bytes: Uint8Array): Promise<string> {

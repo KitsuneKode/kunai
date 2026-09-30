@@ -407,4 +407,94 @@ describe("ConfigService vault lane (#179)", () => {
     expect(service.videasySessionToken).toBe("keep-me");
     expect(store.written.at(-1)?.videasySessionToken).toBe("keep-me");
   });
+
+  test("a wyzie key migrates into the vault and leaves config.json", async () => {
+    const vault = fakeVault();
+    const store = captureStore({ wyzieApiKey: "fixture-wyzie-key" });
+    const service = await ConfigServiceImpl.load(store, vault);
+
+    expect(service.wyzieApiKey).toBe("fixture-wyzie-key");
+    expect(store.written.at(-1)?.wyzieApiKey).toBe("");
+    expect(vault.store.get(CREDENTIAL_KEYS.wyzieApiKey)).toBe("fixture-wyzie-key");
+  });
+
+  test("a vault that cannot store a wyzie key turns the feature off", async () => {
+    const vault = fakeVault({
+      set: async () => {
+        throw new Error("keyring gone");
+      },
+    });
+    const store = captureStore({ wyzieApiKey: "do-not-write-back" });
+    const service = await ConfigServiceImpl.load(store, vault);
+
+    expect(service.wyzieApiKey).toBe("");
+    expect(store.written.at(-1)?.wyzieApiKey).toBe("");
+    expect(vault.store.has(CREDENTIAL_KEYS.wyzieApiKey)).toBe(false);
+  });
+
+  test("an empty disk field hydrates a youtube po token from the vault", async () => {
+    const vault = fakeVault();
+    vault.store.set(CREDENTIAL_KEYS.youtubePoToken, "fixture-po-token");
+    const store = captureStore({});
+    const service = await ConfigServiceImpl.load(store, vault);
+
+    expect(service.youtubeMetadata.poToken).toBe("fixture-po-token");
+    expect(store.written).toHaveLength(0);
+  });
+});
+
+describe("platform vault spawn", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "kunai-vault-spawn-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("macOS keychain set sends the secret on stdin, not argv", async () => {
+    const spawned: Array<{ argv: readonly string[]; input: string }> = [];
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      env: { KUNAI_CREDENTIAL_BACKEND: "keychain" },
+      which: (cmd) => (cmd === "security" ? "/usr/bin/security" : null),
+      spawn: async (argv, input) => {
+        spawned.push({ argv, input });
+        return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+      },
+    });
+    await vault.set(CREDENTIAL_KEYS.wyzieApiKey, "stdin-secret");
+    const write = spawned.find((call) => call.argv[0] === "security" && call.argv[1] === "-i");
+    expect(write?.argv).toEqual(["security", "-i"]);
+    expect(write?.input).toContain("stdin-secret");
+    expect(write?.argv.join(" ")).not.toContain("stdin-secret");
+  });
+
+  test("Windows uses powershell.exe when it is on PATH", async () => {
+    const spawned: string[][] = [];
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      platform: "win32",
+      env: {},
+      which: (cmd) => (cmd === "powershell.exe" ? "C:\\Windows\\System32\\powershell.exe" : null),
+      spawn: async (argv) => {
+        spawned.push([...argv]);
+        return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+      },
+    });
+    expect(vault.backend).toBe("wincred");
+    await vault.get(CREDENTIAL_KEYS.wyzieApiKey);
+    expect(spawned[0]?.[0]).toBe("C:\\Windows\\System32\\powershell.exe");
+  });
+
+  test("a missing Windows powershell falls back to file without throwing", async () => {
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      platform: "win32",
+      env: {},
+      which: () => null,
+    });
+    expect(vault.backend).toBe("file");
+    await expect(vault.get(CREDENTIAL_KEYS.wyzieApiKey)).resolves.toBeUndefined();
+  });
 });

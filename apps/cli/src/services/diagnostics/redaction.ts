@@ -46,6 +46,8 @@ const SENSITIVE_QUERY_KEYS = new Set([
   // that reach diagnostics — the catalogue proxy sends `api_key` on every
   // metadata call, and account writes add `session_id`.
   "api_key",
+  "po_token",
+  "potoken",
   "session_id",
   "auth",
   "authorization",
@@ -81,7 +83,8 @@ export function redactDiagnosticValue(value: unknown, options: RedactionOptions 
 }
 
 function redactString(value: string, options: RedactionOptions): string {
-  const redacted = redactEmbeddedUrls(redactPath(value, options));
+  const withoutPoToken = value.replace(/\bpo_?token\b\s*[:=]\s*\S+/gi, "po_token=[redacted]");
+  const redacted = redactEmbeddedUrls(redactPath(withoutPoToken, options));
   if (isOpaqueQueryValue(redacted.trim())) return "[redacted]";
   return truncate(redacted, options.maxStringLength ?? DEFAULT_MAX_STRING_LENGTH);
 }
@@ -205,7 +208,13 @@ function isOpaqueIdentifier(value: string): boolean {
   if (/^\d{3,}$/.test(value)) {
     return true;
   }
-  return /^[a-f0-9]{16,}$/i.test(value);
+  if (/^[a-f0-9]{16,}$/i.test(value)) return true;
+  return (
+    value.length >= 20 &&
+    /[A-Z]/.test(value) &&
+    /[a-z]/.test(value) &&
+    /^[A-Za-z0-9_-]+$/.test(value)
+  );
 }
 
 function truncate(value: string, maxLength: number): string {

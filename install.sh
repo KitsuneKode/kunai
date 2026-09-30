@@ -349,6 +349,40 @@ sha256_of() {
 	fi
 }
 
+# A checksum file without a matching ed25519 signature is a failure. The
+# previous published installer still accepts checksums alone; this script is
+# the release that starts requiring SHA256SUMS.sig.
+verify_ed25519_sums() {
+	local sums_file="$1"
+	local sig_url="$2"
+	local sig_file="$3"
+	if ! have openssl; then
+		err "openssl is required to verify the release signature."
+		exit 1
+	fi
+	if ! bounded_download "$sig_url" "$sig_file" "$DOWNLOAD_CHECKSUM_MAX_BYTES" "$(basename "$sig_url")"; then
+		err "A checksum match without a signature is a failure."
+		exit 1
+	fi
+	local pub
+	pub="$(mktemp)"
+	if [[ -n "${KUNAI_RELEASE_ED25519_PUBLIC_KEY:-}" ]]; then
+		printf '%s\n' "$KUNAI_RELEASE_ED25519_PUBLIC_KEY" >"$pub"
+	else
+		cat >"$pub" <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAiJ7jdwwCejDY1gA90xbA+HSJI89eqI79y0qVOrdwiYw=
+-----END PUBLIC KEY-----
+EOF
+	fi
+	if ! openssl pkeyutl -verify -pubin -inkey "$pub" -rawin -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1; then
+		rm -f "$pub"
+		err "SHA256SUMS signature did not verify."
+		exit 1
+	fi
+	rm -f "$pub"
+}
+
 is_retryable_http_status() {
 	local status="$1"
 	[[ "$status" == 408 || "$status" == 429 || "$status" -ge 500 ]]
@@ -1713,6 +1747,8 @@ install_binary() {
 			download_failed_hint "SHA256SUMS.archives"
 			exit 1
 		fi
+	else
+		verify_ed25519_sums "$staged_archive_sums" "$archive_sums.sig" "$staging/SHA256SUMS.archives.sig"
 	fi
 
 	if [[ "$archive_available" == 1 ]]; then
@@ -1744,6 +1780,7 @@ install_binary() {
 		download_failed_hint "SHA256SUMS"
 		exit 1
 	fi
+	verify_ed25519_sums "$staged_sums" "$sums.sig" "$staging/SHA256SUMS.sig"
 	if ! want="$(checksum_for_asset "$staged_sums" "$asset")"; then
 		err "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries; the release is incomplete."
 		exit 1

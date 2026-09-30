@@ -21,6 +21,10 @@ export const CREDENTIAL_KEYS = {
   anilistTokens: "anilist.tokens",
   tmdbTokens: "tmdb.tokens",
   videasySessionToken: "videasy.sessionToken",
+  wyzieApiKey: "wyzie.apiKey",
+  providerRelayToken: "relay.token",
+  youtubePoToken: "youtube.poToken",
+  youtubeCookiesFromBrowser: "youtube.cookiesFromBrowser",
 } as const;
 
 export type CredentialVaultDeps = {

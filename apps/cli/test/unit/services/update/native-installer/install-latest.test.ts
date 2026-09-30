@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -20,7 +20,11 @@ import {
   writeInstallManifestUnderActivation,
 } from "@/services/update/install-manifest";
 import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
-import { installLatest } from "@/services/update/native-installer/install-latest";
+import type { FetchLike } from "@/services/update/native-installer/download";
+import {
+  installLatest as installLatestUnchecked,
+  type InstallLatestOptions,
+} from "@/services/update/native-installer/install-latest";
 import {
   activationLockPath,
   getInstallLayoutPaths,
@@ -37,6 +41,36 @@ import {
 } from "@/services/update/platform-assets";
 
 import { createReleaseArchive } from "../../../../../scripts/build-release-archives";
+
+const releaseTestKeys = generateKeyPairSync("ed25519");
+const releaseTestPublicKey = releaseTestKeys.publicKey.export({
+  type: "spki",
+  format: "pem",
+}) as string;
+
+function signChecksumFetches(fetchImpl: FetchLike): FetchLike {
+  return async (input, init) => {
+    const url = String(input);
+    if (url.endsWith(".sig")) {
+      const sums = await fetchImpl(url.slice(0, -".sig".length), init);
+      const signature = sign(
+        null,
+        new Uint8Array(await sums.arrayBuffer()),
+        releaseTestKeys.privateKey,
+      );
+      return new Response(signature);
+    }
+    return fetchImpl(input, init);
+  };
+}
+
+function installLatest(options: InstallLatestOptions) {
+  return installLatestUnchecked({
+    ...options,
+    releasePublicKeyPem: releaseTestPublicKey,
+    fetchImpl: options.fetchImpl ? signChecksumFetches(options.fetchImpl) : options.fetchImpl,
+  });
+}
 import { waitUntil } from "../../../../support/wait-until";
 
 const made: string[] = [];

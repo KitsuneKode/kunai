@@ -1,3 +1,4 @@
+import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -224,10 +225,35 @@ function buildResponse(route: ReleaseFixtureRoute): Response {
   return new Response(bytes, { status, headers });
 }
 
+const releaseTestKeys = generateKeyPairSync("ed25519");
+
+/** Public half used by install.sh tests. The private half never leaves this process. */
+export const RELEASE_TEST_PUBLIC_KEY = releaseTestKeys.publicKey.export({
+  type: "spki",
+  format: "pem",
+}) as string;
+
+function signedChecksumRoutes(
+  routes: Readonly<Record<string, ReleaseFixtureRoute>>,
+): Record<string, ReleaseFixtureRoute> {
+  const signed: Record<string, ReleaseFixtureRoute> = { ...routes };
+  for (const [path, route] of Object.entries(routes)) {
+    const status = route.status ?? 200;
+    if (status !== 200) continue;
+    if (!path.endsWith("/SHA256SUMS") && !path.endsWith("/SHA256SUMS.archives")) continue;
+    const signaturePath = `${path}.sig`;
+    if (signed[signaturePath]) continue;
+    const body = toBytes(route.body);
+    signed[signaturePath] = { body: sign(null, body, releaseTestKeys.privateKey) };
+  }
+  return signed;
+}
+
 export async function withReleaseFixture(
   routes: Readonly<Record<string, ReleaseFixtureRoute>>,
   run: (baseUrl: string, evidence: ReleaseFixtureEvidence) => Promise<void>,
 ): Promise<void> {
+  const signedRoutes = signedChecksumRoutes(routes);
   const hitCounts = new Map<string, number>();
   const requests: string[] = [];
 
@@ -237,7 +263,7 @@ export async function withReleaseFixture(
     fetch(request) {
       const pathname = new URL(request.url).pathname;
       requests.push(pathname);
-      const route = routes[pathname];
+      const route = signedRoutes[pathname];
       if (!route) {
         return new Response("not found", { status: 404 });
       }
