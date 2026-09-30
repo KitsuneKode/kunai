@@ -126,8 +126,7 @@ export type FixtureReleaseTree = {
 };
 
 function spkiPem(key: KeyObject): string {
-  const exported = key.export({ type: "spki", format: "pem" });
-  return exported instanceof Uint8Array ? new TextDecoder().decode(exported) : exported;
+  return key.export({ type: "spki", format: "pem" });
 }
 
 /** Build a mock GitHub Releases tree (same layout as prepare-fixture.sh). */
