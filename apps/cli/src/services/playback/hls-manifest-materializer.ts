@@ -6,6 +6,7 @@ import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import { streamNeedsHlsRelay } from "@/infra/player/hls-relay";
 import {
   absolutizeHostRootHlsManifest,
+  fetchGuardedStreamTarget,
   isHlsPlaylistUrl,
   shouldMaterializeHlsManifest,
 } from "@kunai/providers";
@@ -43,6 +44,7 @@ export type HlsMaterializeSkipReason =
   | "relay-owned"
   | "fetch-failed"
   | "http-error"
+  | "blocked-target"
   | "not-needed";
 
 export function isTerminalHlsHttpStatus(status: number | undefined): boolean {
@@ -74,13 +76,28 @@ export async function materializeHlsManifestForPlayback(
     : controller.signal;
   let manifestText: string;
   try {
-    const response = await fetch(manifestUrl, {
-      headers: {
-        accept: "*/*",
-        ...headers,
+    const outcome = await fetchGuardedStreamTarget({
+      fetchImpl: fetch,
+      url: manifestUrl,
+      init: {
+        headers: {
+          accept: "*/*",
+          ...headers,
+        },
       },
       signal: fetchSignal,
     });
+    if (outcome.kind === "blocked") {
+      // A private or non-http target is terminal, not a skip — letting mpv
+      // take the direct URL would fetch the very address the guard rejected.
+      onSkipped?.("blocked-target", outcome.reason);
+      return null;
+    }
+    if (outcome.kind === "timeout") {
+      onSkipped?.("fetch-failed", "manifest fetch aborted");
+      return null;
+    }
+    const response = outcome.response;
     if (!response.ok) {
       onSkipped?.("http-error", `HTTP ${response.status}`, response.status);
       return null;

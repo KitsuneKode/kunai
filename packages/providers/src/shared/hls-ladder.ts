@@ -2,6 +2,7 @@ import type { ProviderFetchPort } from "@kunai/types";
 
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
 import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
+import { fetchGuardedStreamTarget } from "./stream-reachability";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 
 export type HlsLadderVariant = {
@@ -36,7 +37,7 @@ export type HlsRenditionTrack = {
  * reject expansion fetches yet still play.
  */
 export type HlsMasterProbe = {
-  readonly kind: "ok" | "http-error" | "not-master" | "network";
+  readonly kind: "ok" | "http-error" | "not-master" | "network" | "blocked-target";
   readonly httpStatus?: number;
 };
 
@@ -98,10 +99,24 @@ export async function expandHlsMasterInventory(
   });
 
   try {
-    const response = await options.fetch(masterUrl, {
-      headers: headers ?? {},
+    // The master URL is provider markup, not a vetted candidate yet — the same
+    // SSRF blocklist the probe applies has to gate this fetch too, or a page
+    // could aim the expansion at a link-local or LAN address.
+    const outcome = await fetchGuardedStreamTarget({
+      fetchImpl: options.fetch,
+      url: masterUrl,
+      init: {
+        headers: headers ?? {},
+      },
       signal: signal ?? AbortSignal.timeout(12_000),
     });
+    if (outcome.kind === "blocked") {
+      return empty({ kind: "blocked-target" });
+    }
+    if (outcome.kind === "timeout") {
+      return empty({ kind: "network" });
+    }
+    const response = outcome.response;
     if (!response.ok) {
       return empty({ kind: "http-error", httpStatus: response.status });
     }

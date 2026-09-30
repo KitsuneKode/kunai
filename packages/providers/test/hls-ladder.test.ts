@@ -37,6 +37,39 @@ describe("hls ladder", () => {
     expect(variants.map((variant) => variant.qualityLabel)).toEqual(["1080p", "720p", "360p"]);
   });
 
+  test("expandHlsMasterInventory refuses a private master URL without fetching", async () => {
+    let called = false;
+    const inventory = await expandHlsMasterInventory({
+      masterUrl: "http://169.254.169.254/master.m3u8",
+      // SAFETY: deliberately partial fetch stub — the test only needs call tracking.
+      fetch: (async () => {
+        called = true;
+        return new Response(MASTER, { status: 200 });
+      }) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    expect(called).toBe(false);
+    expect(inventory.probe.kind).toBe("blocked-target");
+    expect(inventory.variants).toHaveLength(1);
+    expect(inventory.variants[0]?.qualityLabel).toBe("auto");
+  });
+
+  test("expandHlsMasterInventory refuses a master redirect into a private target", async () => {
+    const urls: string[] = [];
+    const inventory = await expandHlsMasterInventory({
+      masterUrl: "https://cdn.example/master.m3u8",
+      // SAFETY: deliberately partial fetch stub — the test only needs URL capture.
+      fetch: (async (url: string | URL | Request) => {
+        urls.push(String(url));
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://127.0.0.1:7000/internal.m3u8" },
+        });
+      }) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    expect(urls).toEqual(["https://cdn.example/master.m3u8"]);
+    expect(inventory.probe.kind).toBe("blocked-target");
+  });
+
   test("expandHlsMasterInventory falls back to auto on media playlist", async () => {
     const { variants } = await expandHlsMasterInventory({
       masterUrl: "https://cdn.example/index.m3u8",

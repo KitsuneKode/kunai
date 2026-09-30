@@ -25,6 +25,7 @@ import {
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
 import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
+import { fetchGuardedStreamTarget } from "@kunai/providers";
 import {
   buildYoutubeYtdlProfile,
   getYoutubeProviderConfig,
@@ -1536,10 +1537,23 @@ export class DownloadService {
     }
     try {
       const policy = buildDownloadStreamPolicy(job.headers);
-      const res = await fetch(job.subtitleUrl, {
-        headers: policy.headers,
+      const outcome = await fetchGuardedStreamTarget({
+        fetchImpl: fetch,
+        url: job.subtitleUrl,
+        init: { headers: policy.headers },
         signal: AbortSignal.timeout(15_000),
       });
+      if (outcome.kind === "blocked") {
+        return buildRepairableSidecarResult(
+          job,
+          "subtitle",
+          `subtitle target blocked: ${outcome.reason}`,
+        );
+      }
+      if (outcome.kind === "timeout") {
+        return buildRepairableSidecarResult(job, "subtitle", "subtitle request timed out");
+      }
+      const res = outcome.response;
       if (!res.ok) {
         return buildRepairableSidecarResult(
           job,
