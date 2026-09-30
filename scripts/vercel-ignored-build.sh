@@ -5,11 +5,13 @@
 #
 # Configure per project in Settings → Git → Ignored Build Step:
 #
-#   # kunai-analytics (root dir apps/analytics-ingest)
+#   # kunai-analytics (root dir apps/analytics-ingest) — its vercel.json also
+#   #   sets git.deploymentEnabled to main-only, so previews never queue.
 #   bash "$(git rev-parse --show-toplevel)/scripts/vercel-ignored-build.sh" \
 #     apps/analytics-ingest package.json bun.lock
 #
-#   # kunai-relay (root dir apps/relay-server)
+#   # kunai-relay (root dir apps/relay-server) — git deployments are disabled
+#   #   in its vercel.json entirely; deploy it manually when it changes.
 #   bash "$(git rev-parse --show-toplevel)/scripts/vercel-ignored-build.sh" \
 #     apps/relay-server packages/relay packages/providers packages/core \
 #     packages/types package.json bun.lock
