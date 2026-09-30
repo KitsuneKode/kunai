@@ -487,7 +487,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
               input,
               context: {
                 ...context,
-                signal: cycleContext.signal ?? context.signal,
+                signal: candidateContext.signal ?? context.signal,
               },
               cachePolicy,
               sourceDataPromise,

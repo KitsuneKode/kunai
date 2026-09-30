@@ -32,9 +32,9 @@ export function buildChapterSegmentsFromTiming(
   const markers: Array<{ startMs: number; endMs: number; title: string }> = [];
 
   for (const recap of timing.recap ?? []) {
-    if (typeof recap?.startMs === "number" && recap.startMs >= 0) {
+    if (recap?.startMs != null && recap.startMs >= 0) {
       const endMs =
-        typeof recap?.endMs === "number" && recap.endMs > recap.startMs
+        recap.endMs != null && recap.endMs > recap.startMs
           ? recap.endMs
           : recap.startMs + 60_000;
       markers.push({
@@ -46,9 +46,9 @@ export function buildChapterSegmentsFromTiming(
   }
 
   for (const intro of timing.intro ?? []) {
-    if (typeof intro?.startMs === "number" && intro.startMs >= 0) {
+    if (intro?.startMs != null && intro.startMs >= 0) {
       const endMs =
-        typeof intro?.endMs === "number" && intro.endMs > intro.startMs
+        intro.endMs != null && intro.endMs > intro.startMs
           ? intro.endMs
           : intro.startMs + 90_000;
       markers.push({
@@ -60,9 +60,9 @@ export function buildChapterSegmentsFromTiming(
   }
 
   for (const credits of timing.credits ?? []) {
-    if (typeof credits?.startMs === "number" && credits.startMs >= 0) {
+    if (credits?.startMs != null && credits.startMs >= 0) {
       const endMs =
-        typeof credits?.endMs === "number" && credits.endMs > credits.startMs
+        credits.endMs != null && credits.endMs > credits.startMs
           ? credits.endMs
           : credits.startMs + 90_000;
       markers.push({
@@ -74,9 +74,9 @@ export function buildChapterSegmentsFromTiming(
   }
 
   for (const preview of timing.preview ?? []) {
-    if (typeof preview?.startMs === "number" && preview.startMs >= 0) {
+    if (preview?.startMs != null && preview.startMs >= 0) {
       const endMs =
-        typeof preview?.endMs === "number" && preview.endMs > preview.startMs
+        preview.endMs != null && preview.endMs > preview.startMs
           ? preview.endMs
           : preview.startMs + 30_000;
       markers.push({

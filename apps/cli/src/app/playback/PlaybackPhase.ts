@@ -3205,7 +3205,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 new Set(
                   streams
                     .map((s) => s.sourceId)
-                    .filter((id): id is string => typeof id === "string" && id.length > 0),
+                    .filter((id): id is string => id != null && id.length > 0),
                 ),
               );
 
