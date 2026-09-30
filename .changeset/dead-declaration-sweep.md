@@ -1,5 +1,5 @@
 ---
-"@kunai/cli": patch
+"@kitsunekode/kunai": patch
 ---
 
 chore: remove declarations with no production reader (#474)

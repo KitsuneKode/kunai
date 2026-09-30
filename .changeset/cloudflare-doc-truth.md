@@ -1,5 +1,5 @@
 ---
-"@kunai/cli": patch
+"@kitsunekode/kunai": patch
 ---
 
 docs(dossiers): describe the Cloudflare strategy that shipped
