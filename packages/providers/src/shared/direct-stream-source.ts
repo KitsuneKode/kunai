@@ -11,6 +11,7 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
+import { isRelayRefusalError } from "@kunai/types";
 
 import { ProviderHttpError } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "./catalog-id";
@@ -74,7 +75,12 @@ export interface DirectStreamSourceOptions {
   readonly input: ProviderResolveInput;
   readonly context: ProviderRuntimeContext;
   readonly fetchPayload: (params: DirectStreamFetchParams) => Promise<DirectStreamPayload | null>;
-  /** When true, probe the selected stream before returning (resolve-gate). */
+  /**
+   * Probe ranked candidates before reporting success (resolve-gate). On by
+   * default — a provider must never report success for a stream it has not
+   * probed. Set `false` only with a documented runtime reason (see the
+   * exemption list in `test/provider-resolve-gate-coverage.test.ts`).
+   */
   readonly resolveGateProbe?: boolean;
   readonly resolveGateTimeoutMs?: number;
 }
@@ -93,7 +99,15 @@ const RESOLVE_GATE_MAX_PROBES = 3;
 export async function resolveDirectStreamSource(
   options: DirectStreamSourceOptions,
 ): Promise<ProviderResolveResult> {
-  const { providerId, host, label, input, context, fetchPayload, resolveGateProbe } = options;
+  const {
+    providerId,
+    host,
+    label,
+    input,
+    context,
+    fetchPayload,
+    resolveGateProbe = true,
+  } = options;
 
   if (input.mediaKind !== "movie" && input.mediaKind !== "series") {
     return createExhaustedResult(input, context, providerId, {
@@ -372,13 +386,15 @@ export async function resolveDirectStreamSource(
     // A ProviderHttpError already carries the classified code and retryability
     // (e.g. 429 → rate-limited, 403 → blocked); collapsing it to network-error
     // would retry-storm throttled endpoints and mis-report them as generic
-    // network failures.
+    // network failures. A relay refusal is the user's own relay declining the
+    // request — a terminal block, likewise not transport noise.
+    const refusal = isRelayRefusalError(error);
     const httpError = error instanceof ProviderHttpError ? error : undefined;
     const failure: ProviderFailure = {
       providerId,
-      code: httpError?.code ?? (timedOut ? "timeout" : "network-error"),
+      code: httpError?.code ?? (refusal ? "blocked" : timedOut ? "timeout" : "network-error"),
       message: error instanceof Error ? error.message : `${label} resolution failed`,
-      retryable: httpError?.retryable ?? true,
+      retryable: httpError?.retryable ?? !refusal,
       at: context.now(),
     };
     failures.push(failure);

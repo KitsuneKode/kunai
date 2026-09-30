@@ -17,6 +17,11 @@ test("relay app health route reports configured providers", async () => {
   expect(response.status).toBe(200);
   expect(body).toMatchObject({ ok: true, service: "kunai-relay" });
   expect(body.providers).toBeGreaterThan(0);
+  // `kunai doctor` diffs this list against the client's relay-capable roster.
+  expect(body.providerIds).toBeArray();
+  expect(body.providerIds.length).toBe(body.providers);
+  expect(body.providerIds).toContain("anidb");
+  expect(body.providerIds).not.toContain("youtube");
 });
 
 test("relay app forwards allowlisted provider RPC requests", async () => {

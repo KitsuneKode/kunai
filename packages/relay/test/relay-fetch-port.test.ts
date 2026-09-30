@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 
+import { isRelayRefusalError, RELAYED_RESPONSE_HEADER, RelayRefusalError } from "@kunai/types";
+
 import { createRelayFetchPort } from "../src/create-relay-fetch-port";
 import { handleRpcRequest, relayError } from "../src/handler";
 import { normalizeRelayBaseUrl } from "../src/normalize-relay-base-url";
@@ -118,8 +120,11 @@ test("createRelayFetchPort falls back to direct when relay network fails", async
 test.each([
   ["relay-not-configured", 503],
   ["unauthorized", 401],
+  ["unknown-provider", 404],
+  ["host-not-allowed", 403],
+  ["upstream-timeout", 504],
 ] as const)(
-  "createRelayFetchPort falls back to direct for relay authorization failure %s",
+  "createRelayFetchPort falls back to direct for relay refusal %s",
   async (code, status) => {
     const calls: string[] = [];
     const port = createRelayFetchPort({
@@ -131,7 +136,7 @@ test.each([
           return relayError(
             code satisfies RelayErrorCode,
             "allanime",
-            "Relay authorization failed",
+            "Relay refused the request",
             status,
           );
         }
@@ -141,8 +146,57 @@ test.each([
 
     const response = await port.fetch("https://api.allanime.day/api");
 
+    // The fallback answer is the upstream's own response — it must not carry
+    // the relayed marker, or providers would treat a direct fetch as final.
     expect(await response.json()).toEqual({ direct: true });
+    expect(response.headers.get(RELAYED_RESPONSE_HEADER)).toBeNull();
     expect(calls).toEqual(["https://relay.example/rpc/allanime", "https://api.allanime.day/api"]);
+  },
+);
+
+test.each([
+  ["relay-not-configured", 503],
+  ["unknown-provider", 404],
+  ["host-not-allowed", 403],
+  ["upstream-timeout", 504],
+] as const)(
+  "createRelayFetchPort throws a typed refusal when fallback is off (%s)",
+  async (code, status) => {
+    const calls: string[] = [];
+    const port = createRelayFetchPort({
+      relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: false },
+      registry,
+      async fetch(input) {
+        calls.push(String(input));
+        if (new URL(String(input)).origin === "https://relay.example") {
+          return relayError(
+            code satisfies RelayErrorCode,
+            "allanime",
+            "Relay refused the request",
+            status,
+          );
+        }
+        return Response.json({ direct: true });
+      },
+    });
+
+    // fallbackToDirect: false means the user pinned relay-only traffic — the
+    // refusal must surface as a thrown, typed error rather than a returned
+    // response, because the refusal's status is not the upstream's verdict:
+    // a provider that saw it as a response could cache `unknown-provider` 404
+    // as missing content.
+    const error = await port
+      .fetch("https://api.allanime.day/api")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(RelayRefusalError);
+    if (!isRelayRefusalError(error)) throw new Error("expected a RelayRefusalError");
+    expect(error.relayCode).toBe(code);
+    expect(error.providerId).toBe("allanime");
+    expect(error.status).toBe(status);
+    expect(error.code).toBe("RELAY_REFUSAL");
+    expect(error.name).toBe("RelayRefusalError");
+    expect(calls).toEqual(["https://relay.example/rpc/allanime"]);
   },
 );
 
@@ -167,7 +221,26 @@ test("createRelayFetchPort does not fall back for an unmarked upstream HTTP fail
 
   const response = await port.fetch("https://api.allanime.day/api");
 
+  // No error header means the upstream answered: the status is its verdict,
+  // relayed so providers may not re-ask the same URL direct.
   expect(response.status).toBe(503);
+  expect(response.headers.get(RELAYED_RESPONSE_HEADER)).toBe("1");
+  expect(calls).toEqual(["https://relay.example/rpc/allanime"]);
+});
+
+test("createRelayFetchPort rethrows transport failure when fallback is off", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: false },
+    registry,
+    async fetch(input) {
+      calls.push(String(input));
+      throw new Error("relay down");
+    },
+  });
+
+  await expect(port.fetch("https://api.allanime.day/api")).rejects.toThrow("relay down");
+  // A disabled fallback must never silently become a direct request.
   expect(calls).toEqual(["https://relay.example/rpc/allanime"]);
 });
 

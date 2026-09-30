@@ -18,6 +18,8 @@ export * from "./miruro/manifest";
 export * from "./rivestream/direct";
 export * from "./rivestream/manifest";
 export * from "./catalogs";
+export * from "./production";
+export * from "./production-modules";
 export * from "./shared";
 export * from "./utils/m3u8-parser";
 export * from "./utils/variant-tree";

@@ -6,6 +6,7 @@ import {
   type ProviderEngine,
   type ProviderPriorityInput,
 } from "@kunai/core";
+import { PRODUCTION_PROVIDER_LOADERS } from "@kunai/providers/production";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import { ProviderCacheRepository } from "@kunai/storage";
 
@@ -31,58 +32,21 @@ export type ProviderBootstrap = {
 };
 
 /**
- * The single production provider list. Exported so contract tests can prove the
- * configured lane defaults are actually registered without building a second
- * registry that could drift from this one.
+ * The single production provider list, loaded through the shared
+ * `PRODUCTION_PROVIDER_LOADERS` roster in `@kunai/providers` — the same map
+ * the relay server and the status sweep consume, so the three cannot drift
+ * apart again. Exported so contract tests can prove the configured lane
+ * defaults are actually registered without building a second registry that
+ * could drift from this one.
  */
 export async function loadProductionProviderModules(
   providerPriority: ProviderPriorityInput,
 ): Promise<readonly CoreProviderModule[]> {
-  const [
-    { videasyProviderModule },
-    { vidlinkProviderModule },
-    { vidrockProviderModule },
-    { rivestreamProviderModule },
-    { movyProviderModule },
-    { allmangaProviderModule },
-    { anidbProviderModule },
-    { hianimeProviderModule },
-    { animeggProviderModule },
-    { kickassanimeProviderModule },
-    { miruroProviderModule },
-    { youtubeProviderModule },
-  ] = await Promise.all([
-    import("@kunai/providers/videasy"),
-    import("@kunai/providers/vidlink"),
-    import("@kunai/providers/vidrock"),
-    import("@kunai/providers/rivestream"),
-    import("@kunai/providers/movy"),
-    import("@kunai/providers/allmanga"),
-    import("@kunai/providers/anidb"),
-    import("@kunai/providers/hianime"),
-    import("@kunai/providers/animegg"),
-    import("@kunai/providers/kickassanime"),
-    import("@kunai/providers/miruro"),
-    import("@kunai/providers/youtube"),
-  ]);
-
-  return orderProviderModulesByPriority(
-    [
-      videasyProviderModule,
-      vidlinkProviderModule,
-      vidrockProviderModule,
-      rivestreamProviderModule,
-      movyProviderModule,
-      anidbProviderModule,
-      allmangaProviderModule,
-      hianimeProviderModule,
-      miruroProviderModule,
-      animeggProviderModule,
-      kickassanimeProviderModule,
-      youtubeProviderModule,
-    ],
-    providerPriority,
+  const modules = await Promise.all(
+    Object.values(PRODUCTION_PROVIDER_LOADERS).map((load) => load()),
   );
+
+  return orderProviderModulesByPriority(modules, providerPriority);
 }
 
 export async function bootstrapProviders(

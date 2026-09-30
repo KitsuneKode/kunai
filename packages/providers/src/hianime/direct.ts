@@ -17,7 +17,7 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
-import { ProviderHttpError } from "@kunai/types";
+import { isRelayRefusalError, ProviderHttpError } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { formatAnimeEpisodeLabel } from "../shared/anime-metadata";
@@ -665,18 +665,23 @@ export const hianimeProviderModule: CoreProviderModule = {
       }
       const message = error instanceof Error ? error.message : String(error);
       const gone = /hianime fetch HTTP (404|410)\b/.test(message);
+      /* A relay refusal is the user's own relay declining the request — a
+       * terminal block, not the upstream's verdict and not a transport fault
+       * worth retrying. */
+      const refusal = isRelayRefusalError(error);
       /* A status-bearing error carries its own verdict — a bare 403 whose body
        * never said "cloudflare" is still blocked, and a 429 is a rate limit,
        * not a retryable network blip (#458). */
       const structured = error instanceof ProviderHttpError ? error : undefined;
       let code: ProviderFailure["code"] = structured && !gone ? structured.code : "network-error";
-      if (gone) code = "not-found";
+      if (refusal) code = "blocked";
+      else if (gone) code = "not-found";
       else if (/cloudflare|just a moment/i.test(message)) code = "blocked";
       const failure: ProviderFailure = {
         providerId: HIANIME_PROVIDER_ID,
         code,
         message,
-        retryable: gone ? false : (structured?.retryable ?? true),
+        retryable: gone || refusal ? false : (structured?.retryable ?? true),
         at: context.now(),
       };
       failures.push(failure);

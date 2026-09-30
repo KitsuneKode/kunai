@@ -62,7 +62,6 @@ export function resolveVidrockDirect(
     label: "VidRock",
     input,
     context,
-    resolveGateProbe: true,
     fetchPayload: async ({ tmdbId, season, episode, input: resolveInput, context: ctx }) => {
       const path =
         resolveInput.mediaKind === "movie"

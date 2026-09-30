@@ -22,6 +22,7 @@ import type {
   StreamCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { isRelayRefusalError } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
@@ -233,7 +234,14 @@ export const animeggProviderModule: CoreProviderModule = {
     try {
       slug = await locateAnimeggShow(input.title, context, events);
     } catch (error) {
-      return fail("network-error", `AnimeGG search failed: ${describe(error)}`, true);
+      // A relay refusal is the user's own relay declining the request — a
+      // terminal block, not a transport fault to retry.
+      const refusal = isRelayRefusalError(error);
+      return fail(
+        refusal ? "blocked" : "network-error",
+        `AnimeGG search failed: ${describe(error)}`,
+        !refusal,
+      );
     }
     if (!slug) {
       return fail("not-found", `AnimeGG has no show that is clearly "${input.title.title}"`);
@@ -247,7 +255,12 @@ export const animeggProviderModule: CoreProviderModule = {
     try {
       tabs = parseAnimeggEpisodeTabs(await fetchText(episodeUrl, context));
     } catch (error) {
-      return fail("network-error", `AnimeGG episode page failed: ${describe(error)}`, true);
+      const refusal = isRelayRefusalError(error);
+      return fail(
+        refusal ? "blocked" : "network-error",
+        `AnimeGG episode page failed: ${describe(error)}`,
+        !refusal,
+      );
     }
     const picked = selectAnimeggTab(tabs, audio.catalogMode);
     if (!picked) {
@@ -268,7 +281,12 @@ export const animeggProviderModule: CoreProviderModule = {
         await fetchText(animeggEmbedPath(picked.tab.embedId), context),
       );
     } catch (error) {
-      return fail("network-error", `AnimeGG embed failed: ${describe(error)}`, true);
+      const refusal = isRelayRefusalError(error);
+      return fail(
+        refusal ? "blocked" : "network-error",
+        `AnimeGG embed failed: ${describe(error)}`,
+        !refusal,
+      );
     }
 
     const sourceId = `source:${ANIMEGG_PROVIDER_ID}:${picked.tab.mirror.toLowerCase()}:${presentation}`;

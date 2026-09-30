@@ -28,7 +28,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import { providerHttpErrorForStatus } from "@kunai/types";
+import { isRelayRefusalError, providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { readJsonObjectBody } from "../shared/json-body";
@@ -1549,12 +1549,14 @@ async function fetchWingsdatabaseSeed(
           if (!body?.seed) throw new Error("seed payload missing seed");
           return { apiBase, seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
         } catch (error) {
-          // Three different causes reach this catch and only one is host
+          // Four different causes reach this catch and only one is host
           // evidence. A loser aborted because a peer already won says nothing
           // about this host, and neither does the *caller* walking away — that
           // used to poison both hosts for five minutes on every cancelled
-          // playback. A genuine pre-winner failure or timeout is real evidence.
-          if (!won && !effectiveSignal?.aborted) {
+          // playback. A relay refusal is the user's own relay declining the
+          // request — config evidence, not host evidence. A genuine pre-winner
+          // failure or timeout is real evidence.
+          if (!won && !effectiveSignal?.aborted && !isRelayRefusalError(error)) {
             wingsHostFailureCache.set(apiBase, true, WINGS_HOST_FAILURE_PENALTY_MS);
           }
           throw error;
@@ -1860,14 +1862,19 @@ async function tryVidkingServer(opts: {
           // ProviderAttemptTimeoutError. A bare `aborted` check cannot, so it
           // would also discard genuine timeout evidence that feeds the
           // transient cooldown.
-          endpointHealth.recordFailure(server, {
-            class: isVideasyTimeoutError(error) ? "transient" : "server-error",
-            titleId,
-          });
+          // A relay refusal is not server evidence either — recording it would
+          // quarantine a healthy server for the user's relay policy.
+          const refusal = isRelayRefusalError(error);
+          if (!refusal) {
+            endpointHealth.recordFailure(server, {
+              class: isVideasyTimeoutError(error) ? "transient" : "server-error",
+              titleId,
+            });
+          }
           const timedOut = isVideasyTimeoutError(error);
           const f: ProviderFailure = {
             providerId: VIDEOSY_PROVIDER_ID,
-            code: timedOut ? "timeout" : "parse-failed",
+            code: refusal ? "blocked" : timedOut ? "timeout" : "parse-failed",
             message: error instanceof Error ? error.message : "VidKing payload decode failed",
             retryable: false,
             at: context.now(),

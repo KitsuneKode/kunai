@@ -1,20 +1,12 @@
-import {
-  allmangaProviderModule,
-  anidbProviderModule,
-  miruroProviderModule,
-  rivestreamProviderModule,
-  videasyProviderModule,
-  vidlinkProviderModule,
-} from "@kunai/providers";
+import { PRODUCTION_PROVIDER_MODULES } from "@kunai/providers/production-modules";
 import { buildProviderRelayRegistry } from "@kunai/relay";
 
-export const relayProviderModules = [
-  videasyProviderModule,
-  vidlinkProviderModule,
-  rivestreamProviderModule,
-  allmangaProviderModule,
-  anidbProviderModule,
-  miruroProviderModule,
-] as const;
-
-export const relayRegistry = buildProviderRelayRegistry(relayProviderModules);
+/**
+ * Every production provider whose manifest declares `relayProfile` registers
+ * here automatically. This used to be a hand-picked list, which is how a relay
+ * deployed with six providers answered `unknown-provider` for the six the CLI
+ * had already grown to — a refusal the client then misread as an upstream
+ * verdict. `buildProviderRelayRegistry` does the manifest filtering, so the
+ * deployment roster moves with `PRODUCTION_PROVIDER_MODULES` and nothing else.
+ */
+export const relayRegistry = buildProviderRelayRegistry(PRODUCTION_PROVIDER_MODULES);

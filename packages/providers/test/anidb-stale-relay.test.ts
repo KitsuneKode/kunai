@@ -1,44 +1,83 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { RELAYED_RESPONSE_HEADER, type ProviderRuntimeContext } from "@kunai/types";
+import {
+  isRelayRefusalError,
+  RELAYED_RESPONSE_HEADER,
+  RelayRefusalError,
+  type ProviderRuntimeContext,
+  type RelayErrorCode,
+} from "@kunai/types";
 
 import { clearAnidbCachesForTest, fetchAnidbEpisodeCatalog } from "../src/anidb/direct";
 
 /**
  * A relay deployed before `anidb` existed answers its RPC route with a 404
- * `unknown-provider` of its own. Read as anidb.app's verdict that took the
- * whole anime lane down: the catalogue was marked permanently missing, the miss
- * was cached, and every later resolve returned "no episodes" — while the same
- * id resolved fine over curl. The relay's status is not the upstream's answer.
+ * `unknown-provider` of its own. That refusal is the relay's voice, not the
+ * upstream's verdict, so under `fallbackToDirect: false` the fetch port throws
+ * `RelayRefusalError` instead of returning the refusal as a marked response.
+ * The catalogue must reject with that error and record nothing: folding a
+ * refusal 404 into `{ missing: true }` cached a stale deployment's refusal as
+ * "no episodes". A *relayed* upstream 404 — marked, without the relay's
+ * error-code header — is still the upstream's verdict and still a miss.
  */
 afterEach(() => {
   clearAnidbCachesForTest();
 });
 
-function relayContext(status: number, body: string): ProviderRuntimeContext {
+/**
+ * What `createRelayFetchPort` hands the client under `fallbackToDirect:
+ * false`: the port reads the refusal envelope and throws — the client never
+ * sees a Response for a refusal.
+ */
+function relayRefusalContext(relayCode: RelayErrorCode, status: number): ProviderRuntimeContext {
   return {
     fetch: {
       async fetch() {
-        return new Response(body, { status, headers: { [RELAYED_RESPONSE_HEADER]: "1" } });
+        throw new RelayRefusalError({ relayCode, providerId: "anidb", status });
       },
     },
   } as unknown as ProviderRuntimeContext;
 }
 
-test("a 404 from a stale relay is not treated as a missing catalogue", async () => {
-  // No curl fallback is reachable in the unit environment, so the call fails
-  // rather than resolving — the point is that it does NOT report `missing`,
-  // which is what poisoned the cache and blanked the lane.
-  const context = relayContext(
-    404,
-    JSON.stringify({ error: { code: "unknown-provider", providerId: "anidb" } }),
+test("a relay refusal rejects — it is the relay's voice, never a cached miss", async () => {
+  const context = relayRefusalContext("unknown-provider", 404);
+
+  const error = await fetchAnidbEpisodeCatalog("onigiri-3942", undefined, context).catch(
+    (caught: unknown) => caught,
   );
 
-  const catalog = await fetchAnidbEpisodeCatalog("onigiri-3942", undefined, context).catch(
-    () => "threw" as const,
-  );
+  expect(isRelayRefusalError(error)).toBe(true);
+  if (!isRelayRefusalError(error)) return;
+  expect(error.relayCode).toBe("unknown-provider");
+  expect(error.providerId).toBe("anidb");
+  expect(error.status).toBe(404);
 
-  expect(catalog).not.toEqual({ episodes: [], missing: true });
+  // Nothing was cached as a miss — asking again rejects the same way instead
+  // of replaying a poisoned `{ episodes: [], missing: true }`.
+  const second = await fetchAnidbEpisodeCatalog("onigiri-3942", undefined, context).catch(
+    (caught: unknown) => caught,
+  );
+  expect(isRelayRefusalError(second)).toBe(true);
+});
+
+test("a relayed upstream 404 is still a missing catalogue", async () => {
+  // Marked as relayed but without the relay's error-code header: the upstream
+  // answered through the relay, so the status is its own verdict and the
+  // reindexed-slug repair path must still see `missing`.
+  const context = {
+    fetch: {
+      async fetch() {
+        return new Response("not found", {
+          status: 404,
+          headers: { [RELAYED_RESPONSE_HEADER]: "1" },
+        });
+      },
+    },
+  } as unknown as ProviderRuntimeContext;
+
+  const catalog = await fetchAnidbEpisodeCatalog("onigiri-3942", undefined, context);
+
+  expect(catalog).toEqual({ episodes: [], missing: true });
 });
 
 test("a 404 straight from anidb.app is still a missing catalogue", async () => {

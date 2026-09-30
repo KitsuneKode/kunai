@@ -15,6 +15,7 @@ import { detectInstallMethod } from "../install-method";
 import { findKunaiPathCandidates } from "../path-candidates";
 import { detectPlatform, resolveReleaseBinaryTarget } from "../platform-assets";
 import { parseCanonicalVersion } from "../version";
+import { probeRelayCoverage, type DoctorRelayCoverage } from "./doctor-relay";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
@@ -112,6 +113,7 @@ export type BuildDoctorReportInput = {
   readonly inspectManifest?: () => Promise<InstallManifestInspection>;
   readonly probeCapabilities?: () => Promise<CapabilitySnapshot>;
   readonly probeStorage?: () => Promise<readonly DoctorStorageInfo[]>;
+  readonly probeRelayCoverage?: () => Promise<DoctorRelayCoverage>;
 };
 
 /**
@@ -227,9 +229,10 @@ function isProcessAlive(pid: number): boolean {
 function collectFindings(input: {
   readonly report: Omit<DoctorReport, "findings">;
   readonly detectedKind: string;
+  readonly relayCoverage: DoctorRelayCoverage;
 }): DoctorFinding[] {
   const findings: DoctorFinding[] = [];
-  const { report, detectedKind } = input;
+  const { report, detectedKind, relayCoverage } = input;
   const manifest = report.manifest.status === "loaded" ? report.manifest.manifest : null;
 
   const winner = report.pathCandidates.find((c) => c.winner);
@@ -451,7 +454,84 @@ function collectFindings(input: {
     });
   }
 
+  // Appended after the `ok` fallback so a lone "check skipped" note does not
+  // suppress the install verdict on an otherwise-clean offline report.
+  findings.push(...relayCoverageFindings(relayCoverage));
+
   return findings;
+}
+
+/**
+ * A relay deployed before a provider existed answers that provider's route
+ * with `unknown-provider` — a refusal that, until recently, read as the
+ * upstream's verdict and once blanked the anime lane. Comparing the
+ * deployment's own roster makes the drift visible instead of silent.
+ * Everything here is a note: an unreachable relay is not an install defect,
+ * and doctor stays offline-safe.
+ */
+function relayCoverageFindings(coverage: DoctorRelayCoverage): DoctorFinding[] {
+  switch (coverage.status) {
+    case "not-configured":
+      return [
+        {
+          severity: "info",
+          code: "relay-coverage-skipped",
+          message: "No provider relay configured — roster coverage check skipped.",
+          remediation: [],
+        },
+      ];
+    case "unreachable":
+      return [
+        {
+          severity: "info",
+          code: "relay-coverage-unreachable",
+          message: `Relay at ${describeRelayHost(coverage.baseUrl)} did not answer /health${
+            coverage.detail ? ` (${coverage.detail})` : ""
+          } — coverage check skipped.`,
+          remediation: [],
+        },
+      ];
+    case "no-provider-ids":
+      return [
+        {
+          severity: "info",
+          code: "relay-coverage-unreported",
+          message: `Relay at ${describeRelayHost(coverage.baseUrl)} answers /health without a provider roster — it predates coverage reporting.`,
+          remediation: ["Redeploy or update the relay so doctor can diff its provider roster."],
+        },
+      ];
+    case "missing-providers":
+      return [
+        {
+          severity: "warning",
+          code: "relay-roster-drift",
+          message: `Relay at ${describeRelayHost(coverage.baseUrl)} does not know: ${coverage.missingProviderIds?.join(", ")}.`,
+          remediation: [
+            "The deployment was set up before these providers existed — redeploy or update it.",
+            "Until then those providers refuse through the relay (or fall back to direct) on every request.",
+          ],
+        },
+      ];
+    case "ok":
+      return [
+        {
+          severity: "info",
+          code: "relay-coverage-ok",
+          message: `Relay at ${describeRelayHost(coverage.baseUrl)} knows every relay-capable provider.`,
+          remediation: [],
+        },
+      ];
+  }
+}
+
+/** Host only — a baseUrl is user-owned, and its path or port add nothing here. */
+function describeRelayHost(baseUrl: string | undefined): string {
+  if (!baseUrl) return "unknown";
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return baseUrl;
+  }
 }
 
 /**
@@ -592,9 +672,17 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     storage: await (input.probeStorage ?? (() => probeStorageWritability(layout)))(),
   };
 
+  const relayCoverage = await (
+    input.probeRelayCoverage ?? (() => probeRelayCoverage(layout.configDir))
+  )();
+
   return {
     ...base,
-    findings: collectFindings({ report: base, detectedKind: detectedMethod.kind }),
+    findings: collectFindings({
+      report: base,
+      detectedKind: detectedMethod.kind,
+      relayCoverage,
+    }),
   };
 }
 

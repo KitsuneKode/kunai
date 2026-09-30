@@ -21,6 +21,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { isRelayRefusalError } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
@@ -393,7 +394,14 @@ export const kickassanimeProviderModule: CoreProviderModule = {
     try {
       slug = await locateKaaShow(input.title, context, events);
     } catch (error) {
-      return fail("network-error", `KickAssAnime search failed: ${describe(error)}`, true);
+      // A relay refusal is the user's own relay declining the request — a
+      // terminal block, not a transport fault to retry.
+      const refusal = isRelayRefusalError(error);
+      return fail(
+        refusal ? "blocked" : "network-error",
+        `KickAssAnime search failed: ${describe(error)}`,
+        !refusal,
+      );
     }
     if (!slug) {
       const year = input.title.year ? ` (${input.title.year})` : "";
@@ -436,7 +444,12 @@ export const kickassanimeProviderModule: CoreProviderModule = {
         }
       }
     } catch (error) {
-      return fail("network-error", `KickAssAnime episode list failed: ${describe(error)}`, true);
+      const refusal = isRelayRefusalError(error);
+      return fail(
+        refusal ? "blocked" : "network-error",
+        `KickAssAnime episode list failed: ${describe(error)}`,
+        !refusal,
+      );
     }
     if (!located) return fail("not-found", `KickAssAnime has no episode ${episode} for ${slug}`);
 
@@ -449,7 +462,12 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       server = servers.find((candidate) => PLAYABLE_SERVERS.has(candidate.name));
       if (server) player = parseKaaPlayerPage(await fetchPlayerPage(context, server));
     } catch (error) {
-      return fail("network-error", `KickAssAnime player failed: ${describe(error)}`, true);
+      const refusal = isRelayRefusalError(error);
+      return fail(
+        refusal ? "blocked" : "network-error",
+        `KickAssAnime player failed: ${describe(error)}`,
+        !refusal,
+      );
     }
     if (!server || !player) {
       return fail("not-found", `KickAssAnime offered no playable server for ${slug} ${episode}`);

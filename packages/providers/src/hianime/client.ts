@@ -7,7 +7,7 @@
  * curl/curl-impersonate — the same shape as the AniDB client.
  */
 
-import { isRelayedResponse, providerHttpErrorForStatus } from "@kunai/types";
+import { isRelayedResponse, isRelayRefusalError, providerHttpErrorForStatus } from "@kunai/types";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { ProviderHttpError } from "../runtime/fetch";
@@ -264,6 +264,10 @@ export async function hianimeFetchText(
     } catch (error) {
       if (options.signal?.aborted === true) throw error;
       if (error instanceof HianimeRelayedUpstreamError) throw error;
+      // A relay refusal is a typed terminal error — it is the relay's own
+      // voice, not a transport fault, and falling through to curl/direct
+      // would silently bypass the relay the user pinned.
+      if (isRelayRefusalError(error)) throw error;
       // Fall through to local curl/impersonate.
     }
   }

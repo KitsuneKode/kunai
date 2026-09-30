@@ -8,6 +8,7 @@ import type {
 import {
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
+  isRelayRefusalError,
   ProviderHttpError,
 } from "@kunai/types";
 
@@ -172,7 +173,6 @@ export function resolveVidlinkDirect(
     label: "VidLink",
     input,
     context,
-    resolveGateProbe: true,
     fetchPayload: async ({ tmdbId, season, episode, input: resolveInput, context: ctx }) => {
       const encryptedId = await encryptTmdbId(ctx, tmdbId, ctx.signal, resolveInput.title.id);
       const path =
@@ -351,6 +351,11 @@ async function fetchVidlinkApi(
       }
       throw error;
     } catch (error) {
+      // A relay refusal is the user's own relay declining the request — it is
+      // terminal, must not be retried, and must never count as endpoint health
+      // evidence: quarantining vidlink.pro for a local config refusal would
+      // outlive the refusal itself.
+      if (isRelayRefusalError(error)) throw error;
       if (!(error instanceof ProviderHttpError) && !signal?.aborted) {
         endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, { class: "transient", titleId });
       }
@@ -417,6 +422,9 @@ async function encryptTmdbId(
       endpointHealth.recordSuccess(ENC_DEC_ENDPOINT);
       return data.result;
     } catch (error) {
+      // Same rule as the API loop: a relay refusal is terminal config
+      // evidence, never endpoint evidence and never worth a second attempt.
+      if (isRelayRefusalError(error)) throw error;
       if (!signal?.aborted) {
         const failureClass =
           error instanceof ProviderHttpError ? vidlinkFailureClass(error.code) : "transient";

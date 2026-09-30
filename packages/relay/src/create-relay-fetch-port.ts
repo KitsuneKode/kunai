@@ -1,4 +1,9 @@
-import { RELAYED_RESPONSE_HEADER } from "@kunai/types";
+import {
+  RELAYED_RESPONSE_HEADER,
+  RelayRefusalError,
+  type RelayErrorCode,
+  type RelayRpcErrorBody,
+} from "@kunai/types";
 
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
 import { RELAY_ERROR_CODE_HEADER, type RelayRpcRequest } from "./types";
@@ -51,8 +56,17 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
           body: JSON.stringify(requestInfo),
           signal: init?.signal,
         });
-        if (fallbackToDirect && isRelayAuthorizationFailure(response)) {
-          return fetchImpl(input, init);
+        // `RELAY_ERROR_CODE_HEADER` is set only by the relay's own refusal —
+        // the handler strips it from proxied upstream responses — so its
+        // presence means the status is not the upstream's verdict. With
+        // fallback enabled the refusal becomes a plain direct request. With
+        // fallback off it must surface as a thrown, typed refusal rather than
+        // a returned Response: handing the provider a refusal 404 once let
+        // AniDB cache it as a missing catalogue, and silently going direct
+        // would bypass the relay the user pinned.
+        if (response.headers.has(RELAY_ERROR_CODE_HEADER)) {
+          if (fallbackToDirect) return fetchImpl(input, init);
+          throw new RelayRefusalError(await readRelayRefusal(response, entry.providerId));
         }
         return markRelayedResponse(response);
       } catch (error) {
@@ -81,12 +95,26 @@ function markRelayedResponse(response: Response): Response {
   });
 }
 
-function isRelayAuthorizationFailure(response: Response): boolean {
-  const code = response.headers.get(RELAY_ERROR_CODE_HEADER);
-  return (
-    (response.status === 503 && code === "relay-not-configured") ||
-    (response.status === 401 && code === "unauthorized")
-  );
+/**
+ * Pull the refusal's identity out of the envelope. The code lives in the
+ * header — set by the relay handler before the body was even written — and the
+ * optional provider id rides in the JSON body; neither field is trusted to
+ * arrive well-formed, so both degrade to what the request already knew.
+ */
+async function readRelayRefusal(
+  response: Response,
+  fallbackProviderId: string,
+): Promise<{
+  readonly relayCode: RelayErrorCode;
+  readonly providerId?: string;
+  readonly status: number;
+}> {
+  const body = (await response.json().catch(() => undefined)) as RelayRpcErrorBody | undefined;
+  return {
+    relayCode: (response.headers.get(RELAY_ERROR_CODE_HEADER) || "bad-request") as RelayErrorCode,
+    providerId: body?.error?.providerId ?? fallbackProviderId,
+    status: response.status,
+  };
 }
 
 async function toRelayRequest(

@@ -16,10 +16,14 @@ export async function handleRelayRequest(request: Request, env: RelayAppEnv): Pr
   const url = new URL(request.url);
 
   if (url.pathname === "/health") {
+    // providerIds lets `kunai doctor` and the deploy probe compare the
+    // deployment's roster against the client's relay-capable set — a count
+    // alone cannot name who is missing.
     return Response.json({
       ok: true,
       service: "kunai-relay",
       providers: relayRegistry.providers.length,
+      providerIds: relayRegistry.providers.map((entry) => entry.providerId).sort(),
     });
   }
 
