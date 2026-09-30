@@ -39,6 +39,7 @@ From a repo clone (contributor-oriented), use `bun run dev -- <flags>` so Bun fo
 | `kunai rollback --to <ver>` | Roll back to an explicit verified version           |
 | `kunai doctor`              | Read-only install health (PATH, ownership)          |
 | `kunai doctor --json`       | Same report as JSON                                 |
+| `kunai doctor --strict`     | Exit non-zero on any warning, for scripts           |
 | `kunai uninstall`           | Ownership-aware removal                             |
 | `kunai uninstall --purge`   | Also delete config/history/cache                    |
 | `kunai diagnostics recent`  | Print recent redacted diagnostics from the cache DB |
@@ -115,12 +116,12 @@ More: [Share links](/docs/users/share-links).
 
 ## Download modes (do not confuse)
 
-| Entry                                 | What it does                                                                                                                                             |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Entry                                 | What it does                                                                                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `kunai --download -S "Title"`         | **Download-only launch flag.** Resolves a title, then runs the download flow and exits; no interactive shell queue UI. Requires `-S` or `-i` bootstrap. |
-| `kunai --download -i 438631 -t movie` | Same download-only path with a fixed TMDB id.                                                                                                            |
+| `kunai --download -i 438631 -t movie` | Same download-only path with a fixed TMDB id.                                                                                                           |
 | `/downloads` in the shell             | **Queue overlay** while the shell is running; queued, running, and failed jobs.                                                                         |
-| `/download` during playback           | Queue the **current** item for offline from inside a session.                                                                                            |
+| `/download` during playback           | Queue the **current** item for offline from inside a session.                                                                                           |
 
 ## Launch flags
 

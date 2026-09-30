@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { CURL_INSTALL, MPV_INSTALL, YT_DLP_INSTALL } from "@/infra/os/install-commands";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
-import { runDoctor } from "@/services/update/run-doctor";
+import { runDoctor, type RunDoctorOptions } from "@/services/update/run-doctor";
 import type { CapabilitySnapshot } from "@/ui";
 
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
@@ -190,6 +190,72 @@ describe("runDoctor", () => {
         }),
       });
       expect(code).toBe(0);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  /**
+   * `--strict` turns warnings into a non-zero exit for scripts asking "is this
+   * install fully featured?": lane deps like yt-dlp and curl are warnings by
+   * default (the core player works without them) and errors under strict.
+   * `info` never fails either way — a source checkout correctly reports
+   * `missing-manifest` at info.
+   */
+  test("strict mode exits 1 on warnings that the default mode tolerates", async () => {
+    const { layout } = await makeLayout();
+    const originalLog = console.log;
+    console.log = () => {};
+    const laneDepsOnly: RunDoctorOptions = {
+      json: false,
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.2.3" },
+      pathValue: "",
+      platform: "linux" as const,
+      fileExists: () => false,
+      probeCapabilities: async () => ({
+        ...emptyCapabilities(),
+        ytDlp: false,
+        curl: { present: false, impersonates: false, profile: null },
+        issues: [
+          {
+            id: "yt-dlp-missing",
+            severity: "degraded" as const,
+            message: "yt-dlp not found — YouTube playback and downloads require yt-dlp.",
+            install: YT_DLP_INSTALL,
+            remediation: [],
+          },
+        ],
+      }),
+    };
+
+    try {
+      expect(await runDoctor(laneDepsOnly)).toBe(0);
+      expect(await runDoctor({ ...laneDepsOnly, strict: true })).toBe(1);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  test("strict mode still exits 0 when there is nothing to report", async () => {
+    const { layout } = await makeLayout();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      expect(
+        await runDoctor({
+          json: false,
+          strict: true,
+          layout,
+          now: () => FIXED_DATE,
+          runningExecutable: { path: layout.launcherPath, version: "1.2.3" },
+          pathValue: "",
+          platform: "linux",
+          fileExists: () => false,
+          probeCapabilities: async () => emptyCapabilities(),
+        }),
+      ).toBe(0);
     } finally {
       console.log = originalLog;
     }
