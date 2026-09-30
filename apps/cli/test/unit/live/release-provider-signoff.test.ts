@@ -238,6 +238,23 @@ describe("release provider signoff", () => {
         error: "no playable source for episode 1",
       }),
     ).toBe("provider-drift");
+    // An episode number is not an HTTP status — the bare 5xx pattern once
+    // filed "episode 512" as a network failure instead of provider drift.
+    expect(
+      classifyReleaseSignoffFailure({
+        resolved: false,
+        streamReachable: null,
+        error: "no playable source for episode 512",
+      }),
+    ).toBe("provider-drift");
+    // A real HTTP status in context still classifies as an upstream failure.
+    expect(
+      classifyReleaseSignoffFailure({
+        resolved: false,
+        streamReachable: null,
+        error: "anidb fetch HTTP 503",
+      }),
+    ).toBe("environment-network");
   });
 });
 

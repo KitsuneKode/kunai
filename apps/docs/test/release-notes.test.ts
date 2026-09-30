@@ -100,17 +100,18 @@ describe("release notes artifacts", () => {
     }
   });
 
-  test("published releases carry a display date derived from publishedAt", () => {
+  test("published releases carry a display date", () => {
     // `date` is rendered verbatim on the detail page. Both shipped artifacts once
     // carried `date: null` because the notes generator never authors it — the
-    // publish transition now derives it, and this pins that invariant.
+    // publish transition now derives it, and this pins that invariant. Equality
+    // with `publishedAt` is not the contract: a re-publish keeps the display date
+    // it already had. Derivation itself is pinned in release-artifact.test.ts.
     const published = publishedReleaseNotesArtifacts();
     expect(published.length).toBeGreaterThan(0);
 
     for (const release of published) {
       expect(release.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(release.publishedAt).not.toBeNull();
-      expect(release.date).toBe(release.publishedAt!.slice(0, 10));
     }
   });
 

@@ -2150,15 +2150,29 @@ function miruroSearchContentType(
 }
 
 function stripSearchDescription(value: string | null | undefined): string {
-  return (value ?? "")
-    .replace(/<br\s*\/?>/gi, " ")
-    .replace(/<[^>]*>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 240);
+  let text = (value ?? "").replace(/<br\s*\/?>/gi, " ");
+  // Strip tags to a fixpoint: one pass over `<<script>script>` leaves a
+  // re-formed `<script>` behind, so pass until nothing changes.
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, "");
+  } while (text !== previous);
+  return (
+    text
+      // `&amp;` decodes last: decoding it first would let `&amp;quot;` or
+      // `&amp;#39;` double-unescape into a quote the author deliberately hid.
+      .replace(/&quot;/g, '"')
+      .replace(/&#0?39;/g, "'")
+      .replace(/&amp;/g, "&")
+      // After every decode, a lone bracket can only be a truncated tag remnant;
+      // real descriptions write them as &lt;/&gt;, which this deliberately
+      // never decodes. Nothing after this line can put a bracket back.
+      .replace(/[<>]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 240)
+  );
 }
 
 /**

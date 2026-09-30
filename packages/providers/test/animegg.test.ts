@@ -90,6 +90,16 @@ describe("parseAnimeggSearchResults", () => {
       [],
     );
   });
+
+  test("uppercase tags and quoted `>` inside attributes still parse", () => {
+    const html =
+      `<A TITLE="Part > 1" HREF="/series/cased" CLASS="mse"><div><h2>Cased</h2></div></A>` +
+      `<a title="Part > 1" href="/series/quoted" class="mse"><div><h2>Quoted</h2></div></a>`;
+    expect(parseAnimeggSearchResults(html).map((result) => result.slug)).toEqual([
+      "cased",
+      "quoted",
+    ]);
+  });
 });
 
 describe("parseAnimeggEpisodeNumbers", () => {
@@ -128,6 +138,14 @@ describe("parseAnimeggEpisodeTabs", () => {
     expect(
       parseAnimeggEpisodeTabs(`<a data-id='1' data-mirror="X" data-version="raw"></a>`),
     ).toEqual([]);
+  });
+
+  test("a `>` inside a quoted attribute does not truncate the tab tag", () => {
+    expect(
+      parseAnimeggEpisodeTabs(
+        `<a title="Part > 1" data-id="7" data-mirror="Quoted" data-version="subbed"></a>`,
+      ),
+    ).toEqual([{ embedId: "7", mirror: "Quoted", version: "subbed" }]);
   });
 
   test("an episode with no player yields no tabs", () => {
