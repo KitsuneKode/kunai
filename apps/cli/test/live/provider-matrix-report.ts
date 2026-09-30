@@ -37,8 +37,12 @@ export type ProviderHealthClass =
   | "harness-failure";
 
 /** Text that means the upstream never gave us a usable answer. */
+// A bare 5xx cannot count — "no playable source for episode 512" is provider
+// drift, not a network failure. Statuses only count in HTTP-status context
+// ("HTTP 503", "status: 500", "http/1.1 503"), which is how every provider in
+// the repo formats them.
 const UNREACHABLE_UPSTREAM =
-  /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket|maintenance|unavailable|unreachable|cloudflare|just a moment|challenge|blocked by|http 5\d{2}|\b5\d{2}\b/;
+  /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket|maintenance|unavailable|unreachable|cloudflare|just a moment|challenge|blocked by|\b(?:http|status)\b[\s=:/]*(?:\d[\d.]*\s)?5\d{2}\b/;
 
 /** Text that means the upstream answered, but not with a route we can use. */
 const DRIFTED_ROUTE =

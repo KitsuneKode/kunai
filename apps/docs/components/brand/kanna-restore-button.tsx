@@ -23,9 +23,10 @@ export function KannaRestoreButton() {
       }
     };
     read();
-    // If she is dismissed in this tab after mount, the chip should appear
-    // without a reload — watch for the flag being set by the roamer's close.
-    const onDismiss = () => read();
+    // The event is the source of truth for this page view: when localStorage
+    // is unavailable the flag was never written, so re-reading it would hide
+    // the chip the roamer just asked for.
+    const onDismiss = () => setDismissed(true);
     window.addEventListener("kunai:roamer-dismissed", onDismiss);
     return () => window.removeEventListener("kunai:roamer-dismissed", onDismiss);
   }, []);
@@ -36,7 +37,13 @@ export function KannaRestoreButton() {
     <button
       type="button"
       className="text-fd-muted-foreground hover:text-fd-accent-foreground hover:bg-fd-accent mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors"
-      onClick={() => window.dispatchEvent(new Event("kunai:roamer-restore"))}
+      onClick={() => {
+        // The roamer does not confirm a restore, so hide on dispatch. If she
+        // declined (ineligible page), the flag stayed set and the chip returns
+        // next mount.
+        window.dispatchEvent(new Event("kunai:roamer-restore"));
+        setDismissed(false);
+      }}
     >
       <IconPaw className="size-3.5" stroke={1.5} />
       Bring Kanna back

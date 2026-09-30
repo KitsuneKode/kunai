@@ -144,4 +144,16 @@ describe("classifyProviderHealth", () => {
 
     expect(classifyProviderHealth(result, { timedOut: false })).toBe("provider-drift");
   });
+
+  test("an episode number is not an HTTP status", () => {
+    // "episode 512" used to trip the bare 5xx pattern and file a missing
+    // playable route as a network failure instead of provider drift.
+    const result = {
+      ok: false,
+      failureCodes: ["not-found"],
+      error: "no playable source for episode 512",
+    };
+
+    expect(classifyProviderHealth(result, { timedOut: false })).toBe("provider-drift");
+  });
 });
