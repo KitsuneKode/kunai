@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-12"
+lastReviewed: "2026-09-30"
 ---
 
 # Kunai — Repo Infrastructure
@@ -127,6 +127,7 @@ every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
 would otherwise skip the check meant to catch it. It runs `setup-bun` without
 `bun install` — the script imports only `node:fs` and `node:path`.
 
+<<<<<<< HEAD
 `scripts/ci-affected-run.ts` wraps `--affected` because a PR touching only
 non-package files (`.github/`, `install.sh`, `tools/`, `docs/`, `.docs/`) used
 to select zero workspace tasks and exit 0 — four green legs that ran nothing.
@@ -136,6 +137,17 @@ not in any workspace, so turbo never sees them regardless of the diff
 (`fmt:root:check` covers `.github/`, `scripts/`, `docs/`, `.changeset/`, and the
 root configs). Locally, `bun run ci` runs the four blocking tasks plus the
 `verify:doc-*` and `verify:parity-references` gates; pre-push calls it.
+
+`verify:doc-frontmatter` (inside `checks-docs`) has two halves. The first is
+static: every live `.docs` doc declares `status`, an ISO `lastReviewed`, and the
+L3 banner. The second compares the change set against `origin/main` and fails
+when a doc's body moved but its `lastReviewed` did not — the field only means
+something if editing a doc forces you to answer for it. Set `lastReviewed` to
+the day you actually re-read the doc against the tree; for a mechanical sweep
+that cannot change meaning, re-run with `SKIP_DOC_FRESHNESS=1`. Both halves need
+history, which is why every `checkout` in the workflow pins `fetch-depth: 0`; on
+a checkout without the base ref the freshness half skips with a notice rather
+than failing on the shape of the clone.
 
 Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
 `~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).
