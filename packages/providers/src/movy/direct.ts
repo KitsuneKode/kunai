@@ -138,6 +138,8 @@ async function fetchMovySeed(
       retryable: response.status >= 500 || response.status === 429,
     });
   }
+  // SAFETY: seed response is a two-field JSON envelope; a missing `seed` is
+  // rejected on the next line, so a shape surprise fails closed.
   const body = (await response.json()) as { seed?: string; ttlMs?: number };
   if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
 
@@ -203,6 +205,8 @@ async function fetchMovyLaneSources(
     const ciphertext = await response.text();
     const plaintext = decryptMovyPayload(ciphertext, seed, mediaId);
     try {
+      // SAFETY: decrypted payload is the lane's sources envelope; every
+      // consumer reads optional fields and empty sources fail closed below.
       return JSON.parse(plaintext) as MovySourcesPayload;
     } catch (error) {
       throw new MovyDecryptError(`${lane}: decrypted payload was not JSON`, { cause: error });
@@ -212,7 +216,7 @@ async function fetchMovyLaneSources(
 }
 
 /** Language names appear in the `quality` field on multi-audio lanes. */
-const LANE_AUDIO_LABELS: Readonly<Record<string, string>> = {
+const LANE_AUDIO_LABELS = {
   hindi: "hi",
   english: "en",
   tamil: "ta",
@@ -235,7 +239,10 @@ function movyLaneAudioLanguage(quality: string | undefined): string | undefined 
   if (!quality) return undefined;
   const normalized = normalizeIsoLanguageCode(quality.trim().toLowerCase());
   if (normalized) return normalized;
-  return LANE_AUDIO_LABELS[quality.trim().toLowerCase()];
+  // SAFETY: the label comes from provider JSON; an unmapped key indexes to
+  // undefined at runtime, which is the documented "no audio language" answer.
+  const label = quality.trim().toLowerCase() as keyof typeof LANE_AUDIO_LABELS;
+  return LANE_AUDIO_LABELS[label];
 }
 
 type MovyResolvedCandidate = {
@@ -267,7 +274,7 @@ async function resolveMovyLaneCandidate({
   const payload = await fetchMovyLaneSources(context, lane, laneParams, tmdbId, signal);
 
   const rawSources = (payload.sources ?? []).filter(
-    (source) => typeof source.url === "string" && source.url.startsWith("http"),
+    (source) => source.url?.startsWith("http") === true,
   );
   if (rawSources.length === 0) {
     throw createProviderCycleFailureError(candidate, {
@@ -469,7 +476,7 @@ export async function resolveMovyDirect(
 
   const season = input.episode?.season ?? 1;
   const episode = input.episode?.episode ?? 1;
-  const laneParams: Record<string, string> = {
+  const laneParams = {
     // The site's own bundle pre-encodes the title before the query layer
     // encodes again — lanes receive a still-encoded title on the wire.
     // Live-verified: a space-containing title resolved on 11/16 lanes only
@@ -508,6 +515,9 @@ export async function resolveMovyDirect(
       MOVY_CANDIDATE_TIMEOUT_MS,
     ),
     resolveCandidate: async (candidate, candidateContext) => {
+      // SAFETY: serverId/lane were minted by this module's own lane roster
+      // when the candidates were declared; a stray value resolves as a lane
+      // fetch that the API rejects, failing closed in the cycle.
       const lane = String(candidate.serverId ?? candidate.metadata?.lane ?? "") as MovyLane;
       try {
         return await resolveMovyLaneCandidate({

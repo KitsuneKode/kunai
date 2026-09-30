@@ -46,6 +46,7 @@ function contextReturning(
 ): ProviderRuntimeContext {
   return {
     ...TEST_CONTEXT,
+    // SAFETY: test stub — supplies only the fetch surface this module calls.
     fetch: {
       runtime: "direct-http",
       fetch: async (url: string | URL | Request) => handler(String(url)),
@@ -56,6 +57,8 @@ function contextReturning(
 describe("decryptMovyPayload", () => {
   test("decrypts a real captured ciphertext into the sources JSON", () => {
     const plain = decryptMovyPayload(FIXTURE.body, FIXTURE.seed, FIXTURE.mediaId);
+    // SAFETY: decrypted fixture is asserted structurally on the next lines;
+    // a shape surprise fails the expectations, never ships silently.
     const parsed = JSON.parse(plain) as { sources?: { url?: string }[] };
     expect(Array.isArray(parsed.sources)).toBe(true);
     expect(parsed.sources?.length).toBeGreaterThan(0);
