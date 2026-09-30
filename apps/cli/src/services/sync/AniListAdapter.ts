@@ -336,12 +336,27 @@ export class AniListAdapter implements SyncAdapter {
   }
 
   private async persistToken(accessToken: string, expiresIn: string | null): Promise<SyncResult> {
+    const previous = {
+      accessToken: this.accessToken,
+      userId: this.userId,
+      username: this.username,
+      expiresAt: this.expiresAt,
+      reauthReason: this.reauthReason,
+    };
     this.accessToken = accessToken;
-    // Identity doubles as validation: a token AniList will not answer for is
-    // not worth persisting, and `userId` is needed by the token record anyway.
-    await this.refreshUsername();
+    this.userId = undefined;
+    this.username = undefined;
+    this.expiresAt = undefined;
+    this.reauthReason = undefined;
+    try {
+      await this.refreshUsername();
+    } catch {
+      this.restoreCredential(previous);
+      return { ok: false, error: "Could not fetch AniList user info after authorization." };
+    }
 
-    if (!this.userId) {
+    if (!this.userId || this.reauthReason) {
+      this.restoreCredential(previous);
       return { ok: false, error: "Could not fetch AniList user info after authorization." };
     }
 
@@ -350,7 +365,6 @@ export class AniListAdapter implements SyncAdapter {
       Number.isFinite(seconds) && seconds > 0
         ? new Date(Date.now() + seconds * 1000).toISOString()
         : undefined;
-    this.reauthReason = undefined;
     await this.tokenStore.patchAniList({
       accessToken,
       userId: this.userId,
@@ -358,6 +372,20 @@ export class AniListAdapter implements SyncAdapter {
     });
 
     return { ok: true };
+  }
+
+  private restoreCredential(previous: {
+    accessToken: string | undefined;
+    userId: number | undefined;
+    username: string | undefined;
+    expiresAt: string | undefined;
+    reauthReason: string | undefined;
+  }): void {
+    this.accessToken = previous.accessToken;
+    this.userId = previous.userId;
+    this.username = previous.username;
+    this.expiresAt = previous.expiresAt;
+    this.reauthReason = previous.reauthReason;
   }
 
   async disconnect(): Promise<void> {

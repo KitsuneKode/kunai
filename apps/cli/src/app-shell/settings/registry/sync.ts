@@ -177,8 +177,9 @@ export function syncSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] 
       kind: "section",
       id: "section:sync",
       label: "Sync",
-      // Reachable, and honest about its state: the delivery path is covered by
-      // tests but has not yet been verified against a live tracker account.
+      // Reachable, and honest about its state. The disposable-account smoke
+      // skips until CI has KUNAI_ANILIST_DISPOSABLE_TOKEN, so this stays
+      // experimental until that run is green.
       detail: "Experimental · mirror what you watch to AniList and TMDB",
     },
     {
