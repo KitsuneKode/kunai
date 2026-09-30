@@ -15,11 +15,7 @@ import { selectVerifiedStream, verifyCandidateStream } from "../src/shared/resol
 function contextRecording(
   handler: (url: string, init?: RequestInit) => Response,
   port: { readonly resolvesLocally?: boolean } = {},
-): {
-  readonly context: ProviderRuntimeContext;
-  readonly seen: RequestInit[];
-  readonly seenUrls: string[];
-} {
+) {
   const seen: RequestInit[] = [];
   const seenUrls: string[] = [];
   const context = {
@@ -222,6 +218,9 @@ describe("verifyCandidateStream DNS pinning", () => {
 
     expect(verdict.accepted).toBe(true);
     expect(seenUrls).toEqual(["https://93.184.216.34/v.mp4"]);
+    // SAFETY: the pin writes `tls`/`proxy` onto the init object it fetches
+    // with, and RequestInit does not declare them — the assertion only exposes
+    // the fields the code under test set.
     const init = seen[0] as RequestInit & {
       readonly tls?: { readonly serverName?: string };
       readonly proxy?: boolean;

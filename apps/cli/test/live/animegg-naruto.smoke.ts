@@ -29,7 +29,7 @@ const args = directSmokeArgs();
 
 const episode = Number(args[0] ?? "1");
 const searchQuery = args.slice(1).join(" ") || "Naruto";
-const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
+const isCacheClearRequested = () => process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
@@ -40,7 +40,7 @@ if (!provider) {
   process.exit(1);
 }
 
-if (clearCache) {
+if (isCacheClearRequested()) {
   await container.cacheStore.clear();
 }
 
@@ -91,8 +91,7 @@ if (!selected) {
 
 const title = titleInfoFromSearchResult(selected, selected.title);
 
-let resolveError: unknown = null;
-const resolved = await resolveProviderSmokeStream({
+const outcome = await resolveProviderSmokeStream({
   container,
   providerId: "animegg",
   mode: "anime",
@@ -102,12 +101,14 @@ const resolved = await resolveProviderSmokeStream({
     audioPreference: container.config.animeLanguageProfile.audio,
     subtitlePreference: container.config.animeLanguageProfile.subtitle,
   },
-}).catch((error) => {
-  resolveError = error;
-  return { stream: null, result: null, resolveDurationMs: null };
-});
+})
+  .then((resolved) => ({ resolved }))
+  .catch((error) => ({ error }));
 
-const { stream, result, resolveDurationMs } = resolved;
+const { stream, result, resolveDurationMs } =
+  "resolved" in outcome
+    ? outcome.resolved
+    : { stream: null, result: null, resolveDurationMs: null };
 
 // Reported for transparency only: AnimeGG's CDN refusing a fetch is expected,
 // so the probe verdict never feeds `streamReachable`.
@@ -147,10 +148,13 @@ const payload = {
   probeVerdict,
   mpvDecoded,
   streamReachable,
-  ...(resolveError ? providerSmokeError(resolveError) : null),
   ...providerSmokeProfilePayload(profile),
-  cacheCleared: clearCache,
+  cacheCleared: isCacheClearRequested(),
 };
+
+if ("error" in outcome) {
+  Object.assign(payload, providerSmokeError(outcome.error));
+}
 
 console.log(JSON.stringify(payload, null, 2));
 

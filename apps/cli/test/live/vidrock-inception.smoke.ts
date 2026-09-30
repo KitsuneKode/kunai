@@ -26,7 +26,7 @@ const args = directSmokeArgs();
 const season = args[0] === undefined ? undefined : Number(args[0]);
 const episode = args[1] === undefined ? undefined : Number(args[1]);
 const isSeries = season !== undefined && episode !== undefined;
-const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
+const isCacheClearRequested = () => process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
@@ -37,7 +37,7 @@ if (!provider) {
   process.exit(1);
 }
 
-if (clearCache) {
+if (isCacheClearRequested()) {
   await container.cacheStore.clear();
 }
 
@@ -45,18 +45,17 @@ const title: TitleInfo = isSeries
   ? { id: "1396", type: "series", name: "Breaking Bad" }
   : { id: "27205", type: "movie", name: "Inception" };
 
-let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
 let failureMessages: readonly string[] = [];
 let streamCandidates = 0;
 
-const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
+const outcome = await resolveProviderSmokeStream({
   container,
   providerId: "vidrock",
   mode: "series",
   request: {
     title,
-    ...(isSeries ? { episode: { season, episode } } : {}),
+    episode: isSeries ? { season, episode } : undefined,
     audioPreference: container.config.seriesLanguageProfile.audio,
     subtitlePreference: container.config.seriesLanguageProfile.subtitle,
   },
@@ -65,12 +64,12 @@ const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
     failureCodes = resolved.result.failures.map((failure) => failure.code);
     failureMessages = resolved.result.failures.map((failure) => failure.message);
     streamCandidates = resolved.result.streams.length;
-    return resolved;
+    return { resolved };
   })
-  .catch((error) => {
-    resolveError = error;
-    return { stream: null, resolveDurationMs: null };
-  });
+  .catch((error) => ({ error }));
+
+const stream = "resolved" in outcome ? outcome.resolved.stream : null;
+const resolveDurationMs = "resolved" in outcome ? outcome.resolved.resolveDurationMs : null;
 
 const streamProbe = stream?.url
   ? await probeStreamReachability({
@@ -95,10 +94,13 @@ const payload = {
   streamCandidates,
   streamProbe,
   streamReachable,
-  ...(resolveError ? providerSmokeError(resolveError) : null),
   ...providerSmokeProfilePayload(profile),
-  cacheCleared: clearCache,
+  cacheCleared: isCacheClearRequested(),
 };
+
+if ("error" in outcome) {
+  Object.assign(payload, providerSmokeError(outcome.error));
+}
 
 console.log(JSON.stringify(payload, null, 2));
 

@@ -393,6 +393,8 @@ describe("stream reachability DNS pinning", () => {
     const probe = await probeStreamReachability({
       url: "https://cdn.example:8443/v/start.mp4?token=x",
       fetchImpl: async (url, init) => {
+        // SAFETY: RequestInit does not declare Bun's `tls`/`proxy` fields; the
+        // assertion only exposes what the pin wrote onto the live init.
         seen.push({ url, init: init as PinnedInit });
         return response(200);
       },
@@ -418,6 +420,8 @@ describe("stream reachability DNS pinning", () => {
     const probe = await probeStreamReachability({
       url: "http://cdn.example/v.mp4",
       fetchImpl: async (url, init) => {
+        // SAFETY: RequestInit does not declare Bun's `tls`/`proxy` fields; the
+        // assertion only exposes what the pin wrote onto the live init.
         seen.push({ url, init: init as PinnedInit });
         return response(200);
       },
@@ -470,7 +474,7 @@ describe("stream reachability DNS pinning", () => {
 
   test("empty and failed lookups fail closed instead of resolving again", async () => {
     for (const lookupImpl of [
-      async () => [] as string[],
+      async () => [],
       async () => {
         throw new Error("ENOTFOUND");
       },
@@ -529,10 +533,10 @@ describe("stream reachability DNS pinning", () => {
   test("each redirect hop resolves and pins its own hostname", async () => {
     const seen: { url: string; host: string | null }[] = [];
     const lookedUp: string[] = [];
-    const answers: Record<string, string> = {
-      "one.example": "93.184.216.34",
-      "two.example": "1.1.1.1",
-    };
+    const answers = new Map([
+      ["one.example", "93.184.216.34"],
+      ["two.example", "1.1.1.1"],
+    ]);
 
     const probe = await probeStreamReachability({
       url: "https://one.example/a.mp4",
@@ -545,7 +549,7 @@ describe("stream reachability DNS pinning", () => {
       },
       lookupImpl: async (host) => {
         lookedUp.push(host);
-        return [answers[host] ?? "93.184.216.34"];
+        return [answers.get(host) ?? "93.184.216.34"];
       },
       timeoutMs: 200,
     });
