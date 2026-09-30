@@ -39,6 +39,17 @@ export function verifyReleaseSignature(
   }
 }
 
+/**
+ * Same override `install.sh` honors. Empty means the embedded release key.
+ * Read at call time so a fixture can sign with its own key without baking it
+ * into the binary.
+ */
+export function releasePublicKeyOverride(): string | undefined {
+  const value = process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY ?? "";
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export function assertReleaseSignature(
   message: Uint8Array,
   signature: Uint8Array | undefined,

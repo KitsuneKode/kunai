@@ -378,8 +378,8 @@ EOF
 	# OpenSSL 3.0 verifies Ed25519 only with -rawin. macOS LibreSSL rejects that
 	# flag and verifies the same raw signature without it. A bad signature fails
 	# both, so the second attempt cannot accept a checksum the first one refused.
-	if ! openssl pkeyutl -verify -pubin -inkey "$pub" -rawin -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1 \
-		&& ! openssl pkeyutl -verify -pubin -inkey "$pub" -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1; then
+	if ! openssl pkeyutl -verify -pubin -inkey "$pub" -rawin -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1 &&
+		! openssl pkeyutl -verify -pubin -inkey "$pub" -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1; then
 		rm -f "$pub"
 		err "SHA256SUMS signature did not verify."
 		exit 1

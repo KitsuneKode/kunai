@@ -8,6 +8,7 @@ import {
   assertReleaseSignature,
   cleanupOldBinary,
   pickChecksum,
+  releasePublicKeyOverride,
   selfReplace,
   verifyChecksum,
   verifyReleaseSignature,
@@ -26,6 +27,15 @@ test("pickChecksum finds the matching line in SHA256SUMS", () => {
   const sums = "aaaa  kunai-linux-x64\nbbbb  kunai-darwin-arm64\n";
   expect(pickChecksum(sums, "kunai-darwin-arm64")).toBe("bbbb");
   expect(pickChecksum(sums, "kunai-missing")).toBeNull();
+});
+
+test("an empty release-key override keeps the embedded public key", () => {
+  const previous = process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY;
+  process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY = "  fixture-key\n";
+  expect(releasePublicKeyOverride()).toBe("fixture-key");
+  delete process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY;
+  expect(releasePublicKeyOverride()).toBeUndefined();
+  if (previous !== undefined) process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY = previous;
 });
 
 test("verifyChecksum rejects a mismatch and empty input", () => {
