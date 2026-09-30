@@ -1,8 +1,8 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "c38f3565e6ee42b840151e7f84de4ec40fbcc81f19caf41c16e5de1328af9a1a",
-  "docsContentFingerprint": "d257522e1132610ef9e2ab4d4a9a4812e29a35849a2ef33aabeebf4daab8d557",
+  "cliSourceFingerprint": "7aefeff2eb17ec9caec2349cbfe2a89b51c7d0e2f6ecc4ddd6720e76921b41f0",
+  "docsContentFingerprint": "f20800eade9a3024fb903571dd1fe910fe5497535dad4a6dc430f0bb62ddc595",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
   "providerIds": [

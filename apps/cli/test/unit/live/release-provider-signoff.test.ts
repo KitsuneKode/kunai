@@ -243,7 +243,7 @@ describe("release provider signoff", () => {
 
 describe("release provider route derivation", () => {
   test("derives signoff providers from production defaults", () => {
-const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, [
+    const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, [
       "vidlink",
       "hianime",
       "anidb",

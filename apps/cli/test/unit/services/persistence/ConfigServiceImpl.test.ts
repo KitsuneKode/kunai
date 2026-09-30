@@ -397,8 +397,9 @@ describe("ConfigServiceImpl", () => {
   test("leaves an anime lane the user customised alone, and does not write", async () => {
     for (const loaded of [
       { animeProvider: "allanime", animeProviderPriority: ["allanime", "anidb"] },
-      // AniDB first is still a choice once the priority list was edited.
-      { animeProvider: "anidb", animeProviderPriority: ["anidb", "allanime"] },
+      // AniDB first is still a choice once the priority list was edited — the
+      // pair must be one no shipped default ever wrote, or it migrates.
+      { animeProvider: "anidb", animeProviderPriority: ["anidb", "miruro", "allanime"] },
     ]) {
       const store = new MemoryConfigStore(loaded);
       const before = await store.load();
