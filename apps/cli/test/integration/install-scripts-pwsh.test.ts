@@ -1628,6 +1628,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
     const digest = createHash("sha256").update(body).digest("hex");
     const sandbox = createInstallerSandbox("install-ps1-activation-failure");
     const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    mkdirSync(dirname(sandbox.configDir), { recursive: true });
     writeFileSync(sandbox.configDir, "not-a-directory");
     try {
       await withReleaseFixture(
