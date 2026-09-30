@@ -4,8 +4,11 @@ import { HLS_SEGMENT_PROBE_MIN_BYTES } from "../src/shared/hls-manifest";
 import {
   isStreamReachableForPlaybackPreflight,
   isStreamReachableForResolve,
+  probeLookupForPort,
   probeStreamReachability,
   shouldAbortPlaybackForPreflight,
+  systemDnsLookup,
+  type StreamReachabilityLookup,
 } from "../src/shared/stream-reachability";
 
 function response(
@@ -374,5 +377,215 @@ describe("stream reachability", () => {
       expect(probe.reason).toContain("blocked stream target");
       expect(probe.definitive).toBe(true);
     }
+  });
+});
+
+type PinnedInit = RequestInit & {
+  readonly tls?: { readonly serverName?: string };
+  readonly proxy?: boolean;
+};
+
+describe("stream reachability DNS pinning", () => {
+  test("pins a hostname fetch to the validated answer and keeps its authority", async () => {
+    const seen: { url: string; init: PinnedInit }[] = [];
+    const lookedUp: string[] = [];
+
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example:8443/v/start.mp4?token=x",
+      fetchImpl: async (url, init) => {
+        seen.push({ url, init: init as PinnedInit });
+        return response(200);
+      },
+      lookupImpl: async (host) => {
+        lookedUp.push(host);
+        return ["93.184.216.34"];
+      },
+      timeoutMs: 100,
+    });
+
+    expect(probe).toEqual({ status: "reachable" });
+    expect(lookedUp).toEqual(["cdn.example"]);
+    // The socket addresses the validated IP; Host + SNI keep the real name.
+    expect(seen[0]?.url).toBe("https://93.184.216.34:8443/v/start.mp4?token=x");
+    expect(new Headers(seen[0]?.init.headers).get("host")).toBe("cdn.example:8443");
+    expect(seen[0]?.init.tls).toEqual({ serverName: "cdn.example" });
+    expect(seen[0]?.init.proxy).toBe(false);
+  });
+
+  test("http targets pin without a TLS override", async () => {
+    const seen: { url: string; init: PinnedInit }[] = [];
+
+    const probe = await probeStreamReachability({
+      url: "http://cdn.example/v.mp4",
+      fetchImpl: async (url, init) => {
+        seen.push({ url, init: init as PinnedInit });
+        return response(200);
+      },
+      lookupImpl: async () => ["93.184.216.34"],
+      timeoutMs: 100,
+    });
+
+    expect(probe).toEqual({ status: "reachable" });
+    expect(seen[0]?.url).toBe("http://93.184.216.34/v.mp4");
+    expect(new Headers(seen[0]?.init.headers).get("host")).toBe("cdn.example");
+    expect(seen[0]?.init.tls).toBeUndefined();
+    expect(seen[0]?.init.proxy).toBe(false);
+  });
+
+  test("a private DNS answer is refused before any fetch", async () => {
+    let called = false;
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/v.mp4",
+      fetchImpl: async () => {
+        called = true;
+        return response(200);
+      },
+      lookupImpl: async () => ["10.0.0.5"],
+      timeoutMs: 100,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("blocked stream target");
+      expect(probe.definitive).toBe(true);
+    }
+    expect(called).toBe(false);
+  });
+
+  test("one private address in a mixed answer refuses the whole name", async () => {
+    let called = false;
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/v.mp4",
+      fetchImpl: async () => {
+        called = true;
+        return response(200);
+      },
+      lookupImpl: async () => ["93.184.216.34", "169.254.169.254"],
+      timeoutMs: 100,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    expect(called).toBe(false);
+  });
+
+  test("empty and failed lookups fail closed instead of resolving again", async () => {
+    for (const lookupImpl of [
+      async () => [] as string[],
+      async () => {
+        throw new Error("ENOTFOUND");
+      },
+    ] satisfies StreamReachabilityLookup[]) {
+      let called = false;
+      const probe = await probeStreamReachability({
+        url: "https://cdn.example/v.mp4",
+        fetchImpl: async () => {
+          called = true;
+          return response(200);
+        },
+        lookupImpl,
+        timeoutMs: 100,
+      });
+
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") {
+        expect(probe.reason).toContain("blocked stream target");
+      }
+      expect(called).toBe(false);
+    }
+  });
+
+  test("a resolver slower than the probe deadline reports timeout", async () => {
+    let called = false;
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/v.mp4",
+      fetchImpl: async () => {
+        called = true;
+        return response(200);
+      },
+      lookupImpl: () => new Promise(() => {}),
+      timeoutMs: 50,
+    });
+
+    expect(probe).toEqual({ status: "timeout" });
+    expect(called).toBe(false);
+  });
+
+  test("parent abort during the lookup reports timeout", async () => {
+    const controller = new AbortController();
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/v.mp4",
+      fetchImpl: async () => response(200),
+      lookupImpl: () => {
+        controller.abort();
+        return new Promise(() => {});
+      },
+      timeoutMs: 5_000,
+      signal: controller.signal,
+    });
+
+    expect(probe).toEqual({ status: "timeout" });
+  });
+
+  test("each redirect hop resolves and pins its own hostname", async () => {
+    const seen: { url: string; host: string | null }[] = [];
+    const lookedUp: string[] = [];
+    const answers: Record<string, string> = {
+      "one.example": "93.184.216.34",
+      "two.example": "1.1.1.1",
+    };
+
+    const probe = await probeStreamReachability({
+      url: "https://one.example/a.mp4",
+      fetchImpl: async (url, init) => {
+        seen.push({ url, host: new Headers(init?.headers).get("host") });
+        if (seen.length === 1) {
+          return response(302, "", { location: "https://two.example/b.mp4" });
+        }
+        return response(200);
+      },
+      lookupImpl: async (host) => {
+        lookedUp.push(host);
+        return [answers[host] ?? "93.184.216.34"];
+      },
+      timeoutMs: 200,
+    });
+
+    expect(probe).toEqual({ status: "reachable" });
+    expect(lookedUp).toEqual(["one.example", "two.example"]);
+    expect(seen.map((s) => s.url)).toEqual([
+      "https://93.184.216.34/a.mp4",
+      "https://1.1.1.1/b.mp4",
+    ]);
+    expect(seen.map((s) => s.host)).toEqual(["one.example", "two.example"]);
+  });
+
+  test("an injected fetch without lookupImpl keeps its URLs untouched", async () => {
+    const seen: string[] = [];
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/v.mp4",
+      fetchImpl: async (url) => {
+        seen.push(url);
+        return response(200);
+      },
+      timeoutMs: 100,
+    });
+
+    expect(probe).toEqual({ status: "reachable" });
+    expect(seen).toEqual(["https://cdn.example/v.mp4"]);
+  });
+});
+
+describe("probeLookupForPort", () => {
+  test("undefined means the global fetch, which resolves locally", () => {
+    expect(probeLookupForPort(undefined)).toBe(systemDnsLookup);
+  });
+
+  test("a port that resolves locally gets the system lookup", () => {
+    expect(probeLookupForPort({ resolvesLocally: true })).toBe(systemDnsLookup);
+  });
+
+  test("ports that do not resolve locally get no local pinning", () => {
+    expect(probeLookupForPort({ resolvesLocally: false })).toBeUndefined();
+    expect(probeLookupForPort({})).toBeUndefined();
   });
 });

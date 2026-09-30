@@ -16,9 +16,18 @@ the request itself.
 All of those fetches now run through a shared target guard: http(s) only, no
 loopback / link-local / private / CGNAT / multicast literals for IPv4 or IPv6
 (including IPv4-mapped and NAT64 forms), no `localhost`-family or single-label
-intranet names, and — when the real fetch is used — DNS answers are checked so
-a public-looking name cannot resolve to a private address. Redirects are
-followed by hand and re-validated at every hop (bounded at 3), and credentials
-headers no longer cross origins on a redirect. A blocked target reports as a
-definitive unreachable probe, so the resolve gate rejects the candidate and
-the player never sees the URL.
+intranet names. On the real network path the guard goes further: the name is
+resolved, every answer is checked against the blocklist, and the connection is
+pinned to a validated address — `Host` and TLS `serverName` keep the original
+authority while the request literally targets the checked IP — so a name that
+answers publicly for the check cannot privately re-resolve for the fetch
+(DNS rebinding). Lookups race the probe deadline and fail closed on an error
+or an empty answer. `proxy: false` keeps a configured proxy from re-resolving
+the name and undoing the check. Fetch ports that open local sockets declare
+`resolvesLocally` so the guard can pin through their wrapped fetch; ports that
+resolve elsewhere keep hostname URLs untouched.
+
+Redirects are followed by hand and each hop is resolved and pinned again
+(bounded at 3); credentials headers no longer cross origins on a redirect. A
+blocked target reports as a definitive unreachable probe, so the resolve gate
+rejects the candidate and the player never sees the URL.

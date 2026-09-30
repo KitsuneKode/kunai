@@ -594,6 +594,14 @@ export interface ProviderAbortState {
 
 export interface ProviderFetchPort {
   readonly runtime: "browser-safe-fetch" | "direct-http";
+  /**
+   * True when requests through this port can open a socket on this machine —
+   * the direct path, or a relay port whose fallback is the local fetch. The
+   * stream target guard uses it to decide whether DNS answers must be
+   * validated and the connection pinned: a request that resolves remotely
+   * (a real relay hop) must never carry a locally-pinned address.
+   */
+  readonly resolvesLocally?: boolean;
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 }
 

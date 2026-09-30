@@ -12,21 +12,28 @@ import { selectVerifiedStream, verifyCandidateStream } from "../src/shared/resol
  * refused. Both halves were individually reasonable; the bug was that they were
  * assembled twice.
  */
-function contextRecording(handler: (url: string, init?: RequestInit) => Response): {
+function contextRecording(
+  handler: (url: string, init?: RequestInit) => Response,
+  port: { readonly resolvesLocally?: boolean } = {},
+): {
   readonly context: ProviderRuntimeContext;
   readonly seen: RequestInit[];
+  readonly seenUrls: string[];
 } {
   const seen: RequestInit[] = [];
+  const seenUrls: string[] = [];
   const context = {
     fetch: {
       runtime: "direct-http" as const,
+      ...port,
       fetch: async (url: string, init?: RequestInit) => {
+        seenUrls.push(String(url));
         seen.push(init ?? {});
         return handler(String(url), init);
       },
     },
   } as unknown as ProviderRuntimeContext;
-  return { context, seen };
+  return { context, seen, seenUrls };
 }
 
 const PLAYLIST = "#EXTM3U\n#EXTINF:4.0,\nsegment-0.ts\n";
@@ -194,5 +201,65 @@ describe("selectVerifiedStream", () => {
     const result = await selectVerifiedStream({ streams: [], context });
 
     expect(result.accepted).toBe(false);
+  });
+});
+
+describe("verifyCandidateStream DNS pinning", () => {
+  test("a bound port that resolves locally pins the probe to a validated address", async () => {
+    const { context, seen, seenUrls } = contextRecording(
+      () => new Response(null, { status: 200 }),
+      { resolvesLocally: true },
+    );
+
+    const verdict = await verifyCandidateStream({
+      stream: { url: "https://cdn.example/v.mp4" },
+      context,
+      lookupImpl: async (host) => {
+        expect(host).toBe("cdn.example");
+        return ["93.184.216.34"];
+      },
+    });
+
+    expect(verdict.accepted).toBe(true);
+    expect(seenUrls).toEqual(["https://93.184.216.34/v.mp4"]);
+    const init = seen[0] as RequestInit & {
+      readonly tls?: { readonly serverName?: string };
+      readonly proxy?: boolean;
+    };
+    expect(new Headers(init?.headers).get("host")).toBe("cdn.example");
+    expect(init?.tls).toEqual({ serverName: "cdn.example" });
+    expect(init?.proxy).toBe(false);
+  });
+
+  test("a private DNS answer on a local port rejects the candidate", async () => {
+    const { context, seenUrls } = contextRecording(() => new Response(null, { status: 200 }), {
+      resolvesLocally: true,
+    });
+
+    const verdict = await verifyCandidateStream({
+      stream: { url: "https://cdn.example/v.mp4" },
+      context,
+      lookupImpl: async () => ["127.0.0.1"],
+    });
+
+    expect(verdict.accepted).toBe(false);
+    if (!verdict.accepted) {
+      expect(verdict.reason).toContain("blocked stream target");
+    }
+    expect(seenUrls).toEqual([]);
+  });
+
+  test("a port that does not resolve locally keeps the hostname URL", async () => {
+    const { context, seenUrls } = contextRecording(() => new Response(null, { status: 200 }), {
+      resolvesLocally: false,
+    });
+
+    const verdict = await verifyCandidateStream({
+      stream: { url: "https://cdn.example/v.mp4" },
+      context,
+    });
+
+    expect(verdict.accepted).toBe(true);
+    expect(seenUrls).toEqual(["https://cdn.example/v.mp4"]);
   });
 });

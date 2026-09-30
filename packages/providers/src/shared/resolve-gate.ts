@@ -3,6 +3,8 @@ import type { ProviderRuntimeContext, StreamCandidate } from "@kunai/types";
 import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "./stream-health";
 import {
   isStreamReachableForResolve,
+  probeLookupForPort,
+  type StreamReachabilityLookup,
   type StreamReachabilityProbeResult,
 } from "./stream-reachability";
 
@@ -66,11 +68,14 @@ export async function verifyCandidateStream({
   context,
   signal,
   timeoutMs = STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
+  lookupImpl = probeLookupForPort(context.fetch),
 }: {
   readonly stream: Pick<StreamCandidate, "url" | "headers">;
   readonly context: ProviderRuntimeContext;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  /** Test seam for the DNS answer source; production derives it from the port. */
+  readonly lookupImpl?: StreamReachabilityLookup;
 }): Promise<CandidateStreamVerdict> {
   const url = stream.url?.trim();
   if (!url) return { accepted: false, reason: "candidate has no stream url" };
@@ -81,6 +86,10 @@ export async function verifyCandidateStream({
     // The candidate's own headers, verbatim — never a re-derived set.
     headers: stream.headers,
     fetchImpl: context.fetch?.fetch.bind(context.fetch),
+    // A bound port method never matches the probe's `=== fetch` identity
+    // check, and the relay port's stream URLs take its direct branch, so the
+    // local-DNS pin has to be requested on the port's own say-so.
+    lookupImpl,
     timeoutMs,
     signal: signal ?? context.signal,
   });

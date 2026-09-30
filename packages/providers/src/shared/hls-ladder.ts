@@ -2,7 +2,7 @@ import type { ProviderFetchPort } from "@kunai/types";
 
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
 import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
-import { fetchGuardedStreamTarget } from "./stream-reachability";
+import { fetchGuardedStreamTarget, type StreamReachabilityLookup } from "./stream-reachability";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 
 export type HlsLadderVariant = {
@@ -68,6 +68,12 @@ export type ExpandHlsMasterPlaylistOptions = {
   readonly masterUrl: string;
   readonly headers?: Record<string, string>;
   readonly signal?: AbortSignal;
+  /**
+   * DNS pinning for the guarded fetch — pass `probeLookupForPort(port)` when
+   * `fetch` is a wrapper around a port that opens local sockets, or the
+   * expanded URL's DNS answers go unvalidated.
+   */
+  readonly lookupImpl?: StreamReachabilityLookup;
   /** Cap variants after sort (highest quality first). */
   readonly maxVariants?: number;
 };
@@ -109,6 +115,7 @@ export async function expandHlsMasterInventory(
         headers: headers ?? {},
       },
       signal: signal ?? AbortSignal.timeout(12_000),
+      lookupImpl: options.lookupImpl,
     });
     if (outcome.kind === "blocked") {
       return empty({ kind: "blocked-target" });

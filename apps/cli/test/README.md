@@ -33,9 +33,9 @@ So these tests are safe to keep in-repo without shipping them to npm.
 - `bun run test:integration`
 - `bun run test:live:allanime`
 - `bun run test:live:miruro`
-- `bun run test:live:providers`
+- `bun run test:live:providers` (the full provider matrix)
 - `bun run test:live:rivestream`
-- `bun run test:live:vidking`
+- `bun run test:live:vidlink`
 - `bun run test:vhs:setup`
 - `bun run test:vhs:offline`
 - `bun run test:vhs:palette`
