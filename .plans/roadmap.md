@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-09-19
+Last updated: 2026-10-01
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -12,20 +12,29 @@ plan in the same change set. Shipped behavior belongs in `.docs/` and
 
 ## Execution mode
 
-CLI first. Web, desktop, remote sync, paid cloud compute, premium dashboards,
-watch rooms, and account-required flows are parked until the CLI runtime feels
-excellent. Their direction is recorded in
-[kunai-architecture-and-cache-hardening.md](./kunai-architecture-and-cache-hardening.md)
-and [kunai-experience-and-growth-moat.md](./kunai-experience-and-growth-moat.md)
-so it is not re-derived — not because it is scheduled.
+CLI first, then the mobile host proof. Web, desktop, remote sync, paid cloud
+compute, premium dashboards, watch rooms, and account-required flows are parked.
+They are not scheduled. Do not implement them, and do not cite them as current
+work, unless the user explicitly names that surface in the task.
+
+## Parked, do not execute
+
+Direction only. These files are not an active index.
+
+| Doc                                                                                      | Why it is here                                     |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| [kunai-architecture-and-cache-hardening.md](./kunai-architecture-and-cache-hardening.md) | Parked web, desktop, daemon, and paid-cloud intent |
+| [kunai-experience-and-growth-moat.md](./kunai-experience-and-growth-moat.md)             | Parked growth and paid-product intent              |
+| [kunai-principal-grill-qa.md](./kunai-principal-grill-qa.md)                             | Pressure-test of that parked product direction     |
 
 ## Locked decisions
 
-| Doc                                                                                  | Owns                                                   |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| [kunai-beta-v1-scope-and-contracts.md](./kunai-beta-v1-scope-and-contracts.md)       | Beta v1 scope, architecture seams, telemetry posture   |
-| [kunai-execution-passes-and-cli-modes.md](./kunai-execution-passes-and-cli-modes.md) | Execution passes, CLI modes, autoskip                  |
-| [kunai-principal-grill-qa.md](./kunai-principal-grill-qa.md)                         | Product/architecture decisions already pressure-tested |
+Active CLI decisions only.
+
+| Doc                                                                                  | Owns                                                 |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| [kunai-beta-v1-scope-and-contracts.md](./kunai-beta-v1-scope-and-contracts.md)       | Beta v1 scope, architecture seams, telemetry posture |
+| [kunai-execution-passes-and-cli-modes.md](./kunai-execution-passes-and-cli-modes.md) | Execution passes, CLI modes, autoskip                |
 
 ## Active tracks
 

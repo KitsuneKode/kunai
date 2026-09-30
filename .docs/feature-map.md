@@ -37,7 +37,7 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Modes: `-a` anime, `-y` youtube, `-m` minimal, `-z` zen, `-q` quick | `apps/cli/src/app/session/*`                                              | [.plans/kunai-execution-passes-and-cli-modes.md](../.plans/kunai-execution-passes-and-cli-modes.md)         |
 | Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                            | [download-offline-onboarding.md](./download-offline-onboarding.md)                                          |
 | `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts`    | [share-links.md](./share-links.md)                                                                          |
-| Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                   | [architecture.md](./architecture.md)                                                                        |
+| Container / DI wiring                                               | `apps/cli/src/container/index.ts` and the `bootstrap-*.ts` siblings       | [architecture.md](./architecture.md)                                                                        |
 | Mobile terminal host proof                                          | `apps/mobile/src/entry.ts`, `application/*`, `runtime/{android,ashell}/*` | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md) · [mobile-device-lab.md](./mobile-device-lab.md) |
 
 ## Shell (Ink)

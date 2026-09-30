@@ -12,6 +12,8 @@ judgment, and the developer's stated preference outranks anything here. If a
 rule fights the task in front of you, say so and get a decision rather than
 quietly working around it.
 
+Active work is the CLI, then the mobile host proof in `apps/mobile`. Web, desktop, paid sync, paid cloud compute, watch rooms, and growth-moat plans are parked. Do not implement, cite them as current work, or extend them unless the user explicitly names that surface in the task.
+
 Find code through [.docs/feature-map.md](.docs/feature-map.md) before grepping.
 Read the code as the source of truth — when a doc disagrees with the tree, the
 tree wins and the doc is the bug. Route to the one or two deep docs your change

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-07-29"
+lastReviewed: "2026-10-01"
 ---
 
 # Kunai Target Runtime Architecture
@@ -12,15 +12,21 @@ lastReviewed: "2026-07-29"
 > what exists today. Read this one to avoid re-deriving a decision that was
 > already made — never to learn how the code works now.
 >
-> **Not built:** `apps/web`, `apps/desktop`, `packages/ui-cli`, and the local
-> daemon. Those surfaces are parked per [../.plans/roadmap.md](../.plans/roadmap.md).
-> Sections describing them are intent. Package boundaries, trust boundaries, and
-> storage direction do reflect shipped `packages/*` and are safe to rely on.
+> **Parked — do not implement, cite as current work, or extend unless the user
+> explicitly names that surface in the task.** Web, desktop, paid sync, paid
+> cloud compute, watch rooms, public plugin marketplaces, and account-required
+> growth are not scheduled. The active product is the CLI, then the mobile host
+> proof. These paths are not built: `apps/web`, `apps/desktop`, `packages/ui-cli`, and the local daemon.
+> Package boundaries, trust boundaries, and storage direction do reflect shipped
+> `packages/*` and are safe to rely on. Index:
+> [../.plans/roadmap.md](../.plans/roadmap.md).
 
 Use this doc when changing monorepo boundaries, package contracts, cache
 architecture, or when a proposal touches the parked web/desktop/daemon surfaces.
 
 ## Target Shape
+
+The shape below is parked intent. It is not a build order. `apps/web` and `apps/desktop` are not built; do not start them from this section.
 
 Kunai should become a local-first media runtime with three product surfaces:
 

@@ -4,6 +4,8 @@ Status: Planned
 
 Last updated: 2026-04-28
 
+**Parked — do not implement, cite as current work, or extend unless the user explicitly names this surface in the task.** Web, desktop, paid sync, watch rooms, and the growth moat are not scheduled. Active work is the CLI, then the mobile host proof.
+
 Use this plan when deciding what to add, what not to add, how the CLI and web should feel, and how Kunai becomes a product users recommend, pay for, and do not want to leave.
 
 This is the product companion to [.plans/kunai-architecture-and-cache-hardening.md](./kunai-architecture-and-cache-hardening.md).
