@@ -281,6 +281,13 @@ describe("parseKaaPlayerPage", () => {
   test("a page with no player island is no stream", () => {
     expect(parseKaaPlayerPage("<html><body>Episode not available</body></html>")).toBeNull();
   });
+
+  test("literal brackets inside quoted island attributes do not end the tag", () => {
+    const withLt = playerHtml().replace("<astro-island", '<astro-island title="A < B"');
+    expect(parseKaaPlayerPage(withLt)?.manifest).toContain("master.m3u8");
+    const withGt = playerHtml().replace('uid="Z1AjcGt"', 'uid="Z1A>Gt"');
+    expect(parseKaaPlayerPage(withGt)?.manifest).toContain("master.m3u8");
+  });
 });
 
 describe("resolveKaaSlug", () => {

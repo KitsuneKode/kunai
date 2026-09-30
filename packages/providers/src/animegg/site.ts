@@ -8,7 +8,7 @@
  *
  * Shapes observed 2026-09-11 (see `.docs/provider-dossiers/animegg.md`).
  */
-import { decodeMarkupEntities, stripTags } from "../shared/markup-text";
+import { decodeMarkupEntities, findTagEnd, indexOfTagName, stripTags } from "../shared/markup-text";
 
 export const ANIMEGG_BASE_URL = "https://www.animegg.org";
 
@@ -51,16 +51,11 @@ export function parseAnimeggSearchResults(html: string): AnimeggSearchResult[] {
   const seen = new Set<string>();
   // indexOf tag scan, not a pattern: interleaved `[^>]*` runs backtrack
   // quadratically on a page full of near-miss anchors, and the page is
-  // upstream-controlled input.
+  // upstream-controlled input. Tag names fold case (`<A HREF=...>` is an
+  // anchor too) and `>` inside a quoted attribute does not end the tag.
   let pos = 0;
-  while ((pos = html.indexOf("<a", pos)) !== -1) {
-    // `<a` needs whitespace before its attributes — `<abbr` is not an anchor.
-    const open = html.charCodeAt(pos + 2);
-    if (open !== 32 && open !== 9 && open !== 10 && open !== 13) {
-      pos += 2;
-      continue;
-    }
-    const end = html.indexOf(">", pos + 2);
+  while ((pos = indexOfTagName(html, "a", pos)) !== -1) {
+    const end = findTagEnd(html, pos);
     if (end === -1) break;
     const tagHtml = html.slice(pos, end + 1);
     pos = end + 1;
@@ -146,7 +141,7 @@ export function parseAnimeggEpisodeTabs(html: string): AnimeggEpisodeTab[] {
       pos += 1;
       continue;
     }
-    const end = html.indexOf(">", pos + 1);
+    const end = findTagEnd(html, pos);
     if (end === -1) break;
     const tagHtml = html.slice(pos, end + 1);
     pos = end + 1;

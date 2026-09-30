@@ -71,6 +71,64 @@ export function stripTags(value: string): string {
   }
 }
 
+/**
+ * `indexOf` for a case-insensitive ASCII tag name with a real name boundary —
+ * `indexOfTagName(html, "a", 0)` matches `<a ` and `<A>` but not `<abbr`.
+ * `name` must be lowercase ASCII.
+ *
+ * Lowering a copy of the document first is tempting and wrong: lowercase can
+ * change code-unit length (U+0130 folds to two units), so offsets taken from a
+ * lowered copy do not slice the original correctly. The comparison folds each
+ * A-Z code unit in place instead, which keeps every offset exact.
+ */
+export function indexOfTagName(markup: string, name: string, from: number): number {
+  for (
+    let index = markup.indexOf("<", from);
+    index !== -1;
+    index = markup.indexOf("<", index + 1)
+  ) {
+    if (index + 1 + name.length > markup.length) return -1;
+    let matched = true;
+    for (let i = 0; i < name.length; i++) {
+      const code = markup.charCodeAt(index + 1 + i);
+      const folded = code >= 0x41 && code <= 0x5a ? code + 0x20 : code;
+      if (folded !== name.charCodeAt(i)) {
+        matched = false;
+        break;
+      }
+    }
+    if (!matched) continue;
+    const next = markup.charCodeAt(index + 1 + name.length);
+    // whitespace, `/`, `>`, or end of input all terminate the tag name.
+    if (Number.isNaN(next) || next === 0x2f || next === 0x3e || next <= 0x20) return index;
+  }
+  return -1;
+}
+
+/**
+ * Index of the `>` that closes the tag opened at `open`. A `>` inside a quoted
+ * attribute value closes nothing — `title="Part > 1"` is legal HTML — so the
+ * scan tracks single- and double-quote state instead of taking the first
+ * bracket. `<` inside quotes is likewise just attribute text.
+ *
+ * When an unclosed quote swallows every later bracket, this falls back to the
+ * first raw `>` — the lenient behavior a malformed page needs — and returns -1
+ * only when no `>` exists at all.
+ */
+export function findTagEnd(markup: string, open: number): number {
+  let quote = 0;
+  for (let i = open + 1; i < markup.length; i++) {
+    const code = markup.charCodeAt(i);
+    if (quote !== 0) {
+      if (code === quote) quote = 0;
+      continue;
+    }
+    if (code === 0x22 || code === 0x27) quote = code;
+    else if (code === 0x3e) return i;
+  }
+  return markup.indexOf(">", open + 1);
+}
+
 /** `indexOf` for a tag whose name ends at the match — not `<scriptfoo>`. */
 function indexOfTag(lowered: string, tag: string, from: number): number {
   for (

@@ -15,6 +15,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "../shared/json-value";
+import { findTagEnd, indexOfTagName } from "../shared/markup-text";
 
 export type KaaSearchResult = {
   readonly slug: string;
@@ -189,14 +190,18 @@ export function decodeAstroProp<T>(value: T): AstroValue {
  * normalized through the URL parser rather than used as written.
  */
 export function parseKaaPlayerPage(html: string): KaaPlayerPayload | null {
-  // One tag-shaped scan, then the attr read on the finished tag: a single
-  // pattern with interleaved `[^>]*`/`[^"]*` runs backtracks quadratically on
-  // a page dense with astro islands.
-  const island = /<astro-island\b[^<>]*>/gi;
+  // Scanned, not patterned: interleaved `[^>]*`/`[^"]*` runs backtrack
+  // quadratically on a page dense with astro islands, and a bare `[^<>]*`
+  // would reject a valid island whose props carry a literal bracket —
+  // quoted attribute values may hold `<` and `>`.
+  let pos = 0;
   let propsAttr: string | undefined;
-  let tag: RegExpExecArray | null;
-  while ((tag = island.exec(html)) !== null) {
-    const value = /\sprops="([^"]*)"/i.exec(tag[0])?.[1];
+  while ((pos = indexOfTagName(html, "astro-island", pos)) !== -1) {
+    const end = findTagEnd(html, pos);
+    if (end === -1) break;
+    const tagHtml = html.slice(pos, end + 1);
+    pos = end + 1;
+    const value = /\sprops="([^"]*)"/i.exec(tagHtml)?.[1];
     if (value?.includes("manifest")) {
       propsAttr = value;
       break;
