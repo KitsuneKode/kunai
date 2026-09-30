@@ -34,9 +34,7 @@ export function buildChapterSegmentsFromTiming(
   for (const recap of timing.recap ?? []) {
     if (recap?.startMs != null && recap.startMs >= 0) {
       const endMs =
-        recap.endMs != null && recap.endMs > recap.startMs
-          ? recap.endMs
-          : recap.startMs + 60_000;
+        recap.endMs != null && recap.endMs > recap.startMs ? recap.endMs : recap.startMs + 60_000;
       markers.push({
         startMs: Math.round(recap.startMs),
         endMs: Math.round(endMs),
@@ -48,9 +46,7 @@ export function buildChapterSegmentsFromTiming(
   for (const intro of timing.intro ?? []) {
     if (intro?.startMs != null && intro.startMs >= 0) {
       const endMs =
-        intro.endMs != null && intro.endMs > intro.startMs
-          ? intro.endMs
-          : intro.startMs + 90_000;
+        intro.endMs != null && intro.endMs > intro.startMs ? intro.endMs : intro.startMs + 90_000;
       markers.push({
         startMs: Math.round(intro.startMs),
         endMs: Math.round(endMs),
