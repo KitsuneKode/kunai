@@ -187,7 +187,10 @@ export class PlayerServiceImpl implements PlayerService {
     const materialized = await materializePlaybackMediaForPlayback(
       stream,
       (reason, detail, httpStatus) => {
-        if (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus)) {
+        if (
+          reason === "blocked-target" ||
+          (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus))
+        ) {
           terminalHlsFailure = { detail, httpStatus };
           return;
         }

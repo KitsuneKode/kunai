@@ -275,4 +275,104 @@ describe("stream reachability", () => {
     expect(probe).toEqual({ status: "reachable" });
     expect(methods).toEqual(["HEAD", "GET"]);
   });
+
+  test("rejects a provider URL aimed at a private literal host without fetching", async () => {
+    for (const url of [
+      "http://169.254.169.254/latest/meta-data",
+      "http://127.0.0.1:8080/internal",
+      "http://10.0.0.4/lan",
+      "http://192.168.1.10/jellyfin",
+      "http://[::1]/loopback",
+      "http://[fd00::5]/ula",
+      "https://localhost/private",
+      "http://nas/intranet",
+      "file:///etc/passwd",
+    ]) {
+      let called = false;
+      const probe = await probeStreamReachability({
+        url,
+        fetchImpl: async () => {
+          called = true;
+          return response(200);
+        },
+        timeoutMs: 50,
+      });
+      expect(probe.status).toBe("unreachable");
+      if (probe.status === "unreachable") {
+        expect(probe.reason).toContain("blocked stream target");
+        expect(probe.definitive).toBe(true);
+      }
+      expect(called).toBe(false);
+    }
+  });
+
+  test("follows a public redirect but refuses a redirect into a private target", async () => {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      if (url === "https://cdn.example/start.mp4") {
+        return response(302, "", { location: "http://169.254.169.254/meta" });
+      }
+      return response(200);
+    };
+
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/start.mp4",
+      fetchImpl,
+      timeoutMs: 100,
+    });
+
+    expect(urls).toEqual(["https://cdn.example/start.mp4"]);
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("blocked stream target");
+      expect(probe.definitive).toBe(true);
+    }
+  });
+
+  test("public redirect hops still resolve to reachable", async () => {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      if (url === "https://cdn.example/start.mp4") {
+        return response(302, "", { location: "/v2/start.mp4" });
+      }
+      return response(206);
+    };
+
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/start.mp4",
+      fetchImpl,
+      timeoutMs: 100,
+    });
+
+    expect(urls).toEqual(["https://cdn.example/start.mp4", "https://cdn.example/v2/start.mp4"]);
+    expect(probe).toEqual({ status: "reachable" });
+  });
+
+  test("an HLS playlist cannot name a private absolute variant or segment URI", async () => {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      return response(
+        200,
+        ["#EXTM3U", "#EXT-X-STREAM-INF:BANDWIDTH=800000", "http://169.254.169.254/steal.m3u8"].join(
+          "\n",
+        ),
+      );
+    };
+
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/master.m3u8",
+      fetchImpl,
+      timeoutMs: 100,
+    });
+
+    expect(urls).toEqual(["https://cdn.example/master.m3u8"]);
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("blocked stream target");
+      expect(probe.definitive).toBe(true);
+    }
+  });
 });
