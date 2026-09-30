@@ -1,6 +1,6 @@
 ---
 title: Customization
-description: "Configure Kunai through config.json and provider overrides: mpv forwarding, download paths, posters, keybindings, and the settings that survive an upgrade."
+description: "Configure Kunai through config.json: provider relay, mpv forwarding, download paths, posters, keybindings, and the settings that survive an upgrade."
 status: shipped
 ---
 
@@ -162,6 +162,13 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 ```
 
 Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
+
+## Provider domains
+
+Provider domains for the media (movie/TV and anime) providers are compiled in; changing a media-provider domain requires a code change and rebuild, not a config file. Exception: YouTube metadata endpoints are configurable via `youtubeMetadata.instanceUrl` and `youtubeMetadata.pipedApiUrl` in settings or `config.json`, no rebuild needed.
+
+To reach provider metadata APIs through a different network, configure your own relay with `providerRelay.baseUrl` in `/settings` or `config.json`. See [Provider relay](#provider-relay). This changes the network path, not the provider domain; video stays direct.
+
 ## mpv flags and bridge options
 
 Kunai always launches `mpv` for playback. You can forward diagnostic flags for a single run:
@@ -255,5 +262,5 @@ Use `/settings` or `/setup` for guided changes. Settings persist immediately to 
 </Tabs>
 
 <Callout type="idea" title="Reset without uninstall">
-Delete `config.json` to reset preferences. Use `kunai uninstall --purge` only when you want config, history, and cache removed together.
+Delete `config.json` to reset preferences. Use `kunai uninstall --purge` only when you want config, history, cache, and default downloaded videos removed together (Linux: `~/.local/share/kunai/downloads`, or `$XDG_DATA_HOME/kunai/downloads`). Custom/external download directories outside Kunai's config, data, and cache directories are preserved. See [Install and update](/docs/users/install-and-update#lifecycle-cli-only) for all platform paths.
 </Callout>
