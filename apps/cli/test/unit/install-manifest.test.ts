@@ -794,6 +794,8 @@ test("write preserves installedAt and refreshes updatedAt", async () => {
   // not-equal assertion deterministic instead of racing Date.now()'s
   // millisecond granularity on a fast (or stalled-parallel) runner.
   const manifestFile = Bun.file(`${dir}/install.json`);
+  // SAFETY: install.json was written by the manifest writer under test; only
+  // the updatedAt field is touched, and a malformed read still fails the test.
   const onDisk = (await manifestFile.json()) as { updatedAt?: string };
   onDisk.updatedAt = "2000-01-01T00:00:00.000Z";
   await Bun.write(manifestFile, JSON.stringify(onDisk));
