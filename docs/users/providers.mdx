@@ -100,12 +100,11 @@ when more than one of its shows could be the one you picked, it steps aside rath
 
 <ProviderDocSection id="movy" title="Movy">
 
-**Adapter role:** registered movies/series adapter backed by the movy.sx source aggregator. Each upstream lane (`denver`, `atlanta`, …) is a separate source, so `/source` switches lanes directly.
+**Adapter role:** registered movies/series adapter backed by the movy.sx source aggregator. Each upstream lane (`denver`, `atlanta`, and so on) is a separate source, so `/source` switches lanes directly.
 
 **Config id:** `movy`.
 
-**Caveats:** lanes are independent upstream scrapers — coverage varies per title and individual lanes may 500 while others still resolve. A `seed` exchange precedes each resolve; a stale seed is retried once automatically.
-
+**Caveats:** lanes are independent upstream scrapers; coverage varies per title and individual lanes may 500 while others still resolve. A `seed` exchange precedes each resolve; a stale seed is retried once automatically.
 
 </ProviderDocSection>
 

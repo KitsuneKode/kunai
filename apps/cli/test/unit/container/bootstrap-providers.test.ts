@@ -54,6 +54,7 @@ describe("production provider defaults", () => {
       "hianime",
       "kickassanime",
       "miruro",
+      "movy",
       "rivestream",
       "videasy",
       "vidlink",

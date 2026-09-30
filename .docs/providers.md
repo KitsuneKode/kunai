@@ -712,7 +712,6 @@ default to the table — a bump alone stamps configs without changing them.
 | `miruro`       | anime         | direct-http | `packages/providers/src/miruro/direct.ts`       |
 | `youtube`      | video         | direct-http | `packages/providers/src/youtube/direct.ts`      |
 
-
 ### Anime catalog identity
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
