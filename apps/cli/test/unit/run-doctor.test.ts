@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { CURL_INSTALL, MPV_INSTALL, YT_DLP_INSTALL } from "@/infra/os/install-commands";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
-import { runDoctor } from "@/services/update/run-doctor";
+import { runDoctor, type RunDoctorOptions } from "@/services/update/run-doctor";
 import type { CapabilitySnapshot } from "@/ui";
 
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
@@ -33,7 +33,6 @@ function emptyCapabilities(): CapabilitySnapshot {
     issues: [],
   };
 }
-
 
 async function makeLayout() {
   const root = await mkdtemp(join(tmpdir(), "kunai-run-doctor-"));
@@ -191,6 +190,10 @@ describe("runDoctor", () => {
         }),
       });
       expect(code).toBe(0);
+    } finally {
+      console.log = originalLog;
+    }
+  });
 
   /**
    * `--strict` turns warnings into a non-zero exit for scripts asking "is this
@@ -203,7 +206,7 @@ describe("runDoctor", () => {
     const { layout } = await makeLayout();
     const originalLog = console.log;
     console.log = () => {};
-    const laneDepsOnly = {
+    const laneDepsOnly: RunDoctorOptions = {
       json: false,
       layout,
       now: () => FIXED_DATE,
@@ -253,7 +256,6 @@ describe("runDoctor", () => {
           probeCapabilities: async () => emptyCapabilities(),
         }),
       ).toBe(0);
-
     } finally {
       console.log = originalLog;
     }
