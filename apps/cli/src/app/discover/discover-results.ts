@@ -147,7 +147,7 @@ function applyResultEnrichment(
   };
 }
 
-function shouldIncludeItem(
+export function discoverIncludesItem(
   discoverMode: "auto" | "unified" | "anime-only" | "series-only",
   shellMode: import("@/domain/types").ShellMode,
   item: SearchResult,
@@ -155,10 +155,18 @@ function shouldIncludeItem(
   // YouTube discover uses a dedicated loader; this filter is for TMDB/AniList sections.
   if (shellMode === "youtube") return false;
   if (discoverMode === "unified") return true;
-  if (discoverMode === "anime-only") return item.type === "series";
+  if (discoverMode === "anime-only") return item.isAnime === true;
   if (discoverMode === "series-only") return item.type === "movie" || item.type === "series";
-  // auto mode
-  return shellMode === "anime" ? item.type === "series" : true;
+  // auto mode follows the shell: anime trays are anime, not every series.
+  return shellMode === "anime" ? item.isAnime === true : true;
+}
+
+function shouldIncludeItem(
+  discoverMode: "auto" | "unified" | "anime-only" | "series-only",
+  shellMode: import("@/domain/types").ShellMode,
+  item: SearchResult,
+): boolean {
+  return discoverIncludesItem(discoverMode, shellMode, item);
 }
 
 function labelDiscoverMode(

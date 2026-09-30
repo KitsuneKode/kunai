@@ -1445,6 +1445,7 @@ function mapBrowseResultOption(
     {
       followPreference: context.followPreferenceByTitleId.get(result.id),
       inUpNextQueue: context.queueTitleIds.has(result.id),
+      providerId: container.stateManager.getState().provider,
     },
   );
 }

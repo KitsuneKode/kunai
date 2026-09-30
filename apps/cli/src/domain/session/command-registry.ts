@@ -56,6 +56,7 @@ export type AppCommandId =
   | "follow"
   | "unfollow"
   | "mute"
+  | "unmute"
   | "mark-watched"
   | "mark-unwatched"
   | "mark-season-watched"
@@ -152,6 +153,7 @@ export const COMMAND_CONTEXTS = {
     "follow",
     "unfollow",
     "mute",
+    "unmute",
     "mark-watched",
     "mark-unwatched",
     "mark-season-watched",
@@ -203,6 +205,7 @@ export const COMMAND_CONTEXTS = {
     "follow",
     "unfollow",
     "mute",
+    "unmute",
     "mark-watched",
     "mark-unwatched",
     "mark-season-watched",
@@ -655,6 +658,12 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Stop release notices for the current title",
   },
   {
+    id: "unmute",
+    label: "Unmute Releases",
+    aliases: ["unmute", "unmute-title", "unmute-releases"],
+    description: "Resume release notices for the current title",
+  },
+  {
     id: "mark-watched",
     label: "Mark Watched",
     aliases: ["mark-watched", "watched", "complete", "finish"],
@@ -824,6 +833,7 @@ export const HELP_PANEL_COMMAND_IDS = [
   "follow",
   "unfollow",
   "mute",
+  "unmute",
   "export-diagnostics",
   "report-issue",
 ] as const satisfies readonly AppCommandId[];
@@ -880,6 +890,7 @@ export function commandGroupFor(id: AppCommandId): AppCommandGroup {
     case "follow":
     case "unfollow":
     case "mute":
+    case "unmute":
     case "notifications":
     case "calendar":
     case "anime-calendar":
@@ -1338,6 +1349,7 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
     case "follow":
     case "unfollow":
     case "mute":
+    case "unmute":
     case "mark-watched":
     case "mark-unwatched":
     case "mark-season-watched":
@@ -1361,13 +1373,15 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
                     ? "Play or select a title before following releases."
                     : id === "mute"
                       ? "Play or select a title before muting releases."
-                      : id === "mark-unwatched"
-                        ? "Play or select a title before marking it unwatched."
-                        : id === "mark-season-watched" || id === "mark-up-to-episode"
-                          ? "Select a series episode before marking a season watched."
-                          : id === "mark-watched"
-                            ? "Play or select a title before marking it watched."
-                            : "Play or select a title before reclassifying it.",
+                      : id === "unmute"
+                        ? "Play or select a title before unmuting releases."
+                        : id === "mark-unwatched"
+                          ? "Play or select a title before marking it unwatched."
+                          : id === "mark-season-watched" || id === "mark-up-to-episode"
+                            ? "Select a series episode before marking a season watched."
+                            : id === "mark-watched"
+                              ? "Play or select a title before marking it watched."
+                              : "Play or select a title before reclassifying it.",
           };
 
     case "watch":

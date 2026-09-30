@@ -167,6 +167,7 @@ function buildHistoryBadge(entry: HistoryProgress | null | undefined): string | 
 export type BrowseResultOptionContext = {
   readonly followPreference?: FollowedTitlePreference;
   readonly inUpNextQueue?: boolean;
+  readonly providerId?: string;
 };
 
 export function toBrowseResultOption(
@@ -224,6 +225,7 @@ export function toBrowseResultOption(
 
   return {
     value: result,
+    providerId: optionContext?.providerId,
     localFilterFacts: buildLocalFilterFacts({
       result,
       historyEntry,
@@ -370,7 +372,7 @@ function buildManagementFacts(
   if (followPreference === "following") {
     facts.push({
       label: "Release follow",
-      detail: "Following releases · /follow or /mute to change",
+      detail: "Following releases · /follow, /mute, or /unmute to change",
       tone: "success",
     });
   } else if (followPreference === "muted") {

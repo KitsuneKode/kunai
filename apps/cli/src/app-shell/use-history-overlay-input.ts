@@ -88,6 +88,7 @@ export function resolveHistoryOverlayKey(
 export type HistoryRowIntent =
   | { readonly kind: "media-action"; readonly actionId: MediaActionId; readonly status: string }
   | { readonly kind: "resume" }
+  | { readonly kind: "mark-up-to-episode" }
   | { readonly kind: "delegate" };
 
 export function historyRowIntentForShellAction(action: string): HistoryRowIntent {
@@ -110,6 +111,8 @@ export function historyRowIntentForShellAction(action: string): HistoryRowIntent
         actionId: "mark-unwatched",
         status: "Marked unwatched (resume kept)",
       };
+    case "mark-up-to-episode":
+      return { kind: "mark-up-to-episode" };
     case "resume":
       return { kind: "resume" };
     default:
@@ -159,8 +162,11 @@ async function openHistoryTitleControlMenu(
   const { pickTitleControlShellAction } =
     await import("@/app-shell/title-control/open-title-control-menu");
   const entry = selected.entry;
+  const rowItem = mediaItemFromHistoryEntry(selected.titleId, entry);
   const shellAction = await pickTitleControlShellAction(ctx.container, "history", {
     titleName: entry.title,
+    titleType: rowItem.contentType === "movie" ? "movie" : "series",
+    isAnime: rowItem.mediaKind === "anime",
     hasTitle: true,
     canResume: entry.positionSeconds > 0 && !isFinished(entry),
   });
@@ -179,6 +185,12 @@ async function openHistoryTitleControlMenu(
         { sourcePreference: ctx.sourcePreference },
       ),
     );
+    return;
+  }
+  if (intent.kind === "mark-up-to-episode") {
+    const { markUpToEpisodeForItem } = await import("@/app-shell/workflows");
+    await markUpToEpisodeForItem(ctx.container, rowItem);
+    ctx.onRedraw();
     return;
   }
   if (intent.kind === "media-action") {

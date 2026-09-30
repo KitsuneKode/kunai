@@ -39,6 +39,7 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "follow",
   "unfollow",
   "mute",
+  "unmute",
   "mark-watched",
   "mark-unwatched",
   "mark-season-watched",

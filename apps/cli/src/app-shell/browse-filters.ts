@@ -53,6 +53,11 @@ function browseFiltersFromState(state: FilterState, ignoredFilterCount = 0): Bro
   let year: string | undefined;
   if (typeof state.year === "number") {
     year = String(state.year);
+  } else if (state.year) {
+    const { from, to } = state.year;
+    if (typeof from === "number" && typeof to === "number") year = `${from}..${to}`;
+    else if (typeof from === "number") year = String(from);
+    else if (typeof to === "number") year = String(to);
   }
   return {
     state,
@@ -289,26 +294,9 @@ function parseOptionRating<T>(option: BrowseShellOption<T>): number | null {
 }
 
 function matchesProviderFilter<T>(option: BrowseShellOption<T>, provider: string): boolean {
-  return getOptionSearchText(option).includes(provider.trim().toLowerCase());
-}
-
-function getOptionSearchText<T>(option: BrowseShellOption<T>): string {
-  const facts: string[] = [];
-  for (const fact of option.previewFacts ?? []) {
-    if (fact.label) facts.push(fact.label);
-    if (fact.detail) facts.push(fact.detail);
-  }
-  return [
-    option.label,
-    option.detail,
-    option.previewTitle,
-    option.previewBody,
-    option.previewNote,
-    option.previewRating,
-    ...(option.previewMeta ?? []),
-    ...facts,
-  ]
-    .filter((value): value is string => typeof value === "string" && value.length > 0)
-    .join(" ")
-    .toLowerCase();
+  const wanted = provider.trim().toLowerCase();
+  if (!wanted) return true;
+  const id = option.providerId?.trim().toLowerCase();
+  if (!id) return false;
+  return id === wanted;
 }

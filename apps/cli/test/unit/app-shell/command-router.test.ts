@@ -165,6 +165,7 @@ describe("resolveCommandContext scoped surfaces", () => {
       "follow",
       "unfollow",
       "mute",
+      "unmute",
       "mark-watched",
       "mark-unwatched",
       "mark-season-watched",

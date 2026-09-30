@@ -878,6 +878,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   follow: (c) => handleAttentionPreference(c, "following"),
   unfollow: (c) => handleAttentionPreference(c, "implicit"),
   mute: (c) => handleAttentionPreference(c, "muted"),
+  unmute: (c) => handleAttentionPreference(c, "unmuted"),
   "mark-watched": (c) => handleMarkWatched(c),
   "mark-unwatched": (c) => handleMarkUnwatched(c),
   "mark-season-watched": (c) => handleMarkSeasonWatched(c),
@@ -1960,7 +1961,7 @@ async function handleBookmark(container: Container): Promise<"handled"> {
 
 async function handleAttentionPreference(
   container: Container,
-  preference: "implicit" | "following" | "muted",
+  preference: "implicit" | "following" | "muted" | "unmuted",
 ): Promise<"handled"> {
   const state = container.stateManager.getState();
   const title = state.currentTitle;
@@ -1972,14 +1973,22 @@ async function handleAttentionPreference(
           ? "Play or select a title before following releases."
           : preference === "implicit"
             ? "Play or select a title before unfollowing releases."
-            : "Play or select a title before muting releases.",
+            : preference === "unmuted"
+              ? "Play or select a title before unmuting releases."
+              : "Play or select a title before muting releases.",
     });
     return "handled";
   }
 
   const result = await createContainerMediaActionRouter(container).run({
     actionId:
-      preference === "following" ? "follow" : preference === "implicit" ? "unfollow" : "mute",
+      preference === "following"
+        ? "follow"
+        : preference === "implicit"
+          ? "unfollow"
+          : preference === "unmuted"
+            ? "unmute"
+            : "mute",
     item: {
       mediaKind: resolveCurrentMediaKind(state),
       titleId: title.id,
@@ -2126,45 +2135,85 @@ async function handleMarkUpToEpisode(container: Container): Promise<"handled"> {
     });
     return "handled";
   }
+  await markUpToEpisodeForItem(container, {
+    titleId: title.id,
+    mediaKind: resolveCurrentMediaKind(state),
+    title: title.name,
+    season: currentEpisode.season,
+    episode: currentEpisode.episode,
+    ...(title.externalIds ? { externalIds: title.externalIds } : {}),
+    ...(title.isAnime ? { contentType: "series" as const } : {}),
+  });
+  return "handled";
+}
 
-  const seasonEpisodes = await resolveSeasonEpisodesForQueue(container, title, currentEpisode);
+/** Mark a season through a chosen episode for this item, anime or TMDB. */
+export async function markUpToEpisodeForItem(
+  container: Container,
+  item: {
+    readonly titleId: string;
+    readonly title: string;
+    readonly mediaKind: MediaKind;
+    readonly season?: number;
+    readonly episode?: number;
+    readonly externalIds?: TitleInfo["externalIds"];
+  },
+): Promise<void> {
+  const season = item.season ?? 1;
+  const episode = item.episode ?? 1;
+  if (item.mediaKind === "movie" || item.mediaKind === "video") {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Select a series episode before marking through an episode.",
+    });
+    return;
+  }
+  const title: TitleInfo = {
+    id: item.titleId,
+    type: "series",
+    name: item.title,
+    ...(item.externalIds ? { externalIds: item.externalIds } : {}),
+    ...(item.mediaKind === "anime" ? { isAnime: true } : {}),
+  };
+  const seasonEpisodes = await resolveSeasonEpisodesForQueue(container, title, {
+    season,
+    episode,
+  });
   if (!seasonEpisodes?.length) {
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: "Could not load episodes for this season.",
     });
-    return "handled";
+    return;
   }
 
   const throughEpisode = await chooseFromListShell({
     title: "Mark through episode",
-    subtitle: `${title.name} · Season ${currentEpisode.season}`,
-    options: seasonEpisodes.map((episode) => ({
-      value: episode.episode,
-      label: `E${String(episode.episode).padStart(2, "0")}${episode.name ? ` · ${episode.name}` : ""}`,
-      detail: `Mark episodes 1–${episode.episode} as watched`,
+    subtitle: `${title.name} · Season ${season}`,
+    options: seasonEpisodes.map((row) => ({
+      value: row.episode,
+      label: `E${String(row.episode).padStart(2, "0")}${row.name ? ` · ${row.name}` : ""}`,
+      detail: `Mark episodes 1–${row.episode} as watched`,
     })),
   });
-  if (!throughEpisode) return "handled";
+  if (!throughEpisode) return;
 
-  const mediaKind = resolveCurrentMediaKind(state);
   const count = markSeasonThroughMediaItemWatched(
     container,
     {
       titleId: title.id,
-      mediaKind,
+      mediaKind: item.mediaKind,
       title: title.name,
       ...(title.externalIds ? { externalIds: title.externalIds } : {}),
     },
-    currentEpisode.season,
+    season,
     throughEpisode,
   );
 
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
-    note: `Marked ${count} episode(s) in season ${currentEpisode.season} through E${throughEpisode} as watched.`,
+    note: `Marked ${count} episode(s) in season ${season} through E${throughEpisode} as watched.`,
   });
-  return "handled";
 }
 
 function resolveCurrentMediaKind(state: SessionState): MediaKind {
@@ -3126,7 +3175,7 @@ async function resolveSeasonEpisodesForQueue(
   currentEpisode: PlaybackEpisodeInfo,
 ): Promise<readonly PlaybackEpisodeInfo[] | null> {
   const state = container.stateManager.getState();
-  if (state.mode === "anime") {
+  if (state.mode === "anime" || title.isAnime === true) {
     const provider = container.providerRegistry.get(state.provider);
     if (!provider?.listEpisodes) return null;
     const episodes = await provider.listEpisodes({ title });

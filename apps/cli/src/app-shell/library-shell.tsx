@@ -1,4 +1,5 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import { libraryFilterAcceptsText } from "@/app-shell/filter-capture";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import {
@@ -41,6 +42,7 @@ import {
   isFinished,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
+import { manualArtworkFetchAllowed } from "@/services/offline/manual-artwork";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
@@ -284,10 +286,7 @@ function LibraryTab({
         !key.upArrow &&
         !key.downArrow &&
         !key.tab &&
-        input !== "x" &&
-        input !== "X" &&
-        input !== "p" &&
-        input !== "P"
+        libraryFilterAcceptsText(input, filterQuery)
       ) {
         setFilterQuery((query) => query + input);
         return;
@@ -303,7 +302,7 @@ function LibraryTab({
         setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
         return;
       }
-      if (input === "x" || key.delete) {
+      if ((input === "x" || input === "X" || key.delete) && filterQuery.length === 0) {
         if (!selectedOfflineGroup) return;
         if (confirmDeleteKey === selectedOfflineGroup.key) {
           setConfirmDeleteKey(null);
@@ -320,7 +319,7 @@ function LibraryTab({
         }
         return;
       }
-      if (input === "p" || input === "P") {
+      if ((input === "p" || input === "P") && filterQuery.length === 0) {
         if (!selectedOfflineGroup) return;
         const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
         const protectedSet = new Set(container.config.protectedDownloadJobIds);
@@ -368,7 +367,8 @@ function LibraryTab({
       !loading &&
       !loadError &&
       Boolean(entries) &&
-      (viewport.columns ?? 80) >= 124,
+      (viewport.columns ?? 80) >= 124 &&
+      manualArtworkFetchAllowed(container.config),
   });
 
   if (loading) {

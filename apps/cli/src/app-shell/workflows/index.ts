@@ -19,6 +19,7 @@ export {
   downloadSelectedResult,
   enqueueCurrentPlaybackDownload,
   handleShellAction,
+  markUpToEpisodeForItem,
   runShellWorkflowFromOverlay,
   openCompletedDownloadsPicker,
   openOfflineLibraryGroupPicker,

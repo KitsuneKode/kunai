@@ -27,6 +27,8 @@ export function buildTitleControlContext(
     readonly failedProvider?: boolean;
     readonly cancellable?: boolean;
     readonly titleName?: string;
+    readonly titleType?: "series" | "movie";
+    readonly isAnime?: boolean;
     readonly hasTitle?: boolean;
     readonly hasTitleProviderPreference?: boolean;
     readonly hasSavedPosition?: boolean;
@@ -46,7 +48,7 @@ export function buildTitleControlContext(
   return {
     surface,
     titleName: options.titleName ?? title?.name,
-    titleType: title?.type,
+    titleType: options.titleType ?? title?.type,
     ...(title?.posterUrl ? { posterUrl: title.posterUrl } : {}),
     currentSeason: episode?.season,
     currentEpisodeNumber: episode?.episode,
@@ -54,7 +56,7 @@ export function buildTitleControlContext(
     nextEpisodeLabel: state.episodeNavigation.nextLabel,
     nextEpisodeName: options.nextEpisodeName,
     resumeAtLabel: options.resumeAtLabel,
-    isAnime: state.mode === "anime" || title?.isAnime === true,
+    isAnime: options.isAnime ?? (state.mode === "anime" || title?.isAnime === true),
     hasTitle: options.hasTitle ?? Boolean(title),
     hasTitleProviderPreference: options.hasTitleProviderPreference,
     downloadsEnabled: options.downloadsEnabled,
@@ -94,6 +96,8 @@ export function buildTitleControlContextFromContainer(
     readonly postPlayState?: PostPlayState;
     readonly cancellable?: boolean;
     readonly titleName?: string;
+    readonly titleType?: "series" | "movie";
+    readonly isAnime?: boolean;
     readonly hasTitle?: boolean;
     readonly canResume?: boolean;
   } = {},
@@ -170,6 +174,8 @@ type TitleControlMenuOptions = {
   readonly postPlayState?: PostPlayState;
   readonly cancellable?: boolean;
   readonly titleName?: string;
+  readonly titleType?: "series" | "movie";
+  readonly isAnime?: boolean;
   readonly hasTitle?: boolean;
   readonly canResume?: boolean;
 };

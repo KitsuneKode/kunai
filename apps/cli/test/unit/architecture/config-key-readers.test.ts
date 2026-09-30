@@ -24,8 +24,6 @@ const BOOKKEEPING_KEYS = new Set([
   // as a streaming auto-download; nothing else reads it.
   "autoDownload",
   "autoDownloadNextCount",
-  // Settings can store it. The artwork path does not read it yet.
-  "powerSaverAllowManualArtwork",
 ]);
 
 function sourceOutsideConfigAndSettings(): string {

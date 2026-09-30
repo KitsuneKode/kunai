@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   directIdImpliedLane,
+  directIdRejectionMessage,
   resolveBootstrapIntent,
   resolveLaunchMode,
 } from "@/app/bootstrap/bootstrap-intent";
@@ -61,6 +62,7 @@ describe("namespaced -i/--id", () => {
     const intent = resolveBootstrapIntent(parse(["-i", "imdb:0944947", "-t", "tv"]));
     expect(intent.directTitle).toBeNull();
     expect(intent.logs).toContainEqual({ kind: "id-unknown-namespace", id: "imdb:0944947" });
+    expect(directIdRejectionMessage("imdb:0944947")).toContain("is not resolved yet");
   });
 
   test("youtube:<id> implies the youtube lane and picks video vs playlist", () => {

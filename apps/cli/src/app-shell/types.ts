@@ -64,6 +64,7 @@ export type ShellAction =
   | "follow"
   | "unfollow"
   | "mute"
+  | "unmute"
   | "mark-watched"
   | "mark-unwatched"
   | "mark-season-watched"
@@ -343,6 +344,8 @@ export type BrowseShellOption<T> = {
   value: T;
   label: string;
   detail?: string;
+  /** Provider that produced this row. `provider:` matches this id, not the title. */
+  providerId?: string;
   previewTitle?: string;
   previewMeta?: readonly string[];
   readonly localFilterFacts?: BrowseLocalFilterFacts;
@@ -508,6 +511,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "follow":
     case "unfollow":
     case "mute":
+    case "unmute":
     case "mark-watched":
     case "mark-unwatched":
     case "mark-season-watched":

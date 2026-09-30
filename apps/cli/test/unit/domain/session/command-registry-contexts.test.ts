@@ -31,6 +31,7 @@ describe("command registry contexts", () => {
       "follow",
       "unfollow",
       "mute",
+      "unmute",
       "mark-watched",
       "mark-unwatched",
       "mark-season-watched",
@@ -112,6 +113,7 @@ describe("command registry contexts", () => {
       "follow",
       "unfollow",
       "mute",
+      "unmute",
       "mark-watched",
       "mark-unwatched",
       "mark-season-watched",
@@ -199,6 +201,7 @@ describe("command registry contexts", () => {
     expect(parseCommand("/follow")?.id).toBe("follow");
     expect(parseCommand("/unfollow")?.id).toBe("unfollow");
     expect(parseCommand("/mute")?.id).toBe("mute");
+    expect(parseCommand("/unmute")?.id).toBe("unmute");
     expect(parseCommand("/mark-watched")?.id).toBe("mark-watched");
     expect(parseCommand("/watched")?.id).toBe("mark-watched");
   });
@@ -258,6 +261,11 @@ describe("command registry contexts", () => {
       id: "mute",
       enabled: false,
       reason: "Play or select a title before muting releases.",
+    });
+    expect(resolveCommands(state, ["unmute"])[0]).toMatchObject({
+      id: "unmute",
+      enabled: false,
+      reason: "Play or select a title before unmuting releases.",
     });
     expect(resolveCommands(state, ["mark-watched"])[0]).toMatchObject({
       id: "mark-watched",

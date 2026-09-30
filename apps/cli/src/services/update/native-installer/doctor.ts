@@ -424,15 +424,24 @@ function collectFindings(input: {
   }
 
   for (const store of report.storage) {
+    if (!store.exists) {
+      findings.push({
+        severity: store.writable ? "info" : "error",
+        code: `storage-will-be-created-${store.label}`,
+        message: `${store.path} will be created.`,
+        remediation: store.writable
+          ? []
+          : [`Kunai cannot create ${store.path} — its parent directory is not writable.`],
+      });
+      continue;
+    }
     if (store.writable) continue;
     findings.push({
       severity: "error",
       code: `storage-not-writable-${store.label}`,
       message: `Kunai cannot write to its ${store.label} directory (${store.path}).`,
       remediation: [
-        store.exists
-          ? `Check ownership and permissions: ${store.path}`
-          : `Kunai cannot create ${store.path} — its parent directory is not writable.`,
+        `Check ownership and permissions: ${store.path}`,
         // Running once under sudo is the usual cause, and it leaves a
         // root-owned directory that every later non-root run fails against.
         "If you ever ran kunai with sudo, the directory may now be root-owned.",
@@ -707,8 +716,8 @@ export function formatDoctorReportText(report: DoctorReport): string {
   lines.push("");
   lines.push("Storage");
   for (const store of report.storage) {
-    const state = store.writable ? "writable" : "NOT WRITABLE";
-    lines.push(`  ${store.label}: ${store.path} (${store.exists ? state : `${state}, missing`})`);
+    const state = !store.exists ? "will be created" : store.writable ? "writable" : "NOT WRITABLE";
+    lines.push(`  ${store.label}: ${store.path} (${state})`);
   }
   lines.push("");
   lines.push("Findings");
