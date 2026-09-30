@@ -260,4 +260,66 @@ describe("docs codegen drift", () => {
       }
     }
   });
+
+  test("published docs prose avoids em-dashes and non-range en-dashes", () => {
+    // Em-dashes read as generated filler; ranges like `1–5` and `L0–L4` keep
+    // the en-dash because that is what it is for. Fenced code blocks are
+    // exempt: mock output must mirror what the tool actually prints.
+    const rangeDash = /[A-Za-z]?\d–[A-Za-z]?\d/;
+    for (const filePath of listDocFiles(DOCS_ROOT)) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      let inFence = false;
+      const prose = content
+        .split("\n")
+        .filter((line) => {
+          if (line.trimStart().startsWith("```")) {
+            inFence = !inFence;
+            return false;
+          }
+          return !inFence;
+        })
+        .join("\n");
+      expect(prose).not.toContain("—");
+      const strayEnDash = prose
+        .split("")
+        .map((char, i) => (char === "–" ? prose.slice(Math.max(0, i - 2), i + 3) : null))
+        .filter((ctx): ctx is string => ctx !== null && !rangeDash.test(ctx));
+      expect(strayEnDash).toEqual([]);
+    }
+  });
+
+  test("frontmatter values containing colons are quoted", () => {
+    // An unquoted `key: text with: colon` is a YAML nested-mapping error that
+    // only surfaces when the page is compiled — a colon in prose silently 500s
+    // the route. Quote the value instead.
+    const scalar = /^(\w[\w-]*):\s+(.+)$/;
+    for (const filePath of listDocFiles(DOCS_ROOT)) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      const frontmatter = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!frontmatter?.[1]) continue;
+      for (const line of frontmatter[1].split("\n")) {
+        const match = line.match(scalar);
+        if (!match?.[2]) continue;
+        const value = match[2].trim();
+        if (value.startsWith('"') || value.startsWith("'")) continue;
+        if (value.includes(": ") || value.endsWith(":")) {
+          expect.unreachable(`${filePath}: unquoted frontmatter "${match[1]}" contains a colon`);
+        }
+      }
+    }
+  });
+
+  test("published docs do not describe config surfaces the runtime never reads", () => {
+    // `providers.json` and `autoDownload` were documented while nothing in the
+    // runtime consumed them — `autoDownload` is force-pinned to "off" on load
+    // and on update. If either surface ever becomes real, delete the row here
+    // AND restore the doc, in the same change.
+    const phantomSurfaces = [/providers\.json/, /`autoDownload`/, /"autoDownload"/];
+    for (const filePath of listDocFiles(DOCS_ROOT)) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      for (const banned of phantomSurfaces) {
+        expect(content).not.toMatch(banned);
+      }
+    }
+  });
 });

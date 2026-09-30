@@ -1,5 +1,5 @@
 ---
-title: Reliability And Privacy
+title: Reliability and Privacy
 description: What Kunai stores locally, what it never sends, how it limits third-party traffic, and how diagnostics stay redacted by default when you report a failure.
 ---
 
@@ -73,8 +73,8 @@ Anonymous usage analytics are **yours to turn on or off at any time**, in
 **Settings → General → Usage analytics**.
 
 On a fresh install, setup asks you directly. It recommends turning analytics on
-and pre-selects that option — it counts unique installs and versions, never
-people — but nothing is enabled until you confirm it on that screen. Skipping
+and pre-selects that option; it counts unique installs and versions, never
+people. Nothing is enabled until you confirm it on that screen. Skipping
 setup leaves analytics **off**: no default, accept-all, or non-interactive path
 can turn it on for you. Existing installs get one non-blocking recommendation
 explaining the payload; that notice does not enable analytics, create an id, or
@@ -95,10 +95,10 @@ When on, Kunai sends at most one tiny ping per day:
 
 - `installId` on the wire is **`sha256` of your local install id**, not the id
   itself. The id is generated on your machine, stored only in your config, and
-  never transmitted — so the value above is a 64-character hex digest, never a
+  never transmitted, so the value above is a 64-character hex digest, never a
   UUID
 - Never titles, queries, providers, stream URLs, or file paths
-- **Your IP address is never read.** Not collected and discarded — the ingest
+- **Your IP address is never read.** Not collected and discarded; the ingest
   has no code path that reads a client address at all, so there is nothing to
   log, rate-limit on, or hand over
 - Turning it off **deletes the install id from disk**. The id exists only while
@@ -109,7 +109,7 @@ When on, Kunai sends at most one tiny ping per day:
   clears the id
 - `DO_NOT_TRACK=1` and `CI=true` block sends regardless of the setting. A value
   of `0`, `false`, or `no` does not block
-- Without an interactive terminal — piped or scripted output — analytics stays
+- Without an interactive terminal (piped or scripted output), analytics stays
   off, because the notice could not be shown
 - The ingest re-hashes that digest with an HMAC before storing it, alongside your
   platform, architecture, and version. It does not read your IP address at all
@@ -125,7 +125,7 @@ Preview the exact JSON with `/analytics show`.
 
 If you turn analytics on, pings go to `analytics.kunai.kitsunekode.in`. Point
 them somewhere else by setting a **non-empty** `KUNAI_ANALYTICS_URL` or
-`analyticsEndpoint`. That address must use **https** — `http://localhost`, `127.0.0.1`, and `[::1]`
+`analyticsEndpoint`. That address must use **https**; `http://localhost`, `127.0.0.1`, and `[::1]`
 are the only exceptions, for testing your own ingest. Any other
 cleartext address is refused and nothing is sent at all; your pings are never
 silently rerouted to the built-in URL. An empty `analyticsEndpoint` (the shipped
@@ -137,9 +137,3 @@ endpoint says.
 ## Release confidence
 
 Contributor release checks (`fmt`, `lint`, `typecheck`, `test`, `build`) live in [Contribute](/docs/developer/contribute). Live provider, Discord, and real mpv checks stay manual.
-
-## Related guides
-
-- [Usage analytics pulse](/analytics)
-- [Diagnostics and reporting](/docs/users/diagnostics-and-reporting)
-- [Supported and unsupported](/docs/users/supported-and-unsupported)

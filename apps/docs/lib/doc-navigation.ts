@@ -41,7 +41,7 @@ export const docNavEntries: readonly DocNavEntry[] = [
     surfaces: ["hub"],
   },
   {
-    title: "CLI reference",
+    title: "CLI Reference",
     href: "/docs/users/cli-reference",
     description: "Launch flags, provider registry, and command tables synced from the running CLI.",
     group: "reference",
@@ -64,7 +64,7 @@ export const docNavEntries: readonly DocNavEntry[] = [
   },
   // Setup
   {
-    title: "Install And Update",
+    title: "Install and Update",
     href: "/docs/users/install-and-update",
     description: "Global package, source checkout, installer script, and manual update checks.",
     group: "setup",
@@ -107,14 +107,14 @@ export const docNavEntries: readonly DocNavEntry[] = [
     surfaces: ["hub", "home"],
   },
   {
-    title: "Commands And Shortcuts",
+    title: "Commands and Shortcuts",
     href: "/docs/users/commands-and-shortcuts",
     description: "Palette commands, playback actions, overlays, and reporting shortcuts.",
     group: "daily",
     surfaces: ["hub", "home"],
   },
   {
-    title: "Playback And Recovery",
+    title: "Playback and Recovery",
     href: "/docs/users/playback-and-recovery",
     description: "Recover, replay, resume, fallback, and what each action actually does.",
     group: "daily",
@@ -158,7 +158,7 @@ export const docNavEntries: readonly DocNavEntry[] = [
   },
   // Offline
   {
-    title: "Downloads And Offline",
+    title: "Downloads and Offline",
     href: "/docs/users/downloads-and-offline",
     description:
       "Queue jobs, validate artifacts, and play completed downloads without provider calls.",
@@ -167,14 +167,14 @@ export const docNavEntries: readonly DocNavEntry[] = [
   },
   // Trust
   {
-    title: "Reliability And Privacy",
+    title: "Reliability and Privacy",
     href: "/docs/users/reliability-and-privacy",
     description: "Durable vs disposable data, redacted diagnostics, and recovery posture.",
     group: "trust",
     surfaces: ["hub", "home"],
   },
   {
-    title: "Diagnostics And Reporting",
+    title: "Diagnostics and Reporting",
     href: "/docs/users/diagnostics-and-reporting",
     description: "Inspect runtime state, export bundles, and file issues without leaking URLs.",
     group: "trust",
@@ -332,7 +332,7 @@ export function hubGroups(): readonly {
       eyebrow: "Local media",
       title: "Downloads and offline",
       description:
-        "Separate download-only launch from in-shell queue management — they are not the same entry point.",
+        "Separate download-only launch from in-shell queue management; they are not the same entry point.",
       items: [],
     },
     {

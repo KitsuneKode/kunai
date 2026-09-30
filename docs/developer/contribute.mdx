@@ -10,15 +10,15 @@ Contributors changing the Kunai CLI, providers, or documentation who want a revi
 
 **You will learn:** how to fork the repo, verify the baseline, run the right tests, attach diagnostics for playback or provider bugs, and stay inside project boundaries.
 
-Thank you for contributing. Kunai is Bun-first, terminal-first, and evidence-driven — PRs with reproduction steps or test coverage are easier to review.
+Thank you for contributing. Kunai is Bun-first, terminal-first, and evidence-driven. PRs with reproduction steps or test coverage are easier to review.
 
 ## Before you start
 
 Read the repo entry points:
 
-- `CLAUDE.md` / `AGENTS.md` — routing, hard boundaries, commands
-- [.docs/architecture.md](https://github.com/KitsuneKode/kunai/blob/main/.docs/architecture.md) — playback flow and data ownership (in-repo deep doc, not published on this site)
-- [Debugging workflow](/docs/developer/debugging-workflow) — traces and diagnostics for bug reports
+- `CLAUDE.md` / `AGENTS.md`: routing, hard boundaries, commands
+- [.docs/architecture.md](https://github.com/KitsuneKode/kunai/blob/main/.docs/architecture.md): playback flow and data ownership (in-repo deep doc, not published on this site)
+- [Debugging workflow](/docs/developer/debugging-workflow): traces and diagnostics for bug reports
 
 <Callout type="info" title="Provider changes need extra care">
   Before changing provider crypto, decoder constants, or AllManga/AllAnime parity logic, compare
@@ -96,7 +96,7 @@ bun run fmt            # format check
 bun run build          # release build — run before large features
 ```
 
-Unit tests live under `apps/cli/test/unit/`. Integration tests under `apps/cli/test/integration/`. Do **not** use `bun test` directly — use `bun run test`.
+Unit tests live under `apps/cli/test/unit/`. Integration tests under `apps/cli/test/integration/`. Do **not** use `bun test` directly; use `bun run test`.
 
 Docs changes:
 
@@ -111,7 +111,7 @@ See [Docs maintenance](/docs/developer/docs-maintenance).
 
 ## Live provider smokes (opt-in)
 
-Live tests hit real provider endpoints. They are **manual** release checks — not default CI.
+Live tests hit real provider endpoints. They are **manual** release checks, not default CI.
 
 ```sh
 bun run test:live:videasy
@@ -121,7 +121,7 @@ bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
 bun run test:live:miruro
 ```
 
-Each smoke creates an isolated temp profile under `/tmp/kunai-live-*`. Do not run live smokes in a tight loop while debugging — use unit tests and `--debug-json` traces for iteration, then one live smoke to confirm provider reality.
+Each smoke creates an isolated temp profile under `/tmp/kunai-live-*`. Do not run live smokes in a tight loop while debugging; use unit tests and `--debug-json` traces for iteration, then one live smoke to confirm provider reality.
 
 Relay (opt-in, local server):
 
@@ -157,10 +157,10 @@ Inside the shell: `/diagnostics`, `/export-diagnostics`. See [Debugging workflow
 
 ### Scope and style
 
-- Minimize diff scope — one logical change per PR when possible.
+- Minimize diff scope: one logical change per PR when possible.
 - Match surrounding naming, types, and patterns.
 - Extract shared logic when duplicate code would smell across files.
-- Do not add noisy `console.log` in Ink render paths — use diagnostics events.
+- Do not add noisy `console.log` in Ink render paths; use diagnostics events.
 
 ### Required checks
 
@@ -178,9 +178,9 @@ Run `bun run build` for features that touch build-only paths or release packagin
 ### PR description should include
 
 1. **What** changed (user-visible behavior first).
-2. **Why** — bug fix, provider drift, UX gap, etc.
-3. **How to test** — exact commands and flags.
-4. **Evidence** — diagnostics bundle path, trace excerpt, or test output for provider/playback changes.
+2. **Why:** bug fix, provider drift, UX gap, etc.
+3. **How to test:** exact commands and flags.
+4. **Evidence:** diagnostics bundle path, trace excerpt, or test output for provider/playback changes.
 
 ### Provider PRs additionally
 
@@ -191,15 +191,15 @@ Run `bun run build` for features that touch build-only paths or release packagin
 ### Docs PRs
 
 - User-facing behavior before implementation detail.
-- Use `/docs/users/...` absolute paths for internal links — never `../../.docs` or `../../.plans`.
+- Use `/docs/users/...` absolute paths for internal links, never `../../.docs` or `../../.plans`.
 - Register new pages in the nearest `meta.json`.
 - Run `bun run --cwd apps/docs generate` when commands or providers change.
 
 ## Hard boundaries (do not violate)
 
-- `apps/cli/index.ts` is a compatibility wrapper — new runtime work goes in `apps/cli/src/main.ts`.
+- `apps/cli/index.ts` is a compatibility wrapper; new runtime work goes in `apps/cli/src/main.ts`.
 - Episode numbers are **1-based** in the UI.
-- Browser/Playwright legacy code is archive reference only — not active beta runtime.
+- Browser/Playwright legacy code is archive reference only, not active beta runtime.
 - Diagnostics exports must not include raw stream URLs, tokens, or private home paths.
 - Do not commit secrets (`.env`, tokens, session captures).
 
@@ -211,6 +211,6 @@ Run `bun run build` for features that touch build-only paths or release packagin
 
 ## Related
 
-- [Docs maintenance](/docs/developer/docs-maintenance) — add pages, codegen, drift tests
-- [Debugging workflow](/docs/developer/debugging-workflow) — symptom triage for developers
-- [Supported and unsupported](/docs/users/supported-and-unsupported) — beta scope boundaries
+- [Docs maintenance](/docs/developer/docs-maintenance): add pages, codegen, drift tests
+- [Debugging workflow](/docs/developer/debugging-workflow): symptom triage for developers
+- [Supported and Unsupported](/docs/users/supported-and-unsupported): beta scope boundaries

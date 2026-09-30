@@ -7,7 +7,7 @@ The docs website lives in `apps/docs` and uses Next.js, Fumadocs, MDX, and Tailw
 
 <Callout type="info" title="Docs build is separate from CLI release">
   The CLI release path builds `@kitsunekode/kunai` without requiring the docs website. Docs CI/build
-  is its own task — keep it that way.
+  is its own task; keep it that way.
 </Callout>
 
 ## Adding a page
@@ -51,7 +51,7 @@ bun run --cwd apps/docs build
 
 `apps/docs/scripts/sync-code-metadata.ts` writes `lib/generated-metadata.json` from the CLI registry. Drift tests in `apps/docs/test/drift.test.ts` and `apps/docs/test/seo.test.ts` guard provider order, command counts, link hygiene, SEO uniqueness, and fingerprint parity.
 
-`apps/docs/scripts/sync-repo-content.ts` bakes the monorepo files the site renders but must not read at request time — `.release/*.json`, the troubleshooting FAQ parsed out of `docs/`, and the OG mascot PNG — into `lib/generated-release-notes.json`, `lib/generated-troubleshooting-faq.json`, and `lib/generated-mascot.json`. Reading those from disk inside a route made Turbopack trace the whole workspace into every function's NFT list; the runtime now touches no filesystem. `scripts/check-codegen-freshness.ts` fails when any generated file drifts from its source.
+`apps/docs/scripts/sync-repo-content.ts` bakes the monorepo files the site renders but must not read at request time (`.release/*.json`, the troubleshooting FAQ parsed out of `docs/`, and the OG mascot PNG) into `lib/generated-release-notes.json`, `lib/generated-troubleshooting-faq.json`, and `lib/generated-mascot.json`. Reading those from disk inside a route made Turbopack trace the whole workspace into every function's NFT list; the runtime now touches no filesystem. `scripts/check-codegen-freshness.ts` fails when any generated file drifts from its source.
 
 Run `bun run --cwd apps/docs generate` after changing commands, providers, help text, `docs/feature-status.yaml`, `docs/users/troubleshooting.mdx`, `docs/troubleshooting-symptoms.yaml`, or `.release/`.
 
@@ -65,7 +65,7 @@ Run `bun run --cwd apps/docs generate` after changing commands, providers, help 
 | **L3 Agent**     | `.docs/*`, `.plans/*`                                             | never link from published docs; promote via `docs/promotion-manifest.yaml` |
 | **L4 Release**   | CHANGELOG, `.release/`                                            | `release-checklist.mdx`, `release:notes:check`                             |
 
-**Rule:** Code wins for behavior. YAML wins for product posture. Prose explains — it does not duplicate L0 tables.
+**Rule:** Code wins for behavior. YAML wins for product posture. Prose explains; it does not duplicate L0 tables.
 
 ### Freshness gate
 

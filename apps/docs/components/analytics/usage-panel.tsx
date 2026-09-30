@@ -79,7 +79,7 @@ function BreakdownCards({ metrics }: { readonly metrics: DocsAnalyticsMetrics })
       </div>
       <p className="text-muted-foreground m-0 text-xs text-pretty">
         Each breakdown counts the same installs a different way, so the three add up to the same day
-        total — they are not parts of one whole. Small-cell suppression is applied per breakdown; it
+        total; they are not parts of one whole. Small-cell suppression is applied per breakdown; it
         is not a joint anonymity guarantee.
       </p>
     </div>
@@ -99,7 +99,7 @@ function PayloadContractCard() {
       <CardHeader>
         <CardTitle>Exact wire payload</CardTitle>
         <CardDescription>
-          Nothing else is accepted. Extra keys — titles, queries, URLs — are rejected.
+          Nothing else is accepted. Extra keys (titles, queries, URLs) are rejected.
         </CardDescription>
         <CardAction>
           <CopyButton text={payload} label="payload" />
@@ -130,7 +130,7 @@ function GuaranteesCard() {
     {
       icon: IconLock,
       title: "Install ids are hashed before storage",
-      body: "The ingest keeps HMAC hashes of the install id with your platform, architecture, and version — never a raw UUID.",
+      body: "The ingest keeps HMAC hashes of the install id with your platform, architecture, and version, never a raw UUID.",
     },
     {
       icon: IconShieldCheck,
@@ -237,7 +237,7 @@ export function AnalyticsMetricsEmpty() {
           render={<Link href="/docs/users/cli-reference" />}
           nativeButton={false}
         >
-          CLI reference
+          CLI Reference
         </Button>
       </EmptyContent>
     </Empty>

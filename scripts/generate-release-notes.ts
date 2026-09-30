@@ -159,6 +159,7 @@ type PreservedDiskFields = {
   readonly assets?: readonly ReleaseBinaryChecksum[];
   readonly status?: ReleaseNotesArtifact["status"];
   readonly publishedAt?: string | null;
+  readonly date?: string | null;
 };
 
 function serializeArtifact(
@@ -172,12 +173,25 @@ function serializeArtifact(
           ...base,
           status: preserved.status,
           publishedAt: preserved.publishedAt ?? null,
+          // `date` is publication-owned (derived from `publishedAt` by
+          // `set-release-status.ts`); regen never authors it, only carries it.
+          ...(preserved.date !== undefined ? { date: preserved.date } : {}),
         }
       : base;
   const merged = preserved?.assets
     ? { ...withPublication, assets: preserved.assets }
     : withPublication;
   return `${JSON.stringify(merged, null, 2)}\n`;
+}
+
+/** Artifact as it lands on disk — fresh fields merged with preserved ones. */
+function mergedArtifact(
+  artifact: ReleaseNotesArtifact,
+  preserved?: PreservedDiskFields,
+): ReleaseNotesArtifact {
+  // SAFETY: serializeArtifact emits exactly the artifact schema, so parsing
+  // the round-trip back is the same object shape; used only for the render pass.
+  return JSON.parse(serializeArtifact(artifact, preserved)) as ReleaseNotesArtifact;
 }
 
 /**
@@ -193,18 +207,31 @@ function readPreservedDiskFields(path: string): PreservedDiskFields | undefined 
   try {
     const onDisk = JSON.parse(readFileSync(path, "utf8")) as unknown;
     const publication = publicationStateFromUnknown(onDisk);
+    if (!(onDisk instanceof Object)) return undefined;
+    // SAFETY: onDisk is a JSON record this script itself wrote; each field read
+    // below still checks its own shape before use, so the record cast only
+    // unlocks keyed access.
+    const diskArtifact = onDisk as ReleaseNotesArtifact;
     const assets =
-      onDisk &&
-      typeof onDisk === "object" &&
-      "assets" in onDisk &&
-      Array.isArray((onDisk as ReleaseNotesArtifact).assets) &&
-      (onDisk as ReleaseNotesArtifact).assets!.length > 0
-        ? (onDisk as ReleaseNotesArtifact).assets
+      "assets" in diskArtifact &&
+      Array.isArray(diskArtifact.assets) &&
+      diskArtifact.assets.length > 0
+        ? diskArtifact.assets
         : undefined;
-    if (!publication && !assets) return undefined;
+    const date =
+      "date" in diskArtifact && String(diskArtifact.date) === diskArtifact.date
+        ? diskArtifact.date
+        : undefined;
+    if (!publication && !assets && date === undefined) return undefined;
     return {
       ...(assets ? { assets } : null),
-      ...(publication ? { status: publication.status, publishedAt: publication.publishedAt } : {}),
+      ...(publication
+        ? {
+            status: publication.status,
+            publishedAt: publication.publishedAt,
+            ...(date !== undefined ? { date } : null),
+          }
+        : null),
     };
   } catch {
     // A corrupt artifact is about to be overwritten anyway; nothing to preserve.
@@ -223,19 +250,26 @@ export async function writeArtifact({
   mkdirSync(dirname(path), { recursive: true });
   const preserved = readPreservedDiskFields(path);
   writeFileSync(path, serializeArtifact(artifact, preserved), "utf8");
-  writeFileSync(markdownPath, renderReleaseNotesMarkdown(artifact), "utf8");
+  // Render from the merged artifact so the preserved publication `date` lands
+  // in the markdown ("Released 2026-09-02"), not a regenerated null.
+  writeFileSync(
+    markdownPath,
+    renderReleaseNotesMarkdown(mergedArtifact(artifact, preserved)),
+    "utf8",
+  );
   console.log(`[release-notes] wrote ${path}`);
   console.log(`[release-notes] wrote ${markdownPath}`);
 }
 
-/** Compare note content only — assets and publication state are owned elsewhere. */
+/** Compare note content only — assets and publication state (incl. `date`) are owned elsewhere. */
 function artifactForNotesCheck(
   artifact: ReleaseNotesArtifact,
-): Omit<ReleaseNotesArtifact, "assets" | "status" | "publishedAt"> {
+): Omit<ReleaseNotesArtifact, "assets" | "status" | "publishedAt" | "date"> {
   const {
     assets: _assets,
     status: _status,
     publishedAt: _publishedAt,
+    date: _date,
     ...rest
   } = artifactWithoutBinaryChecksums(artifact) as ReleaseNotesArtifact;
   return rest;
@@ -243,7 +277,8 @@ function artifactForNotesCheck(
 
 function checkArtifact(artifact: ReleaseNotesArtifact): void {
   const paths = artifactPaths(artifact.version);
-  const expectedMarkdown = renderReleaseNotesMarkdown(artifact);
+  const preserved = readPreservedDiskFields(paths.json);
+  const expectedMarkdown = renderReleaseNotesMarkdown(mergedArtifact(artifact, preserved));
   const errors: string[] = [];
 
   if (!existsSync(paths.json)) {

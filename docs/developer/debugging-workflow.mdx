@@ -149,9 +149,9 @@ After reproducing with breakpoints, run `/export-diagnostics` before exiting the
 
 These areas have dedicated implementation work in the repo. User-facing behavior is documented above; contributors should search the codebase and `.docs/` for current contracts:
 
-- **Recovery hardening** — conservative recover/replay policy, stale-cache retention when fresh lookup fails, explicit queue recovery notices
-- **Recovery policy engine** — `recoveryMode` setting (`guided`, `fallback-first`, `manual`) and classified failure routing
-- **Diagnostics reporting UX** — `/export-diagnostics` redaction rules, `/report-issue` preview-and-confirm flow, category sections in support bundles
-- **Provider/player harness** — unit and integration tests under `apps/cli/test/`; live smokes under `apps/cli/test/live/` are opt-in manual checks
+- **Recovery hardening:** conservative recover/replay policy, stale-cache retention when fresh lookup fails, explicit queue recovery notices
+- **Recovery policy engine:** `recoveryMode` setting (`guided`, `fallback-first`, `manual`) and classified failure routing
+- **Diagnostics reporting UX:** `/export-diagnostics` redaction rules, `/report-issue` preview-and-confirm flow, category sections in support bundles
+- **Provider/player harness:** unit and integration tests under `apps/cli/test/`; live smokes under `apps/cli/test/live/` are opt-in manual checks
 
 See [Contribute](/docs/developer/contribute) for PR expectations and test commands. Maintainer docs: [Docs maintenance](/docs/developer/docs-maintenance).

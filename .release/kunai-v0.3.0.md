@@ -1,13 +1,15 @@
 # Kunai 0.3.0
 
+Released 2026-09-02
+
 Give Kunai a mascot, and one of her rather than two.
 
-Kanna is a rose kitsune. A **kanna** (鉋) is a Japanese hand plane — you run it
+Kanna is a rose kitsune. A **kanna** (鉋) is a Japanese hand plane. You run it
 over rough wood and the roughness leaves in one curl. Kunai is the blade; she is
 who holds it.
 
 - **She appears where waiting happens, and nowhere else.** Setup, the setup
-  summary, the goodbye screen, and — as one short line of text — every empty and
+  summary, the goodbye screen, and (as one short line of text) every empty and
   error state. That text tier is the one that matters: the illustrated fox needs
   a graphics protocol and reaches four terminals, while copy reaches all of them.
   She is silent on `loading`, `info` and `success`, which already say what is
@@ -27,7 +29,7 @@ vector source, and every one of those surfaces renders from it.
 
 She appears in the terminal where the session is actually waiting: while
 providers are being raced, on the beat where a stream is handed to mpv, and when
-a resolve fails. One rule keeps that from becoming clutter — she never competes
+a resolve fails. One rule keeps that from becoming clutter: she never competes
 with content artwork, so where a poster renders she does not. Failure is the one
 exception, because a surface explaining what went wrong outranks a picture.
 
@@ -38,11 +40,11 @@ becomes undrawable, another if a moment has no reporter.
 
 On the docs site she roams, and she is an animal with attention rather than a
 cursor mirror. She has to notice a movement (small ones are ignored), take a beat
-to decide, walk over, and settle _beside_ you rather than on you — anything that
+to decide, walk over, and settle _beside_ you rather than on you; anything that
 lands under the pointer reads as cursor decoration. Changing direction mid-walk
 costs her a moment of speed instead of snapping. At rest she watches you, gets
 bored, and only then curls up. She is goofier there than in the terminal on
-purpose — the CLI is her at work, where a chatty line in someone's shell is a bug.
+purpose: the CLI is her at work, where a chatty line in someone's shell is a bug.
 
 The browser tab is hers too: the favicon is Kanna rather than the blade mark,
 which stays as the insignia on badges and the cards.
@@ -54,8 +56,8 @@ Fixes found while building it, all pre-existing:
   `?query=` per request, so Next prerendered it once with no query and served
   that forever. The built payload was two bytes.
 - **A failed clipboard write still reported success.** The copy button did not
-  await `writeText`, so a rejected write — insecure context, denied permission,
-  no clipboard API — still said "Copied" and still fired the event the fox
+  await `writeText`, so a rejected write (insecure context, denied permission,
+  no clipboard API) still said "Copied" and still fired the event the fox
   reacts to.
 - **Discord presence printed its status twice** on the shell boot line, both
   settings actions, and the diagnostics reason: "unavailable · unavailable ·
@@ -65,7 +67,7 @@ Fixes found while building it, all pre-existing:
   written for a corner peek on a dark square with empty space beside it; the art
   changed to a centred bust and the layout did not follow.
 - **The installer Docker matrix was failing every scenario on both libc
-  variants** with `release companion not found` — the build job uploaded raw
+  variants** with `release companion not found`: the build job uploaded raw
   executables while the fixture installs from the archive.
 
 Security, honesty, and platform fixes from a full codebase review.
@@ -95,8 +97,8 @@ Provider source reliability and lower cold-start waiting.
 Launch flags, discovery, and the queue.
 
 - **`-S <query>` shows its results.** The search ran, but the view and the shell
-  were both chosen from a state snapshot taken before it finished — and that
-  snapshot is empty by construction — so a successful search landed on the empty
+  were both chosen from a state snapshot taken before it finished, and that
+  snapshot is empty by construction, so a successful search landed on the empty
   search surface and looked like the query had merely been typed for you.
 - **A search on launch now shows a loader.** The idle surface rendered the
   welcome screen regardless of search state, so the header said "searching" over
@@ -114,20 +116,20 @@ Launch flags, discovery, and the queue.
 - **`--dry-run` prints the plan instead of starting a session.** The flag was
   documented as a general launch flag and read in exactly two places
   (`--install-protocol-handler` and `rollback`), so `kunai -S "Dune" --dry-run`
-  parsed it, discarded it, and mounted the full interactive shell — starting the
+  parsed it, discarded it, and mounted the full interactive shell, starting the
   session it had just promised not to. It now prints the resolved mode, surface,
   query or title, auto-pick, and any flag it will ignore, and exits before
   anything is created: no version lock, no version pruning, no database, no
   terminal probe.
 - **`--zen` no longer plays a title you did not pick.** Zen is documented as a
-  bare layout, but it set `--quick`, which is not a layout flag at all — it means
+  bare layout, but it set `--quick`, which is not a layout flag at all; it means
   "auto-pick result #1". `kunai -S "Dune" --zen` skipped the result list and
   started playing the top hit. Zen now changes chrome only; use `--zen --quick`
   for the old behaviour.
 - **Finishing a title no longer triggers a search you did not ask for.**
   Launching with both a query and a direct target (`-S "Dune" --history`, a
   share link, `-i` with `-t`) left the query armed after the chosen title
-  played, so the session bounced into a stale search when playback ended — and
+  played, so the session bounced into a stale search when playback ended, and
   with the auto-pick index still set, under `--quick` that search immediately
   played its first hit, writing a history row and a tracker sync for a title
   nobody selected.
@@ -139,7 +141,7 @@ Privacy hardening, and a consent bug in the installer.
 
 - **Diagnostics no longer leak signed-CDN tokens or your IP address.**
   Redaction judged only the parameter _name_, so anything the CDN keyed
-  differently — `?q=<token>`, `?md5=<hash>`, `?ip=`, `?client_ip=` — passed
+  differently (`?q=<token>`, `?md5=<hash>`, `?ip=`, `?client_ip=`) passed
   through intact into the debug log, the diagnostics store, and the support
   bundle people paste into GitHub issues. Values are now judged too: an
   unbroken high-entropy blob is redacted, while readable values like `?q=Dune`
@@ -158,12 +160,12 @@ Privacy hardening, and a consent bug in the installer.
   failed read fell through to the default. `--yes` is now the only thing that
   accepts on your behalf; a skipped step says so.
 - **`kunai` works in the next terminal you open.** The installer printed a PATH
-  line and stopped, which changes nothing in your shell — so on macOS and
+  line and stopped, which changes nothing in your shell, so on macOS and
   Alpine, where `~/.local/bin` is not already on PATH, the install "succeeded"
   and the command was not found. It now writes your shell profile (opt out with
   `--skip-path-update`) and prints one `source` line for the current shell.
 - **Apple Silicon binaries run.** Release binaries are cross-compiled on Linux
-  and therefore arrive unsigned, which arm64 macOS refuses to execute — the
+  and therefore arrive unsigned, which arm64 macOS refuses to execute; the
   shell reports only `killed: 9`. The installer now ad-hoc signs on your Mac.
 - **The public usage page works.** `/analytics` on the docs site showed
   "not published yet" permanently while the ingest was serving real data.
@@ -172,7 +174,7 @@ Privacy hardening, and a consent bug in the installer.
   `::ffff:169.254.169.254`.
 - **Discord Rich Presence can no longer end your session.** A malformed frame
   from Discord reached `JSON.parse` inside the socket callback, and a throw
-  there is an uncaught exception rather than a rejected promise — which Kunai
+  there is an uncaught exception rather than a rejected promise, which Kunai
   escalates to a fatal shutdown. A cosmetic, optional integration was able to
   print a stack trace over the UI and stop playback. Unreadable frames are now
   dropped, and a frame claiming an implausible size drops the connection instead
@@ -180,16 +182,16 @@ Privacy hardening, and a consent bug in the installer.
 - **An unplugged drive no longer kills the session or strands the download.**
   When the download folder became unwritable or disappeared mid-session,
   preparing the output directory threw past the point where the job was claimed:
-  the job stayed claimed for the rest of the run — displayed as queued, never
-  startable again — and the error surfaced as an unhandled rejection, which is
+  the job stayed claimed for the rest of the run (displayed as queued, never
+  startable again), and the error surfaced as an unhandled rejection, which is
   also a fatal shutdown. The job is now paused with a readable reason and picked
   up on a later attempt.
 - **Reordering Up Next is all-or-nothing.** Positions were written one row at a
   time outside a transaction, so an interruption part-way left the queue with
   duplicate positions rather than a stale-but-valid order.
 - **Anime playback stops stalling the interface between segments.** The relay
-  decoded every video segment into a JavaScript string twice — once to find a
-  status trailer, once to check whether the bytes were a playlist — which for a
+  decoded every video segment into a JavaScript string twice (once to find a
+  status trailer, once to check whether the bytes were a playlist), which for a
   6 MiB segment cost about 50 ms of blocked main thread and 60 MiB of garbage,
   on the same thread that reads your keystrokes. Both checks now work on bytes.
 - **The relay's CDN allowlist is a domain check again.** The patterns matched
@@ -199,7 +201,7 @@ Privacy hardening, and a consent bug in the installer.
   temp directory; on systems with a group-writable umask that left mpv's
   command interface reachable by another process running as the same group.
   It now uses `$XDG_RUNTIME_DIR/kunai`, falling back to an owner-only temp
-  subdirectory (macOS sets no runtime dir). Windows is unaffected — it uses a
+  subdirectory (macOS sets no runtime dir). Windows is unaffected: it uses a
   named pipe.
 - **Links open only if they are links.** External URLs went straight to
   `xdg-open`/`open`/`explorer.exe` whatever their scheme, and a value beginning
@@ -255,7 +257,7 @@ Persist expensive provider intermediate data across restarts.
   date (clamped to 2h–1 week), so a newly-aired episode is never hidden behind a
   stale cache.
 - Only a non-empty catalog is persisted; a failed or empty body is never cached.
-  The cache degrades to a no-op on any store error — a broken cache slows a
+  The cache degrades to a no-op on any store error; a broken cache slows a
   resolve, never fails it. Stream/source URLs stay in-memory and are never
   persisted.
 
@@ -263,8 +265,8 @@ Warm the top anime result's episode cache during search.
 
 - After an anime search, Kunai warms the persistent episode cache for the single
   top anime result in the background, so the Cloudflare-gated catalog fetch
-  (~6s) is already paid by the time you pick it. It is fire-and-forget — it never
-  blocks, delays, or fails the search — deduped so a title is warmed once per
+  (~6s) is already paid by the time you pick it. It is fire-and-forget: it never
+  blocks, delays, or fails the search. Deduped so a title is warmed once per
   session, and limited to one gated call per search to stay gentle on the WAF.
 
 Keep the anime auto-skip and provider-relay paths working after upstream rotations.
@@ -277,7 +279,7 @@ Keep the anime auto-skip and provider-relay paths working after upstream rotatio
 Show posters on every terminal, including Windows.
 
 - New half-block renderer decodes JPEG/PNG in process and paints two pixels per
-  cell with truecolour SGR, so posters no longer require `chafa` — which is
+  cell with truecolour SGR, so posters no longer require `chafa`, which is
   effectively never installed on Windows, where posters previously never
   appeared at all.
 - Windows Terminal no longer auto-selects sixel: support only landed in 1.22 and
@@ -303,7 +305,7 @@ A last review pass over the release train, from real sessions:
 
 - **A malformed language tag can no longer take down a resolve.** `Intl.DisplayNames.of()`
   throws on anything that is not a well-formed BCP-47 tag, and several values reaching it are
-  not — YouTube's `a.en` auto-caption codes, `live_chat`, and `none`, which Kunai ships as its
+  not: YouTube's `a.en` auto-caption codes, `live_chat`, and `none`, which Kunai ships as its
   own default subtitle preference. Labels now degrade instead of throwing, YouTube's dotted
   auto-caption tags resolve to the real language, and the `live_chat` metadata track is dropped
   before it can reach the picker.
@@ -320,8 +322,8 @@ A last review pass over the release train, from real sessions:
 - **YouTube live streams play.** mpv's ytdl hook turns each `ytdl-raw-options` entry into a bare
   `--flag` when its value is empty, so Kunai's `live-from-start=no` reached yt-dlp as
   `--live-from-start no` and `no` was read as a second URL. Live playback now joins at the live
-  edge, holds a short demuxer buffer to stay there — at spawn and on every in-session
-  replacement alike — and suppresses every seek that assumes a fixed position: the start
+  edge, holds a short demuxer buffer to stay there (at spawn and on every in-session
+  replacement alike) and suppresses every seek that assumes a fixed position: the start
   argument, the loadfile offset, the watch-later resume prompt, and the seek that used to fire
   after an in-process reconnect.
 
@@ -330,7 +332,7 @@ A last review pass over the release train, from real sessions:
   with no Proof-of-Origin requirement, and yt-dlp skips rather than attempts formats whose token
   is missing, so a token-gated client in front spent a whole failover lane on formats that were
   never going to be offered. A configured PO token now survives a restart, reaches downloads as
-  well as playback, and is written in the single-prefix form yt-dlp can actually parse — before,
+  well as playback, and is written in the single-prefix form yt-dlp can actually parse; before,
   it was dropped by config normalization, omitted by downloads, and malformed on the wire.
 - **A YouTube premiere says it has not started.** Opening one reports that instead of handing
   mpv a stream that cannot play yet, and rows carry view counts, humanized upload times, and
@@ -342,8 +344,8 @@ A last review pass over the release train, from real sessions:
   progress, `esc` to cancel, and `r` to retry a failure. It previously passed a signal from a
   controller nobody held, so cancelling was impossible and the wizard waited on an unresponsive
   screen until the tracker's own deadline expired.
-- **Stopping early shows where you stopped.** The post-play bar read season progress — "3 / 10"
-  after 23 seconds of an episode — and films got no bar at all. It now reads elapsed position
+- **Stopping early shows where you stopped.** The post-play bar read season progress ("3 / 10"
+  after 23 seconds of an episode), and films got no bar at all. It now reads elapsed position
   over runtime for both, without a misleading percentage or a season fallback when runtime is
   unavailable.
 - **Discord presence clears when Kunai exits.** A single Discord IPC frame was allowed ten
@@ -383,7 +385,7 @@ Also new since 0.2.5, the last release you could install:
   everything else, with live/upcoming handling, SponsorBlock and cookie settings,
   and video watch history counted in your stats.
 - **Playback that recovers.** Persistent mpv sessions, provider fallback with
-  endpoint-health diagnostics, and honest cancellation — a dead source retries
+  endpoint-health diagnostics, and honest cancellation: a dead source retries
   the next one instead of looping.
 - **Share links.** `kunai://` round trips, so a title (and timestamp) can be
   handed to someone else or reopened later.
@@ -423,9 +425,9 @@ Redact standalone opaque credential values from diagnostics even when an upstrea
 Keep unexpected background download-queue failures inside the download
 subsystem so they cannot terminate playback.
 
-YouTube plays at the quality you chose on the persistent player path. The format selector was set on mpv's `ytdl` option, which is a yes/no flag — mpv answered `unsupported format for accessing property` and dropped it, so the ceiling silently never applied while the spawn path honoured it. The two player paths now agree.
+YouTube plays at the quality you chose on the persistent player path. The format selector was set on mpv's `ytdl` option, which is a yes/no flag; mpv answered `unsupported format for accessing property` and dropped it, so the ceiling silently never applied while the spawn path honoured it. The two player paths now agree.
 
-Tracker credentials are private on Windows and survive a power cut everywhere. The owner-only permission was applied under a POSIX-only branch, so on Windows `sync-tokens.json` and `config.json` kept whatever `%APPDATA%` inherited; they now get an inheritance-free, user-only ACL. Neither file was ever flushed either, so an atomic rename could reach the journal while the data sat in the page cache — a power loss left a correctly named, empty config. Both are now flushed before the rename and the directory entry after it.
+Tracker credentials are private on Windows and survive a power cut everywhere. The owner-only permission was applied under a POSIX-only branch, so on Windows `sync-tokens.json` and `config.json` kept whatever `%APPDATA%` inherited; they now get an inheritance-free, user-only ACL. Neither file was ever flushed either, so an atomic rename could reach the journal while the data sat in the page cache; a power loss left a correctly named, empty config. Both are now flushed before the rename and the directory entry after it.
 
 `-i/--id` no longer leaves a placeholder title in your history, and a partial write can no longer erase external ids that were already resolved. Continue-watching rows keep the identity they were saved with.
 
@@ -474,12 +476,12 @@ AniList now connects with no configuration at all: the implicit grant needs no
 client secret, so Kunai ships an application id and nothing else. Delivery is
 paced against AniList's published rate-limit headers, and a `429` defers the
 whole batch for that tracker using the server's own wait rather than retrying
-into it. Sync can be paused for a while — distinct from turning a tracker off —
+into it. Sync can be paused for a while (distinct from turning a tracker off),
 with work still queueing while paused.
 
 Favourites and watchlist now reach the right tracker. A list change carries the
 title's catalogue ids instead of dropping them, and AniList is resolved from an
-explicit id rather than from the lane a row arrived through — anime almost always
+explicit id rather than from the lane a row arrived through; anime almost always
 arrives as a TMDB-typed `series`, so the old lane check rejected the very titles
 it existed to route while TMDB accepted them. Favouriting an anime wrote to TMDB
 and never to AniList; more often it queued nothing at all and still reported
@@ -506,8 +508,8 @@ title twice keeps one row instead of two invisible ones, and the membership chec
 gets a covering index. Existing duplicates collapse onto the earliest row.
 
 In the shell, the favourite mark moves to its own accent-tinted column on the
-right — prefixed into the title it took the title's colour and pushed every
-favourited row a glyph out of alignment — and a toggle now reports which way it
+right; prefixed into the title, it took the title's colour and pushed every
+favourited row a glyph out of alignment. A toggle now reports which way it
 went, and where it synced, instead of "Updated favourites" for both directions.
 Favourites reach the screens where you actually spend time: `l` toggles during
 loading and playback, and the playing rail and post-play panel both show the
@@ -516,11 +518,11 @@ been describing one half of a pair.
 
 Connecting TMDB no longer hangs when the API is unreachable. Artwork and
 metadata try a mirror before going direct, so they can work on a network where
-account linking cannot — linking must be direct, because a request token and
+account linking cannot; linking must be direct, because a request token and
 session id are account credentials. That now fails in seconds with an
 explanation instead of stalling forever with no output.
 
-Sync gains a settings page — the first reachable Connect surface — with a status
+Sync gains a settings page (the first reachable Connect surface) with a status
 badge in the root crumb. It is marked experimental: the delivery path is covered
 by tests but has not yet been verified against a live tracker account.
 

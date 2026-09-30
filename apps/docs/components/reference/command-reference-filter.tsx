@@ -8,6 +8,21 @@ type CommandReferenceFilterProps = {
   readonly total: number;
 };
 
+const COLUMNS = ["Command", "Label", "Aliases", "Description"] as const;
+
+function CommandRow({ cmd }: { readonly cmd: CommandMetadata }) {
+  return (
+    <tr className="border-fd-border/50 border-b align-top">
+      <td className="py-2 pr-4 font-mono text-xs">/{cmd.id}</td>
+      <td className="py-2 pr-4 text-xs">{cmd.label}</td>
+      <td className="text-fd-muted-foreground py-2 pr-4 font-mono text-xs">
+        {cmd.aliases.length > 0 ? cmd.aliases.join(", ") : "-"}
+      </td>
+      <td className="py-2 text-xs leading-relaxed">{cmd.description || "-"}</td>
+    </tr>
+  );
+}
+
 export function CommandReferenceFilter({ commands, total }: CommandReferenceFilterProps) {
   const [query, setQuery] = useState("");
 
@@ -41,22 +56,16 @@ export function CommandReferenceFilter({ commands, total }: CommandReferenceFilt
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b text-left">
-              <th className="py-2 pr-4 font-medium">Command</th>
-              <th className="py-2 pr-4 font-medium">Label</th>
-              <th className="py-2 pr-4 font-medium">Aliases</th>
-              <th className="py-2 font-medium">Description</th>
+              {COLUMNS.map((column, index) => (
+                <th key={column} className={`py-2 font-medium ${index < 3 ? "pr-4" : ""}`}>
+                  {column}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {filtered.map((cmd) => (
-              <tr key={cmd.id} className="border-fd-border/50 border-b align-top">
-                <td className="py-2 pr-4 font-mono text-xs">/{cmd.id}</td>
-                <td className="py-2 pr-4 text-xs">{cmd.label}</td>
-                <td className="text-fd-muted-foreground py-2 pr-4 font-mono text-xs">
-                  {cmd.aliases.length > 0 ? cmd.aliases.join(", ") : "-"}
-                </td>
-                <td className="py-2 text-xs leading-relaxed">{cmd.description || "-"}</td>
-              </tr>
+              <CommandRow key={cmd.id} cmd={cmd} />
             ))}
             {filtered.length === 0 ? (
               <tr>

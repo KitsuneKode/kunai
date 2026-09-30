@@ -4,49 +4,41 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { copyAndAnnounce } from "@/lib/clipboard-copy";
 import { IconCheck, IconCopy } from "@tabler/icons-react";
-import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useState, type ReactNode } from "react";
+import { AnimatePresence, domAnimation, LazyMotion, m } from "motion/react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 type CopyButtonProps = {
   readonly text: string;
   readonly label?: string;
   readonly className?: string;
   readonly children?: ReactNode;
-  /** @deprecated Use local state - kept for gradual migration */
-  readonly copiedText?: string | null;
-  /** @deprecated Use local state - kept for gradual migration */
-  readonly onCopy?: (text: string, label: string) => void;
 };
 
-export function CopyButton({
-  text,
-  label = "copy",
-  className,
-  children,
-  copiedText: externalCopied,
-  onCopy: externalOnCopy,
-}: CopyButtonProps) {
-  const [localCopied, setLocalCopied] = useState(false);
-  const copied = externalCopied !== undefined ? externalCopied === label : localCopied;
+export function CopyButton({ text, label = "copy", className, children }: CopyButtonProps) {
+  const [copied, setCopied] = useState(false);
+  const revertTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (revertTimerRef.current !== null) window.clearTimeout(revertTimerRef.current);
+    };
+  }, []);
 
   const handleCopy = useCallback(
     () =>
       copyAndAnnounce(text, label, {
         writeText: (value) => navigator.clipboard.writeText(value),
         onCopied: () => {
-          if (externalOnCopy) {
-            externalOnCopy(text, label);
-            return;
-          }
-          setLocalCopied(true);
-          window.setTimeout(() => setLocalCopied(false), 1800);
+          setCopied(true);
+          if (revertTimerRef.current !== null) window.clearTimeout(revertTimerRef.current);
+          revertTimerRef.current = window.setTimeout(() => setCopied(false), 1800);
         },
         // Announced rather than wired: the fox reacts to a successful copy, and
         // this button should not have to know that a fox exists.
         announce: (name) =>
           window.dispatchEvent(new CustomEvent("kunai:copied", { detail: { label: name } })),
       }),
-    [externalOnCopy, label, text],
+    [label, text],
   );
 
   return (
@@ -66,37 +58,36 @@ export function CopyButton({
             />
           }
         >
-          {children ?? (
-            <span className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 tabular-nums">
-              <AnimatePresence mode="wait" initial={false}>
-                {copied ? (
-                  <motion.span
+          <LazyMotion features={domAnimation}>
+            <AnimatePresence mode="wait" initial={false}>
+              {children ??
+                (copied ? (
+                  <m.span
                     key="copied"
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="inline-flex items-center gap-1 text-[var(--kunai-ok)]"
+                    className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 text-[var(--kunai-ok)] tabular-nums"
                   >
                     <IconCheck className="size-3" stroke={1.5} data-icon="inline-start" />
                     <span className="text-[10px]">Copied</span>
-                  </motion.span>
+                  </m.span>
                 ) : (
-                  <motion.span
+                  <m.span
                     key="copy"
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="inline-flex items-center gap-1"
+                    className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 tabular-nums"
                   >
                     <IconCopy className="size-3" stroke={1.5} data-icon="inline-start" />
                     <span className="text-[10px]">Copy</span>
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </span>
-          )}
+                  </m.span>
+                ))}
+            </AnimatePresence>
+          </LazyMotion>
         </TooltipTrigger>
         <TooltipContent side="top">Copy command</TooltipContent>
       </Tooltip>

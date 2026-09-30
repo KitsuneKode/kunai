@@ -10,13 +10,12 @@ Kunai stores preferences locally. Most settings are editable from `/settings` or
 | File | Purpose |
 | --- | --- |
 | `~/.config/kunai/config.json` | User preferences, provider priority, language profiles, presence, downloads |
-| `~/.config/kunai/providers.json` | Optional per-provider base domain overrides |
 | `~/.config/kunai/install.json` | Install channel metadata (binary / npm / bun) |
 </Callout>
 
 ## config.json
 
-The main config file is created on first run or after `kunai --setup`. Kunai merges saved values with defaults on load — you do not need every key present.
+The main config file is created on first run or after `kunai --setup`. Kunai merges saved values with defaults on load, so you do not need every key present.
 
 ### Mode and providers
 
@@ -46,8 +45,8 @@ More on fallback behavior: [Providers](/docs/users/providers).
 }
 ```
 
-- `cookiesFromBrowser` — optional browser profile name for yt-dlp (no default).
-- `cookiesFile` — optional **absolute** path to a cookie file (no default).
+- `cookiesFromBrowser`: optional browser profile name for yt-dlp (no default).
+- `cookiesFile`: optional **absolute** path to a cookie file (no default).
 - Never paste cookie contents into issues or chat. Review redacted `/export-diagnostics` bundles before sharing.
 - Kunai does not bypass DRM or YouTube access controls; cookies only help yt-dlp with content your account can already play.
 
@@ -91,7 +90,7 @@ profile to all four lanes. Playback defaults (autoplay, intro skip, and credit
 skip) start off. Press `s` for the recommended all-on defaults. The final setup
 screen summarizes every choice before saving.
 
-Example (not the shipped defaults — those use `audio: "original"` and `quality: "best"`):
+Example (not the shipped defaults; those use `audio: "original"` and `quality: "best"`):
 
 ```json
 {
@@ -101,8 +100,8 @@ Example (not the shipped defaults — those use `audio: "original"` and `quality
 }
 ```
 
-- `animeTitlePreference` — display English, romaji, native, or provider-native titles.
-- `favoriteSources` — pin preferred source/server names to the top of pickers.
+- `animeTitlePreference`: display English, romaji, native, or provider-native titles.
+- `favoriteSources`: pin preferred source/server names to the top of pickers.
 
 See [Media selection](/docs/users/media-selection) for how profiles flow into resolution and mpv.
 
@@ -123,7 +122,7 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 
 | Key / flag | Effect |
 | --- | --- |
-| `zenMode` / `--zen` | Single-column, minimal chrome — all features still key-reachable |
+| `zenMode` / `--zen` | Single-column, minimal chrome; all features still key-reachable |
 | `minimalMode` / `--minimal` | Collapse companion pane and dim header status |
 | `footerHints` | `detailed` or `minimal` footer guidance |
 | `discoverShowOnStartup` | Faint discover hint in browse footer when history exists |
@@ -133,7 +132,7 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `powerSaverAllowManualArtwork` | Still fetch artwork you ask for by hand while power saver is on (default `true`) |
 | `recommendationRailEnabled` | Show the recommendation rail after playback (default `true`) |
 
-Kunai ships with the Sakura design system baked into the terminal UI. There is no separate theme picker today — density modes (`zen`, `minimal`) are how you reduce visual chrome.
+Kunai ships with the Sakura design system baked into the terminal UI. There is no separate theme picker today; density modes (`zen`, `minimal`) are how you reduce visual chrome.
 
 ### Downloads and offline
 
@@ -147,8 +146,6 @@ Kunai ships with the Sakura design system baked into the terminal UI. There is n
 | `offlineMode` | Persistent local-only shell posture (separate from `--offline` launch) |
 | `autoCleanupWatched` | Surface watched downloads as cleanup candidates |
 | `autoCleanupGraceDays` | Days a watched download is kept before it becomes a cleanup candidate (default `7`) |
-| `autoDownload` | Download ahead automatically: `off` (default), `next`, or `season` |
-| `autoDownloadNextCount` | How many episodes ahead `autoDownload: "next"` fetches (default `1`) |
 | `offlineArtworkCacheEnabled` | Cache poster artwork alongside downloads for offline browsing (default `true`) |
 
 See [Downloads and offline](/docs/users/downloads-and-offline).
@@ -165,27 +162,6 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 ```
 
 Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
-
-## providers.json overrides
-
-Advanced users can override provider base domains without editing code:
-
-```json
-{
-  "videasy": "https://mirror.example",
-  "vidlink": "https://alt.example"
-}
-```
-
-- File path: `~/.config/kunai/providers.json`
-- Keys match provider ids from the production registry.
-- `vidking` remains accepted as a legacy alias for `videasy`.
-- Overrides affect URL construction only — they do not add new providers.
-
-<Callout type="warning" title="Overrides do not fix broken providers">
-Domain overrides help when a provider moves mirrors. They do not bypass DRM, add authentication, or guarantee stream availability.
-</Callout>
-
 ## mpv flags and bridge options
 
 Kunai always launches `mpv` for playback. You can forward diagnostic flags for a single run:
@@ -197,7 +173,7 @@ Kunai always launches `mpv` for playback. You can forward diagnostic flags for a
 | `--no-user-mpv-config` | Ignore user mpv.conf for this run |
 | `--mpv-log-file <path>` | Write mpv log to a specific file |
 
-These are process flags — see [CLI reference](/docs/users/cli-reference#mpv-and-diagnostics).
+These are process flags; see [CLI Reference](/docs/users/cli-reference#mpv-and-diagnostics).
 
 ### Persistent mpv bridge settings
 
@@ -221,7 +197,7 @@ Example `mpvKunaiScriptOpts`:
 }
 ```
 
-Kunai still passes provider-required headers (referrer, user-agent) and subtitle attachments automatically. Do not expect arbitrary mpv CLI passthrough from config today — use the flags above for debugging.
+Kunai still passes provider-required headers (referrer, user-agent) and subtitle attachments automatically. Do not expect arbitrary mpv CLI passthrough from config today; use the flags above for debugging.
 
 ## Discord presence setup
 
@@ -251,7 +227,7 @@ The Discord **desktop app** must be running (local IPC). Kunai ships a default a
 <Step>
 ### Connect and verify
 
-Use **Connect Discord now** in Settings. Kunai connects through Discord's local IPC — Unix socket on Linux/macOS, named pipe on Windows — no cloud relay.
+Use **Connect Discord now** in Settings. Kunai connects through Discord's local IPC (Unix socket on Linux/macOS, named pipe on Windows), no cloud relay.
 
 While playing, Kunai updates episode cards and progress timestamps. Paused playback shows static text; activity clears after a configurable idle delay.
 </Step>
@@ -271,7 +247,7 @@ Use `/settings` or `/setup` for guided changes. Settings persist immediately to 
 </Tab>
 <Tab value="Manual edit">
 
-1. Quit Kunai (or edit while idle — avoid editing mid-playback).
+1. Quit Kunai (or edit while idle; avoid editing mid-playback).
 2. Edit `~/.config/kunai/config.json` with valid JSON.
 3. Restart Kunai. Invalid JSON falls back to defaults with a stderr warning.
 
@@ -281,9 +257,3 @@ Use `/settings` or `/setup` for guided changes. Settings persist immediately to 
 <Callout type="idea" title="Reset without uninstall">
 Delete `config.json` to reset preferences. Use `kunai uninstall --purge` only when you want config, history, and cache removed together.
 </Callout>
-
-## Related
-
-- [Providers](/docs/users/providers) — fallback chains and priority
-- [Media selection](/docs/users/media-selection) — language profiles in practice
-- [Troubleshooting](/docs/users/troubleshooting) — when config changes do not fix playback

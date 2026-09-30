@@ -1,6 +1,6 @@
 ---
 title: Providers
-description: How Kunai chooses among third-party adapters, retries, recovers, and falls back when one fails — plus the live status table for every registered provider.
+description: How Kunai chooses among third-party adapters, retries, recovers, and falls back when one fails, plus the live status table for every registered provider.
 status: shipped
 ---
 
@@ -18,15 +18,15 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 
 Mode defaults at a glance:
 
-- **Movies / series** — VidLink first, then Rivestream, then Videasy (from `providerPriority`). Videasy's canonical metadata host has stopped resolving at DNS, so it is a fallback rather than the lead — its stream resolve path still answers
-- **Anime** — HiAnime first, then Miruro, then KickAssAnime, then AnimeGG, then AniDB, then AllManga (from `animeProviderPriority`). Every registered provider is tried automatically; the list sets the order, not who is included
-- **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
+- **Movies / series:** VidLink first, then Rivestream, then Videasy (from `providerPriority`). Videasy's canonical metadata host has stopped resolving at DNS, so it is a fallback rather than the lead; its stream resolve path still answers
+- **Anime:** HiAnime first, then Miruro, then KickAssAnime, then AnimeGG, then AniDB, then AllManga (from `animeProviderPriority`). Every registered provider is tried automatically; the list sets the order, not who is included
+- **YouTube:** dedicated video mode via Invidious search + yt-dlp playback
 
-Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
+Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only, not registered for production resolve.
 
 <ProviderDocSection id="videasy" title="Videasy">
 
-**Adapter role:** registered movies/series adapter, last in the automatic lane. Its metadata host `api.videasy.to` has stopped resolving at DNS (title enrichment degrades), while the wings stream endpoints it resolves through still answer — which is why it stays a fallback rather than the lead or removed.
+**Adapter role:** registered movies/series adapter, last in the automatic lane. Its metadata host `api.videasy.to` has stopped resolving at DNS (title enrichment degrades), while the wings stream endpoints it resolves through still answer, which is why it stays a fallback rather than the lead or removed.
 
 **Config id:** `videasy` (legacy alias `vidking` still accepted).
 
@@ -57,8 +57,8 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 <ProviderDocSection id="kickassanime" title="KickAssAnime">
 
 **Adapter role:** the anime backup, third in the default order. It has its own catalogue, site and
-video servers, so a HiAnime or Miruro outage does not reach it — and unlike the others it can pick
-up a show Kunai found anywhere, by matching the name and year against its own catalogue.
+video servers, so a HiAnime or Miruro outage does not reach it. Unlike the others it can pick up
+a show Kunai found anywhere, by matching the name and year against its own catalogue.
 
 **Config id:** `kickassanime`.
 
@@ -81,7 +81,7 @@ show you mean, it steps aside rather than playing the wrong one.
 
 **Adapter role:** the fourth anime source, behind HiAnime, Miruro and KickAssAnime. AnimeGG has its own
 catalogue, its own site and its own video servers, so it keeps working when the earlier providers do
-not — which is the whole reason it is there. It picks up a show Kunai found anywhere by matching its
+not, which is the whole reason it is there. It picks up a show Kunai found anywhere by matching its
 name against AnimeGG's own catalogue. Sub and dub both come from AnimeGG's own episode tabs.
 
 **Config id:** `animegg`.
@@ -126,7 +126,7 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 **Adapter role:** last in the default anime order, behind HiAnime, Miruro, KickAssAnime, AnimeGG and AniDB. Display name is AllManga; the runtime id is `allanime`. It carries the ani-cli parity path, which is why it stays registered even when its stream API is gated.
 
-**Config id:** `allanime` — the display name is not the config id.
+**Config id:** `allanime`. The display name is not the config id.
 
 **Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks hit a captcha/Cloudflare gate on stream sources while the episode catalog still loads, so the episode list can look healthy and still not play. Its decryption keys rotate often; a key change shows up as resolve failures until Kunai is updated.
 
@@ -136,7 +136,7 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 **Adapter role:** the default anime provider, first in the order. HiAnime has its own catalogue and
 search, so anime search keeps working when AniList or AniDB are down. It resolves the ZokoAnime
-server for each episode — the same one ani-cli uses — and hands the HLS ladder and subtitle tracks
+server for each episode, the same one ani-cli uses, and hands the HLS ladder and subtitle tracks
 to the player.
 
 **Config id:** `hianime`.
@@ -172,8 +172,8 @@ working when AniList is down; if Miruro's search finds nothing, Kunai asks AniLi
 ```
 
 **Caveats:** anime mode must be active. Kunai tries its own HTTP client first, but Cloudflare
-refuses it at Miruro's API, so in practice `curl` is what gets through — unless you run a provider
-relay, which answers on Kunai's behalf. Some servers burn subtitles into the video
+refuses it at Miruro's API, so in practice `curl` is what gets through; a provider relay answers
+on Kunai's behalf if you run one. Some servers burn subtitles into the video
 rather than shipping a separate track, and one opens on a short site bumper before the episode.
 If `miruro.bz` itself is unreachable, every one of its backends is too, and Kunai falls back to
 the providers behind it.
@@ -182,37 +182,37 @@ the providers behind it.
 
 <ProviderDocSection id="hianime" title="HiAnime">
 
-**Adapter role:** the automatic anime lane's lead — Kunai's shipped `animeProvider`. Sub and dub resolve through the ZokoAnime server with soft English subtitles; each season is a separate catalog title.
+**Adapter role:** the automatic anime lane's lead, Kunai's shipped `animeProvider`. Sub and dub resolve through the ZokoAnime server with soft English subtitles; each season is a separate catalog title.
 
 **Config id:** `hianime`. The shipped lane is `animeProvider: "hianime"` with `animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"]`.
 
-**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks need `curl` installed for HiAnime requests to get past Cloudflare. Only the ZokoAnime server is resolved — other servers the catalog lists are observed but unsupported.
+**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks need `curl` installed for HiAnime requests to get past Cloudflare. Only the ZokoAnime server is resolved; other servers the catalog lists are observed but unsupported.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="youtube" title="YouTube">
 
-**Adapter role:** YouTube mode — Invidious search, yt-dlp stream handoff to mpv. This is not a TMDB movie/series adapter.
+**Adapter role:** YouTube mode: Invidious search, yt-dlp stream handoff to mpv. This is not a TMDB movie/series adapter.
 
 **Config id:** `youtube`. Switch with `/youtube-mode` or `Tab` to cycle catalog mode.
 
-**Caveats:** requires network; yt-dlp must be available for resolve. Kunai does **not** bypass DRM or circumvent YouTube access controls — it only forwards optional cookies you already have to yt-dlp/mpv.
+**Caveats:** requires network; yt-dlp must be available for resolve. Kunai does **not** bypass DRM or circumvent YouTube access controls. It only forwards optional cookies you already have to yt-dlp/mpv.
 
 Search can return **videos, Shorts, playlists, and channels**. Results retain
 their shape and the shell labels it before playback, so a Short is not mistaken
 for a collection. Playlists and channels are catalog collections
-(`youtube-playlist:…` / channel ids) — pick a video inside them to play. Live
-and upcoming entries carry their own status badge — `● LIVE` for an active
+(`youtube-playlist:…` / channel ids): pick a video inside them to play. Live
+and upcoming entries carry their own status badge (`● LIVE` for an active
 broadcast, `Upcoming` for a premiere that has not started, `Was Live` for an
-archived stream — and backends that omit a shape or status signal are labelled
-conservatively. Use `type:short` in YouTube search to narrow to Shorts — that query
+archived stream). Backends that omit a shape or status signal are labelled
+conservatively. Use `type:short` in YouTube search to narrow to Shorts; that query
 runs YouTube's own Shorts search through yt-dlp rather than filtering ordinary
 results, which never include Shorts. If it finds none, it says so instead of
 falling back to regular videos.
 
 Live URLs (`youtube.com/live/…`) resolve as videos. Kunai passes
 `--no-live-from-start` to yt-dlp so a live handoff joins at the live edge, and it
-will not offer to resume a broadcast from a saved position — a live stream has no
+will not offer to resume a broadcast from a saved position; a live stream has no
 fixed position to return to. Opening a premiere that has not started tells you so
 instead of handing mpv a stream that cannot play yet.
 
@@ -225,7 +225,7 @@ Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also edi
 | Key                  | Safe usage                                                                                                                                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `cookiesFromBrowser` | Browser name for yt-dlp `--cookies-from-browser` (for example `chrome`, `firefox`). Reads cookies from that browser profile on your machine.                                                           |
-| `cookiesFile`        | **Absolute** path to a Netscape cookie file passed as yt-dlp `--cookies`. Relative paths are easy to mis-resolve — use an absolute path.                                                               |
+| `cookiesFile`        | **Absolute** path to a Netscape cookie file passed as yt-dlp `--cookies`. Relative paths are easy to mis-resolve; use an absolute path.                                                                |
 | `poToken`            | Proof of Origin token in yt-dlp's `CLIENT.CONTEXT+TOKEN` form (for example `visionos.gvs+...`). A bare token is scoped to whichever client Kunai is asking for. Used for playback and downloads alike. |
 
 Safety rules:
@@ -259,7 +259,7 @@ compatible catalog is reported as unsupported rather than quietly answered by TM
 <Step>
 ### Provider-local cycling
 
-Within one provider, Kunai may try multiple sources, servers, or variants before giving up. Diagnostics shows this as retry progress — not necessarily an error.
+Within one provider, Kunai may try multiple sources, servers, or variants before giving up. Diagnostics shows this as retry progress, not necessarily an error.
 
 </Step>
 <Step>
@@ -292,7 +292,7 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
 ```
 
 The anime client shows as **AllManga** in the UI; the config id remains `allanime`. Every
-registered anime provider is tried automatically when the selected one fails — the priority list
+registered anime provider is tried automatically when the selected one fails. The priority list
 sets the order, it does not decide who is included.
 
 If you saved settings while AniDB was the default, Kunai moves that inherited default to the order
@@ -313,12 +313,12 @@ See [Customization](/docs/users/customization).
 
 Kunai uses three distinct user-facing actions. They are not interchangeable.
 
-| Action                | Keys / command    | What happens                                                                                                |
-| --------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Recover**           | `r`, `/recover`   | Refresh current playback intent on the **active** provider — new resolve, cache revalidation, or mpv reload |
-| **Retry** (automatic) | —                 | Provider-local cycling through sources/variants before global fallback; shown in diagnostics timeline       |
-| **Fallback provider** | `⇧F`, `/fallback` | Stop active provider; global engine picks **next compatible provider**                                      |
-| **Recompute**         | `/recompute`      | Bypass stream cache and provider health memory for current episode                                          |
+| Action                | Keys / command    | What happens                                                                                               |
+| --------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Recover**           | `r`, `/recover`   | Refresh current playback intent on the **active** provider: new resolve, cache revalidation, or mpv reload |
+| **Retry** (automatic) | none              | Provider-local cycling through sources/variants before global fallback; shown in diagnostics timeline      |
+| **Fallback provider** | `⇧F`, `/fallback` | Stop active provider; global engine picks **next compatible provider**                                     |
+| **Recompute**         | `/recompute`      | Bypass stream cache and provider health memory for current episode                                         |
 
 <Callout type="idea" title="Recover before fallback">
   When a stream dies mid-playback, try recover first. Fallback switches providers and may change
@@ -337,27 +337,15 @@ Kunai uses three distinct user-facing actions. They are not interchangeable.
 
 ## Provider health and cache
 
-Kunai remembers provider health locally to avoid hammering known-bad paths. Health updates come from resolve outcomes — not from your home network being offline.
+Kunai remembers provider health locally to avoid hammering known-bad paths. Health updates come from resolve outcomes, not from your home network being offline.
 
-- **Cache hit** — reuse recent stream inventory when still valid.
-- **Stale cache** — revalidate before play when health checks fail.
-- **Cold resolve** — full provider lookup when no usable cache exists.
+- **Cache hit:** reuse recent stream inventory when still valid.
+- **Stale cache:** revalidate before play when health checks fail.
+- **Cold resolve:** full provider lookup when no usable cache exists.
 
 `/diagnostics` shows cache provenance and health deltas without exposing signed URLs.
 
 Network-unavailable failures stop cycling early. Kunai does not mark unrelated providers as unhealthy because your Wi-Fi dropped.
-
-## Domain overrides
-
-Advanced users can point providers at alternate base domains via `~/.config/kunai/providers.json`:
-
-```json
-{
-  "videasy": "https://mirror.example"
-}
-```
-
-Overrides affect URL construction only. They do not register new providers or bypass site authentication.
 
 ## Provider geo relay
 
@@ -379,11 +367,11 @@ What it does not do:
 - Kunai does not host or proxy video. There is no video-relay configuration; stream URLs always stay direct.
 - The relay does not bypass provider login or DRM.
 
-Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct fetches. To use a relay you operate, set `baseUrl` in `/settings` or `config.json` to **your** origin — Kunai never ships a public relay URL. An internet relay requires a matching bearer `token`; only a relay bound to numeric loopback may run without one. `fallbackToDirect: true` degrades to direct fetches after relay network or authorization-policy failures where the provider is not geo-blocked. Env overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`.
+Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct fetches. To use a relay you operate, set `baseUrl` in `/settings` or `config.json` to **your** origin; Kunai never ships a public relay URL. An internet relay requires a matching bearer `token`; only a relay bound to numeric loopback may run without one. `fallbackToDirect: true` degrades to direct fetches after relay network or authorization-policy failures where the provider is not geo-blocked. Env overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`.
 
 ### Deploying your own relay
 
-A relay only helps when it reaches the provider from a network that is not blocked. A captcha gate (`NEED_CAPTCHA`) or a regional block is tied to your IP, so the relay has to run somewhere else — a free serverless host, or a machine in an ungated region. Both deploy from a source checkout, since the relay imports the `@kunai/relay` and `@kunai/providers` workspace packages.
+A relay only helps when it reaches the provider from a network that is not blocked. A captcha gate (`NEED_CAPTCHA`) or a regional block is tied to your IP, so the relay has to run somewhere else: a free serverless host, or a machine in an ungated region. Both deploy from a source checkout, since the relay imports the `@kunai/relay` and `@kunai/providers` workspace packages.
 
 **On Vercel.** Full steps and the reason handler bundling is required are in `apps/relay-server/README.md`:
 
@@ -402,7 +390,7 @@ bun run dev:relay            # listens on http://127.0.0.1:8787
 
 ### Pointing Kunai at your relay
 
-Set the origin and token in any one of three places — `/settings` → Provider Relay, `config.json`, or the environment — and keep `fallbackToDirect` on so Kunai degrades to direct fetches when the relay is unreachable and the provider is not geo-blocked.
+Set the origin and token in any one of three places (`/settings` → Provider Relay, `config.json`, or the environment) and keep `fallbackToDirect` on so Kunai degrades to direct fetches when the relay is unreachable and the provider is not geo-blocked.
 
 ```json
 {
@@ -425,9 +413,9 @@ Provider catalogs drift. Failure is operational, not exceptional.
 1. Diagnostics records failure class and stage.
 2. Kunai attempts provider-local retries when inventory exists.
 3. Global fallback runs when configured and appropriate.
-4. You stay in the shell with context intact — search, history, and offline library remain available.
+4. You stay in the shell with context intact; search, history, and offline library remain available.
 
-If **all** providers fail, Kunai explains why in diagnostics and the shell footer. Collect evidence with `/export-diagnostics` — see [Troubleshooting](/docs/users/troubleshooting).
+If **all** providers fail, Kunai explains why in diagnostics and the shell footer. Collect evidence with `/export-diagnostics`; see [Troubleshooting](/docs/users/troubleshooting).
 
 ## What Kunai does not do with providers
 
@@ -436,7 +424,7 @@ If **all** providers fail, Kunai explains why in diagnostics and the shell foote
 - No guarantee of subtitle language, quality tier, or dub availability
 - No silent provider switching without user action (except configured automatic fallback within policy)
 
-See [Supported and unsupported](/docs/users/supported-and-unsupported).
+See [Supported and Unsupported](/docs/users/supported-and-unsupported).
 
 ## Picking a provider manually
 
@@ -446,10 +434,3 @@ Before playback starts:
 - `/source` or `/tracks` during playback when inventory supports switching without full re-resolve.
 
 After explicit pick, Kunai stores per-title preference for future resume.
-
-## Related
-
-- [Playback and recovery](/docs/users/playback-and-recovery) — resume, replay, hotkeys
-- [Troubleshooting](/docs/users/troubleshooting) — provider resolve failed
-- [Customization](/docs/users/customization) — priority lists and overrides
-- [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) — attempt timelines

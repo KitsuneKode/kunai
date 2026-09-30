@@ -1,12 +1,12 @@
 ---
-title: Playback And Recovery
-description: Recover, recompute, replay, resume, and fall back — the five ways Kunai handles a stalled stream, and which one to reach for when playback stops behaving.
+title: Playback and Recovery
+description: "Recover, recompute, replay, resume, and fall back: the five ways Kunai handles a stalled stream, and which one to reach for when playback stops behaving."
 status: shipped
 ---
 
 Kunai keeps playback centered on one shell session. After `mpv` exits, you return to Kunai with browse context, history, and recovery tools intact.
 
-This guide covers the full playback lifecycle — from first resolve through recovery when providers or networks misbehave.
+This guide covers the full playback lifecycle, from first resolve through recovery when providers or networks misbehave.
 
 ## Playback flow
 
@@ -38,8 +38,7 @@ Kunai launches mpv with required headers and subtitle attachments, then supervis
 <Step>
 ### Return to the shell
 
-When mpv closes, Kunai shows post-play options — next episode, replay, fallback, diagnostics, or new search.
-
+When mpv closes, Kunai shows post-play options: next episode, replay, fallback, diagnostics, or new search.
 </Step>
 </Steps>
 
@@ -63,14 +62,16 @@ More: [Continue watching and new episodes](/docs/users/continue-watching-and-new
 
 Provider catalogs drift. Recovery is normal usage.
 
-| Action                | Keys / command           | Effect                                                 |
-| --------------------- | ------------------------ | ------------------------------------------------------ |
-| Recover stream        | `r`, `/recover`          | Refresh current provider intent                        |
-| Fallback provider     | `⇧F`, `/fallback`        | Next compatible provider                               |
-| Recompute             | `/recompute`             | Bypass stale cache for current episode                 |
-| Replay                | `/replay`                | Start current episode from beginning                   |
-| Source                | `o`, `/source`           | Switch source / mirror                                 |
-| Quality               | `k`, `/quality`          | Switch quality                                         |
+| Action                   | Keys / command                                             | Effect                                            |
+| ------------------------ | ---------------------------------------------------------- | ------------------------------------------------- |
+| Recover stream           | `r` in the recovery prompt or during playback, `/recover`  | Refresh current provider intent                   |
+| Refresh stream (in mpv)  | `Ctrl+R`                                                   | Re-resolve the same episode without leaving playback |
+| Resume saved position    | `Alt+R`                                                    | Jump back to your last position after refresh     |
+| Fallback provider        | `⇧F`, `/fallback`                                          | Next compatible provider                          |
+| Recompute                | `/recompute`                                               | Bypass stale cache for current episode            |
+| Replay                   | `/replay`                                                  | Start current episode from beginning              |
+| Source                   | `o`, `/source`                                             | Switch source / mirror                            |
+| Quality                  | `k`, `/quality`                                            | Switch quality                                    |
 | Reset provider health | `/reset-provider-health` | Forget down-provider memory so auto-fallback can retry |
 | Clear cache           | `/clear-cache`           | Drop cached stream URLs                                |
 | Diagnostics           | `/diagnostics`           | Runtime panel with attempt timeline                    |
@@ -85,9 +86,9 @@ Provider catalogs drift. Recovery is normal usage.
 
 Configure in `/settings` or `config.json`:
 
-- **guided** (default) — explain failures; suggest recover then fallback
-- **fallback-first** — move to next provider sooner after classified failures
-- **manual** — you drive `/recover` and `/fallback`
+- **guided** (default): explain failures; suggest recover then fallback
+- **fallback-first:** move to next provider sooner after classified failures
+- **manual:** you drive `/recover` and `/fallback`
 
 See [Customization](/docs/users/customization) and [Providers](/docs/users/providers).
 
@@ -113,7 +114,7 @@ AniSkip for split-cour anime: when the only MAL mapping is TMDB season-1, Kunai 
 
 - Language profiles differ for anime, series, and movies (`animeLanguageProfile`, etc.).
 - Kunai passes preferred subtitle first when launching mpv.
-- Additional subtitle tracks attach when available — switch inside mpv without another lookup.
+- Additional subtitle tracks attach when available; switch inside mpv without another lookup.
 - Press `s` during playback to reload subtitles.
 - Late subtitle search uses Wyzie only when you set `wyzieApiKey` in Settings › Language. Kunai ships no key.
 - Source/quality/language variants prefer cached stream inventory to avoid extra network calls.
@@ -128,8 +129,8 @@ Kunai monitors mpv through IPC and the Kunai bridge Lua script:
 - In-process stream reconnect after network-read-dead stalls (configurable)
 - Auto-skip overlay when timing metadata and autoskip are enabled
 
-When playback recovers on its own — buffering clears, a stall resolves, or a
-seek completes — the shell returns to playing as soon as fresh progress arrives,
+When playback recovers on its own (buffering clears, a stall resolves, or a
+seek completes), the shell returns to playing as soon as fresh progress arrives,
 so a transient hiccup no longer leaves the header stuck on "buffering" for the
 rest of the episode. Recovery never overrides a deliberate state: pausing,
 stopping, or finishing stays exactly as you left it, and only resuming restarts
@@ -147,22 +148,22 @@ Debug mpv for one run:
 kunai --mpv-debug --mpv-log-file /tmp/kunai-mpv.log -S "Title"
 ```
 
-See [CLI reference](/docs/users/cli-reference#mpv-and-diagnostics).
+See [CLI Reference](/docs/users/cli-reference#mpv-and-diagnostics).
 
 ## Post-playback behavior
 
 When mpv exits:
 
-- **Near end** — `quitNearEndBehavior` controls whether autoplay may still advance
-- **Autoplay chain** — next episode resolves automatically when enabled
-- **Recommendation rail** — optional compact suggestions after series completion
-- **History write** — position and watched state persist locally
+- **Near end:** `quitNearEndBehavior` controls whether autoplay may still advance
+- **Autoplay chain:** next episode resolves automatically when enabled
+- **Recommendation rail:** optional compact suggestions after series completion
+- **History write:** position and watched state persist locally
 
 Queue recovery: if a previous session crashed with pending queue items, Kunai may show a recoverable queue notice. Restoring moves items into the current session without autoplaying them.
 
 ## When playback fails
 
-1. Open `/diagnostics` — read provider timeline and mpv/player section.
+1. Open `/diagnostics`: read provider timeline and mpv/player section.
 2. Press `r` to recover.
 3. Press `⇧F` if recover loops or failure class suggests provider exhaustion.
 4. Export evidence: `/export-diagnostics`.
@@ -181,10 +182,3 @@ kunai --offline
 Offline playback writes history with the same shape as online. Opening the offline library never calls providers.
 
 More: [Downloads and offline](/docs/users/downloads-and-offline).
-
-## Related
-
-- [Providers](/docs/users/providers) — fallback chains and retry semantics
-- [Media selection](/docs/users/media-selection) — pickers and inventory model
-- [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) — evidence collection
-- [Commands and shortcuts](/docs/users/commands-and-shortcuts) — full command list

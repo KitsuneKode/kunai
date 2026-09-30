@@ -3,7 +3,7 @@ import Link from "next/link";
 export const SEARCH_FALLBACK_LINKS = [
   { name: "Getting started", href: "/docs/users/getting-started" },
   { name: "Troubleshooting", href: "/docs/users/troubleshooting" },
-  { name: "CLI reference", href: "/docs/users/cli-reference" },
+  { name: "CLI Reference", href: "/docs/users/cli-reference" },
   { name: "Supported matrix", href: "/docs/users/supported-and-unsupported" },
   { name: "Documentation index", href: "/docs" },
 ] as const;

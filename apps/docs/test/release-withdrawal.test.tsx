@@ -102,6 +102,6 @@ describe("withdrawn releases", () => {
     const html = renderToStaticMarkup(<ReleaseDetail release={published} />);
 
     expect(html).toContain(published.install.bunx);
-    expect(html).not.toContain("Withdrawn — do not install");
+    expect(html).not.toContain("Withdrawn: do not install");
   });
 });

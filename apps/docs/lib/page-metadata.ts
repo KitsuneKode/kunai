@@ -15,7 +15,7 @@ export const SOCIAL_IMAGE = {
   url: "/opengraph-image",
   width: 1200,
   height: 630,
-  alt: "Kunai — Kanna, the rose kitsune, above a row of anime, series, and movie marks",
+  alt: "Kunai: Kanna, the rose kitsune, above a row of anime, series, and movie marks",
 } as const;
 
 /** Same card, dedicated Twitter file-convention route. */

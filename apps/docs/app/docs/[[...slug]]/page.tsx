@@ -2,7 +2,12 @@ import { DocsStatusBadge } from "@/components/docs/docs-status-badge";
 import { RelatedDocLinks } from "@/components/docs/related-doc-links";
 import { navGroupForHref } from "@/lib/doc-page-nav";
 import { docsEditUrl } from "@/lib/docs-github";
-import { breadcrumbListJsonLd, faqPageJsonLd, techArticleJsonLd } from "@/lib/json-ld";
+import {
+  breadcrumbListJsonLd,
+  faqPageJsonLd,
+  serializeJsonLd,
+  techArticleJsonLd,
+} from "@/lib/json-ld";
 import { buildPageMetadata } from "@/lib/page-metadata";
 import { docsCanonicalUrl } from "@/lib/site";
 import { source } from "@/lib/source";
@@ -18,6 +23,7 @@ import {
   ViewOptionsPopover,
 } from "fumadocs-ui/layouts/docs/page";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 type PageProps = {
@@ -78,16 +84,16 @@ export default async function Page({ params }: PageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(articleJsonLd) }}
       />
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd) }}
       />
       {faqJsonLd ? (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqJsonLd) }}
         />
       ) : null}
       <DocsPage
@@ -112,7 +118,15 @@ export default async function Page({ params }: PageProps) {
         {navGroup ? <RelatedDocLinks group={navGroup} currentHref={page.url} /> : null}
         <div className="not-prose border-fd-border mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6">
           <EditOnGitHub href={editUrl} />
-          {lastModified ? <PageLastUpdate date={lastModified} /> : null}
+          <div className="flex items-center gap-4">
+            <Link
+              href="/feedback"
+              className="text-fd-muted-foreground hover:text-fd-foreground text-sm transition-colors"
+            >
+              Report an issue or give feedback
+            </Link>
+            {lastModified ? <PageLastUpdate date={lastModified} /> : null}
+          </div>
         </div>
       </DocsPage>
     </>

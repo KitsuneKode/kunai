@@ -1,5 +1,5 @@
 ---
-title: Diagnostics And Reporting
+title: Diagnostics and Reporting
 description: Use Kunai diagnostics, support bundles, and traces to report a problem precisely, without leaking titles, queries, or anything else from your local machine.
 status: shipped
 ---
@@ -10,7 +10,7 @@ Diagnostics are local-first. Kunai records enough runtime context to explain fai
 
 | Command / flag        | Purpose                                                |
 | --------------------- | ------------------------------------------------------ |
-| `/diagnostics`        | Runtime panel — provider timeline, cache, mpv, network |
+| `/diagnostics`        | Runtime panel: provider timeline, cache, mpv, network |
 | `/export-diagnostics` | Redacted JSON bundle near cwd                          |
 | `/report-issue`       | GitHub issue flow with bundle guidance                 |
 | `--debug`             | Verbose logging to `./logs.txt`                        |
@@ -35,17 +35,17 @@ Press `/` and choose diagnostics, or type:
 
 The panel typically includes:
 
-- **Capabilities** — mpv, yt-dlp, ffprobe, curl, poster renderer detection at startup
-- **Provider** — resolve stages, failure classes, fallback timeline
-- **Cache** — hit/miss, stale revalidation, stream health events
-- **Subtitles** — attachment evidence and active track
-- **Playback / mpv** — player state, IPC events, exit reasons
-- **Network** — connectivity snapshot (does not mark providers unhealthy alone)
-- **Presence** — Discord connect/clear status
-- **Download / offline** — queue failures, artifact validation
-- **Updates** — background check results
+- **Capabilities:** mpv, yt-dlp, ffprobe, curl, poster renderer detection at startup
+- **Provider:** resolve stages, failure classes, fallback timeline
+- **Cache:** hit/miss, stale revalidation, stream health events
+- **Subtitles:** attachment evidence and active track
+- **Playback / mpv:** player state, IPC events, exit reasons
+- **Network:** connectivity snapshot (does not mark providers unhealthy alone)
+- **Presence:** Discord connect/clear status
+- **Download / offline:** queue failures, artifact validation
+- **Updates:** background check results
 
-Provider attempts in progress show as retry/fallback progress — not always final errors.
+Provider attempts in progress show as retry/fallback progress, not always final errors.
 
 ## Exporting a support bundle
 
@@ -71,7 +71,7 @@ It must **not** include:
 <Callout type="warning" title="Review before sharing">
   Open the exported JSON locally before attaching to a public issue or chat. If something sensitive
   slipped through, redact it manually and note the omission in your report. Never paste cookie file
-  contents into the issue body — point to a redacted bundle path only.
+  contents into the issue body; point to a redacted bundle path only.
 </Callout>
 
 ## Reporting an issue
@@ -115,7 +115,7 @@ Recorded once per session:
 - Terminal poster support (Kitty / iTerm2 inline / Sixel / half-block)
 - Platform opener availability
 
-Missing optional tools degrade gracefully — setup explains gaps.
+Missing optional tools degrade gracefully; setup explains gaps.
 
 ### Provider resolve
 
@@ -145,7 +145,7 @@ See [Providers](/docs/users/providers).
 - Privacy mode in effect
 - Unavailability reasons (missing client id, IPC unreachable)
 
-Configure presence in `/settings` — [Customization](/docs/users/customization).
+Configure presence in `/settings`; see [Customization](/docs/users/customization).
 
 ### Downloads and offline
 
@@ -193,9 +193,3 @@ Support bundles align with [Reliability and privacy](/docs/users/reliability-and
 | Verbose text log                  | `--debug` → `./logs.txt`            |
 
 Symptom index: [Troubleshooting](/docs/users/troubleshooting).
-
-## Related
-
-- [Feature tour](/docs/users/feature-tour#diagnostics-flow) — diagnostics command summary
-- [Playback and recovery](/docs/users/playback-and-recovery) — recover vs fallback
-- [Supported and unsupported](/docs/users/supported-and-unsupported) — what diagnostics will not contain

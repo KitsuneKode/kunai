@@ -140,7 +140,7 @@ export default function HomePageShell({
               Install once, then keep playback predictable.
             </h2>
             <p className="kunai-type-body text-fd-muted-foreground mt-3 max-w-xl text-sm">
-              Recovery stays in the shell. No shared public relay — when you need geo metadata help,
+              Recovery stays in the shell. No shared public relay; when you need geo metadata help,
               you own the relay URL.
             </p>
           </div>

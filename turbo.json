@@ -114,6 +114,13 @@
     "@kunai/docs#test": {
       "dependsOn": ["transit", "generate"],
       "outputs": []
+    },
+    "@kunai/docs#typecheck": {
+      // tsc resolves lib/generated-provenance.json and .source/server — both
+      // gitignored products of `generate`. Without this, typecheck breaks on a
+      // clean checkout.
+      "dependsOn": ["transit", "generate"],
+      "outputs": []
     }
   }
 }

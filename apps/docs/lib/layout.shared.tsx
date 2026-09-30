@@ -1,3 +1,4 @@
+import { KannaRestoreButton } from "@/components/brand/kanna-restore-button";
 import { DocsSidebarBanner } from "@/components/layout/docs-sidebar-banner";
 import { GithubStarCta } from "@/components/layout/github-star-cta";
 import { NavTitle } from "@/components/layout/nav-title";
@@ -87,5 +88,10 @@ export const docsSidebar: NonNullable<DocsLayoutProps["sidebar"]> = {
   collapsible: true,
   defaultOpenLevel: 1,
   banner: <DocsSidebarBanner />,
-  footer: <GithubStarCta />,
+  footer: (
+    <>
+      <GithubStarCta />
+      <KannaRestoreButton />
+    </>
+  ),
 };
