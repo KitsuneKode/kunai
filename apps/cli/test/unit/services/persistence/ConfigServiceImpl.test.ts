@@ -8,6 +8,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type ConfigStore } from "@/services/persistence/ConfigStore";
 import { ConfigStoreImpl } from "@/services/persistence/ConfigStoreImpl";
+import { isJsonNumber, isJsonObject, isJsonString } from "@kunai/types";
 
 class MemoryConfigStore implements ConfigStore {
   constructor(private loaded: Partial<KitsuneConfig> = {}) {}
@@ -921,27 +922,30 @@ describe("concurrent config saves merge onto disk", () => {
 
 type ConfigValueClass = "string" | "number" | "boolean" | "array" | "object" | "null";
 
-function valueClass(value: unknown): ConfigValueClass {
-  if (value === null) return "null";
+function valueClass(value: KitsuneConfig[keyof KitsuneConfig] | undefined): ConfigValueClass {
+  if (value === null || value === undefined) return "null";
   if (Array.isArray(value)) return "array";
-  const kind = typeof value;
-  if (kind === "string" || kind === "number" || kind === "boolean") return kind;
-  return kind === "object" ? "object" : "null";
+  if (isJsonString(value)) return "string";
+  if (isJsonNumber(value)) return "number";
+  if (value === true || value === false) return "boolean";
+  return isJsonObject(value) ? "object" : "null";
 }
 
 describe("malformed config values never crash load", () => {
   const fuzzValues: readonly unknown[] = [null, 42, "str", { a: 1 }, ["x"], [1], true];
-  const getterNames = Object.entries(Object.getOwnPropertyDescriptors(ConfigServiceImpl.prototype))
-    .filter(([, descriptor]) => typeof descriptor.get === "function")
-    .map(([name]) => name);
+  const getters = Object.values(
+    Object.getOwnPropertyDescriptors(ConfigServiceImpl.prototype),
+  ).flatMap((descriptor) => (descriptor.get === undefined ? [] : [descriptor.get]));
 
+  // SAFETY: DEFAULT_CONFIG declares every KitsuneConfig field, so its keys are
+  // exactly `keyof KitsuneConfig`.
   for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
     for (const value of fuzzValues) {
       test(`${key} = ${JSON.stringify(value)} loads, reads, and keeps the default's shape`, async () => {
         const store = new MemoryConfigStore({ [key]: value });
         const service = await ConfigServiceImpl.load(store);
-        for (const getter of getterNames) {
-          expect(() => (service as unknown as Record<string, unknown>)[getter]).not.toThrow();
+        for (const getter of getters) {
+          expect(() => getter.call(service)).not.toThrow();
         }
         const expected = valueClass(DEFAULT_CONFIG[key]);
         const actual = valueClass(service.getRaw()[key]);
