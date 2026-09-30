@@ -136,7 +136,7 @@ Kunai reports that rather than playing a different season. AniDB does not advert
 
 **Adapter role:** the default anime provider, first in the order. HiAnime has its own catalogue and
 search, so anime search keeps working when AniList or AniDB are down. It resolves the ZokoAnime
-server for each episode — the same one ani-cli uses — and hands the HLS ladder and subtitle tracks
+server for each episode, the same one ani-cli uses, and hands the HLS ladder and subtitle tracks
 to the player.
 
 **Config id:** `hianime`.
@@ -225,7 +225,7 @@ Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also edi
 | Key                  | Safe usage                                                                                                                                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `cookiesFromBrowser` | Browser name for yt-dlp `--cookies-from-browser` (for example `chrome`, `firefox`). Reads cookies from that browser profile on your machine.                                                           |
-| `cookiesFile`        | **Absolute** path to a Netscape cookie file passed as yt-dlp `--cookies`. Relative paths are easy to mis-resolve; use an absolute path.                                                               |
+| `cookiesFile`        | **Absolute** path to a Netscape cookie file passed as yt-dlp `--cookies`. Relative paths are easy to mis-resolve; use an absolute path.                                                                |
 | `poToken`            | Proof of Origin token in yt-dlp's `CLIENT.CONTEXT+TOKEN` form (for example `visionos.gvs+...`). A bare token is scoped to whichever client Kunai is asking for. Used for playback and downloads alike. |
 
 Safety rules:
@@ -313,12 +313,12 @@ See [Customization](/docs/users/customization).
 
 Kunai uses three distinct user-facing actions. They are not interchangeable.
 
-| Action                | Keys / command    | What happens                                                                                                |
-| --------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| Action                | Keys / command    | What happens                                                                                               |
+| --------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
 | **Recover**           | `r`, `/recover`   | Refresh current playback intent on the **active** provider: new resolve, cache revalidation, or mpv reload |
-| **Retry** (automatic) | none                 | Provider-local cycling through sources/variants before global fallback; shown in diagnostics timeline       |
-| **Fallback provider** | `⇧F`, `/fallback` | Stop active provider; global engine picks **next compatible provider**                                      |
-| **Recompute**         | `/recompute`      | Bypass stream cache and provider health memory for current episode                                          |
+| **Retry** (automatic) | none              | Provider-local cycling through sources/variants before global fallback; shown in diagnostics timeline      |
+| **Fallback provider** | `⇧F`, `/fallback` | Stop active provider; global engine picks **next compatible provider**                                     |
+| **Recompute**         | `/recompute`      | Bypass stream cache and provider health memory for current episode                                         |
 
 <Callout type="idea" title="Recover before fallback">
   When a stream dies mid-playback, try recover first. Fallback switches providers and may change
@@ -346,6 +346,7 @@ Kunai remembers provider health locally to avoid hammering known-bad paths. Heal
 `/diagnostics` shows cache provenance and health deltas without exposing signed URLs.
 
 Network-unavailable failures stop cycling early. Kunai does not mark unrelated providers as unhealthy because your Wi-Fi dropped.
+
 ## Provider geo relay
 
 Some provider metadata APIs are geo-blocked from some countries while the final
