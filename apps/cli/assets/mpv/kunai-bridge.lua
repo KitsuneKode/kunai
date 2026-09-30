@@ -1052,6 +1052,42 @@ local function do_quality()
 	signal("quality")
 end
 
+local function do_source()
+	mp.osd_message("Kunai · Select server in the terminal", 2.5)
+	signal("source")
+end
+
+local function do_cycle_source()
+	mp.set_property("user-data/kunai-loading", "Kunai · Cycling server / source…")
+	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
+	draw_kunai_loading_overlay()
+	signal("cycle-source")
+	mp.commandv("stop")
+end
+
+local function has_multiple_internal_audio_tracks()
+	local tracks = mp.get_property_native("track-list", {})
+	local count = 0
+	for _, t in ipairs(tracks) do
+		if t.type == "audio" then
+			count = count + 1
+		end
+	end
+	return count > 1
+end
+
+local function do_cycle_audio()
+	if has_multiple_internal_audio_tracks() then
+		mp.commandv("cycle", "audio")
+		return
+	end
+	mp.set_property("user-data/kunai-loading", "Kunai · Toggling Sub / Dub…")
+	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
+	draw_kunai_loading_overlay()
+	signal("cycle-audio")
+	mp.commandv("stop")
+end
+
 local function do_refresh()
 	mp.set_property("user-data/kunai-loading", "Kunai · Refreshing stream (same episode)…")
 	sync_kunai_loading_text(mp.get_property_native("user-data/kunai-loading"))
@@ -1080,6 +1116,18 @@ mp.add_forced_key_binding("k", "kunai-quality", do_quality, { repeatable = false
 mp.add_forced_key_binding("K", "kunai-quality-shift", do_quality, { repeatable = false })
 mp.add_forced_key_binding("v", "kunai-quality-alt", do_quality, { repeatable = false })
 mp.add_forced_key_binding("V", "kunai-quality-alt-shift", do_quality, { repeatable = false })
+
+-- Server / source selection and in-player cycling:
+mp.add_forced_key_binding("s", "kunai-source", do_source, { repeatable = false })
+mp.add_forced_key_binding("S", "kunai-source-shift", do_source, { repeatable = false })
+mp.add_forced_key_binding("c", "kunai-cycle-source", do_cycle_source, { repeatable = false })
+mp.add_forced_key_binding("C", "kunai-cycle-source-shift", do_cycle_source, { repeatable = false })
+
+-- Audio cycling (toggles internal audio tracks if multi-audio, or switches Sub/Dub variants):
+mp.add_forced_key_binding("a", "kunai-cycle-audio", do_cycle_audio, { repeatable = false })
+mp.add_forced_key_binding("A", "kunai-cycle-audio-shift", do_cycle_audio, { repeatable = false })
+mp.add_forced_key_binding("d", "kunai-cycle-audio-alt", do_cycle_audio, { repeatable = false })
+mp.add_forced_key_binding("D", "kunai-cycle-audio-alt-shift", do_cycle_audio, { repeatable = false })
 
 -- Same episode: re-resolve the stream URL (cache bust) and resume from the saved position.
 mp.add_key_binding("ctrl+r", "kunai-refresh", do_refresh, { repeatable = false })

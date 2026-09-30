@@ -485,7 +485,10 @@ export const rivestreamProviderModule: CoreProviderModule = {
               candidate,
               provider,
               input,
-              context,
+              context: {
+                ...context,
+                signal: candidateContext.signal ?? context.signal,
+              },
               cachePolicy,
               sourceDataPromise,
               signal: candidateContext.signal,

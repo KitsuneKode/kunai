@@ -53,6 +53,10 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
       return "Kunai · Select quality in the terminal…";
     case "pick-episode":
       return "Kunai · Select an episode in the terminal…";
+    case "cycle-source":
+      return "Kunai · Cycling server / source…";
+    case "cycle-audio":
+      return "Kunai · Toggling Sub / Dub…";
     default:
       return null;
   }
@@ -451,6 +455,14 @@ export class PlayerControlServiceImpl implements PlayerControlService {
 
   async pickQualityCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     return this.showPickerRequest("pick-quality", reason);
+  }
+
+  async cycleSourceCurrentPlayback(reason = "user-requested"): Promise<boolean> {
+    return await this.deliverStopBackedIntent("cycle-source", reason, { stopCurrentFile: true });
+  }
+
+  async cycleAudioCurrentPlayback(reason = "user-requested"): Promise<boolean> {
+    return await this.deliverStopBackedIntent("cycle-audio", reason, { stopCurrentFile: true });
   }
 
   async previousCurrentPlayback(reason = "user-requested"): Promise<boolean> {

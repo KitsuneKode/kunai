@@ -63,6 +63,7 @@ import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
+import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
 import {
   checkStreamPreflight,
@@ -105,44 +106,59 @@ export async function launchMpv(opts: {
     await unlinkIfExists(ipcEndpoint.path);
   }
 
-  const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), {
-    mpv: opts.mpv,
-  });
-  const stats = createPlayerStatsState(ipcEndpoint.path);
-  noteTrustedSeek(stats, opts.startAt ?? 0);
-  const baseEmit = opts.onPlaybackEvent ?? (() => {});
-  const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
-    if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
-      noteStreamStall(stats, Date.now());
+  let chaptersFile: string | null = null;
+  if (opts.timing) {
+    try {
+      chaptersFile = await writeMpvChaptersFile(opts.timing, sessionId);
+    } catch {
+      // Best effort chapters file
     }
-    baseEmit(event);
-  };
-
-  const mpvInvocation = discoverMpvInvocation();
-  if (!mpvInvocation) {
-    throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
   }
 
-  const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
-  const mpv = Bun.spawn([...mpvInvocation.argv, ...args], {
-    stdin: stdio,
-    stdout: stdio,
-    stderr: stdio,
-    env: process.env as Record<string, string>,
-  });
-  const unregisterMpv = registerMpvProcess(mpv);
   try {
-    return await launchMpvInner(
-      mpv,
-      unregisterMpv,
-      opts,
-      sessionId,
-      ipcEndpoint,
-      stats,
-      emitPlaybackEvent,
-    );
+    const args = buildMpvArgs({ ...opts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
+      mpv: opts.mpv,
+    });
+    const stats = createPlayerStatsState(ipcEndpoint.path);
+    noteTrustedSeek(stats, opts.startAt ?? 0);
+    const baseEmit = opts.onPlaybackEvent ?? (() => {});
+    const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
+      if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
+        noteStreamStall(stats, Date.now());
+      }
+      baseEmit(event);
+    };
+
+    const mpvInvocation = discoverMpvInvocation();
+    if (!mpvInvocation) {
+      throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
+    }
+
+    const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
+    const mpv = Bun.spawn([...mpvInvocation.argv, ...args], {
+      stdin: stdio,
+      stdout: stdio,
+      stderr: stdio,
+      env: process.env as Record<string, string>,
+    });
+    const unregisterMpv = registerMpvProcess(mpv);
+    try {
+      return await launchMpvInner(
+        mpv,
+        unregisterMpv,
+        opts,
+        sessionId,
+        ipcEndpoint,
+        stats,
+        emitPlaybackEvent,
+      );
+    } finally {
+      unregisterMpv();
+    }
   } finally {
-    unregisterMpv();
+    if (chaptersFile) {
+      await removeMpvChaptersFile(chaptersFile).catch(() => {});
+    }
   }
 }
 
@@ -525,6 +541,7 @@ export function buildMpvArgs(
     ytdlFormat?: string;
     ytdlRawOptions?: string;
     isLive?: boolean;
+    chaptersFile?: string | null;
   },
   ipcPath: string | null,
   config?: {
@@ -600,6 +617,9 @@ export function buildMpvArgs(
     args.push(`--start=${opts.startAt}`);
   }
   args.push(`--force-media-title=${opts.displayTitle}`);
+  if (opts.chaptersFile) {
+    args.push(`--chapters-file=${opts.chaptersFile}`);
+  }
   if (config?.persistent) {
     // keep-open=no is intentional: with keep-open=yes, mpv silently pauses at the last
     // frame on natural EOF and never fires the end-file IPC event, so play() hangs and

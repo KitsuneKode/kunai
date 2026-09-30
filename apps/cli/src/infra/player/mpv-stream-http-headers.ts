@@ -17,23 +17,6 @@ export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b/ba";
 export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
   "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
 
-export type NormalizedStreamHttpHeaders = {
-  readonly referer?: string;
-  readonly userAgent?: string;
-  readonly origin?: string;
-  /**
-   * Every other header the provider attached, already formatted as
-   * `Name: Value` for mpv's `http-header-fields` list.
-   *
-   * mpv has dedicated options for referer and user-agent and nothing else, so
-   * anything a provider adds beyond those has to ride this list or it is simply
-   * dropped. VidLink is why this exists: its DASH manifests are CloudFront
-   * signed and answer 403 without their `Cookie`, so a resolve that carried the
-   * cookie still failed at the player.
-   */
-  readonly extraFields: readonly string[];
-};
-
 /**
  * mpv's `--alang`/`--slang` take language codes, but Kunai's audio setting is a
  * mode ("sub"/"dub") as often as a code, because the Tracks panel writes the
@@ -54,6 +37,23 @@ export function toMpvLanguageToken(
   if (normalized === "interactive" || normalized === "fzf") return null;
   return normalized;
 }
+
+export type NormalizedStreamHttpHeaders = {
+  readonly referer?: string;
+  readonly userAgent?: string;
+  readonly origin?: string;
+  /**
+   * Every other header the provider attached, already formatted as
+   * `Name: Value` for mpv's `http-header-fields` list.
+   *
+   * mpv has dedicated options for referer and user-agent and nothing else, so
+   * anything a provider adds beyond those has to ride this list or it is simply
+   * dropped. VidLink is why this exists: its DASH manifests are CloudFront
+   * signed and answer 403 without their `Cookie`, so a resolve that carried the
+   * cookie still failed at the player.
+   */
+  readonly extraFields: readonly string[];
+};
 
 /** Headers mpv sets through dedicated options rather than the header list. */
 const DEDICATED_HEADER_NAMES = new Set(["referer", "user-agent", "origin"]);
@@ -165,6 +165,7 @@ export type PersistentLoadfileOptions = {
   readonly "tls-verify"?: string;
   /** Audio language for this file; see {@link toMpvLanguageToken}. */
   readonly alang?: string;
+  readonly "chapters-file"?: string;
   /** mpv's `--ytdl` is a yes/no flag: whether ytdl_hook runs at all. */
   readonly ytdl?: string;
   /** mpv's `--ytdl-format` is the format selector string. */
@@ -222,6 +223,8 @@ export type PersistentLoadfileMediaOptions = {
   readonly urlKind?: MpvUrlKind;
   /** Kunai audio setting: a language code, or the mode "sub"/"dub". */
   readonly audioPreference?: string;
+  /** Ephemeral chapters file path containing chapter markers. */
+  readonly chaptersFile?: string | null;
 };
 
 export function buildPersistentLoadfileOptions(
@@ -249,6 +252,10 @@ export function buildPersistentLoadfileOptions(
   }
   if (shouldDisableMpvTlsVerify(url, headers)) {
     loadOptions["tls-verify"] = "no";
+  }
+
+  if (ytdlOptions?.chaptersFile) {
+    loadOptions["chapters-file"] = ytdlOptions.chaptersFile;
   }
 
   // Per-file, not only at spawn: `--alang` is a process option, so a session
