@@ -25,6 +25,7 @@
 
 import { createHmac } from "node:crypto";
 
+import { analyticsDayKey } from "./analytics-day.js";
 import { isAllowedArch, isAllowedOs, isValidVersion } from "./payload-validation.js";
 import type { AnalyticsStore } from "./store.js";
 
@@ -62,10 +63,6 @@ const INSTALL_DIGEST_RE = /^[0-9a-f]{64}$/i;
 
 export function isAcceptedInstallId(value: string): boolean {
   return UUID_RE.test(value) || INSTALL_DIGEST_RE.test(value);
-}
-
-export function utcDayKey(now = Date.now()): string {
-  return new Date(now).toISOString().slice(0, 10);
 }
 
 export function parseAnalyticsPayload(body: unknown): AnalyticsIngestPayload | null {
@@ -129,7 +126,7 @@ export async function ingestAnalyticsPing(input: {
     return { ok: false, status: 400, error: "timestamp_skew" };
   }
 
-  const day = utcDayKey(now);
+  const day = analyticsDayKey(now);
   // The store's (day, install_hash) key is the once-per-day gate. There is no
   // separate claim step to race against. The store also charges the day's
   // global admission budget in the same statement.

@@ -9,6 +9,7 @@
  * No new collection, no payload change, no consent change. Serving only.
  */
 
+import { shiftDayKey } from "./analytics-day.js";
 import {
   DIMENSION_VALUE_SPACE,
   METRICS_SCHEMA_VERSION,
@@ -144,7 +145,5 @@ export function clampSeriesDays(raw: string | undefined): number {
 
 /** The inclusive start day for a window of `days` ending on `endDay`. */
 export function seriesStartDay(endDay: string, days: number): string {
-  const end = new Date(`${endDay}T00:00:00.000Z`);
-  end.setUTCDate(end.getUTCDate() - (days - 1));
-  return end.toISOString().slice(0, 10);
+  return shiftDayKey(endDay, -(days - 1));
 }

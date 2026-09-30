@@ -66,6 +66,20 @@ function isCountMap(value: unknown): value is Record<string, number> {
   );
 }
 
+/**
+ * `updatedAt` arrives as Postgres text (`2026-09-11 00:27:00.82757+00`), not
+ * ISO 8601. Engines are not required to parse that form, so it is normalised
+ * here — the boundary every consumer passes through — and never handed to a
+ * browser as-is.
+ *
+ * An unparseable value is returned untouched: `toISOString` throws `RangeError`
+ * on an invalid date, and one bad timestamp must not empty the panel.
+ */
+function toIsoTimestamp(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+}
+
 export function parseDocsAnalyticsMetrics(raw: unknown): DocsAnalyticsMetrics | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
@@ -102,7 +116,7 @@ export function parseDocsAnalyticsMetrics(raw: unknown): DocsAnalyticsMetrics | 
     byVersion: record.byVersion,
     byOs: record.byOs,
     byArch: record.byArch,
-    updatedAt: record.updatedAt,
+    updatedAt: toIsoTimestamp(record.updatedAt),
   };
 }
 
