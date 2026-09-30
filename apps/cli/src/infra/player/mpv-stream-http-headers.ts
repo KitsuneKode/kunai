@@ -83,8 +83,8 @@ export function normalizeStreamHttpHeaders(
   const referer = dedicated("referer");
   const userAgent = dedicated("user-agent");
   const origin = dedicated("origin");
-  const sanitize = (value: unknown, pattern: RegExp): string | undefined => {
-    if (typeof value !== "string") return undefined;
+  const sanitize = (value: string | undefined, pattern: RegExp): string | undefined => {
+    if (value === undefined) return undefined;
     const sanitized = value.trim().replace(pattern, "");
     return sanitized.length > 0 ? sanitized : undefined;
   };
@@ -93,8 +93,8 @@ export function normalizeStreamHttpHeaders(
   // " " because ffmpeg cannot express an absent header. The shared sanitizer
   // would trim it to nothing and silently delete the header, so the UA strips
   // only CR/LF and preserves an all-whitespace value.
-  const sanitizeUserAgent = (value: unknown): string | undefined => {
-    if (typeof value !== "string") return undefined;
+  const sanitizeUserAgent = (value: string | undefined): string | undefined => {
+    if (value === undefined) return undefined;
     const sanitized = value.replace(/[\r\n]/g, "");
     return sanitized.length > 0 ? sanitized : undefined;
   };

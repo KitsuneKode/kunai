@@ -207,11 +207,13 @@ async function fetchPlaylist(
     signal: directStreamFetchSignal(signal, VIDROCK_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) return [];
-  const data = (await response.json()) as unknown;
+  const data: unknown = await response.json();
   if (!Array.isArray(data)) return [];
-  return data
-    .filter((item): item is { url: string; resolution: unknown } =>
-      Boolean(item && typeof item === "object" && "url" in item && item.url),
-    )
-    .map((item) => ({ url: String(item.url), resolution: String(item.resolution ?? "") }));
+  const out: { url: string; resolution: string }[] = [];
+  for (const item of data) {
+    if (!(item instanceof Object) || !("url" in item) || !item.url) continue;
+    const resolution = "resolution" in item ? item.resolution : undefined;
+    out.push({ url: String(item.url), resolution: String(resolution ?? "") });
+  }
+  return out;
 }
