@@ -38,6 +38,12 @@ const PRODUCTION_PROVIDERS = [
   ),
 ];
 
+// The roster is parsed out of `loadProductionProviderModules` — if the import
+// form ever changes, an empty parse must fail, not silently check nothing.
+if (PRODUCTION_PROVIDERS.length === 0) {
+  throw new Error("No providers parsed from bootstrap-providers.ts; update the roster regex");
+}
+
 /**
  * A provider may only appear here with a reason that is about the *runtime*,
  * not about effort.
