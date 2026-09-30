@@ -52,6 +52,7 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "recommendation",
   "calendar",
   "downloads",
+  "cleanup-downloads",
   "library",
   "history",
   "diagnostics",

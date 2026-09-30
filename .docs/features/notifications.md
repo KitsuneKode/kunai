@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-05-17"
+lastReviewed: "2026-09-30"
 ---
 
 # Notifications
@@ -44,3 +44,29 @@ The inbox is safe to open during playback. It shows local notices and routes saf
 Recoverable queue notices are deliberate restore prompts. They should never auto-restore or autoplay on startup.
 
 Queue recovery notices persist only the recoverable queue session id. New episode notices persist media identity and provider hints. Neither path stores stream URLs, headers, cookies, or tokens.
+
+## Desktop delivery
+
+`OsNotificationSink` (`apps/cli/src/services/notifications/notification-sinks.ts`) pops real OS
+notifications beside the durable inbox:
+
+- **Linux:** `notify-send` argv-only — no shell, title/body are positional args.
+- **macOS:** `osascript` with a fixed `on run argv` script — title/body travel as argv items,
+  never as AppleScript source.
+- **Windows:** `powershell -EncodedCommand` with a fixed WinRT toast script — title/body travel as
+  `KUNAI_NOTIFY_*` env vars, never as script source. The toast uses the well-known Windows
+  PowerShell AUMID so no helper binary or BurntToast install is needed.
+
+Delivery is best-effort and bounded:
+
+- `KUNAI_DESKTOP_NOTIFICATIONS=0|false|no|off` disables it (default on); the inbox is unaffected.
+- A missing notifier binary or an unsupported platform means no popup — never an error.
+- `NotificationService` replays the whole active set on every mutation, so the sink dedupes by
+  `dedupKey` (re-armed on `dismiss`, capped at 500 remembered keys) and ignores records created
+  before the process started, so launching Kunai does not re-pop the inbox.
+- Each notifier subprocess gets ignored stdio and a 5-second reaper; spawn failures, rejected
+  `exited` promises, and hung processes are all swallowed. Nothing in delivery can block or
+  crash the shell.
+
+The subprocess runtime (`platform`, `which`, `spawn`) is injected for deterministic tests,
+matching the seam in `infra/os/external-open.ts`.

@@ -1,10 +1,10 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "9e1e2e73e3ddde4c61c992f8512b08eac2967d87771d5eeba2abccfeae89892c",
-  "docsContentFingerprint": "fc66c3a8edb0963223dfea7edf09bbb1417029be8c1656446bffe204bf88aa77",
+  "cliSourceFingerprint": "409a5701a1760655bbd3f705459630309544e7543a8fc1f7f4d745768b75cde2",
+  "docsContentFingerprint": "5a38f503171709b7eb3906004d4880c42215fba191834683b24099978b9d8430",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 82,
+  "commandCount": 83,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -272,6 +272,12 @@
       "label": "Library",
       "aliases": ["library", "offline", "offline-library", "my-downloads"],
       "description": "Browse offline library and manage downloads"
+    },
+    {
+      "id": "cleanup-downloads",
+      "label": "Cleanup Downloads",
+      "aliases": ["cleanup-downloads", "cleanup", "clean-downloads", "reclaim-space"],
+      "description": "Review watched downloads eligible for cleanup and delete them"
     },
     {
       "id": "search",

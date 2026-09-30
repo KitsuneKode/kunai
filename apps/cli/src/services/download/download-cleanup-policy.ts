@@ -10,9 +10,20 @@ export type ProtectedDownloadEpisode = {
   readonly episode?: number;
 };
 
+/**
+ * Which retention rule released the job for cleanup. A review row reads this to
+ * answer "why is this here" — a title configured `keep-last-watched` releases
+ * episodes that fell out of the keep set, everything else releases on the
+ * watched-plus-grace clock. Display metadata only; it never deletes anything.
+ */
+export type DownloadCleanupEligibility =
+  | { readonly kind: "grace"; readonly graceDays: number }
+  | { readonly kind: "keep-last-watched"; readonly count: number };
+
 export type DownloadCleanupCandidate = {
   readonly job: DownloadJobRecord;
   readonly reason: "watched";
+  readonly eligibility: DownloadCleanupEligibility;
   readonly watchedAt: string;
 };
 
@@ -76,6 +87,14 @@ export function selectDownloadCleanupCandidates(input: {
     candidates.push({
       job,
       reason: decision.reason,
+      eligibility:
+        titlePolicy?.mode === "keep-last-watched"
+          ? { kind: "keep-last-watched", count: titlePolicy.count }
+          : {
+              kind: "grace",
+              graceDays:
+                titlePolicy?.mode === "cleanup-watched" ? titlePolicy.graceDays : input.graceDays,
+            },
       watchedAt: decision.watchedAt,
     });
   }

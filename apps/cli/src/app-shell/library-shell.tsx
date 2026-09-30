@@ -1,4 +1,8 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import {
+  formatCleanupBannerText,
+  useDownloadCleanupSummary,
+} from "@/app-shell/hooks/use-download-cleanup-summary";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import {
@@ -175,6 +179,7 @@ function LibraryTab({
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
+  const cleanupSummary = useDownloadCleanupSummary(container);
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const titlesActive = libraryView === "titles";
 
@@ -274,6 +279,10 @@ function LibraryTab({
         setFilterQuery((query) => query.slice(0, -1));
         return;
       }
+      // No bare-letter action while a text filter lives on this surface — the
+      // cleanup review is reached through /cleanup-downloads (the banner
+      // advertises it). A focus model can promote `c` to a list-focus action
+      // later; today `c` must always reach the filter.
       if (input === "\u001b") return;
       if (
         input.length === 1 &&
@@ -451,6 +460,14 @@ function LibraryTab({
       <Box marginBottom={1}>
         <Text color={palette.dim}>{shelf.summary}</Text>
       </Box>
+      {cleanupSummary ? (
+        <Box marginBottom={1}>
+          <Text color={palette.accentDeep}>
+            {formatCleanupBannerText(cleanupSummary)} ·{" "}
+            <Text color={palette.accent}>/cleanup-downloads</Text> to review
+          </Text>
+        </Box>
+      ) : null}
       {filterQuery.length > 0 ? (
         <Box marginBottom={1}>
           <Text color={palette.accent}>Filter: </Text>

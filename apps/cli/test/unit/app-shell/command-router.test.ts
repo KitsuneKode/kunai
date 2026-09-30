@@ -178,6 +178,7 @@ describe("resolveCommandContext scoped surfaces", () => {
       "recommendation",
       "calendar",
       "downloads",
+      "cleanup-downloads",
       "library",
       "history",
       "diagnostics",

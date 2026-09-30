@@ -3,6 +3,10 @@ import {
   buildDownloadManagerLayout,
   buildDownloadManagerRailModel,
 } from "@/app-shell/download-manager-view";
+import {
+  formatCleanupBannerText,
+  useDownloadCleanupSummary,
+} from "@/app-shell/hooks/use-download-cleanup-summary";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import {
@@ -183,6 +187,7 @@ export function DownloadManagerContent({
   const [confirmingDeleteIndex, setConfirmingDeleteIndex] = useState<number | null>(null);
   const [repairSweepStatus, setRepairSweepStatus] = useState<string | null>(null);
   const [repairSweepRunning, setRepairSweepRunning] = useState(false);
+  const cleanupSummary = useDownloadCleanupSummary(container);
 
   const refresh = useCallback(() => {
     const lists = refreshJobLists(container);
@@ -267,6 +272,13 @@ export function DownloadManagerContent({
       }
       if ((key.tab || input === "1" || input === "l") && onNavigateToLibrary) {
         onNavigateToLibrary();
+        return;
+      }
+      if (input === "c" || input === "C") {
+        void import("@/app-shell/workflows/download-cleanup-review").then(
+          ({ openDownloadCleanupReview }) =>
+            openDownloadCleanupReview(container).then(() => refresh()),
+        );
         return;
       }
       if (input.toLowerCase() === "a") {
@@ -485,6 +497,7 @@ export function DownloadManagerContent({
 
   const hasSummaryHeader =
     activeJobs.length > 0 || queuedJobs.length > 0 || failedAttentionCount > 0;
+  const cleanupBanner = cleanupSummary ? formatCleanupBannerText(cleanupSummary) : "";
   const hintRows =
     (confirmingDeleteIndex !== null ? 1 : 0) +
     (repairSweepStatus ? 1 : 0) +
@@ -492,7 +505,7 @@ export function DownloadManagerContent({
   const chromeRows = getPickerChromeRows({
     hasSubtitle: false,
     commandMode: false,
-    extraRows: (hasSummaryHeader ? 1 : 0) + hintRows,
+    extraRows: (hasSummaryHeader ? 1 : 0) + (cleanupBanner ? 1 : 0) + hintRows,
   });
   const maxVisible = getPickerListMaxVisible(viewport.rows, chromeRows, ROOT_CHROME_ROWS + 1);
   const windowStart = getWindowStart(selectedIndex, allJobs.length, maxVisible);
@@ -529,6 +542,11 @@ export function DownloadManagerContent({
             queuedCount={queuedJobs.length}
             failedCount={failedAttentionCount}
           />
+          {cleanupBanner ? (
+            <Text color={palette.accentDeep}>
+              {cleanupBanner} · <Text color={palette.accent}>c</Text> to review
+            </Text>
+          ) : null}
           {windowStart > 0 ? (
             <Text color={palette.dim} dimColor>
               {"  "}more above
@@ -571,6 +589,7 @@ export function DownloadManagerContent({
                 {failedJobs.some((job) => job.status === "repairable")
                   ? "  ·  a to repair all"
                   : ""}
+                {cleanupBanner ? "  ·  c cleanup review" : ""}
               </Text>
             </Box>
           ) : null;
