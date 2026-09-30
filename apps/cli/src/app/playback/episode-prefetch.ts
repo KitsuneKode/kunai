@@ -133,7 +133,11 @@ export class EpisodePrefetchHandle {
     this.generation += 1;
     this.abortController?.abort();
     this.abortController = null;
+    const abandoned = this.inFlight;
     this.inFlight = null;
+    if (abandoned) {
+      void abandoned.catch(() => undefined);
+    }
     this.ready = null;
     this.activeTarget = null;
   }
@@ -253,13 +257,18 @@ async function racePromiseWithTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
 ): Promise<"completed" | "timed-out"> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     return await Promise.race([
       promise.then(() => "completed" as const),
-      new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), timeoutMs)),
+      new Promise<"timed-out">((resolve) => {
+        timer = setTimeout(() => resolve("timed-out"), timeoutMs);
+      }),
     ]);
   } catch {
     return "completed";
+  } finally {
+    if (timer !== null) clearTimeout(timer);
   }
 }
 

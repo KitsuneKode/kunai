@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { HLS_SEGMENT_PROBE_MIN_BYTES } from "../src/shared/hls-manifest";
 import {
+  blockedLiteralAddressReason,
   fetchGuardedStreamTarget,
   isStreamReachableForPlaybackPreflight,
   isStreamReachableForResolve,
@@ -635,5 +636,14 @@ describe("probeLookupForPort", () => {
   test("ports that do not resolve locally get no local pinning", () => {
     expect(probeLookupForPort({ resolvesLocally: false })).toBeUndefined();
     expect(probeLookupForPort({})).toBeUndefined();
+  });
+});
+
+describe("blocked literal addresses", () => {
+  test("6to4 and teredo unwrap to the embedded private IPv4", () => {
+    expect(blockedLiteralAddressReason("2002:a9fe:a9fe::")).toContain("private");
+    expect(blockedLiteralAddressReason("2001:0::5601:5601")).toContain("private");
+    expect(blockedLiteralAddressReason("::ffff:169.254.169.254")).toContain("private");
+    expect(blockedLiteralAddressReason("1.1.1.1")).toBeNull();
   });
 });

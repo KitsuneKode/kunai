@@ -133,8 +133,9 @@ type PinnedTarget =
  * opens is the one the DNS check covered. The target URL stays a hostname —
  * redirects resolve against it and each hop re-pins.
  *
- * `proxy: false` because a configured proxy would resolve the pinned name
- * itself and silently undo the check.
+ * The request is rewritten onto the validated address. `proxy: false` is set
+ * so a proxy is not asked to resolve the name again; Bun 1.4 is not proven
+ * to honor that flag, so the pin itself is the IP literal.
  *
  * Fails closed: an empty or failed lookup cannot prove the name stays public
  * through the fetch's own resolution, so it is a blocked target — the same
@@ -272,8 +273,17 @@ function isPrivateIpv4(parts: readonly [number, number, number, number]): boolea
   );
 }
 
-/** IPv6-mapped IPv4 (`::ffff:7f00:1`) and NAT64 (`64:ff9b::a9fe:1`) unwrap to v4 checks. */
+/** IPv6-mapped IPv4 (`::ffff:7f00:1`), NAT64 (`64:ff9b::`), 6to4 (`2002::/16`), and Teredo (`2001:0::/32`). */
 function embeddedIpv4(host: string): [number, number, number, number] | null {
+  const sixToFour = host.match(/^2002:([0-9a-f]{1,4}):([0-9a-f]{1,4})(?::|$)/);
+  if (sixToFour?.[1] && sixToFour[2]) {
+    return hextetPairToIpv4(sixToFour[1], sixToFour[2]);
+  }
+  const teredo = host.match(/^2001:0(?::[0-9a-f]{0,4})*::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (teredo?.[1] && teredo[2]) {
+    const raw = hextetPairToIpv4(teredo[1], teredo[2]);
+    return raw ? [raw[0] ^ 0xff, raw[1] ^ 0xff, raw[2] ^ 0xff, raw[3] ^ 0xff] : null;
+  }
   const tail = host.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1];
   if (tail) return parseIpv4(tail);
   const hexTail = host.match(/(?:^|:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/) ?? null;
@@ -281,6 +291,17 @@ function embeddedIpv4(host: string): [number, number, number, number] | null {
   const hi = parseInt(hexTail[1], 16);
   const lo = parseInt(hexTail[2], 16);
   return [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff];
+}
+
+function hextetPairToIpv4(hi: string, lo: string): [number, number, number, number] | null {
+  const a = parseInt(hi, 16);
+  const b = parseInt(lo, 16);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a > 0xffff || b > 0xffff) return null;
+  return [a >> 8, a & 0xff, b >> 8, b & 0xff];
+}
+
+export function blockedLiteralAddressReason(host: string): string | null {
+  return isPrivateLiteralAddress(host.replace(/^\[|\]$/g, "").toLowerCase());
 }
 
 function isPrivateLiteralAddress(host: string): string | null {
@@ -291,11 +312,12 @@ function isPrivateLiteralAddress(host: string): string | null {
   if (!host.includes(":")) return null;
   if (host === "::" || host === "::1") return `loopback address ${host}`;
   const embedded = embeddedIpv4(host);
-  if (
-    (host.startsWith("::ffff:") || host.startsWith("64:ff9b::")) &&
-    embedded &&
-    isPrivateIpv4(embedded)
-  ) {
+  const unwraps =
+    host.startsWith("::ffff:") ||
+    host.startsWith("64:ff9b::") ||
+    host.startsWith("2002:") ||
+    host.startsWith("2001:0");
+  if (unwraps && embedded && isPrivateIpv4(embedded)) {
     return `private address ${host}`;
   }
   const first = parseInt(host.split(":", 1)[0] || "0", 16);

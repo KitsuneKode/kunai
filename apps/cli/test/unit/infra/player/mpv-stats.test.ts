@@ -487,4 +487,19 @@ describe("mpv-stats", () => {
     expect(stats.latestIpcSample?.cacheSpeedBytesPerSecond).toBe(1_000_000);
     expect(stats.latestIpcSample?.seeking).toBe(true);
   });
+
+  test("eof with zero watched seconds does not persist as a finished title", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1_400,
+      observedAt: 10,
+    });
+    applyEndFileEvent(stats, "eof", 20);
+    recordPlayerExit(stats, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.watchedSeconds).toBe(0);
+    expect(result.endReason).not.toBe("eof");
+  });
 });

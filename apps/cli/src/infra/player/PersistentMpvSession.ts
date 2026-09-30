@@ -749,6 +749,7 @@ export class PersistentMpvSession {
             this.pendingFileLoad = null;
             if (!this.isGenerationCurrent(pending.generation)) return;
             this.loadedFileGeneration = pending.generation;
+            this.watchdog?.resetForNewFile(Date.now());
 
             void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 300);
             const reconnect = this.pendingInProcessReconnect;
@@ -1564,14 +1565,23 @@ export class PersistentMpvSession {
       this.playbackStream.url.length > 0 &&
       (demoted || (result.endReason === "error" && networkish));
 
+    const generationAtEnd = this.cycleGeneration;
     if (shouldTryReconnect) {
       const trigger: InProcessReconnectTrigger = demoted ? "premature-eof" : "error";
       const reloaded = await this.runSameUrlReconnect(active, seekFrom, durationForSeek, trigger);
+      if (this.activeCycle !== active || !this.isGenerationCurrent(generationAtEnd)) {
+        active.resolve(result);
+        return;
+      }
       if (reloaded) {
         return;
       }
     }
 
+    if (this.activeCycle !== active) {
+      active.resolve(result);
+      return;
+    }
     this.activeCycle = null;
     active.resolve(result);
   }
@@ -1658,10 +1668,18 @@ export class PersistentMpvSession {
       const savedEndReason = active.stats.endReason;
       const savedMaxTrusted = active.stats.maxTrustedProgressSeconds;
       const savedLastReliable = active.stats.lastReliableProgressSeconds;
+      const savedStallAt = active.stats.lastStreamStallAtMs;
+      const savedPausedAt = active.stats.lastPausedAtMs;
+      const savedUnpausedAt = active.stats.lastUnpausedAtMs;
+      const savedDemoted = active.stats.eofDemotedByPrematureGuard;
       active.stats = createPlayerStatsState(this.ipcEndpoint.path);
       active.stats.endReason = savedEndReason;
       active.stats.maxTrustedProgressSeconds = savedMaxTrusted;
       active.stats.lastReliableProgressSeconds = savedLastReliable;
+      active.stats.lastStreamStallAtMs = savedStallAt;
+      active.stats.lastPausedAtMs = savedPausedAt;
+      active.stats.lastUnpausedAtMs = savedUnpausedAt;
+      active.stats.eofDemotedByPrematureGuard = savedDemoted;
       // Reconnect reloads the same cycle: keep its generation, but retire the
       // previous pending owner so two load owners never coexist.
       this.pendingInProcessReconnect = {

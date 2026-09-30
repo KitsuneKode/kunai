@@ -3,6 +3,8 @@
 // These take precomputed primitives so they are pure and unit-testable; callers
 // still own when `endedNearNaturalEnd` is computed (no control-flow change).
 
+import { getCompletionThresholdSeconds } from "@/domain/playback/playback-policy";
+
 /**
  * A "quit" near the natural end of an episode that should silently roll into the
  * next one (autoplay-chain), rather than parking on the post-play menu.
@@ -39,7 +41,9 @@ export function canResumePlayback(input: {
 }): boolean {
   return (
     input.resumeSeconds > 10 &&
-    (input.durationSeconds <= 0 || input.resumeSeconds < Math.max(0, input.durationSeconds - 5)) &&
+    (input.durationSeconds <= 0 ||
+      input.resumeSeconds <
+        getCompletionThresholdSeconds(input.durationSeconds, null, "seconds-only")) &&
     (input.endReason !== "eof" || !input.endedNearNaturalEnd)
   );
 }

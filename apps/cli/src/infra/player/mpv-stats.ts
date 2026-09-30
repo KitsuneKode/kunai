@@ -1,3 +1,4 @@
+import { getCompletionThresholdSeconds } from "@/domain/playback/playback-policy";
 import type { EndReason, PlaybackResult } from "@/domain/types";
 
 export interface PlayerStatsSample {
@@ -250,7 +251,8 @@ function shouldDemotePauseDroppedEof(
 ): boolean {
   if (durationSeconds <= 180) return false;
   if (sample?.eofReached === true) return false;
-  if (maxTrusted >= durationSeconds - 5) return false;
+  if (maxTrusted >= getCompletionThresholdSeconds(durationSeconds, null, "seconds-only"))
+    return false;
 
   const pausedNow = sample?.paused === true;
   const pausedAt = state.lastPausedAtMs;
@@ -558,7 +560,11 @@ export function finalizePlaybackResult(
   const duration = chosen?.durationSeconds ?? 0;
   const lastTrustedProgressSeconds = state.maxTrustedProgressSeconds;
 
-  if (endReason === "eof" && duration > 0) {
+  if (
+    endReason === "eof" &&
+    duration > 0 &&
+    (watchedSeconds > 0 || lastTrustedProgressSeconds > 0)
+  ) {
     watchedSeconds = Math.max(watchedSeconds, duration);
   }
 

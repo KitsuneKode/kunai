@@ -316,7 +316,9 @@ export async function anidbFetchText(
   const maxTime = String(options.maxTimeSec ?? 12);
   const args = [
     curl.path,
-    "-sL",
+    "-s",
+    "--max-redirs",
+    "0",
     "-A",
     ANIDB_USER_AGENT,
     "-H",
@@ -332,10 +334,8 @@ export async function anidbFetchText(
     url,
   ];
   const stdout = await runAnidbCurlWithRetry(args, options.signal);
-  // `-sL` has no `--fail`, so curl exits 0 and hands back the error page for a
-  // 404. Without asking for the status explicitly the miss is indistinguishable
-  // from a body that merely failed to parse, which is how a reindexed id used
-  // to look exactly like an empty catalogue.
+  // Redirects are not followed. A 3xx body is an HTTP status, and a metadata
+  // address such as 169.254.169.254 never receives a second request.
   const { body, status } = splitAnidbStatus(stdout);
   if (status >= 400) throw new AnidbHttpStatusError(status);
   if (isCloudflareChallengeText(body)) {

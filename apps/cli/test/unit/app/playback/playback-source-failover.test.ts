@@ -44,6 +44,18 @@ describe("playback-source-failover", () => {
     ).toBeNull();
   });
 
+  test("does not give up while an earlier untried source remains", () => {
+    expect(
+      planStartupFailover({
+        sourceIds: ["s1", "s2", "s3"],
+        currentSourceId: "s3",
+        triedSourceIds: new Set(["s3"]),
+        hasFallbackProvider: false,
+        failoverAttempts: 1,
+      }),
+    ).toEqual({ kind: "advance-source", sourceId: "s1" });
+  });
+
   test("planStartupFailover prefers next source then provider hop then give-up", () => {
     expect(
       planStartupFailover({

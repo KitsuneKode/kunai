@@ -59,6 +59,7 @@ import {
   streamPresentationFields,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
+import { probeLookupForPort } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
@@ -1026,6 +1027,7 @@ async function resolveRivestreamProviderCandidate({
         // expansion runs after the prefetch, so a hung master must die with
         // the attempt instead of lingering as an orphan fetch.
         signal: signal ?? context.signal,
+        lookupImpl: probeLookupForPort(context.fetch),
       });
       if (isHlsDeadHostStatus(inventory.probe.httpStatus)) {
         return { source, variants: [] as readonly HlsLadderVariant[] };
