@@ -4,6 +4,8 @@ import { encodePlaybackTargetWebUrl } from "@kunai/types";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import SharePage, { generateMetadata } from "../app/w/[code]/page";
+import { PrivacyAnalytics } from "../components/analytics/privacy-analytics";
+import { PrivacySpeedInsights } from "../components/analytics/privacy-speed-insights";
 import { filterPrivateShareAnalytics } from "../lib/analytics-privacy";
 
 function webCode(url: string): string {
@@ -60,6 +62,34 @@ test("share codes never enter site analytics", () => {
 
   expect(filterPrivateShareAnalytics(shareEvent)).toBeNull();
   expect(filterPrivateShareAnalytics(docsEvent)).toBe(docsEvent);
+});
+
+test("relative share URLs and malformed telemetry URLs fail closed", () => {
+  for (const url of ["/w/v1.private?query=1", "/w/invalid", "http://[", "unparseable"]) {
+    expect(filterPrivateShareAnalytics({ type: "pageview", url })).toBeNull();
+  }
+});
+
+test("both mounted SDK wrappers suppress share events across navigation and delayed delivery", () => {
+  const analytics = PrivacyAnalytics();
+  const speed = PrivacySpeedInsights();
+  // Inspect the actual SDK props emitted by each client boundary, not a detached helper.
+  expect(analytics.props.beforeSend).toBeFunction();
+  expect(speed.props.beforeSend).toBeFunction();
+  for (const [url, allowed] of [
+    ["https://kunai.kitsunekode.in/docs", true],
+    ["https://kunai.kitsunekode.in/w/v1.private", false],
+    ["/w/invalid?title=private", false],
+    ["https://kunai.kitsunekode.in/docs/users", true],
+    // A share-page performance sample delivered after navigation to docs.
+    ["https://kunai.kitsunekode.in/w/v1.private?query=1", false],
+    ["http://[", false],
+  ] as const) {
+    const pageview = { type: "pageview", url };
+    const vital = { type: "vital", url, route: "/w/[code]" };
+    expect(analytics.props.beforeSend(pageview)).toBe(allowed ? pageview : null);
+    expect(speed.props.beforeSend(vital)).toBe(allowed ? vital : null);
+  }
 });
 
 test("share metadata leaves the image slot to the segment card", async () => {

@@ -1,4 +1,5 @@
 import { SQLiteError } from "bun:sqlite";
+import { win32 } from "node:path";
 
 import type {
   MediaKind,
@@ -144,7 +145,37 @@ export class DownloadJobAdmissionConflictError extends Error {
 const DOWNLOAD_INTENT_UNIQUE_INDEX = "idx_download_jobs_blocking_intent";
 
 export class DownloadJobsRepository {
-  constructor(private readonly db: KunaiDatabase) {}
+  /** A legacy shared destination is ambiguous even when the other job failed. */
+  hasConflictingOutputOwner(jobId: string, outputPath: string): boolean {
+    if (this.platform === "win32") {
+      // Compare only at the ownership boundary: keep recorded paths intact.
+      // SQLite NOCASE is ASCII-only; filenames can include Unicode letters.
+      const identity = win32.normalize(outputPath).toUpperCase();
+      return this.db
+        .query<{ path: string }, [string, string]>(
+          `SELECT output_path AS path FROM download_jobs WHERE id <> ?
+         UNION ALL
+         SELECT file_path AS path FROM offline_assets WHERE origin_job_id IS NULL OR origin_job_id <> ?`,
+        )
+        .all(jobId, jobId)
+        .some(({ path }) => win32.normalize(path).toUpperCase() === identity);
+    }
+    return (
+      this.db
+        .query<{ conflict: number }, [string, string, string, string]>(
+          `SELECT EXISTS (
+        SELECT 1 FROM download_jobs WHERE output_path = ? AND id <> ?
+        UNION ALL
+        SELECT 1 FROM offline_assets WHERE file_path = ? AND (origin_job_id IS NULL OR origin_job_id <> ?)
+      ) AS conflict`,
+        )
+        .get(outputPath, jobId, outputPath, jobId)?.conflict === 1
+    );
+  }
+  constructor(
+    private readonly db: KunaiDatabase,
+    private readonly platform: NodeJS.Platform = process.platform,
+  ) {}
 
   enqueue(
     input: Omit<
