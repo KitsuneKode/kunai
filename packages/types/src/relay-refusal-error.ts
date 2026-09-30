@@ -47,6 +47,6 @@ export class RelayRefusalError extends Error {
   }
 }
 
-export function isRelayRefusalError(error: unknown): error is RelayRefusalError {
+export function isRelayRefusalError<T>(error: T): error is T & RelayRefusalError {
   return error instanceof RelayRefusalError;
 }

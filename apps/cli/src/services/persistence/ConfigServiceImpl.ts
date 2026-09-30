@@ -13,7 +13,13 @@ import {
 import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
-import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@kunai/types";
+import {
+  isJsonNumber,
+  isJsonObject,
+  isJsonString,
+  type ProviderRelayConfig,
+  type StartupPriority,
+} from "@kunai/types";
 
 import type {
   ConfigService,
@@ -76,7 +82,7 @@ function normalizeQualityPreference<T>(value: T): string {
 function normalizeLanguageProfile(
   profile: KitsuneConfig["animeLanguageProfile"] | undefined,
 ): KitsuneConfig["animeLanguageProfile"] {
-  if (!profile || typeof profile !== "object") {
+  if (!isJsonObject(profile)) {
     return { audio: "original", subtitle: "none", quality: "best" };
   }
   return {
@@ -160,12 +166,13 @@ function normalizeYoutubeMetadata(
 
 type ConfigValueClass = "string" | "number" | "boolean" | "array" | "object" | "null";
 
-function configValueClass(value: unknown): ConfigValueClass {
-  if (value === null) return "null";
+function configValueClass(value: KitsuneConfig[keyof KitsuneConfig] | undefined): ConfigValueClass {
+  if (value === null || value === undefined) return "null";
   if (Array.isArray(value)) return "array";
-  const kind = typeof value;
-  if (kind === "string" || kind === "number" || kind === "boolean") return kind;
-  return kind === "object" ? "object" : "null";
+  if (isJsonString(value)) return "string";
+  if (isJsonNumber(value)) return "number";
+  if (value === true || value === false) return "boolean";
+  return isJsonObject(value) ? "object" : "null";
 }
 
 /**
@@ -178,31 +185,32 @@ function configValueClass(value: unknown): ConfigValueClass {
  * string fields); anything else is dropped so the default applies. Only key
  * names are reported — never values, which may be user data.
  */
-function sanitizeLoadedConfig(loaded: Partial<KitsuneConfig>): {
-  sanitized: Partial<KitsuneConfig>;
-  droppedKeys: string[];
-} {
+type SanitizedConfig = {
+  readonly sanitized: Partial<KitsuneConfig>;
+  readonly droppedKeys: string[];
+};
+
+function sanitizeLoadedConfig(loaded: Partial<KitsuneConfig>): SanitizedConfig {
   const droppedKeys: string[] = [];
-  const sanitized: Record<string, unknown> = { ...loaded };
+  const sanitized = { ...loaded };
   for (const key of Object.keys(sanitized)) {
     if (!(key in DEFAULT_CONFIG)) continue;
     // SAFETY: guarded by `key in DEFAULT_CONFIG` — key is a known config field.
-    const expected = configValueClass(DEFAULT_CONFIG[key as keyof typeof DEFAULT_CONFIG]);
-    const actual = configValueClass(sanitized[key]);
+    const configKey = key as keyof typeof DEFAULT_CONFIG;
+    const expected = configValueClass(DEFAULT_CONFIG[configKey]);
+    const actual = configValueClass(sanitized[configKey]);
     const accepted =
       expected === "null"
         ? actual === "null" || actual === "string"
         : expected === "number"
-          ? actual === "number" && Number.isFinite(sanitized[key])
+          ? actual === "number" && Number.isFinite(sanitized[configKey])
           : actual === expected;
     if (!accepted) {
-      delete sanitized[key];
+      delete sanitized[configKey];
       droppedKeys.push(key);
     }
   }
-  // SAFETY: only wrong-typed values were removed; every surviving key keeps the
-  // class its `KitsuneConfig` field declares.
-  return { sanitized: sanitized as Partial<KitsuneConfig>, droppedKeys };
+  return { sanitized, droppedKeys };
 }
 
 /**
@@ -215,23 +223,27 @@ function sanitizeLoadedConfig(loaded: Partial<KitsuneConfig>): {
  * `needsResave` is the same flag set `load()` persists on: every migration or
  * repair it performed OR'd together.
  */
-function normalizeLoadedConfig(loaded: Partial<KitsuneConfig>): {
-  config: KitsuneConfig;
-  needsResave: boolean;
-  migratedVideasyAppId: boolean;
-  droppedKeys: string[];
-} {
+type NormalizedLoadedConfig = {
+  readonly config: KitsuneConfig;
+  readonly needsResave: boolean;
+  readonly migratedVideasyAppId: boolean;
+  readonly droppedKeys: string[];
+};
+
+function normalizeLoadedConfig(loaded: Partial<KitsuneConfig>): NormalizedLoadedConfig {
   const { sanitized, droppedKeys } = sanitizeLoadedConfig(loaded);
   // Configs written before explicit consent had no notice marker. Their
   // enabled value was opt-out state, not evidence of a current opt-in, so
   // revoke it and erase the old local identifier before startup can send.
   const requiresExplicitAnalyticsConsent =
-    sanitized.analytics === "enabled" && typeof sanitized.analyticsNoticeShown !== "boolean";
+    sanitized.analytics === "enabled" &&
+    sanitized.analyticsNoticeShown !== true &&
+    sanitized.analyticsNoticeShown !== false;
   const normalizedAnalytics = requiresExplicitAnalyticsConsent
     ? "unset"
     : normalizeAnalyticsPreference(sanitized.analytics);
   const normalizedInstallId =
-    normalizedAnalytics === "enabled" && typeof sanitized.installId === "string"
+    normalizedAnalytics === "enabled" && isJsonString(sanitized.installId)
       ? sanitized.installId.trim()
       : "";
   const repairedAnalyticsIdentity =
@@ -315,17 +327,16 @@ function normalizeLoadedConfig(loaded: Partial<KitsuneConfig>): {
     analyticsNoticeShown: sanitized.analyticsNoticeShown === true,
     installId: normalizedInstallId,
     lastAnalyticsPingAt:
-      typeof sanitized.lastAnalyticsPingAt === "number" &&
-      Number.isFinite(sanitized.lastAnalyticsPingAt)
+      isJsonNumber(sanitized.lastAnalyticsPingAt) && Number.isFinite(sanitized.lastAnalyticsPingAt)
         ? Math.max(0, sanitized.lastAnalyticsPingAt)
         : 0,
     analyticsRetryAfter:
-      typeof sanitized.analyticsRetryAfter === "number" &&
-      Number.isFinite(sanitized.analyticsRetryAfter)
+      isJsonNumber(sanitized.analyticsRetryAfter) && Number.isFinite(sanitized.analyticsRetryAfter)
         ? Math.max(0, sanitized.analyticsRetryAfter)
         : 0,
-    analyticsEndpoint:
-      typeof sanitized.analyticsEndpoint === "string" ? sanitized.analyticsEndpoint.trim() : "",
+    analyticsEndpoint: isJsonString(sanitized.analyticsEndpoint)
+      ? sanitized.analyticsEndpoint.trim()
+      : "",
   };
   const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(sanitized, config);
   return {
@@ -583,7 +594,7 @@ export class ConfigServiceImpl implements ConfigService {
     return this.effective().mpvKunaiScriptPath;
   }
 
-  get mpvKunaiScriptOpts(): Record<string, string> {
+  get mpvKunaiScriptOpts(): KitsuneConfig["mpvKunaiScriptOpts"] {
     return { ...this.effective().mpvKunaiScriptOpts };
   }
 
@@ -699,7 +710,7 @@ export class ConfigServiceImpl implements ConfigService {
     return [...this.effective().protectedDownloadJobIds];
   }
 
-  get titleProviderPreferences(): Record<string, string> {
+  get titleProviderPreferences(): KitsuneConfig["titleProviderPreferences"] {
     return { ...this.effective().titleProviderPreferences };
   }
 
@@ -1035,7 +1046,8 @@ export class ConfigServiceImpl implements ConfigService {
           for (const key of writing) {
             // SAFETY: `key` is a KitsuneConfig field; `next` gets the field's
             // own type from `this.config`.
-            (next as Record<keyof KitsuneConfig, unknown>)[key] = this.config[key];
+            (next as Record<keyof KitsuneConfig, KitsuneConfig[keyof KitsuneConfig]>)[key] =
+              this.config[key];
           }
         }
         await this.persistConfig(next);
@@ -1085,7 +1097,7 @@ function pickConfigKeys(
   config: KitsuneConfig,
   keys: ReadonlySet<keyof KitsuneConfig>,
 ): Partial<KitsuneConfig> {
-  const picked: Partial<Record<keyof KitsuneConfig, unknown>> = {};
+  const picked: Partial<Record<keyof KitsuneConfig, KitsuneConfig[keyof KitsuneConfig]>> = {};
   for (const key of keys) picked[key] = config[key];
   // SAFETY: every assigned member comes from `config[key]` for a known key, so
   // each field keeps its declared type.

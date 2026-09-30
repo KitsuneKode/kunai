@@ -124,25 +124,23 @@ function parseManifest(manifestPath: string, fallbackDir: string): ProviderMetad
 }
 
 function syncProvidersFromContainer(): ProviderMetadata[] {
-  const containerPath = path.join(ROOT_DIR, "apps/cli/src/container/bootstrap-providers.ts");
-  const content = fs.readFileSync(containerPath, "utf-8");
-  const arrayMatch = content.match(/orderProviderModulesByPriority\(\s*\[([\s\S]*?)\]\s*,/);
-  if (!arrayMatch) {
-    throw new Error(
-      "Could not parse providerModules from apps/cli/src/container/bootstrap-providers.ts",
-    );
-  }
-
-  const moduleNames = [...arrayMatch[1].matchAll(/(\w+ProviderModule)/g)].map((m) => m[1]);
+  // `PRODUCTION_PROVIDER_LOADERS` in packages/providers is the single roster —
+  // bootstrap-providers, the relay server, and the status sweep all consume it,
+  // so the docs table reads the source of truth rather than one call site.
+  const rosterPath = path.join(ROOT_DIR, "packages/providers/src/production.ts");
+  const content = fs.readFileSync(rosterPath, "utf-8");
+  const moduleNames = [...content.matchAll(/\.then\(\(m\) => m\.(\w+ProviderModule)\)/g)].map(
+    (m) => m[1],
+  );
   if (moduleNames.length === 0) {
-    throw new Error("No provider modules found in bootstrap-providers.ts");
+    throw new Error("No provider loaders found in packages/providers/src/production.ts");
   }
 
   const providers: ProviderMetadata[] = [];
   for (const moduleName of moduleNames) {
     const dir = PROVIDER_MODULE_DIR[moduleName];
     if (!dir) {
-      throw new Error(`Unknown provider module in bootstrap-providers.ts: ${moduleName}`);
+      throw new Error(`Unknown provider module in production.ts: ${moduleName}`);
     }
     const manifestPath = path.join(ROOT_DIR, `packages/providers/src/${dir}/manifest.ts`);
     if (!fs.existsSync(manifestPath)) {

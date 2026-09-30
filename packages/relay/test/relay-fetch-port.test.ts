@@ -185,9 +185,7 @@ test.each([
     // response, because the refusal's status is not the upstream's verdict:
     // a provider that saw it as a response could cache `unknown-provider` 404
     // as missing content.
-    const error = await port
-      .fetch("https://api.allanime.day/api")
-      .catch((caught: unknown) => caught);
+    const error = await port.fetch("https://api.allanime.day/api").catch((caught) => caught);
 
     expect(error).toBeInstanceOf(RelayRefusalError);
     if (!isRelayRefusalError(error)) throw new Error("expected a RelayRefusalError");

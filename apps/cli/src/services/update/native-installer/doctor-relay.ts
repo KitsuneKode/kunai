@@ -3,7 +3,8 @@ import { join } from "node:path";
 
 import { RELAY_CAPABLE_PROVIDER_OPTIONS } from "@/domain/provider-relay-settings";
 import { parseProviderRelayConfig } from "@kunai/config";
-import { resolveEffectiveProviderRelayConfig } from "@kunai/relay";
+import { resolveEffectiveProviderRelayConfig, type RelayFetch } from "@kunai/relay";
+import { isJsonObject, isJsonString, type JsonValue } from "@kunai/types";
 
 /**
  * Outcome of the relay roster probe, already classified for `collectFindings`.
@@ -35,7 +36,7 @@ const RELAY_HEALTH_TIMEOUT_MS = 5_000;
  */
 export async function probeRelayCoverage(
   configDir: string,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: RelayFetch = fetch,
 ): Promise<DoctorRelayCoverage> {
   const relay = parseProviderRelayConfig(await readConfigRelay(configDir));
   const effective = resolveEffectiveProviderRelayConfig(relay, {
@@ -74,11 +75,11 @@ export async function probeRelayCoverage(
 }
 
 /** The health endpoint is unauthenticated and owns this shape — read it defensively anyway. */
-function readProviderIds(body: unknown): readonly string[] | undefined {
-  if (!body || typeof body !== "object") return undefined;
-  const candidate = body as { providerIds?: unknown };
-  if (!Array.isArray(candidate.providerIds)) return undefined;
-  return candidate.providerIds.filter((id): id is string => typeof id === "string");
+function readProviderIds<T>(body: T): readonly string[] | undefined {
+  if (!isJsonObject(body)) return undefined;
+  const ids = body.providerIds;
+  if (!Array.isArray(ids)) return undefined;
+  return ids.filter(isJsonString);
 }
 
 /**
@@ -86,20 +87,18 @@ function readProviderIds(body: unknown): readonly string[] | undefined {
  * loads, read through the schema so a hand-edited value degrades to the
  * default (relay off) rather than taking doctor down with it.
  */
-async function readConfigRelay(configDir: string): Promise<unknown> {
+async function readConfigRelay(configDir: string): Promise<JsonValue | undefined> {
   try {
     const raw = await readFile(join(configDir, "config.json"), "utf8");
-    const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === "object"
-      ? (parsed as { providerRelay?: unknown }).providerRelay
-      : undefined;
+    const parsed: JsonValue = JSON.parse(raw);
+    return isJsonObject(parsed) ? parsed.providerRelay : undefined;
   } catch {
     return undefined;
   }
 }
 
 /** Names, not messages: a fetch error message can embed the URL the user owns. */
-function describeProbeError(error: unknown): string {
+function describeProbeError<T>(error: T): string {
   if (error instanceof Error) return error.name;
   return "request failed";
 }
