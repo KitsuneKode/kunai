@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-09-12"
 ---
 
 # Lint policy (beta)
@@ -10,6 +10,24 @@ lastReviewed: "2026-08-24"
 - **Gate:** `bun run lint` (oxlint) must exit **zero** in CI — **errors are blocking**; warnings may exist during beta burn-down.
 - **Budget:** no per-warning budget file — fix new warnings in the same PR that introduces them; burn down existing warnings in focused batches when touching a file anyway.
 - **Rationale:** keeps signal high for agents and humans without blocking unrelated refactors on legacy debt.
+
+## Root tooling coverage
+
+`bun run lint` runs package lint tasks and the explicitly registered Turbo root
+task `//#lint:root`. That nonrecursive, uncached task runs `oxlint scripts tools`
+with the same base correctness rules as package lint. It does not scan unrelated
+root files, application/package trees, or worktrees. Existing warnings remain
+nonblocking; this adds coverage without changing rule severity.
+
+The full and affected local CI commands, `bun run check`, and both hosted lint lanes name the root
+task explicitly. It therefore runs even when `--affected` selects no packages;
+package selection remains affected-only on PRs. Arguments such as `--force` and
+`--summarize` still reach Turbo. The changed-file anti-slop advisory remains a
+separate PR step, not a substitute for this blocking correctness gate.
+
+`apps/cli/test/unit/scripts/root-tooling-lint.test.ts` exercises the real Turbo
+task graphs (including an empty affected range) and runs the configured oxlint
+command against clean and failing temporary tooling fixtures.
 
 ## anti-slop (ratcheted, plus a changed-file advisory)
 
