@@ -33,6 +33,13 @@ export type HistoryOverlayInputContext = {
   readonly historySelections: readonly RootHistorySelection[];
   readonly historyPickerContext: HistoryPickerOptionsContext;
   readonly selectedIndex: number;
+  /**
+   * Focus-zone gate for bare-letter actions. While the filter text zone owns
+   * printable keys (the default), letters feed the filter and the letter
+   * bindings below stay inert; once the list owns focus they become actions.
+   * Tab/←→/Enter and the modal delete + source-choice flows are zone-independent.
+   */
+  readonly listFocused: boolean;
   readonly sourceChoiceTitleId: string | null;
   readonly sourcePreference: ContinueSourcePreference;
   readonly setSourceChoiceTitleId: (titleId: string | null) => void;
@@ -284,11 +291,12 @@ export function handleHistoryOverlayInput(
     ctx.setSelectedIndex(() => 0);
     return "handled";
   }
-  const keyOutcome = key.return
-    ? "unhandled"
-    : resolveHistoryOverlayKey(input, {
-        hasSelection: Boolean(selected),
-      });
+  const keyOutcome =
+    key.return || !ctx.listFocused
+      ? "unhandled"
+      : resolveHistoryOverlayKey(input, {
+          hasSelection: Boolean(selected),
+        });
   if (keyOutcome === "ignore") return "handled";
   if (keyOutcome === "toggle-watched" && selected) {
     const watched = isFinished(selected.entry);
@@ -304,7 +312,7 @@ export function handleHistoryOverlayInput(
     void openHistoryTitleControlMenu(ctx, selected);
     return "handled";
   }
-  if (input.toLowerCase() === "q") {
+  if (ctx.listFocused && input.toLowerCase() === "q") {
     if (selected) {
       const historySelection = buildRootHistorySelection(
         selected,
@@ -373,6 +381,7 @@ export function handleHistoryOverlayInput(
     return "handled";
   }
   if (
+    ctx.listFocused &&
     !key.return &&
     (input.toLowerCase() === "l" || input.toLowerCase() === "s") &&
     selected &&
@@ -393,7 +402,7 @@ export function handleHistoryOverlayInput(
     );
     return "handled";
   }
-  if (selected && input === "x" && !key.shift) {
+  if (ctx.listFocused && selected && input === "x" && !key.shift) {
     ctx.setPendingDelete({
       kind: "episode",
       key: selected.entry.key,
@@ -404,7 +413,7 @@ export function handleHistoryOverlayInput(
     );
     return "handled";
   }
-  if (selected && (input === "X" || input === "x") && key.shift) {
+  if (ctx.listFocused && selected && (input === "X" || input === "x") && key.shift) {
     ctx.setPendingDelete({
       kind: "title",
       titleId: selected.titleId,

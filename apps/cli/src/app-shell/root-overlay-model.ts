@@ -102,12 +102,18 @@ export function getRootOverlaySubtitle({
   settingsDraft,
   config,
   settingsError,
+  episodePickerListFocused = false,
 }: {
   readonly overlay: RootOwnedOverlay;
   readonly state: SessionState;
   readonly settingsDraft: KitsuneConfig | null;
   readonly config: KitsuneConfig;
   readonly settingsError: string | null;
+  /**
+   * Episode picker only: true once the list owns focus and `s`/`m` act;
+   * false while the filter text zone owns printable keys.
+   */
+  readonly episodePickerListFocused?: boolean;
 }): string {
   if (overlay.type === "help") return "Global commands, editing, filtering, and shell behavior";
   if (overlay.type === "about") return "Kunai";
@@ -132,7 +138,13 @@ export function getRootOverlaySubtitle({
     const progress = total > 0 ? Math.round((watched / total) * 100) : 0;
     const parts = [seriesName, `S${String(overlay.season).padStart(2, "0")}`, `${total} eps`];
     if (progress > 0) parts.push(`${progress}% complete`);
-    parts.push("s season", "m watched");
+    // The subtitle names whichever mode owns the keys: filter typing until the
+    // list takes focus, the letter actions once it has.
+    if (episodePickerListFocused) {
+      parts.push("s season", "m watched", "Esc to filter");
+    } else {
+      parts.push("type to filter", "↓ for actions");
+    }
     return parts.join("  ·  ");
   }
   if (overlay.type === "subtitle_picker") return `${overlay.options.length} tracks available`;

@@ -452,6 +452,10 @@ describe("library input ownership", () => {
     );
     try {
       await waitForFrame(handle, "Dune");
+      // The shelf boots with the filter text zone focused — a bare x types
+      // into the filter. ↓ hands the list focus, then x arms and the matching
+      // second press deletes.
+      handle.stdin.enqueue("\u001b[B");
       handle.stdin.enqueue("x");
       await waitForFrame(handle, "Press x again");
       handle.stdin.enqueue("x");
@@ -496,6 +500,8 @@ describe("library input ownership", () => {
     );
     try {
       await waitForFrame(handle, "Dune");
+      // p only toggles protection while the list zone owns focus.
+      handle.stdin.enqueue("\u001b[B");
       handle.stdin.enqueue("p");
       await act(async () => {
         await Promise.resolve();
