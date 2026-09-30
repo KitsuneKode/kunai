@@ -57,6 +57,7 @@ describe("production provider defaults", () => {
       "rivestream",
       "videasy",
       "vidlink",
+      "vidrock",
       "youtube",
     ]);
   });

@@ -22,6 +22,7 @@ const PROVIDER_SRC = join(import.meta.dir, "../src");
 const PRODUCTION_PROVIDERS = [
   "videasy",
   "vidlink",
+  "vidrock",
   "rivestream",
   "allmanga",
   "anidb",

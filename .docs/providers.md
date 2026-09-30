@@ -583,6 +583,7 @@ only the contracts every provider must honour.
 | Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
 | VidLink             | [vidlink.md](./provider-dossiers/vidlink.md)                                                                                                                      |
 | Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
+| VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                                                      |
 | YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
 
 Cineby is **not** a production provider: it is a research-only Videasy-flavor
@@ -692,6 +693,7 @@ default to the table — a bump alone stamps configs without changing them.
 | `vidlink`      | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`      |
 | `rivestream`   | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts`   |
 | `videasy`      | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`      |
+| `vidrock`      | movie, series | direct-http | `packages/providers/src/vidrock/direct.ts`      |
 | `anidb`        | anime         | direct-http | `packages/providers/src/anidb/direct.ts`        |
 | `animegg`      | anime         | direct-http | `packages/providers/src/animegg/direct.ts`      |
 | `kickassanime` | anime         | direct-http | `packages/providers/src/kickassanime/direct.ts` |

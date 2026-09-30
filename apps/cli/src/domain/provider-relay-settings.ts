@@ -20,6 +20,7 @@ export const RELAY_CAPABLE_PROVIDER_OPTIONS = [
   { value: "videasy", label: "Videasy" },
   { value: "vidlink", label: "VidLink" },
   { value: "rivestream", label: "Rivestream" },
+  { value: "vidrock", label: "VidRock" },
 ] as const;
 
 export type RelayCapableProviderId = (typeof RELAY_CAPABLE_PROVIDER_OPTIONS)[number]["value"];

@@ -179,13 +179,13 @@ Dependency direction between these is enforced — see
 Present in the tree, deliberately not wired into production. Do not cite these
 as capabilities.
 
-| Path                                                  | What it is                                                           |
-| ----------------------------------------------------- | -------------------------------------------------------------------- |
-| `.archive/legacy/apps/cli/src/browser/*`              | Playwright interception reference; awaiting `@kunai/runtime-browser` |
-| `.archive/legacy/apps/cli/src/providers/*`            | Pre-`packages/providers` provider reference                          |
-| `.reference/experiments/*`                            | Provider research lab and scratchpads                                |
-| `packages/providers/src/cineby`, `rgshows`, `vidrock` | Modules that exist but are not in `loadProductionProviderModules()`  |
-| `apps/docs`                                           | The public docs site — content, not runtime                          |
+| Path                                       | What it is                                                           |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| `.archive/legacy/apps/cli/src/browser/*`   | Playwright interception reference; awaiting `@kunai/runtime-browser` |
+| `.archive/legacy/apps/cli/src/providers/*` | Pre-`packages/providers` provider reference                          |
+| `.reference/experiments/*`                 | Provider research lab and scratchpads                                |
+| `packages/providers/src/cineby`, `rgshows` | Modules that exist but are not in `loadProductionProviderModules()`  |
+| `apps/docs`                                | The public docs site — content, not runtime                          |
 
 Active runtime code must not import any of the first three; the boundary test
 enforces it.

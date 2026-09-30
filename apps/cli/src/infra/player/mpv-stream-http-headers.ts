@@ -83,9 +83,19 @@ export function normalizeStreamHttpHeaders(
   const referer = dedicated("referer");
   const userAgent = dedicated("user-agent");
   const origin = dedicated("origin");
-  const sanitize = (value: unknown, pattern: RegExp): string | undefined => {
-    if (typeof value !== "string") return undefined;
+  const sanitize = (value: string | undefined, pattern: RegExp): string | undefined => {
+    if (value === undefined) return undefined;
     const sanitized = value.trim().replace(pattern, "");
+    return sanitized.length > 0 ? sanitized : undefined;
+  };
+  // A whitespace-only User-Agent is load-bearing: vidrock's ngcorp stream
+  // hosts drop any real UA and only accept an effectively-empty one, spelled
+  // " " because ffmpeg cannot express an absent header. The shared sanitizer
+  // would trim it to nothing and silently delete the header, so the UA strips
+  // only CR/LF and preserves an all-whitespace value.
+  const sanitizeUserAgent = (value: string | undefined): string | undefined => {
+    if (value === undefined) return undefined;
+    const sanitized = value.replace(/[\r\n]/g, "");
     return sanitized.length > 0 ? sanitized : undefined;
   };
   const extraFields: string[] = [];
@@ -102,7 +112,7 @@ export function normalizeStreamHttpHeaders(
 
   return {
     referer: sanitize(referer, /[\r\n]/g),
-    userAgent: sanitize(userAgent, /[\r\n]/g),
+    userAgent: sanitizeUserAgent(userAgent),
     origin: sanitize(origin, /[\r\n,]/g),
     extraFields,
   };
