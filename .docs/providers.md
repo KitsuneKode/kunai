@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-16"
+lastReviewed: "2026-09-30"
 ---
 
 # Kunai — Provider Guide
@@ -591,6 +591,7 @@ only the contracts every provider must honour.
 | Videasy             | [videasy.md](./provider-dossiers/videasy.md)                                                                                                                      |
 | VidLink             | [vidlink.md](./provider-dossiers/vidlink.md)                                                                                                                      |
 | Rivestream          | [rivestream.md](./provider-dossiers/rivestream.md)                                                                                                                |
+| Movy                | [movy.md](./provider-dossiers/movy.md)                                                                                                                            |
 | VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                                                      |
 | YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
 
@@ -700,6 +701,7 @@ default to the table — a bump alone stamps configs without changing them.
 | -------------- | ------------- | ----------- | ----------------------------------------------- |
 | `vidlink`      | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`      |
 | `rivestream`   | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts`   |
+| `movy`         | movie, series | direct-http | `packages/providers/src/movy/direct.ts`         |
 | `videasy`      | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`      |
 | `vidrock`      | movie, series | direct-http | `packages/providers/src/vidrock/direct.ts`      |
 | `anidb`        | anime         | direct-http | `packages/providers/src/anidb/direct.ts`        |
