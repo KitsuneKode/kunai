@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-import { dispatchPaletteCommand } from "@/app-shell/dispatch-palette-command";
+import {
+  dispatchPaletteCommand,
+  PALETTE_WORKFLOW_ACTIONS,
+} from "@/app-shell/dispatch-palette-command";
 import {
   createPaletteWorkflowPort,
   type PaletteWorkflowPort,
@@ -174,5 +177,11 @@ describe("dispatchPaletteCommand", () => {
       },
     });
     expect(openRootOwnedOverlay).toHaveBeenCalledWith(container, { type: "queue" });
+  });
+
+  // The overlay palette's Enter handler gates on PALETTE_WORKFLOW_ACTIONS —
+  // an action the palette lists but the set omits silently does nothing.
+  test("palette-listed workflow commands are wired into PALETTE_WORKFLOW_ACTIONS", () => {
+    expect(PALETTE_WORKFLOW_ACTIONS.has("cleanup-downloads")).toBe(true);
   });
 });
