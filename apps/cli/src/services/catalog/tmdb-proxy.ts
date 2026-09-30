@@ -243,11 +243,11 @@ export type TmdbFetchFailureKind =
   | "unknown";
 
 /** A 4xx answer is definitive: the upstream says the resource is not there. */
-export function isTmdbClientError(error: unknown): boolean {
+export function isTmdbClientError<T>(error: T): boolean {
   return error instanceof TmdbHttpError && error.status >= 400 && error.status < 500;
 }
 
-export function classifyTmdbFetchFailure(error: unknown): TmdbFetchFailureKind {
+export function classifyTmdbFetchFailure<T>(error: T): TmdbFetchFailureKind {
   if (error instanceof TmdbHttpError) {
     return error.status === 404 ? "not-found" : "upstream";
   }
