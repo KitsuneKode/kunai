@@ -999,6 +999,14 @@ export class ConfigServiceImpl implements ConfigService {
    */
   private saveInFlight: Promise<void> | null = null;
 
+  /**
+   * Serializes `persistPendingSave()` runs. Two runs overlapping one
+   * load→write window would both merge onto the same disk base — the second
+   * write drops keys the first just persisted — and the second run would
+   * overwrite the shared `inFlightValues` snapshot the first still needs.
+   */
+  private persistTail: Promise<void> = Promise.resolve();
+
   // Trailing debounce: every call re-arms the timer so the latest config wins,
   // and all callers in a burst share one promise that settles once the write
   // actually lands (or rejects, so shutdown can record the failure).
@@ -1049,22 +1057,29 @@ export class ConfigServiceImpl implements ConfigService {
     // so assigning afterwards left an already-rejected promise in `saveInFlight`
     // that every later `flushPending()` would await.
     this.saveInFlight = pending;
-    void (async () => {
-      // Snapshot the keys this write is responsible for, then merge them onto
-      // what is actually on disk — a second Kunai process may have written
-      // since this one loaded (e.g. disabling analytics), and writing the whole
-      // in-memory config would resurrect its stale values.
+    // Snapshot at queue time: the write owns exactly what was dirty here, and
+    // keys dirtied while the run waits or writes stay dirty for the next save.
+    // The snapshot also survives `reloadFromDisk()` — it swaps `this.config`
+    // values for keys it sees as untouched (dirtyKeys is already cleared).
+    const writing = new Set(this.dirtyKeys);
+    const writingValues = pickConfigKeys(this.config, writing);
+    this.dirtyKeys.clear();
+    const prior = this.persistTail;
+    this.persistTail = (async () => {
+      // Never overlap a prior run's load→write window: two runs merging the
+      // same disk base would each drop the other's just-written keys, and
+      // `inFlightValues` is shared so only the live run may own it. A rejected
+      // tail must not block this run, hence the catch.
+      await prior.catch(() => {});
+      this.inFlightValues = writingValues;
+      // Merge the snapshot onto what is actually on disk — a second Kunai
+      // process may have written since this one loaded (e.g. disabling
+      // analytics), and writing the whole in-memory config would resurrect
+      // its stale values.
       // Residual race: two processes whose saves land inside one load→write
       // window can still interleave and last-writer-wins. There is deliberately
       // no cross-process lock — the merge only shrinks the window it used to be
       // (whole-process-lifetime staleness down to a single write).
-      const writing = new Set(this.dirtyKeys);
-      // Snapshot the values now — `await store.load()` below can interleave
-      // with `reloadFromDisk()`, which swaps `this.config` values for keys it
-      // sees as untouched (dirtyKeys is already cleared) back to disk data.
-      const writingValues = pickConfigKeys(this.config, writing);
-      this.inFlightValues = writingValues;
-      this.dirtyKeys.clear();
       try {
         const disk = await this.store.load();
         let next: KitsuneConfig;
@@ -1091,7 +1106,13 @@ export class ConfigServiceImpl implements ConfigService {
       } catch (error) {
         // A mid-flight reload may have swapped these keys to disk values —
         // restore the snapshot before re-dirtying so the retry writes them.
-        this.config = { ...this.config, ...writingValues };
+        // Keys dirtied mid-flight hold newer values than the snapshot, so the
+        // live dirty values go last: without them the retry persists the old.
+        this.config = {
+          ...this.config,
+          ...writingValues,
+          ...pickConfigKeys(this.config, this.dirtyKeys),
+        };
         this.effectiveView = null;
         for (const key of writing) this.dirtyKeys.add(key);
         reject?.(error instanceof Error ? error : String(error));
