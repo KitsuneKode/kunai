@@ -16,12 +16,15 @@ import {
  * refused. Both halves were individually reasonable; the bug was that they were
  * assembled twice.
  */
-function contextRecording(handler: (url: string, init?: RequestInit) => Response): {
+type RecordedContext = {
   readonly context: ProviderRuntimeContext;
   readonly seen: RequestInit[];
-} {
+};
+
+function contextRecording(handler: (url: string, init?: RequestInit) => Response): RecordedContext {
   const seen: RequestInit[] = [];
   const context = {
+    now: () => "2026-01-01T00:00:00.000Z",
     fetch: {
       runtime: "direct-http" as const,
       fetch: async (url: string, init?: RequestInit) => {
@@ -29,7 +32,7 @@ function contextRecording(handler: (url: string, init?: RequestInit) => Response
         return handler(String(url), init);
       },
     },
-  } as unknown as ProviderRuntimeContext;
+  } satisfies ProviderRuntimeContext;
   return { context, seen };
 }
 
@@ -217,6 +220,7 @@ describe("selectVerifiedStream", () => {
     // the host dies the same way, so probing siblings only burns the budget.
     const probed: string[] = [];
     const context = {
+      now: () => "2026-01-01T00:00:00.000Z",
       fetch: {
         runtime: "direct-http" as const,
         fetch: async (url: string) => {
@@ -227,7 +231,7 @@ describe("selectVerifiedStream", () => {
           return new Response(null, { status: 200 });
         },
       },
-    } as unknown as ProviderRuntimeContext;
+    } satisfies ProviderRuntimeContext;
 
     const result = await selectVerifiedStream({
       streams: [
@@ -250,6 +254,7 @@ describe("selectVerifiedStream", () => {
   test("identical requests are probed once even across duplicate rungs", async () => {
     const probed: string[] = [];
     const context = {
+      now: () => "2026-01-01T00:00:00.000Z",
       fetch: {
         runtime: "direct-http" as const,
         fetch: async (url: string) => {
@@ -257,7 +262,7 @@ describe("selectVerifiedStream", () => {
           return new Response("forbidden", { status: 403 });
         },
       },
-    } as unknown as ProviderRuntimeContext;
+    } satisfies ProviderRuntimeContext;
 
     const result = await selectVerifiedStream({
       streams: [

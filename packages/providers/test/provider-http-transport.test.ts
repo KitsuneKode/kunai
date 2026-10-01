@@ -21,7 +21,7 @@ const URL_UNDER_TEST = "https://provider.example/search?keyword=secret-title";
  */
 const CURL_ENV = {
   which: (command: string) => (command === "curl" ? "/fake/curl" : null),
-  listPathEntries: () => [] as readonly string[],
+  listPathEntries: (): readonly string[] => [],
 };
 
 function contextWith(
@@ -48,6 +48,14 @@ const POLICY = {
   referer: "https://provider.example/",
 } as const;
 
+/** Assert `thrown` is a `Ctor` and return it narrowed — replaces `(thrown as Ctor)` probes. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- the whole point is probing an untyped rejection value
+function mustBe<T>(thrown: unknown, Ctor: abstract new (...args: never[]) => T): T {
+  expect(thrown).toBeInstanceOf(Ctor);
+  if (!(thrown instanceof Ctor)) throw new Error(`unreachable after toBeInstanceOf`);
+  return thrown;
+}
+
 let savedFetch: typeof fetch | undefined;
 
 function stubRawFetch(impl: (url: string, init?: RequestInit) => Promise<Response>): () => void {
@@ -55,7 +63,7 @@ function stubRawFetch(impl: (url: string, init?: RequestInit) => Promise<Respons
   // SAFETY: deliberately partial test stub — only the call shape is exercised.
   globalThis.fetch = impl as never;
   return () => {
-    globalThis.fetch = savedFetch as typeof fetch;
+    if (savedFetch) globalThis.fetch = savedFetch;
   };
 }
 
@@ -92,9 +100,9 @@ describe("providerFetchText — context leg", () => {
         (error) => error,
       );
       expect(thrown).toBeInstanceOf(ProviderRelayedUpstreamError);
-      expect((thrown as Error).message).toContain("via relay");
-      expect((thrown as ProviderRelayedUpstreamError).status).toBe(403);
-      expect((thrown as ProviderRelayedUpstreamError).code).toBe("blocked");
+      expect(mustBe(thrown, Error).message).toContain("via relay");
+      expect(mustBe(thrown, ProviderRelayedUpstreamError).status).toBe(403);
+      expect(mustBe(thrown, ProviderRelayedUpstreamError).code).toBe("blocked");
       expect(curlRan).toBe(false);
     } finally {
       restore();
@@ -114,8 +122,8 @@ describe("providerFetchText — context leg", () => {
       (error) => error,
     );
     expect(thrown).toBeInstanceOf(ProviderRelayedUpstreamError);
-    expect((thrown as ProviderRelayedUpstreamError).code).toBe("blocked");
-    expect((thrown as ProviderRelayedUpstreamError).retryable).toBe(false);
+    expect(mustBe(thrown, ProviderRelayedUpstreamError).code).toBe("blocked");
+    expect(mustBe(thrown, ProviderRelayedUpstreamError).retryable).toBe(false);
   });
 
   test("a relayed 5xx classifies as server-error, not a generic blip", async () => {
@@ -131,8 +139,8 @@ describe("providerFetchText — context leg", () => {
       (error) => error,
     );
     expect(thrown).toBeInstanceOf(ProviderRelayedUpstreamError);
-    expect((thrown as ProviderRelayedUpstreamError).code).toBe("provider-unavailable");
-    expect((thrown as ProviderRelayedUpstreamError).retryable).toBe(true);
+    expect(mustBe(thrown, ProviderRelayedUpstreamError).code).toBe("provider-unavailable");
+    expect(mustBe(thrown, ProviderRelayedUpstreamError).retryable).toBe(true);
   });
 
   test("a non-final relayed status settles over curl (anidb stale-relay hedge)", async () => {
@@ -250,9 +258,9 @@ describe("providerFetchText — transport failures", () => {
         (error) => error,
       );
       expect(thrown).toBeInstanceOf(ProviderTransportError);
-      expect((thrown as ProviderTransportError).transportKind).toBe("offline");
-      expect((thrown as ProviderTransportError).code).toBe("network-error");
-      expect((thrown as ProviderTransportError).retryable).toBe(false);
+      expect(mustBe(thrown, ProviderTransportError).transportKind).toBe("offline");
+      expect(mustBe(thrown, ProviderTransportError).code).toBe("network-error");
+      expect(mustBe(thrown, ProviderTransportError).retryable).toBe(false);
     } finally {
       restore();
     }
@@ -289,7 +297,7 @@ describe("providerFetchText — transport failures", () => {
       () => null,
       (error) => error,
     );
-    expect((thrown as DOMException).name).toBe("AbortError");
+    expect(mustBe(thrown, DOMException).name).toBe("AbortError");
     expect(curlRan).toBe(false);
   });
 
@@ -369,8 +377,8 @@ describe("providerFetchText — curl leg", () => {
     );
     expect(attempts).toBe(2);
     expect(thrown).toBeInstanceOf(ProviderTransportError);
-    expect((thrown as ProviderTransportError).transportKind).toBe("timeout");
-    expect((thrown as ProviderTransportError).code).toBe("timeout");
+    expect(mustBe(thrown, ProviderTransportError).transportKind).toBe("timeout");
+    expect(mustBe(thrown, ProviderTransportError).code).toBe("timeout");
   });
 
   test("curl exit 6 (DNS) classifies offline and non-retryable", async () => {
@@ -384,8 +392,8 @@ describe("providerFetchText — curl leg", () => {
       (error) => error,
     );
     expect(thrown).toBeInstanceOf(ProviderTransportError);
-    expect((thrown as ProviderTransportError).transportKind).toBe("offline");
-    expect((thrown as ProviderTransportError).retryable).toBe(false);
+    expect(mustBe(thrown, ProviderTransportError).transportKind).toBe("offline");
+    expect(mustBe(thrown, ProviderTransportError).retryable).toBe(false);
   });
 
   test("a curl challenge body throws the provider's blocked error", async () => {
@@ -404,7 +412,7 @@ describe("providerFetchText — curl leg", () => {
       () => null,
       (error) => error,
     );
-    expect((thrown as Error).message).toBe("testprovider blocked (impersonated=false)");
+    expect(mustBe(thrown, Error).message).toBe("testprovider blocked (impersonated=false)");
   });
 
   test("a curl non-2xx with no challenge throws the status error", async () => {
@@ -418,8 +426,8 @@ describe("providerFetchText — curl leg", () => {
       (error) => error,
     );
     expect(thrown).toBeInstanceOf(ProviderHttpError);
-    expect((thrown as ProviderHttpError).status).toBe(410);
-    expect((thrown as ProviderHttpError).code).toBe("network-error");
+    expect(mustBe(thrown, ProviderHttpError).status).toBe(410);
+    expect(mustBe(thrown, ProviderHttpError).code).toBe("network-error");
   });
 
   test("statuses outside the curl-retry gate throw immediately (anidb shape)", async () => {
@@ -438,7 +446,7 @@ describe("providerFetchText — curl leg", () => {
       () => null,
       (error) => error,
     );
-    expect((thrown as Error).message).toBe("typed status 503");
+    expect(mustBe(thrown, Error).message).toBe("typed status 503");
     expect(curlRan).toBe(false);
   });
 
@@ -456,7 +464,7 @@ describe("providerFetchText — curl leg", () => {
       () => null,
       (error) => error,
     );
-    expect((thrown as Error).message).toBe("typed status 503");
+    expect(mustBe(thrown, Error).message).toBe("typed status 503");
   });
 });
 

@@ -609,7 +609,7 @@ async function resolveMegaplayLane(
           extraHeaders: { "X-Requested-With": "XMLHttpRequest" },
         },
       );
-      const sourcesJson = JSON.parse(sourcesRaw) as unknown;
+      const sourcesJson: unknown = JSON.parse(sourcesRaw);
       const parsed = parseMegaplaySourcesJson(sourcesJson);
       if (!parsed) {
         throw new MegaplayEmbedDecodeError(
@@ -715,6 +715,7 @@ export async function resolveHianimeEpisodeStreams({
   const availableModes = (["sub", "dub"] as const).filter((mode) =>
     supported.some((server) => server.audioMode === mode),
   );
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- keyed accumulator: both lanes are pushed into below
   const laneNames: Record<HianimeAudioMode, string[]> = { sub: [], dub: [] };
   for (const server of supported) laneNames[server.audioMode].push(server.serverName);
 

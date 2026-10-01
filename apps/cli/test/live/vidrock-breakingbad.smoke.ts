@@ -27,7 +27,7 @@ const args = directSmokeArgs();
 
 const season = args[0] === undefined ? 1 : Number(args[0]);
 const episode = args[1] === undefined ? 1 : Number(args[1]);
-const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
+const clearCache = () => process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
@@ -38,12 +38,13 @@ if (!provider) {
   process.exit(1);
 }
 
-if (clearCache) {
+if (clearCache()) {
   await container.cacheStore.clear();
 }
 
 const title: TitleInfo = { id: "1396", type: "series", name: "Breaking Bad" };
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- the slot holds whatever the resolve rejects with; unknown IS the contract here
 let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
 let failureMessages: readonly string[] = [];
@@ -100,7 +101,7 @@ const payload = {
   streamReachable,
   ...(resolveError ? providerSmokeError(resolveError) : null),
   ...providerSmokeProfilePayload(profile),
-  cacheCleared: clearCache,
+  cacheCleared: clearCache(),
 };
 
 console.log(JSON.stringify(payload, null, 2));

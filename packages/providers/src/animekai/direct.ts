@@ -90,6 +90,7 @@ function parseExplicitSource(
 ): { mode: AnimekaiAudioMode; serverIndex?: number } | undefined {
   const match = /^source:animekai:(sub|dub)(?::(\d+))?$/.exec(preferredSourceId ?? "");
   if (!match) return undefined;
+  // SAFETY: the regex's capture group is `(sub|dub)` — the literal union is pinned by the pattern.
   const mode = match[1] as AnimekaiAudioMode;
   const serverIndex = match[2] !== undefined ? Number.parseInt(match[2], 10) : undefined;
   return { mode, ...(serverIndex !== undefined && { serverIndex }) };

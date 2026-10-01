@@ -219,6 +219,7 @@ export async function animekaiFetchText(
 async function animekaiFetchJson(
   url: string,
   options: Parameters<typeof animekaiFetchText>[1] = {},
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- JSON boundary: the payload shape is established by the downstream parsers, not the fetch
 ): Promise<unknown> {
   return providerFetchJson(url, {
     context: options.context,
@@ -359,7 +360,13 @@ export async function fetchAnimekaiServers(
   return parseAnimekaiServersJson(json);
 }
 
-function failureOf(error: unknown): { code: AnimekaiStreamFailureCode; message: string } {
+type AnimekaiFailureEvidence = {
+  readonly code: AnimekaiStreamFailureCode;
+  readonly message: string;
+};
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- failure probe: the thrown value's type is what this function answers
+function failureOf(error: unknown): AnimekaiFailureEvidence {
   const message = error instanceof Error ? error.message : String(error);
   if (error instanceof AnimekaiEmbedDecodeError) {
     return { code: "parse-failed", message: `animekai embed decode failed: ${error.code}` };
@@ -554,7 +561,7 @@ export async function resolveAnimekaiEpisodeStreams({
   const availableModes = (["sub", "dub"] as const).filter((mode) =>
     servers.some((server) => server.audioMode === mode),
   );
-  const laneCounts: Record<AnimekaiAudioMode, number> = { sub: 0, dub: 0 };
+  const laneCounts = { sub: 0, dub: 0 } satisfies Record<AnimekaiAudioMode, number>;
   for (const server of servers) laneCounts[server.audioMode] += 1;
 
   const modeServers = servers.filter((server) => server.audioMode === requestedMode);

@@ -1,3 +1,5 @@
+/* oxlint-disable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters -- this module IS the I/O-boundary parser for animekai's untyped upstream HTML/JSON; the duck-type probes establish the contract (providers carry no schema-runtime dep) */
+
 /**
  * Pure AnimeKai markup/JSON parsing.
  *
@@ -215,16 +217,21 @@ export function parseAnimekaiEpisodesHtml(
  */
 export function parseAnimekaiServersJson(json: unknown): readonly AnimekaiServerEntry[] {
   if (!json || typeof json !== "object" || Array.isArray(json)) return [];
-  const sources = (json as { sources?: unknown }).sources;
+  // SAFETY: object-guarded above; `sources` is probed as unknown.
+  const { sources } = json as { sources?: unknown };
   if (!sources || typeof sources !== "object") return [];
   const entries: AnimekaiServerEntry[] = [];
   for (const mode of ["sub", "dub"] as const) {
-    const list = (sources as Record<string, unknown>)[mode];
+    // SAFETY: object-guarded above; `mode` only ever names the two known keys.
+    const list = (sources as { sub?: unknown; dub?: unknown })[mode];
     if (!Array.isArray(list)) continue;
     for (const [index, item] of list.entries()) {
       if (!item || typeof item !== "object") continue;
-      const sourceUrl = (item as { source_url?: unknown }).source_url;
-      const serverName = (item as { server_name?: unknown }).server_name;
+      // SAFETY: object-guarded above; both fields are probed as unknown.
+      const { source_url: sourceUrl, server_name: serverName } = item as {
+        source_url?: unknown;
+        server_name?: unknown;
+      };
       if (typeof sourceUrl !== "string" || !/^https?:\/\//i.test(sourceUrl)) continue;
       entries.push({
         audioMode: mode,

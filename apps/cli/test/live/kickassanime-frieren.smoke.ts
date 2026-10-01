@@ -26,7 +26,7 @@ const args = directSmokeArgs();
 const episode = Number(args[0] ?? "5");
 const audioArg = args[1];
 const searchQuery = args.slice(2).join(" ") || "Frieren";
-const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
+const clearCache = () => process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
@@ -37,7 +37,7 @@ if (!provider) {
   process.exit(1);
 }
 
-if (clearCache) {
+if (clearCache()) {
   await container.cacheStore.clear();
 }
 
@@ -93,6 +93,7 @@ if (!selected) {
 
 const title = titleInfoFromSearchResult(selected, selected.title);
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- the slot holds whatever the resolve rejects with; unknown IS the contract here
 let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
 let failureMessages: readonly string[] = [];
@@ -141,7 +142,7 @@ const payload = {
   mpvDecodes,
   ...(resolveError ? providerSmokeError(resolveError) : null),
   ...providerSmokeProfilePayload(profile),
-  cacheCleared: clearCache,
+  cacheCleared: clearCache(),
 };
 
 console.log(JSON.stringify(payload, null, 2));

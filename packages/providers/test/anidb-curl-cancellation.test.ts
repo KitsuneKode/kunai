@@ -20,6 +20,7 @@ test("a signal-killed curl reports cancellation, not a network fault", async () 
   );
 
   expect(error).toBeInstanceOf(Error);
+  // SAFETY: instanceof-asserted directly above.
   expect(classifyProviderFailure({ message: (error as Error).message }).failureClass).toBe(
     "user-cancelled",
   );
@@ -30,6 +31,7 @@ test("an aborted caller reports cancellation even when curl exits non-zero", asy
   controller.abort();
 
   const error = await runAnidbCurlWithRetry(["curl"], controller.signal, spawnExiting(1)).catch(
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- probing an untyped rejection value
     (thrown: unknown) => thrown,
   );
 
@@ -47,8 +49,10 @@ test("a genuine curl failure is still a failure, not a cancellation", async () =
 
   // curl exit 6 is DNS resolution — the shared transport now reports the
   // structured kind instead of a bare exit line.
+  // SAFETY: the runner throws Error objects; `(thrown: Error)` above pins it.
   expect((error as Error).message).toContain("curl exit 6");
   expect((error as Error).message).toContain("no HTTP response");
+  // SAFETY: same captured Error.
   expect(classifyProviderFailure({ message: (error as Error).message }).failureClass).not.toBe(
     "user-cancelled",
   );

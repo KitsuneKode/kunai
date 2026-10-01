@@ -918,6 +918,20 @@ const NON_RETRYABLE_RESOLVE_CODES: ReadonlySet<string> = new Set<ResolveErrorCod
   "yt-dlp-missing",
 ]);
 
+/** Narrow carrier for the evidence fields — known keys, probed as unknown. */
+type StructuredEvidenceCarrier = {
+  readonly code?: unknown;
+  readonly status?: unknown;
+  readonly retryable?: unknown;
+  readonly transportKind?: unknown;
+  readonly retryAfterMs?: unknown;
+};
+
+const isResolveErrorCode = (value: string): value is ResolveErrorCode =>
+  RESOLVE_ERROR_CODES.has(value);
+
+/* oxlint-disable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters -- boundary evidence reader: the duck-type probes ARE the contract; prototypes are deliberately untrusted */
+
 /**
  * Read the typed fields off a thrown value without trusting its prototype.
  * Returns null unless at least one vocabulary slot is real evidence — a
@@ -931,11 +945,10 @@ function structuredErrorEvidence(error: unknown): {
   readonly transportKind?: string;
 } | null {
   if (typeof error !== "object" || error === null) return null;
-  const record = error as Record<string, unknown>;
+  // SAFETY: object-guarded above; every carrier field is probed as unknown below.
+  const record = error as StructuredEvidenceCarrier;
   const code =
-    typeof record.code === "string" && RESOLVE_ERROR_CODES.has(record.code)
-      ? (record.code as ResolveErrorCode)
-      : undefined;
+    typeof record.code === "string" && isResolveErrorCode(record.code) ? record.code : undefined;
   const status =
     typeof record.status === "number" && record.status >= 100 && record.status <= 599
       ? record.status

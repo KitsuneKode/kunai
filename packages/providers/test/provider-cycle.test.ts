@@ -19,14 +19,17 @@ const context: ProviderRuntimeContext = {
   now: () => NOW,
 };
 
-const input = {
-  title: "Frieren",
-  episode: 1,
-} as unknown as ProviderResolveInput;
+const input: ProviderResolveInput = {
+  title: { id: "frieren", kind: "anime", title: "Frieren" },
+  episode: { episode: 1 },
+  mediaKind: "anime",
+  intent: "play",
+  allowedRuntimes: ["direct-http"],
+};
 
 const candidate: ProviderCycleCandidate = {
   id: "lane-1",
-  providerId: "testprovider" as ProviderCycleCandidate["providerId"],
+  providerId: "testprovider",
   priority: 0,
 };
 
@@ -50,7 +53,7 @@ describe("cycleExhaustedResult", () => {
     const result = cycleExhaustedResult({
       input,
       context,
-      providerId: "testprovider" as never,
+      providerId: "testprovider",
       attempts: [
         { failure: failure("candidate-empty", "lane empty") },
         { failure: failure("candidate-server-error", "seed HTTP 502") },
@@ -61,7 +64,7 @@ describe("cycleExhaustedResult", () => {
         // behind the terminal verdict — failures[0] is what the engine throws.
         failures: [
           {
-            providerId: "testprovider" as never,
+            providerId: "testprovider",
             code: "not-found",
             message: "lane empty",
             retryable: false,
@@ -81,13 +84,13 @@ describe("cycleExhaustedResult", () => {
     const result = cycleExhaustedResult({
       input,
       context,
-      providerId: "testprovider" as never,
+      providerId: "testprovider",
       attempts: [{ failure: failure("candidate-timeout", "lane timed out") }],
       fallback: { code: "not-found", message: "no playable source", retryable: false },
       evidence: {
         failures: [
           {
-            providerId: "testprovider" as never,
+            providerId: "testprovider",
             code: "timeout",
             message: "lane timed out",
             retryable: true,
@@ -105,7 +108,7 @@ describe("cycleExhaustedResult", () => {
     const result = cycleExhaustedResult({
       input,
       context,
-      providerId: "testprovider" as never,
+      providerId: "testprovider",
       attempts: [],
       fallback: { code: "not-found", message: "no playable source", retryable: false },
     });
@@ -118,7 +121,7 @@ describe("cycleExhaustedResult", () => {
     const result = cycleExhaustedResult({
       input,
       context,
-      providerId: "testprovider" as never,
+      providerId: "testprovider",
       attempts: [
         { failure: failure("candidate-user-cancelled", "Provider cycle cancelled", false) },
       ],
@@ -134,7 +137,7 @@ describe("cycleExhaustedResult", () => {
     const result = cycleExhaustedResult({
       input,
       context,
-      providerId: "testprovider" as never,
+      providerId: "testprovider",
       attempts: [{ failure: failure("candidate-empty") }],
       fallback: { code: "not-found", message: "no playable source", retryable: false },
       evidence: {
@@ -142,7 +145,7 @@ describe("cycleExhaustedResult", () => {
           {
             type: "source:start",
             at: NOW,
-            providerId: "testprovider" as never,
+            providerId: "testprovider",
             message: "lane-1",
           },
         ],

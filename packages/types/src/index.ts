@@ -509,6 +509,12 @@ export interface EndpointHealthFailureInfo {
   readonly class: EndpointFailureClass;
   readonly titleId?: string;
   readonly at: string;
+  /**
+   * The upstream's `Retry-After` hint in milliseconds, when the failure carried
+   * one. Treated as a floor on whatever cooldown/quarantine the class would
+   * otherwise produce — never a reduction of it.
+   */
+  readonly retryAfterMs?: number;
 }
 
 export interface ProviderEndpointHealthRecord {

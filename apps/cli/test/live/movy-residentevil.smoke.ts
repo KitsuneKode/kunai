@@ -1,3 +1,4 @@
+import type { TitleInfo } from "@/domain/types";
 /**
  * Live smoke for the Movy lane.
  *
@@ -9,7 +10,7 @@
  *
  * bun test/live/movy-residentevil.smoke.ts [tmdbId] [series season episode]
  */
-import type { TitleInfo } from "@/domain/types";
+import type { StreamRequest } from "@/services/providers/Provider";
 import { probeStreamReachability } from "@kunai/providers";
 
 import {
@@ -31,7 +32,7 @@ const episodeArg = args[2];
 const isSeries = seasonArg !== undefined && episodeArg !== undefined;
 const season = isSeries ? Number(seasonArg) : undefined;
 const episode = isSeries ? Number(episodeArg) : undefined;
-const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
+const clearCache = () => process.env.KITSUNE_CLEAR_CACHE === "1";
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
@@ -42,7 +43,7 @@ if (!provider) {
   process.exit(1);
 }
 
-if (clearCache) {
+if (clearCache()) {
   await container.cacheStore.clear();
 }
 
@@ -50,23 +51,26 @@ const title: TitleInfo = isSeries
   ? { id: tmdbId, type: "series", name: "Movy series fixture" }
   : { id: tmdbId, type: "movie", name: "Resident Evil" };
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- the slot holds whatever the resolve rejects with; unknown IS the contract here
 let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
 let failureMessages: readonly string[] = [];
 let streamCandidates = 0;
 
+const request: StreamRequest = {
+  title,
+  audioPreference: container.config.seriesLanguageProfile.audio,
+  subtitlePreference: container.config.seriesLanguageProfile.subtitle,
+};
+if (isSeries && season !== undefined && episode !== undefined) {
+  request.episode = { season, episode };
+}
+
 const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
   container,
   providerId: "movy",
   mode: "series",
-  request: {
-    title,
-    ...(isSeries && season !== undefined && episode !== undefined
-      ? { episode: { season, episode } }
-      : {}),
-    audioPreference: container.config.seriesLanguageProfile.audio,
-    subtitlePreference: container.config.seriesLanguageProfile.subtitle,
-  },
+  request,
 })
   .then((resolved) => {
     failureCodes = resolved.result.failures.map((failure) => failure.code);
@@ -104,7 +108,7 @@ const payload = {
   streamReachable,
   ...(resolveError ? providerSmokeError(resolveError) : null),
   ...providerSmokeProfilePayload(profile),
-  cacheCleared: clearCache,
+  cacheCleared: clearCache(),
 };
 
 console.log(JSON.stringify(payload, null, 2));

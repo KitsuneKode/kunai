@@ -67,10 +67,13 @@ export interface MegaplaySourcesPayload {
   readonly outro?: { readonly start: number; readonly end: number };
 }
 
+/* oxlint-disable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters anti-slop/no-unknown-returns anti-slop/no-unsafe-dictionary-type -- this module IS the I/O-boundary parser for megaplay's untyped upstream JSON; the duck-type probes below establish the contract, and providers carry no schema-runtime dep */
+
 /** `getSources` JSON: `enc` blob, subtitle `tracks`, and `intro`/`outro`. */
 export function parseMegaplaySourcesJson(json: unknown): MegaplaySourcesPayload | null {
   if (!json || typeof json !== "object" || Array.isArray(json)) return null;
-  const data = json as Record<string, unknown>;
+  // SAFETY: object-guarded above; upstream keys are probed individually below.
+  const data = json as { enc?: unknown; tracks?: unknown; intro?: unknown; outro?: unknown };
   const enc = data.enc;
   if (typeof enc !== "string" || !enc) return null;
 
@@ -84,11 +87,15 @@ export function parseMegaplaySourcesJson(json: unknown): MegaplaySourcesPayload 
   if (Array.isArray(rawTracks)) {
     for (const track of rawTracks) {
       if (!track || typeof track !== "object") continue;
-      const file = (track as { file?: unknown }).file;
+      // SAFETY: object-guarded above; each field is probed as unknown before use.
+      const {
+        file,
+        label,
+        kind,
+        default: defaultFlag,
+      } = track as { file?: unknown; label?: unknown; kind?: unknown; default?: unknown };
       if (typeof file !== "string" || !/^https?:\/\//i.test(file)) continue;
-      const label = (track as { label?: unknown }).label;
-      const kind = (track as { kind?: unknown }).kind;
-      const isDefault = (track as { default?: unknown }).default === true;
+      const isDefault = defaultFlag === true;
       tracks.push({
         file,
         ...(typeof label === "string" && label.trim() && { label: label.trim() }),
@@ -100,8 +107,8 @@ export function parseMegaplaySourcesJson(json: unknown): MegaplaySourcesPayload 
 
   const segment = (value: unknown) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-    const start = (value as { start?: unknown }).start;
-    const end = (value as { end?: unknown }).end;
+    // SAFETY: object-guarded above; start/end probed as unknown before numeric checks.
+    const { start, end } = value as { start?: unknown; end?: unknown };
     if (typeof start !== "number" || typeof end !== "number" || !(end > start)) return undefined;
     return { start, end };
   };
@@ -152,6 +159,7 @@ export function megaplayMasterUrlFromDecrypted(json: unknown): string {
       "megaplay decrypted sources payload is not an object",
     );
   }
+  // SAFETY: object-guarded above; `file` is probed as unknown before the regex check.
   const file = (json as { file?: unknown }).file;
   if (typeof file !== "string" || !/\.m3u8(\?|$|#)/i.test(file)) {
     throw new MegaplayEmbedDecodeError(

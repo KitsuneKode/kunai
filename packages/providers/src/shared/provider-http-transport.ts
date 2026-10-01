@@ -139,6 +139,8 @@ const TLS_ERROR_CODES = new Set([
  * `error.cause` (or `cause.errors` for an AggregateError), so the walk goes
  * through `cause` chains rather than trusting the outer name/message.
  */
+/* oxlint-disable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters -- errno/transport probes: runtimes hide socket codes behind untyped cause chains, so the duck-typed walks below ARE the boundary parse */
+
 export function transportKindFromFetchError(error: unknown): ProviderTransportKind {
   if (error instanceof Error && error.name === "TimeoutError") return "timeout";
   const code = findErrorCode(error);
@@ -165,6 +167,7 @@ export function transportKindFromFetchError(error: unknown): ProviderTransportKi
 
 function findErrorCode(error: unknown, depth = 0): string | undefined {
   if (depth > 4 || typeof error !== "object" || error === null) return undefined;
+  // SAFETY: object-guarded above; carrier fields are probed as unknown.
   const record = error as { code?: unknown; cause?: unknown; errors?: unknown };
   if (typeof record.code === "string" && /^[A-Z_]+$/i.test(record.code)) {
     return record.code.toUpperCase();
@@ -187,11 +190,14 @@ function messageChainIncludes(error: unknown, needles: readonly string[]): boole
     if (needles.some((needle) => lower.includes(needle))) return true;
     current =
       typeof current === "object" && current !== null
-        ? (current as { cause?: unknown }).cause
+        ? // SAFETY: object-guarded in the condition; `cause` is probed as unknown.
+          (current as { cause?: unknown }).cause
         : undefined;
   }
   return false;
 }
+
+/* oxlint-enable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters */
 
 /** curl exit codes → transport kind. `-w %{http_code}` keeps HTTP statuses off
  * this path; a nonzero exit here always means "no HTTP response". */
@@ -474,11 +480,10 @@ export async function providerFetchText(
           ? `${String(policy.providerId)} blocked by Cloudflare (curl-impersonate was already used; retry later or from another network)`
           : `${String(policy.providerId)} blocked by Cloudflare (try curl-impersonate)`,
       ));
-  const requestHeaders = {
-    "User-Agent": policy.userAgent,
-    ...(policy.referer ? { Referer: policy.referer } : {}),
-    ...policy.extraHeaders,
-  };
+  // oxlint-disable-next-line anti-slop/no-known-value-widening -- a mutable open bag is the contract: Referer and caller headers are added after this literal
+  const requestHeaders: Record<string, string> = { "User-Agent": policy.userAgent };
+  if (policy.referer) requestHeaders.Referer = policy.referer;
+  if (policy.extraHeaders) Object.assign(requestHeaders, policy.extraHeaders);
 
   if (policy.context?.fetch) {
     let response: Response | undefined;
@@ -522,6 +527,7 @@ export async function providerFetchText(
         // A mid-body disconnect is the same class of fact as a failed fetch —
         // curl/impersonate settles it — *unless* the response is relay-owned:
         // re-requesting the same URL direct is exactly what the mark forbids.
+        // oxlint-disable-next-line anti-slop/no-unknown-parameters -- rejection values are untyped at this boundary
         const text = await readResponseText(response).catch((error: unknown) => {
           if (signal?.aborted === true) throw error;
           if (relayed) {
@@ -589,6 +595,7 @@ export async function providerFetchText(
     // classify it later (anidb's no-curl ordering, adopted everywhere).
     const read = await readResponseText(response).then(
       (text) => ({ ok: true as const, text }),
+      // oxlint-disable-next-line anti-slop/no-unknown-parameters -- rejection values are untyped at this boundary
       (error: unknown) => ({ ok: false as const, error }),
     );
     if (!response.ok) {
@@ -668,6 +675,8 @@ export async function providerFetchJson<T = unknown>(
 ): Promise<T> {
   const raw = await providerFetchText(url, policy);
   try {
+    // SAFETY: providerFetchJson is the raw JSON boundary by contract — each caller
+    // validates the payload shape with its own parser (per the module docblock).
     return JSON.parse(raw) as T;
   } catch (cause) {
     throw new ProviderHttpError({
@@ -692,6 +701,7 @@ function isAborted(signal: AbortSignal | undefined): boolean {
 
 /** One line of transport evidence for the failure message — the errno beats
  * `fetch failed`, which says nothing. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- probes an untyped thrown value
 function transportMessageDetail(error: unknown): string {
   const code = findErrorCode(error);
   if (code) return code;

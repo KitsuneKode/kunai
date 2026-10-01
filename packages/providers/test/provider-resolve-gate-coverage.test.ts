@@ -52,7 +52,7 @@ test("every bootstrap provider module maps to a source directory", () => {
  * A provider may only appear here with a reason that is about the *runtime*,
  * not about effort.
  */
-const EXEMPT: Record<string, string> = {
+const EXEMPT = {
   // YouTube hands mpv a watch URL and lets ytdl resolve the media at play time.
   // There is no direct stream URL at resolve time to probe, and the smoke
   // asserts the watch-host contract instead.
@@ -75,7 +75,7 @@ const EXEMPT: Record<string, string> = {
   // documented in .docs/provider-dossiers/kickassanime.md — so a probe is not
   // a reachability signal for these URLs and must not veto them.
   kickassanime: "probes fail on streams mpv plays; no verdict the gate can trust",
-};
+} satisfies Record<string, string>;
 
 /**
  * The gate itself, the walks that apply it across a candidate's rungs, or the
@@ -109,6 +109,8 @@ describe("resolve gate coverage", () => {
 
   test("every exemption states a runtime reason", () => {
     for (const [provider, reason] of Object.entries(EXEMPT)) {
+      // SAFETY: keys are pinned to provider ids by the satisfies contract above;
+      // this assert is the check itself, not blind trust.
       expect(PRODUCTION_PROVIDERS).toContain(provider as (typeof PRODUCTION_PROVIDERS)[number]);
       expect(reason.length).toBeGreaterThan(20);
     }

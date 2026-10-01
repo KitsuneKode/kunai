@@ -47,6 +47,7 @@ export function animekaiEmbedDataIdOrThrow(html: string): string {
   return dataId;
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- decrypted blob is untyped by contract; animekaiMasterUrlFromDecrypted is its parser
 export async function decryptAnimekaiSourcesBlob(enc: string): Promise<unknown> {
   try {
     return await decryptMegaplaySourcesBlob(enc);
@@ -58,6 +59,7 @@ export async function decryptAnimekaiSourcesBlob(enc: string): Promise<unknown> 
   }
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- the decrypted blob is exactly what this parser validates
 /** Decrypted blob → `{file: <master m3u8>}`; the only field the stream needs. */
 export function animekaiMasterUrlFromDecrypted(json: unknown): string {
   return wrapAnimekaiDecode(() => megaplayMasterUrlFromDecrypted(json));
