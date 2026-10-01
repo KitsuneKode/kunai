@@ -148,7 +148,7 @@ const ALLOWED_WORKSPACE_DEPS_BY_PACKAGE = new Map<string, readonly string[]>([
   ["@kunai/core", ["@kunai/types"]],
   ["@kunai/config", ["@kunai/schemas", "@kunai/types"]],
   ["@kunai/providers", ["@kunai/core", "@kunai/types"]],
-  ["@kunai/relay", ["@kunai/core", "@kunai/types"]],
+  ["@kunai/relay", ["@kunai/core", "@kunai/schemas", "@kunai/types"]],
   ["@kunai/storage", ["@kunai/core", "@kunai/schemas", "@kunai/types"]],
   ["@kunai/design", []],
 ]);

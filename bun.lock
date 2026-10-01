@@ -179,6 +179,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@kunai/core": "workspace:*",
+        "@kunai/schemas": "workspace:*",
         "@kunai/types": "workspace:*",
       },
       "devDependencies": {

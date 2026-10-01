@@ -1,3 +1,4 @@
+import { relayRpcRequestSchema } from "@kunai/schemas";
 import { markRelayOwnedError, RELAYED_RESPONSE_HEADER } from "@kunai/types";
 
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
@@ -24,6 +25,10 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
 
       const requestInfo = await toRelayRequest(input, init);
       if (!requestInfo) return fetchImpl(input, init);
+      // Validate the envelope against the same schema the handler enforces —
+      // a drifted contract fails here instead of round-tripping a 400.
+      const envelope = relayRpcRequestSchema.safeParse(requestInfo);
+      if (!envelope.success) return fetchImpl(input, init);
       const entry = options.providerId
         ? options.registry.get(options.providerId)
         : options.registry.findByUpstreamUrl(requestInfo.upstreamUrl);
@@ -53,7 +58,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
         const response = await fetchImpl(relayUrl, {
           method: "POST",
           headers,
-          body: JSON.stringify(requestInfo),
+          body: JSON.stringify(envelope.data),
           signal: init?.signal,
           /* The relay itself never redirects (`fetchWithValidatedRedirects`
            * follows upstream hops server-side), so a 3xx on the RPC route is a
