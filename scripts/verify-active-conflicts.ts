@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 
 const SKIP_DIRECTORIES = new Set([
   ".git",
@@ -43,7 +43,7 @@ export function findConflictMarkers(root: string): readonly string[] {
       const text = readFileSync(path, "utf8");
       for (const line of text.split("\n")) {
         if (MARKER.test(line)) {
-          hits.push(relative(root, path));
+          hits.push(relative(root, path).split(sep).join("/"));
           break;
         }
       }
@@ -53,11 +53,12 @@ export function findConflictMarkers(root: string): readonly string[] {
   return hits;
 }
 
-if (import.meta.main) {
-  const root = process.cwd();
-  const hits = findConflictMarkers(root);
+function main(): void {
+  const hits = findConflictMarkers(process.cwd());
   if (hits.length > 0) {
     console.error(`Unresolved conflict markers:\n${hits.join("\n")}`);
     process.exit(1);
   }
 }
+
+if (import.meta.main) main();

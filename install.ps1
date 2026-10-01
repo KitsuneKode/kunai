@@ -2107,13 +2107,14 @@ function Test-Ed25519WithRuntime {
   if (-not $runtime) { $runtime = Get-Command bun -ErrorAction SilentlyContinue }
   if (-not $runtime) { return $false }
   $script = @'
-const { verify, readFileSync } = require("crypto");
+const fs = require("fs");
+const crypto = require("crypto");
 const [messagePath, publicPath, signaturePath] = process.argv.slice(2);
-const ok = verify(
+const ok = crypto.verify(
   null,
-  readFileSync(messagePath),
-  readFileSync(publicPath, "utf8"),
-  readFileSync(signaturePath),
+  fs.readFileSync(messagePath),
+  fs.readFileSync(publicPath, "utf8"),
+  fs.readFileSync(signaturePath),
 );
 process.exit(ok ? 0 : 1);
 '@

@@ -36,13 +36,16 @@ export function titleInfoFromDownloadJob(job: DownloadJobRecord): TitleInfo {
 export function episodeInfoFromDownloadJob(job: DownloadJobRecord): EpisodeInfo | undefined {
   if (job.contentType === "movie" || job.mediaKind === "movie") return undefined;
   if (job.season === undefined && job.episode === undefined) return undefined;
-  return {
-    season: job.season ?? 1,
-    episode: job.episode ?? 1,
-    ...(job.providerEpisodeIdentity
-      ? { providerEpisodeIdentity: job.providerEpisodeIdentity }
-      : {}),
-  };
+  const season = job.season ?? 1;
+  const episode = job.episode ?? 1;
+  if (job.providerEpisodeIdentity) {
+    return {
+      season,
+      episode,
+      providerEpisodeIdentity: job.providerEpisodeIdentity,
+    };
+  }
+  return { season, episode };
 }
 
 function applyDownloadJobSessionRouting(container: Container, job: DownloadJobRecord): void {
