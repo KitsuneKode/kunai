@@ -31,6 +31,7 @@ import {
   httpStatusToResolveErrorCode,
   isRelayedResponse,
   isRelayOwnedError,
+  parseRetryAfterHeader,
   ProviderHttpError,
   providerHttpErrorForStatus,
   type ProviderId,
@@ -509,18 +510,19 @@ export async function providerFetchText(
          * otherwise the curl fallback would silently bypass the relay. */
         if (relayed) {
           if (policy.relayedStatusIsFinal?.(response.status) ?? true) {
-            throw (
+            throw attachRetryAfter(
               policy.relayedStatusError?.(response.status) ??
-              new ProviderRelayedUpstreamError({
-                message: `${label} HTTP ${response.status} from ${urlLabel} via relay`,
-                providerId: policy.providerId,
-                status: response.status,
-              })
+                new ProviderRelayedUpstreamError({
+                  message: `${label} HTTP ${response.status} from ${urlLabel} via relay`,
+                  providerId: policy.providerId,
+                  status: response.status,
+                }),
+              response.headers,
             );
           }
           // Non-final relayed status (anidb's stale-relay 404 hedge) → curl.
         } else if (!(policy.retryStatusViaCurl?.(response.status) ?? true)) {
-          throw statusError(response.status);
+          throw attachRetryAfter(statusError(response.status), response.headers);
         }
         // Retryable unmarked status / non-final relayed status → curl.
       } else {
@@ -543,17 +545,22 @@ export async function providerFetchText(
         });
         if (text !== undefined) {
           const virtual = policy.bodyAsStatus?.(text);
-          if (virtual !== null && virtual !== undefined) throw statusError(virtual);
+          if (virtual !== null && virtual !== undefined) {
+            throw attachRetryAfter(statusError(virtual), response.headers);
+          }
           if (!isChallenge(text)) return text;
           if (relayed) {
             if (policy.relayedChallengeIsFinal !== false) {
-              throw new ProviderRelayedUpstreamError({
-                message: blockedError(false).message,
-                providerId: policy.providerId,
-                status: response.status,
-                code: "blocked",
-                retryable: false,
-              });
+              throw attachRetryAfter(
+                new ProviderRelayedUpstreamError({
+                  message: blockedError(false).message,
+                  providerId: policy.providerId,
+                  status: response.status,
+                  code: "blocked",
+                  retryable: false,
+                }),
+                response.headers,
+              );
             }
             // Non-final relayed challenge → the local fingerprint settles it.
           }
@@ -602,8 +609,10 @@ export async function providerFetchText(
       // The status is the upstream's answer even when its body dies on the
       // wire — report the status, not the disconnect.
       const partial = read.ok ? read.text : "";
-      if (isChallenge(partial)) throw blockedError(false);
-      throw statusError(response.status);
+      if (isChallenge(partial)) {
+        throw attachRetryAfter(blockedError(false), response.headers);
+      }
+      throw attachRetryAfter(statusError(response.status), response.headers);
     }
     if (!read.ok) {
       // A mid-body disconnect on a 200 is not an empty page — reporting ""
@@ -620,8 +629,10 @@ export async function providerFetchText(
     }
     const text = read.text;
     const virtual = policy.bodyAsStatus?.(text);
-    if (virtual !== null && virtual !== undefined) throw statusError(virtual);
-    if (isChallenge(text)) throw blockedError(false);
+    if (virtual !== null && virtual !== undefined) {
+      throw attachRetryAfter(statusError(virtual), response.headers);
+    }
+    if (isChallenge(text)) throw attachRetryAfter(blockedError(false), response.headers);
     return text;
   }
 
@@ -692,6 +703,24 @@ export async function providerFetchJson<T = unknown>(
 
 function readResponseText(response: Response): Promise<string> {
   return response.text();
+}
+
+/**
+ * Stamp the response's `Retry-After` onto whatever error a policy produced.
+ * The throw site is the only place response headers still exist, and the field
+ * is the duck-typed vocabulary every downstream classifier reads — attaching
+ * it post-construction covers provider `statusError`/`blockedError` overrides
+ * that construct their own classes without signature churn.
+ */
+function attachRetryAfter<T>(error: T, headers: Headers | undefined): T {
+  const retryAfterMs = parseRetryAfterHeader(headers?.get("retry-after"));
+  if (retryAfterMs === undefined || typeof error !== "object" || error === null) {
+    return error;
+  }
+  const record = error as { retryAfterMs?: unknown };
+  if (record.retryAfterMs !== undefined) return error;
+  record.retryAfterMs = retryAfterMs;
+  return error;
 }
 
 /** Abort checks read through this so narrowing never eats a mid-flight abort. */

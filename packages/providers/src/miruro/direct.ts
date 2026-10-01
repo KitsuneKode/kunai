@@ -24,7 +24,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
+import { parseRetryAfterHeader, ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 
 import {
   miruroInventorySourceId,
@@ -2103,6 +2103,8 @@ export async function probeMiruroBackendDown(
   headers: Readonly<Record<string, string>> | undefined,
   context: Pick<ProviderRuntimeContext, "fetch">,
   signal?: AbortSignal,
+  /** Out-param: the response's Retry-After hint, when it carried one. */
+  hintOut?: { retryAfterMs?: number },
 ): Promise<number | null> {
   if (!/^https?:\/\//i.test(url)) return null;
   if (MIRURO_UNPROBEABLE_STREAM_HOSTS.has(new URL(url).hostname)) return null;
@@ -2119,7 +2121,11 @@ export async function probeMiruroBackendDown(
     // what the CDN then says about one odd request is not evidence about the
     // backend. AnimeGG hands off to vidcache, which 500s anything but its player.
     if (!isSameHost(url, response.url)) return null;
-    return isMiruroBackendDownStatus(response.status) ? response.status : null;
+    if (!isMiruroBackendDownStatus(response.status)) return null;
+    if (hintOut) {
+      hintOut.retryAfterMs = parseRetryAfterHeader(response.headers.get("retry-after"));
+    }
+    return response.status;
   } catch {
     // A timeout or connection error is as likely to be this client's network as
     // the backend's, and being offline must not read as "every server is dead".
@@ -2487,12 +2493,14 @@ export const miruroProviderModule: CoreProviderModule = {
           const selected =
             result.streams.find((stream) => stream.id === result.selectedStreamId) ??
             result.streams[0];
+          const probeHint: { retryAfterMs?: number } = {};
           const downStatus = selected?.url
             ? await probeMiruroBackendDown(
                 selected.url,
                 selected.headers,
                 context,
                 cycleContext.signal,
+                probeHint,
               )
             : null;
           if (downStatus !== null) {
@@ -2504,6 +2512,7 @@ export const miruroProviderModule: CoreProviderModule = {
               class: "server-error",
               titleId: input.title.id,
               at: context.now(),
+              retryAfterMs: probeHint.retryAfterMs,
             });
             throw createProviderCycleFailureError(candidate, {
               // Not `candidate-network`: retryable schedules a retry of a host

@@ -258,6 +258,7 @@ export async function runProviderCycle<TResolved>(
               class: endpointFailureClass,
               titleId: input.titleId,
               at: failure.at,
+              retryAfterMs: failure.retryAfterMs,
             });
           }
         }
@@ -309,7 +310,11 @@ export async function runProviderCycle<TResolved>(
                 reason: "transient-endpoint",
               }),
             );
-            const transientDelayMs = retryDelayForFailureClass(retryDelayMs, failure.failureClass);
+            const transientDelayMs = retryDelayForFailureClass(
+              retryDelayMs,
+              failure.failureClass,
+              failure.retryAfterMs,
+            );
             if (transientDelayMs > 0) {
               await sleepWithAbort(transientDelayMs, input.signal);
             }
@@ -321,7 +326,11 @@ export async function runProviderCycle<TResolved>(
         emit(
           createCycleTraceEvent("retry:scheduled", candidate, now(), { attempt: attemptNumber }),
         );
-        const nextDelayMs = retryDelayForFailureClass(retryDelayMs, failure.failureClass);
+        const nextDelayMs = retryDelayForFailureClass(
+          retryDelayMs,
+          failure.failureClass,
+          failure.retryAfterMs,
+        );
         if (nextDelayMs > 0) {
           await sleepWithAbort(nextDelayMs, input.signal);
         }
@@ -442,14 +451,14 @@ async function runProviderCycleRaced<TResolved>(args: {
       },
       (error): Settled => {
         if (endpoint && health) {
-          const failureClass = classifyEndpointFailureFromCycleFailure(
-            toCycleFailure(candidate, error, now),
-          );
+          const failure = toCycleFailure(candidate, error, now);
+          const failureClass = classifyEndpointFailureFromCycleFailure(failure);
           if (failureClass) {
             health.recordFailure(input.providerId, endpoint, {
               class: failureClass,
               titleId: input.titleId,
-              at: now(),
+              at: failure.at,
+              retryAfterMs: failure.retryAfterMs,
             });
           }
         }
@@ -607,15 +616,29 @@ async function runProviderCycleRaced<TResolved>(args: {
   }
 }
 
+/**
+ * The longest an in-cycle sleep honors an upstream `Retry-After` hint. The
+ * hint's real home is endpoint health — parking the endpoint for the hinted
+ * window — not a same-candidate stall; sleeping minutes inside one resolve
+ * would just starve healthy siblings. A short floor is still worth honoring:
+ * re-asking in 750ms what was rate-limited to "30s" is a guaranteed second
+ * refusal.
+ */
+const RETRY_AFTER_CYCLE_DELAY_CAP_MS = 5_000;
+
 function retryDelayForFailureClass(
   explicitDelayMs: number | undefined,
   failureClass: ProviderCycleFailureClass,
+  retryAfterMs?: number,
 ): number {
-  if (explicitDelayMs !== undefined) return explicitDelayMs;
-  if (failureClass === "candidate-timeout" || failureClass === "candidate-network") {
-    return DEFAULT_TRANSIENT_RETRY_DELAY_MS;
-  }
-  return DEFAULT_RETRY_DELAY_MS;
+  const hinted =
+    retryAfterMs === undefined ? 0 : Math.min(retryAfterMs, RETRY_AFTER_CYCLE_DELAY_CAP_MS);
+  if (explicitDelayMs !== undefined) return Math.max(explicitDelayMs, hinted);
+  const base =
+    failureClass === "candidate-timeout" || failureClass === "candidate-network"
+      ? DEFAULT_TRANSIENT_RETRY_DELAY_MS
+      : DEFAULT_RETRY_DELAY_MS;
+  return Math.max(base, hinted);
 }
 
 function orderCycleCandidates(
@@ -696,6 +719,7 @@ function toCycleFailure(
     message: classified.message,
     retryable: classified.retryable,
     at: now(),
+    ...(classified.retryAfterMs !== undefined ? { retryAfterMs: classified.retryAfterMs } : null),
   };
 }
 
@@ -756,6 +780,8 @@ export type ProviderCycleErrorClassification = {
   readonly failureClass: ProviderCycleFailureClass;
   readonly message: string;
   readonly retryable: boolean;
+  /** The upstream's Retry-After hint in ms, when the error carried one. */
+  readonly retryAfterMs?: number;
 };
 
 export function classifyProviderCycleError(error: unknown): ProviderCycleErrorClassification {
@@ -787,6 +813,7 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
       failureClass: providerHttpCycleFailureClass(error),
       message: error.message,
       retryable: error.retryable,
+      ...(error.retryAfterMs !== undefined ? { retryAfterMs: error.retryAfterMs } : null),
     };
   }
   if (isNetworkOfflineMessage(message)) {
@@ -814,6 +841,7 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
           : structured.transportKind !== undefined
             ? structured.transportKind !== "offline"
             : !NON_RETRYABLE_RESOLVE_CODES.has(structured.code ?? "unknown")),
+      ...(structured.retryAfterMs !== undefined ? { retryAfterMs: structured.retryAfterMs } : null),
     };
   }
   if (message.includes("network") || message.includes("fetch")) {
@@ -943,6 +971,7 @@ function structuredErrorEvidence(error: unknown): {
   readonly status?: number;
   readonly retryable?: boolean;
   readonly transportKind?: string;
+  readonly retryAfterMs?: number;
 } | null {
   if (typeof error !== "object" || error === null) return null;
   // SAFETY: object-guarded above; every carrier field is probed as unknown below.
@@ -955,8 +984,14 @@ function structuredErrorEvidence(error: unknown): {
       : undefined;
   const transportKind = typeof record.transportKind === "string" ? record.transportKind : undefined;
   const retryable = typeof record.retryable === "boolean" ? record.retryable : undefined;
+  const retryAfterMs =
+    typeof record.retryAfterMs === "number" &&
+    Number.isFinite(record.retryAfterMs) &&
+    record.retryAfterMs >= 0
+      ? record.retryAfterMs
+      : undefined;
   if (!code && status === undefined && !transportKind) return null;
-  return { code, status, retryable, transportKind };
+  return { code, status, retryable, transportKind, retryAfterMs };
 }
 
 export function isAbortError(error: unknown): boolean {

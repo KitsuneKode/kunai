@@ -98,7 +98,7 @@ describe("videasy preferred source fallback", () => {
       now: () => "2026-07-11T00:00:00.000Z",
       signal: AbortSignal.timeout(30_000),
       retryPolicy: { maxAttempts: 1, backoff: "none" as const },
-      // Isolate from module-level HealthTracker pollution left by other Videasy tests.
+      // Isolate from module-level tracker pollution left by other Videasy tests.
       endpointHealth: passthroughEndpointHealth,
       fetch: createFetchWithSeedMock(async (input) => {
         requestedUrls.push(String(input));

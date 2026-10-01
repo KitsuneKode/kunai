@@ -6,8 +6,10 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 import {
+  errorRetryAfterMs,
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
+  parseRetryAfterHeader,
   ProviderHttpError,
 } from "@kunai/types";
 
@@ -72,11 +74,19 @@ function createVidlinkEndpointHealth(context: ProviderRuntimeContext) {
     recordSuccess(endpoint: string): void {
       port?.recordSuccess(VIDLINK_PROVIDER_ID, endpoint);
     },
-    recordFailure(endpoint: string, info: { class: EndpointFailureClass; titleId?: string }): void {
+    recordFailure(
+      endpoint: string,
+      info: {
+        class: EndpointFailureClass;
+        titleId?: string;
+        retryAfterMs?: number;
+      },
+    ): void {
       port?.recordFailure(VIDLINK_PROVIDER_ID, endpoint, {
         class: info.class,
         titleId: info.titleId,
         at: context.now(),
+        retryAfterMs: info.retryAfterMs,
       });
     },
   };
@@ -101,7 +111,12 @@ function vidlinkFailureClass(code: ProviderHttpError["code"]): EndpointFailureCl
   return undefined;
 }
 
-function vidlinkHttpError(status: number, endpoint: string, stage: string): ProviderHttpError {
+function vidlinkHttpError(
+  status: number,
+  endpoint: string,
+  stage: string,
+  headers?: Headers,
+): ProviderHttpError {
   return new ProviderHttpError({
     providerId: VIDLINK_PROVIDER_ID,
     stage,
@@ -109,6 +124,7 @@ function vidlinkHttpError(status: number, endpoint: string, stage: string): Prov
     message: `${endpoint} returned HTTP ${status}`,
     code: httpStatusToResolveErrorCode(status),
     retryable: httpStatusIsRetryable(status),
+    retryAfterMs: parseRetryAfterHeader(headers?.get("retry-after")),
   });
 }
 
@@ -338,11 +354,20 @@ async function fetchVidlinkApi(
         endpointHealth.recordSuccess(VIDLINK_API_ENDPOINT);
         return response;
       }
-      const error = vidlinkHttpError(response.status, VIDLINK_API_ENDPOINT, "api");
+      const error = vidlinkHttpError(
+        response.status,
+        VIDLINK_API_ENDPOINT,
+        "api",
+        response.headers,
+      );
       if (!signal?.aborted) {
         const failureClass = vidlinkFailureClass(error.code);
         if (failureClass)
-          endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, { class: failureClass, titleId });
+          endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, {
+            class: failureClass,
+            titleId,
+            retryAfterMs: error.retryAfterMs,
+          });
       }
       if (attempt < maxAttempts && response.status >= 500 && !signal?.aborted) {
         lastError = error;
@@ -352,7 +377,11 @@ async function fetchVidlinkApi(
       throw error;
     } catch (error) {
       if (!(error instanceof ProviderHttpError) && !signal?.aborted) {
-        endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, { class: "transient", titleId });
+        endpointHealth.recordFailure(VIDLINK_API_ENDPOINT, {
+          class: "transient",
+          titleId,
+          retryAfterMs: errorRetryAfterMs(error),
+        });
       }
       if (attempt >= maxAttempts || signal?.aborted) throw error;
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -404,7 +433,7 @@ async function encryptTmdbId(
         signal: directStreamFetchSignal(signal, VIDLINK_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
-        throw vidlinkHttpError(response.status, ENC_DEC_ENDPOINT, "enc-dec");
+        throw vidlinkHttpError(response.status, ENC_DEC_ENDPOINT, "enc-dec", response.headers);
       }
       // SAFETY: response.json() resolves to the parsed document; result is checked optional.
       const data = (await response.json()) as { result?: string };
@@ -421,7 +450,11 @@ async function encryptTmdbId(
         const failureClass =
           error instanceof ProviderHttpError ? vidlinkFailureClass(error.code) : "transient";
         if (failureClass) {
-          endpointHealth.recordFailure(ENC_DEC_ENDPOINT, { class: failureClass, titleId });
+          endpointHealth.recordFailure(ENC_DEC_ENDPOINT, {
+            class: failureClass,
+            titleId,
+            retryAfterMs: errorRetryAfterMs(error),
+          });
         }
       }
       lastError = error instanceof Error ? error : new Error(String(error));
