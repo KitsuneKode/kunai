@@ -57,7 +57,11 @@ export function createMemoryAnalyticsStore(
           cap,
         ),
         // As of `day`, never as of now: a later install must not retroactively
-        // inflate an earlier day's lifetime figure.
+        // inflate an earlier day's lifetime figure. The `retired` half is
+        // as-of-now, which cannot skew a recompute — a prunable row was last
+        // seen long before every day raw retention still lets this roll up.
+        // A return after pruning is counted twice: the published figure is
+        // cumulative observations, not unique installs.
         lifetimeInstalls:
           [...lifetime.values()].filter((entry) => entry.firstSeen <= day).length + retired,
       };
