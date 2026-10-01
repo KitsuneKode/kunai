@@ -71,6 +71,7 @@ export type ShellAction =
   | "watch"
   | "download"
   | "downloads"
+  | "cleanup-downloads"
   | "library"
   | "watchlist"
   | "favorites"
@@ -488,6 +489,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "report-issue":
     case "download":
     case "downloads":
+    case "cleanup-downloads":
     case "library":
     case "watchlist":
     case "favorites":

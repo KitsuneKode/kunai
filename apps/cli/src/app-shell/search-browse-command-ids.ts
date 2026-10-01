@@ -16,6 +16,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "downloads",
   "notifications",
   "history",
+  "cleanup-downloads",
   "download",
   "details",
   "setup",

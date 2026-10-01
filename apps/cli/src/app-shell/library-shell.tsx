@@ -7,6 +7,10 @@ import {
 } from "@/app-shell/browse-focus-zone";
 import type { DismissTimerOperations } from "@/app-shell/dismiss-timer-registry";
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import {
+  formatCleanupBannerText,
+  useDownloadCleanupSummary,
+} from "@/app-shell/hooks/use-download-cleanup-summary";
 import { usePressAgainConfirm } from "@/app-shell/hooks/use-press-again-confirm";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
@@ -216,6 +220,7 @@ function LibraryTab({
   const deleteConfirm = usePressAgainConfirm(confirmTimers);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
+  const cleanupSummary = useDownloadCleanupSummary(container);
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const titlesActive = libraryView === "titles" && !commandMode;
 
@@ -361,13 +366,26 @@ function LibraryTab({
         // rather than typing into the filter.
         if (input === "/" && !key.ctrl && !key.meta) return;
         if (input.length === 1 && !key.ctrl && !key.meta) {
+          // The Filter row only renders with rows present — capturing letters
+          // into a filter that isn't on screen would swallow them invisibly.
+          if (totalRows === 0) return;
           setFilterQuery((query) => query + input);
           return;
         }
         return;
       }
 
-      // List zone — bare-letter actions are live here.
+      // List zone — bare-letter actions are live here. `c` opens the cleanup
+      // review unconditionally: with no candidates the picker shows the same
+      // empty-state explanation `/cleanup-downloads` does, matching the
+      // downloads tab instead of leaving `c` a dead key.
+      if (input === "c" || input === "C") {
+        void import("@/app-shell/workflows/download-cleanup-review").then(
+          ({ openDownloadCleanupReview }) =>
+            openDownloadCleanupReview(container).then(() => refreshEntries()),
+        );
+        return;
+      }
       if (input === "2") {
         onNavigateToQueue();
         return;
@@ -542,6 +560,14 @@ function LibraryTab({
       <Box marginBottom={1}>
         <Text color={palette.dim}>{shelf.summary}</Text>
       </Box>
+      {cleanupSummary ? (
+        <Box marginBottom={1}>
+          <Text color={palette.accentDeep}>
+            {formatCleanupBannerText(cleanupSummary)} ·{" "}
+            <Text color={palette.accent}>{listFocused ? "c" : "/cleanup-downloads"}</Text> to review
+          </Text>
+        </Box>
+      ) : null}
       <Box marginBottom={1}>
         <Text color={listFocused ? palette.dim : palette.accent}>Filter: </Text>
         <Text color={listFocused ? palette.dim : palette.text} bold={!listFocused}>

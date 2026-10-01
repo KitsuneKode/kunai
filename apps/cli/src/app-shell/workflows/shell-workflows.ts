@@ -23,6 +23,7 @@ import {
   waitForRootLibraryPlaybackLaunch,
 } from "@/app-shell/root-library-playback-bridge";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
+import { openDownloadCleanupReview } from "@/app-shell/workflows/download-cleanup-review";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
@@ -57,6 +58,7 @@ import {
   buildUiDiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
+import { formatCleanupRecoveryHint } from "@/services/download/download-cleanup-candidates";
 import {
   parseOfflineTitleCleanupPreference,
   type OfflineTitleCleanupPreference,
@@ -838,6 +840,10 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
     return Promise.resolve("handled");
   },
   downloads: (c) => handleLibraryOverlay(c, "queue"),
+  "cleanup-downloads": async (c) => {
+    await openDownloadCleanupReview(c);
+    return "handled";
+  },
   library: (c) => handleLibraryOverlay(c, "library"),
   menu: (c) => handleTitleControlMenu(c),
   help: (c) => handleStaticOverlay(c, "help"),
@@ -1677,9 +1683,15 @@ export async function enqueueCurrentPlaybackDownload({
         : error instanceof Error
           ? error.message
           : String(error);
+    // On a disk refusal, name the recovery path: how many watched downloads
+    // are eligible for cleanup and what they'd free. "" when there are none.
+    const recoveryHint =
+      error instanceof DownloadEnqueueRejectedError && error.code === "insufficient-disk"
+        ? formatCleanupRecoveryHint(container)
+        : "";
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: `Download queue failed: ${message}`,
+      note: `Download queue failed: ${message}${recoveryHint}`,
     });
     container.diagnosticsService.record(
       buildDownloadDiagnosticEvent({

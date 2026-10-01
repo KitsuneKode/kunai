@@ -45,6 +45,7 @@ export function shouldOverlayAcceptFilterInput(input: {
     case "season_picker":
     case "subtitle_picker":
     case "recommendation_picker":
+    case "list_picker":
       // No bare-letter actions on these pickers — the field is always live.
       return true;
     case "episode_picker":

@@ -85,10 +85,35 @@ retry time elapses. A job left `running` after a crash is reclaimed only after i
 heartbeat lease expires, so a second Kunai process that still owns the job is not
 stolen. Completed files in `/library` are unaffected.
 
+## Reviewing watched downloads for cleanup
+
+When `autoCleanupWatched` is enabled, Kunai watches for completed
+downloads whose episodes you have already finished and the configured
+`autoCleanupGraceDays` has passed. Nothing is deleted automatically. Eligible
+downloads surface as a banner on `/downloads` and `/library` with the count and
+total recoverable size.
+
+Three entry points open the same review:
+
+- `/cleanup-downloads`
+- `c` while the banner is showing on `/downloads`
+- `c` in `/library` while the banner is showing
+
+The review lists each candidate with its size, when it was watched, and why it
+became eligible (past the grace window, or only the newest watched episodes of
+that title are kept). You can review all candidates or pick items, confirm
+explicitly, and Kunai deletes the artifact from disk. Each item reports
+successfully deleted or the reason it failed, and one failure never stops the
+rest. Downloads you pinned or titles with a keep-last-watched policy never
+appear here.
+
+A download rejected for lack of free space mentions the recoverable size
+available through this same review.
+
 ## Safety Rules
 
 - Kunai does not silently delete completed artifacts.
-- Cleanup candidates are surfaced explicitly.
+- Cleanup candidates are surfaced explicitly and confirmed before deletion.
 - Re-download uses the saved download intent when available.
 - Opening the offline library uses local SQLite/filesystem facts and must not trigger provider calls.
 - Artifact validation records local size and duration when available, which makes offline rows easier to inspect.

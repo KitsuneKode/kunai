@@ -70,9 +70,53 @@ describe("download cleanup policy", () => {
       {
         job: record,
         reason: "watched",
+        eligibility: { kind: "grace", graceDays: 2 },
         watchedAt: "2026-05-10T00:00:00.000Z",
       },
     ]);
+  });
+
+  test("reports which retention rule released each candidate", () => {
+    const record = job();
+    const grace = selectDownloadCleanupCandidates({
+      jobs: [record],
+      historyByTitle: new Map([
+        [record.titleId, [watched({ updatedAt: "2026-05-01T00:00:00.000Z" })]],
+      ]),
+      nowMs: Date.parse("2026-05-14T00:00:00.000Z"),
+      graceDays: 5,
+    });
+    expect(grace[0]?.eligibility).toEqual({ kind: "grace", graceDays: 5 });
+
+    const overridden = selectDownloadCleanupCandidates({
+      jobs: [record],
+      historyByTitle: new Map([
+        [record.titleId, [watched({ updatedAt: "2026-04-20T00:00:00.000Z" })]],
+      ]),
+      nowMs: Date.parse("2026-05-14T00:00:00.000Z"),
+      graceDays: 2,
+      titlePolicies: new Map([["title-1", { mode: "cleanup-watched", graceDays: 14 }]]),
+    });
+    expect(overridden[0]?.eligibility).toEqual({ kind: "grace", graceDays: 14 });
+
+    const older = job({ id: "older", episode: 2 });
+    const newest = job({ id: "newest", episode: 3 });
+    const retention = selectDownloadCleanupCandidates({
+      jobs: [older, newest],
+      historyByTitle: new Map([
+        [
+          "title-1",
+          [
+            watched({ episode: 2, updatedAt: "2026-05-08T00:00:00.000Z" }),
+            watched({ episode: 3, updatedAt: "2026-05-10T00:00:00.000Z" }),
+          ],
+        ],
+      ]),
+      nowMs: Date.parse("2026-05-14T00:00:00.000Z"),
+      graceDays: 2,
+      titlePolicies: new Map([["title-1", { mode: "keep-last-watched", count: 1 }]]),
+    });
+    expect(retention[0]?.eligibility).toEqual({ kind: "keep-last-watched", count: 1 });
   });
 
   test("never selects unwatched, pinned, or protected next episodes", () => {

@@ -310,10 +310,11 @@ describe("docs codegen drift", () => {
   });
 
   test("published docs do not describe config surfaces the runtime never reads", () => {
-    // `providers.json` and `autoDownload` were documented while nothing in the
-    // runtime consumed them — `autoDownload` is force-pinned to "off" on load
-    // and on update. If either surface ever becomes real, delete the row here
-    // AND restore the doc, in the same change.
+    // `providers.json` was documented while nothing in the runtime consumed
+    // it. `autoDownload`/`autoDownloadNextCount`/`powerSaverAllowManualArtwork`
+    // never gained a reader either and have since been removed from
+    // `KitsuneConfig` entirely — the ban stays so the keys cannot quietly
+    // reappear in docs as if they were live settings.
     const phantomSurfaces = [/providers\.json/, /`autoDownload`/, /"autoDownload"/];
     for (const filePath of listDocFiles(DOCS_ROOT)) {
       const content = fs.readFileSync(filePath, "utf-8");

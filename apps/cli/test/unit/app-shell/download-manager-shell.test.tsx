@@ -4,7 +4,7 @@ import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { OverlayLayoutProvider } from "@/app-shell/overlay-layout-context";
 import type { Container } from "@/container";
 import { measureColumns } from "@/domain/text-display";
-import type { DownloadJobRecord } from "@kunai/storage";
+import type { DownloadJobRecord, HistoryProgress } from "@kunai/storage";
 import React, { act } from "react";
 
 import { render, stripAnsi } from "../../harness/render-capture";
@@ -35,10 +35,21 @@ function createContainerFixture() {
   let activeJobs: DownloadJobRecord[] = [];
   let completedJobs: DownloadJobRecord[] = [];
   let failedJobs: DownloadJobRecord[] = [];
+  let historyEntries: readonly HistoryProgress[] = [];
 
   const container = {
     config: {
       zenMode: false,
+      autoCleanupWatched: true,
+      autoCleanupGraceDays: 2,
+      // SAFETY: widens the empty-array literal to the field's declared string[].
+      protectedDownloadJobIds: [] as string[],
+    },
+    historyRepository: {
+      listRecent: () => historyEntries,
+    },
+    offlineTitlePolicies: {
+      listByTitleIds: () => [],
     },
     downloadService: {
       listActive: () => activeJobs,
@@ -73,6 +84,9 @@ function createContainerFixture() {
     },
     setFailedJobs(nextJobs: DownloadJobRecord[]) {
       failedJobs = nextJobs;
+    },
+    setHistory(next: readonly HistoryProgress[]) {
+      historyEntries = next;
     },
     emit(event: DownloadEvent) {
       act(() => {
@@ -257,6 +271,90 @@ test("burst navigation moves the selection immediately", async () => {
     for (const line of frame.split("\n")) {
       expect(measureColumns(line)).toBeLessThanOrEqual(140);
     }
+  } finally {
+    handle.unmount();
+  }
+});
+
+/**
+ * The cleanup banner is how a user learns watched downloads are reclaimable —
+ * it names the count, the recoverable size, and the `c` entry point. Hidden
+ * entirely when the feature is off or nothing is eligible.
+ */
+test("a watched download past grace shows the cleanup review banner", () => {
+  const fixture = createContainerFixture();
+  fixture.setCompletedJobs([
+    queuedJob({
+      status: "completed",
+      contentType: "series",
+      fileSize: 1024 ** 3,
+      completedAt: "2026-05-01T00:00:00.000Z",
+    }),
+  ]);
+  fixture.setHistory([
+    {
+      key: "k1",
+      titleId: "title-1",
+      mediaKind: "anime",
+      title: "Frieren",
+      season: 1,
+      episode: 3,
+      positionSeconds: 1420,
+      completed: true,
+      updatedAt: "2026-05-01T00:00:00.000Z",
+      createdAt: "2026-05-01T00:00:00.000Z",
+    },
+  ]);
+
+  const handle = render(
+    <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
+    { columns: 120, rows: 35 },
+  );
+
+  try {
+    const frame = stripAnsi(handle.lastFrame() ?? "");
+    expect(frame).toContain("1 watched download can be cleaned up");
+    expect(frame).toContain("1.0 GiB recoverable");
+    expect(frame).toContain("c");
+    expect(frame).toContain("to review");
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("no cleanup banner when watched downloads are inside the grace window", () => {
+  const fixture = createContainerFixture();
+  fixture.setCompletedJobs([
+    queuedJob({
+      status: "completed",
+      contentType: "series",
+      fileSize: 1024 ** 3,
+      completedAt: new Date().toISOString(),
+    }),
+  ]);
+  fixture.setHistory([
+    {
+      key: "k1",
+      titleId: "title-1",
+      mediaKind: "anime",
+      title: "Frieren",
+      season: 1,
+      episode: 3,
+      positionSeconds: 1420,
+      completed: true,
+      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    },
+  ]);
+
+  const handle = render(
+    <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
+    { columns: 120, rows: 35 },
+  );
+
+  try {
+    const frame = stripAnsi(handle.lastFrame() ?? "");
+    expect(frame).not.toContain("can be cleaned up");
   } finally {
     handle.unmount();
   }

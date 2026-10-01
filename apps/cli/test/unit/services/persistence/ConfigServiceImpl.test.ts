@@ -154,8 +154,6 @@ describe("ConfigServiceImpl", () => {
     expect(service.downloadsEnabled).toBe(false);
     expect(service.downloadPath).toBe("");
     expect(service.downloadOnboardingDismissed).toBe(false);
-    expect(service.autoDownload).toBe("off");
-    expect(service.autoDownloadNextCount).toBe(1);
     expect(service.autoCleanupWatched).toBe(false);
     expect(service.recoveryMode).toBe("guided");
     expect(service.artworkPreviewsEnabled).toBe(true);
@@ -164,7 +162,6 @@ describe("ConfigServiceImpl", () => {
     expect(service.offlineUnknownEpisodeEstimateBytes).toBe(768 * 1024 * 1024);
     expect(service.offlineDefaultRunwayTarget).toBe(2);
     expect(service.powerSaverMode).toBe(false);
-    expect(service.powerSaverAllowManualArtwork).toBe(true);
     expect(service.autoCleanupGraceDays).toBe(7);
     expect(service.protectedDownloadJobIds).toEqual([]);
     expect(service.updateChecksEnabled).toBe(true);
@@ -175,8 +172,6 @@ describe("ConfigServiceImpl", () => {
       downloadsEnabled: true,
       downloadPath: "~/Videos/Kunai",
       downloadOnboardingDismissed: true,
-      autoDownload: "next",
-      autoDownloadNextCount: 3,
       autoCleanupWatched: true,
       recoveryMode: "fallback-first",
       artworkPreviewsEnabled: false,
@@ -185,7 +180,6 @@ describe("ConfigServiceImpl", () => {
       offlineUnknownEpisodeEstimateBytes: 200,
       offlineDefaultRunwayTarget: 5,
       powerSaverMode: true,
-      powerSaverAllowManualArtwork: false,
       autoCleanupGraceDays: 3,
       protectedDownloadJobIds: ["job-a", "job-a", " job-b "],
       updateChecksEnabled: false,
@@ -196,8 +190,6 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).downloadsEnabled).toBe(true);
     expect((await store.load()).downloadPath).toBe("~/Videos/Kunai");
     expect((await store.load()).downloadOnboardingDismissed).toBe(true);
-    expect((await store.load()).autoDownload).toBe("off");
-    expect((await store.load()).autoDownloadNextCount).toBe(3);
     expect((await store.load()).autoCleanupWatched).toBe(true);
     expect((await store.load()).recoveryMode).toBe("fallback-first");
     expect((await store.load()).artworkPreviewsEnabled).toBe(false);
@@ -206,7 +198,6 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).offlineUnknownEpisodeEstimateBytes).toBe(200);
     expect((await store.load()).offlineDefaultRunwayTarget).toBe(5);
     expect((await store.load()).powerSaverMode).toBe(true);
-    expect((await store.load()).powerSaverAllowManualArtwork).toBe(false);
     expect((await store.load()).autoCleanupGraceDays).toBe(3);
     expect((await store.load()).protectedDownloadJobIds).toEqual(["job-a", "job-b"]);
     expect((await store.load()).updateChecksEnabled).toBe(false);
@@ -224,28 +215,35 @@ describe("ConfigServiceImpl", () => {
     expect(service.recoveryMode).toBe("guided");
   });
 
-  test("clamps auto-download next count on load and update", async () => {
-    const store = new MemoryConfigStore({ autoDownloadNextCount: 99 });
+  test("legacy config files with retired keys still load and get scrubbed on save", async () => {
+    // autoDownload / autoDownloadNextCount / powerSaverAllowManualArtwork were
+    // removed from KitsuneConfig after never gaining a runtime reader. A file
+    // written by an older build must still parse, must not surface them on the
+    // typed config, and must not carry them into the next persisted shape.
+    // SAFETY: the retired keys are deliberately not on KitsuneConfig anymore —
+    // the cast simulates a payload written by a build that still had them.
+    const store = new MemoryConfigStore({
+      autoDownload: "season",
+      autoDownloadNextCount: 9,
+      powerSaverAllowManualArtwork: false,
+      subLang: "jpn",
+    } as Partial<KitsuneConfig>);
     const service = await ConfigServiceImpl.load(store);
 
-    expect(service.autoDownloadNextCount).toBe(24);
+    expect(service.subLang).toBe("jpn");
+    expect("autoDownload" in service.getRaw()).toBe(false);
+    expect("autoDownloadNextCount" in service.getRaw()).toBe(false);
+    expect("powerSaverAllowManualArtwork" in service.getRaw()).toBe(false);
 
-    await service.update({ autoDownloadNextCount: 0 });
-    await service.save();
-
-    expect((await store.load()).autoDownloadNextCount).toBe(1);
-  });
-
-  test("disables legacy streaming auto-download authority on load and update", async () => {
-    const store = new MemoryConfigStore({ autoDownload: "season" });
-    const service = await ConfigServiceImpl.load(store);
-
-    expect(service.autoDownload).toBe("off");
-
-    await service.update({ autoDownload: "next" });
-    await service.save();
-
-    expect((await store.load()).autoDownload).toBe("off");
+    // load() resaves immediately when retired keys were dropped, so the file
+    // is already scrubbed — no update/save cycle needed. The `in` check reads
+    // the raw object shape, which is the point: these keys aren't in
+    // `KitsuneConfig`, so a typed accessor could never see them.
+    const persisted = await store.load();
+    expect("autoDownload" in persisted).toBe(false);
+    expect("autoDownloadNextCount" in persisted).toBe(false);
+    expect("powerSaverAllowManualArtwork" in persisted).toBe(false);
+    expect(persisted.subLang).toBe("jpn");
   });
 
   test("normalizes legacy subtitle defaults back to english on load", async () => {

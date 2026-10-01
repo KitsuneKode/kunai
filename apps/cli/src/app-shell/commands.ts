@@ -52,6 +52,7 @@ const POST_PLAYBACK_SURFACE_COMMANDS: readonly AppCommandId[] = [
   "recommendation",
   "calendar",
   "downloads",
+  "cleanup-downloads",
   "library",
   "history",
   "diagnostics",
@@ -73,7 +74,8 @@ function isMediaPickerOverlay(type: string): boolean {
     type === "season_picker" ||
     type === "episode_picker" ||
     type === "subtitle_picker" ||
-    type === "recommendation_picker"
+    type === "recommendation_picker" ||
+    type === "list_picker"
   );
 }
 

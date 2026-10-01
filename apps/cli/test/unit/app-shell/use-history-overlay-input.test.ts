@@ -224,6 +224,8 @@ describe("handleHistoryOverlayInput", () => {
       {
         ...baseCtx({ listFocused: false }).ctx,
         pendingDelete: { kind: "episode", key: "tmdb:1:1:2", label: "Example · S01E02" },
+        // SAFETY: minimal container stub — this path only exercises
+        // historyRepository.delete*, so the full AppContainer is unneeded.
         container: {
           historyRepository: {
             deleteProgressByKey: (key: string) => calls.push(`episode:${key}`),

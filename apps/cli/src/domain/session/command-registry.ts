@@ -71,6 +71,7 @@ export type AppCommandId =
   | "report-issue"
   | "download"
   | "downloads"
+  | "cleanup-downloads"
   | "library"
   | "watchlist"
   | "favorites"
@@ -112,6 +113,9 @@ export const COMMAND_CONTEXTS = {
     "downloads",
     "notifications",
     "history",
+    // Sits just outside the first-run top row: cleanup is a maintenance action
+    // users reach from the banner or `c` key more than from palette search.
+    "cleanup-downloads",
     // Title-scoped queue mutations belong beside the queue view: they show
     // their "select a title/episode first" reason when nothing is selected,
     // which is better discovery than not listing them at all.
@@ -170,6 +174,7 @@ export const COMMAND_CONTEXTS = {
     "toggle-autoskip",
     "stop-after-current",
     "downloads",
+    "cleanup-downloads",
     "library",
     "notifications",
     "history",
@@ -211,6 +216,7 @@ export const COMMAND_CONTEXTS = {
     "download",
     "library",
     "downloads",
+    "cleanup-downloads",
     "notifications",
     "watchlist",
     "playlists",
@@ -286,6 +292,7 @@ export const COMMAND_CONTEXTS = {
     "stats",
     "library",
     "downloads",
+    "cleanup-downloads",
     "diagnostics",
     "export-diagnostics",
     "report-issue",
@@ -324,6 +331,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Library",
     aliases: ["library", "offline", "offline-library", "my-downloads"],
     description: "Browse offline library and manage downloads",
+  },
+  {
+    id: "cleanup-downloads",
+    label: "Cleanup Downloads",
+    aliases: ["cleanup-downloads", "cleanup", "clean-downloads", "reclaim-space"],
+    description: "Review watched downloads eligible for cleanup and delete them",
   },
   {
     id: "search",
@@ -851,6 +864,7 @@ export function commandGroupFor(id: AppCommandId): AppCommandGroup {
     case "up-next":
     case "download":
     case "downloads":
+    case "cleanup-downloads":
     case "library":
     case "share":
     case "share-qr":
@@ -1422,6 +1436,9 @@ function resolveCommandState(id: AppCommandId, state: SessionState): ResolvedCom
           };
 
     case "downloads":
+      return { enabled: true };
+
+    case "cleanup-downloads":
       return { enabled: true };
 
     case "library":
