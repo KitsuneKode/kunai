@@ -44,6 +44,7 @@ import {
 import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
 import { whichLive } from "../../infra/os/which";
+import type { DownloadDeleteResult } from "./download-delete-result";
 import { downloadJobShellMode } from "./download-job-mode";
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
 import { resolveDownloadOutputPath } from "./download-path-naming";
@@ -1056,9 +1057,12 @@ export class DownloadService {
     }
   }
 
-  async deleteJob(jobId: string, opts: { deleteArtifact?: boolean } = {}): Promise<void> {
+  async deleteJob(
+    jobId: string,
+    opts: { deleteArtifact?: boolean } = {},
+  ): Promise<DownloadDeleteResult> {
     const job = this.deps.repo.get(jobId);
-    if (!job) return;
+    if (!job) return { status: "deleted", jobId };
     if (job.status === "running" || this.activeProcesses.has(jobId)) {
       await this.abort(jobId);
     }
@@ -1067,10 +1071,12 @@ export class DownloadService {
       ["completed", "completed-with-notes", "repairable"].includes(job.status) &&
       !this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath);
     if (opts.deleteArtifact && ownsArtifact) {
+      let mediaRemoved = false;
       try {
         await rm(job.outputPath, { force: true });
+        mediaRemoved = true;
       } catch {
-        return;
+        return this.retainFailedRemoval(jobId, [job.outputPath], false);
       }
       const retained: string[] = [];
       const removeOwned = async (path: string | null | undefined) => {
@@ -1090,14 +1096,7 @@ export class DownloadService {
         await removeOwned(posterPath);
       }
       if (retained.length > 0) {
-        // The video may already be gone. Keep the completed row so a later
-        // delete can retry the sidecar, and do not report that as success.
-        this.emit({
-          type: "failed",
-          jobId,
-          error: "artifact removal failed",
-        });
-        return;
+        return this.retainFailedRemoval(jobId, retained, mediaRemoved);
       }
     }
     // Emit before deleting the row, not after. `offline_assets.origin_job_id` is
@@ -1107,6 +1106,32 @@ export class DownloadService {
     // but unplayable because its originJobId is now null.
     this.emit({ type: "deleted", jobId });
     this.deps.repo.delete(jobId);
+    return { status: "deleted", jobId };
+  }
+
+  /**
+   * A removal error is not a delete. The row stays so cleanup can be retried.
+   * Once the video itself is gone, playback must stop offering it.
+   */
+  private retainFailedRemoval(
+    jobId: string,
+    remainingPaths: readonly string[],
+    mediaRemoved: boolean,
+  ): DownloadDeleteResult {
+    if (mediaRemoved) {
+      this.deps.repo.markArtifactValidated(jobId, "missing", new Date().toISOString());
+    }
+    this.emit({
+      type: "failed",
+      jobId,
+      error: "artifact removal failed",
+    });
+    return {
+      status: "retained",
+      jobId,
+      reason: "artifact-removal-failed",
+      remainingPaths,
+    };
   }
 
   private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {

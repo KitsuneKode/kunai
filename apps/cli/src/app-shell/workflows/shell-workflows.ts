@@ -459,14 +459,18 @@ export async function openOfflineLibraryGroupPicker(
         ],
       });
       if (!confirmed) continue;
-      await Promise.all(
+      const deleted = await Promise.all(
         entries.map((entry) =>
           container.downloadService.deleteJob(entry.job.id, { deleteArtifact: true }),
         ),
       );
+      const kept = deleted.filter((result) => result.status === "retained").length;
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
-        note: `Deleted offline title: ${first.titleName}`,
+        note:
+          kept === 0
+            ? `Deleted offline title: ${first.titleName}`
+            : `Kept ${kept} ${kept === 1 ? "download" : "downloads"}. A file could not be removed.`,
       });
       return;
     }
@@ -605,12 +609,17 @@ export async function openOfflineLibraryGroupPicker(
       container.downloadService.kickQueue("download-manager");
       continue;
     }
-    await container.downloadService.deleteJob(job.id, {
+    const deleted = await container.downloadService.deleteJob(job.id, {
       deleteArtifact: action === "delete-artifact",
     });
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: action === "delete-artifact" ? "Download artifact deleted" : "Download job deleted",
+      note:
+        deleted.status === "retained"
+          ? "Kept the download. A file could not be removed."
+          : action === "delete-artifact"
+            ? "Download artifact deleted"
+            : "Download job deleted",
     });
   }
 }

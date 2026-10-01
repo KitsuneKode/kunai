@@ -2651,13 +2651,61 @@ describe("DownloadService", () => {
     const rmSpy = spyOn(fsPromises, "rm").mockImplementation(async (path) => {
       if (String(path) === subtitlePath) throw new Error("eacces");
     });
+    let result: Awaited<ReturnType<typeof service.deleteJob>> | undefined;
     try {
-      await service.deleteJob(job.id, { deleteArtifact: true });
+      result = await service.deleteJob(job.id, { deleteArtifact: true });
     } finally {
       rmSpy.mockRestore();
     }
 
+    expect(result).toEqual({
+      status: "retained",
+      jobId: job.id,
+      reason: "artifact-removal-failed",
+      remainingPaths: [subtitlePath],
+    });
     expect(repo.get(job.id)?.status).toBe("completed");
+    expect(repo.get(job.id)?.artifactStatus).toBe("missing");
+    expect(events).not.toContain("deleted");
+    expect(events).toContain("failed");
+  });
+
+  test("a failed media delete keeps the download and does not mark the file missing", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:media-lock", type: "movie", name: "Locked" },
+      stream: { url: "https://cdn.example/locked.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    writeFileSync(job.outputPath, "still here");
+    repo.complete(job.id, new Date().toISOString());
+    const events: string[] = [];
+    service.onEvent((event) => {
+      events.push(event.type);
+    });
+    const rmSpy = spyOn(fsPromises, "rm").mockImplementation(async (path) => {
+      if (String(path) === job.outputPath) throw new Error("eacces");
+    });
+    let result: Awaited<ReturnType<typeof service.deleteJob>> | undefined;
+    try {
+      result = await service.deleteJob(job.id, { deleteArtifact: true });
+    } finally {
+      rmSpy.mockRestore();
+    }
+
+    expect(result).toEqual({
+      status: "retained",
+      jobId: job.id,
+      reason: "artifact-removal-failed",
+      remainingPaths: [job.outputPath],
+    });
+    expect(repo.get(job.id)?.status).toBe("completed");
+    expect(repo.get(job.id)?.artifactStatus).not.toBe("missing");
     expect(events).not.toContain("deleted");
     expect(events).toContain("failed");
   });

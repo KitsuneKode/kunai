@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-01"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -317,7 +317,10 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 - Opening `/offline` must not fetch remote metadata. Stored poster URLs are only fetched by the
   terminal image renderer when the selected row needs a preview.
 - Deleting a downloaded artifact removes the media file, subtitle sidecar, recorded artwork sidecar,
-  and deterministic derived artwork path to avoid orphaned local preview files.
+  and deterministic derived artwork path to avoid orphaned local preview files. A removal error
+  keeps the job, reports the failure, and leaves the video unavailable only after the media file
+  itself is gone. The shell says the download was kept. A missing file counts as already gone.
+  A permission or IO error keeps the job for a later cleanup retry.
 
 ## Config Fields (current + planned)
 
