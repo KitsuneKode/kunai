@@ -36,6 +36,7 @@ import {
   externalIdsToAliases,
   getKunaiPaths,
   type DownloadArtifactStatus,
+  type DownloadClaimRef,
   type DownloadJobRecord,
   type DownloadJobsRepository,
   type HistoryTitleAliasInput,
@@ -275,6 +276,8 @@ export class DownloadService {
   // concurrent workers run without two of them claiming the same queued job in
   // the window between `selectEligibleQueuedJob` and `markRunning` (an await).
   private readonly claimedJobIds = new Set<string>();
+  /** Lease returned by markRunning or recovery. Late updates must present it. */
+  private readonly jobClaims = new Map<string, DownloadClaimRef>();
   private readonly eventListeners = new Set<DownloadEventListener>();
 
   onEvent(handler: DownloadEventListener): () => void {
@@ -713,21 +716,26 @@ export class DownloadService {
     // Anything between the claim and the try/finally below must release the
     // claim on the way out, or the job is stranded exactly as above.
     let stopHeartbeat: () => void;
+    let owned: DownloadJobRecord = next;
     try {
-      if (!this.deps.repo.markRunning(next.id, now)) {
+      const claim = this.deps.repo.markRunning(next.id, now);
+      if (!claim) {
         this.claimedJobIds.delete(next.id);
         // Another process won the durable claim after our read. Its update makes
         // this row ineligible, so continue with the next queued candidate.
         return await this.processNextQueued(queueContext);
       }
+      this.jobClaims.set(next.id, claim);
+      owned = { ...next, tempPath: claim.stagingDir };
       stopHeartbeat = this.startHeartbeat(next.id);
     } catch (error) {
       this.claimedJobIds.delete(next.id);
+      this.jobClaims.delete(next.id);
       throw error;
     }
 
     try {
-      const downloaded = await this.executeYtDlpDownload(next);
+      const downloaded = await this.executeYtDlpDownload(owned);
       const subtitleResult = await this.downloadSubtitleIfAvailable(downloaded);
       await this.persistOutputFileSize(downloaded);
       const completedAt = new Date().toISOString();
@@ -765,9 +773,10 @@ export class DownloadService {
             active?.cancelReason ?? cancellation?.reason ?? "download paused by shutdown",
             failedAt,
             failedAt,
+            this.jobClaims.get(next.id),
           );
         } else {
-          this.deps.repo.abort(next.id, failedAt);
+          this.deps.repo.abort(next.id, failedAt, this.jobClaims.get(next.id));
           this.emit({ type: "aborted", jobId: next.id });
         }
       } else {
@@ -787,6 +796,7 @@ export class DownloadService {
             this.formatDiskExhaustedMessage(),
             new Date(Date.now() + STORAGE_DEFERRAL_RETRY_MS).toISOString(),
             failedAt,
+            this.jobClaims.get(next.id),
           );
           this.deps.diagnostics?.record({
             category: "download",
@@ -797,15 +807,31 @@ export class DownloadService {
           });
         } else if (analysis.retryable && retriesLeft) {
           const retryAt = new Date(Date.now() + retryDelayMs(next.retryCount)).toISOString();
-          this.deps.repo.scheduleRetry(next.id, message, retryAt, failedAt);
+          this.deps.repo.scheduleRetry(
+            next.id,
+            message,
+            retryAt,
+            failedAt,
+            this.jobClaims.get(next.id),
+          );
         } else {
-          this.deps.repo.fail(next.id, message, true, failedAt, analysis.failureKind);
+          this.deps.repo.fail(
+            next.id,
+            message,
+            true,
+            failedAt,
+            analysis.failureKind,
+            this.jobClaims.get(next.id),
+          );
           this.emit({ type: "failed", jobId: next.id, error: message });
           const failedJob = this.deps.repo.get(next.id);
           if (failedJob) await this.deps.onTerminalFailure?.(failedJob, message);
         }
       }
-      await rm(next.tempPath, { force: true }).catch(() => {});
+      await rm(owned.tempPath, { force: true }).catch(() => {});
+      if (owned.tempPath !== next.tempPath) {
+        await rm(next.tempPath, { force: true }).catch(() => {});
+      }
       this.deps.logger.warn("Download failed", { jobId: next.id, error: message });
       return this.deps.repo.get(next.id) ?? null;
     } finally {
@@ -814,6 +840,7 @@ export class DownloadService {
       this.activeProcesses.delete(next.id);
       this.cancellationRequests.delete(next.id);
       this.claimedJobIds.delete(next.id);
+      this.jobClaims.delete(next.id);
     }
   }
 
@@ -1052,7 +1079,7 @@ export class DownloadService {
     for (const [jobId] of activeEntries) {
       const job = this.deps.repo.get(jobId);
       if (job && job.status !== "completed" && job.status !== "aborted") {
-        this.deps.repo.pause(jobId, reason, pausedAt, pausedAt);
+        this.deps.repo.pause(jobId, reason, pausedAt, pausedAt, this.jobClaims.get(jobId));
       }
     }
   }
@@ -1258,7 +1285,12 @@ export class DownloadService {
       const clamped = Math.round(Math.max(0, Math.min(99, percent)));
       if (clamped === lastPersistedPercent) return;
       if (now - lastProgressPersistAt < 1000) return;
-      this.deps.repo.updateProgress(job.id, clamped, new Date().toISOString());
+      this.deps.repo.updateProgress(
+        job.id,
+        clamped,
+        new Date().toISOString(),
+        this.jobClaims.get(job.id),
+      );
       this.emit({ type: "progress", jobId: job.id, percent: clamped });
       lastProgressPersistAt = now;
       lastPersistedPercent = clamped;
@@ -1695,6 +1727,7 @@ export class DownloadService {
             JSON.stringify({ artifact: result.artifact, message: result.message }),
         },
         updatedAt,
+        this.jobClaims.get(jobId),
       );
       this.deps.diagnostics?.record({
         category: "download",
@@ -1719,10 +1752,11 @@ export class DownloadService {
           repairMetadataJson: result.repairMetadataJson,
         },
         updatedAt,
+        this.jobClaims.get(jobId),
       );
       return;
     }
-    this.deps.repo.complete(jobId, updatedAt);
+    this.deps.repo.complete(jobId, updatedAt, this.jobClaims.get(jobId));
   }
 
   private async repairSidecars(job: DownloadJobRecord): Promise<void> {
@@ -1858,96 +1892,136 @@ export class DownloadService {
       const heartbeatAt = runningJob.lastHeartbeatAt ?? runningJob.startedAt;
       const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
       if (Number.isFinite(heartbeatMs) && nowMs - heartbeatMs < STALLED_HEARTBEAT_MS) continue;
-      if (!this.deps.repo.claimRunningForRecovery(runningJob.id, runningJob.lastHeartbeatAt, now)) {
+      const recovery = this.deps.repo.claimRunningForRecovery(
+        runningJob.id,
+        runningJob.lastHeartbeatAt,
+        now,
+      );
+      if (!recovery) {
         continue;
       }
-
-      // Clean up orphaned temp files from crashed processes
-      if (runningJob.tempPath) {
-        await rm(runningJob.tempPath, { force: true }).catch(() => {});
-      }
-
-      const publishedOutput = await stat(runningJob.outputPath).catch(() => null);
-      if (publishedOutput) {
-        if (this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)) {
-          const message =
-            "Download destination ownership is ambiguous; existing artifact preserved";
-          this.deps.repo.fail(runningJob.id, message, false, now, "artifact-invalid");
-          this.emit({ type: "failed", jobId: runningJob.id, error: message });
-          continue;
+      this.jobClaims.set(runningJob.id, recovery);
+      try {
+        // Clean up orphaned temp files from crashed processes. The previous
+        // claim's staging directory is the one that worker may have written.
+        if (runningJob.stagingDir) {
+          await rm(runningJob.stagingDir, { force: true }).catch(() => {});
         }
-        let validation: ArtifactValidationResult;
-        try {
-          validation = await this.validateCompletedArtifact(runningJob.outputPath, runningJob.id);
-        } catch (error) {
-          const cancellation = this.cancellationRequests.get(runningJob.id);
-          if (cancellation) {
-            if (cancellation.mode === "pause") {
-              this.deps.repo.pause(runningJob.id, cancellation.reason, now, now);
-            } else {
-              this.deps.repo.abort(runningJob.id, now);
-              this.emit({ type: "aborted", jobId: runningJob.id });
-            }
-            this.cancellationRequests.delete(runningJob.id);
-            continue;
-          }
-          if (error instanceof ArtifactValidationTimeoutError) {
-            this.deps.repo.fail(runningJob.id, error.message, false, now, "artifact-timeout");
-            this.emit({ type: "failed", jobId: runningJob.id, error: error.message });
-            this.deps.logger.warn("Interrupted download artifact validation timed out", {
-              jobId: runningJob.id,
-              error: error.message,
-            });
-            continue;
-          }
-          if (publishedOutput.isFile()) {
-            await rm(runningJob.outputPath, { force: true }).catch(() => {});
-          } else {
-            const message = "download output path is not a regular file";
-            this.deps.repo.fail(runningJob.id, message, false, now, "artifact-invalid");
+        if (runningJob.tempPath) {
+          await rm(runningJob.tempPath, { force: true }).catch(() => {});
+        }
+
+        const publishedOutput = await stat(runningJob.outputPath).catch(() => null);
+        if (publishedOutput) {
+          if (this.deps.repo.hasConflictingOutputOwner(runningJob.id, runningJob.outputPath)) {
+            const message =
+              "Download destination ownership is ambiguous; existing artifact preserved";
+            this.deps.repo.fail(
+              runningJob.id,
+              message,
+              false,
+              now,
+              "artifact-invalid",
+              this.jobClaims.get(runningJob.id),
+            );
             this.emit({ type: "failed", jobId: runningJob.id, error: message });
             continue;
           }
-          this.deps.logger.warn("Discarded invalid interrupted download artifact", {
-            jobId: runningJob.id,
-            error: error instanceof Error ? error.message : String(error),
+          let validation: ArtifactValidationResult;
+          try {
+            validation = await this.validateCompletedArtifact(runningJob.outputPath, runningJob.id);
+          } catch (error) {
+            const cancellation = this.cancellationRequests.get(runningJob.id);
+            if (cancellation) {
+              if (cancellation.mode === "pause") {
+                this.deps.repo.pause(
+                  runningJob.id,
+                  cancellation.reason,
+                  now,
+                  now,
+                  this.jobClaims.get(runningJob.id),
+                );
+              } else {
+                this.deps.repo.abort(runningJob.id, now, this.jobClaims.get(runningJob.id));
+                this.emit({ type: "aborted", jobId: runningJob.id });
+              }
+              this.cancellationRequests.delete(runningJob.id);
+              continue;
+            }
+            if (error instanceof ArtifactValidationTimeoutError) {
+              this.deps.repo.fail(
+                runningJob.id,
+                error.message,
+                false,
+                now,
+                "artifact-timeout",
+                this.jobClaims.get(runningJob.id),
+              );
+              this.emit({ type: "failed", jobId: runningJob.id, error: error.message });
+              this.deps.logger.warn("Interrupted download artifact validation timed out", {
+                jobId: runningJob.id,
+                error: error.message,
+              });
+              continue;
+            }
+            if (publishedOutput.isFile()) {
+              await rm(runningJob.outputPath, { force: true }).catch(() => {});
+            } else {
+              const message = "download output path is not a regular file";
+              this.deps.repo.fail(
+                runningJob.id,
+                message,
+                false,
+                now,
+                "artifact-invalid",
+                this.jobClaims.get(runningJob.id),
+              );
+              this.emit({ type: "failed", jobId: runningJob.id, error: message });
+              continue;
+            }
+            this.deps.logger.warn("Discarded invalid interrupted download artifact", {
+              jobId: runningJob.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            this.rescheduleInterruptedJob(
+              runningJob,
+              now,
+              "download interrupted after publishing an invalid artifact",
+            );
+            continue;
+          }
+          // From this point forward the artifact is known-good. Persistence and
+          // notification failures must surface for retry without ever entering
+          // the invalid-artifact cleanup path above.
+          this.persistValidatedArtifactMetadata(runningJob.id, validation);
+          const subtitleResult: DownloadSidecarResult = runningJob.subtitleUrl
+            ? buildRepairableSidecarResult(
+                runningJob,
+                "subtitle",
+                "download was recovered after publication; subtitle needs repair",
+              )
+            : { artifact: "subtitle", status: "not-applicable" };
+          this.persistCompletedDownloadWithSidecarResult(runningJob.id, subtitleResult, now);
+          this.emit({ type: "complete", jobId: runningJob.id });
+          const completed = this.deps.repo.get(runningJob.id);
+          if (completed) await this.deps.onCompletedArtifact?.(completed);
+          this.deps.diagnostics?.record({
+            category: "download",
+            level: "info",
+            operation: "download.recovery.adopted",
+            message: "Recovered a validated download published before shutdown",
+            context: { jobId: runningJob.id, fileSize: validation.fileSize },
           });
-          this.rescheduleInterruptedJob(
-            runningJob,
-            now,
-            "download interrupted after publishing an invalid artifact",
-          );
           continue;
         }
-        // From this point forward the artifact is known-good. Persistence and
-        // notification failures must surface for retry without ever entering
-        // the invalid-artifact cleanup path above.
-        this.persistValidatedArtifactMetadata(runningJob.id, validation);
-        const subtitleResult: DownloadSidecarResult = runningJob.subtitleUrl
-          ? buildRepairableSidecarResult(
-              runningJob,
-              "subtitle",
-              "download was recovered after publication; subtitle needs repair",
-            )
-          : { artifact: "subtitle", status: "not-applicable" };
-        this.persistCompletedDownloadWithSidecarResult(runningJob.id, subtitleResult, now);
-        this.emit({ type: "complete", jobId: runningJob.id });
-        const completed = this.deps.repo.get(runningJob.id);
-        if (completed) await this.deps.onCompletedArtifact?.(completed);
-        this.deps.diagnostics?.record({
-          category: "download",
-          level: "info",
-          operation: "download.recovery.adopted",
-          message: "Recovered a validated download published before shutdown",
-          context: { jobId: runningJob.id, fileSize: validation.fileSize },
-        });
-        continue;
+        this.rescheduleInterruptedJob(
+          runningJob,
+          now,
+          "download interrupted by previous session shutdown",
+        );
+      } finally {
+        this.jobClaims.delete(runningJob.id);
       }
-      this.rescheduleInterruptedJob(
-        runningJob,
-        now,
-        "download interrupted by previous session shutdown",
-      );
     }
   }
 
@@ -1957,7 +2031,13 @@ export class DownloadService {
     message: string,
   ): void {
     if (job.retryCount < job.maxAttempts) {
-      this.deps.repo.scheduleRetry(job.id, message, updatedAt, updatedAt);
+      this.deps.repo.scheduleRetry(
+        job.id,
+        message,
+        updatedAt,
+        updatedAt,
+        this.jobClaims.get(job.id),
+      );
       return;
     }
     this.deps.repo.fail(
@@ -1966,6 +2046,7 @@ export class DownloadService {
       false,
       updatedAt,
       "interrupted",
+      this.jobClaims.get(job.id),
     );
   }
 
@@ -1974,7 +2055,7 @@ export class DownloadService {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = () => {
       if (!active) return;
-      this.deps.repo.markHeartbeat(jobId, new Date().toISOString());
+      this.deps.repo.markHeartbeat(jobId, new Date().toISOString(), this.jobClaims.get(jobId));
       timer = setTimeout(tick, HEARTBEAT_INTERVAL_MS);
       timer.unref?.();
     };

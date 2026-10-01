@@ -776,6 +776,15 @@ export const dataMigrations: readonly Migration[] = [
         WHERE status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable');
     `,
   },
+  {
+    id: "040_data_download_job_claim",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN owner_token TEXT;
+      ALTER TABLE download_jobs ADD COLUMN claim_generation INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE download_jobs ADD COLUMN staging_dir TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

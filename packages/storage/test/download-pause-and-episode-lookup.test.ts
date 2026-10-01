@@ -29,7 +29,7 @@ test("pause does not move a job another worker already completed", () => {
     createdAt: now,
     updatedAt: now,
   });
-  expect(jobs.markRunning("job-done", now)).toBe(true);
+  expect(jobs.markRunning("job-done", now)?.jobId).toBe("job-done");
   jobs.complete("job-done", now);
 
   expect(jobs.pause("job-done", "late pause", now, now)).toBe(false);

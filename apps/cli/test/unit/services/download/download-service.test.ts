@@ -1836,7 +1836,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "valid-media-bytes");
     writeFileSync(job.tempPath, "orphaned-temp-bytes");
 
@@ -1868,7 +1868,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "");
     writeFileSync(job.tempPath, "orphaned-temp-bytes");
 
@@ -1902,7 +1902,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "valid-media-that-must-survive");
     const updateFileSizeSpy = spyOn(repo, "updateFileSize").mockImplementation(() => {
       throw new Error("simulated SQLite write failure");
@@ -1934,7 +1934,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "published-media-that-must-survive");
 
     const probe = createHangingProbe("SIGKILL");
@@ -1977,7 +1977,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "published-media-that-must-survive-shutdown");
 
     let expireProbe!: () => void;
@@ -2253,8 +2253,8 @@ describe("DownloadService", () => {
       if (claimedJobIds.length === 1) {
         // Simulate another Kunai process winning this row between selection and
         // our compare-and-set. The durable update makes the recursive pass pick B.
-        expect(originalMarkRunning(jobId, updatedAt)).toBe(true);
-        return false;
+        expect(originalMarkRunning(jobId, updatedAt)?.jobId).toBe(jobId);
+        return undefined;
       }
       throw new Error("simulated SQLite claim failure for job B");
     });
@@ -2461,7 +2461,7 @@ describe("DownloadService", () => {
       mode: "series",
     });
     const activeAt = new Date().toISOString();
-    expect(repo.markRunning(job.id, activeAt)).toBe(true);
+    expect(repo.markRunning(job.id, activeAt)?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "partially-published-by-owner");
     writeFileSync(job.tempPath, "active-temp-bytes");
 
@@ -2501,8 +2501,8 @@ describe("DownloadService", () => {
       mode: "series",
       outputDirectory: tempDir,
     });
-    expect(repo.markRunning(stale.id, "2026-04-29T00:01:00.000Z")).toBe(true);
-    expect(repo.markRunning(fresh.id, new Date().toISOString())).toBe(true);
+    expect(repo.markRunning(stale.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(stale.id);
+    expect(repo.markRunning(fresh.id, new Date().toISOString())?.jobId).toBe(fresh.id);
     writeFileSync(stale.outputPath, "valid-stale-output");
     writeFileSync(stale.tempPath, "stale-temp");
     writeFileSync(fresh.tempPath, "fresh-temp");

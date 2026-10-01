@@ -69,6 +69,7 @@ export {
 } from "./repositories/download-jobs";
 export type {
   DownloadArtifactStatus,
+  DownloadClaimRef,
   DownloadJobRecord,
   DownloadJobStatus,
 } from "./repositories/download-jobs";
