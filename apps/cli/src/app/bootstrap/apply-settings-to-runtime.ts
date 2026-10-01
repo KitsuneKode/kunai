@@ -29,13 +29,13 @@ export async function applySettingsToRuntime({
   // launch-flag values into config.json. An explicit edit to an overridden
   // field still diffs dirty, so update() clears the override and persists it.
   const patch: Partial<KitsuneConfig> = {};
+  // SAFETY: `next` is a complete KitsuneConfig, so every Object.keys entry is
+  // a keyof KitsuneConfig — the assertion restores what Object.keys erases.
   for (const key of Object.keys(next) as (keyof KitsuneConfig)[]) {
     const value = next[key];
     if (value === before[key]) continue;
     if (JSON.stringify(value ?? null) === JSON.stringify(before[key] ?? null)) continue;
-    // SAFETY: `key` is a KitsuneConfig field; `patch` gets the field's own
-    // type from `next`.
-    (patch as Record<keyof KitsuneConfig, KitsuneConfig[keyof KitsuneConfig]>)[key] = value;
+    setChangedKey(patch, key, value);
   }
   await config.update(patch);
   await config.save();
@@ -106,6 +106,17 @@ export async function applySettingsToRuntime({
     const { applyYoutubeProviderConfig } = await import("@/container/configure-youtube-provider");
     applyYoutubeProviderConfig(next, container.cacheDb, { purgeCache: true });
   }
+}
+
+// Indexed writes through a union key require a value assignable to every
+// constituent; binding key and value through one type parameter keeps the
+// write sound without an assertion.
+function setChangedKey<K extends keyof KitsuneConfig>(
+  patch: Partial<KitsuneConfig>,
+  key: K,
+  value: KitsuneConfig[K],
+): void {
+  patch[key] = value;
 }
 
 async function invalidateVideasyCaches(

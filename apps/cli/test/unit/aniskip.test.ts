@@ -227,3 +227,40 @@ test("fetchAniSkipTimingMetadata AniList path is unaffected by season > 1", asyn
   ).toBe(true);
   expect(calls.some((url) => url.includes("/30013/5?"))).toBe(true);
 });
+
+/**
+ * The lookup caches (`malIdFromAllAnimeShowCache`, `malIdCache`,
+ * `anilistIdByNameCache`) were plain Maps — one entry per title looked up, for
+ * the whole session. They are LRU-bounded at 500 now: filling past the ceiling
+ * evicts the oldest key, so re-resolving it must pay a fresh lookup.
+ */
+test("the AllAnime show-id → MAL cache evicts its oldest entry past the ceiling", async () => {
+  let lookups = 0;
+  globalThis.fetch = (async (_input: string | URL | Request) => {
+    lookups += 1;
+    // malId: null — a definitive "no mapping" answer, so each show id resolves
+    // to a cached null and nothing downstream is consulted.
+    return new Response(JSON.stringify({ data: { show: { malId: null } } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  const resolve = (showId: string) =>
+    fetchAniSkipTimingMetadata({
+      anilistId: showId,
+      episode: 1,
+      providerId: "allanime",
+    });
+
+  for (let i = 0; i <= 500; i++) {
+    await resolve(`bound-show-${i}`);
+  }
+  const afterFill = lookups;
+
+  await resolve("bound-show-500");
+  expect(lookups).toBe(afterFill);
+
+  await resolve("bound-show-0");
+  expect(lookups).toBeGreaterThan(afterFill);
+});

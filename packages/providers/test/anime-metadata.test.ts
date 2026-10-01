@@ -15,6 +15,9 @@ import {
   shouldSkipExternalEpisodeMetadataEnrichment,
   type AnimeEpisodeMetadata,
 } from "../src/shared/anime-metadata";
+import { installGlobalRestore } from "./helpers/restore-globals";
+
+installGlobalRestore();
 
 afterEach(() => {
   clearAnimeMetadataCacheForTest();

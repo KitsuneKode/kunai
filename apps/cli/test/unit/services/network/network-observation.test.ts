@@ -74,7 +74,10 @@ describe("observeOnline", () => {
         throw new Error("ECONNREFUSED");
       }),
     ).rejects.toThrow("ECONNREFUSED");
-    expect(connectivity.getSnapshot().status).toBe("offline");
+    // ECONNREFUSED is endpoint-local: the host answered, so the uplink worked.
+    // It downgrades to "limited"; only uplink evidence (DNS, unreachable net)
+    // can declare "offline".
+    expect(connectivity.getSnapshot().status).toBe("limited");
   });
 });
 

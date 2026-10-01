@@ -5,6 +5,9 @@ import type { ProviderRuntimeContext } from "@kunai/types";
 import { anidbProviderModule, clearAnidbCachesForTest } from "../src/anidb/direct";
 import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
 import { isOfficialAnidbApi, urlHasHostname } from "./helpers/anidb-urls";
+import { installGlobalRestore } from "./helpers/restore-globals";
+
+installGlobalRestore();
 
 // What this file protects: AniDB's own metadata is one request for a whole
 // series, while Jikan pages 100 episodes at a time under a rate limit. Paying

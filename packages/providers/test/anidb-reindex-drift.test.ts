@@ -13,6 +13,7 @@ import {
 } from "../src/anidb/direct";
 import { __testing as curlImpersonateTesting } from "../src/shared/curl-impersonate";
 import { urlHasHostname } from "./helpers/anidb-urls";
+import { installGlobalRestore } from "./helpers/restore-globals";
 
 /**
  * anidb.app reindexes slugs, so a persisted `providerNativeIds.anidb` can
@@ -23,6 +24,11 @@ import { urlHasHostname } from "./helpers/anidb-urls";
 afterEach(() => {
   clearAnidbCachesForTest();
 });
+
+// This file also rewrites PATH and `fetch`; a mid-test failure must not leak
+// either one into the next file — and the PATH-keyed curl scan cache must be
+// forgotten too, or the restore itself leaves a stale resolution.
+installGlobalRestore();
 
 function contextReturning(
   handler: (url: string) => { status: number; body: string },

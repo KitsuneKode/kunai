@@ -10,7 +10,7 @@ import {
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
-import { migrateLegacyProviderId } from "@kunai/providers";
+import { migrateLegacyProviderId, PRODUCTION_PROVIDER_IDS } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
 import {
   isJsonNumber,
@@ -39,6 +39,26 @@ function normalizeSeriesProvider<T>(value: T): string {
   const normalized = isJsonString(value) ? value.trim() : "";
   if (!normalized) return DEFAULT_CONFIG.provider;
   return migrateLegacyProviderId(normalized);
+}
+
+/**
+ * The YouTube lane has its own default — routing an absent/invalid value
+ * through `normalizeSeriesProvider` used to return `DEFAULT_CONFIG.provider`
+ * ("vidlink"), so the `|| youtubeProvider` fallback at the call site was
+ * unreachable and a youtube-lane config silently became a series provider.
+ * A well-formed but unknown id also falls back: an id no production provider
+ * registers can never resolve, so keeping it would persist a dead head of the
+ * lane's priority list.
+ */
+function normalizeYoutubeProvider<T>(value: T): string {
+  const normalized = isJsonString(value) ? value.trim() : "";
+  if (!normalized) return DEFAULT_CONFIG.youtubeProvider;
+  const migrated = migrateLegacyProviderId(normalized);
+  // SAFETY: `PRODUCTION_PROVIDER_IDS` is typed by the loader-map union; widening to
+  // `readonly string[]` for the membership test is safe because `includes` only reads.
+  return (PRODUCTION_PROVIDER_IDS as readonly string[]).includes(migrated)
+    ? migrated
+    : DEFAULT_CONFIG.youtubeProvider;
 }
 
 function normalizeProviderIdList<T>(
@@ -305,8 +325,7 @@ function normalizeLoadedConfig(loaded: Partial<KitsuneConfig>): NormalizedLoaded
       readProviderDefaultsRevision(sanitized),
       CURRENT_PROVIDER_DEFAULTS_REVISION,
     ),
-    youtubeProvider:
-      normalizeSeriesProvider(sanitized.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
+    youtubeProvider: normalizeYoutubeProvider(sanitized.youtubeProvider),
     youtubeProviderPriority: normalizeProviderIdList(
       sanitized.youtubeProviderPriority,
       DEFAULT_CONFIG.youtubeProviderPriority,

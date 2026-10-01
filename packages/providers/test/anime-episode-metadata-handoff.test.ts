@@ -12,6 +12,9 @@ import {
   seedEpisodeMetadataFromProvider,
   type AnimeEpisodeMetadata,
 } from "../src/shared/anime-metadata";
+import { installGlobalRestore } from "./helpers/restore-globals";
+
+installGlobalRestore();
 
 const FIXTURE_BASE = new URL("./fixtures/allmanga/", import.meta.url);
 const TEST_CONTEXT: ProviderRuntimeContext = {

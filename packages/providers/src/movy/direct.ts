@@ -4,6 +4,7 @@ import {
   createProviderCachePolicy,
   createResolveTrace,
   createTraceStep,
+  isTransportNetworkFailure,
   providerCycleCandidateTimeoutMs,
   runProviderCycle,
   type CoreProviderModule,
@@ -569,14 +570,17 @@ export async function resolveMovyDirect(
                     failureClass: "candidate-blocked" as const,
                   }
                 : {
-                    // Raw transport errors (ENOTFOUND, ECONNRESET, fetch failed)
-                    // are offline-class evidence — non-retryable so the cycle's
-                    // offline early-exit can still trigger.
+                    // Raw transport errors (ENOTFOUND, ECONNRESET, fetch
+                    // failed) are non-retryable — the dead socket does not
+                    // deserve a second attempt. Whether they also count as
+                    // *offline* evidence is the cycle engine's message-level
+                    // check, so a reset stays endpoint-local instead of voting
+                    // the uplink dead.
                     code: "network-error" as const,
-                    retryable:
-                      !/enotfound|eai_again|enetunreach|econnrefused|econnreset|fetch failed|socket/i.test(
-                        message,
-                      ),
+                    retryable: !isTransportNetworkFailure({
+                      code: "network-error",
+                      message,
+                    }),
                     failureClass: "candidate-network" as const,
                   };
         failures.push({

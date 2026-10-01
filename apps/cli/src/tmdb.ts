@@ -6,6 +6,7 @@
 // Results are memory-cached (per-session, never stale during a session).
 // =============================================================================
 
+import { BoundedLruMap } from "@/infra/bounded-map";
 import { cleanEpisodeSynopsis, isPlaceholderEpisodeName } from "@/services/catalog/episode-display";
 import type { SeasonLoadFailure } from "@/services/catalog/season-load-failure";
 import {
@@ -46,10 +47,18 @@ type SeasonSummaryCandidate = SeasonSummary & {
   readonly airDate: string;
 };
 
+/**
+ * Session-cache ceiling per map. These were unbounded `Map`s: one entry per
+ * `tmdbId:season` browsed, kept for the whole session — a long browse session
+ * grew them without limit. 500 seasons/episodes-lists is far past any real
+ * browse path; oldest-write is evicted past it.
+ */
+const TMDB_MEMORY_CACHE_MAX_ENTRIES = 500;
+
 // In-memory cache: `${tmdbId}:${season}` → EpisodeInfo[] (raw TMDB rows)
-const epCache = new Map<string, EpisodeInfo[]>();
-const seasonCache = new Map<string, SeasonSummary[]>();
-const showLanguageCache = new Map<string, string>();
+const epCache = new BoundedLruMap<string, EpisodeInfo[]>(TMDB_MEMORY_CACHE_MAX_ENTRIES);
+const seasonCache = new BoundedLruMap<string, SeasonSummary[]>(TMDB_MEMORY_CACHE_MAX_ENTRIES);
+const showLanguageCache = new BoundedLruMap<string, string>(TMDB_MEMORY_CACHE_MAX_ENTRIES);
 
 function mapTmdbEpisodeRows(rows: readonly Record<string, unknown>[]): EpisodeInfo[] {
   return rows.map((episode) => {

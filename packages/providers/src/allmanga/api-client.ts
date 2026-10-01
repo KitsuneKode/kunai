@@ -1,6 +1,6 @@
 import { createDecipheriv } from "node:crypto";
 
-import { isOfflineNetworkFailure } from "@kunai/core";
+import { isTransportNetworkFailure } from "@kunai/core";
 import type { ProviderEpisodeIdentity, ProviderRuntimeContext } from "@kunai/types";
 import { isRelayRefusalError } from "@kunai/types";
 
@@ -847,15 +847,17 @@ export async function resolveEpisodeSources(opts: {
       const message = error instanceof Error ? error.message : "AllManga source request failed";
       const timedOut =
         error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
-      // A dead connection must not read as an empty source list: offline
-      // signatures are non-retryable so the engine's offline budget caps the
-      // provider early instead of counting it as a catalog miss.
+      // A dead connection must not read as an empty source list: transport
+      // failures are non-retryable (a dead socket earns no second attempt)
+      // and the engine's offline quorum reads the *message*, so uplink
+      // evidence still caps the provider early instead of counting a dead
+      // link as a catalog miss.
       throw new ProviderHttpError({
         providerId: ALLANIME_PROVIDER_ID,
         stage: "episode-sources",
         code: timedOut ? "timeout" : "network-error",
         message,
-        retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
+        retryable: timedOut || !isTransportNetworkFailure({ code: "network-error", message }),
         cause: error,
       });
     }

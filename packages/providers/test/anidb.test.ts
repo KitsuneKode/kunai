@@ -23,6 +23,9 @@ import {
 import { anidbManifest, ANIDB_PROVIDER_ID } from "../src/anidb/manifest";
 import { clearAnimeMetadataCacheForTest } from "../src/shared/anime-metadata";
 import { isOfficialAnidbApi, urlHasHostname } from "./helpers/anidb-urls";
+import { installGlobalRestore } from "./helpers/restore-globals";
+
+installGlobalRestore();
 
 const fixture = (name: string) =>
   Bun.file(new URL(`./fixtures/anidb/${name}`, import.meta.url)).text();

@@ -28,6 +28,9 @@ import {
   splitCurlHttpTrailer,
 } from "../src/hianime/direct";
 import { HIANIME_PROVIDER_ID, hianimeManifest } from "../src/hianime/manifest";
+import { installGlobalRestore } from "./helpers/restore-globals";
+
+installGlobalRestore();
 
 const NOW = "2026-09-13T00:00:00.000Z";
 

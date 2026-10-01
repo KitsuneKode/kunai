@@ -144,6 +144,28 @@ describe("resolveMovyDirect", () => {
     );
   });
 
+  test("a connection reset is a dead lane, not offline evidence — every lane still gets attempted", async () => {
+    const ctx = contextReturning((url) => {
+      if (url.includes("/seed")) {
+        return new Response(JSON.stringify({ seed: FIXTURE.seed, ttlMs: 30000 }), { status: 200 });
+      }
+      // A torn socket on one lane says that lane is dead; it must not vote the
+      // machine offline — the cycle's offline quorum keys on resolver/routing
+      // phrasings, which a reset is not.
+      throw new Error("read ECONNRESET — socket hang up");
+    });
+
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+    expect(result.status).toBe("exhausted");
+    // A dead socket earns no same-lane retry …
+    expect(result.failures?.every((f) => f.code === "network-error" && f.retryable === false)).toBe(
+      true,
+    );
+    // … but every lane was still attempted. If a reset counted as offline
+    // evidence, the quorum would have stopped the walk after two lanes.
+    expect(result.failures?.length).toBe(MOVY_LANES.length);
+  });
+
   test("a decrypt failure classifies as parse-failed and non-retryable, not a network error", async () => {
     const ctx = contextReturning((url) => {
       if (url.includes("/seed")) {

@@ -1,4 +1,5 @@
 import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
+import { BoundedLruMap } from "@/infra/bounded-map";
 import {
   classifyTimingHttpStatus,
   classifyTimingThrownError,
@@ -37,9 +38,21 @@ type AniSkipResponse = {
   results: AniSkipResultJson[];
 };
 
-const malIdCache = new Map<string, number | null>();
-const anilistIdByNameCache = new Map<string, string | null>();
-const malIdFromAllAnimeShowCache = new Map<string, number | null>();
+/**
+ * Session-cache ceiling per map. These were unbounded `Map`s — one entry per
+ * distinct title or name looked up, kept for the whole session. 500 distinct
+ * id/name resolutions is far past a real session; oldest-write is evicted past
+ * it.
+ */
+const ANISKIP_LOOKUP_CACHE_MAX_ENTRIES = 500;
+
+const malIdCache = new BoundedLruMap<string, number | null>(ANISKIP_LOOKUP_CACHE_MAX_ENTRIES);
+const anilistIdByNameCache = new BoundedLruMap<string, string | null>(
+  ANISKIP_LOOKUP_CACHE_MAX_ENTRIES,
+);
+const malIdFromAllAnimeShowCache = new BoundedLruMap<string, number | null>(
+  ANISKIP_LOOKUP_CACHE_MAX_ENTRIES,
+);
 
 /**
  * Resolve MAL numeric id from an AllAnime / AllManga catalog `show._id`, matching
