@@ -840,6 +840,34 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   /**
+   * Consent as the file has it now. `getRaw()` is this process, so an opt-out
+   * saved by another window is invisible until something reads the store again.
+   */
+  async readPersistedAnalyticsConsent(): Promise<{
+    analytics: KitsuneConfig["analytics"];
+    installId: string;
+  }> {
+    const loaded = await this.store.load();
+    const analytics = normalizeAnalyticsPreference(loaded.analytics);
+    const installId = persistedInstallId(loaded.installId, analytics);
+    return { analytics, installId };
+  }
+
+  /**
+   * Another window already saved this. Copy it into memory and drop any unsaved
+   * write of the old id so the next flush cannot put that id back.
+   */
+  adoptPersistedAnalyticsConsent(consent: {
+    analytics: KitsuneConfig["analytics"];
+    installId: string;
+  }): void {
+    const installId = consent.analytics === "enabled" ? consent.installId : "";
+    this.config = { ...this.config, analytics: consent.analytics, installId };
+    this.dirtyKeys.delete("analytics");
+    this.dirtyKeys.delete("installId");
+  }
+
+  /**
    * Apply launch-flag overrides for this run only. Readers see them; `save()`
    * never does. An explicit `update()` of the same key later in the session
    * clears the override, so changing the setting in `/settings` wins over the
@@ -1263,6 +1291,14 @@ function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreferenc
 
 function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
   return value === "enabled" ? "enabled" : value === "disabled" ? "disabled" : "unset";
+}
+
+function persistedInstallId(
+  value: KitsuneConfig["installId"] | undefined,
+  analytics: KitsuneConfig["analytics"],
+): string {
+  if (analytics !== "enabled" || !value) return "";
+  return value.trim();
 }
 
 function normalizeStartupPriority<T>(value: T): StartupPriority {

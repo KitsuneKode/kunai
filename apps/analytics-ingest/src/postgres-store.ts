@@ -34,7 +34,13 @@ export const RECORD_PING_SQL = `with budget as (
   on conflict (day, install_hash) do nothing
 ), install_lifetime_insert as (
   insert into install_lifetime (install_hash, first_seen, last_seen)
-  select decode($2, 'hex'), $1::date, $1::date from admitted
+  select decode($2, 'hex'),
+         coalesce(
+           (select first_seen from retired_install where install_hash = decode($2, 'hex')),
+           $1::date
+         ),
+         $1::date
+  from admitted
   on conflict (install_hash) do update set last_seen = excluded.last_seen
   where install_lifetime.last_seen < excluded.last_seen
 ), unretire as (
@@ -52,11 +58,13 @@ select (select count(*)::int from admitted) as admitted,
  * `lifetime_retired.retired_installs` is only the pre-migration residue.
  */
 export const PRUNE_LIFETIME_SQL = `with deleted as (
-  delete from install_lifetime where last_seen < $1::date returning install_hash
+  delete from install_lifetime where last_seen < $1::date
+  returning install_hash, first_seen
 ), inserted as (
-  insert into retired_install (install_hash)
-  select install_hash from deleted
-  on conflict (install_hash) do nothing
+  insert into retired_install (install_hash, first_seen)
+  select install_hash, first_seen from deleted
+  on conflict (install_hash) do update
+    set first_seen = coalesce(retired_install.first_seen, excluded.first_seen)
 )
 select (select count(*)::int from deleted) as n`;
 
@@ -104,7 +112,7 @@ export const ROLL_UP_DAY_SQL = `with active as (
 ), lifetime as (
   select (
     (select count(*) from install_lifetime where first_seen <= $1::date)
-    + (select count(*) from retired_install)
+    + (select count(*) from retired_install where first_seen is null or first_seen <= $1::date)
     + (select coalesce(max(retired_installs), 0) from lifetime_retired)
   )::int as n
 ), ${bucketJsonCte("by_version", "version")},

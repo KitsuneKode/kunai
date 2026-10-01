@@ -277,6 +277,9 @@ export async function anidbGuardedFetch(
       }
     } catch (error) {
       if (signal?.aborted === true) throw error;
+      // The relay port already refused this request and direct fallback is off.
+      // Swallowing that and curling the upstream is the fallback the user disabled.
+      if (error instanceof Error && error.name === "RelayRefusalError") throw error;
     }
   }
 
@@ -363,6 +366,7 @@ export async function anidbFetchText(
       // `options.signal` rather than the error shape, so the 15s internal
       // timeout still earns its second chance through curl.
       if (options.signal?.aborted === true) throw error;
+      if (error instanceof Error && error.name === "RelayRefusalError") throw error;
       // Fallback to local curl/impersonate
     }
   }

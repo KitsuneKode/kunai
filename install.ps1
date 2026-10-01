@@ -2049,6 +2049,119 @@ function Install-OptionalDeps {
   # prepared image, and half-block is the universal in-process floor.
 }
 
+function Get-ReleasePublicKeyPem {
+  $fromEnv = $env:KUNAI_RELEASE_ED25519_PUBLIC_KEY
+  if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv.Trim() }
+  return @"
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAiJ7jdwwCejDY1gA90xbA+HSJI89eqI79y0qVOrdwiYw=
+-----END PUBLIC KEY-----
+"@.Trim()
+}
+
+function Get-Ed25519OpenSsl {
+  $cmd = Get-Command openssl -ErrorAction SilentlyContinue
+  if (-not $cmd) { return $null }
+  $version = & $cmd.Source version 2>&1 | Out-String
+  if ($version -notmatch '(?m)^OpenSSL ') { return $null }
+  return $cmd.Source
+}
+
+function Test-Ed25519OpenSslOnce {
+  param(
+    [Parameter(Mandatory = $true)][string]$OpenSsl,
+    [Parameter(Mandatory = $true)][string]$SumsPath,
+    [Parameter(Mandatory = $true)][string]$SignaturePath,
+    [Parameter(Mandatory = $true)][string]$PublicPath,
+    [switch]$RawIn
+  )
+  $previous = $null
+  $hadPreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+  if ($hadPreference) {
+    $previous = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+  }
+  try {
+    if ($RawIn) {
+      & $OpenSsl pkeyutl -verify -pubin -inkey $PublicPath -rawin -in $SumsPath -sigfile $SignaturePath 2>$null | Out-Null
+    }
+    else {
+      & $OpenSsl pkeyutl -verify -pubin -inkey $PublicPath -in $SumsPath -sigfile $SignaturePath 2>$null | Out-Null
+    }
+    return $LASTEXITCODE -eq 0
+  }
+  catch { return $false }
+  finally {
+    if ($hadPreference) { $PSNativeCommandUseErrorActionPreference = $previous }
+  }
+}
+
+function Test-Ed25519WithRuntime {
+  param(
+    [Parameter(Mandatory = $true)][string]$SumsPath,
+    [Parameter(Mandatory = $true)][string]$SignaturePath,
+    [Parameter(Mandatory = $true)][string]$PublicPath,
+    [Parameter(Mandatory = $true)][string]$ScriptPath
+  )
+  $runtime = Get-Command node -ErrorAction SilentlyContinue
+  if (-not $runtime) { $runtime = Get-Command bun -ErrorAction SilentlyContinue }
+  if (-not $runtime) { return $false }
+  $script = @'
+const { verify, readFileSync } = require("crypto");
+const [messagePath, publicPath, signaturePath] = process.argv.slice(2);
+const ok = verify(
+  null,
+  readFileSync(messagePath),
+  readFileSync(publicPath, "utf8"),
+  readFileSync(signaturePath),
+);
+process.exit(ok ? 0 : 1);
+'@
+  [System.IO.File]::WriteAllText($ScriptPath, $script)
+  $previous = $null
+  $hadPreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+  if ($hadPreference) {
+    $previous = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+  }
+  try {
+    & $runtime.Source $ScriptPath $SumsPath $PublicPath $SignaturePath
+    return $LASTEXITCODE -eq 0
+  }
+  catch { return $false }
+  finally {
+    if ($hadPreference) { $PSNativeCommandUseErrorActionPreference = $previous }
+  }
+}
+
+function Assert-ReleaseChecksumSignature {
+  param(
+    [Parameter(Mandatory = $true)][string]$SumsPath,
+    [Parameter(Mandatory = $true)][string]$SignatureUrl
+  )
+  $sigPath = "$SumsPath.sig"
+  try {
+    Invoke-BoundedDownload -Url $SignatureUrl -DestinationPath $sigPath `
+      -MaxBytes $DownloadChecksumMaxBytes -Label ([System.IO.Path]::GetFileName($SignatureUrl))
+  }
+  catch { throw "A checksum match without a signature is a failure." }
+  $pemPath = Join-Path ([System.IO.Path]::GetTempPath()) ("kunai-ed25519-" + [guid]::NewGuid().ToString("n") + ".pem")
+  $scriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("kunai-ed25519-" + [guid]::NewGuid().ToString("n") + ".cjs")
+  try {
+    [System.IO.File]::WriteAllText($pemPath, ((Get-ReleasePublicKeyPem) + "`n"))
+    $openssl = Get-Ed25519OpenSsl
+    if ($openssl) {
+      if (Test-Ed25519OpenSslOnce -OpenSsl $openssl -SumsPath $SumsPath -SignaturePath $sigPath -PublicPath $pemPath -RawIn) { return }
+      if (Test-Ed25519OpenSslOnce -OpenSsl $openssl -SumsPath $SumsPath -SignaturePath $sigPath -PublicPath $pemPath) { return }
+    }
+    if (Test-Ed25519WithRuntime -SumsPath $SumsPath -SignaturePath $sigPath -PublicPath $pemPath -ScriptPath $scriptPath) { return }
+    throw "SHA256SUMS signature did not verify. Ed25519 needs OpenSSL 3 or Node. The openssl on macOS is LibreSSL and cannot verify it."
+  }
+  finally {
+    Remove-Item -LiteralPath $pemPath, $scriptPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Install-Binary {
   if ($Version -ne 'latest') {
     $null = Get-NormalizedVersion $Version
@@ -2121,6 +2234,7 @@ function Install-Binary {
     }
 
     if ($archiveAvailable) {
+      Assert-ReleaseChecksumSignature -SumsPath $stagedArchiveSums -SignatureUrl "$archiveSumsUrl.sig"
       try { $archiveWant = Get-ChecksumEntry $stagedArchiveSums $archive }
       catch { throw "SHA256SUMS.archives must contain exactly one valid entry for $archive. $($_.Exception.Message)" }
       try {
@@ -2160,6 +2274,7 @@ function Install-Binary {
       Write-Warn 'Or pin a version: -Version X.Y.Z'
       throw
     }
+    Assert-ReleaseChecksumSignature -SumsPath $stagedSums -SignatureUrl "$sumsUrl.sig"
     try { $want = Get-ChecksumEntry $stagedSums $asset }
     catch { throw "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries. $($_.Exception.Message)" }
 

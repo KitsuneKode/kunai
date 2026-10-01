@@ -6,8 +6,9 @@
 // drifted from packages/storage once already).
 // =============================================================================
 
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, mkdir, open, stat, unlink } from "node:fs/promises";
+import { chmod, mkdir, open, rename, stat, unlink } from "node:fs/promises";
 import { join, dirname } from "node:path";
 
 import { writeAtomicSecretJson, writeAtomicSecretText } from "@/infra/fs/atomic-write";
@@ -212,13 +213,49 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-async function lockIsReclaimable(lockPath: string): Promise<boolean> {
-  let text = "";
+/**
+ * Remove a stale lock only when this call still owns the bytes it judged stale.
+ *
+ * Two waiters used to read a dead pid and then `unlink` the path. The first
+ * could create a new live lock in between, and the second deleted that one.
+ * `rename` claims one generation. A rename that steals different bytes is put
+ * back and does not count as a reclaim.
+ */
+export async function reclaimStaleLock(lockPath: string): Promise<boolean> {
+  let observed = "";
   try {
-    text = await Bun.file(lockPath).text();
+    observed = await Bun.file(lockPath).text();
   } catch (error) {
     return errorCode(error) === "ENOENT";
   }
+  if (!(await observedLockIsStale(lockPath, observed))) return false;
+
+  const quarantine = `${lockPath}.reclaim-${process.pid}-${randomUUID()}`;
+  try {
+    await rename(lockPath, quarantine);
+  } catch {
+    return false;
+  }
+
+  let stolen = "";
+  try {
+    stolen = await Bun.file(quarantine).text();
+  } catch {
+    stolen = "";
+  }
+  if (stolen !== observed) {
+    try {
+      await rename(quarantine, lockPath);
+    } catch {
+      await unlink(quarantine).catch(() => {});
+    }
+    return false;
+  }
+  await unlink(quarantine).catch(() => {});
+  return true;
+}
+
+async function observedLockIsStale(lockPath: string, text: string): Promise<boolean> {
   const pid = Number(text.trim());
   if (Number.isInteger(pid) && pid > 0) return !pidAlive(pid);
   try {
@@ -253,10 +290,7 @@ async function withCrossProcessLock(lockPath: string, fn: () => Promise<void>): 
       return;
     } catch (error) {
       if (errorCode(error) !== "EEXIST") throw error;
-      if (await lockIsReclaimable(lockPath)) {
-        await unlink(lockPath).catch(() => {});
-        continue;
-      }
+      if (await reclaimStaleLock(lockPath)) continue;
       if (Date.now() - started > LOCK_WAIT_MS) {
         throw new Error(`config lock timed out: ${lockPath}`, { cause: error });
       }

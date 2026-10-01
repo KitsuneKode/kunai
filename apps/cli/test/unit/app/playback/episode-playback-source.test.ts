@@ -41,6 +41,7 @@ describe("resolveLocalEpisodePlayback", () => {
     const requestedTitleIds: string[] = [];
     let storedNativeValue = "1";
     let playableReads = 0;
+    let episodeTwoReady = false;
     const assetsById = (titleId: string) =>
       titleId === "151807"
         ? [
@@ -70,10 +71,11 @@ describe("resolveLocalEpisodePlayback", () => {
         findReadyOriginJobId: (
           titleId: string,
           _season: number,
-          _episode: number,
+          episode: number,
           _mediaKind: string | undefined,
           identity: { readonly providerId: string; readonly value: string } | undefined,
         ) => {
+          if (episode === 2) return episodeTwoReady ? "job-2" : undefined;
           requestedTitleIds.push(titleId);
           return assetsById(titleId).find((asset) => {
             if (asset.state !== "ready") return false;
@@ -86,12 +88,13 @@ describe("resolveLocalEpisodePlayback", () => {
         },
       },
       offlineLibraryService: {
-        getPlayableSource: async () => {
+        getPlayableSource: async (jobId: string) => {
           playableReads += 1;
+          const source = jobId === "job-2" ? { ...SOURCE, jobId: "job-2", episode: 2 } : SOURCE;
           return {
             status: "ready" as const,
-            source: SOURCE,
-            job: { id: "job-1" },
+            source,
+            job: { id: source.jobId, season: 1, episode: source.episode ?? 1 },
           };
         },
       },
@@ -112,5 +115,24 @@ describe("resolveLocalEpisodePlayback", () => {
 
     expect(staleResult).toBeNull();
     expect(playableReads).toBe(1);
+
+    episodeTwoReady = true;
+    const selected = await resolveLocalEpisodePlayback(
+      container,
+      { ...TITLE, offlineJobId: "job-1" },
+      { season: 1, episode: 2 },
+      { forceLocal: true },
+    );
+    expect(selected?.jobId).toBe("job-2");
+    expect(selected?.source.episode).toBe(2);
+
+    episodeTwoReady = false;
+    const missing = await resolveLocalEpisodePlayback(
+      container,
+      { ...TITLE, offlineJobId: "job-1" },
+      { season: 1, episode: 2 },
+      { forceLocal: true },
+    );
+    expect(missing).toBeNull();
   });
 });

@@ -504,3 +504,76 @@ describe("the wire carries a digest, never the stored id", () => {
     expect(Object.keys(JSON.parse(body) as object).sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
   });
 });
+
+describe("analytics consent across windows", () => {
+  function sharedStore(initial: Partial<KitsuneConfig>) {
+    let disk: Partial<KitsuneConfig> = { ...DEFAULT_CONFIG, ...initial };
+    return {
+      store: {
+        load: async () => ({ ...disk }),
+        save: async (value: KitsuneConfig) => {
+          disk = { ...value };
+        },
+        merge: async (patch: Partial<KitsuneConfig>) => {
+          disk = { ...disk, ...patch };
+        },
+        reset: async () => {},
+      },
+      read: () => disk,
+    };
+  }
+
+  test("a loaded window does not send after another window opts out", async () => {
+    const shared = sharedStore({
+      analytics: "enabled",
+      installId: UUID,
+      analyticsNoticeShown: true,
+      lastAnalyticsPingAt: 0,
+      analyticsRetryAfter: 0,
+    });
+    const loaded = await ConfigServiceImpl.load(shared.store);
+    const other = await ConfigServiceImpl.load(shared.store);
+    await other.update({ analytics: "disabled", installId: "" });
+    const saving = other.save();
+    await other.flushPending();
+    await saving;
+
+    let sent = 0;
+    const service = makeService(loaded, {
+      fetchImpl: async () => {
+        sent += 1;
+        return new Response(null, { status: 204 });
+      },
+    });
+    await service.maybePing({ isInteractive: true });
+    expect(sent).toBe(0);
+    expect(shared.read().installId).toBe("");
+    expect(shared.read().analytics).toBe("disabled");
+    expect(loaded.getRaw().analytics).toBe("disabled");
+  });
+
+  test("a completed ping does not restore an id another window cleared", async () => {
+    const shared = sharedStore({
+      analytics: "enabled",
+      installId: UUID,
+      analyticsNoticeShown: true,
+      lastAnalyticsPingAt: 0,
+      analyticsRetryAfter: 0,
+    });
+    const loaded = await ConfigServiceImpl.load(shared.store);
+    const other = await ConfigServiceImpl.load(shared.store);
+    const service = makeService(loaded, {
+      fetchImpl: async () => {
+        await other.update({ analytics: "disabled", installId: "" });
+        const saving = other.save();
+        await other.flushPending();
+        await saving;
+        return new Response(null, { status: 204 });
+      },
+    });
+    await service.maybePing({ isInteractive: true });
+    expect(shared.read().analytics).toBe("disabled");
+    expect(shared.read().installId).toBe("");
+    expect(loaded.getRaw().installId).toBe("");
+  });
+});

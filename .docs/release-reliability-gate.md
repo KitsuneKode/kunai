@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-24"
+lastReviewed: "2026-10-01"
 ---
 
 # Kunai Release Reliability Gate
@@ -84,7 +84,12 @@ before npm receives any package, and draft/public downloads repeat the byte and
 provenance checks.
 
 The TypeScript native updater and both native installer scripts consume these
-archives. All three verify the archive against `SHA256SUMS.archives`, permit
+archives. `install.sh` and `install.ps1` require an Ed25519 signature
+(`SHA256SUMS.sig`, and `SHA256SUMS.archives.sig` when the archive sums file is
+present) before trusting those files. A missing or bad signature fails closed.
+A 404/410 on the archive sums file still selects the raw asset, and that raw
+`SHA256SUMS` still needs its own signature. All three verify the archive against
+`SHA256SUMS.archives`, permit
 exactly one expected regular-file member, bound compressed and decompressed
 bytes, and then verify that member against the legacy raw `SHA256SUMS` before
 version-store or launcher activation. TypeScript parses tar/gzip and zip

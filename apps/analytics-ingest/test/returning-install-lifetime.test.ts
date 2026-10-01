@@ -19,5 +19,9 @@ describe("returning install lifetime", () => {
 
     await store.recordPing({ day: "1999-02-01", installHash: "abc", ...ping });
     expect((await store.rollUpDay("1999-02-01")).lifetimeInstalls).toBe(1);
+    // The return must not rewrite first_seen, or the day they originally
+    // appeared drops out of history.
+    expect((await store.rollUpDay("1999-01-01")).lifetimeInstalls).toBe(1);
+    expect((await store.rollUpDay("1998-12-01")).lifetimeInstalls).toBe(0);
   });
 });

@@ -307,13 +307,26 @@ function LibraryTab({
         if (confirmDeleteKey === selectedOfflineGroup.key) {
           setConfirmDeleteKey(null);
           const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
-          const groupEntryIdSet = offlineGroupJobIdSet(selectedOfflineGroup);
-          for (const jobId of groupEntryIds) {
-            container.downloadService.deleteJob(jobId, { deleteArtifact: true });
-          }
-          setEntries((prev) =>
-            prev ? prev.filter((entry) => !groupEntryIdSet.has(entry.job.id)) : null,
-          );
+          void (async () => {
+            const results = await Promise.all(
+              groupEntryIds.map((jobId) =>
+                container.downloadService.deleteJob(jobId, { deleteArtifact: true }),
+              ),
+            );
+            const removed = new Set(
+              results.filter((result) => result.status === "deleted").map((result) => result.jobId),
+            );
+            const kept = results.length - removed.size;
+            setEntries((prev) =>
+              prev ? prev.filter((entry) => !removed.has(entry.job.id)) : null,
+            );
+            if (kept > 0) {
+              container.stateManager.dispatch({
+                type: "SET_PLAYBACK_FEEDBACK",
+                note: `Kept ${kept} ${kept === 1 ? "download" : "downloads"}. A file could not be removed.`,
+              });
+            }
+          })();
         } else {
           setConfirmDeleteKey(selectedOfflineGroup.key);
         }

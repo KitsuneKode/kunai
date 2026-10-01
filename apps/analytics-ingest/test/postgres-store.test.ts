@@ -52,7 +52,11 @@ test("lifetime pruning records the hash so a return is not counted twice", () =>
   // A data-modifying CTE that the outer query reads must return rows.
   // Postgres and Neon both reject `select count(*) from unretire` otherwise.
   expect(RECORD_PING_SQL).toMatch(/delete from retired_install[\s\S]*returning install_hash/);
-  expect(ROLL_UP_DAY_SQL).toContain("count(*) from retired_install");
+  expect(RECORD_PING_SQL).toContain("first_seen from retired_install");
+  expect(PRUNE_LIFETIME_SQL).toContain("returning install_hash, first_seen");
+  expect(ROLL_UP_DAY_SQL).toContain(
+    "count(*) from retired_install where first_seen is null or first_seen <= $1::date",
+  );
 });
 
 test("postgres suites mint disjoint install ids at the same n", () => {

@@ -365,11 +365,16 @@ export class AniListAdapter implements SyncAdapter {
       Number.isFinite(seconds) && seconds > 0
         ? new Date(Date.now() + seconds * 1000).toISOString()
         : undefined;
-    await this.tokenStore.patchAniList({
-      accessToken,
-      userId: this.userId,
-      ...(this.expiresAt ? { expiresAt: this.expiresAt } : {}),
-    });
+    try {
+      await this.tokenStore.patchAniList({
+        accessToken,
+        userId: this.userId,
+        ...(this.expiresAt ? { expiresAt: this.expiresAt } : {}),
+      });
+    } catch {
+      this.restoreCredential(previous);
+      return { ok: false, error: "Could not save the AniList account." };
+    }
 
     return { ok: true };
   }

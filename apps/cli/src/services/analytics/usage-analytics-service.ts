@@ -78,10 +78,19 @@ export type AnalyticsFetch = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+type AnalyticsConsentSnapshot = {
+  readonly analytics: KitsuneConfig["analytics"];
+  readonly installId: string;
+};
+
 type AnalyticsConfig = {
   getRaw(): KitsuneConfig;
   update(partial: Partial<KitsuneConfig>): Promise<void>;
   save(): Promise<void>;
+  /** Disk consent, including a change saved by another window. */
+  readPersistedAnalyticsConsent?(): Promise<AnalyticsConsentSnapshot>;
+  /** Take disk consent into memory without writing it back. */
+  adoptPersistedAnalyticsConsent?(consent: AnalyticsConsentSnapshot): void;
 };
 
 export type UsageAnalyticsServiceDeps = {
@@ -244,6 +253,15 @@ export class UsageAnalyticsService {
     // A pending retry from an earlier failed send is still cooling down.
     if (config.analyticsRetryAfter > now) return;
 
+    // Memory is this process. Another window can opt out, or clear the id,
+    // after this one loaded. A send that has not started has to see that file.
+    const diskBefore = await readDiskConsent(this.deps.config);
+    if (diskBefore === "unreadable") return;
+    if (diskBefore && !diskConsentStillMatches(diskBefore, config)) {
+      this.deps.config.adoptPersistedAnalyticsConsent?.(diskBefore);
+      return;
+    }
+
     const installId = ensureInstallId(config);
     const payload: AnalyticsPayload = {
       // The digest, never the stored id. `installId` below is persisted locally
@@ -257,11 +275,18 @@ export class UsageAnalyticsService {
 
     const outcome = await this.send(endpoint, payload);
 
-    // Consent and rotation can change while the request is in flight, including
-    // through Settings/setup writers outside this service. Compare the original
-    // stored id (which ensureInstallId may have repaired), not the payload id.
+    // Consent and rotation can change while the request is in flight, in this
+    // process or in another window that already saved. Compare the original
+    // stored id (which ensureInstallId may have repaired), not the payload id,
+    // and re-read the file so a completed request cannot write a cleared id back.
     const current = this.deps.config.getRaw();
     if (current.analytics !== "enabled" || current.installId !== config.installId) return;
+    const diskAfter = await readDiskConsent(this.deps.config);
+    if (diskAfter === "unreadable") return;
+    if (diskAfter && !diskConsentStillMatches(diskAfter, config)) {
+      this.deps.config.adoptPersistedAnalyticsConsent?.(diskAfter);
+      return;
+    }
 
     // ConfigServiceImpl.update mutates synchronously before its promise resolves:
     // there is no yield between this guard and the mutation. save reads the latest
@@ -302,6 +327,25 @@ export class UsageAnalyticsService {
       clearTimeout(timer);
     }
   }
+}
+
+async function readDiskConsent(
+  config: AnalyticsConfig,
+): Promise<AnalyticsConsentSnapshot | "unreadable" | undefined> {
+  if (!config.readPersistedAnalyticsConsent) return undefined;
+  try {
+    return await config.readPersistedAnalyticsConsent();
+  } catch {
+    return "unreadable";
+  }
+}
+
+function diskConsentStillMatches(disk: AnalyticsConsentSnapshot, snapshot: KitsuneConfig): boolean {
+  return (
+    disk.analytics === "enabled" &&
+    disk.installId.length > 0 &&
+    disk.installId === snapshot.installId
+  );
 }
 
 /**

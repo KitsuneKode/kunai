@@ -17,7 +17,8 @@ export function createMemoryAnalyticsStore(
   const raw = new Map<string, RecordPingInput>();
   /** installHash → { firstSeen, lastSeen }, mirroring install_lifetime. */
   const lifetime = new Map<string, { firstSeen: string; lastSeen: string }>();
-  const retiredHashes = new Set<string>();
+  /** hash → firstSeen. A return restores that day instead of starting over. */
+  const retired = new Map<string, string>();
   const rollups = new Map<string, DailyRollup>();
   const budget = new Map<string, number>();
 
@@ -31,8 +32,11 @@ export function createMemoryAnalyticsStore(
 
       const seen = lifetime.get(input.installHash);
       if (!seen) {
-        lifetime.set(input.installHash, { firstSeen: input.day, lastSeen: input.day });
-        retiredHashes.delete(input.installHash);
+        lifetime.set(input.installHash, {
+          firstSeen: retired.get(input.installHash) ?? input.day,
+          lastSeen: input.day,
+        });
+        retired.delete(input.installHash);
       } else if (seen.lastSeen < input.day) seen.lastSeen = input.day;
 
       const key = keyOf(input.day, input.installHash);
@@ -62,7 +66,7 @@ export function createMemoryAnalyticsStore(
         // inflate an earlier day's lifetime figure.
         lifetimeInstalls:
           [...lifetime.values()].filter((entry) => entry.firstSeen <= day).length +
-          retiredHashes.size,
+          [...retired.values()].filter((firstSeen) => firstSeen <= day).length,
       };
       rollups.set(day, rollup);
       return rollup;
@@ -104,7 +108,7 @@ export function createMemoryAnalyticsStore(
       for (const [hash, entry] of lifetime) {
         if (entry.lastSeen < day) {
           lifetime.delete(hash);
-          retiredHashes.add(hash);
+          retired.set(hash, entry.firstSeen);
           removed += 1;
         }
       }
