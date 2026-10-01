@@ -22,10 +22,12 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
+import { parseRetryAfterHeader } from "@kunai/types";
 
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { cycleExhaustedResult } from "../shared/provider-cycle";
+import { ProviderQueryCache } from "../shared/provider-query";
 import { resolveGateBudgetMs, selectVerifiedReadyStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "../shared/series-coordinates";
@@ -106,10 +108,18 @@ type MovySourcesPayload = {
   }[];
 };
 
-/** Per-mediaId seed cache — seeds carry a ~30 s server TTL. */
-const seedCache = new Map<string, { seed: string; expiresAt: number }>();
-const SEED_CACHE_MAX = 64;
 const SEED_EXPIRY_HEADROOM_MS = 5_000;
+/**
+ * Per-mediaId seed cache — seeds carry a ~30 s server TTL. ProviderQueryCache
+ * dedupes concurrent resolves for the same mediaId (a search→play transition
+ * used to fire the seed request twice) and never freezes a failed fetch into
+ * a long-lived entry.
+ */
+const seedCache = new ProviderQueryCache<string, { seed: string; ttlMs: number }>({
+  ttlMs: (value) => value.ttlMs,
+  refreshHeadroomMs: SEED_EXPIRY_HEADROOM_MS,
+  maxEntries: 64,
+});
 const MOVY_CANDIDATE_TIMEOUT_MS = 15_000;
 
 async function fetchMovySeed(
@@ -118,49 +128,38 @@ async function fetchMovySeed(
   signal?: AbortSignal,
 ): Promise<string> {
   const cacheKey = `${MOVY_API_BASE}|${mediaId}`;
-  const now = Date.now();
-  const cached = seedCache.get(cacheKey);
-  if (cached && cached.expiresAt - SEED_EXPIRY_HEADROOM_MS > now) return cached.seed;
-
-  const response = await providerFetch(context, `${MOVY_API_BASE}/seed?mediaId=${mediaId}`, {
-    headers: { "User-Agent": USER_AGENT, Referer: MOVY_REFERER, Origin: MOVY_ORIGIN },
-    signal,
-  });
-  if (!response.ok) {
-    throw new ProviderHttpError({
-      message: `seed request failed: HTTP ${response.status}`,
-      providerId: MOVY_PROVIDER_ID,
-      stage: "seed",
-      status: response.status,
-      code: "network-error",
-      retryable: response.status >= 500 || response.status === 429,
+  const entry = await seedCache.query(cacheKey, async () => {
+    const response = await providerFetch(context, `${MOVY_API_BASE}/seed?mediaId=${mediaId}`, {
+      headers: { "User-Agent": USER_AGENT, Referer: MOVY_REFERER, Origin: MOVY_ORIGIN },
+      signal,
     });
-  }
-  // SAFETY: seed response is a two-field JSON envelope; a missing `seed` is
-  // rejected on the next line, so a shape surprise fails closed.
-  const body = (await response.json()) as { seed?: string; ttlMs?: number };
-  if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
-
-  seedCache.delete(cacheKey);
-  seedCache.set(cacheKey, {
-    seed: body.seed,
-    expiresAt: Date.now() + (body.ttlMs ?? 30_000),
+    if (!response.ok) {
+      throw new ProviderHttpError({
+        message: `seed request failed: HTTP ${response.status}`,
+        providerId: MOVY_PROVIDER_ID,
+        stage: "seed",
+        status: response.status,
+        code: "network-error",
+        retryable: response.status >= 500 || response.status === 429,
+        retryAfterMs: parseRetryAfterHeader(response.headers.get("retry-after")),
+      });
+    }
+    // SAFETY: seed response is a two-field JSON envelope; a missing `seed` is
+    // rejected on the next line, so a shape surprise fails closed.
+    const body = (await response.json()) as { seed?: string; ttlMs?: number };
+    if (!body.seed) throw new MovyDecryptError("seed response carried no seed");
+    return { seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
   });
-  while (seedCache.size > SEED_CACHE_MAX) {
-    const oldest = seedCache.keys().next();
-    if (oldest.done) break;
-    seedCache.delete(oldest.value);
-  }
-  return body.seed;
+  return entry.seed;
 }
 
 function invalidateMovySeed(mediaId: number): void {
-  seedCache.delete(`${MOVY_API_BASE}|${mediaId}`);
+  seedCache.invalidate(`${MOVY_API_BASE}|${mediaId}`);
 }
 
 /** Test seam — the seed cache is module state and must not leak between cases. */
 export function clearMovySeedCacheForTest(): void {
-  seedCache.clear();
+  seedCache.reset();
 }
 
 async function fetchMovyLaneSources(

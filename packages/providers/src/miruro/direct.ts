@@ -62,6 +62,7 @@ import { isJsonNumber, isJsonObject, isJsonString, type JsonObject } from "../sh
 import { TTLCache } from "../shared/provider-cache";
 import { appendCycleEventsToResult, cycleExhaustedResult } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { ProviderQueryCache } from "../shared/provider-query";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
@@ -139,16 +140,14 @@ export function setMiruroPipeRetrySleepForTest(
 
 // Keyed by binary path — the resolved candidate can change if PATH changes
 // mid-process, and probing bare "curl" could report features of a different
-// binary than the one pipeCall spawns.
-const curlHttp2Probes = new Map<string, Promise<boolean>>();
+// binary than the one pipeCall spawns. Probe results are process-lifetime
+// facts (the binary does not change mid-run), so one week is "permanent".
+const curlHttp2Probes = new ProviderQueryCache<string, boolean>({
+  ttlMs: 7 * 24 * 60 * 60 * 1000,
+});
 
 function detectCurlHttp2Support(curlPath: string): Promise<boolean> {
-  let probe = curlHttp2Probes.get(curlPath);
-  if (probe === undefined) {
-    probe = probeCurlHttp2Support(curlPath);
-    curlHttp2Probes.set(curlPath, probe);
-  }
-  return probe;
+  return curlHttp2Probes.query(curlPath, () => probeCurlHttp2Support(curlPath));
 }
 
 async function probeCurlHttp2Support(curlPath: string): Promise<boolean> {

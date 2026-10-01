@@ -17,6 +17,7 @@ import {
 } from "../shared/anime-metadata";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
+import { ProviderQueryCache } from "../shared/provider-query";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
   ALLMANGA_BUILD_ID,
@@ -345,12 +346,18 @@ function extractRawSourcesFromPlaintext(
 }
 
 /**
- * Build the AllAnime `aaReq` attestation — see `./crypto.ts`.
+ * Crypto material for the episode persisted query — the `aaReq` attestation
+ * built in `./crypto.ts`. One deduped derivation, cached while fresh; a failed
+ * bootstrap falls back to bundled material with a shorter TTL so a transient
+ * mkissa outage does not pin the stale constants for the full window.
  */
-
-let cachedCryptoMaterial: { readonly material: AllMangaCryptoMaterial; expiresAt: number } | null =
-  null;
-let inFlightCryptoMaterial: Promise<AllMangaCryptoMaterial | null> | null = null;
+const cryptoMaterialCache = new ProviderQueryCache<
+  "default",
+  { material: AllMangaCryptoMaterial; live: boolean }
+>({
+  ttlMs: (entry) => (entry.live ? ALLMANGA_CRYPTO_MATERIAL_TTL_MS : 60_000),
+  maxEntries: 1,
+});
 let cryptoMaterialOverrideForTest: AllMangaCryptoMaterial | null = null;
 function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
   if (!signal) return Bun.sleep(ms);
@@ -392,10 +399,10 @@ export async function getAllMangaCryptoMaterial(
   signal?: AbortSignal,
 ): Promise<AllMangaCryptoMaterial | null> {
   if (cryptoMaterialOverrideForTest) return cryptoMaterialOverrideForTest;
-  if (cachedCryptoMaterial && cachedCryptoMaterial.expiresAt > Date.now()) {
-    return cachedCryptoMaterial.material;
-  }
-  return refreshAllMangaCryptoMaterial(context, ua, signal);
+  const entry = await cryptoMaterialCache.query("default", () =>
+    deriveCryptoMaterialEntry(context, ua, signal),
+  );
+  return entry.material;
 }
 
 /** Force a live re-derivation (AA_CRYPTO_STALE recovery); dedupes concurrent callers. */
@@ -405,41 +412,41 @@ export function refreshAllMangaCryptoMaterial(
   signal?: AbortSignal,
 ): Promise<AllMangaCryptoMaterial | null> {
   if (cryptoMaterialOverrideForTest) return Promise.resolve(cryptoMaterialOverrideForTest);
-  inFlightCryptoMaterial ??= fetchAllMangaCryptoMaterial(context, ua, signal)
-    .then((material) => {
-      const resolved = material ?? BUNDLED_ALLMANGA_CRYPTO;
-      if (!material) {
-        // Say which failure this was. A rotation and a flaky upstream both used
-        // to surface as the same unexplained crypto miss, which is why the
-        // 140 -> 171 rotation went unnoticed until playback broke.
-        const signalKind = getLastAllMangaRotationSignal() ?? "unavailable";
-        context.emit?.({
-          type: "cache:stale",
-          at: context.now(),
-          providerId: ALLANIME_PROVIDER_ID,
-          message:
-            signalKind === "build-rotated"
-              ? `mkissa rejected build ${ALLMANGA_BUILD_ID} as unknown — upstream rotated; re-extract ALLMANGA_CRYPTO_PROFILE`
-              : signalKind === "token-rejected"
-                ? `mkissa rejected our boot token for build ${ALLMANGA_BUILD_ID} — derivation constants drifted; re-extract ALLMANGA_CRYPTO_PROFILE`
-                : "mkissa bootstrap unavailable — using bundled crypto material",
-          attributes: {
-            rotationSignal: signalKind,
-            buildId: ALLMANGA_BUILD_ID,
-          },
-        });
-      }
-      cachedCryptoMaterial = {
-        material: resolved,
-        // A failed bootstrap falls back to bundled material; retry sooner.
-        expiresAt: Date.now() + (material ? ALLMANGA_CRYPTO_MATERIAL_TTL_MS : 60_000),
-      };
-      return resolved;
-    })
-    .finally(() => {
-      inFlightCryptoMaterial = null;
-    });
-  return inFlightCryptoMaterial;
+  // Invalidate first so the forced refresh bypasses a still-fresh entry; the
+  // in-flight dedup then shares this derivation across concurrent refreshers.
+  cryptoMaterialCache.invalidate("default");
+  return cryptoMaterialCache
+    .query("default", () => deriveCryptoMaterialEntry(context, ua, signal))
+    .then((entry) => entry.material);
+}
+
+async function deriveCryptoMaterialEntry(
+  context: ProviderRuntimeContext,
+  ua: string,
+  signal?: AbortSignal,
+): Promise<{ material: AllMangaCryptoMaterial; live: boolean }> {
+  const material = await fetchAllMangaCryptoMaterial(context, ua, signal);
+  if (material) return { material, live: true };
+  // Say which failure this was. A rotation and a flaky upstream both used to
+  // surface as the same unexplained crypto miss, which is why the 140 -> 171
+  // rotation went unnoticed until playback broke.
+  const signalKind = getLastAllMangaRotationSignal() ?? "unavailable";
+  context.emit?.({
+    type: "cache:stale",
+    at: context.now(),
+    providerId: ALLANIME_PROVIDER_ID,
+    message:
+      signalKind === "build-rotated"
+        ? `mkissa rejected build ${ALLMANGA_BUILD_ID} as unknown — upstream rotated; re-extract ALLMANGA_CRYPTO_PROFILE`
+        : signalKind === "token-rejected"
+          ? `mkissa rejected our boot token for build ${ALLMANGA_BUILD_ID} — derivation constants drifted; re-extract ALLMANGA_CRYPTO_PROFILE`
+          : "mkissa bootstrap unavailable — using bundled crypto material",
+    attributes: {
+      rotationSignal: signalKind,
+      buildId: ALLMANGA_BUILD_ID,
+    },
+  });
+  return { material: BUNDLED_ALLMANGA_CRYPTO, live: false };
 }
 
 function normalizeShowThumbnail(path: string | undefined): string | undefined {
@@ -574,7 +581,7 @@ export function clearAllMangaProviderCachesForTest(): void {
   akDeferredRegistry.clear();
   akDeferredCounter = 0;
   providerCacheNow = Date.now;
-  cachedCryptoMaterial = null;
+  cryptoMaterialCache.reset();
   cryptoMaterialOverrideForTest = null;
   retrySleep = (ms, signal) => sleepAbortable(ms, signal);
 }
