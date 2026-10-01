@@ -1,7 +1,12 @@
-import { providerHttpErrorForStatus, type ProviderRuntimeContext } from "@kunai/types";
+import {
+  parseRetryAfterHeader,
+  providerHttpErrorForStatus,
+  type ProviderRuntimeContext,
+} from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
 import { EndpointResilienceTracker } from "../shared/provider-cache";
+import { ProviderQueryCache } from "../shared/provider-query";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { YOUTUBE_PROVIDER_ID } from "./manifest";
 
@@ -23,10 +28,12 @@ type InvidiousInstanceRecord = {
   readonly api?: boolean;
 };
 
-type CachedInstances = {
-  readonly fetchedAt: number;
-  readonly instances: readonly string[];
-};
+/**
+ * An empty registry page is not the same failure as an unreachable one — it
+ * still routes through the stale-pool fallback, but a caller with no previous
+ * pool must see `[]` (empty), not a thrown fetch error.
+ */
+class EmptyInstancePoolError extends Error {}
 
 /**
  * Keyed by registry URL, not a single slot.
@@ -34,9 +41,16 @@ type CachedInstances = {
  * Production uses one URL, so a bare variable worked — but it meant any change
  * of `instancesUrl` silently answered from the previous registry's pool, and it
  * made every test in a file share one cache entry regardless of the URL each
- * one served.
+ * one served. `staleIfError` is the "a broken or empty registry still names
+ * instances that very likely work" rule.
  */
-const cachedInstancesByUrl = new Map<string, CachedInstances>();
+const instanceRegistry = new ProviderQueryCache<string, readonly string[]>({
+  ttlMs: 15 * 60 * 1000,
+  // A stale pool is a better answer than an error — except when the "error" is
+  // the caller walking away, which is not a fetch failure worth masking.
+  staleIfError: (_error, call) => call?.signal?.aborted !== true,
+  maxEntries: 8,
+});
 /**
  * Instance cooldowns — one failed request parks an instance for the policy
  * window. Single-strike is right here: the pool always has more instances to
@@ -67,65 +81,56 @@ export async function fetchHealthyInvidiousInstances(
   }
 
   const instancesUrl = options.instancesUrl ?? DEFAULT_INSTANCES_URL;
-  const cachedInstances = cachedInstancesByUrl.get(instancesUrl);
-  if (cachedInstances && now - cachedInstances.fetchedAt < 15 * 60 * 1000) {
-    return filterAvailableInstances(cachedInstances.instances, now);
-  }
-
-  let instances: readonly string[];
-  try {
-    const response = await providerFetch(options.context, instancesUrl, {
-      headers: { Accept: "application/json" },
-      signal: createTimeoutSignal(options.signal, INSTANCE_REGISTRY_TIMEOUT_MS),
+  const instances = await instanceRegistry
+    .query(
+      instancesUrl,
+      async () => {
+        const response = await providerFetch(options.context, instancesUrl, {
+          headers: { Accept: "application/json" },
+          signal: createTimeoutSignal(options.signal, INSTANCE_REGISTRY_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          throw providerHttpErrorForStatus({
+            status: response.status,
+            message: `Invidious instance list failed (${response.status})`,
+            providerId: YOUTUBE_PROVIDER_ID,
+            stage: "instance-list",
+            retryAfterMs: parseRetryAfterHeader(response.headers.get("retry-after")),
+          });
+        }
+        const payload = await response.json();
+        // A 200 carrying the wrong shape (`{}`, an object, a string) is as
+        // useless as a failed fetch — malformed data takes the same stale-pool
+        // recovery path as a thrown request.
+        if (!Array.isArray(payload)) {
+          throw new Error("Invidious instance list returned an unexpected shape");
+        }
+        // SAFETY: Array.isArray narrows to any[]; selectReachableInstances
+        // validates each row's shape before trusting the tuple fields.
+        const selected = selectReachableInstances(
+          payload as readonly (readonly [string, InvidiousInstanceRecord])[],
+        );
+        // An empty selection is not a healthy pool — caching it made
+        // `pickInvidiousInstance` throw from a *cached* empty pool for 15
+        // minutes, so YouTube stayed broken long after the registry recovered.
+        // Throwing routes it through staleIfError like any other failure.
+        if (selected.length === 0) {
+          throw new EmptyInstancePoolError("registry listed no reachable instances");
+        }
+        return selected;
+      },
+      { at: now, signal: options.signal },
+    )
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- rejection handler: the thrown value is genuinely untyped
+    .catch((error: unknown) => {
+      // The registry is a directory, not the service: an expired directory
+      // still names instances that very likely still work, and a caller-aborted
+      // fetch must never serve stale data as if it were fresh.
+      if (options.signal?.aborted) throw error;
+      if (error instanceof EmptyInstancePoolError) return [] satisfies readonly string[];
+      throw error;
     });
-    if (!response.ok) {
-      throw providerHttpErrorForStatus({
-        status: response.status,
-        message: `Invidious instance list failed (${response.status})`,
-        providerId: YOUTUBE_PROVIDER_ID,
-        stage: "instance-list",
-      });
-    }
-    const payload = await response.json();
-    // A 200 carrying the wrong shape (`{}`, an object, a string) is as useless
-    // as a failed fetch, and `selectReachableInstances` throwing on it outside
-    // this block would skip the stale-cache fallback entirely. Parse and select
-    // inside the try so malformed data takes the same recovery path.
-    if (!Array.isArray(payload)) {
-      throw new Error("Invidious instance list returned an unexpected shape");
-    }
-    instances = selectReachableInstances(
-      payload as readonly (readonly [string, InvidiousInstanceRecord])[],
-    );
-  } catch (error) {
-    // The registry is a directory, not the service. An expired directory still
-    // names instances that very likely still work, so a slow or broken registry
-    // should not take YouTube search down with it — same reasoning as the empty
-    // -payload path below, applied to the fetch itself.
-    if (options.signal?.aborted) throw error;
-    const stale = cachedInstances ? filterAvailableInstances(cachedInstances.instances, now) : [];
-    if (stale.length > 0) return stale;
-    throw error;
-  }
 
-  // An empty selection is not a healthy pool.
-  //
-  // A 200 that yields zero reachable API instances means the registry is
-  // degraded, or its shape changed, or everything it listed is unusable — none
-  // of which is knowledge worth holding for the full TTL. Caching it made
-  // `pickInvidiousInstance` throw "No healthy Invidious instances available"
-  // from a *cached* empty pool for 15 minutes, so YouTube stayed broken long
-  // after the registry recovered.
-  //
-  // Thrown requests and non-OK responses were already left uncached; this
-  // closes the third path to the same state.
-  if (instances.length === 0) {
-    // A previous non-empty pool is better evidence than an empty one. Keep it
-    // and let its own TTL expire rather than replacing it with nothing.
-    return cachedInstances ? filterAvailableInstances(cachedInstances.instances, now) : [];
-  }
-
-  cachedInstancesByUrl.set(instancesUrl, { fetchedAt: now, instances });
   return filterAvailableInstances(instances, now);
 }
 
