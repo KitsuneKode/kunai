@@ -21,6 +21,7 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
+import { isRelayRefusalError } from "@kunai/types";
 
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
@@ -559,17 +560,25 @@ export async function resolveMovyDirect(
                   retryable: false,
                   failureClass: "candidate-parse" as const,
                 }
-              : {
-                  // Raw transport errors (ENOTFOUND, ECONNRESET, fetch failed)
-                  // are offline-class evidence — non-retryable so the cycle's
-                  // offline early-exit can still trigger.
-                  code: "network-error" as const,
-                  retryable:
-                    !/enotfound|eai_again|enetunreach|econnrefused|econnreset|fetch failed|socket/i.test(
-                      message,
-                    ),
-                  failureClass: "candidate-network" as const,
-                };
+              : isRelayRefusalError(error)
+                ? {
+                    // The relay's own refusal is configuration evidence, not
+                    // lane evidence — blocked, and no retry buys anything.
+                    code: "blocked" as const,
+                    retryable: false,
+                    failureClass: "candidate-blocked" as const,
+                  }
+                : {
+                    // Raw transport errors (ENOTFOUND, ECONNRESET, fetch failed)
+                    // are offline-class evidence — non-retryable so the cycle's
+                    // offline early-exit can still trigger.
+                    code: "network-error" as const,
+                    retryable:
+                      !/enotfound|eai_again|enetunreach|econnrefused|econnreset|fetch failed|socket/i.test(
+                        message,
+                      ),
+                    failureClass: "candidate-network" as const,
+                  };
         failures.push({
           providerId: MOVY_PROVIDER_ID,
           code: failure.code,

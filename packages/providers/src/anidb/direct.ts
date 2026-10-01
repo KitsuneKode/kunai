@@ -15,7 +15,7 @@ import type {
   ProviderVariantCandidate,
   StreamCandidate,
 } from "@kunai/types";
-import { ProviderHttpError } from "@kunai/types";
+import { isRelayRefusalError, ProviderHttpError } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
@@ -433,8 +433,17 @@ export const anidbProviderModule: CoreProviderModule = {
     } catch (error) {
       // Same rule as listEpisodes: a browse outage is a retryable transport
       // failure, not an exhausted search — and a caller cancel is a decision
-      // that keeps propagating rather than a provider failure.
+      // that keeps propagating rather than a provider failure. A relay refusal
+      // is neither an outage nor a cancel: the user's own relay declined the
+      // request, so it is a terminal block.
       if (context.signal?.aborted === true) throw error;
+      if (isRelayRefusalError(error)) {
+        return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
+          code: "blocked",
+          message: error.message,
+          retryable: false,
+        });
+      }
       return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
         code: "provider-unavailable",
         message: `AniDB browse unreachable: ${error instanceof Error ? error.message : String(error)}`,
@@ -721,6 +730,9 @@ export const anidbProviderModule: CoreProviderModule = {
       // "retryable: !captchaBlocked" policy allmanga already states.
       const cloudflare = /cloudflare/i.test(message);
       const blocked = error instanceof AnidbBlockedError || cloudflare;
+      // A relay refusal is the user's own relay declining the request —
+      // config-level evidence like a block, not a transport fault to retry.
+      const refusal = isRelayRefusalError(error);
       // A status-bearing error carries its own verdict — a bare 403 whose body
       // never said "cloudflare" is still blocked, and a 429 is a rate limit,
       // not a retryable network blip (#458).
@@ -730,9 +742,9 @@ export const anidbProviderModule: CoreProviderModule = {
           : undefined;
       const failure: ProviderFailure = {
         providerId: ANIDB_PROVIDER_ID,
-        code: blocked ? "blocked" : (structured?.code ?? "network-error"),
+        code: blocked || refusal ? "blocked" : (structured?.code ?? "network-error"),
         message,
-        retryable: blocked ? false : (structured?.retryable ?? true),
+        retryable: blocked || refusal ? false : (structured?.retryable ?? true),
         at: context.now(),
       };
       failures.push(failure);

@@ -2,6 +2,7 @@ import { createDecipheriv } from "node:crypto";
 
 import { isOfflineNetworkFailure } from "@kunai/core";
 import type { ProviderEpisodeIdentity, ProviderRuntimeContext } from "@kunai/types";
+import { isRelayRefusalError } from "@kunai/types";
 
 import { createProviderHttpError, ProviderHttpError, providerFetch } from "../runtime/fetch";
 import {
@@ -839,6 +840,10 @@ export async function resolveEpisodeSources(opts: {
       rawText = await getRes.text();
     } catch (error) {
       if (error instanceof ProviderHttpError) throw error;
+      // A relay refusal is the relay's own voice — terminal and typed, so it
+      // must not be flattened into a retryable `network-error` ProviderHttpError
+      // and retried through the remaining attempts.
+      if (isRelayRefusalError(error)) throw error;
       const message = error instanceof Error ? error.message : "AllManga source request failed";
       const timedOut =
         error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");

@@ -24,6 +24,7 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
+import { isRelayRefusalError } from "@kunai/types";
 
 import { ProviderHttpError, providerJson } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
@@ -514,22 +515,32 @@ export const rivestreamProviderModule: CoreProviderModule = {
               });
               throw error;
             }
+            // A relay refusal is the user's own relay declining the request —
+            // config evidence, not a network verdict, so it is classified as a
+            // terminal block rather than a retryable transport failure.
+            const refusal = isRelayRefusalError(error);
             const providerError =
               error instanceof ProviderHttpError
                 ? error
                 : new ProviderHttpError({
                     providerId: RIVESTREAM_PROVIDER_ID,
                     stage: "source:start",
-                    code: isRivestreamAbortOrTimeoutError(error) ? "timeout" : "network-error",
+                    code: refusal
+                      ? "blocked"
+                      : isRivestreamAbortOrTimeoutError(error)
+                        ? "timeout"
+                        : "network-error",
                     message:
                       error instanceof Error ? error.message : `Internal server ${provider} failed`,
                     // Offline signatures (ENOTFOUND, EAI_AGAIN, …) are
                     // non-retryable so the cycle's network-offline early-exit
                     // fires; other transport errors stay transient.
-                    retryable: !isOfflineNetworkFailure({
-                      code: "network-error",
-                      message: error instanceof Error ? error.message : "",
-                    }),
+                    retryable: refusal
+                      ? false
+                      : !isOfflineNetworkFailure({
+                          code: "network-error",
+                          message: error instanceof Error ? error.message : "",
+                        }),
                     cause: error,
                   });
             failures.push({
@@ -691,9 +702,15 @@ export const rivestreamProviderModule: CoreProviderModule = {
 
       const failure: ProviderFailure = {
         providerId: RIVESTREAM_PROVIDER_ID,
-        code: error instanceof ProviderHttpError ? error.code : "network-error",
+        code:
+          error instanceof ProviderHttpError
+            ? error.code
+            : isRelayRefusalError(error)
+              ? "blocked"
+              : "network-error",
         message: error instanceof Error ? error.message : "Rivestream API failed",
-        retryable: error instanceof ProviderHttpError ? error.retryable : true,
+        retryable:
+          error instanceof ProviderHttpError ? error.retryable : !isRelayRefusalError(error),
         at: context.now(),
       };
       failures.push(failure);

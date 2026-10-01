@@ -24,7 +24,7 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import { ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
+import { isRelayRefusalError, ProviderHttpError, providerHttpErrorForStatus } from "@kunai/types";
 
 import {
   miruroInventorySourceId,
@@ -1953,6 +1953,9 @@ async function pipeCall(
   }
 
   const message = lastError instanceof Error ? lastError.message : "request failed";
+  // A relay refusal stays typed through the wrap — folding it into the generic
+  // "network request failed" message would let it read as offline evidence.
+  if (isRelayRefusalError(lastError)) throw lastError;
   // A status-bearing failure keeps its verdict through the wrap — otherwise a
   // persistent 429/5xx re-enters the engine as an untyped retryable error and
   // never reaches quarantine (#458).
@@ -2009,6 +2012,11 @@ type MiruroPipeFailure = {
 };
 
 function classifyMiruroPipeError<T>(error: T): MiruroPipeFailure {
+  // A relay refusal is the user's own relay declining the request — a terminal
+  // block, not a transport fault worth retrying.
+  if (isRelayRefusalError(error)) {
+    return { code: "blocked", message: error.message, retryable: false };
+  }
   if (error instanceof MiruroPipeDecodeError) {
     return {
       code: "parse-failed",

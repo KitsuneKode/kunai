@@ -19,6 +19,7 @@ import type {
   StreamCandidate,
   SubtitleCandidate,
 } from "@kunai/types";
+import { isRelayRefusalError } from "@kunai/types";
 
 import { ProviderHttpError } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
@@ -842,9 +843,12 @@ export const allmangaProviderModule: CoreProviderModule = {
 
       // A captcha gate is not a network fault and retrying cannot clear it —
       // reporting it as retryable network noise is what made this look like an
-      // empty episode rather than a blocked request.
+      // empty episode rather than a blocked request. A relay refusal is the
+      // same shape: the user's own relay declined the request, so it is a
+      // terminal block, not a transport fault to retry.
       const captchaBlocked = error instanceof AllMangaCaptchaError;
       const queryDrift = error instanceof AllMangaQueryDriftError;
+      const refusal = isRelayRefusalError(error);
       const failure: ProviderFailure =
         error instanceof ProviderHttpError
           ? {
@@ -856,9 +860,14 @@ export const allmangaProviderModule: CoreProviderModule = {
             }
           : {
               providerId: ALLANIME_PROVIDER_ID,
-              code: captchaBlocked ? "blocked" : queryDrift ? "parse-failed" : "network-error",
+              code:
+                captchaBlocked || refusal
+                  ? "blocked"
+                  : queryDrift
+                    ? "parse-failed"
+                    : "network-error",
               message: error instanceof Error ? error.message : "AllManga API failed",
-              retryable: !captchaBlocked && !queryDrift,
+              retryable: !captchaBlocked && !queryDrift && !refusal,
               at: context.now(),
             };
       failures.push(failure);

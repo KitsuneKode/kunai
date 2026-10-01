@@ -9,6 +9,7 @@ export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 
 export type * from "./provider-cycle";
 export * from "./provider-http-error";
+export * from "./relay-refusal-error";
 export * from "./share";
 
 export type ProviderId = string & { readonly __brand?: "ProviderId" };
@@ -614,21 +615,28 @@ export function isRelayedResponse(response: Response): boolean {
 
 export type RelayMethod = "GET" | "POST" | "HEAD";
 
-export type RelayErrorCode =
-  | "unknown-provider"
-  | "provider-not-relayable"
-  | "host-not-allowed"
-  | "protocol-not-allowed"
-  | "method-not-allowed"
-  | "headers-rejected"
-  | "body-too-large"
-  | "response-too-large"
-  | "redirect-not-allowed"
-  | "relay-not-configured"
-  | "unauthorized"
-  | "upstream-timeout"
-  | "upstream-error"
-  | "bad-request";
+/**
+ * Every code the relay handler can put in `RELAY_ERROR_CODE_HEADER`. The union
+ * is derived from this tuple so wire validation cannot drift from the contract.
+ */
+export const RELAY_ERROR_CODES = [
+  "unknown-provider",
+  "provider-not-relayable",
+  "host-not-allowed",
+  "protocol-not-allowed",
+  "method-not-allowed",
+  "headers-rejected",
+  "body-too-large",
+  "response-too-large",
+  "redirect-not-allowed",
+  "relay-not-configured",
+  "unauthorized",
+  "upstream-timeout",
+  "upstream-error",
+  "bad-request",
+] as const;
+
+export type RelayErrorCode = (typeof RELAY_ERROR_CODES)[number];
 
 export interface RelayProfile {
   readonly upstreamHosts: readonly string[];
@@ -656,18 +664,6 @@ export interface RelayRpcRequest {
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string;
 }
-
-/**
- * Set by the client-side relay fetch port on any response that came back
- * through a relay hop, overwriting whatever the upstream sent under this name.
- *
- * A relay answers some requests itself (`unknown-provider` from a deployment
- * that predates a provider, `unauthorized`, `host-not-allowed`) and proxies the
- * rest. The client cannot tell those apart from the wire, so an adapter must
- * not read an HTTP status that arrived over a relay hop as the upstream's own
- * verdict.
- */
-export const RELAY_HOP_HEADER = "X-Kunai-Relay-Hop";
 
 export interface RelayRpcErrorBody {
   readonly error: {

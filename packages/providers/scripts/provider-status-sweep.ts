@@ -14,16 +14,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { ProviderModule, ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
+import type { ProviderRuntimeContext } from "@kunai/types";
 
-import { allmangaProviderModule } from "../src/allmanga/direct";
-import { anidbProviderModule } from "../src/anidb/direct";
-import { hianimeProviderModule } from "../src/hianime/direct";
-import { miruroProviderModule } from "../src/miruro/direct";
-import { rivestreamProviderModule } from "../src/rivestream/direct";
-import { videasyProviderModule } from "../src/videasy/index";
-import { vidlinkProviderModule } from "../src/vidlink/direct";
-import { youtubeProviderModule } from "../src/youtube/index";
+import { SWEEP_PROBES, type SweepProbe } from "./provider-sweep-roster";
 
 const OUTPUT_PATH = path.resolve(
   import.meta.dir,
@@ -74,109 +67,10 @@ const resolveContext = (signal: AbortSignal): ProviderRuntimeContext => ({
   },
 });
 
-const MOVIE_INPUT: ProviderResolveInput = {
-  allowedRuntimes: ["direct-http"],
-  intent: "play",
-  mediaKind: "movie",
-  title: { id: "tmdb:550", kind: "movie", title: "Fight Club", tmdbId: "550" },
-  episode: { season: 1, episode: 1 },
-};
-
-const ONE_PIECE_ANILIST: ProviderResolveInput = {
-  allowedRuntimes: ["direct-http"],
-  intent: "play",
-  mediaKind: "anime",
-  title: { id: "anilist:21", kind: "anime", title: "One Piece", anilistId: "21" },
-  episode: { season: 1, episode: 1 },
-};
-
-const ALLMANGA_ONE_PIECE: ProviderResolveInput = {
-  allowedRuntimes: ["direct-http"],
-  intent: "play",
-  mediaKind: "anime",
-  title: { id: "allanime:ReooPAxPMsHM4KPMY", kind: "anime", title: "One Piece" },
-  episode: { season: 1, episode: 1 },
-};
-
-const ANIDB_ONE_PIECE: ProviderResolveInput = {
-  allowedRuntimes: ["direct-http"],
-  intent: "play",
-  mediaKind: "anime",
-  title: { id: "one-piece-69", kind: "anime", title: "One Piece" },
-  episode: { season: 1, episode: 1 },
-};
-
-const YOUTUBE_INPUT: ProviderResolveInput = {
-  allowedRuntimes: ["direct-http"],
-  intent: "play",
-  mediaKind: "video",
-  title: {
-    id: "youtube:dQw4w9WgXcQ",
-    kind: "video",
-    title: "Rick Astley - Never Gonna Give You Up",
-  },
-  episode: { season: 1, episode: 1 },
-};
-
-interface ProbeSpec {
-  readonly id: string;
-  readonly module: Pick<ProviderModule, "resolve">;
-  readonly frontDoor: string;
-  readonly input: ProviderResolveInput;
-}
-
-const PROBES: readonly ProbeSpec[] = [
-  {
-    id: "videasy",
-    module: videasyProviderModule,
-    frontDoor: "https://api.videasy.to",
-    input: MOVIE_INPUT,
-  },
-  {
-    id: "vidlink",
-    module: vidlinkProviderModule,
-    frontDoor: "https://vidlink.pro",
-    input: MOVIE_INPUT,
-  },
-  {
-    id: "rivestream",
-    module: rivestreamProviderModule,
-    frontDoor: "https://www.rivestream.app",
-    input: MOVIE_INPUT,
-  },
-  {
-    // The provider id is "allanime" (AllAnime upstream); "allmanga" is the
-    // module's internal directory name, not the id rows carry.
-    id: "allanime",
-    module: allmangaProviderModule,
-    frontDoor: "https://api.allanime.day",
-    input: ALLMANGA_ONE_PIECE,
-  },
-  {
-    id: "anidb",
-    module: anidbProviderModule,
-    frontDoor: "https://anidb.app",
-    input: ANIDB_ONE_PIECE,
-  },
-  {
-    id: "hianime",
-    module: hianimeProviderModule,
-    frontDoor: "https://hianime.at",
-    input: ONE_PIECE_ANILIST,
-  },
-  {
-    id: "miruro",
-    module: miruroProviderModule,
-    frontDoor: "https://www.miruro.bz",
-    input: ONE_PIECE_ANILIST,
-  },
-  {
-    id: "youtube",
-    module: youtubeProviderModule,
-    frontDoor: "https://www.youtube.com",
-    input: YOUTUBE_INPUT,
-  },
-];
+// The probe set comes from the shared production roster — see
+// `provider-sweep-roster.ts`. Adding a provider to production without a
+// fixture there fails the sweep-coverage test instead of silently omitting it.
+const PROBES = SWEEP_PROBES;
 
 async function probeFrontDoor(url: string): Promise<number | null> {
   try {
@@ -224,7 +118,7 @@ function classify(
   return { status: "degraded", note: `resolve status ${resolveStatus}` };
 }
 
-async function probe(spec: ProbeSpec): Promise<ProviderRow> {
+async function probe(spec: SweepProbe): Promise<ProviderRow> {
   const upstreamHttp = await probeFrontDoor(spec.frontDoor);
   const started = Date.now();
   const signal = AbortSignal.timeout(RESOLVE_TIMEOUT_MS);

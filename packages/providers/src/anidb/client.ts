@@ -2,7 +2,7 @@ import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "
 import {
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
-  isRelayedResponse,
+  isRelayRefusalError,
   ProviderHttpError,
 } from "@kunai/types";
 
@@ -253,25 +253,26 @@ export async function anidbFetchText(
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
-      } else if (
-        !isFingerprintRetryableStatus(response.status) &&
-        !(response.status === 404 && isRelayedResponse(response))
-      ) {
+      } else if (!isFingerprintRetryableStatus(response.status)) {
         // Falling through to curl exists so a Cloudflare challenge gets a
         // second chance with a better TLS fingerprint. An upstream outage or
         // a genuine 404 is not a fingerprint problem, so it is answered here.
         //
-        // A 404 that arrived over a relay hop is a different fact. A relay
-        // deployed before this provider existed answers `unknown-provider`
-        // with a 404 of its own, and reading that as anidb.app's verdict marks
-        // the catalogue permanently missing and caches the miss — which took
-        // the whole anime lane down behind a stale relay while the same id
-        // resolved fine over curl. Let curl settle it: a genuine 404 still
-        // throws below, one request later.
+        // Relay-generated refusals are settled in the fetch port: they become
+        // a plain direct request when `fallbackToDirect` is on, and a thrown
+        // RelayRefusalError when the user pinned relay-only. A marked 404
+        // reaching this point is therefore the upstream's own verdict — final
+        // rather than curl-retryable — because a refusal is thrown before it
+        // can be read as one.
         throw new AnidbHttpStatusError(response.status);
       }
     } catch (error) {
       if (error instanceof AnidbHttpStatusError) throw error;
+      // A relay refusal is a typed terminal error, not a transport hiccup —
+      // falling through to curl would silently bypass the relay the user
+      // pinned, and returning it as a response would let its status read as
+      // an upstream verdict.
+      if (isRelayRefusalError(error)) throw error;
       // A cancelled caller is not a fingerprint problem either. Without this
       // an abort during the context fetch is swallowed and the fallback spends
       // a whole curl request on work nobody is waiting for. Checked against
@@ -674,7 +675,9 @@ export async function fetchAnidbEpisodeCatalog(
   } catch (error) {
     // A reindexed slug (Solo Leveling 19413 → 4883) 404s permanently. Record
     // it as a miss so the caller can re-search, and cache it briefly so a dead
-    // id is not re-requested once per call site on the same resolve.
+    // id is not re-requested once per call site on the same resolve. A relay
+    // refusal is deliberately not an AnidbHttpStatusError — it is the relay's
+    // voice, not upstream's, and must never enter the missing-catalogue cache.
     if (error instanceof AnidbHttpStatusError && error.status === 404) {
       episodeCache.set(showId, ANIDB_MISSING_CATALOG, ANIDB_MISSING_CATALOG_TTL_MS);
       return ANIDB_MISSING_CATALOG;
@@ -1025,16 +1028,23 @@ async function settleAnidbLanguage(options: {
     if (options.callerSignal?.aborted) throw error;
     // A typed HTTP status (a missing playlist 404s permanently) keeps its own
     // classification — flattening it to retryable network-error would spend a
-    // second resolve budget on a dead id.
+    // second resolve budget on a dead id. A relay refusal is the user's own
+    // relay declining the request: recorded as a terminal block, never as a
+    // transport fault worth retrying.
     const statusError = error instanceof AnidbHttpStatusError ? error : undefined;
+    const refusal = isRelayRefusalError(error);
     return {
       mode: options.mode,
       status: "failed",
       links: [],
       failure: {
-        code: statusError ? httpStatusToResolveErrorCode(statusError.status) : "network-error",
+        code: refusal
+          ? "blocked"
+          : statusError
+            ? httpStatusToResolveErrorCode(statusError.status)
+            : "network-error",
         message: error instanceof Error ? error.message : `AniDB ${options.mode} source failed`,
-        retryable: statusError ? httpStatusIsRetryable(statusError.status) : true,
+        retryable: refusal ? false : statusError ? httpStatusIsRetryable(statusError.status) : true,
       },
     };
   }

@@ -10,6 +10,7 @@ export default function handler(_req: unknown, res: ServerResponse): void {
       ok: true,
       service: "kunai-relay",
       providers: relayRegistry.providers.length,
+      providerIds: relayRegistry.providers.map((entry) => entry.providerId).sort(),
     }),
   );
 }
