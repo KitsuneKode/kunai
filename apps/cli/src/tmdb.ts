@@ -7,7 +7,12 @@
 // =============================================================================
 
 import { cleanEpisodeSynopsis, isPlaceholderEpisodeName } from "@/services/catalog/episode-display";
-import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
+import type { SeasonLoadFailure } from "@/services/catalog/season-load-failure";
+import {
+  classifyTmdbFetchFailure,
+  fetchTmdbJsonCached,
+  isTmdbClientError,
+} from "@/services/catalog/tmdb-proxy";
 import {
   filterPlayableEpisodes,
   isDefinitelyFutureAirDate,
@@ -128,23 +133,31 @@ async function enrichEpisodesWithOriginalLanguage(
   }
 }
 
-async function fetchEpisodesRaw(tmdbId: string, season: number): Promise<EpisodeInfo[] | null> {
+/**
+ * Throwing variant of {@link fetchEpisodesRaw}: callers that must tell a dead
+ * connection apart from an answered-with-nothing read this, then classify.
+ */
+async function fetchEpisodesRawOrThrow(tmdbId: string, season: number): Promise<EpisodeInfo[]> {
   const key = `${tmdbId}:${season}`;
   const cachedEpisodes = epCache.get(key);
   if (cachedEpisodes) return cachedEpisodes;
 
-  try {
-    const data = await fetchTmdbJsonCached(`/tv/${tmdbId}/season/${season}?language=en-US`);
-    const payload = readRecord(data);
-    const episodes = Array.isArray(payload.episodes) ? payload.episodes.map(readRecord) : [];
-    const eps = await enrichEpisodesWithOriginalLanguage(
-      tmdbId,
-      season,
-      mapTmdbEpisodeRows(episodes),
-    );
+  const data = await fetchTmdbJsonCached(`/tv/${tmdbId}/season/${season}?language=en-US`);
+  const payload = readRecord(data);
+  const episodes = Array.isArray(payload.episodes) ? payload.episodes.map(readRecord) : [];
+  const eps = await enrichEpisodesWithOriginalLanguage(
+    tmdbId,
+    season,
+    mapTmdbEpisodeRows(episodes),
+  );
 
-    epCache.set(key, eps);
-    return eps;
+  epCache.set(key, eps);
+  return eps;
+}
+
+async function fetchEpisodesRaw(tmdbId: string, season: number): Promise<EpisodeInfo[] | null> {
+  try {
+    return await fetchEpisodesRawOrThrow(tmdbId, season);
   } catch {
     return null;
   }
@@ -168,7 +181,13 @@ async function resolvePlayableSeasonSummaries(
 
   const verified = await Promise.all(
     needsVerification.map(async (summary): Promise<SeasonSummary | null> => {
-      const episodes = await fetchEpisodesRaw(tmdbId, summary.number);
+      // A definitive 4xx answer means the season is not listed — drop it.
+      // Anything else means verification could not run, and quietly dropping
+      // the season would report "no seasons" when the catalog simply errored.
+      const episodes = await fetchEpisodesRawOrThrow(tmdbId, summary.number).catch((error) => {
+        if (isTmdbClientError(error)) return null;
+        throw error;
+      });
       return seasonHasPlayableEpisodes(episodes ?? []) ? stripSeasonCandidate(summary) : null;
     }),
   );
@@ -188,32 +207,37 @@ function stripSeasonCandidate(summary: SeasonSummaryCandidate): SeasonSummary {
   };
 }
 
-// Returns season metadata for a series (excludes specials and unreleased-only seasons).
-// Returns null if both the proxy and direct TMDB API are unreachable.
-export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummary[] | null> {
+/** Throwing variant of {@link fetchSeasonSummaries} — see fetchSeriesData. */
+async function fetchSeasonSummariesOrThrow(tmdbId: string): Promise<SeasonSummary[]> {
   const key = tmdbId;
   const cachedSeasons = seasonCache.get(key);
   if (cachedSeasons) return cachedSeasons;
 
+  const data = await fetchTmdbJsonCached(`/tv/${tmdbId}`);
+
+  const payload = readRecord(data);
+  const seasons = Array.isArray(payload.seasons) ? payload.seasons.map(readRecord) : [];
+
+  const candidates: SeasonSummaryCandidate[] = seasons
+    .filter((s) => Number(s.season_number) > 0 && Number(s.episode_count) > 0)
+    .map((s) => ({
+      number: Number(s.season_number),
+      name: readString(s.name) || `Season ${Number(s.season_number)}`,
+      posterPath: readString(s.poster_path) || undefined,
+      airDate: readString(s.air_date),
+    }))
+    .sort((a, b) => a.number - b.number);
+
+  const summaries = await resolvePlayableSeasonSummaries(tmdbId, candidates);
+  seasonCache.set(key, summaries);
+  return summaries;
+}
+
+// Returns season metadata for a series (excludes specials and unreleased-only seasons).
+// Returns null if both the proxy and direct TMDB API are unreachable.
+export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummary[] | null> {
   try {
-    const data = await fetchTmdbJsonCached(`/tv/${tmdbId}`);
-
-    const payload = readRecord(data);
-    const seasons = Array.isArray(payload.seasons) ? payload.seasons.map(readRecord) : [];
-
-    const candidates: SeasonSummaryCandidate[] = seasons
-      .filter((s) => Number(s.season_number) > 0 && Number(s.episode_count) > 0)
-      .map((s) => ({
-        number: Number(s.season_number),
-        name: readString(s.name) || `Season ${Number(s.season_number)}`,
-        posterPath: readString(s.poster_path) || undefined,
-        airDate: readString(s.air_date),
-      }))
-      .sort((a, b) => a.number - b.number);
-
-    const summaries = await resolvePlayableSeasonSummaries(tmdbId, candidates);
-    seasonCache.set(key, summaries);
-    return summaries;
+    return await fetchSeasonSummariesOrThrow(tmdbId);
   } catch {
     return null;
   }
@@ -234,6 +258,15 @@ export async function fetchEpisodes(tmdbId: string, season: number): Promise<Epi
   return filterPlayableEpisodes(raw);
 }
 
+/**
+ * Throwing variant of {@link fetchEpisodes}: `[]` is an answered season with
+ * nothing playable yet, while a rejection carries the real failure kind for
+ * {@link classifyTmdbFetchFailure}.
+ */
+export async function fetchEpisodesOrThrow(tmdbId: string, season: number): Promise<EpisodeInfo[]> {
+  return filterPlayableEpisodes(await fetchEpisodesRawOrThrow(tmdbId, season));
+}
+
 /** All TMDB episode rows for a season, including unreleased placeholders. */
 export async function fetchEpisodesUnfiltered(
   tmdbId: string,
@@ -242,22 +275,51 @@ export async function fetchEpisodesUnfiltered(
   return fetchEpisodesRaw(tmdbId, season);
 }
 
+/**
+ * Result of a season-list + initial-episode read. `failure`/`episodesFailure`
+ * name why the corresponding field is `null`, so callers stop guessing "offline"
+ * for a 404, an upstream 500, or an unreadable body alike.
+ */
+export type SeriesDataResult = {
+  readonly seasons: number[] | null;
+  readonly episodes: EpisodeInfo[] | null;
+  /** Why `seasons` is null — absent on success. */
+  readonly failure?: SeasonLoadFailure;
+  /** Why `episodes` is null while seasons loaded — absent on success. */
+  readonly episodesFailure?: SeasonLoadFailure;
+};
+
 // Fetches playable season list + episodes for the target season (one season fetch).
-// Returns null fields when TMDB is unreachable.
+// `seasons`/`episodes` stay null on failure, now with the failure kind attached.
 export async function fetchSeriesData(
   tmdbId: string,
   preferredSeason?: number,
-): Promise<{ seasons: number[] | null; episodes: EpisodeInfo[] | null }> {
-  const summaries = await fetchSeasonSummaries(tmdbId);
-  if (!summaries || summaries.length === 0) return { seasons: null, episodes: null };
+): Promise<SeriesDataResult> {
+  let summaries: SeasonSummary[];
+  try {
+    summaries = await fetchSeasonSummariesOrThrow(tmdbId);
+  } catch (error) {
+    return { seasons: null, episodes: null, failure: classifyTmdbFetchFailure(error) };
+  }
+  if (summaries.length === 0) {
+    // Answered fine — the catalog simply lists no playable seasons here.
+    return { seasons: null, episodes: null, failure: "empty" };
+  }
 
   const seasons = summaries.map((season) => season.number);
   const targetSeason =
     preferredSeason !== undefined && seasons.includes(preferredSeason)
       ? preferredSeason
       : (seasons[0] ?? 1);
-  const episodes = await fetchEpisodes(tmdbId, targetSeason);
-  return { seasons, episodes };
+  try {
+    return { seasons, episodes: await fetchEpisodesOrThrow(tmdbId, targetSeason) };
+  } catch (error) {
+    return {
+      seasons,
+      episodes: null,
+      episodesFailure: classifyTmdbFetchFailure(error),
+    };
+  }
 }
 
 /** Read a cached season episode row without network (after fetchEpisodes warmed the cache). */

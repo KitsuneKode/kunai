@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { loadCalendarResults } from "@/app/search/calendar-results";
+import { describeCalendarLoadFailure, loadCalendarResults } from "@/app/search/calendar-results";
 
 function withCalendarServices(input: {
   readonly stateManager: { readonly getState: () => { readonly mode: "anime" | "series" } };
@@ -632,4 +632,27 @@ test("treats three fulfilled empty source responses as a real empty week", async
   );
   expect(bundle.results).toEqual([]);
   expect(bundle.subtitle).toBe("No releases found for the next week");
+});
+
+// "Could not reach" is only honest when the failure is transport on every
+// source — a source answering with an error is a different fix.
+test("describeCalendarLoadFailure blames the network only when every reason is transport", () => {
+  const transport = new AggregateError(
+    [new Error("getaddrinfo ENOTFOUND api.example"), new Error("fetch timed out")],
+    "Calendar sources unavailable",
+  );
+  expect(describeCalendarLoadFailure(transport)).toContain("Could not reach");
+
+  const answered = new AggregateError(
+    [new Error("getaddrinfo ENOTFOUND api.example"), new Error("provider returned HTTP 500")],
+    "Calendar sources unavailable",
+  );
+  expect(describeCalendarLoadFailure(answered)).toContain("not on the network");
+  expect(describeCalendarLoadFailure(answered)).not.toContain("Could not reach");
+
+  // A non-Aggregate error and a bare reason both still get honest copy.
+  expect(describeCalendarLoadFailure(new Error("provider exploded"))).toContain(
+    "not on the network",
+  );
+  expect(describeCalendarLoadFailure("nope")).toContain("not on the network");
 });

@@ -25,6 +25,89 @@ describe("episode selection outcome", () => {
 
     expect(outcome.kind).toBe("unavailable");
     expect(outcome.kind === "unavailable" && outcome.reason.length).toBeGreaterThan(0);
+    // No failure kind attached — the honest fallback names no cause.
+    expect(outcome.kind === "unavailable" && outcome.reason).toContain("unexpected error");
+  });
+
+  test("names the transport cause instead of guessing 'check your connection'", async () => {
+    const outcome = await chooseEpisodeFromMetadata({
+      currentId: "42",
+      isAnime: false,
+      currentSeason: 1,
+      currentEpisode: 1,
+      loaders: {
+        loadSeasons: async () => ({ seasons: null, episodes: null, failure: "unreachable" }),
+      },
+    });
+
+    expect(outcome.kind).toBe("unavailable");
+    expect(outcome.kind === "unavailable" && outcome.reason).toContain(
+      "Could not reach the episode catalog",
+    );
+  });
+
+  test("a 404 is the catalog answering, not an outage", async () => {
+    const outcome = await chooseEpisodeFromMetadata({
+      currentId: "42",
+      isAnime: false,
+      currentSeason: 1,
+      currentEpisode: 1,
+      loaders: {
+        loadSeasons: async () => ({ seasons: null, episodes: null, failure: "not-found" }),
+      },
+    });
+
+    expect(outcome.kind).toBe("unavailable");
+    expect(outcome.kind === "unavailable" && outcome.reason).toContain("no record of this title");
+  });
+
+  test("a successful read with no seasons says so — not 'check your connection'", async () => {
+    const outcome = await chooseEpisodeFromMetadata({
+      currentId: "42",
+      isAnime: false,
+      currentSeason: 1,
+      currentEpisode: 1,
+      loaders: {
+        loadSeasons: async () => ({ seasons: null, episodes: null, failure: "empty" }),
+      },
+    });
+
+    expect(outcome.kind).toBe("unavailable");
+    expect(outcome.kind === "unavailable" && outcome.reason).toContain("lists no playable seasons");
+  });
+
+  test("seasons loaded but the episode read failed — a failure, not a cancel", async () => {
+    const outcome = await chooseEpisodeFromMetadata({
+      currentId: "42",
+      isAnime: false,
+      currentSeason: 1,
+      currentEpisode: 1,
+      loaders: {
+        loadSeasons: async () => ({
+          seasons: [1],
+          episodes: null,
+          episodesFailure: "upstream",
+        }),
+      },
+    });
+
+    expect(outcome.kind).toBe("unavailable");
+    expect(outcome.kind === "unavailable" && outcome.reason).toContain("answered with an error");
+  });
+
+  test("a lone season with no released episodes is availability, not a silent Esc", async () => {
+    const outcome = await chooseEpisodeFromMetadata({
+      currentId: "42",
+      isAnime: false,
+      currentSeason: 1,
+      currentEpisode: 1,
+      loaders: {
+        loadSeasons: async () => ({ seasons: [1], episodes: [] }),
+      },
+    });
+
+    expect(outcome.kind).toBe("unavailable");
+    expect(outcome.kind === "unavailable" && outcome.reason).toContain("no released episodes");
   });
 });
 

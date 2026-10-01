@@ -1,5 +1,5 @@
 import { existsSync, constants as fsConstants } from "node:fs";
-import { access, readdir, readlink } from "node:fs/promises";
+import { access, readdir, readlink, stat } from "node:fs/promises";
 import { dirname as nodeDirname, win32 } from "node:path";
 
 const { W_OK } = fsConstants;
@@ -84,6 +84,12 @@ export interface DoctorStorageInfo {
   readonly path: string;
   readonly exists: boolean;
   readonly writable: boolean;
+  /**
+   * A non-directory file owns the target path or one of its ancestor
+   * segments, so `mkdir` can never succeed no matter how writable the nearest
+   * real directory is — remediation is moving the file, not permissions.
+   */
+  readonly blockedByFile?: boolean;
 }
 
 export interface DoctorReport {
@@ -142,18 +148,51 @@ async function probeStorageWritability(
 
   const results: DoctorStorageInfo[] = [];
   for (const target of targets) {
-    const exists = existsSync(target.path);
-    const probed = exists ? target.path : nodeDirname(target.path);
-    let writable = false;
-    try {
-      await access(probed, W_OK);
-      writable = true;
-    } catch {
-      writable = false;
-    }
-    results.push({ label: target.label, path: target.path, exists, writable });
+    const probe = await probeWritableTarget(target.path);
+    results.push({
+      label: target.label,
+      path: target.path,
+      exists: existsSync(target.path),
+      writable: probe.writable,
+      blockedByFile: probe.blockedByFile,
+    });
   }
   return results;
+}
+
+/**
+ * `access(W_OK)` on the path itself when it exists; otherwise on the nearest
+ * existing ancestor, which is where `mkdir` will actually need write
+ * permission. The previous version probed only the immediate parent, so a
+ * path missing by more than one segment (or whose parent was missing) kept
+ * reporting "parent is not writable" for directories Kunai would create just
+ * fine.
+ *
+ * The climb ends at a non-directory — a file squatting on the name makes
+ * creation fail with ENOTDIR regardless of permissions above it — or at the
+ * filesystem root, which exists on every platform we ship for.
+ */
+async function probeWritableTarget(
+  targetPath: string,
+): Promise<{ writable: boolean; blockedByFile: boolean }> {
+  let probe = targetPath;
+  for (;;) {
+    if (existsSync(probe)) {
+      const stats = await stat(probe).catch(() => null);
+      if (stats && !stats.isDirectory()) {
+        return { writable: false, blockedByFile: true };
+      }
+      try {
+        await access(probe, W_OK);
+        return { writable: true, blockedByFile: false };
+      } catch {
+        return { writable: false, blockedByFile: false };
+      }
+    }
+    const parent = nodeDirname(probe);
+    if (parent === probe) return { writable: false, blockedByFile: false };
+    probe = parent;
+  }
 }
 
 function pathsMatch(left: string, right: string, platform: NodeJS.Platform): boolean {
@@ -433,12 +472,17 @@ function collectFindings(input: {
       code: `storage-not-writable-${store.label}`,
       message: `Kunai cannot write to its ${store.label} directory (${store.path}).`,
       remediation: [
-        store.exists
-          ? `Check ownership and permissions: ${store.path}`
-          : `Kunai cannot create ${store.path} — its parent directory is not writable.`,
+        store.blockedByFile
+          ? `A file (not a directory) already owns part of ${store.path} — move it aside.`
+          : store.exists
+            ? `Check ownership and permissions: ${store.path}`
+            : `Kunai cannot create ${store.path} — a directory above it is not writable.`,
         // Running once under sudo is the usual cause, and it leaves a
         // root-owned directory that every later non-root run fails against.
-        "If you ever ran kunai with sudo, the directory may now be root-owned.",
+        // A file squatting on the path is fixed by moving it, not by chown.
+        ...(store.blockedByFile
+          ? []
+          : ["If you ever ran kunai with sudo, the directory may now be root-owned."]),
       ],
     });
   }

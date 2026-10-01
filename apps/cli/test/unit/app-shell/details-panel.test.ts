@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildBrowseDetailsPanel,
   buildDetailsPanelDataFromBrowseOption,
+  buildDetailsSheetLines,
   resolveBrowseDetailsSecondary,
 } from "@/app-shell/details-panel";
 import type { BrowseShellOption } from "@/app-shell/types";
@@ -161,5 +162,30 @@ describe("buildBrowseDetailsPanel", () => {
 
     expect(panel.primary.type).toBe("movie");
     expect(panel.primary.year).toBe("2024");
+  });
+});
+
+describe("buildDetailsSheetLines", () => {
+  test("emits body rows only — the sheet header owns title and synopsis", () => {
+    const option: BrowseShellOption<string> = {
+      value: "demo",
+      label: "Demon Slayer",
+      previewTitle: "Demon Slayer",
+      previewBody: "A young swordsman joins the demon slayer corps.",
+      previewMeta: ["Series", "2019"],
+      previewFacts: [{ label: "Watchlist", detail: "Not saved · /bookmark to add" }],
+    };
+
+    const lines = buildDetailsSheetLines(option, null);
+    const labels = lines.map((line) => line.label);
+
+    // Rendered by the component header; keeping them in `lines` would double them.
+    expect(labels).not.toContain("Title");
+    expect(labels).not.toContain("At a glance");
+    expect(labels).not.toContain("Overview");
+    expect(labels).not.toContain("─── Synopsis");
+    // …while the real body still starts at the first section.
+    expect(labels[0]).toBe("─── Management");
+    expect(labels).toContain("Watchlist");
   });
 });

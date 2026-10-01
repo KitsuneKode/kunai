@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -337,7 +337,7 @@ describe("storage writability", () => {
     expect(finding?.remediation.join(" ")).toContain("sudo");
   });
 
-  test("distinguishes an unwritable parent from an unwritable directory", async () => {
+  test("distinguishes an unwritable ancestor from an unwritable directory", async () => {
     const report = await reportWithStorage([
       { label: "config", path: "/readonly/kunai", exists: false, writable: false },
       { label: "data", path: "/var/kunai", exists: true, writable: true },
@@ -345,7 +345,19 @@ describe("storage writability", () => {
     ]);
 
     const finding = report.findings.find((c) => c.code === "storage-not-writable-config");
-    expect(finding?.remediation[0]).toContain("parent directory is not writable");
+    expect(finding?.remediation[0]).toContain("a directory above it is not writable");
+  });
+
+  test("tells the user when a file blocks the path instead of blaming permissions", async () => {
+    const report = await reportWithStorage([
+      { label: "config", path: "/x/kunai", exists: false, writable: false, blockedByFile: true },
+      { label: "data", path: "/var/kunai", exists: true, writable: true },
+      { label: "cache", path: "/var/cache/kunai", exists: true, writable: true },
+    ]);
+
+    const finding = report.findings.find((c) => c.code === "storage-not-writable-config");
+    expect(finding?.remediation[0]).toContain("file");
+    expect(finding?.remediation[0]).toContain("move it aside");
   });
 
   test("stays silent when every directory is writable", async () => {
@@ -418,5 +430,85 @@ describe("storage writability", () => {
       probeCapabilities: async () => emptyCapabilities(),
     });
     expect(report.storage.map((s) => s.label).sort()).toEqual(["cache", "config", "data"]);
+  });
+});
+
+// Real-filesystem probe coverage: no probeStorage injection, so the ancestor
+// walk itself is what gets asserted.
+describe("storage probe against a real filesystem", () => {
+  async function probeLayoutWith(configDir: string) {
+    const root = await mkdtemp(join(tmpdir(), "kunai-doctor-probe-"));
+    made.push(root);
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data-ok"),
+      cacheDir: join(root, "cache-ok"),
+      configDir,
+      launcherPath: join(root, "bin", LAUNCHER_NAME),
+      platform: process.platform === "win32" ? "win32" : "linux",
+    });
+    await mkdir(join(root, "data-ok"), { recursive: true });
+    await mkdir(join(root, "cache-ok"), { recursive: true });
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: "",
+      platform: process.platform === "win32" ? "win32" : "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () => emptyCapabilities(),
+    });
+    return report.storage.find((s) => s.label === "config");
+  }
+
+  test("a missing directory under a writable parent is creatable, not broken", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-doctor-missing-"));
+    made.push(root);
+    const config = await probeLayoutWith(join(root, "does-not-exist-yet"));
+
+    expect(config?.exists).toBe(false);
+    expect(config?.writable).toBe(true);
+  });
+
+  test("walks past several missing ancestors to the writable root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-doctor-nested-"));
+    made.push(root);
+    const config = await probeLayoutWith(join(root, "a", "b", "c", "kunai"));
+
+    expect(config?.exists).toBe(false);
+    expect(config?.writable).toBe(true);
+  });
+
+  test("a file occupying an ancestor segment is reported as blocked, not unwritable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-doctor-fileblock-"));
+    made.push(root);
+    await writeFile(join(root, "squatter"), "not a directory");
+    const config = await probeLayoutWith(join(root, "squatter", "kunai"));
+
+    expect(config?.exists).toBe(false);
+    expect(config?.writable).toBe(false);
+    expect(config?.blockedByFile).toBe(true);
+  });
+
+  // chmod 0555 only makes a directory read-only for the current user — root
+  // and some CI sandboxes still write through it, so the assertion keys off
+  // the uid rather than assuming the chmod took.
+  test("a read-only ancestor reports not writable when permissions apply", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-doctor-readonly-"));
+    made.push(root);
+    const locked = join(root, "locked");
+    await mkdir(locked, { recursive: true });
+    await chmod(locked, 0o555);
+    const config = await probeLayoutWith(join(locked, "kunai"));
+
+    if (process.platform === "win32") {
+      // Windows ACLs don't honor POSIX mode bits — chmod 0555 does not revoke
+      // write access, so the probe legitimately reports writable.
+      expect(config?.writable).toBe(true);
+    } else if (process.getuid && process.getuid() === 0) {
+      // Root ignores permission bits — the probe is allowed to say writable.
+      expect(config?.writable).toBe(true);
+    } else {
+      expect(config?.writable).toBe(false);
+    }
   });
 });
