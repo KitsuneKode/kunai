@@ -93,13 +93,43 @@ done
 
 # A checksum file without its signature is a failed install. The key exists
 # only for this fixture; the private half is removed before the tree is served.
-sign_key="$(mktemp)"
-openssl genpkey -algorithm ED25519 -out "$sign_key"
-openssl pkey -in "$sign_key" -pubout -out "$OUT/ed25519-public.pem"
-for sums in SHA256SUMS SHA256SUMS.archives; do
-	openssl pkeyutl -sign -inkey "$sign_key" -rawin -in "$DL_DIR/$sums" -out "$DL_DIR/$sums.sig"
-done
-rm -f "$sign_key"
+# macOS `openssl` is LibreSSL and cannot sign Ed25519. Prefer OpenSSL 3,
+# including the Homebrew prefix that is not on PATH, then Node.
+sign_release_sums() {
+	local dl_dir="$1"
+	local pub_out="$2"
+	local candidate openssl_bin=""
+	for candidate in /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl openssl; do
+		if [[ "$candidate" == openssl ]]; then
+			command -v openssl >/dev/null 2>&1 || continue
+		elif [[ ! -x "$candidate" ]]; then
+			continue
+		fi
+		if "$candidate" version 2>/dev/null | grep -q '^OpenSSL '; then
+			openssl_bin="$candidate"
+			break
+		fi
+	done
+	if [[ -n "$openssl_bin" ]]; then
+		local sign_key sums
+		sign_key="$(mktemp)"
+		"$openssl_bin" genpkey -algorithm ED25519 -out "$sign_key"
+		"$openssl_bin" pkey -in "$sign_key" -pubout -out "$pub_out"
+		for sums in SHA256SUMS SHA256SUMS.archives; do
+			"$openssl_bin" pkeyutl -sign -inkey "$sign_key" -rawin -in "$dl_dir/$sums" -out "$dl_dir/$sums.sig"
+		done
+		rm -f "$sign_key"
+		return 0
+	fi
+	if ! command -v node >/dev/null 2>&1; then
+		echo "Ed25519 fixture signing needs OpenSSL 3 or Node. macOS LibreSSL cannot sign it." >&2
+		return 1
+	fi
+	node -e 'const crypto=require("crypto");const fs=require("fs");const {publicKey,privateKey}=crypto.generateKeyPairSync("ed25519");fs.writeFileSync(process.argv[1],publicKey.export({type:"spki",format:"pem"}));for (const sums of process.argv.slice(2)) fs.writeFileSync(sums+".sig",crypto.sign(null,fs.readFileSync(sums),privateKey));' \
+		"$pub_out" "$dl_dir/SHA256SUMS" "$dl_dir/SHA256SUMS.archives"
+}
+
+sign_release_sums "$DL_DIR" "$OUT/ed25519-public.pem"
 
 cp "$DL_DIR"/* "$PINNED_DIR/"
 echo "fake release v$VERSION -> $OUT"

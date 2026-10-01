@@ -561,9 +561,18 @@ jobs:
           bash test/install/make-fake-release.sh 9.9.9 "$rel" "$unsigned"
 
           home="$(mktemp -d)"
-          env -i HOME="$home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" SHELL=/bin/zsh \
+          # The login-shell PATH stays minimal so ~/.local/bin has to be added
+          # by the installer. Node stays available because macOS LibreSSL cannot
+          # verify the fixture signature, and the fixture key is not the
+          # embedded release key.
+          verify_path="/usr/bin:/bin:/usr/sbin:/sbin"
+          if command -v node >/dev/null 2>&1; then
+            verify_path="$verify_path:$(dirname "$(command -v node)")"
+          fi
+          env -i HOME="$home" PATH="$verify_path" SHELL=/bin/zsh \
             KUNAI_DL_BASE="file://$rel/releases" \
             KUNAI_RELEASES_API="file://$rel/releases/latest" \
+            KUNAI_RELEASE_ED25519_PUBLIC_KEY="$(cat "$rel/ed25519-public.pem")" \
             bash install.sh --yes --skip-deps --version 9.9.9
 
           # A fresh login shell, with nothing inherited: the only question a user
