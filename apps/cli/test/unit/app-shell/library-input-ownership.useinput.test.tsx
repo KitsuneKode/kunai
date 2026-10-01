@@ -454,7 +454,7 @@ describe("library input ownership", () => {
     try {
       await waitForFrame(handle, "Dune");
       handle.stdin.enqueue("x");
-      await waitForFrame(handle, "Press x again");
+      await waitForFrame(handle, "x deletes");
       handle.stdin.enqueue("x");
       expect(deletes).toEqual(["movie"]);
     } finally {
