@@ -349,6 +349,47 @@ sha256_of() {
 	fi
 }
 
+# macOS ships LibreSSL as `openssl`. It cannot verify an Ed25519 signature.
+# Prefer a real OpenSSL 3, including the Homebrew prefix that is not on PATH.
+ed25519_openssl() {
+	local candidate
+	for candidate in \
+		"${KUNAI_OPENSSL:-}" \
+		/opt/homebrew/opt/openssl@3/bin/openssl \
+		/usr/local/opt/openssl@3/bin/openssl \
+		openssl; do
+		[[ -n "$candidate" ]] || continue
+		if [[ "$candidate" == openssl ]]; then
+			command -v openssl >/dev/null 2>&1 || continue
+		elif [[ ! -x "$candidate" ]]; then
+			continue
+		fi
+		if "$candidate" version 2>/dev/null | grep -q '^OpenSSL '; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Node and Bun verify the same raw signature LibreSSL rejects. Used only when
+# no OpenSSL 3 binary is on the machine.
+verify_ed25519_with_runtime() {
+	local sums_file="$1"
+	local pub_file="$2"
+	local sig_file="$3"
+	local runtime=""
+	if command -v node >/dev/null 2>&1; then
+		runtime="node"
+	elif command -v bun >/dev/null 2>&1; then
+		runtime="bun"
+	else
+		return 1
+	fi
+	"$runtime" -e 'const fs=require("fs");const crypto=require("crypto");const ok=crypto.verify(null,fs.readFileSync(process.argv[1]),fs.readFileSync(process.argv[2],"utf8"),fs.readFileSync(process.argv[3]));process.exit(ok?0:1);' \
+		"$sums_file" "$pub_file" "$sig_file"
+}
+
 # A checksum file without a matching ed25519 signature is a failure. The
 # previous published installer still accepts checksums alone; this script is
 # the release that starts requiring SHA256SUMS.sig.
@@ -356,15 +397,11 @@ verify_ed25519_sums() {
 	local sums_file="$1"
 	local sig_url="$2"
 	local sig_file="$3"
-	if ! have openssl; then
-		err "openssl is required to verify the release signature."
-		exit 1
-	fi
 	if ! bounded_download "$sig_url" "$sig_file" "$DOWNLOAD_CHECKSUM_MAX_BYTES" "$(basename "$sig_url")"; then
 		err "A checksum match without a signature is a failure."
 		exit 1
 	fi
-	local pub
+	local pub openssl_bin
 	pub="$(mktemp)"
 	if [[ -n "${KUNAI_RELEASE_ED25519_PUBLIC_KEY:-}" ]]; then
 		printf '%s\n' "$KUNAI_RELEASE_ED25519_PUBLIC_KEY" >"$pub"
@@ -375,16 +412,22 @@ MCowBQYDK2VwAyEAiJ7jdwwCejDY1gA90xbA+HSJI89eqI79y0qVOrdwiYw=
 -----END PUBLIC KEY-----
 EOF
 	fi
-	# OpenSSL 3.0 verifies Ed25519 only with -rawin. macOS LibreSSL rejects that
-	# flag and verifies the same raw signature without it. A bad signature fails
-	# both, so the second attempt cannot accept a checksum the first one refused.
-	if ! openssl pkeyutl -verify -pubin -inkey "$pub" -rawin -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1 &&
-		! openssl pkeyutl -verify -pubin -inkey "$pub" -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1; then
+	# OpenSSL 3.0 needs -rawin. A later OpenSSL also accepts the raw file
+	# without it. Either success is a verification; a bad signature fails both.
+	if openssl_bin="$(ed25519_openssl)" &&
+		{ "$openssl_bin" pkeyutl -verify -pubin -inkey "$pub" -rawin -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1 ||
+			"$openssl_bin" pkeyutl -verify -pubin -inkey "$pub" -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1; }; then
 		rm -f "$pub"
-		err "SHA256SUMS signature did not verify."
-		exit 1
+		return 0
+	fi
+	if verify_ed25519_with_runtime "$sums_file" "$pub" "$sig_file"; then
+		rm -f "$pub"
+		return 0
 	fi
 	rm -f "$pub"
+	err "SHA256SUMS signature did not verify."
+	err "Ed25519 needs OpenSSL 3. The openssl on macOS is LibreSSL and cannot verify it."
+	exit 1
 }
 
 is_retryable_http_status() {
