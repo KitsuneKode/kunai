@@ -60,27 +60,28 @@ export function withCommandPath(
   return next;
 }
 
-export function createInstallerSandbox(name: string) {
+export function createInstallerSandbox(name: string, layout: "host" | "powershell" = "host") {
   const root = mkdtempSync(join(tmpdir(), `kunai-${name}-`));
   const home = join(root, "home");
   const binDir = join(root, "bin");
   const dataDir = join(root, "data");
   const cacheDir = join(root, "cache");
-  // Same parent for bash (XDG_CONFIG_HOME/kunai) and the PowerShell installer
-  // (APPDATA/kunai) so both scripts write the install record the sandbox reads.
-  // Darwin bash uses ~/Library/Application Support and ignores XDG.
+  // install.sh on Darwin writes ~/Library/Application Support/kunai and ignores
+  // XDG. install.ps1 always writes $env:APPDATA/kunai. The powershell layout
+  // keeps those two the same directory so a macOS runner with pwsh installed
+  // reads the manifest the script actually wrote.
   const configParent = join(root, "config-parent");
-  const configDir =
-    process.platform === "darwin"
-      ? join(home, "Library", "Application Support", "kunai")
-      : join(configParent, "kunai");
+  const useWindowsConfig = layout === "powershell" || process.platform !== "darwin";
+  const configDir = useWindowsConfig
+    ? join(configParent, "kunai")
+    : join(home, "Library", "Application Support", "kunai");
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...windowsShellEnvDefaults(root),
     HOME: home,
     USERPROFILE: home,
     XDG_CONFIG_HOME: configParent,
-    APPDATA: process.platform === "darwin" ? join(root, "appdata") : configParent,
+    APPDATA: useWindowsConfig ? configParent : join(root, "appdata"),
     KUNAI_BIN_DIR: binDir,
     KUNAI_DATA_DIR: dataDir,
     KUNAI_CACHE_DIR: cacheDir,

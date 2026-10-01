@@ -21,7 +21,7 @@ import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 
 import { createReleaseArchive } from "../../scripts/build-release-archives";
 import {
-  createInstallerSandbox,
+  createInstallerSandbox as createHostInstallerSandbox,
   installCommandShim,
   seedActivationLock,
   seedLifecycleLock,
@@ -29,6 +29,10 @@ import {
   withCommandPath,
   withReleaseFixture,
 } from "./helpers/installer-script-harness";
+
+function createInstallerSandbox(name: string) {
+  return createHostInstallerSandbox(name, "powershell");
+}
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_PS1 = join(REPO_ROOT, "install.ps1");
