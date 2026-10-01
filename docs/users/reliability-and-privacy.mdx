@@ -114,7 +114,9 @@ When on, Kunai sends at most one tiny ping per day:
 - The ingest re-hashes that digest with an HMAC before storing it, alongside your
   platform, architecture, and version. It does not read your IP address at all
 - Raw rows are deleted after 35 days. A permanent table keeps one hashed row per
-  install with a first-seen date, which is what an exact lifetime count costs
+  install with a first-seen date, which is what a lifetime count costs. Installs
+  silent past the retention window fold into a retired count, and one that
+  returns is counted again
 - Public docs show yesterday's active installs, a lifetime total, and version /
   platform / architecture breakdowns. Any group with **fewer than 5** installs is
   reported as `other`. This is per-breakdown small-cell suppression, not a joint

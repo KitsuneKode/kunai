@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-09-19
+Last updated: 2026-10-02
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -72,7 +72,7 @@ archive and put only the residue here.
 | Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
-| Analytics day boundary   | Task 8 only, after the cutover: prove the IST clock is live, then move the snapshot cron to `0 19 * * *`                                             | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                               | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
 
 ### Docs
 
@@ -145,10 +145,10 @@ in number order unless a row says otherwise.
 | [061](./061-install-ps1-parity-gaps.md)                               | —     | `KUNAI_REPO` + deps-for-all-methods; then a parity-contract test so seams can't drift                                     | TODO                               |
 | [062](./062-post-install-cleanup-rejection.md)                        | —     | Fix `cleanupOldVersions` rejection; classify all `void` sites; write the convention                                       | TODO                               |
 | [063](./063-docs-dev-dep-advisories.md)                               | —     | Clear `bun audit`; `minimumReleaseAge` floor; weekly informational audit job                                              | TODO                               |
-| [064](./064-analytics-day-table-order-and-paging.md)                  | —     | Day-by-day table: newest-first + chunked reveal (bounded at 180 rows)                                                     | TODO                               |
+| [064](../.archive/plans/064-analytics-day-table-order-and-paging.md)  | —     | none — day-by-day table is newest-first with chunked reveal                                                               | LANDED                             |
 | [065](./065-share-landing-cta-resilience.md)                          | —     | `/w/` CTA: post-click "install below" state + copyable `kunai://` link                                                    | TODO                               |
-| [066](./066-analytics-cross-links-and-staleness.md)                   | —     | Version rows → release pages; window tile → `#day-by-day`; stale badge                                                    | TODO                               |
-| [067](./067-chart-table-highlight-sync.md)                            | —     | Chart hover → table row highlight/scroll (after 064)                                                                      | TODO                               |
+| [066](../.archive/plans/066-analytics-cross-links-and-staleness.md)   | —     | none — release links, `#day-by-day` anchor, and the 48h stale badge all landed                                            | LANDED                             |
+| [067](../.archive/plans/067-chart-table-highlight-sync.md)            | —     | none — chart hover reveals and scrolls the matching table row                                                             | LANDED                             |
 
 048–058 are implemented on `advisor/NNN-*` worktree branches (see each plan's
 "Implementation" note); rows stay until the branch lands. Review residue that

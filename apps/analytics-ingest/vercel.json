@@ -21,7 +21,7 @@
   "crons": [
     {
       "path": "/api/cron/snapshot",
-      "schedule": "5 0 * * *"
+      "schedule": "0 19 * * *"
     }
   ],
   "functions": {

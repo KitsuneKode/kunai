@@ -43,7 +43,9 @@ equivalent to a probabilistic sketch.
 | `GET /api/cron/snapshot`  | `CRON_SECRET`           | Rolls up yesterday, then prunes raw rows. |
 | `GET /api/metrics/admin`  | `ANALYTICS_ADMIN_TOKEN` | Last 30 days, **unsuppressed**.           |
 
-Cron runs at `5 0 * * *` (see `vercel.json`).
+Cron runs at `0 19 * * *` (see `vercel.json`). The analytics day closes at
+midnight IST (18:30 UTC); hour 19 is the first hour that cannot fire before the
+close — Hobby may run a job anywhere inside its scheduled hour.
 
 ## Setup
 

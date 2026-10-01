@@ -136,7 +136,7 @@ export function SectionCards({
             : undefined
         }
         headline={lifetimeHeadline(lifetimeDelta)}
-        detail="Exact: one hashed row per install"
+        detail="Cumulative: kept installs plus the retired count"
       />
       <StatCard
         label="Active yesterday"
