@@ -714,9 +714,11 @@ function readResponseText(response: Response): Promise<string> {
  */
 function attachRetryAfter<T>(error: T, headers: Headers | undefined): T {
   const retryAfterMs = parseRetryAfterHeader(headers?.get("retry-after"));
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- post-construction stamp on an untyped thrown value; the duck-type IS the boundary probe
   if (retryAfterMs === undefined || typeof error !== "object" || error === null) {
     return error;
   }
+  // SAFETY: object-guarded above; the field is probed as unknown before writing.
   const record = error as { retryAfterMs?: unknown };
   if (record.retryAfterMs !== undefined) return error;
   record.retryAfterMs = retryAfterMs;

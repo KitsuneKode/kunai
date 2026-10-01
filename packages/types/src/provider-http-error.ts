@@ -115,8 +115,11 @@ export function httpStatusIsRetryable(status: number): boolean {
  * errors reconstituted across a serialization boundary. Anything else returns
  * undefined.
  */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- boundary probe: the thrown value's type is what this answers
 export function errorRetryAfterMs(error: unknown): number | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- duck-typed field read; survives error reconstitution by design
   if (typeof error !== "object" || error === null) return undefined;
+  // SAFETY: object-guarded above; the field is probed as unknown before the number check.
   const value = (error as { readonly retryAfterMs?: unknown }).retryAfterMs;
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }

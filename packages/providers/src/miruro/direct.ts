@@ -2493,6 +2493,7 @@ export const miruroProviderModule: CoreProviderModule = {
           const selected =
             result.streams.find((stream) => stream.id === result.selectedStreamId) ??
             result.streams[0];
+          // oxlint-disable-next-line anti-slop/no-known-value-widening -- open slot: retryAfterMs is attached only when the probe answers 429
           const probeHint: { retryAfterMs?: number } = {};
           const downStatus = selected?.url
             ? await probeMiruroBackendDown(

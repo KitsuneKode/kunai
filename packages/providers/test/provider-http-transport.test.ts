@@ -488,7 +488,7 @@ describe("providerFetchText — Retry-After capture", () => {
       (error) => error,
     );
     expect(thrown).toBeInstanceOf(ProviderRelayedUpstreamError);
-    expect((thrown as ProviderRelayedUpstreamError).retryAfterMs).toBe(30_000);
+    expect(mustBe(thrown, ProviderRelayedUpstreamError).retryAfterMs).toBe(30_000);
   });
 
   test("a non-curl-retryable direct status carries the hint", async () => {
@@ -501,7 +501,7 @@ describe("providerFetchText — Retry-After capture", () => {
       (error) => error,
     );
     expect(thrown).toBeInstanceOf(ProviderHttpError);
-    expect((thrown as ProviderHttpError).retryAfterMs).toBe(12_000);
+    expect(mustBe(thrown, ProviderHttpError).retryAfterMs).toBe(12_000);
   });
 
   test("the HTTP-date form resolves against the response time", async () => {
@@ -515,7 +515,7 @@ describe("providerFetchText — Retry-After capture", () => {
       () => null,
       (error) => error,
     );
-    const hint = (thrown as ProviderHttpError).retryAfterMs;
+    const hint = mustBe(thrown, ProviderHttpError).retryAfterMs;
     expect(hint).toBeGreaterThan(40_000);
     expect(hint).toBeLessThanOrEqual(45_000);
   });
@@ -529,7 +529,7 @@ describe("providerFetchText — Retry-After capture", () => {
       () => null,
       (error) => error,
     );
-    expect((thrown as ProviderHttpError).retryAfterMs).toBeUndefined();
+    expect(mustBe(thrown, ProviderHttpError).retryAfterMs).toBeUndefined();
   });
 });
 
