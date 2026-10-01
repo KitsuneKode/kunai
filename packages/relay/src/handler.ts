@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
+import { relayRpcRequestSchema } from "@kunai/schemas";
+
 import { filterForwardHeaders, mergeRelayHeaders, RelayValidationError } from "./forward-headers";
 import {
   createPinnedRelayTransport,
@@ -202,30 +204,20 @@ async function readRpcRequest(request: Request): Promise<RelayRpcRequest> {
   } catch {
     throw new RelayValidationError("bad-request", "Relay request body must be JSON", 400);
   }
-  if (!isRelayRpcRequest(parsed)) {
-    throw new RelayValidationError("bad-request", "Relay request body is invalid", 400);
+  // The schema is the single source of truth for the wire envelope — the
+  // client-side port validates the same shape before sending, so a drifted
+  // contract fails loudly at whichever end noticed first.
+  const result = relayRpcRequestSchema.safeParse(parsed);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const where = issue?.path.join(".") || "body";
+    throw new RelayValidationError(
+      "bad-request",
+      `Relay request body is invalid: ${where} — ${issue?.message ?? "wrong shape"}`,
+      400,
+    );
   }
-  return parsed;
-}
-
-function isRelayRpcRequest(value: unknown): value is RelayRpcRequest {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<RelayRpcRequest>;
-  return (
-    isRelayMethod(candidate.method) &&
-    typeof candidate.upstreamUrl === "string" &&
-    (candidate.headers === undefined || isStringRecord(candidate.headers)) &&
-    (candidate.body === undefined || typeof candidate.body === "string")
-  );
-}
-
-function isRelayMethod(value: unknown): value is RelayMethod {
-  return value === "GET" || value === "POST" || value === "HEAD";
-}
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value).every((entry) => typeof entry === "string");
+  return result.data;
 }
 
 async function fetchWithValidatedRedirects(input: {
