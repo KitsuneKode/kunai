@@ -105,6 +105,8 @@ export async function fetchHealthyInvidiousInstances(
         if (!Array.isArray(payload)) {
           throw new Error("Invidious instance list returned an unexpected shape");
         }
+        // SAFETY: Array.isArray narrows to any[]; selectReachableInstances
+        // validates each row's shape before trusting the tuple fields.
         const selected = selectReachableInstances(
           payload as readonly (readonly [string, InvidiousInstanceRecord])[],
         );
@@ -119,12 +121,13 @@ export async function fetchHealthyInvidiousInstances(
       },
       { at: now, signal: options.signal },
     )
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- rejection handler: the thrown value is genuinely untyped
     .catch((error: unknown) => {
       // The registry is a directory, not the service: an expired directory
       // still names instances that very likely still work, and a caller-aborted
       // fetch must never serve stale data as if it were fresh.
       if (options.signal?.aborted) throw error;
-      if (error instanceof EmptyInstancePoolError) return [] as readonly string[];
+      if (error instanceof EmptyInstancePoolError) return [] satisfies readonly string[];
       throw error;
     });
 

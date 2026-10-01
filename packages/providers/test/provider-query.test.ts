@@ -4,6 +4,7 @@ import { ProviderQueryCache } from "../src/shared/provider-query";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Promise reject callbacks carry untyped thrown values
   let reject!: (error: unknown) => void;
   const promise = new Promise<T>((res, rej) => {
     resolve = res;

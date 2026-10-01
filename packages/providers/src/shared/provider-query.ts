@@ -39,6 +39,7 @@ export type ProviderQueryPolicy<V> = {
    */
   readonly staleIfError?:
     | boolean
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- predicate receives whatever the fetcher threw; untyped by contract
     | ((error: unknown, call: ProviderQueryCall | undefined) => boolean);
   /**
    * Treat entries expiring within this window as already stale — the fetch
@@ -113,6 +114,9 @@ export class ProviderQueryCache<K, V> {
       return Promise.resolve(entry.value);
     }
 
+    /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters --
+     * typeof narrows the declared boolean|function and number|function policy
+     * unions; rejection handlers receive genuinely untyped thrown values. */
     const staleIfError = (error: unknown) =>
       typeof this.staleIfError === "function" ? this.staleIfError(error, call) : this.staleIfError;
 
@@ -144,6 +148,7 @@ export class ProviderQueryCache<K, V> {
         throw error;
       },
     );
+    /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters */
     // Store the shared promise; rejections are marked handled so a losing
     // joiner that never awaited it cannot trip an unhandled-rejection.
     const shared = fetch.finally(() => {
