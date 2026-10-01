@@ -35,6 +35,7 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
       saves += 1;
       persisted = { ...raw };
     },
+    async reloadFromDisk() {},
     get persisted() {
       return persisted;
     },
@@ -48,7 +49,7 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
 }
 
 function makeService(
-  config: Pick<ConfigServiceImpl, "getRaw" | "update" | "save">,
+  config: Pick<ConfigServiceImpl, "getRaw" | "update" | "save" | "reloadFromDisk">,
   options: {
     fetchImpl?: AnalyticsFetch;
     env?: { DO_NOT_TRACK?: string; CI?: string };
@@ -190,6 +191,7 @@ describe("pending ping identity", () => {
             await config.flushPending();
             await save;
           },
+          reloadFromDisk: () => config.reloadFromDisk(),
         },
         { fetchImpl: async () => new Response(null, { status: 204 }) },
       );
@@ -384,6 +386,32 @@ describe("endpoint configuration", () => {
 
     expect(calls).toBe(0);
     expect(config.rawRef.lastAnalyticsPingAt).toBe(0);
+  });
+
+  test("an opt-out written by another process stops the send", async () => {
+    // This instance still holds "enabled" in memory; the file on disk now says
+    // disabled — what a second Kunai window writes when the user opts out there.
+    // maybePing must re-read the file before trusting its snapshot.
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    const secondProcessDisabled = {
+      ...config,
+      async reloadFromDisk() {
+        await config.update({ analytics: "disabled", installId: "" });
+      },
+    };
+    let calls = 0;
+    const service = makeService(secondProcessDisabled, {
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await service.maybePing({ isInteractive: true });
+
+    expect(calls).toBe(0);
+    expect(config.rawRef.analytics).toBe("disabled");
+    expect(config.rawRef.installId).toBe("");
   });
 
   test("an opted-in install sends nothing from a non-interactive session", async () => {

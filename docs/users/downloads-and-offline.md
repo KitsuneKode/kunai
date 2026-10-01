@@ -97,7 +97,7 @@ stolen. Completed files in `/library` are unaffected.
 
 ## Persistent offline mode
 
-`offlineMode` in config keeps the shell in a local-only posture until you turn it off. This is separate from the `--offline` launch flag. Network status appears in the shell header; mode changes are never silent.
+`offlineMode` in config keeps the shell in a local-only posture until you turn it off. The `--offline` launch flag is the one-run version: it makes this run local-only (no update check, sync, analytics, or provider/network work) and opens the Library. Network status appears in the shell header; mode changes are never silent.
 
 Use `/watch-online` when you want to return from offline posture to online shell flows.
 

@@ -1,7 +1,8 @@
 /**
  * Pure resolution of transient, in-memory config overrides a launch flag should
- * apply for the current session only. These are applied with `config.update()`
- * (memory-only) and never `save()`d, so they do not touch the user's config file.
+ * apply for the current session only. These are applied with
+ * `config.applySessionOverrides()` — readers see them for the run but they are
+ * never persisted, so they do not touch the user's config file.
  *
  * Keeping this pure lets us assert that each layout flag honestly flips the
  * config field its name implies, without booting the shell.
