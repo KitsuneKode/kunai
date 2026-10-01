@@ -87,6 +87,7 @@ export async function launchMpv(opts: {
   ytdlFormat?: string;
   ytdlRawOptions?: string;
   isLive?: boolean;
+  demuxerProfile?: "capped-readahead";
   attach?: boolean;
   timing?: import("@/domain/types").PlaybackTimingMetadata | null;
   autoSkipEnabled?: boolean;
@@ -541,6 +542,7 @@ export function buildMpvArgs(
     ytdlFormat?: string;
     ytdlRawOptions?: string;
     isLive?: boolean;
+    demuxerProfile?: "capped-readahead";
     chaptersFile?: string | null;
   },
   ipcPath: string | null,
@@ -655,7 +657,12 @@ export function buildMpvArgs(
   } else {
     args.push("--cache-pause-wait=2");
     const fastStart = config?.mpv?.startupPriority === "fast";
-    if (fastStart) {
+    // Providers flag burst-limited CDNs (the megaplay family kills IPs that pull
+    // ~100 uncached segments inside 10s — the same constraint ani-cli's
+    // --cache-secs=120 works around). A capped readahead queue keeps segment
+    // requests near realtime instead of draining 60s of media in one burst.
+    const capReadahead = fastStart || opts.demuxerProfile === "capped-readahead";
+    if (capReadahead) {
       args.push("--demuxer-readahead-secs=10");
       args.push("--demuxer-max-bytes=48MiB");
       // Shorter reconnect window so dead CDNs fail fast into Kunai failover.

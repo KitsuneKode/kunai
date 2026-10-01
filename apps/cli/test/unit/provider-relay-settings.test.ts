@@ -68,7 +68,7 @@ test("describeProviderRelayProviders counts direct overrides", () => {
       providers: { allanime: { enabled: false }, miruro: { enabled: false } },
     },
   };
-  expect(describeProviderRelayProviders(config)).toBe("9 on · 2 direct");
+  expect(describeProviderRelayProviders(config)).toBe("10 on · 2 direct");
 });
 
 test("isSafeProviderRelayBaseUrl accepts https and local http only", () => {

@@ -387,6 +387,7 @@ export const anidbProviderModule: CoreProviderModule = {
         { anilistId, malId: metadataMalId },
         context.signal,
         pass,
+        context,
       );
       mergeExternalEpisodeMetadataInto(metadata, externalMetadata);
     }

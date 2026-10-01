@@ -22,6 +22,7 @@ import type {
   StreamCandidate,
   TitleIdentity,
 } from "@kunai/types";
+import { providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
@@ -29,10 +30,11 @@ import {
   formatAnimeSourceArchetype,
   formatAnimeSourceDetail,
 } from "../shared/anime-source-presentation";
-import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { providerFetchText } from "../shared/provider-http-transport";
 import { matchProviderCatalogTitle } from "../shared/provider-title-match";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { searchWithPhraseFallback } from "../shared/search-fallback";
 import {
   createSourceCandidateFromStream,
   createStreamId,
@@ -61,29 +63,43 @@ const USER_AGENT =
 
 /**
  * The site needs no referer and no cookie, on any of its four documents or on
- * the stream itself (verified 2026-09-11). Sending only what is required keeps
- * the mpv handoff identical to what was tested.
+ * the stream itself (verified 2026-09-11) — so the policy sends none. The
+ * shared transport still earns this provider relay-honest marking, a curl
+ * fingerprint fallback, and typed status/transport errors.
  */
-function requestHeaders(): Record<string, string> {
-  return {
-    accept: "text/html,application/xhtml+xml",
-    "accept-language": "en-US,en;q=0.9",
-    "user-agent": USER_AGENT,
-  };
-}
-
 async function fetchText(
   url: string,
   context: ProviderRuntimeContext,
   signal?: AbortSignal,
 ): Promise<string> {
-  const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
-  const response = await requester(url, {
-    headers: requestHeaders(),
-    signal: directStreamFetchSignal(signal ?? context.signal, ANIMEGG_FETCH_TIMEOUT_MS),
+  return providerFetchText(url, {
+    context,
+    signal,
+    providerId: ANIMEGG_PROVIDER_ID,
+    label: "animegg fetch",
+    userAgent: USER_AGENT,
+    extraHeaders: {
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "en-US,en;q=0.9",
+    },
+    fetchTimeoutMs: ANIMEGG_FETCH_TIMEOUT_MS,
+    statusError: (status) =>
+      providerHttpErrorForStatus({
+        status,
+        message: `AnimeGG returned HTTP ${status}`,
+        providerId: ANIMEGG_PROVIDER_ID,
+        stage: "fetch-page",
+      }),
   });
-  if (!response.ok) throw new Error(`AnimeGG returned HTTP ${response.status}`);
-  return response.text();
+}
+
+/** Search rows for a query, with the literal-phrase miss rescue applied. */
+async function searchAnimeggWithPhraseFallback(query: string, context: ProviderRuntimeContext) {
+  return searchWithPhraseFallback(
+    query,
+    async (q) => parseAnimeggSearchResults(await fetchText(animeggSearchPath(q), context)),
+    (row) => [row.title, ...row.altNames],
+  );
 }
 
 /**
@@ -128,7 +144,10 @@ export async function locateAnimeggShow(
 
   const query = title.title.trim();
   if (!query) return null;
-  const rows = parseAnimeggSearchResults(await fetchText(animeggSearchPath(query), context));
+  // AnimeGG matches the query as one literal phrase — rescue a miss by
+  // retrying the longest word and filtering the wider set (ani-cli's fix,
+  // shared with AnimeKai in `shared/search-fallback`).
+  const rows = await searchAnimeggWithPhraseFallback(query, context);
   const match = matchProviderCatalogTitle(rows, { title: query });
   if (!match) return null;
 
@@ -168,8 +187,7 @@ export const animeggProviderModule: CoreProviderModule = {
   async search(input, context) {
     const query = input.query.trim();
     if (!query) return null;
-    const html = await fetchText(animeggSearchPath(query), context);
-    const results = parseAnimeggSearchResults(html).slice(0, 40);
+    const results = (await searchAnimeggWithPhraseFallback(query, context)).slice(0, 40);
     if (results.length === 0) return null;
 
     return results.map((result): ProviderSearchResult => {

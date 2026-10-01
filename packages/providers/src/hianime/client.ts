@@ -7,17 +7,29 @@
  * curl/curl-impersonate — the same shape as the AniDB client.
  */
 
-import { isRelayedResponse, providerHttpErrorForStatus } from "@kunai/types";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
-import { ProviderHttpError } from "../runtime/fetch";
-import {
-  curlCipherArgs,
-  isCloudflareChallengeText,
-  resolveCurlCandidate,
-} from "../shared/curl-impersonate";
+import { providerFetch, ProviderHttpError } from "../runtime/fetch";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
+import {
+  decryptMegaplaySourcesBlob,
+  MegaplayEmbedDecodeError,
+  megaplayEmbedReferer,
+  megaplayMasterUrlFromDecrypted,
+  megaplaySourcesEndpoint,
+  type MegaplaySourcesPayload,
+  parseMegaplayEmbedSourceIds,
+  parseMegaplaySourcesJson,
+} from "../shared/megaplay-embed";
 import { TTLCache } from "../shared/provider-cache";
+import {
+  providerCurlFailureMessage,
+  providerFetchText,
+  providerUrlLabel,
+  runProviderCurlWithRetry,
+  splitCurlHttpTrailer,
+  type CurlHttpTrailer,
+} from "../shared/provider-http-transport";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import {
   decodeHianimeEmbedPage,
@@ -96,66 +108,60 @@ export type HianimeStreamLink = {
   readonly referer: string;
 };
 
-export type HianimeModeResolution =
+/** What one server lane produced, before its position in the mode is attached. */
+export type HianimeResolvedLane = {
+  readonly status: "resolved";
+  readonly serverName: string;
+  readonly serverKind: HianimeServerKind;
+  readonly links: readonly HianimeStreamLink[];
+  readonly subtitles: HianimeEmbedPayload["subtitles"];
+  readonly malId?: string;
+  readonly intro?: { readonly start: number; readonly end: number };
+  readonly outro?: { readonly start: number; readonly end: number };
+  /** Episode poster and scrub-preview sprite, when the embed provides them. */
+  readonly poster?: string;
+  readonly spriteVtt?: string;
+  readonly embedReferer: string;
+  /** True when the ladder collapsed to the single `auto` fallback row. */
+  readonly ladderFallback?: boolean;
+};
+
+export type HianimeServerResolution =
+  | (HianimeResolvedLane & { readonly serverIndex: number })
   | {
-      readonly mode: HianimeAudioMode;
-      readonly status: "resolved";
-      readonly links: readonly HianimeStreamLink[];
-      readonly subtitles: HianimeEmbedPayload["subtitles"];
-      readonly malId?: string;
-      readonly intro?: { readonly start: number; readonly end: number };
-      readonly outro?: { readonly start: number; readonly end: number };
-      /** Episode poster and scrub-preview sprite, when the embed provides them. */
-      readonly poster?: string;
-      readonly spriteVtt?: string;
-      readonly embedReferer: string;
-      /** True when the ladder collapsed to the single `auto` fallback row. */
-      readonly ladderFallback?: boolean;
-    }
-  | {
-      readonly mode: HianimeAudioMode;
-      readonly status: "unavailable";
-    }
-  | {
-      readonly mode: HianimeAudioMode;
       readonly status: "failed";
+      readonly serverIndex: number;
+      readonly serverName: string;
       readonly failure: {
         readonly code: HianimeStreamFailureCode;
         readonly message: string;
       };
     };
 
+export type HianimeModeResolution = {
+  readonly mode: HianimeAudioMode;
+  readonly status: "resolved" | "unavailable" | "failed";
+  readonly servers: readonly HianimeServerResolution[];
+  readonly failure?: {
+    readonly code: HianimeStreamFailureCode;
+    readonly message: string;
+  };
+};
+
 export type HianimeEpisodeStreamResolution = {
-  /** Modes with a supported (ZokoAnime) server for this episode. */
+  /** Modes with at least one supported server for this episode. */
   readonly availableModes: readonly HianimeAudioMode[];
   /** Every native server name the servers API listed (supported or not). */
   readonly observedServers: readonly string[];
+  /**
+   * Supported servers offered per mode, in API order — names double as the
+   * inventory row labels; `laneNames[mode].length` is the lane count.
+   */
+  readonly laneNames: Readonly<Record<HianimeAudioMode, readonly string[]>>;
   readonly requested: HianimeModeResolution;
 };
 
-const CURL_TIMEOUT_EXIT_CODE = 28;
-
-/**
- * Split curl's `-w '\n%{http_code}'` trailer into `{ body, httpCode }`.
- * `httpCode` is null when curl never received an HTTP response (DNS, TCP, or
- * TLS failure) — the ani-cli 5.1.4 distinction between "no HTTP response"
- * and "HTTP NNN", so a dead route is never misread as an HTTP error. curl
- * prints `000` for that case, which is a missing status, not status zero.
- * Only one trailing line is ever cut, so a body that naturally ends in
- * `\nNNN` keeps its bytes.
- */
-export type CurlHttpTrailer = {
-  readonly body: string;
-  readonly httpCode: number | null;
-};
-
-export function splitCurlHttpTrailer(stdout: string): CurlHttpTrailer {
-  const match = /\n(\d{3})$/.exec(stdout);
-  if (!match?.[1]) return { body: stdout, httpCode: null };
-  const code = Number(match[1]);
-  const body = stdout.slice(0, stdout.length - match[0].length);
-  return { body, httpCode: code === 0 ? null : code };
-}
+export { splitCurlHttpTrailer, type CurlHttpTrailer };
 
 /**
  * The request label for error messages: origin + path, never the query —
@@ -163,12 +169,7 @@ export function splitCurlHttpTrailer(stdout: string): CurlHttpTrailer {
  * error that lands in logs.txt.
  */
 export function hianimeUrlLabel(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.origin}${parsed.pathname}`;
-  } catch {
-    return url;
-  }
+  return providerUrlLabel(url);
 }
 
 /** Name the failed layer first: transport (`no HTTP response`) or HTTP status. */
@@ -178,11 +179,10 @@ export function hianimeCurlFailureMessage(
   exitCode: number,
   url?: string,
 ): string {
-  const { httpCode } = splitCurlHttpTrailer(stdout);
-  const detail = httpCode !== null ? `HTTP ${httpCode}` : "no HTTP response";
-  const tail = stderr.trim();
-  const where = url ? ` from ${hianimeUrlLabel(url)}` : "";
-  return `hianime fetch connection error (${detail}; curl exit ${exitCode})${where}${tail ? `: ${tail}` : ""}`;
+  return providerCurlFailureMessage(stdout, stderr, exitCode, {
+    label: "hianime fetch",
+    urlLabel: url ? providerUrlLabel(url) : undefined,
+  });
 }
 
 /** The advice depends on the binary that just ran — telling a user to "try
@@ -199,36 +199,20 @@ export async function runHianimeCurlWithRetry(
   signal?: AbortSignal,
   url?: string,
 ): Promise<string> {
-  let result = await spawnCurlOnce(args, signal);
-  if (result.exitCode === CURL_TIMEOUT_EXIT_CODE) {
-    result = await spawnCurlOnce(args, signal);
-  }
-  if (result.exitCode !== 0) {
-    throw new Error(hianimeCurlFailureMessage(result.stdout, result.stderr, result.exitCode, url));
-  }
-  return result.stdout;
-}
-
-function spawnCurlOnce(
-  args: readonly string[],
-  signal?: AbortSignal,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe", signal });
-  return Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]).then(([stdout, stderr, exitCode]) => ({ stdout, stderr, exitCode }));
+  return runProviderCurlWithRetry(args, {
+    signal,
+    urlLabel: url ? providerUrlLabel(url) : undefined,
+    label: "hianime fetch",
+    providerId: HIANIME_PROVIDER_ID,
+  });
 }
 
 /**
- * A response the relay port marked as relayed is final: re-asking the same
- * upstream URL direct would silently bypass the relay the user deployed.
- * Transport errors and *direct* (unmarked) responses still fall through to
- * local curl/impersonate — that path is the legitimate Cloudflare bypass.
+ * The relay→curl→fetch choreography lives in `shared/provider-http-transport`
+ * now; hianime keeps its own wrapper only for its labels and messages. Relayed
+ * responses are final (all statuses), unmarked non-OK earns curl's
+ * fingerprint, and challenge text maps to {@link cloudflareBlockMessage}.
  */
-class HianimeRelayedUpstreamError extends Error {}
-
 export async function hianimeFetchText(
   url: string,
   options: {
@@ -236,101 +220,21 @@ export async function hianimeFetchText(
     readonly signal?: AbortSignal;
     readonly maxTimeSec?: number;
     readonly referer?: string;
+    /** Per-request headers beyond UA/Referer (e.g. the megaplay sources XHR). */
+    readonly extraHeaders?: Readonly<Record<string, string>>;
   } = {},
 ): Promise<string> {
-  const referer = options.referer ?? HIANIME_REFERER;
-  if (options.context?.fetch) {
-    try {
-      const response = await options.context.fetch.fetch(url, {
-        headers: { "User-Agent": HIANIME_USER_AGENT, Referer: referer },
-        signal: createTimeoutSignal(options.signal, 15_000),
-      });
-      if (isRelayedResponse(response)) {
-        /* The relay answered for this request — re-asking the same URL direct
-         * would silently bypass the relay the user deployed (#460). Treat the
-         * response as final, including a definitive upstream status. */
-        const text = response.ok ? await response.text() : "";
-        if (response.ok && !isCloudflareChallengeText(text)) return text;
-        throw new HianimeRelayedUpstreamError(
-          isCloudflareChallengeText(text)
-            ? cloudflareBlockMessage(false)
-            : `hianime fetch HTTP ${response.status} from ${hianimeUrlLabel(url)} via relay`,
-        );
-      }
-      if (response.ok) {
-        const text = await response.text();
-        if (!isCloudflareChallengeText(text)) return text;
-      }
-    } catch (error) {
-      if (options.signal?.aborted === true) throw error;
-      if (error instanceof HianimeRelayedUpstreamError) throw error;
-      // Fall through to local curl/impersonate.
-    }
-  }
-
-  const curl = resolveCurlCandidate();
-  if (!curl) {
-    const response = await fetch(url, {
-      headers: { "User-Agent": HIANIME_USER_AGENT, Referer: referer },
-      signal: createTimeoutSignal(options.signal, 15_000),
-    });
-    if (!response.ok) {
-      // The status rides the error so classification reads the structure, not
-      // the message string (#458).
-      throw providerHttpErrorForStatus({
-        status: response.status,
-        message: `hianime fetch HTTP ${response.status} from ${hianimeUrlLabel(url)}`,
-        providerId: HIANIME_PROVIDER_ID,
-        stage: "fetch-page",
-      });
-    }
-    const text = await response.text();
-    if (isCloudflareChallengeText(text)) {
-      throw new Error("hianime blocked by Cloudflare (install curl)");
-    }
-    return text;
-  }
-
-  const args = [
-    curl.path,
-    "-sL",
-    "-A",
-    HIANIME_USER_AGENT,
-    "-H",
-    `Referer: ${referer}`,
-    "--max-time",
-    String(options.maxTimeSec ?? 12),
-    ...curlCipherArgs(curl.impersonates),
-    "-w",
-    "\n%{http_code}",
-    url,
-  ];
-  // Exit 0 only means curl is happy: a 403/404/410 page still needs the
-  // status check below (ani-cli `hianime_curl` parity), otherwise an error
-  // page flows into JSON parsing and misreports as `parse-failed`.
-  const { body, httpCode } = splitCurlHttpTrailer(
-    await runHianimeCurlWithRetry(args, options.signal, url),
-  );
-  // Name the leg. A hianime resolve is four network hops (episodes, servers,
-  // embed page, master playlist) and "hianime fetch HTTP 503" says which of
-  // them died to nobody. The layer name and curl exit already ride along on
-  // the transport-failure path; this is the same courtesy for the status path.
-  // Parity: ani-cli's `hianime_curl` names the URL on both exits.
-  if (httpCode !== null && (httpCode < 200 || httpCode > 299)) {
-    if (isCloudflareChallengeText(body)) {
-      throw new Error(cloudflareBlockMessage(curl.impersonates));
-    }
-    throw providerHttpErrorForStatus({
-      status: httpCode,
-      message: `hianime fetch HTTP ${httpCode} from ${hianimeUrlLabel(url)}`,
-      providerId: HIANIME_PROVIDER_ID,
-      stage: "fetch-page",
-    });
-  }
-  if (isCloudflareChallengeText(body)) {
-    throw new Error(cloudflareBlockMessage(curl.impersonates));
-  }
-  return body;
+  return providerFetchText(url, {
+    context: options.context,
+    signal: options.signal,
+    providerId: HIANIME_PROVIDER_ID,
+    label: "hianime fetch",
+    userAgent: HIANIME_USER_AGENT,
+    referer: options.referer ?? HIANIME_REFERER,
+    extraHeaders: options.extraHeaders,
+    maxTimeSec: options.maxTimeSec,
+    blockedError: (impersonated) => new Error(cloudflareBlockMessage(impersonated)),
+  });
 }
 
 export async function searchHianime(
@@ -446,10 +350,34 @@ export async function fetchHianimeServers(
   return parseHianimeServersHtml(html);
 }
 
-function isSupportedServer(serverName: string): boolean {
-  return (
-    serverName.localeCompare(HIANIME_SUPPORTED_SERVER, undefined, { sensitivity: "accent" }) === 0
-  );
+export type HianimeServerKind = "zokoanime" | "megaplay";
+
+/** Server names observed on megaplay-family embeds; the host decides first. */
+const MEGAPLAY_SERVER_NAMES = ["HD-1", "Vidstream-2"] as const;
+
+function hianimeHost(embedUrl: string): string | null {
+  try {
+    return new URL(embedUrl).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which extraction contract a server entry answers to. The embed host is the
+ * evidence (megaplay.buzz and TLD rotations speak the data-id/getSources
+ * contract); the advertised name is the fallback for a domain the list has
+ * not caught yet. VidPlay-1's vidtube.site player matches neither.
+ */
+export function hianimeServerKind(server: HianimeServerEntry): HianimeServerKind | null {
+  const host = hianimeHost(server.embedUrl);
+  if (host?.startsWith("zokoanime.")) return "zokoanime";
+  if (host?.startsWith("megaplay.")) return "megaplay";
+  const byName = (name: string) =>
+    server.serverName.localeCompare(name, undefined, { sensitivity: "accent" }) === 0;
+  if (byName(HIANIME_SUPPORTED_SERVER)) return "zokoanime";
+  if (MEGAPLAY_SERVER_NAMES.some(byName)) return "megaplay";
+  return null;
 }
 
 export type HianimeStreamFailureCode =
@@ -469,6 +397,9 @@ function failureOf(error: unknown): HianimeStreamFailure {
   const message = error instanceof Error ? error.message : String(error);
   if (error instanceof HianimeEmbedDecodeError) {
     return { code: "parse-failed", message: `hianime embed decode failed: ${error.code}` };
+  }
+  if (error instanceof MegaplayEmbedDecodeError) {
+    return { code: "parse-failed", message: `megaplay sources decode failed: ${error.code}` };
   }
   // Typed upstream failures keep their status fidelity — the ladder fetch and
   // other typed throws must not collapse into a generic network-error, or a
@@ -508,15 +439,221 @@ function failureOf(error: unknown): HianimeStreamFailure {
   return { code: "network-error", message };
 }
 
+/**
+ * Ladder a lane's master playlist into per-quality links. A dead master host
+ * (5xx/404/410) means the fallback `auto` row would point at the same dead
+ * URL — drop it so the lane fails instead of playing a corpse. 403/timeout
+ * stays: gatekept CDNs still play in mpv.
+ */
+async function expandLaneLinks(
+  masterUrl: string,
+  embedReferer: string,
+  context: ProviderRuntimeContext,
+  signal?: AbortSignal,
+): Promise<{ links: HianimeStreamLink[]; ladderFallback: boolean }> {
+  const ladderHeaders = {
+    "User-Agent": HIANIME_USER_AGENT,
+    Referer: embedReferer,
+    Origin: embedReferer.replace(/\/$/, ""),
+  };
+  const fetchImpl = (url: string, init?: RequestInit) => providerFetch(context, url, init);
+  const inventory = await expandHlsMasterInventory({
+    fetch: fetchImpl,
+    masterUrl,
+    headers: ladderHeaders,
+    signal: createTimeoutSignal(signal, 15_000),
+  });
+  const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
+  const links: HianimeStreamLink[] = variants.map((variant) => ({
+    url: variant.url,
+    quality: variant.qualityLabel,
+    qualityRank: variant.qualityRank,
+    referer: embedReferer,
+  }));
+  if (links.length === 0) {
+    // A definitive dead-host answer is upstream evidence, not a transient
+    // transport failure — but keep the status fidelity: a gone route
+    // (404/410) is terminal while a 5xx maintenance window may heal.
+    const deadHostStatus = isHlsDeadHostStatus(inventory.probe.httpStatus)
+      ? inventory.probe.httpStatus
+      : undefined;
+    throw new ProviderHttpError({
+      message:
+        deadHostStatus !== undefined
+          ? `hianime master host answered HTTP ${deadHostStatus} — dead upstream`
+          : "hianime ladder expansion returned no variants",
+      providerId: HIANIME_PROVIDER_ID,
+      stage: "ladder",
+      code:
+        deadHostStatus !== undefined
+          ? deadHostStatus >= 500
+            ? "provider-unavailable"
+            : "not-found"
+          : "network-error",
+      retryable: deadHostStatus !== undefined ? deadHostStatus >= 500 : true,
+      ...(deadHostStatus !== undefined && { status: deadHostStatus }),
+    });
+  }
+  // The ladder still returns the single `auto` fallback row (pointing at
+  // the master URL, rank 0) when the fetched body is not a master playlist
+  // — transport failures throw instead, and never reach this line. That
+  // shape is the fallback's alone: a parsed variant never points at the
+  // master with rank 0, so flag it for the trace instead of letting it
+  // pose as a genuine single rung.
+  const ladderFallback =
+    links.length === 1 &&
+    links[0]?.url === masterUrl &&
+    links[0]?.quality === "auto" &&
+    links[0]?.qualityRank === 0;
+  return { links, ladderFallback };
+}
+
+/** ZokoAnime lane: embed page → `window.__P` XOR blob → master m3u8 → ladder. */
+async function resolveZokoanimeLane(
+  server: HianimeServerEntry,
+  context: ProviderRuntimeContext,
+  signal?: AbortSignal,
+): Promise<HianimeResolvedLane> {
+  const embedReferer = hianimeEmbedReferer(server.embedUrl);
+  const embedHtml = await hianimeFetchText(server.embedUrl, {
+    signal,
+    context,
+    referer: HIANIME_REFERER,
+  });
+  const payload = decodeHianimeEmbedPage(embedHtml);
+  const { links, ladderFallback } = await expandLaneLinks(
+    payload.src,
+    embedReferer,
+    context,
+    signal,
+  );
+  const malId = hianimeMalIdFromEmbedUrl(server.embedUrl);
+  return {
+    status: "resolved",
+    serverName: server.serverName,
+    serverKind: "zokoanime",
+    links,
+    subtitles: payload.subtitles,
+    ...(malId && { malId }),
+    ...(payload.intro && { intro: payload.intro }),
+    ...(payload.outro && { outro: payload.outro }),
+    ...(payload.poster && { poster: payload.poster }),
+    ...(payload.spriteVtt && { spriteVtt: payload.spriteVtt }),
+    embedReferer,
+    ...(ladderFallback && { ladderFallback: true as const }),
+  };
+}
+
+/**
+ * MegaPlay lane (HD-1, Vidstream-2): embed page → `data-id` → getSources XHR
+ * → AES-256-CBC `enc` blob → master m3u8 → ladder. Same contract AnimeKai's
+ * embeds speak; the `?s=` CDN selector on the embed URL rides into the
+ * getSources call the way the player's own rewriter does.
+ */
+async function resolveMegaplayLane(
+  server: HianimeServerEntry,
+  context: ProviderRuntimeContext,
+  signal?: AbortSignal,
+): Promise<HianimeResolvedLane> {
+  const embedReferer = megaplayEmbedReferer(server.embedUrl);
+  const embedHtml = await hianimeFetchText(server.embedUrl, {
+    signal,
+    context,
+    referer: HIANIME_REFERER,
+  });
+  // Dual-id deployments key getSources on `data-mediaid` while `data-id`
+  // decrypts to an empty payload — walk every advertised id and let the
+  // decrypt decide which one is real.
+  const sourceIds = parseMegaplayEmbedSourceIds(embedHtml);
+  if (sourceIds.length === 0) {
+    throw new MegaplayEmbedDecodeError(
+      "missing-data-id",
+      "megaplay embed page exposes no player data-id",
+    );
+  }
+  let masterUrl: string | undefined;
+  let payload: MegaplaySourcesPayload | undefined;
+  let lastError: unknown;
+  for (const sourceId of sourceIds) {
+    try {
+      const sourcesRaw = await hianimeFetchText(
+        megaplaySourcesEndpoint(server.embedUrl, sourceId),
+        {
+          signal,
+          context,
+          referer: embedReferer,
+          extraHeaders: { "X-Requested-With": "XMLHttpRequest" },
+        },
+      );
+      const sourcesJson = JSON.parse(sourcesRaw) as unknown;
+      const parsed = parseMegaplaySourcesJson(sourcesJson);
+      if (!parsed) {
+        throw new MegaplayEmbedDecodeError(
+          "missing-playlist",
+          "megaplay getSources payload carries no enc blob",
+        );
+      }
+      masterUrl = megaplayMasterUrlFromDecrypted(await decryptMegaplaySourcesBlob(parsed.enc));
+      payload = parsed;
+      break;
+    } catch (error) {
+      if (signal?.aborted === true) throw error;
+      lastError = error;
+    }
+  }
+  if (!payload || masterUrl === undefined) {
+    throw lastError instanceof Error
+      ? lastError
+      : new MegaplayEmbedDecodeError("decrypt-failed", "megaplay getSources answered non-JSON");
+  }
+  const { links, ladderFallback } = await expandLaneLinks(masterUrl, embedReferer, context, signal);
+  const malId = hianimeMalIdFromEmbedUrl(server.embedUrl);
+  return {
+    status: "resolved",
+    serverName: server.serverName,
+    serverKind: "megaplay",
+    links,
+    subtitles: payload.tracks.map((track) => ({
+      src: track.file,
+      ...(track.label && { label: track.label }),
+      ...(track.isDefault && { isDefault: true }),
+    })),
+    ...(malId && { malId }),
+    ...(payload.intro && { intro: payload.intro }),
+    ...(payload.outro && { outro: payload.outro }),
+    embedReferer,
+    ...(ladderFallback && { ladderFallback: true as const }),
+  };
+}
+
+function resolveHianimeLane(
+  server: HianimeServerEntry,
+  context: ProviderRuntimeContext,
+  signal?: AbortSignal,
+): Promise<HianimeResolvedLane> {
+  return hianimeServerKind(server) === "megaplay"
+    ? resolveMegaplayLane(server, context, signal)
+    : resolveZokoanimeLane(server, context, signal);
+}
+
+/**
+ * Walk the mode's supported servers in the order the API offered them — a
+ * dead lane records its failure and the walk moves to the next server, so a
+ * rotten ZokoAnime does not take the episode down while HD-1 still plays.
+ * The first resolved lane wins: further servers only cost round trips.
+ */
 export async function resolveHianimeEpisodeStreams({
   context,
   episodeId,
   requestedMode,
+  onlyServerIndex,
   signal,
 }: {
   readonly context: ProviderRuntimeContext;
   readonly episodeId: string;
   readonly requestedMode: HianimeAudioMode;
+  /** A pinned source row (`source:hianime:<mode>:<n>`) resolves only that lane. */
+  readonly onlyServerIndex?: number;
   readonly signal?: AbortSignal;
 }): Promise<HianimeEpisodeStreamResolution> {
   let servers: readonly HianimeServerEntry[];
@@ -530,119 +667,73 @@ export async function resolveHianimeEpisodeStreams({
     return {
       availableModes: [],
       observedServers: [],
-      requested: { mode: requestedMode, status: "failed", failure: failureOf(error) },
+      laneNames: { sub: [], dub: [] },
+      requested: {
+        mode: requestedMode,
+        status: "failed",
+        servers: [],
+        failure: failureOf(error),
+      },
     };
   }
   const observedServers = [...new Set(servers.map((server) => server.serverName))];
-  const supported = servers.filter((server) => isSupportedServer(server.serverName));
+  const supported = servers.filter((server) => hianimeServerKind(server) !== null);
   const availableModes = (["sub", "dub"] as const).filter((mode) =>
     supported.some((server) => server.audioMode === mode),
   );
+  const laneNames: Record<HianimeAudioMode, string[]> = { sub: [], dub: [] };
+  for (const server of supported) laneNames[server.audioMode].push(server.serverName);
 
-  const embedUrl = supported.find((server) => server.audioMode === requestedMode)?.embedUrl;
-  if (!embedUrl) {
+  const modeServers = supported.filter((server) => server.audioMode === requestedMode);
+  const lanes =
+    onlyServerIndex === undefined
+      ? modeServers
+      : modeServers.filter((_, index) => index === onlyServerIndex);
+  if (lanes.length === 0) {
     return {
       availableModes,
       observedServers,
-      requested: { mode: requestedMode, status: "unavailable" },
+      laneNames,
+      requested: { mode: requestedMode, status: "unavailable", servers: [] },
     };
   }
 
-  try {
-    const embedReferer = hianimeEmbedReferer(embedUrl);
-    const embedHtml = await hianimeFetchText(embedUrl, {
-      signal,
-      context,
-      referer: HIANIME_REFERER,
-    });
-    const payload = decodeHianimeEmbedPage(embedHtml);
-    const ladderHeaders = {
-      "User-Agent": HIANIME_USER_AGENT,
-      Referer: embedReferer,
-      Origin: embedReferer.replace(/\/$/, ""),
-    };
-    const fetchImpl =
-      context.fetch?.fetch.bind(context.fetch) ??
-      ((url: string, init?: RequestInit) => fetch(url, init));
-    const inventory = await expandHlsMasterInventory({
-      fetch: fetchImpl,
-      masterUrl: payload.src,
-      headers: ladderHeaders,
-      signal: createTimeoutSignal(signal, 15_000),
-    });
-    // A dead master host (5xx/404/410) means the fallback `auto` row would point
-    // at the same dead URL — drop it so the caller fails instead of playing a
-    // corpse. 403/timeout stays: gatekept CDNs still play in mpv.
-    const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
-    const links: HianimeStreamLink[] = variants.map((variant) => ({
-      url: variant.url,
-      quality: variant.qualityLabel,
-      qualityRank: variant.qualityRank,
-      referer: embedReferer,
-    }));
-    if (links.length === 0) {
-      // A definitive dead-host answer is upstream evidence, not a transient
-      // transport failure — but keep the status fidelity: a gone route
-      // (404/410) is terminal while a 5xx maintenance window may heal.
-      const deadHostStatus = isHlsDeadHostStatus(inventory.probe.httpStatus)
-        ? inventory.probe.httpStatus
-        : undefined;
-      return {
-        availableModes,
-        observedServers,
-        requested: {
+  const resolutions: HianimeServerResolution[] = [];
+  let firstFailure: HianimeStreamFailure | undefined;
+  for (const server of lanes) {
+    // Mode-local index keeps the source row stable regardless of how sub and
+    // dub entries interleave in the endpoint's array.
+    const index = modeServers.indexOf(server);
+    try {
+      const resolution = await resolveHianimeLane(server, context, signal);
+      resolutions.push({ ...resolution, serverIndex: index });
+      // One playable lane is enough — further servers only cost requests.
+      break;
+    } catch (error) {
+      if (signal?.aborted === true) throw error;
+      const failure = failureOf(error);
+      firstFailure ??= failure;
+      resolutions.push({
+        status: "failed",
+        serverIndex: index,
+        serverName: server.serverName,
+        failure,
+      });
+    }
+  }
+
+  const ok = resolutions.find((server) => server.status === "resolved");
+  return {
+    availableModes,
+    observedServers,
+    laneNames,
+    requested: ok
+      ? { mode: requestedMode, status: "resolved", servers: resolutions }
+      : {
           mode: requestedMode,
           status: "failed",
-          failure: {
-            code:
-              deadHostStatus !== undefined
-                ? deadHostStatus >= 500
-                  ? "provider-unavailable"
-                  : "not-found"
-                : "network-error",
-            message:
-              deadHostStatus !== undefined
-                ? `hianime master host answered HTTP ${deadHostStatus} — dead upstream`
-                : "hianime ladder expansion returned no variants",
-          },
+          servers: resolutions,
+          ...(firstFailure && { failure: firstFailure }),
         },
-      };
-    }
-    const malId = hianimeMalIdFromEmbedUrl(embedUrl);
-    // The ladder still returns the single `auto` fallback row (pointing at
-    // the master URL, rank 0) when the fetched body is not a master playlist
-    // — transport failures throw instead, and never reach this line. That
-    // shape is the fallback's alone: a parsed variant never points at the
-    // master with rank 0, so flag it for the trace instead of letting it
-    // pose as a genuine single rung.
-    const ladderFallback =
-      links.length === 1 &&
-      links[0]?.url === payload.src &&
-      links[0]?.quality === "auto" &&
-      links[0]?.qualityRank === 0;
-    return {
-      availableModes,
-      observedServers,
-      requested: {
-        mode: requestedMode,
-        status: "resolved",
-        links,
-        subtitles: payload.subtitles,
-        ...(malId && { malId }),
-        ...(payload.intro && { intro: payload.intro }),
-        ...(payload.outro && { outro: payload.outro }),
-        ...(payload.poster && { poster: payload.poster }),
-        ...(payload.spriteVtt && { spriteVtt: payload.spriteVtt }),
-        embedReferer,
-        ...(ladderFallback && { ladderFallback: true as const }),
-      },
-    };
-  } catch (error) {
-    if (signal?.aborted === true) throw error;
-    return {
-      availableModes,
-      observedServers,
-      requested: { mode: requestedMode, status: "failed", failure: failureOf(error) },
-    };
-  }
+  };
 }

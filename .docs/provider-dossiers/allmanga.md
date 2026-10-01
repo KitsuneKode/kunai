@@ -37,14 +37,14 @@ episode GraphQL persisted GET + aaReq + x-build-id
 
 ani-cli currently generates links for these source families:
 
-| Source family       | ani-cli behavior                          | Kunai behavior today                                                                      |
-| ------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `Default`           | WIXMP/repackager or master HLS extraction | Supported                                                                                 |
-| `Yt-mp4`            | direct tools/fast4speed URL               | Supported                                                                                 |
-| `S-mp4`             | API JSON with direct mp4 when present     | Supported when link exists                                                                |
-| `Mp4`               | mp4upload page scrape                     | Supported (embed scrape + `Referer: https://www.mp4upload.com`, scoped `--tls-verify=no`) |
-| `Fm-mp4` / Filemoon | AES/decrypt path                          | Removed upstream (b8032b7); no Kunai code path remains                                    |
-| `Ak`                | Not in the older ani-cli provider list    | **Current drift gap**                                                                     |
+| Source family       | ani-cli behavior                          | Kunai behavior today                                                                                                                                                                            |
+| ------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Default`           | WIXMP/repackager or master HLS extraction | Supported                                                                                                                                                                                       |
+| `Yt-mp4`            | direct tools/fast4speed URL               | Supported                                                                                                                                                                                       |
+| `S-mp4`             | API JSON with direct mp4 when present     | Supported when link exists                                                                                                                                                                      |
+| `Mp4`               | mp4upload page scrape                     | Supported (embed scrape + `Referer: https://www.mp4upload.com`, scoped `--tls-verify=no`)                                                                                                       |
+| `Fm-mp4` / Filemoon | AES/decrypt path                          | Removed upstream (b8032b7); no Kunai code path remains                                                                                                                                          |
+| `Ak`                | Not in the older ani-cli provider list    | **Supported** — `fetchAkLinks` picks one video + one audio `rawUrls` representation, registers a deferred locator, and `deferred-media-materializer` writes a SegmentBase MPD mpv plays locally |
 
 ### Solo Leveling S01E01 drift
 
@@ -59,7 +59,7 @@ Live probe on 2026-05-25:
   - `duration`: media duration.
   - `subtitles[]`: English ASS subtitle endpoint.
 
-Kunai currently skips `Ak`, so the provider returns no streams. This is a source-shape mismatch, not a provider outage and not simple slowness.
+At the time Kunai skipped `Ak`, so the provider returned no streams — a source-shape mismatch, not a provider outage. `Ak` is now implemented: `rawUrls` become a generated local MPD (see below).
 
 ### `Ak` DASH proof, 2026-05-26
 
@@ -96,8 +96,8 @@ The experiment generated a temporary MPD from one selected video representation 
 - GraphQL search/catalog is working with `youtu-chan.com` referer.
 - The AES-256-GCM `tobeparsed` decode path and the build id 166 crypto bootstrap are verified working (re-derived 2026-09-08 after the 140→166 rotation; the episode query executes and `aaReq` is accepted); AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
-- Returning only the `Ak` video URL would be wrong because audio is separate.
-- The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.
+- Returning only the `Ak` video URL would be wrong because audio is separate — the generated MPD carries one video + one audio representation.
+- `Ak` handoff **is implemented**: `fetchAkLinks` normalizes `rawUrls` (`vids`/`audios`/`subtitles`/`duration`), registers a `allmanga-ak:` deferred locator, and `apps/cli/src/services/playback/deferred-media-materializer.ts` writes the SegmentBase MPD into a private temp dir at playback time. Locators are one-consumer capabilities — a cached copy is released rather than replayed.
 
 ## Recovering a build rotation
 
@@ -179,14 +179,13 @@ around.
 
 ## Recommended Fix Shape
 
-### P0: Promote the proven `Ak` DASH shape behind tests
+### P0: `Ak` DASH — landed
 
-The Solo Leveling proof confirms generated MPD playback with audio. Production work can now proceed behind fixtures and tests:
-
-- Add an AllManga source adapter for `Ak`.
-- Emit a `dash` stream with a generated local MPD/deferred locator, or extend the provider result contract if local MPD ownership belongs outside provider parsing.
-- Preserve subtitles from the `Ak` payload.
-- Add fixture tests for the `Ak` payload and selected stream mapping.
+The Solo Leveling proof confirms generated MPD playback with audio, and the
+production path now implements it: `fetchAkLinks` → deferred locator →
+generated local MPD at playback materialization. Subtitles from the `Ak`
+payload ride `normalizeAkSubtitles`; fixture tests pin the payload shape and
+stream mapping.
 
 ### P1: Expand the proof matrix
 

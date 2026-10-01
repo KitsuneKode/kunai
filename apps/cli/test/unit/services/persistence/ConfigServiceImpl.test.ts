@@ -104,6 +104,27 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).animeProviderPriority).toEqual(["allanime", "miruro"]);
   });
 
+  test("drops a series provider id stored in the youtube lane", async () => {
+    /* Regression: `youtubeProvider` was normalized as a series provider, so a
+     * stored "videasy" survived and got dispatched into youtube mode, where it
+     * can never resolve a `video`-kind title — and under manual recovery it is
+     * the only candidate tried. The youtube lane is `youtube`, nothing else. */
+    const service = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        youtubeProvider: "videasy",
+        youtubeProviderPriority: ["vidlink", "youtube"],
+      }),
+    );
+
+    expect(service.youtubeProvider).toBe("youtube");
+    expect(service.youtubeProviderPriority).toEqual(["youtube"]);
+
+    const service2 = await ConfigServiceImpl.load(
+      new MemoryConfigStore({ youtubeProvider: "youtube" }),
+    );
+    expect(service2.youtubeProvider).toBe("youtube");
+  });
+
   test("normalizes invalid stored startup priority to balanced", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({
@@ -310,6 +331,7 @@ describe("ConfigServiceImpl", () => {
     expect(service.animeProvider).toBe("hianime");
     expect(service.animeProviderPriority).toEqual([
       "miruro",
+      "animekai",
       "kickassanime",
       "animegg",
       "anidb",
@@ -319,12 +341,13 @@ describe("ConfigServiceImpl", () => {
     expect(persisted.animeProvider).toBe("hianime");
     expect(persisted.animeProviderPriority).toEqual([
       "miruro",
+      "animekai",
       "kickassanime",
       "animegg",
       "anidb",
       "allanime",
     ]);
-    expect(persisted.providerDefaultsRevision).toBe(3);
+    expect(persisted.providerDefaultsRevision).toBe(4);
   });
 
   test("moves inherited Miruro defaults from revisions 1 and 2 to HiAnime", async () => {
@@ -346,12 +369,13 @@ describe("ConfigServiceImpl", () => {
       expect(service.animeProvider).toBe("hianime");
       expect(service.animeProviderPriority).toEqual([
         "miruro",
+        "animekai",
         "kickassanime",
         "animegg",
         "anidb",
         "allanime",
       ]);
-      expect((await store.load()).providerDefaultsRevision).toBe(3);
+      expect((await store.load()).providerDefaultsRevision).toBe(4);
     }
   });
 
@@ -387,6 +411,7 @@ describe("ConfigServiceImpl", () => {
     expect(service.animeProvider).toBe("hianime");
     expect(service.animeProviderPriority).toEqual([
       "miruro",
+      "animekai",
       "kickassanime",
       "animegg",
       "anidb",

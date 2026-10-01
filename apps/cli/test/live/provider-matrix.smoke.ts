@@ -50,6 +50,20 @@ const MATRIX: readonly MatrixEntry[] = [
     fixture: "Inception (DASH + playlist cookie)",
   },
   {
+    provider: "vidrock",
+    command: ["bun", "test/live/vidrock-breakingbad.smoke.ts"],
+    playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "vidrock"],
+    media: "series",
+    fixture: "Breaking Bad S01E01 (AES-GCM lanes)",
+  },
+  {
+    provider: "movy",
+    command: ["bun", "test/live/movy-residentevil.smoke.ts"],
+    playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "movy"],
+    media: "movie",
+    fixture: "Resident Evil (STREAMCRYPTO lanes)",
+  },
+  {
     provider: "anidb",
     command: ["bun", "-e", "await import('./test/live/anidb-onigiri.smoke.ts')"],
     media: "anime",
@@ -66,6 +80,31 @@ const MATRIX: readonly MatrixEntry[] = [
     command: ["bun", "-e", "await import('./test/live/miruro-demonslayer.smoke.ts')"],
     media: "anime",
     fixture: "One Piece E1159",
+  },
+  {
+    provider: "hianime",
+    command: ["bun", "test/live/hianime-naruto.smoke.ts"],
+    media: "anime",
+    fixture: "Naruto E01 sub+dub (ZokoAnime embed)",
+  },
+  {
+    provider: "animekai",
+    command: ["bun", "test/live/animekai-naruto.smoke.ts"],
+    playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "animekai"],
+    media: "anime",
+    fixture: "Naruto E01 sub+dub (AES-CBC embed sources)",
+  },
+  {
+    provider: "animegg",
+    command: ["bun", "test/live/animegg-deathnote.smoke.ts"],
+    media: "anime",
+    fixture: "Death Note E05 (mpv decode — probes lie)",
+  },
+  {
+    provider: "kickassanime",
+    command: ["bun", "test/live/kickassanime-frieren.smoke.ts"],
+    media: "anime",
+    fixture: "Frieren E05 (mpv decode — probes lie)",
   },
   {
     provider: "youtube",

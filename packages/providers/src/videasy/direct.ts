@@ -36,8 +36,8 @@ import { decryptOpensslSalted, sha256Hex } from "../shared/openssl-evp";
 import { HealthTracker, TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
-  findLastCycleFailure,
-  providerFailureCodeFromCycleFailure,
+  cycleExhaustedResult,
+  cycleFailureClassFromProviderCode,
 } from "../shared/provider-cycle";
 import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -600,11 +600,18 @@ export async function resolveVideasyDirect(
           at: sessionGuardFailure.at,
         });
       }
+      // The request-level failures carry the real cause (timeout, blocked,
+      // server error). Throw that class, not a blanket `candidate-empty`, so
+      // the terminal exhausted verdict and endpoint health see the truth.
+      const lastDetail = candidateFailures.at(-1);
       throw createProviderCycleFailureError(candidate, {
-        failureClass: "candidate-empty",
-        message: `Videasy ${metadata.server} did not produce a playable source`,
-        retryable: false,
-        at: context.now(),
+        failureClass: lastDetail
+          ? cycleFailureClassFromProviderCode(lastDetail.code)
+          : "candidate-empty",
+        message:
+          lastDetail?.message ?? `Videasy ${metadata.server} did not produce a playable source`,
+        retryable: lastDetail?.retryable ?? false,
+        at: lastDetail?.at ?? context.now(),
       });
     }
     return result;
@@ -762,28 +769,26 @@ export async function resolveVideasyDirect(
   }
 
   events.push(...cycleResult.events);
-  const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-  const failure = cycleFailure
-    ? {
-        code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-        message: cycleFailure.message,
-        retryable: cycleFailure.retryable,
-      }
-    : {
-        code: "not-found" as const,
-        message: "VidKing direct resolver did not find a playable source",
-        retryable: false,
-      };
-
-  return createExhaustedResult(input, context, VIDEOSY_PROVIDER_ID, failure, {
-    cachePolicy,
-    events,
-    failures,
-    sources: finalizeVidkingSourceInventory({
-      sources,
-      attempts: cycleResult.attempts,
-    }),
-    startedAt,
+  return cycleExhaustedResult({
+    input,
+    context,
+    providerId: VIDEOSY_PROVIDER_ID,
+    attempts: cycleResult.attempts,
+    fallback: {
+      code: "not-found",
+      message: "VidKing direct resolver did not find a playable source",
+      retryable: false,
+    },
+    evidence: {
+      cachePolicy,
+      events,
+      failures,
+      sources: finalizeVidkingSourceInventory({
+        sources,
+        attempts: cycleResult.attempts,
+      }),
+      startedAt,
+    },
   });
 }
 
@@ -1485,6 +1490,8 @@ async function fetchWingsdatabaseSeed(
   context: ProviderRuntimeContext,
   signal?: AbortSignal,
   hosts: readonly string[] = WINGS_API_BASES,
+  /** Out-param: the representative cause when every host failed. */
+  failureOut?: { error?: unknown },
 ): Promise<WingsSeedTransport | undefined> {
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const effectiveSignal = signal ?? context.signal;
@@ -1523,6 +1530,7 @@ async function fetchWingsdatabaseSeed(
   // timeout before the fallback was even contacted.
   const controllers = candidates.map(() => new AbortController());
   let won = false;
+  let lastGenuineError: unknown;
   try {
     const winner = await Promise.any(
       candidates.map(async (apiBase, index) => {
@@ -1556,12 +1564,16 @@ async function fetchWingsdatabaseSeed(
           // playback. A genuine pre-winner failure or timeout is real evidence.
           if (!won && !effectiveSignal?.aborted) {
             wingsHostFailureCache.set(apiBase, true, WINGS_HOST_FAILURE_PENALTY_MS);
+            lastGenuineError = error;
           }
           throw error;
         }
       }),
     ).catch(() => undefined);
-    if (!winner) return undefined;
+    if (!winner) {
+      if (failureOut) failureOut.error = lastGenuineError;
+      return undefined;
+    }
 
     wingsSeedCache.set(wingsSeedCacheKey(winner.apiBase, mediaId), winner.seed, winner.ttlMs);
     wingsPreferredHostCache.set(mediaId, winner.apiBase, winner.ttlMs);
@@ -1652,7 +1664,14 @@ async function tryVidkingServer(opts: {
   /* For wingsdatabase, fetch a seed before proceeding. Skip server if seed fails. */
   let wingsTransport: WingsSeedTransport | undefined;
   if (isWings) {
-    wingsTransport = await fetchWingsdatabaseSeed(tmdbId, context, candidateSignal);
+    const seedFailure: { error?: unknown } = {};
+    wingsTransport = await fetchWingsdatabaseSeed(
+      tmdbId,
+      context,
+      candidateSignal,
+      undefined,
+      seedFailure,
+    );
     if (!wingsTransport) {
       emitTraceEvent(events, context, {
         type: "source:failed",
@@ -1661,6 +1680,10 @@ async function tryVidkingServer(opts: {
         message: `${presentation.themeLabel} failed to fetch wingsdatabase seed`,
         attributes: { serverId: server, stage: "seed", failureClass: "seed-unavailable" },
       });
+      // A dead or refusing seed host is upstream evidence (5xx, rate limit,
+      // timeout), not catalog absence — throw so the cycle classifies the real
+      // cause instead of reporting the lane as an empty candidate.
+      if (seedFailure.error) throw seedFailure.error;
       return null;
     }
   }

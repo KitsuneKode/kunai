@@ -1098,7 +1098,11 @@ export class DownloadService {
       (stream) => stream.id === resolved.stream.providerResolveResult?.selectedStreamId,
     );
     const streamMeta = selectedStream?.metadata as
-      | { readonly isLive?: boolean; readonly liveStatus?: string }
+      | {
+          readonly isLive?: boolean;
+          readonly liveStatus?: string;
+          readonly demuxerProfile?: string;
+        }
       | undefined;
     if (streamMeta?.isLive === true || streamMeta?.liveStatus === "live") {
       throw new Error("Live YouTube streams cannot be downloaded yet");
@@ -1144,7 +1148,12 @@ export class DownloadService {
       1,
       Math.min(5, Math.trunc(this.deps.config.maxConcurrentDownloads) || 1),
     );
-    const fragmentConcurrency = Math.max(2, Math.floor(8 / parallelDownloads));
+    // Burst-limited CDNs (the megaplay family kills IPs pulling ~100 uncached
+    // segments inside 10s) need serial fragment fetches — yt-dlp has no
+    // requests/sec throttle, so `--concurrent-fragments 1` is the analogue of
+    // ani-cli's `-readrate 10` cap on ffmpeg downloads.
+    const burstLimited = streamMeta?.demuxerProfile === "capped-readahead";
+    const fragmentConcurrency = burstLimited ? 1 : Math.max(2, Math.floor(8 / parallelDownloads));
     const args = [
       "--concurrent-fragments",
       String(fragmentConcurrency),

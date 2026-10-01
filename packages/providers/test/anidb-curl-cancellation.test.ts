@@ -45,7 +45,10 @@ test("a genuine curl failure is still a failure, not a cancellation", async () =
     (thrown: Error) => thrown,
   );
 
-  expect((error as Error).message).toBe("curl exit 6");
+  // curl exit 6 is DNS resolution — the shared transport now reports the
+  // structured kind instead of a bare exit line.
+  expect((error as Error).message).toContain("curl exit 6");
+  expect((error as Error).message).toContain("no HTTP response");
   expect(classifyProviderFailure({ message: (error as Error).message }).failureClass).not.toBe(
     "user-cancelled",
   );

@@ -11,7 +11,19 @@ export type StreamReachabilityFetch = (url: string, init: RequestInit) => Promis
 
 export type StreamReachabilityProbeResult =
   | { readonly status: "reachable" }
-  | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
+  | {
+      readonly status: "unreachable";
+      readonly reason: string;
+      readonly definitive: boolean;
+      /**
+       * The refusal is evidence about the host, not just this request: DNS
+       * failures, refused connections, TLS verdicts, and SSRF-guard blocks kill
+       * every URL on that host equally. HTTP status refusals and malformed-body
+       * verdicts stay unset — a signed URL's 403 says nothing about a sibling
+       * rung on the same CDN.
+       */
+      readonly hostRefusal?: boolean;
+    }
   | { readonly status: "timeout" };
 
 export type ProbeStreamReachabilityInput = {
@@ -449,6 +461,7 @@ async function fetchPlaylistText(
           status: "unreachable",
           reason: `blocked stream target: ${outcome.reason}`,
           definitive: true,
+          hostRefusal: true,
         },
       };
     }
@@ -467,12 +480,15 @@ async function fetchPlaylistText(
       return { status: "fail", result: { status: "timeout" } };
     }
     const message = error instanceof Error ? error.message : String(error);
+    const definitive = isDefinitiveNetworkError(message);
     return {
       status: "fail",
       result: {
         status: "unreachable",
         reason: message,
-        definitive: isDefinitiveNetworkError(message),
+        definitive,
+        // DNS, refused connections, and TLS verdicts are host-scoped evidence.
+        ...(definitive ? { hostRefusal: true as const } : null),
       },
     };
   } finally {
@@ -517,6 +533,7 @@ async function probeHlsMediaSegment(
         status: "unreachable",
         reason: `HLS segment blocked: ${outcome.reason}`,
         definitive: true,
+        hostRefusal: true,
       };
     }
     const response = outcome.response;
@@ -554,10 +571,12 @@ async function probeHlsMediaSegment(
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
+    const definitive = isDefinitiveNetworkError(message);
     return {
       status: "unreachable",
       reason: `HLS segment unreachable: ${message}`,
-      definitive: isDefinitiveNetworkError(message),
+      definitive,
+      ...(definitive ? { hostRefusal: true as const } : null),
     };
   } finally {
     clearTimeout(timeout);
@@ -609,6 +628,7 @@ async function probeHttpStatus(
         status: "unreachable",
         reason: `blocked stream target: ${outcome.reason}`,
         definitive: true,
+        hostRefusal: true,
       };
     }
     const response = outcome.response;
@@ -625,10 +645,12 @@ async function probeHttpStatus(
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
+    const definitive = isDefinitiveNetworkError(message);
     return {
       status: "unreachable",
       reason: message,
-      definitive: isDefinitiveNetworkError(message),
+      definitive,
+      ...(definitive ? { hostRefusal: true as const } : null),
     };
   } finally {
     clearTimeout(timeout);

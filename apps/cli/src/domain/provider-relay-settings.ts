@@ -14,6 +14,7 @@ export const RELAY_CAPABLE_PROVIDER_OPTIONS = [
   { value: "anidb", label: "AniDB" },
   { value: "allanime", label: "AllAnime" },
   { value: "animegg", label: "AnimeGG" },
+  { value: "animekai", label: "AnimeKai" },
   { value: "hianime", label: "HiAnime" },
   { value: "kickassanime", label: "KickAssAnime" },
   { value: "miruro", label: "Miruro" },

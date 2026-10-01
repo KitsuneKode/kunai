@@ -34,7 +34,7 @@ import {
 } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
-  findLastCycleFailure,
+  cycleExhaustedResult,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import {
@@ -574,27 +574,26 @@ export const rivestreamProviderModule: CoreProviderModule = {
       }
 
       if (!cycleResult.selected) {
-        const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-        const failure = cycleFailure
-          ? {
-              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-              message: cycleFailure.message,
-              retryable: cycleFailure.retryable,
-            }
-          : {
-              code: "not-found" as const,
-              message: "All internal servers exhausted without returning streams.",
-              retryable: true,
-            };
-        return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, failure, {
-          cachePolicy,
-          events,
-          failures,
-          sources: finalizeCycleSourceInventory({
-            sources: sourceInventorySeeds,
-            attempts: cycleResult.attempts,
-          }),
-          startedAt,
+        return cycleExhaustedResult({
+          input,
+          context,
+          providerId: RIVESTREAM_PROVIDER_ID,
+          attempts: cycleResult.attempts,
+          fallback: {
+            code: "not-found",
+            message: "All internal servers exhausted without returning streams.",
+            retryable: true,
+          },
+          evidence: {
+            cachePolicy,
+            events,
+            failures,
+            sources: finalizeCycleSourceInventory({
+              sources: sourceInventorySeeds,
+              attempts: cycleResult.attempts,
+            }),
+            startedAt,
+          },
         });
       }
 
@@ -1173,7 +1172,7 @@ async function resolveRivestreamProviderCandidate({
     });
   }
   // Keep the alternatives, drop the rungs the gate proved dead.
-  streams = dropRefusedStreams(streams, selection.refusedHosts);
+  streams = dropRefusedStreams(streams, selection);
   variants = variants.filter((variant) =>
     streams.some((candidateStream) => candidateStream.variantId === variant.id),
   );

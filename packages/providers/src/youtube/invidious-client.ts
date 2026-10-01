@@ -1,5 +1,6 @@
-import { providerHttpErrorForStatus } from "@kunai/types";
+import { providerHttpErrorForStatus, type ProviderRuntimeContext } from "@kunai/types";
 
+import { providerFetch } from "../runtime/fetch";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { markInvidiousInstanceFailure, pickInvidiousInstance } from "./invidious-instance-pool";
 import { YOUTUBE_PROVIDER_ID } from "./manifest";
@@ -67,6 +68,7 @@ export type InvidiousPlaylistVideo = {
 export type InvidiousClientOptions = {
   readonly preferredInstanceUrl?: string;
   readonly signal?: AbortSignal;
+  readonly context?: ProviderRuntimeContext;
 };
 
 export async function invidiousSearch(
@@ -171,13 +173,14 @@ async function requestInvidiousJson<T>(
   const instance = await pickInvidiousInstance({
     preferredInstanceUrl: options.preferredInstanceUrl,
     signal: options.signal,
+    context: options.context,
   });
   if (options.signal?.aborted) {
     throw new Error("Invidious request aborted");
   }
   const url = `${instance}${path.startsWith("/") ? path : `/${path}`}`;
   try {
-    const response = await fetch(url, {
+    const response = await providerFetch(options.context, url, {
       signal: directStreamFetchSignal(options.signal, INVIDIOUS_FETCH_TIMEOUT_MS),
       headers: { Accept: "application/json" },
     });

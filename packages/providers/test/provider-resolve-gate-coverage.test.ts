@@ -18,23 +18,30 @@ import { join } from "node:path";
  */
 const PROVIDER_SRC = join(import.meta.dir, "../src");
 
-/** Providers registered by `loadProductionProviderModules()`. */
+/** `loadProductionProviderModules()` — the registry this test guards. */
+const BOOTSTRAP = join(import.meta.dir, "../../../apps/cli/src/container/bootstrap-providers.ts");
+
+/**
+ * Providers registered by `loadProductionProviderModules()`. Read out of the
+ * bootstrap file rather than restated here — a hardcoded list is how this
+ * test drifted to covering 8 providers while production ran 12.
+ */
 const PRODUCTION_PROVIDERS = [
-  "videasy",
-  "vidlink",
-  "vidrock",
-  "rivestream",
-  "allmanga",
-  "anidb",
-  "miruro",
-  "youtube",
+  ...new Set(
+    [...readFileSync(BOOTSTRAP, "utf8").matchAll(/(\w+)ProviderModule\b/g)]
+      .flatMap((match) => (match[1] ? [match[1]] : []))
+      // Module names are `<id>ProviderModule`; drop anything that does not
+      // resolve to a provider source dir (e.g. a renamed module mid-refactor
+      // must fail loudly below, not silently drop out of coverage).
+      .filter((id) => readdirSync(PROVIDER_SRC).includes(id)),
+  ),
 ] as const;
 
 /**
  * A provider may only appear here with a reason that is about the *runtime*,
  * not about effort.
  */
-const EXEMPT: Partial<Record<(typeof PRODUCTION_PROVIDERS)[number], string>> = {
+const EXEMPT: Record<string, string> = {
   // YouTube hands mpv a watch URL and lets ytdl resolve the media at play time.
   // There is no direct stream URL at resolve time to probe, and the smoke
   // asserts the watch-host contract instead.
@@ -47,14 +54,29 @@ const EXEMPT: Partial<Record<(typeof PRODUCTION_PROVIDERS)[number], string>> = {
   // needs a live provider to measure against, and Miruro is WAF-blocked; tracked
   // in .plans/provider-playback-resilience.md.
   miruro: "per-candidate budget cannot contain a probe; needs a budget rework measured live",
+  // AnimeGG's vidcache host answers HTTP 500 to anything that is not its own
+  // player — plain GET and ranged GET alike, fresh URL or stale — while mpv
+  // plays the same URL and writes a frame (.docs/provider-dossiers/animegg.md).
+  // A probe here cannot distinguish live from dead, so it would only ever
+  // veto playable streams.
+  animegg: "upstream 500s every non-player request; a probe cannot judge the stream",
+  // ffmpeg/ffprobe fail on KickAssAnime's master where mpv succeeds —
+  // documented in .docs/provider-dossiers/kickassanime.md — so a probe is not
+  // a reachability signal for these URLs and must not veto them.
+  kickassanime: "probes fail on streams mpv plays; no verdict the gate can trust",
 };
 
 /**
- * The gate itself, the walk that applies it across a candidate's rungs, or the
- * shared direct-stream engine that calls it. All three funnel into
+ * The gate itself, the walks that apply it across a candidate's rungs, or the
+ * shared direct-stream engine that calls it. All of them funnel into
  * `verifyCandidateStream`.
  */
-const GATE_MARKERS = ["verifyCandidateStream", "selectVerifiedStream", "resolveDirectStreamSource"];
+const GATE_MARKERS = [
+  "verifyCandidateStream",
+  "selectVerifiedStream",
+  "selectVerifiedReadyStream",
+  "resolveDirectStreamSource",
+];
 
 function providerSources(provider: string): string {
   const dir = join(PROVIDER_SRC, provider);

@@ -4,7 +4,12 @@ import { createRelayFetchPort } from "../src/create-relay-fetch-port";
 import { handleRpcRequest, relayError } from "../src/handler";
 import { normalizeRelayBaseUrl } from "../src/normalize-relay-base-url";
 import { buildProviderRelayRegistry } from "../src/registry";
-import { RELAY_ERROR_CODE_HEADER, type RelayErrorCode } from "../src/types";
+import {
+  RELAY_ERROR_CODE_HEADER,
+  RELAY_RESULT_HEADER,
+  RELAY_RESULT_UPSTREAM,
+  type RelayErrorCode,
+} from "../src/types";
 
 const registry = buildProviderRelayRegistry([
   {
@@ -146,18 +151,26 @@ test.each([
   },
 );
 
-test("createRelayFetchPort does not fall back for an unmarked upstream HTTP failure", async () => {
+test("an unmarked non-2xx falls back to direct — the body cannot decide either way", async () => {
+  /* A platform crash (dead function, SSO wall, missing route) and an old
+   * relay's proxied upstream error look identical: non-2xx with no relay
+   * markers. Falling back resolves the ambiguity — a real upstream error
+   * reproduces direct — and a crafted error-shaped body never influences the
+   * decision because only the header markers count. */
   const calls: string[] = [];
   const port = createRelayFetchPort({
     relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
     registry,
     async fetch(input) {
       calls.push(String(input));
+      if (new URL(String(input)).origin !== "https://relay.example") {
+        return Response.json({ direct: true });
+      }
       return Response.json(
         {
           error: {
             code: "relay-not-configured",
-            message: "Untrusted upstream body must not control fallback",
+            message: "Untrusted body must not control fallback",
           },
         },
         { status: 503 },
@@ -167,8 +180,122 @@ test("createRelayFetchPort does not fall back for an unmarked upstream HTTP fail
 
   const response = await port.fetch("https://api.allanime.day/api");
 
+  expect(await response.json()).toEqual({ direct: true });
+  expect(calls).toEqual(["https://relay.example/rpc/allanime", "https://api.allanime.day/api"]);
+});
+
+test.each([
+  ["upstream-error", 502],
+  ["upstream-timeout", 504],
+  ["unknown-provider", 404],
+  ["host-not-allowed", 403],
+  ["response-too-large", 502],
+] as const)(
+  "createRelayFetchPort falls back to direct for relay error %s",
+  async (code, status) => {
+    /* Every relay error code means the provider's upstream answer was never
+     * delivered — auth failures and refusals alike — so fallbackToDirect
+     * applies to all of them, not just the authorization pair. */
+    const calls: string[] = [];
+    const port = createRelayFetchPort({
+      relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+      registry,
+      async fetch(input) {
+        calls.push(String(input));
+        if (new URL(String(input)).origin === "https://relay.example") {
+          return relayError(
+            code satisfies RelayErrorCode,
+            "allanime",
+            "Relay could not deliver",
+            status,
+          );
+        }
+        return Response.json({ direct: true });
+      },
+    });
+
+    const response = await port.fetch("https://api.allanime.day/api");
+
+    expect(await response.json()).toEqual({ direct: true });
+    expect(calls).toEqual(["https://relay.example/rpc/allanime", "https://api.allanime.day/api"]);
+  },
+);
+
+test("a proxied upstream error carrying the result marker stays final", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+    registry,
+    async fetch(input) {
+      calls.push(String(input));
+      return new Response("upstream unavailable", {
+        status: 503,
+        headers: { [RELAY_RESULT_HEADER]: RELAY_RESULT_UPSTREAM },
+      });
+    },
+  });
+
+  const response = await port.fetch("https://api.allanime.day/api");
+
   expect(response.status).toBe(503);
   expect(calls).toEqual(["https://relay.example/rpc/allanime"]);
+});
+
+test("an unmarked non-2xx stays final when fallbackToDirect is off", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: false },
+    registry,
+    async fetch(input) {
+      calls.push(String(input));
+      return new Response("platform crash", { status: 500 });
+    },
+  });
+
+  const response = await port.fetch("https://api.allanime.day/api");
+
+  expect(response.status).toBe(500);
+  expect(calls).toEqual(["https://relay.example/rpc/allanime"]);
+});
+
+test("an unmarked 2xx stays final — it is a proxied success, not a platform failure", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+    registry,
+    async fetch(input) {
+      calls.push(String(input));
+      return Response.json({ upstream: "ok" });
+    },
+  });
+
+  const response = await port.fetch("https://api.allanime.day/api");
+
+  expect(await response.json()).toEqual({ upstream: "ok" });
+  expect(calls).toEqual(["https://relay.example/rpc/allanime"]);
+});
+
+test("a platform redirect on the RPC route falls back instead of being followed", async () => {
+  const calls: string[] = [];
+  const port = createRelayFetchPort({
+    relayConfig: { baseUrl: "https://relay.example", fallbackToDirect: true },
+    registry,
+    async fetch(input) {
+      calls.push(String(input));
+      if (new URL(String(input)).origin !== "https://relay.example") {
+        return Response.json({ direct: true });
+      }
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://auth.example/login" },
+      });
+    },
+  });
+
+  const response = await port.fetch("https://api.allanime.day/api");
+
+  expect(await response.json()).toEqual({ direct: true });
+  expect(calls).toEqual(["https://relay.example/rpc/allanime", "https://api.allanime.day/api"]);
 });
 
 test("an upstream relay-error marker is stripped before client fallback policy sees it", async () => {

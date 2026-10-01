@@ -10,7 +10,7 @@ import {
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
-import { migrateLegacyProviderId } from "@kunai/providers";
+import { migrateLegacyProviderId, YOUTUBE_PROVIDER_ID } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
 import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@kunai/types";
 
@@ -34,6 +34,28 @@ function normalizeSeriesProvider(value: string | undefined): string {
   const normalized = value?.trim();
   if (!normalized) return DEFAULT_CONFIG.provider;
   return migrateLegacyProviderId(normalized);
+}
+
+/**
+ * `provider`/`animeProvider` only need legacy-id migration: any surviving id is
+ * still a member of its own lane, and lane filtering downstream keeps the
+ * damage to one wasted attempt. A series id in the youtube slot is different —
+ * it can never resolve a `video`-kind title, and under manual recovery mode it
+ * is the only candidate tried. The youtube lane is exactly `YOUTUBE_PROVIDER_ID`
+ * today; extend the membership check if a second `video`-kind provider ships.
+ */
+function normalizeYoutubeProvider(value: string | undefined): string {
+  const normalized = migrateLegacyProviderId(value?.trim() ?? "");
+  return normalized === YOUTUBE_PROVIDER_ID ? normalized : DEFAULT_CONFIG.youtubeProvider;
+}
+
+function normalizeYoutubeProviderIdList(
+  values: readonly string[] | undefined,
+  fallback: readonly string[],
+): readonly string[] {
+  return normalizeProviderIdList(values, fallback).filter(
+    (providerId) => providerId === YOUTUBE_PROVIDER_ID,
+  );
 }
 
 function normalizeProviderIdList(
@@ -219,9 +241,8 @@ export class ConfigServiceImpl implements ConfigService {
         readProviderDefaultsRevision(loaded),
         CURRENT_PROVIDER_DEFAULTS_REVISION,
       ),
-      youtubeProvider:
-        normalizeSeriesProvider(loaded.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
-      youtubeProviderPriority: normalizeProviderIdList(
+      youtubeProvider: normalizeYoutubeProvider(loaded.youtubeProvider),
+      youtubeProviderPriority: normalizeYoutubeProviderIdList(
         loaded.youtubeProviderPriority,
         DEFAULT_CONFIG.youtubeProviderPriority,
       ),
@@ -975,6 +996,12 @@ const INHERITED_ANIME_DEFAULTS: readonly {
   {
     revision: 2,
     animeProvider: "miruro",
+    priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
+  },
+  // Revision 3 leads with HiAnime; revision 4 inserts AnimeKai into the tail.
+  {
+    revision: 3,
+    animeProvider: "hianime",
     priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
   },
 ];

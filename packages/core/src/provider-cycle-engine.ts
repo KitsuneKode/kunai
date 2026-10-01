@@ -10,7 +10,8 @@ import type {
   ProviderId,
   ProviderTraceEvent,
 } from "@kunai/types";
-import { ProviderHttpError } from "@kunai/types";
+import { httpStatusIsRetryable, ProviderHttpError } from "@kunai/types";
+import type { ResolveErrorCode } from "@kunai/types";
 
 import { guardEndpointHealthAgainstCancellation } from "./provider-attempt-cancellation";
 import { isOfflineNetworkFailure } from "./provider-failure-classifier";
@@ -767,6 +768,16 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
       retryable: false,
     };
   }
+  /* `AbortSignal.timeout` raises a DOMException named "TimeoutError", which is
+   * not an AbortError — without this case a per-request deadline reads as a
+   * generic retryable blip instead of the timeout it is. */
+  if (error instanceof Error && error.name === "TimeoutError") {
+    return {
+      failureClass: "candidate-timeout",
+      message: error.message,
+      retryable: true,
+    };
+  }
   /* A provider that threw with its HTTP status attached gets classified on
    * that status, not on whatever the message happens to contain — otherwise a
    * 429 or 503 reads as a generic retryable blip and never reaches the
@@ -783,6 +794,24 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
       failureClass: "candidate-network",
       message: error instanceof Error ? error.message : String(error),
       retryable: false,
+    };
+  }
+  /* A thrown value that carries the typed fields without being a
+   * ProviderHttpError instance — a provider error class that predates the
+   * base type, or an error reconstituted across a serialization boundary —
+   * still classifies on structure instead of prose (#458). An errno-style
+   * `code` like "ENOTFOUND" does not enter: the field must name a real
+   * ResolveErrorCode, carry an HTTP status, or name a transportKind. */
+  const structured = structuredErrorEvidence(error);
+  if (structured) {
+    return {
+      failureClass: providerCycleFailureClassFromParts(structured),
+      message: error instanceof Error ? error.message : String(error),
+      retryable:
+        structured.retryable ??
+        (structured.status !== undefined
+          ? httpStatusIsRetryable(structured.status)
+          : structured.transportKind !== "offline"),
     };
   }
   if (message.includes("network") || message.includes("fetch")) {
@@ -821,19 +850,83 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
 }
 
 function providerHttpCycleFailureClass(error: ProviderHttpError): ProviderCycleFailureClass {
-  const { code, status } = error;
+  return providerCycleFailureClassFromParts(error);
+}
+
+/**
+ * The parts-shaped classifier: every structured error this layer recognizes
+ * carries a subset of `{code, status, transportKind}`, and each vocabulary
+ * slot answers a different failure class. `transportKind` is the transport
+ * taxonomy's word for "timeout" — folded in beside the ResolveErrorCode so a
+ * reconstituted ProviderTransportError classifies the same as the live one.
+ */
+function providerCycleFailureClassFromParts(parts: {
+  readonly code?: ResolveErrorCode;
+  readonly status?: number;
+  readonly transportKind?: string;
+}): ProviderCycleFailureClass {
+  const { code, status, transportKind } = parts;
   if (code === "rate-limited" || status === 429) return "candidate-rate-limited";
   if (code === "provider-unavailable" || (status !== undefined && status >= 500)) {
     return "candidate-server-error";
   }
   if (code === "blocked" || status === 401 || status === 403) return "candidate-blocked";
-  if (code === "timeout" || status === 408 || status === 504) return "candidate-timeout";
+  if (code === "timeout" || transportKind === "timeout" || status === 408 || status === 504) {
+    return "candidate-timeout";
+  }
   if (code === "not-found" || status === 404) return "candidate-empty";
   if (code === "parse-failed") return "candidate-parse";
   if (code === "expired") return "candidate-expired";
   if (code === "unsupported-title") return "candidate-unsupported";
   if (code === "cancelled") return "candidate-user-cancelled";
   return "candidate-network";
+}
+
+/** ResolveErrorCode as a runtime set — `new Set<…>` so a mistyped member is a
+ * compile error at declaration, while `.has` still takes an arbitrary string. */
+const RESOLVE_ERROR_CODES: ReadonlySet<string> = new Set<ResolveErrorCode>([
+  "provider-unavailable",
+  "unsupported-title",
+  "not-found",
+  "network-error",
+  "rate-limited",
+  "blocked",
+  "expired",
+  "parse-failed",
+  "runtime-missing",
+  "yt-dlp-missing",
+  "timeout",
+  "cancelled",
+  "missing-input",
+  "unknown",
+]);
+
+/**
+ * Read the typed fields off a thrown value without trusting its prototype.
+ * Returns null unless at least one vocabulary slot is real evidence — a
+ * Node errno (`code: "ECONNRESET"`) is not a ResolveErrorCode and must keep
+ * falling through to message classification.
+ */
+function structuredErrorEvidence(error: unknown): {
+  readonly code?: ResolveErrorCode;
+  readonly status?: number;
+  readonly retryable?: boolean;
+  readonly transportKind?: string;
+} | null {
+  if (typeof error !== "object" || error === null) return null;
+  const record = error as Record<string, unknown>;
+  const code =
+    typeof record.code === "string" && RESOLVE_ERROR_CODES.has(record.code)
+      ? (record.code as ResolveErrorCode)
+      : undefined;
+  const status =
+    typeof record.status === "number" && record.status >= 100 && record.status <= 599
+      ? record.status
+      : undefined;
+  const transportKind = typeof record.transportKind === "string" ? record.transportKind : undefined;
+  const retryable = typeof record.retryable === "boolean" ? record.retryable : undefined;
+  if (!code && status === undefined && !transportKind) return null;
+  return { code, status, retryable, transportKind };
 }
 
 export function isAbortError(error: unknown): boolean {

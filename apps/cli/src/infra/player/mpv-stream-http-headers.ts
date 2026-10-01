@@ -220,6 +220,12 @@ export type PersistentLoadfileMediaOptions = {
   readonly ytdlFormat?: string;
   readonly ytdlRawOptions?: string;
   readonly isLive?: boolean;
+  /**
+   * Burst-limited-CDN demuxer hint (`StreamInfo.demuxerProfile`): caps the
+   * read-ahead queue so a mid-session switch onto a megaplay-family lane keeps
+   * the same throttle it would have had at process spawn.
+   */
+  readonly demuxerProfile?: "capped-readahead";
   readonly urlKind?: MpvUrlKind;
   /** Kunai audio setting: a language code, or the mode "sub"/"dub". */
   readonly audioPreference?: string;
@@ -293,6 +299,10 @@ export function buildPersistentLoadfileOptions(
 
   if (ytdlOptions?.isLive) {
     Object.assign(loadOptions, LIVE_DEMUXER_OPTIONS);
+  } else if (ytdlOptions?.demuxerProfile === "capped-readahead") {
+    loadOptions["cache-pause-wait"] = "2";
+    loadOptions["demuxer-readahead-secs"] = "10";
+    loadOptions["demuxer-max-bytes"] = "48MiB";
   }
 
   return loadOptions as PersistentLoadfileOptions;

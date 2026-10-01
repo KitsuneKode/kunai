@@ -1,7 +1,7 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "48edf6e3f51c283b713dc69d37366517415102b8911d6136f51932b8db757a04",
+  "cliSourceFingerprint": "d27806daa88e283c88a4617304b639266835e61497a6d052c66f91c48bf7395b",
   "docsContentFingerprint": "27c7a908e2425ab7a7f6747f5e7db6a797417aae1f10c209c09c026412bd439a",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
   "commandCount": 82,
@@ -14,6 +14,7 @@
     "anidb",
     "allanime",
     "hianime",
+    "animekai",
     "miruro",
     "animegg",
     "kickassanime",
@@ -154,11 +155,36 @@
       "status": "production",
       "notes": [
         "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
-        "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
+        "Three servers resolve as provider-local lanes in API order: ZokoAnime first (ani-cli parity), then HD-1 and Vidstream-2 — both megaplay.buzz embeds speaking the shared data-id/getSources/AES-256-CBC contract (upstream revived them after the Sept 410 window; live-verified). A dead lane falls through to the next server; VidPlay-1 (vidtube.site) is a different JWPlayer-style page and stays observed-only.",
         "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
         "Each season is a separate provider-native slug; there is no in-provider season routing.",
         "Bun/fetch may meet Cloudflare where curl passes; the client falls back to curl/curl-impersonate like AniDB/Miruro.",
         "Relay-safe for metadata RPC (/rpc/hianime). Video always stays direct; the relay has no media route."
+      ]
+    },
+    {
+      "id": "animekai",
+      "displayName": "AnimeKai",
+      "description": "Anime episodes in sub and dub via AnimeKai (ani-cli next parity lane)",
+      "domain": "animekai.be",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": [
+        "search",
+        "episode-list",
+        "source-resolve",
+        "subtitle-resolve",
+        "multi-source",
+        "quality-ranked"
+      ],
+      "status": "production",
+      "notes": [
+        "Parity with ani-cli next branch (v5.2.0): /browse literal-phrase search with longest-word retry, /watch/<slug> episode flags (data-sub/data-dub), /watch/<slug>/ep/<n>/sources JSON, megaplay.buzz embed data-id → /stream/getSources?id= (X-Requested-With) → base64url(AES-256-CBC(json)) → HLS master.",
+        "Sub/dub are separate embed rows per episode; a missing mode fails closed like AniDB, never silently plays the other.",
+        "The sources endpoint lists several embeds per mode; dead lanes are walked in order (in-provider multi-server fallback).",
+        "getSources JSON carries intro/outro timestamps and soft subtitle tracks — provider-native skip metadata plus external subs.",
+        "Bun/fetch may meet Cloudflare where curl passes; the client falls back to curl/curl-impersonate like HiAnime/AniDB.",
+        "Relay-safe for metadata RPC (/rpc/animekai). Video always stays direct; the relay has no media route."
       ]
     },
     {

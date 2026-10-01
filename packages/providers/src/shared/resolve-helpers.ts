@@ -38,7 +38,15 @@ export function createExhaustedResult(
   };
   context.emit?.(event);
 
-  const failures = evidence.failures?.length ? evidence.failures : [providerFailure];
+  // `failures[0]` is the de-facto headline — the engine throws it and the
+  // inventory projection reads it. Lane detail must never bury the terminal
+  // classification: a 502 seed outage reported by the last lane as "no
+  // playable source" reads as not-found and poisons fallback decisions.
+  const detail = evidence.failures ?? [];
+  const alreadyRepresented = detail.some(
+    (f) => f.code === providerFailure.code && f.message === providerFailure.message,
+  );
+  const failures = alreadyRepresented ? detail : [providerFailure, ...detail];
   const events = [...(evidence.events ?? []), event];
   const cachePolicy = evidence.cachePolicy ?? {
     ttlClass: "stream-manifest" as const,

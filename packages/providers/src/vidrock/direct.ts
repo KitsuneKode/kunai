@@ -118,7 +118,7 @@ export function resolveVidrockDirect(
           try {
             // Playlist URLs live on the same ngcorp hosts as the streams:
             // they require the single-space UA and die on a Referer.
-            playlist = await fetchPlaylist(url, ctx.signal, {
+            playlist = await fetchPlaylist(url, ctx, {
               "User-Agent": STREAM_USER_AGENT,
             });
           } catch (error) {
@@ -199,12 +199,12 @@ export async function decryptVidrockStreamUrl(
 
 async function fetchPlaylist(
   url: string,
-  signal: AbortSignal | undefined,
+  context: ProviderRuntimeContext,
   headers: Record<string, string>,
 ): Promise<{ url: string; resolution: string }[]> {
-  const response = await fetch(url, {
+  const response = await providerFetch(context, url, {
     headers,
-    signal: directStreamFetchSignal(signal, VIDROCK_FETCH_TIMEOUT_MS),
+    signal: directStreamFetchSignal(context.signal, VIDROCK_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) return [];
   const data: unknown = await response.json();

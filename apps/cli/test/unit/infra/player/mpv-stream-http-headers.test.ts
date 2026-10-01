@@ -336,6 +336,32 @@ describe("buildPersistentLoadfileOptions", () => {
       "demuxer-lavf-o-clr": "",
     });
   });
+
+  test("caps readahead file-locally for burst-limited CDN lanes", () => {
+    const capped = buildPersistentLoadfileOptions(
+      "https://fetch.nexabloom.top/anime/mega/1080/index.m3u8",
+      0,
+      { referer: "https://megaplay.buzz/e/abc", "user-agent": "kunai" },
+      { demuxerProfile: "capped-readahead" },
+    );
+    expect(capped["demuxer-readahead-secs"]).toBe("10");
+    expect(capped["demuxer-max-bytes"]).toBe("48MiB");
+    expect(capped["cache-pause-wait"]).toBe("2");
+
+    // The plain lane keeps unset fields so mpv falls back to the spawn-time
+    // demuxer profile — file-local options revert when the flag is absent.
+    const plain = buildPersistentLoadfileOptions("https://cdn.example/e.m3u8", 0, undefined);
+    expect(plain["demuxer-readahead-secs"]).toBeUndefined();
+    expect(plain["demuxer-max-bytes"]).toBeUndefined();
+  });
+
+  test("the live profile wins over a capped-readahead hint per file", () => {
+    const options = buildPersistentLoadfileOptions("https://cdn.example/live.m3u8", 0, undefined, {
+      isLive: true,
+      demuxerProfile: "capped-readahead",
+    });
+    expect(options["demuxer-max-bytes"]).toBe("32MiB");
+  });
 });
 
 describe("buildPersistentLoadfileCommand", () => {

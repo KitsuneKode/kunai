@@ -28,6 +28,7 @@ import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import { searchWithPhraseFallback } from "../shared/search-fallback";
 import {
   createSourceCandidateFromStream,
   createStreamId,
@@ -241,6 +242,23 @@ function titleKey(value: string): string {
 }
 
 /**
+ * `/api/fsearch` matches the query as one literal phrase — "cyberpunk edge
+ * runners" returns `[]` while "Cyberpunk: Edgerunners" is in the catalog.
+ * Rescue a miss with the longest-word retry shared by the other literal-phrase
+ * catalogs.
+ */
+async function searchKaaWithPhraseFallback(query: string, context: ProviderRuntimeContext) {
+  return searchWithPhraseFallback(
+    query,
+    async (q) =>
+      parseKaaSearchResults(
+        await fetchJson(context, "/api/fsearch", { method: "POST", body: { query: q, page: 1 } }),
+      ),
+    (row) => [row.title, row.englishTitle],
+  );
+}
+
+/**
  * The one search row that is this title: same romaji or English name, and the
  * same year when both sides know it. The site exposes no AniList or MAL id to
  * match on, so anything short of exactly one such row is no match — a wrong
@@ -282,9 +300,7 @@ async function locateKaaShow(
 
   const query = title.title.trim();
   if (!query) return null;
-  const rows = parseKaaSearchResults(
-    await fetchJson(context, "/api/fsearch", { method: "POST", body: { query, page: 1 } }),
-  );
+  const rows = await searchKaaWithPhraseFallback(query, context);
   const slug = matchKaaShow(rows, title);
   if (!slug) return null;
   if (bridgeKey) context.titleBridge?.set({ ...bridgeKey, nativeId: slug });
@@ -315,9 +331,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
   async search(input, context) {
     const query = input.query.trim();
     if (!query) return null;
-    const results = parseKaaSearchResults(
-      await fetchJson(context, "/api/fsearch", { method: "POST", body: { query, page: 1 } }),
-    );
+    const results = await searchKaaWithPhraseFallback(query, context);
     if (results.length === 0) return null;
 
     return results.map((result): ProviderSearchResult => {

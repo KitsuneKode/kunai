@@ -2,14 +2,13 @@ import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "
 import {
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
-  isRelayedResponse,
   ProviderHttpError,
 } from "@kunai/types";
 
+import { providerFetch } from "../runtime/fetch";
 import type { AnimeEpisodeMetadata } from "../shared/anime-metadata";
 import {
   curlCipherArgs,
-  isCloudflareChallengeText,
   resolveCurlCandidate,
   type CurlCandidate,
   type CurlEnvironment,
@@ -18,11 +17,17 @@ import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-lad
 import { markupToPlainText } from "../shared/markup-text";
 import { TTLCache } from "../shared/provider-cache";
 import {
+  providerFetchText,
+  runProviderCurlWithRetry,
+  type SpawnCurlOnce,
+} from "../shared/provider-http-transport";
+import {
   BALANCED_QUALITY_WAIT_BUDGET_MS,
   QUALITY_FIRST_WAIT_BUDGET_MS,
 } from "../shared/startup-selection";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
+import { ANIDB_PROVIDER_ID } from "./manifest";
 
 export {
   anidbNumericId,
@@ -202,16 +207,6 @@ export function isAnidbMaintenanceText(text: string): boolean {
   return /<title>Under Maintenance<\/title>/i.test(text) || /under maintenance/i.test(text);
 }
 
-/** curl reports the final status after redirects; the body keeps the rest. */
-const ANIDB_STATUS_WRITE_OUT = ["-w", "\n%{http_code}"] as const;
-
-function splitAnidbStatus(stdout: string): { readonly body: string; readonly status: number } {
-  const cut = stdout.lastIndexOf("\n");
-  if (cut < 0) return { body: "", status: Number.parseInt(stdout, 10) || 0 };
-  const status = Number.parseInt(stdout.slice(cut + 1), 10);
-  return { body: stdout.slice(0, cut), status: Number.isFinite(status) ? status : 0 };
-}
-
 /**
  * Statuses where a better TLS fingerprint can still change the answer, so the
  * curl fallback is worth a request. Everything else — a missing id, a 5xx
@@ -231,6 +226,22 @@ function isFingerprintRetryableStatus(status: number): boolean {
  * silently, with no health signal for provider fallback. Callers that treat a
  * missing id as a real answer catch the 404 explicitly.
  */
+/**
+ * The transport choreography now lives in `shared/provider-http-transport`;
+ * anidb's policy is the divergent one and stays declared here:
+ *
+ * - Only 403/429 earn a curl retry — a better fingerprint is the only thing
+ *   that can change that answer. A 5xx outage or a real 404 is the upstream's
+ *   verdict and re-asking only doubles the latency.
+ * - A *relayed* 404 is not anidb.app's verdict: a stale relay answers
+ *   `unknown-provider` with a 404 of its own, and reading that as the real
+ *   answer once marked the catalogue permanently missing and cached the miss.
+ *   Same for relayed 403/429 — the relay's fingerprint may be the thing
+ *   Cloudflare refused. Those statuses settle over local curl instead.
+ * - A relayed 2xx challenge is also not final — the impersonate fingerprint
+ *   can clear what the relay's could not.
+ * - The 200-with-"Under Maintenance" page reads as a real 503.
+ */
 export async function anidbFetchText(
   url: string,
   options: {
@@ -239,118 +250,23 @@ export async function anidbFetchText(
     readonly maxTimeSec?: number;
   } = {},
 ): Promise<string> {
-  if (options.context?.fetch) {
-    try {
-      const response = await options.context.fetch.fetch(url, {
-        headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
-        signal: createTimeoutSignal(options.signal, 15_000),
-      });
-      if (response.ok) {
-        const text = await response.text();
-        if (isAnidbMaintenanceText(text)) {
-          throw new AnidbHttpStatusError(503);
-        }
-        if (!isCloudflareChallengeText(text)) {
-          return text;
-        }
-      } else if (
-        !isFingerprintRetryableStatus(response.status) &&
-        !(response.status === 404 && isRelayedResponse(response))
-      ) {
-        // Falling through to curl exists so a Cloudflare challenge gets a
-        // second chance with a better TLS fingerprint. An upstream outage or
-        // a genuine 404 is not a fingerprint problem, so it is answered here.
-        //
-        // A 404 that arrived over a relay hop is a different fact. A relay
-        // deployed before this provider existed answers `unknown-provider`
-        // with a 404 of its own, and reading that as anidb.app's verdict marks
-        // the catalogue permanently missing and caches the miss — which took
-        // the whole anime lane down behind a stale relay while the same id
-        // resolved fine over curl. Let curl settle it: a genuine 404 still
-        // throws below, one request later.
-        throw new AnidbHttpStatusError(response.status);
-      }
-    } catch (error) {
-      if (error instanceof AnidbHttpStatusError) throw error;
-      // A cancelled caller is not a fingerprint problem either. Without this
-      // an abort during the context fetch is swallowed and the fallback spends
-      // a whole curl request on work nobody is waiting for. Checked against
-      // `options.signal` rather than the error shape, so the 15s internal
-      // timeout still earns its second chance through curl.
-      if (options.signal?.aborted === true) throw error;
-      // Fallback to local curl/impersonate
-    }
-  }
-
-  const curl = resolveAnidbCurl();
-  if (!curl) {
-    const response = await fetch(url, {
-      headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
-      signal: createTimeoutSignal(options.signal, 15_000),
-    });
-    if (!response.ok) {
-      // Read the body before answering with the status. Cloudflare serves its
-      // challenge with a 4xx as often as with a 200, and there is no curl left
-      // to fall through to on this path — so a challenge that arrived as a 403
-      // used to be reported as a plain network error and handed to the retry
-      // budget. The paths that *do* have a curl fallback keep their order: they
-      // let the better transport try first, and only classify a challenge when
-      // it has been asked and failed.
-      const text = await response.text();
-      if (isCloudflareChallengeText(text)) {
-        throw new AnidbBlockedError("anidb blocked by Cloudflare (install curl)");
-      }
-      throw new AnidbHttpStatusError(response.status);
-    }
-    const text = await response.text();
-    if (isCloudflareChallengeText(text)) {
-      throw new AnidbBlockedError("anidb blocked by Cloudflare (install curl)");
-    }
-    if (isAnidbMaintenanceText(text)) {
-      throw new AnidbHttpStatusError(503);
-    }
-    return text;
-  }
-
-  const maxTime = String(options.maxTimeSec ?? 12);
-  const args = [
-    curl.path,
-    "-sL",
-    "-A",
-    ANIDB_USER_AGENT,
-    "-H",
-    `Referer: ${ANIDB_REFERER}`,
-    "--max-time",
-    maxTime,
-    ...anidbCipherArgs(curl.impersonates),
-    ...ANIDB_STATUS_WRITE_OUT,
-    // Everything after `--` is an operand, never an option. Embed and playlist
-    // URLs arrive from upstream JSON, so without this a value beginning with
-    // `-` would be read as curl flags rather than as the address to fetch.
-    "--",
-    url,
-  ];
-  const stdout = await runAnidbCurlWithRetry(args, options.signal);
-  // `-sL` has no `--fail`, so curl exits 0 and hands back the error page for a
-  // 404. Without asking for the status explicitly the miss is indistinguishable
-  // from a body that merely failed to parse, which is how a reindexed id used
-  // to look exactly like an empty catalogue.
-  const { body, status } = splitAnidbStatus(stdout);
-  if (status >= 400) throw new AnidbHttpStatusError(status);
-  if (isCloudflareChallengeText(body)) {
-    throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
-  }
-  if (isAnidbMaintenanceText(body)) {
-    throw new AnidbHttpStatusError(503);
-  }
-  return body;
+  return providerFetchText(url, {
+    context: options.context,
+    signal: options.signal,
+    providerId: ANIDB_PROVIDER_ID,
+    label: "anidb fetch",
+    userAgent: ANIDB_USER_AGENT,
+    referer: ANIDB_REFERER,
+    maxTimeSec: options.maxTimeSec,
+    bodyAsStatus: (text) => (isAnidbMaintenanceText(text) ? 503 : null),
+    retryStatusViaCurl: isFingerprintRetryableStatus,
+    relayedStatusIsFinal: (status) => status !== 404 && !isFingerprintRetryableStatus(status),
+    relayedChallengeIsFinal: false,
+    statusError: (status) => new AnidbHttpStatusError(status),
+    relayedStatusError: (status) => new AnidbHttpStatusError(status),
+    blockedError: (impersonated) => new AnidbBlockedError(anidbBlockedMessage(impersonated)),
+  });
 }
-
-const ANIDB_CURL_TIMEOUT_EXIT_CODE = 28;
-
-/** curl killed by SIGINT / SIGTERM — 128 + signal number. */
-const ANIDB_CURL_SIGINT_EXIT_CODE = 130;
-const ANIDB_CURL_SIGTERM_EXIT_CODE = 143;
 
 /**
  * AniDB TTFB from constrained networks sits close to the curl budget, so a lone
@@ -362,47 +278,14 @@ const ANIDB_CURL_SIGTERM_EXIT_CODE = 143;
 export async function runAnidbCurlWithRetry(
   args: readonly string[],
   signal?: AbortSignal,
-  spawnOnce: (
-    args: readonly string[],
-    signal?: AbortSignal,
-  ) => Promise<{ stdout: string; stderr: string; exitCode: number }> = defaultSpawnOnce,
+  spawnOnce?: SpawnCurlOnce,
 ): Promise<string> {
-  let result = await spawnOnce(args, signal);
-  if (result.exitCode === ANIDB_CURL_TIMEOUT_EXIT_CODE) {
-    result = await spawnOnce(args, signal);
-  }
-  if (result.exitCode !== 0) {
-    // Quitting kunai mid-resolve kills curl, and "curl exit 130" matches
-    // neither "abort" nor "cancel", so the failure classifier read a plain
-    // Ctrl-C as an unknown network fault: retryable, worth a fallback provider,
-    // and logged at ERROR. Say cancelled in the one place that knows the
-    // process was signalled, so the existing cancellation handling applies.
-    if (signal?.aborted === true) throw signal.reason ?? new Error("anidb curl cancelled");
-    if (
-      result.exitCode === ANIDB_CURL_SIGINT_EXIT_CODE ||
-      result.exitCode === ANIDB_CURL_SIGTERM_EXIT_CODE
-    ) {
-      throw new Error(`anidb curl cancelled (exit ${result.exitCode})`);
-    }
-    throw new Error(result.stderr.trim() || `curl exit ${result.exitCode}`);
-  }
-  return result.stdout;
-}
-
-function defaultSpawnOnce(
-  args: readonly string[],
-  signal?: AbortSignal,
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([...args], {
-    stdout: "pipe",
-    stderr: "pipe",
+  return runProviderCurlWithRetry(args, {
     signal,
+    label: "anidb fetch",
+    providerId: ANIDB_PROVIDER_ID,
+    spawnOnce,
   });
-  return Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]).then(([stdout, stderr, exitCode]) => ({ stdout, stderr, exitCode }));
 }
 
 export async function searchAnidb(
@@ -534,7 +417,8 @@ export async function fetchAnidbOfficialEpisodeMetadata(
   }
 
   try {
-    const response = await fetch(
+    const response = await providerFetch(
+      context,
       `${ANIDB_HTTP_API}?request=anime&client=${ANIDB_HTTP_API_CLIENT}&clientver=${ANIDB_HTTP_API_CLIENT_VERSION}&protover=1&aid=${officialAid}`,
       {
         headers: { Accept: "text/xml", "User-Agent": ANIDB_USER_AGENT },

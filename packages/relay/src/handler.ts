@@ -13,6 +13,8 @@ import {
   DEFAULT_MAX_RESPONSE_BODY_BYTES,
   DEFAULT_RELAY_TIMEOUT_MS,
   RELAY_ERROR_CODE_HEADER,
+  RELAY_RESULT_HEADER,
+  RELAY_RESULT_UPSTREAM,
   type RelayErrorCode,
   type RelayHandlerOptions,
   type RelayRpcErrorBody,
@@ -312,6 +314,7 @@ async function relayUpstreamResponse(
 ): Promise<Response> {
   const headers = filteredResponseHeaders(upstream.headers);
   headers.set("Access-Control-Allow-Origin", "*");
+  headers.set(RELAY_RESULT_HEADER, RELAY_RESULT_UPSTREAM);
 
   if (method === "HEAD" || !upstream.body) {
     return new Response(null, {
