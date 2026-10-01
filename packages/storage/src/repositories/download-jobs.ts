@@ -88,6 +88,8 @@ export interface DownloadJobRecord {
   readonly claimGeneration?: number;
   /** Directory this claim may write. A later claim gets a different directory. */
   readonly stagingDir?: string;
+  /** Set before artifact removal so a crash can retry the delete. */
+  readonly cleanupPending?: boolean;
 }
 
 /** The lease a worker must present to change a job it claimed. */
@@ -148,6 +150,7 @@ interface DownloadJobRow {
   readonly owner_token: string | null;
   readonly claim_generation: number;
   readonly staging_dir: string | null;
+  readonly cleanup_pending: number;
 }
 
 export class DownloadJobAdmissionConflictError extends Error {
@@ -760,6 +763,21 @@ export class DownloadJobsRepository {
     this.db.query("DELETE FROM download_jobs WHERE id = ?").run(id);
   }
 
+  markCleanupPending(id: string, updatedAt: string): void {
+    this.db
+      .query("UPDATE download_jobs SET cleanup_pending = 1, updated_at = ? WHERE id = ?")
+      .run(updatedAt, id);
+  }
+
+  listCleanupPending(limit = 20): readonly DownloadJobRecord[] {
+    return this.db
+      .query<DownloadJobRow, [number]>(
+        "SELECT * FROM download_jobs WHERE cleanup_pending = 1 ORDER BY updated_at ASC LIMIT ?",
+      )
+      .all(limit)
+      .map(mapRow);
+  }
+
   get(id: string): DownloadJobRecord | undefined {
     const row = this.db
       .query<DownloadJobRow, [string]>("SELECT * FROM download_jobs WHERE id = ?")
@@ -989,6 +1007,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     ownerToken: row.owner_token ?? undefined,
     claimGeneration: row.claim_generation,
     stagingDir: row.staging_dir ?? undefined,
+    cleanupPending: row.cleanup_pending === 1,
   };
 }
 

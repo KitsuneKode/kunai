@@ -176,6 +176,58 @@ export class OfflineAssetsRepository {
       .map(mapAssetRow);
   }
 
+  countReadyByTitle(titleId: string): number {
+    const row = this.db
+      .query<{ count: number }, [string]>(
+        "SELECT COUNT(*) AS count FROM offline_assets WHERE title_id = ? AND state = 'ready'",
+      )
+      .get(titleId);
+    return row?.count ?? 0;
+  }
+
+  /**
+   * Ready titles matching a name, filtered in SQL before the page limit.
+   * `after` is the last row of the previous page, ordered by updated_at then id.
+   */
+  searchReadyByName(
+    query: string,
+    limit: number,
+    after?: { readonly updatedAt: string; readonly id: string },
+  ): readonly {
+    readonly id: string;
+    readonly titleId: string;
+    readonly titleName: string;
+    readonly updatedAt: string;
+  }[] {
+    const needle = query.trim().replaceAll("\\", "").replaceAll("%", "").replaceAll("_", "");
+    if (!needle) return [];
+    const afterUpdatedAt = after?.updatedAt ?? null;
+    const afterId = after?.id ?? null;
+    return this.db
+      .query<
+        { id: string; title_id: string; title_name: string; updated_at: string },
+        [string, string | null, string | null, string | null, string | null, number]
+      >(
+        `SELECT id, title_id, title_name, updated_at FROM offline_assets
+         WHERE state = 'ready'
+           AND title_name LIKE ? COLLATE NOCASE
+           AND (
+             ? IS NULL
+             OR updated_at < ?
+             OR (updated_at = ? AND id < ?)
+           )
+         ORDER BY updated_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(`%${needle}%`, afterUpdatedAt, afterUpdatedAt, afterUpdatedAt, afterId, limit)
+      .map((row) => ({
+        id: row.id,
+        titleId: row.title_id,
+        titleName: row.title_name,
+        updatedAt: row.updated_at,
+      }));
+  }
+
   /**
    * The ready file for this episode, including one past the first page of the title.
    * A null season is season 1 for absolute-numbered anime.

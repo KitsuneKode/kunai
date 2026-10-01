@@ -52,9 +52,11 @@ export async function resolveLocalEpisodePlayback(
 
   if (title.offlineJobId) {
     const pinned = await container.offlineLibraryService.getPlayableSource(title.offlineJobId);
-    // The pin is one file. Asking for a different episode must not play it.
+    // The pin is one file. A deleted selection must not fall through to a sibling.
+    if (!pinned.job) return null;
+    // Asking for a different episode must not play this file.
     // The same episode, when that file is gone, must not fall through to another.
-    if (pinned.job && pinnedSourceMatchesEpisode(pinned.job, episode)) {
+    if (pinnedSourceMatchesEpisode(pinned.job, episode)) {
       if (pinned.status !== "ready") return null;
       if (options.forceLocal) return buildLocalEpisodeResolution(pinned);
       const decision = createSourceSelectionEngine().decide({

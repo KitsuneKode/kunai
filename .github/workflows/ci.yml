@@ -692,6 +692,7 @@ jobs:
         run: |
           bun run verify:doc-paths
           bun run verify:doc-frontmatter
+          bun run verify:active-conflicts
           # Freshness is checked BEFORE generate, deliberately. The script reads
           # the committed generated-metadata.json from disk and compares it to
           # freshly built metadata, so running generate first made it compare a

@@ -367,6 +367,12 @@ export function createInitialState(
   };
 }
 
+function titleWithoutOfflineJob(title: TitleInfo): TitleInfo {
+  if (!title.offlineJobId) return title;
+  const { offlineJobId: _offlineJobId, ...rest } = title;
+  return rest;
+}
+
 export function reduceState(state: SessionState, transition: StateTransition): SessionState {
   switch (transition.type) {
     case "SET_MODE": {
@@ -495,13 +501,23 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       return { ...state, titleDetail: transition.detail, currentTitle };
     }
 
-    case "SELECT_EPISODE":
+    case "SELECT_EPISODE": {
+      const previous = state.currentEpisode;
+      const next = transition.episode;
+      const changed =
+        previous !== null && (previous.season !== next.season || previous.episode !== next.episode);
+      const currentTitle =
+        changed && state.currentTitle?.offlineJobId
+          ? titleWithoutOfflineJob(state.currentTitle)
+          : state.currentTitle;
       return {
         ...state,
+        currentTitle,
         view: "playback",
-        currentEpisode: transition.episode,
+        currentEpisode: next,
         fallbackTriedProviderIds: [],
       };
+    }
 
     case "SET_CURRENT_ANIME_EPISODES":
       return {

@@ -177,6 +177,7 @@ function LibraryTab({
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
+  const [filterFocused, setFilterFocused] = useState(false);
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const titlesActive = libraryView === "titles";
 
@@ -264,6 +265,11 @@ function LibraryTab({
           setConfirmDeleteKey(null);
           return;
         }
+        if (filterQuery.length > 0 || filterFocused) {
+          setFilterQuery("");
+          setFilterFocused(false);
+          return;
+        }
         onClose();
         return;
       }
@@ -277,6 +283,10 @@ function LibraryTab({
         return;
       }
       if (input === "\u001b") return;
+      if (input === "/" && !filterFocused && filterQuery.length === 0) {
+        setFilterFocused(true);
+        return;
+      }
       if (
         input.length === 1 &&
         !key.ctrl &&
@@ -286,8 +296,9 @@ function LibraryTab({
         !key.upArrow &&
         !key.downArrow &&
         !key.tab &&
-        libraryFilterAcceptsText(input, filterQuery)
+        libraryFilterAcceptsText(input, filterQuery, filterFocused)
       ) {
+        setFilterFocused(true);
         setFilterQuery((query) => query + input);
         return;
       }
@@ -302,7 +313,11 @@ function LibraryTab({
         setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
         return;
       }
-      if ((input === "x" || input === "X" || key.delete) && filterQuery.length === 0) {
+      if (
+        (input === "x" || input === "X" || key.delete) &&
+        filterQuery.length === 0 &&
+        !filterFocused
+      ) {
         if (!selectedOfflineGroup) return;
         if (confirmDeleteKey === selectedOfflineGroup.key) {
           setConfirmDeleteKey(null);
@@ -332,7 +347,7 @@ function LibraryTab({
         }
         return;
       }
-      if ((input === "p" || input === "P") && filterQuery.length === 0) {
+      if ((input === "p" || input === "P") && filterQuery.length === 0 && !filterFocused) {
         if (!selectedOfflineGroup) return;
         const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
         const protectedSet = new Set(container.config.protectedDownloadJobIds);
@@ -505,7 +520,7 @@ function LibraryTab({
       {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}Press x again to delete {selectedOfflineGroup.titleName} and all local files
+            {"⚠ "}Delete {selectedOfflineGroup.titleName} and all local files? x deletes · Esc keeps
           </Text>
         </Box>
       ) : null}

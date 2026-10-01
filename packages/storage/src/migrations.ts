@@ -785,6 +785,255 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE download_jobs ADD COLUMN staging_dir TEXT;
     `,
   },
+  {
+    id: "041_data_download_cleanup_pending",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN cleanup_pending INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    id: "042_data_namespace_mal_history_keys",
+    database: "data",
+    sql: `
+      DROP TABLE IF EXISTS mal_rekey;
+      CREATE TEMP TABLE mal_rekey (old_id TEXT PRIMARY KEY);
+
+      INSERT INTO mal_rekey (old_id)
+      SELECT title_id FROM history_progress
+      WHERE json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND title_id = json_extract(external_ids_json, '$.malId')
+        AND title_id NOT LIKE 'mal:%';
+
+      INSERT OR IGNORE INTO mal_rekey (old_id)
+      SELECT title_id FROM download_jobs
+      WHERE json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND title_id = json_extract(external_ids_json, '$.malId')
+        AND title_id NOT LIKE 'mal:%';
+
+      INSERT OR IGNORE INTO mal_rekey (old_id)
+      SELECT title_id FROM list_items
+      WHERE json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND title_id = json_extract(external_ids_json, '$.malId')
+        AND title_id NOT LIKE 'mal:%';
+
+      UPDATE history_progress
+      SET
+        position_seconds = (
+          SELECT CASE
+            WHEN history_progress.completed != 0 OR bare.completed != 0 THEN 0
+            ELSE MAX(history_progress.position_seconds, bare.position_seconds)
+          END
+          FROM history_progress AS bare
+          WHERE bare.title_id IN (SELECT old_id FROM mal_rekey)
+            AND json_extract(bare.external_ids_json, '$.anilistId') IS NULL
+            AND history_progress.title_id = 'mal:' || bare.title_id
+            AND history_progress.media_kind = bare.media_kind
+            AND history_progress.season IS bare.season
+            AND history_progress.episode IS bare.episode
+            AND history_progress.absolute_episode IS bare.absolute_episode
+          LIMIT 1
+        ),
+        completed = (
+          SELECT CASE
+            WHEN history_progress.completed != 0 OR bare.completed != 0 THEN 1
+            ELSE 0
+          END
+          FROM history_progress AS bare
+          WHERE bare.title_id IN (SELECT old_id FROM mal_rekey)
+            AND json_extract(bare.external_ids_json, '$.anilistId') IS NULL
+            AND history_progress.title_id = 'mal:' || bare.title_id
+            AND history_progress.media_kind = bare.media_kind
+            AND history_progress.season IS bare.season
+            AND history_progress.episode IS bare.episode
+            AND history_progress.absolute_episode IS bare.absolute_episode
+          LIMIT 1
+        ),
+        watched_seconds = (
+          SELECT MAX(history_progress.watched_seconds, bare.watched_seconds)
+          FROM history_progress AS bare
+          WHERE bare.title_id IN (SELECT old_id FROM mal_rekey)
+            AND json_extract(bare.external_ids_json, '$.anilistId') IS NULL
+            AND history_progress.title_id = 'mal:' || bare.title_id
+            AND history_progress.media_kind = bare.media_kind
+            AND history_progress.season IS bare.season
+            AND history_progress.episode IS bare.episode
+            AND history_progress.absolute_episode IS bare.absolute_episode
+          LIMIT 1
+        ),
+        duration_seconds = (
+          SELECT CASE
+            WHEN history_progress.duration_seconds IS NULL AND bare.duration_seconds IS NULL THEN NULL
+            ELSE MAX(
+              COALESCE(history_progress.duration_seconds, 0),
+              COALESCE(bare.duration_seconds, 0)
+            )
+          END
+          FROM history_progress AS bare
+          WHERE bare.title_id IN (SELECT old_id FROM mal_rekey)
+            AND json_extract(bare.external_ids_json, '$.anilistId') IS NULL
+            AND history_progress.title_id = 'mal:' || bare.title_id
+            AND history_progress.media_kind = bare.media_kind
+            AND history_progress.season IS bare.season
+            AND history_progress.episode IS bare.episode
+            AND history_progress.absolute_episode IS bare.absolute_episode
+          LIMIT 1
+        ),
+        created_at = (
+          SELECT MIN(history_progress.created_at, bare.created_at)
+          FROM history_progress AS bare
+          WHERE bare.title_id IN (SELECT old_id FROM mal_rekey)
+            AND json_extract(bare.external_ids_json, '$.anilistId') IS NULL
+            AND history_progress.title_id = 'mal:' || bare.title_id
+            AND history_progress.media_kind = bare.media_kind
+            AND history_progress.season IS bare.season
+            AND history_progress.episode IS bare.episode
+            AND history_progress.absolute_episode IS bare.absolute_episode
+          LIMIT 1
+        )
+      WHERE EXISTS (
+        SELECT 1 FROM history_progress AS bare
+        WHERE bare.title_id IN (SELECT old_id FROM mal_rekey)
+          AND json_extract(bare.external_ids_json, '$.anilistId') IS NULL
+          AND history_progress.title_id = 'mal:' || bare.title_id
+          AND history_progress.media_kind = bare.media_kind
+          AND history_progress.season IS bare.season
+          AND history_progress.episode IS bare.episode
+          AND history_progress.absolute_episode IS bare.absolute_episode
+      );
+
+      DELETE FROM history_progress
+      WHERE title_id IN (SELECT old_id FROM mal_rekey)
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM history_progress AS survivor
+          WHERE survivor.title_id = 'mal:' || history_progress.title_id
+            AND survivor.media_kind = history_progress.media_kind
+            AND survivor.season IS history_progress.season
+            AND survivor.episode IS history_progress.episode
+            AND survivor.absolute_episode IS history_progress.absolute_episode
+        );
+
+      UPDATE download_jobs
+      SET title_id = 'mal:' || title_id
+      WHERE json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND title_id = json_extract(external_ids_json, '$.malId')
+        AND title_id NOT LIKE 'mal:%'
+        AND NOT EXISTS (
+          SELECT 1 FROM download_jobs AS existing
+          WHERE existing.id != download_jobs.id
+            AND existing.title_id = 'mal:' || download_jobs.title_id
+            AND existing.season IS download_jobs.season
+            AND existing.episode IS download_jobs.episode
+            AND IFNULL(existing.provider_episode_provider_id, '') = IFNULL(download_jobs.provider_episode_provider_id, '')
+            AND IFNULL(existing.provider_episode_value, '') = IFNULL(download_jobs.provider_episode_value, '')
+            AND existing.status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable')
+            AND download_jobs.status IN ('queued', 'running', 'completed', 'completed-with-notes', 'repairable')
+        );
+
+      UPDATE list_items
+      SET title_id = 'mal:' || title_id
+      WHERE json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND title_id = json_extract(external_ids_json, '$.malId')
+        AND title_id NOT LIKE 'mal:%';
+
+      UPDATE playlist_queue
+      SET title_id = 'mal:' || title_id
+      WHERE json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND title_id = json_extract(external_ids_json, '$.malId')
+        AND title_id NOT LIKE 'mal:%';
+
+      UPDATE user_playlist_items
+      SET title_id = 'mal:' || title_id
+      WHERE json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND title_id = json_extract(external_ids_json, '$.malId')
+        AND title_id NOT LIKE 'mal:%';
+
+      UPDATE followed_titles
+      SET title_id = 'mal:' || title_id
+      WHERE title_id IN (SELECT old_id FROM mal_rekey)
+        AND NOT EXISTS (
+          SELECT 1 FROM history_progress
+          WHERE history_progress.title_id = followed_titles.title_id
+            AND json_extract(history_progress.external_ids_json, '$.anilistId') IS NOT NULL
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM followed_titles AS existing
+          WHERE existing.title_id = 'mal:' || followed_titles.title_id
+        );
+
+      UPDATE playback_events
+      SET title_id = 'mal:' || title_id
+      WHERE title_id IN (SELECT old_id FROM mal_rekey)
+        AND NOT EXISTS (
+          SELECT 1 FROM history_progress
+          WHERE history_progress.title_id = playback_events.title_id
+            AND json_extract(history_progress.external_ids_json, '$.anilistId') IS NOT NULL
+        );
+
+      UPDATE offline_title_policies
+      SET title_id = 'mal:' || title_id
+      WHERE title_id IN (SELECT old_id FROM mal_rekey)
+        AND NOT EXISTS (
+          SELECT 1 FROM history_progress
+          WHERE history_progress.title_id = offline_title_policies.title_id
+            AND json_extract(history_progress.external_ids_json, '$.anilistId') IS NOT NULL
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM offline_title_policies AS existing
+          WHERE existing.title_id = 'mal:' || offline_title_policies.title_id
+        );
+
+      UPDATE offline_assets
+      SET
+        title_id = 'mal:' || title_id,
+        identity_key = 'mal:' || identity_key
+      WHERE title_id IN (SELECT old_id FROM mal_rekey)
+        AND identity_key LIKE title_id || ':%'
+        AND NOT EXISTS (
+          SELECT 1 FROM history_progress
+          WHERE history_progress.title_id = offline_assets.title_id
+            AND json_extract(history_progress.external_ids_json, '$.anilistId') IS NOT NULL
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM offline_assets AS existing
+          WHERE existing.identity_key = 'mal:' || offline_assets.identity_key
+        );
+
+      UPDATE history_title_aliases
+      SET title_id = 'mal:' || title_id
+      WHERE alias_ns = 'mal'
+        AND title_id IN (SELECT old_id FROM mal_rekey)
+        AND title_id = alias_id
+        AND NOT EXISTS (
+          SELECT 1 FROM history_progress
+          WHERE history_progress.title_id = history_title_aliases.title_id
+            AND json_extract(history_progress.external_ids_json, '$.anilistId') IS NOT NULL
+        );
+
+      UPDATE history_progress
+      SET
+        key = media_kind || ':mal:' || title_id || ':' ||
+          CASE WHEN season IS NULL THEN 'none' ELSE CAST(season AS TEXT) END || ':' ||
+          CASE WHEN episode IS NULL THEN 'none' ELSE CAST(episode AS TEXT) END || ':' ||
+          CASE WHEN absolute_episode IS NULL THEN 'none' ELSE CAST(absolute_episode AS TEXT) END,
+        title_id = 'mal:' || title_id
+      WHERE title_id IN (SELECT old_id FROM mal_rekey)
+        AND json_extract(external_ids_json, '$.malId') IS NOT NULL
+        AND json_extract(external_ids_json, '$.anilistId') IS NULL
+        AND title_id NOT LIKE 'mal:%';
+
+      DROP TABLE IF EXISTS mal_rekey;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

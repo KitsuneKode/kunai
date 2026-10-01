@@ -4,9 +4,13 @@
  * A filter that already has characters owns the keyboard: `x` and `p` are
  * letters. Delete and cleanup-protect arm only when the filter is empty.
  */
-export function libraryFilterAcceptsText(input: string, filterQuery: string): boolean {
+export function libraryFilterAcceptsText(
+  input: string,
+  filterQuery: string,
+  filterFocused = false,
+): boolean {
   if (input.length !== 1) return false;
-  if (filterQuery.length > 0) return true;
+  if (filterFocused || filterQuery.length > 0) return true;
   return input !== "x" && input !== "X" && input !== "p" && input !== "P";
 }
 

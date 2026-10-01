@@ -80,4 +80,52 @@ test("episode 101 is found when the first hundred rows are earlier episodes", ()
     { titleId: "long-show", season: 1, episode: 100 },
   ]);
   expect(next[0]?.episode).toBe(101);
+  expect(assets.countReadyByTitle("long-show")).toBe(101);
+
+  const plan = db
+    .query<{ detail: string }, [string, number, number, number]>(
+      `EXPLAIN QUERY PLAN
+       SELECT origin_job_id FROM offline_assets
+       WHERE title_id = ? AND state = 'ready' AND episode = ?
+         AND (season = ? OR (season IS NULL AND ? = 1))`,
+    )
+    .all("long-show", 101, 1, 1)
+    .map((row) => row.detail)
+    .join(" ");
+  expect(plan).toContain("idx_offline_assets_ready_title");
+});
+
+test("a name search finds a ready title past the first page", () => {
+  const db = stores.store("library-search", "data");
+  const assets = new OfflineAssetsRepository(db);
+  for (let index = 0; index < 201; index += 1) {
+    const id = `asset-${index}`;
+    assets.upsertPlayable({
+      titleId: `title-${index}`,
+      titleName: index === 0 ? "Needle" : `Show ${index}`,
+      mediaKind: "series",
+      season: 1,
+      episode: 1,
+      profileKey: "series:sub:none:best",
+      originJobId: undefined,
+      filePath: `/tmp/${id}.mp4`,
+      state: "ready",
+      byteSize: 10,
+      updatedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+    });
+  }
+
+  const first = assets.searchReadyByName("Needle", 1);
+  expect(first).toHaveLength(1);
+  expect(first[0]?.titleName).toBe("Needle");
+  const page = assets.searchReadyByName("Show", 50);
+  expect(page).toHaveLength(50);
+  const last = page[49];
+  if (!last) throw new Error("expected a full page");
+  const nextPage = assets.searchReadyByName("Show", 50, {
+    updatedAt: last.updatedAt,
+    id: last.id,
+  });
+  expect(nextPage[0]?.id).not.toBe(last.id);
+  expect(assets.countReadyByTitle("title-200")).toBe(1);
 });

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
+import { resolvePlaybackSourceAuthority } from "@/app/playback/playback-source-authority";
 import type { Container } from "@/container";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
@@ -41,7 +42,9 @@ describe("resolveLocalEpisodePlayback", () => {
     const requestedTitleIds: string[] = [];
     let storedNativeValue = "1";
     let playableReads = 0;
+    let providerReads = 0;
     let episodeTwoReady = false;
+    let jobBGone = false;
     const assetsById = (titleId: string) =>
       titleId === "151807"
         ? [
@@ -57,7 +60,12 @@ describe("resolveLocalEpisodePlayback", () => {
         : [];
     const container = {
       config: { continueSourcePreference: "stream" },
-      connectivity: { isOnline: () => true },
+      connectivity: {
+        isOnline: () => {
+          providerReads += 1;
+          throw new Error("network down");
+        },
+      },
       stateManager: { getState: () => ({ mode: "anime" }) },
       offlineTitleIdentity: new OfflineTitleIdentityService(
         { lookupTitleIdByAliasId: () => undefined },
@@ -90,6 +98,35 @@ describe("resolveLocalEpisodePlayback", () => {
       offlineLibraryService: {
         getPlayableSource: async (jobId: string) => {
           playableReads += 1;
+          if (jobId === "job-missing") return { status: "not-found" as const };
+          if (jobId === "job-b") {
+            if (jobBGone) {
+              return {
+                status: "missing" as const,
+                job: {
+                  id: "job-b",
+                  season: 1,
+                  episode: 1,
+                  providerEpisodeIdentity: { providerId: "allanime", value: "b" },
+                },
+              };
+            }
+            return {
+              status: "ready" as const,
+              source: {
+                ...SOURCE,
+                jobId: "job-b",
+                filePath: "/tmp/b.mkv",
+                providerEpisodeIdentity: { providerId: "allanime", value: "b" },
+              },
+              job: {
+                id: "job-b",
+                season: 1,
+                episode: 1,
+                providerEpisodeIdentity: { providerId: "allanime", value: "b" },
+              },
+            };
+          }
           const source = jobId === "job-2" ? { ...SOURCE, jobId: "job-2", episode: 2 } : SOURCE;
           return {
             status: "ready" as const,
@@ -134,5 +171,50 @@ describe("resolveLocalEpisodePlayback", () => {
       { forceLocal: true },
     );
     expect(missing).toBeNull();
+
+    const episodeB: EpisodeInfo = {
+      season: 1,
+      episode: 1,
+      providerEpisodeIdentity: { providerId: "allanime", value: "b" },
+    };
+    const selectedFile = await resolveLocalEpisodePlayback(
+      container,
+      { ...TITLE, offlineJobId: "job-b" },
+      episodeB,
+      { forceLocal: true },
+    );
+    expect(selectedFile?.source.filePath).toBe("/tmp/b.mkv");
+    expect(selectedFile?.jobId).toBe("job-b");
+
+    jobBGone = true;
+    const gone = await resolveLocalEpisodePlayback(
+      container,
+      { ...TITLE, offlineJobId: "job-b" },
+      episodeB,
+      { forceLocal: true },
+    );
+    expect(gone).toBeNull();
+
+    storedNativeValue = "1";
+    const deletedSelection = await resolveLocalEpisodePlayback(
+      container,
+      { ...TITLE, offlineJobId: "job-missing" },
+      EPISODE,
+      { forceLocal: true },
+    );
+    expect(deletedSelection).toBeNull();
+
+    jobBGone = false;
+    const authority = await resolvePlaybackSourceAuthority(
+      container,
+      { ...TITLE, offlineJobId: "job-b" },
+      episodeB,
+      { forceLocal: true },
+    );
+    expect(authority.kind).toBe("local");
+    if (authority.kind === "local") {
+      expect(authority.resolution.source.filePath).toBe("/tmp/b.mkv");
+    }
+    expect(providerReads).toBe(0);
   });
 });

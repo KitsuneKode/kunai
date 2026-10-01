@@ -2709,6 +2709,30 @@ describe("DownloadService", () => {
     expect(events).not.toContain("deleted");
     expect(events).toContain("failed");
   });
+
+  test("delete leaves a download another worker is running", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:other-worker", type: "movie", name: "Other" },
+      stream: { url: "https://cdn.example/other.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const claim = repo.markRunning(job.id, new Date().toISOString());
+    expect(claim?.ownerToken).toBeTruthy();
+    const result = await service.deleteJob(job.id, { deleteArtifact: true });
+    expect(result).toEqual({
+      status: "retained",
+      jobId: job.id,
+      reason: "owned-by-other-worker",
+      remainingPaths: [],
+    });
+    expect(repo.get(job.id)?.status).toBe("running");
+  });
 });
 
 function buildService({

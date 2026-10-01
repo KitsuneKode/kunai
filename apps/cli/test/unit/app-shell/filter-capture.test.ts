@@ -14,6 +14,22 @@ describe("filter capture", () => {
     expect(libraryFilterAcceptsText("p", "")).toBe(false);
   });
 
+  test("a focused filter accepts Spy x Family and Pluto", () => {
+    const type = (text: string, focused: boolean) => {
+      let query = "";
+      for (const char of text) {
+        if (!libraryFilterAcceptsText(char, query, focused || query.length > 0)) {
+          throw new Error(`rejected ${char}`);
+        }
+        query += char;
+      }
+      return query;
+    };
+    expect(type("Spy x Family", true)).toBe("Spy x Family");
+    expect(type("Pluto", true)).toBe("Pluto");
+    expect(libraryFilterAcceptsText("P", "", false)).toBe(false);
+  });
+
   test("episode picker m does not mark watched while a filter is being typed", () => {
     expect(episodePickerMarkArmed("")).toBe(true);
     expect(episodePickerMarkArmed("m")).toBe(false);

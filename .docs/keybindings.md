@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-10-01"
 ---
 
 # Kunai CLI Keybindings
@@ -248,12 +248,14 @@ manual skip key can still offer finite known segments while autoskip is paused.
 
 ## Library
 
-| Key     | Action                    |
-| ------- | ------------------------- |
-| `Enter` | Open selected title       |
-| `x`     | Delete offline title      |
-| `p`     | Toggle cleanup protection |
-| `Tab`   | Switch Library / Up Next  |
+| Key     | Action                                                              |
+| ------- | ------------------------------------------------------------------- |
+| `Enter` | Open selected title                                                 |
+| `/`     | Focus the filter. `p` and `x` then type, including a leading letter |
+| `Esc`   | Clear the filter first; close the library when the filter is empty  |
+| `x`     | Delete offline title, only while the filter is not focused          |
+| `p`     | Toggle cleanup protection, only while the filter is not focused     |
+| `Tab`   | Switch Library / Up Next                                            |
 
 The library has no title-control menu key. `m` was registered for one and shown
 in the footer, but no handler read it — the keystroke fell through to the filter

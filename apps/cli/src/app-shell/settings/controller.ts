@@ -76,7 +76,7 @@ function commitTextInput(
       error: null,
     },
     persist: "immediate",
-    statusMessage: buffer.trim() ? "Saved — syncing to disk." : "Cleared — syncing to disk.",
+    statusMessage: buffer.trim() ? "Saving…" : "Clearing…",
   };
 }
 

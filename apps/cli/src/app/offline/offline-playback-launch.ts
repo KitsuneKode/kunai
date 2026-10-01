@@ -39,6 +39,9 @@ export function episodeInfoFromDownloadJob(job: DownloadJobRecord): EpisodeInfo 
   return {
     season: job.season ?? 1,
     episode: job.episode ?? 1,
+    ...(job.providerEpisodeIdentity
+      ? { providerEpisodeIdentity: job.providerEpisodeIdentity }
+      : {}),
   };
 }
 

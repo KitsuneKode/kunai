@@ -670,12 +670,19 @@ export function extractAniListSequelSignal(
   return undefined;
 }
 
+/** A namespaced history id is not an AniList media id. */
+export function anilistMediaIdFromTitleId(titleId: string): number | null {
+  const id = Number(titleId);
+  if (!Number.isFinite(id)) return null;
+  return id;
+}
+
 async function loadAniListNextRelease(
   input: CatalogScheduleInput,
   signal?: AbortSignal,
 ): Promise<CatalogScheduleItem | null> {
-  const id = Number(input.titleId);
-  if (!Number.isFinite(id)) return null;
+  const id = anilistMediaIdFromTitleId(input.titleId);
+  if (id === null) return null;
 
   const query = `query($id:Int){Media(id:$id,type:ANIME){id title{romaji english} nextAiringEpisode{airingAt episode}}}`;
   const data = await postAniListGraphql<{

@@ -19,6 +19,11 @@ import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
 import {
+  removeClaimOwnedPartial,
+  shouldRetainDownloadPartials,
+  type DownloadPartialOutcome,
+} from "@/services/download/download-partials";
+import {
   cacheOfflinePosterArtwork,
   resolveOfflinePosterArtifactPath,
 } from "@/services/offline/offline-artwork-cache";
@@ -766,8 +771,10 @@ export class DownloadService {
       const cancelled = active?.cancelRequested === true || cancellation !== undefined;
       const message = error instanceof Error ? error.message : String(error);
       const failedAt = new Date().toISOString();
+      let partialOutcome: DownloadPartialOutcome = "fail";
       if (cancelled) {
         if (active?.cancelMode === "pause" || cancellation?.mode === "pause") {
+          partialOutcome = "pause";
           this.deps.repo.pause(
             next.id,
             active?.cancelReason ?? cancellation?.reason ?? "download paused by shutdown",
@@ -776,6 +783,7 @@ export class DownloadService {
             this.jobClaims.get(next.id),
           );
         } else {
+          partialOutcome = "abort";
           this.deps.repo.abort(next.id, failedAt, this.jobClaims.get(next.id));
           this.emit({ type: "aborted", jobId: next.id });
         }
@@ -783,6 +791,7 @@ export class DownloadService {
         const analysis = analyzeDownloadFailure(message);
         const retriesLeft = next.retryCount + 1 < next.maxAttempts;
         if (analysis.failureKind === "disk-full") {
+          partialOutcome = "pause";
           // The pre-flight reserve check only sees the volume as it was before
           // the transfer started. A disk that fills underneath a running job —
           // because the estimate was low, or because something else consumed
@@ -806,6 +815,7 @@ export class DownloadService {
             context: { jobId: next.id },
           });
         } else if (analysis.retryable && retriesLeft) {
+          partialOutcome = "retry";
           const retryAt = new Date(Date.now() + retryDelayMs(next.retryCount)).toISOString();
           this.deps.repo.scheduleRetry(
             next.id,
@@ -828,9 +838,11 @@ export class DownloadService {
           if (failedJob) await this.deps.onTerminalFailure?.(failedJob, message);
         }
       }
-      await rm(owned.tempPath, { force: true }).catch(() => {});
-      if (owned.tempPath !== next.tempPath) {
-        await rm(next.tempPath, { force: true }).catch(() => {});
+      if (!shouldRetainDownloadPartials(partialOutcome)) {
+        await removeClaimOwnedPartial(next.tempPath, owned.tempPath);
+        if (owned.tempPath !== next.tempPath) {
+          await removeClaimOwnedPartial(next.tempPath, next.tempPath);
+        }
       }
       this.deps.logger.warn("Download failed", { jobId: next.id, error: message });
       return this.deps.repo.get(next.id) ?? null;
@@ -1090,10 +1102,29 @@ export class DownloadService {
   ): Promise<DownloadDeleteResult> {
     const job = this.deps.repo.get(jobId);
     if (!job) return { status: "deleted", jobId };
+    const heldClaim = this.jobClaims.get(jobId);
+    if (
+      job.status === "running" &&
+      job.ownerToken &&
+      !this.activeProcesses.has(jobId) &&
+      heldClaim?.ownerToken !== job.ownerToken
+    ) {
+      return {
+        status: "retained",
+        jobId,
+        reason: "owned-by-other-worker",
+        remainingPaths: [],
+      };
+    }
     if (job.status === "running" || this.activeProcesses.has(jobId)) {
       await this.abort(jobId);
     }
-    await rm(job.tempPath, { force: true }).catch(() => undefined);
+    this.deps.repo.markCleanupPending(jobId, new Date().toISOString());
+    const stagingRemoval = await removeClaimOwnedPartial(job.tempPath, job.stagingDir);
+    const tempRemoval = await removeClaimOwnedPartial(job.tempPath, job.tempPath);
+    if (stagingRemoval === "failed" || tempRemoval === "failed") {
+      return this.retainFailedRemoval(jobId, [job.stagingDir ?? job.tempPath], false);
+    }
     const ownsArtifact =
       ["completed", "completed-with-notes", "repairable"].includes(job.status) &&
       !this.deps.repo.hasConflictingOutputOwner(job.id, job.outputPath);
@@ -1881,6 +1912,9 @@ export class DownloadService {
   }
 
   private async reconcileInterruptedJobs(): Promise<void> {
+    for (const pending of this.deps.repo.listCleanupPending(20)) {
+      await this.deleteJob(pending.id, { deleteArtifact: true });
+    }
     const now = new Date().toISOString();
     const nowMs = Date.parse(now);
     for (const runningJob of this.deps.repo.listRunning(200)) {

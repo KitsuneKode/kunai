@@ -152,7 +152,24 @@ test("resolveCanonicalCatalogTitleId anime-class series falls back to MAL", () =
       },
       { contentClass: "anime" },
     ),
-  ).toBe("1535");
+  ).toBe("mal:1535");
+});
+
+test("resolveCanonicalCatalogTitleId keeps an AniList id distinct from the same MAL number", () => {
+  expect(
+    resolveCanonicalCatalogTitleId({
+      id: "16498",
+      kind: "anime",
+      externalIds: { anilistId: "16498" },
+    }),
+  ).toBe("16498");
+  expect(
+    resolveCanonicalCatalogTitleId({
+      id: "16498",
+      kind: "anime",
+      externalIds: { malId: "16498" },
+    }),
+  ).toBe("mal:16498");
 });
 
 test("resolveCanonicalCatalogTitleId anime-class series without anime ids keeps tmdb unit", () => {

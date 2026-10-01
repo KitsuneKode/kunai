@@ -924,4 +924,31 @@ describe("root shell surface selection", () => {
       "root-overlay",
     );
   });
+
+  test("a different episode drops a pinned download so it cannot play the previous file", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    state = reduceState(state, {
+      type: "SELECT_TITLE",
+      title: {
+        id: "tmdb:1",
+        type: "series",
+        name: "Demo",
+        offlineJobId: "job-b",
+      },
+    });
+    state = reduceState(state, {
+      type: "SELECT_EPISODE",
+      episode: { season: 1, episode: 1 },
+    });
+    expect(state.currentTitle?.offlineJobId).toBe("job-b");
+    state = reduceState(state, {
+      type: "SELECT_EPISODE",
+      episode: { season: 1, episode: 2 },
+    });
+    expect(state.currentTitle?.offlineJobId).toBeUndefined();
+  });
 });
