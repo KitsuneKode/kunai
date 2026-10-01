@@ -240,7 +240,7 @@ describe("ConfigService.save debounce", () => {
     // update() during the parked write dirties the same key the snapshot
     // holds. Restoring the snapshot over it (without re-applying dirty keys)
     // left the retry persisting the stale value.
-    let rejectSave!: (reason: unknown) => void;
+    let rejectSave!: (reason: Error) => void;
     let mode: "fail" | "ok" = "fail";
     const written: KitsuneConfig[] = [];
     const store = {
