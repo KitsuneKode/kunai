@@ -6,6 +6,8 @@ downloads on · runway: title opt-in
 
 3 titles · 3 local items · local-only
 
+Filter:   type to filter · ↓ for list actions
+
 
 DOWNLOADED ─────────────────────────────────────────────────────────────────────────────────────────
 ▌ Dune: Part Two ↓ 1/1                                               Movie                ↓ 1 movie
@@ -17,6 +19,6 @@ DOWNLOADED ───────────────────────
 
 Library
 
-[enter] open  [x] delete  [p] protect  [/] commands
+[↵] open  [↑↓] list actions  [⇥] downloads  [/] commands
 
-Missing or broken artifacts: press x to remove, then re-add via /download.
+Missing or broken artifacts: select with ↓, press x twice to remove, then re-add via /download.

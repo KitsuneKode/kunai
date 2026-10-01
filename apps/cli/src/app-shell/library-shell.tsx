@@ -1,4 +1,13 @@
+import {
+  browseFocusZoneReducer,
+  createInitialBrowseFocusZone,
+  isBrowseListFocused,
+  type BrowseFocusZone,
+  type BrowseFocusZoneContext,
+} from "@/app-shell/browse-focus-zone";
+import type { DismissTimerOperations } from "@/app-shell/dismiss-timer-registry";
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import { usePressAgainConfirm } from "@/app-shell/hooks/use-press-again-confirm";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import {
@@ -60,13 +69,23 @@ export function LibraryShell({
   container,
   onClose,
   initialView = "library",
+  confirmTimers,
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   initialView?: TabId;
+  /** Test seam: injected clock for the delete press-again window. */
+  confirmTimers?: DismissTimerOperations;
+  /** True while the root command palette owns input — this shell's useInput handlers stay registered but inert, like SettingsShell. */
+  commandMode?: boolean;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
+  // Reported by LibraryTab so the footer can advertise only the keys that are
+  // live — list actions once the list zone owns focus, the zone switch while
+  // the filter text zone does.
+  const [libraryListFocused, setLibraryListFocused] = useState(false);
   const downloadsEnabled = container.config.downloadsEnabled;
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
@@ -115,12 +134,17 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToLibrary={() => setTab("library")}
             showSelectionHints={false}
+            confirmTimers={confirmTimers}
+            commandMode={commandMode}
           />
         ) : (
           <LibraryTab
             container={container}
             onClose={onClose}
             onNavigateToQueue={() => setTab("queue")}
+            onListFocusChange={setLibraryListFocused}
+            confirmTimers={confirmTimers}
+            commandMode={commandMode}
           />
         )}
       </Box>
@@ -130,7 +154,7 @@ export function LibraryShell({
           mode="minimal"
           actions={selectFooterActions(
             tab === "library"
-              ? libraryFooterActions()
+              ? libraryFooterActions({ listFocused: libraryListFocused })
               : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
             "minimal",
             viewport.columns,
@@ -139,8 +163,9 @@ export function LibraryShell({
         />
         {tab === "library" ? (
           <Text color={palette.dim} dimColor>
-            Missing or broken artifacts: press <Text color={palette.accent}>x</Text> to remove, then
-            re-add via <Text color={palette.accent}>/download</Text>.
+            Missing or broken artifacts: select with <Text color={palette.accent}>↓</Text>, press{" "}
+            <Text color={palette.accent}>x</Text> twice to remove, then re-add via{" "}
+            <Text color={palette.accent}>/download</Text>.
           </Text>
         ) : downloadJobCount === 0 ? (
           <Text color={palette.dim} dimColor>
@@ -159,10 +184,19 @@ function LibraryTab({
   container,
   onClose,
   onNavigateToQueue,
+  onListFocusChange,
+  confirmTimers,
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToQueue: () => void;
+  /** Reports which zone owns keys so the shell footer can switch affordances. */
+  onListFocusChange?: (listFocused: boolean) => void;
+  /** Test seam: injected clock for the delete press-again window. */
+  confirmTimers?: DismissTimerOperations;
+  /** True while the root command palette owns input. */
+  commandMode?: boolean;
 }) {
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
@@ -172,11 +206,18 @@ function LibraryTab({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
+  // Focus-zone model shared with browse: the filter text ("query") owns every
+  // printable key until ↑/↓ hands the list focus; Esc hands it back. Only the
+  // list zone runs the bare-letter actions (x delete, p protect, 2 downloads).
+  const [focusZone, setFocusZone] = useState<BrowseFocusZone>(createInitialBrowseFocusZone);
+  // Delete is armed per shelf-group key so moving the selection can never
+  // confirm against a row the prompt did not name. The armed state expires
+  // after PRESS_AGAIN_WINDOW_MS.
+  const deleteConfirm = usePressAgainConfirm(confirmTimers);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
-  const titlesActive = libraryView === "titles";
+  const titlesActive = libraryView === "titles" && !commandMode;
 
   useEffect(() => {
     let cancelled = false;
@@ -252,61 +293,98 @@ function LibraryTab({
     })();
   };
 
+  const listFocused = isBrowseListFocused(focusZone);
+  const focusZoneContext: BrowseFocusZoneContext = {
+    hasResults: totalRows > 0,
+    hasFilterBar: false,
+    canFocusIdle: false,
+  };
+
+  // Report the owning zone so the shell footer advertises the live keys for
+  // this mode rather than the whole binding set.
+  useEffect(() => {
+    onListFocusChange?.(listFocused);
+  }, [listFocused, onListFocusChange]);
+
   useInput(
     (input, key) => {
-      // Esc cancels an armed delete-confirm first (web-routing back: undo the
-      // pending state before leaving the surface). Only when nothing is armed does
-      // esc close the Library overlay.
+      // Esc unwinds one layer at a time: armed confirm → list focus → close.
+      // (Web-routing back: undo the pending state before leaving the surface.)
       if (key.escape) {
-        if (confirmDeleteKey) {
-          setConfirmDeleteKey(null);
+        if (deleteConfirm.armedToken) {
+          deleteConfirm.disarm();
+          return;
+        }
+        if (listFocused) {
+          setFocusZone((zone) =>
+            browseFocusZoneReducer(zone, { type: "escape" }, focusZoneContext),
+          );
           return;
         }
         onClose();
         return;
       }
-      if (key.tab || input === "2") {
+      if (key.tab) {
         onNavigateToQueue();
         return;
       }
       if (loading || !entries) return;
-      if (key.backspace || input === "\b") {
-        setFilterQuery((query) => query.slice(0, -1));
+
+      if (!listFocused) {
+        // Text zone — every printable key is filter input, x/p/2 included.
+        // The filter is append-only with no cursor, so forward delete has no
+        // distinct meaning and simply removes the trailing character.
+        if (key.backspace || key.delete || input === "\b") {
+          setFilterQuery((query) => query.slice(0, -1));
+          return;
+        }
+        if (key.upArrow || key.downArrow) {
+          // First arrow press hands the list focus (browse model); it does not
+          // move the selection — the highlight already sits on a row.
+          setFocusZone((zone) =>
+            browseFocusZoneReducer(
+              zone,
+              { type: key.downArrow ? "arrow-down" : "arrow-up" },
+              focusZoneContext,
+            ),
+          );
+          return;
+        }
+        if (key.return) {
+          if (!selectedOfflineGroup) return;
+          setDetailGroup(selectedOfflineGroup);
+          setLibraryView("title-detail");
+          return;
+        }
+        if (input === "\u001b") return;
+        // `/` is the global command-palette chord — it opens the palette
+        // rather than typing into the filter.
+        if (input === "/" && !key.ctrl && !key.meta) return;
+        if (input.length === 1 && !key.ctrl && !key.meta) {
+          setFilterQuery((query) => query + input);
+          return;
+        }
         return;
       }
-      if (input === "\u001b") return;
-      if (
-        input.length === 1 &&
-        !key.ctrl &&
-        !key.meta &&
-        !key.return &&
-        !key.escape &&
-        !key.upArrow &&
-        !key.downArrow &&
-        !key.tab &&
-        input !== "x" &&
-        input !== "X" &&
-        input !== "p" &&
-        input !== "P"
-      ) {
-        setFilterQuery((query) => query + input);
+
+      // List zone — bare-letter actions are live here.
+      if (input === "2") {
+        onNavigateToQueue();
         return;
       }
-      if (totalRows === 0) return;
       if (key.upArrow) {
-        setConfirmDeleteKey(null);
+        deleteConfirm.disarm();
         setSelectedIndex((prev) => Math.max(0, prev - 1));
         return;
       }
       if (key.downArrow) {
-        setConfirmDeleteKey(null);
+        deleteConfirm.disarm();
         setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
         return;
       }
-      if (input === "x" || key.delete) {
+      if (input === "x" || input === "X" || key.delete) {
         if (!selectedOfflineGroup) return;
-        if (confirmDeleteKey === selectedOfflineGroup.key) {
-          setConfirmDeleteKey(null);
+        if (deleteConfirm.confirm(selectedOfflineGroup.key)) {
           const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
           const groupEntryIdSet = offlineGroupJobIdSet(selectedOfflineGroup);
           for (const jobId of groupEntryIds) {
@@ -315,8 +393,6 @@ function LibraryTab({
           setEntries((prev) =>
             prev ? prev.filter((entry) => !groupEntryIdSet.has(entry.job.id)) : null,
           );
-        } else {
-          setConfirmDeleteKey(selectedOfflineGroup.key);
         }
         return;
       }
@@ -348,9 +424,8 @@ function LibraryTab({
         setLibraryView("title-detail");
         return;
       }
-      if (confirmDeleteKey !== null) {
-        setConfirmDeleteKey(null);
-      }
+      // Any non-confirming key cancels a pending delete.
+      deleteConfirm.disarm();
     },
     { isActive: titlesActive },
   );
@@ -370,6 +445,21 @@ function LibraryTab({
       Boolean(entries) &&
       (viewport.columns ?? 80) >= 124,
   });
+
+  useEffect(() => {
+    if (totalRows === 0) {
+      // The last row vanished under list focus (delete emptied the shelf) —
+      // hand focus back to the text zone rather than stranding it on a list
+      // that no longer exists.
+      setFocusZone((zone) =>
+        browseFocusZoneReducer(
+          zone,
+          { type: "results-became-empty" },
+          { hasResults: false, hasFilterBar: false, canFocusIdle: false },
+        ),
+      );
+    }
+  }, [totalRows]);
 
   if (loading) {
     return (
@@ -432,6 +522,7 @@ function LibraryTab({
         }}
         onNavigateToQueue={onNavigateToQueue}
         onEntriesChanged={refreshEntries}
+        commandMode={commandMode}
       />
     );
   }
@@ -451,14 +542,19 @@ function LibraryTab({
       <Box marginBottom={1}>
         <Text color={palette.dim}>{shelf.summary}</Text>
       </Box>
-      {filterQuery.length > 0 ? (
-        <Box marginBottom={1}>
-          <Text color={palette.accent}>Filter: </Text>
-          <Text color={palette.text} bold>
-            {filterQuery}
-          </Text>
-        </Box>
-      ) : null}
+      <Box marginBottom={1}>
+        <Text color={listFocused ? palette.dim : palette.accent}>Filter: </Text>
+        <Text color={listFocused ? palette.dim : palette.text} bold={!listFocused}>
+          {filterQuery}
+        </Text>
+        <Text color={palette.dim} dimColor>
+          {listFocused
+            ? "  ↑↓ choose · Esc back to filter"
+            : filterQuery.length > 0
+              ? "  ↓ for list actions"
+              : "  type to filter · ↓ for list actions"}
+        </Text>
+      </Box>
       {showScrollUp ? <Text color={palette.dim}> ▲ ...</Text> : null}
       {items.map((item) => {
         if (item.kind === "section") {
@@ -489,14 +585,15 @@ function LibraryTab({
         );
       })}
       {showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}
-      {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
+      {selectedOfflineGroup && deleteConfirm.armedToken === selectedOfflineGroup.key ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}Press x again to delete {selectedOfflineGroup.titleName} and all local files
+            {"⚠ "}Press x again to delete {selectedOfflineGroup.titleName} and all local files · any
+            other key cancels
           </Text>
         </Box>
       ) : null}
-      {selectedOfflineGroup && confirmDeleteKey !== selectedOfflineGroup.key ? (
+      {selectedOfflineGroup && deleteConfirm.armedToken !== selectedOfflineGroup.key ? (
         <ResumeCard
           label={
             selectedOfflineGroup.nextPlayableEpisodeLabel

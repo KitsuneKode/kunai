@@ -23,7 +23,31 @@ export function queueFooterActions(): readonly FooterAction[] {
   });
 }
 
-export function historyFooterActions(): readonly FooterAction[] {
+/**
+ * Standard `/ commands` + `esc close` tail without any surface bindings —
+ * `ids: []` selects nothing but still builds the tail.
+ */
+function footerTail(
+  scope: "history" | "library" | "queue" | "notifications",
+): readonly FooterAction[] {
+  return buildFooterActionsFromBindings(scope, { ids: [] });
+}
+
+export function historyFooterActions(input?: {
+  readonly listFocused?: boolean;
+}): readonly FooterAction[] {
+  // Text zone: q/m/w/x are filter characters, not actions — the footer names
+  // the keys that are actually live (Enter, arrows, Tab cycling) plus how to
+  // reach the action keys, instead of advertising letters that would type.
+  if (!input?.listFocused) {
+    return [
+      { key: "↵", label: "resume", primary: true },
+      { key: "↑↓", label: "list actions" },
+      { key: "Tab·⇧Tab", label: "tabs" },
+      { key: "←→", label: "filter" },
+      ...footerTail("history"),
+    ];
+  }
   return buildFooterActionsFromBindings("history", {
     ids: ["history-resume", "history-menu", "history-queue", "history-tab"],
     overrides: {
@@ -70,7 +94,19 @@ export function downloadQueueFooterActions(input: {
   ];
 }
 
-export function libraryFooterActions(): readonly FooterAction[] {
+export function libraryFooterActions(input?: {
+  readonly listFocused?: boolean;
+}): readonly FooterAction[] {
+  // Text zone: x/p are filter characters, not actions. Advertise the zone
+  // switch instead of keys that would type a letter into the filter.
+  if (!input?.listFocused) {
+    return [
+      { key: "↵", label: "open", primary: true },
+      { key: "↑↓", label: "list actions" },
+      { key: "⇥", label: "downloads" },
+      ...footerTail("library"),
+    ];
+  }
   return buildFooterActionsFromBindings("library", {
     ids: ["library-open", "library-delete", "library-protect", "library-tab"],
     overrides: {

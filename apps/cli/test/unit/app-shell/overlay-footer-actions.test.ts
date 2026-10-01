@@ -17,14 +17,35 @@ describe("overlay footer actions", () => {
     expect(actions.at(-1)).toMatchObject({ key: "esc", label: "close", action: "quit" });
   });
 
-  test("history footer exposes resume, actions, queue and tab hints", () => {
-    expect(historyFooterActions().map((action) => action.label)).toEqual([
+  test("history footer exposes resume, actions, queue and tab hints in the list zone", () => {
+    expect(historyFooterActions({ listFocused: true }).map((action) => action.label)).toEqual([
       "resume",
       "actions",
       "up next",
       "tabs",
       "commands",
       "close",
+    ]);
+  });
+
+  test("history footer in the text zone advertises the zone switch, not letter actions", () => {
+    // Letters are filter characters here — showing q/m/x would lie about what
+    // the keys do. Enter and the tab/filter cycles stay live in both zones.
+    expect(historyFooterActions().map((action) => action.label)).toEqual([
+      "resume",
+      "list actions",
+      "tabs",
+      "filter",
+      "commands",
+      "close",
+    ]);
+    expect(historyFooterActions({ listFocused: false }).map((action) => action.key)).toEqual([
+      "↵",
+      "↑↓",
+      "Tab·⇧Tab",
+      "←→",
+      "/",
+      "esc",
     ]);
   });
 

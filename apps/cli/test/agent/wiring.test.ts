@@ -111,10 +111,18 @@ describe("agent wiring · queue", () => {
       s.press("Q");
       await s.waitForFrame((f) => f.includes("UP NEXT"), "up-next surface");
       await s.waitSettled();
+      // Row removal is a press-again destructive key: the first x arms the
+      // confirm affordance, the second removes. A single x must NOT remove —
+      // that's the audit fix this sequence also exercises.
+      s.press("x");
+      await s.waitForFrame(
+        (f) => f.includes("Press x again to remove"),
+        "armed remove prompt after first x",
+      );
       s.press("x");
       await s.waitForBackend(
         (i) => i.queue().length === before,
-        "playlist_queue back to baseline after x",
+        "playlist_queue back to baseline after confirming x",
       );
     });
   }, 30_000);

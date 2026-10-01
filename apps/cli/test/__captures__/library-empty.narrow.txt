@@ -12,7 +12,7 @@ Switch to Downloads (Tab) to see active downloads
 
 Library
 
-[enter] open  [x] delete  [p] protect  [/] commands
+[↵] open  [↑↓] list actions  [⇥] downloads  [/] commands
 
-Missing or broken artifacts: press x to remove, then re-add via
-/download.
+Missing or broken artifacts: select with ↓, press x twice to remove,
+then re-add via /download.

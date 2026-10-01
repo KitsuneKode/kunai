@@ -39,6 +39,9 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
     historySelections: [{ titleId: "tmdb:1", entry: history() }],
     historyPickerContext: {},
     selectedIndex: 0,
+    // Letter actions (x/X arm) only run while the list zone owns focus; the
+    // pendingDelete modal flow exercised below is zone-independent.
+    listFocused: true,
     sourceChoiceTitleId: null,
     sourcePreference: "auto" as const,
     setSourceChoiceTitleId: () => {},
