@@ -67,6 +67,7 @@ function fixture(options: FixtureOptions = {}): Container {
       onEvent: () => () => undefined,
       deleteJob: (jobId: string) => {
         options.deletes?.push(jobId);
+        return { status: "deleted", jobId };
       },
       abort: async () => undefined,
       retry: async () => undefined,
