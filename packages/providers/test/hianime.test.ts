@@ -26,9 +26,15 @@ import {
   resolveHianimeShow,
   fetchHianimeEpisodeCatalog,
   hianimeFetchText,
+  setHianimeCurlEnvironmentForTests,
   splitCurlHttpTrailer,
 } from "../src/hianime/direct";
 import { HIANIME_PROVIDER_ID, hianimeManifest } from "../src/hianime/manifest";
+
+/* Every hianime fetch in this file runs behind `happyRouter` — a URL that
+ * misses the stub must fail inside the sandbox, not fall through to the real
+ * curl binary on the dev machine's PATH. */
+setHianimeCurlEnvironmentForTests({ which: () => null, listPathEntries: () => [] });
 
 const NOW = "2026-09-13T00:00:00.000Z";
 
@@ -477,9 +483,8 @@ describe("hianime module resolve", () => {
    * Router adding the HD-1 megaplay lane's fixture on top of the happy path.
    * `zokoanimeSubBroken` serves a 200 embed page with no `__P` blob — a
    * deterministic decode failure. Unstubbed getSources ids answer the empty
-   * payload rather than throwing: stubbed fetch failures on these hosts do
-   * not stay failed (hianimeFetchText falls through to real curl), but a
-   * decrypt-to-`{}` payload fails inside the sandbox.
+   * payload rather than throwing so a decrypt-to-`{}` payload fails inside
+   * the sandbox.
    */
   function megaplayRouter(
     url: string,
@@ -539,6 +544,65 @@ describe("hianime module resolve", () => {
     const byId = new Map((result.sources ?? []).map((source) => [source.id, source]));
     expect(byId.get("source:hianime:sub:0")?.label).toContain("ZokoAnime");
     expect(byId.get("source:hianime:sub:1")?.status).toBe("selected");
+  });
+
+  test("a resolved lane whose rungs all fail the gate falls through to the next server", async () => {
+    /* The ZokoAnime lane resolves fine — embed decodes, ladder expands — but
+     * every probed variant answers a definitive 403. Before the gate moved
+     * inside the lane walk, that single verdict ended the episode; now it is
+     * a lane failure and HD-1 still gets its turn. */
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        if (url.startsWith("https://hls2.aniwatchtv.uk/") && url.endsWith("/index.m3u8")) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        return megaplayRouter(url);
+      }),
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved");
+    const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+    expect(selected?.serverName).toBe("HD-1");
+    expect(selected?.sourceId).toBe("source:hianime:sub:1");
+    expect(result.trace.events?.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["source:failed", "source:success"]),
+    );
+  });
+
+  test("a gate refusal on every lane exhausts with the refusal's own code", async () => {
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        // Streams refuse on both lanes; the ladders/embeds stay up, so the
+        // exhausted verdict carries the gate's classification (403 → blocked),
+        // not a collapsed "not-found".
+        if (url.endsWith("/index.m3u8")) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        return megaplayRouter(url);
+      }),
+    );
+
+    expect(result.status).toBe("exhausted");
+    // HiAnime keeps `blocked` retryable on purpose — a WAF verdict on one
+    // episode can heal on the next attempt, so it must not poison the lane.
+    expect(result.failures[0]).toMatchObject({ code: "blocked", retryable: true });
   });
 
   test("a pinned lane source id resolves only that megaplay lane", async () => {

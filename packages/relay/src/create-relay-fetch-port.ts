@@ -1,4 +1,4 @@
-import { RELAYED_RESPONSE_HEADER } from "@kunai/types";
+import { markRelayOwnedError, RELAYED_RESPONSE_HEADER } from "@kunai/types";
 
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
 import {
@@ -62,11 +62,18 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
           redirect: "manual",
         });
         if (fallbackToDirect && shouldFallbackToDirect(response)) {
+          // The abandoned relay body holds a socket until GC — cancel it
+          // explicitly so the direct request does not wait on cleanup.
+          void response.body?.cancel().catch(() => {});
           return fetchImpl(input, init);
         }
         return markRelayedResponse(response);
       } catch (error) {
-        if (!fallbackToDirect) throw error;
+        /* `fallbackToDirect: false` is a privacy promise: never touch the
+         * upstream outside the relay. The marker lets downstream transports
+         * (curl impersonate, raw fetch) tell this throw apart from a generic
+         * network failure and rethrow instead of retrying direct. */
+        if (!fallbackToDirect) throw markRelayOwnedError(error);
         return fetchImpl(input, init);
       }
     },

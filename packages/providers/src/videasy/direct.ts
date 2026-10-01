@@ -1745,12 +1745,19 @@ async function tryVidkingServer(opts: {
               emitRetryIfNeeded(events, context, guardedFailure, sourceId, attempt, maxAttempts);
               return null;
             }
+            // 5xx is the server's own answer (vidking 500 = "no streams for
+            // this title" — transient, per-title), not network evidence: it
+            // maps to provider-unavailable and stays retryable so the cycle
+            // walks on instead of reading it as offline. Gateway timeouts
+            // (408/504) keep their `timeout` code and stay non-retryable —
+            // a hung upstream does not heal inside one resolve, and
+            // candidate-timeout is not offline evidence either way.
             const nonRetryableStatus =
               statusCode === 401 ||
               statusCode === 403 ||
               statusCode === 404 ||
-              statusCode === 500 ||
-              statusCode >= 502;
+              statusCode === 408 ||
+              statusCode === 504;
             const f: ProviderFailure = {
               providerId: VIDEOSY_PROVIDER_ID,
               code: vidkingStatusToFailureCode(statusCode),
@@ -1804,6 +1811,9 @@ async function tryVidkingServer(opts: {
             const guarded = await decodeVideasyGuardedPayload(payload, sessionToken);
             decoded = await decodeVidkingPayload(guarded, tmdbId);
           }
+          // The probe fetches the stream URL — its throws are transport
+          // evidence, not payload evidence, so it gets its own stage.
+          failureStage = "probe";
           const streamProbe = await probeSelectedVidkingPayloadStream({
             decoded,
             input,
@@ -1888,11 +1898,20 @@ async function tryVidkingServer(opts: {
             titleId,
           });
           const timedOut = isVideasyTimeoutError(error);
+          // Only a decrypt-stage throw is a parse failure — a DNS/reset thrown
+          // while fetching is transport evidence. `network-error` stays
+          // retryable so the engine reads a dead socket as transient, never as
+          // the offline verdict a non-retryable one implies.
+          const code = timedOut
+            ? ("timeout" as const)
+            : failureStage === "decrypt"
+              ? ("parse-failed" as const)
+              : ("network-error" as const);
           const f: ProviderFailure = {
             providerId: VIDEOSY_PROVIDER_ID,
-            code: timedOut ? "timeout" : "parse-failed",
+            code,
             message: error instanceof Error ? error.message : "VidKing payload decode failed",
-            retryable: false,
+            retryable: code === "network-error",
             at: context.now(),
           };
           failures.push(f);
@@ -2604,6 +2623,7 @@ function vidkingStatusToFailureCode(status: number): ProviderFailure["code"] {
   if (status === 401 || status === 403) return "blocked";
   if (status === 404) return "not-found";
   if (status === 429) return "rate-limited";
+  if (status >= 500) return "provider-unavailable";
   return "network-error";
 }
 

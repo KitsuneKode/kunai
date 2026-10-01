@@ -10,6 +10,7 @@
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch, ProviderHttpError } from "../runtime/fetch";
+import { type CurlEnvironment } from "../shared/curl-impersonate";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import {
   decryptMegaplaySourcesBlob,
@@ -38,7 +39,11 @@ import {
   HianimeEmbedDecodeError,
   type HianimeEmbedPayload,
 } from "./embed";
-import { HIANIME_PROVIDER_ID, HIANIME_SUPPORTED_SERVER } from "./manifest";
+import {
+  HIANIME_MEGAPLAY_SERVERS,
+  HIANIME_PROVIDER_ID,
+  HIANIME_SUPPORTED_SERVER,
+} from "./manifest";
 import {
   chooseHianimeSearchMatch,
   HIANIME_BASE,
@@ -213,6 +218,19 @@ export async function runHianimeCurlWithRetry(
  * responses are final (all statuses), unmarked non-OK earns curl's
  * fingerprint, and challenge text maps to {@link cloudflareBlockMessage}.
  */
+/**
+ * Test seam: a stubbed fetch failure must not escape the sandbox by falling
+ * through to the real curl binary. Tests pin
+ * `setHianimeCurlEnvironmentForTests({ which: () => null, listPathEntries: () => [] })`
+ * so an unstubbed URL surfaces as a failure inside the fixture world.
+ */
+let hianimeCurlEnvironmentForTests: Partial<CurlEnvironment> | undefined;
+export function setHianimeCurlEnvironmentForTests(
+  environment: Partial<CurlEnvironment> | undefined,
+): void {
+  hianimeCurlEnvironmentForTests = environment;
+}
+
 export async function hianimeFetchText(
   url: string,
   options: {
@@ -233,6 +251,7 @@ export async function hianimeFetchText(
     referer: options.referer ?? HIANIME_REFERER,
     extraHeaders: options.extraHeaders,
     maxTimeSec: options.maxTimeSec,
+    curlEnvironment: hianimeCurlEnvironmentForTests,
     blockedError: (impersonated) => new Error(cloudflareBlockMessage(impersonated)),
   });
 }
@@ -322,12 +341,17 @@ export async function fetchHianimeEpisodeCatalog(
   const entries = parseHianimeEpisodesHtml(html, showId);
   if (entries.length === 0) return [];
   episodeCache.set(showId, entries);
-  void context?.cache?.write(
-    HIANIME_EPISODES_CACHE_NAMESPACE,
-    showId,
-    entries,
-    EPISODE_CATALOG_PERSIST_TTL_MS,
-  );
+  // Fire-and-forget still needs a rejection handler — an unhandled rejection
+  // escalates to a fatal shutdown in main.ts, so a cache-port failure degrades
+  // to a no-op here, matching the anidb write.
+  void Promise.resolve(
+    context?.cache?.write(
+      HIANIME_EPISODES_CACHE_NAMESPACE,
+      showId,
+      entries,
+      EPISODE_CATALOG_PERSIST_TTL_MS,
+    ),
+  ).catch(() => {});
   return entries;
 }
 
@@ -353,7 +377,7 @@ export async function fetchHianimeServers(
 export type HianimeServerKind = "zokoanime" | "megaplay";
 
 /** Server names observed on megaplay-family embeds; the host decides first. */
-const MEGAPLAY_SERVER_NAMES = ["HD-1", "Vidstream-2"] as const;
+const MEGAPLAY_SERVER_NAMES: readonly string[] = HIANIME_MEGAPLAY_SERVERS;
 
 function hianimeHost(embedUrl: string): string | null {
   try {
@@ -388,7 +412,7 @@ export type HianimeStreamFailureCode =
   | "timeout"
   | "not-found";
 
-type HianimeStreamFailure = {
+export type HianimeStreamFailure = {
   readonly code: HianimeStreamFailureCode;
   readonly message: string;
 };
@@ -648,6 +672,7 @@ export async function resolveHianimeEpisodeStreams({
   requestedMode,
   onlyServerIndex,
   signal,
+  verifyLane,
 }: {
   readonly context: ProviderRuntimeContext;
   readonly episodeId: string;
@@ -655,6 +680,15 @@ export async function resolveHianimeEpisodeStreams({
   /** A pinned source row (`source:hianime:<mode>:<n>`) resolves only that lane. */
   readonly onlyServerIndex?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Post-resolution stream gate. A resolved lane whose rungs all fail the
+   * probe is handed back as a failure and the walk moves to the next server —
+   * without it, "a dead lane falls through to the next server" only held for
+   * embed failures, not for dead CDNs.
+   */
+  readonly verifyLane?: (
+    lane: HianimeResolvedLane & { readonly serverIndex: number },
+  ) => Promise<HianimeStreamFailure | undefined>;
 }): Promise<HianimeEpisodeStreamResolution> {
   let servers: readonly HianimeServerEntry[];
   try {
@@ -706,7 +740,19 @@ export async function resolveHianimeEpisodeStreams({
     const index = modeServers.indexOf(server);
     try {
       const resolution = await resolveHianimeLane(server, context, signal);
-      resolutions.push({ ...resolution, serverIndex: index });
+      const lane = { ...resolution, serverIndex: index };
+      const gateFailure = await verifyLane?.(lane);
+      if (gateFailure) {
+        firstFailure ??= gateFailure;
+        resolutions.push({
+          status: "failed",
+          serverIndex: index,
+          serverName: server.serverName,
+          failure: gateFailure,
+        });
+        continue;
+      }
+      resolutions.push(lane);
       // One playable lane is enough — further servers only cost requests.
       break;
     } catch (error) {

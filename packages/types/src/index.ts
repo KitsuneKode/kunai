@@ -612,6 +612,40 @@ export function isRelayedResponse(response: Response): boolean {
   return response.headers.get(RELAYED_RESPONSE_HEADER) === "1";
 }
 
+/**
+ * Field a fetch port stamps on a rethrown error when the failure is
+ * relay-owned and the user opted out of direct fallback
+ * (`fallbackToDirect: false`). The relay is a privacy boundary: without the
+ * marker, a transport layer would catch the throw and retry the same upstream
+ * URL over curl or raw fetch — silently bypassing the relay the user deployed.
+ * Duck-typed rather than `instanceof` so the flag survives error
+ * reconstitution across package boundaries.
+ */
+export const RELAY_OWNED_ERROR_FIELD = "kunaiRelayOwnedFailure";
+
+/** Narrow carrier for the marker — a known optional field, not an open map. */
+type RelayOwnedCarrier = { kunaiRelayOwnedFailure?: unknown };
+
+export function markRelayOwnedError<T>(error: T): T {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- marker survives error reconstitution because it is duck-typed; no prototype is trusted
+  if (typeof error === "object" && error !== null) {
+    // SAFETY: object-guarded above; the marker is an optional own-property we own end to end.
+    (error as RelayOwnedCarrier)[RELAY_OWNED_ERROR_FIELD] = true;
+  }
+  return error;
+}
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- boundary probe: the thrown value's type is exactly what the predicate answers
+export function isRelayOwnedError(error: unknown): boolean {
+  return (
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- duck-typed marker read; the field IS the contract
+    typeof error === "object" &&
+    error !== null &&
+    // SAFETY: object-guarded above; reading an optional marker field.
+    (error as RelayOwnedCarrier)[RELAY_OWNED_ERROR_FIELD] === true
+  );
+}
+
 export type RelayMethod = "GET" | "POST" | "HEAD";
 
 export type RelayErrorCode =

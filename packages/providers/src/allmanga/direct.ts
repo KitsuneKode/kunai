@@ -752,7 +752,16 @@ export const allmangaProviderModule: CoreProviderModule = {
             message: "No selectable AllManga streams were mapped.",
             retryable: true,
           },
-          evidence: { failures },
+          evidence: {
+            cachePolicy,
+            events,
+            failures,
+            sources: finalizeCycleSourceInventory({
+              sources: buildAllmangaSourceInventorySeeds(streams, cachePolicy),
+              attempts: cycleResult.attempts,
+            }),
+            startedAt,
+          },
         });
       }
       const selection = selectReadyStream([selectedStream], {

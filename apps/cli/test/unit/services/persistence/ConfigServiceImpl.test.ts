@@ -671,6 +671,25 @@ describe("ConfigServiceImpl", () => {
       expect(persisted.providerPriority).toEqual(["rivestream", "vidlink"]);
     });
 
+    test("a revision-3 config holding the shipped videasy pair is a deliberate re-pick", async () => {
+      /* Revision 3 is the release that ran the videasy→vidlink move, so a
+       * config stamped 3 holding `videasy` + the old shipped pair can only be
+       * a user's post-migration choice. A later revision bump must not
+       * steamroll it back. */
+      const store = new MemoryConfigStore({
+        provider: "videasy",
+        providerPriority: ["rivestream", "vidlink"],
+        providerDefaultsRevision: 3,
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.provider).toBe("videasy");
+      expect(service.providerPriority).toEqual(["rivestream", "vidlink"]);
+      expect(service.getRaw().providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
+    });
+
     test("the lanes migrate independently — one deliberate pick does not shield the other lane", async () => {
       const store = new MemoryConfigStore({
         // Inherited series pair + a deliberate anime pick: only series moves.

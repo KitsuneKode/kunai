@@ -26,16 +26,27 @@ const BOOTSTRAP = join(import.meta.dir, "../../../apps/cli/src/container/bootstr
  * bootstrap file rather than restated here — a hardcoded list is how this
  * test drifted to covering 8 providers while production ran 12.
  */
-const PRODUCTION_PROVIDERS = [
+/** Bootstrap names that match `(\w+)ProviderModule` but are not provider ids —
+ * `CoreProviderModule` is the module *type*, not a lane. */
+const NON_PROVIDER_MODULE_PREFIXES = new Set(["Core"]);
+
+const MODULE_IDS = [
   ...new Set(
     [...readFileSync(BOOTSTRAP, "utf8").matchAll(/(\w+)ProviderModule\b/g)]
       .flatMap((match) => (match[1] ? [match[1]] : []))
-      // Module names are `<id>ProviderModule`; drop anything that does not
-      // resolve to a provider source dir (e.g. a renamed module mid-refactor
-      // must fail loudly below, not silently drop out of coverage).
-      .filter((id) => readdirSync(PROVIDER_SRC).includes(id)),
+      .filter((id) => !NON_PROVIDER_MODULE_PREFIXES.has(id)),
   ),
 ] as const;
+
+const PRODUCTION_PROVIDERS = MODULE_IDS;
+
+test("every bootstrap provider module maps to a source directory", () => {
+  /* A module id that does not map to a provider dir is a rename mid-refactor —
+   * it must fail loudly here, not be filtered out of coverage (the old filter
+   * is exactly how the list drifted to 8 providers while production ran 12). */
+  const dirs = readdirSync(PROVIDER_SRC);
+  expect(MODULE_IDS.filter((id) => !dirs.includes(id))).toEqual([]);
+});
 
 /**
  * A provider may only appear here with a reason that is about the *runtime*,

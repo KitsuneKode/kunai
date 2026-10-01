@@ -30,6 +30,7 @@ import {
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
   isRelayedResponse,
+  isRelayOwnedError,
   ProviderHttpError,
   providerHttpErrorForStatus,
   type ProviderId,
@@ -490,6 +491,10 @@ export async function providerFetchText(
       // A caller abort is not a transport fact — never buy a curl request with
       // it. Everything else (DNS, reset, the 15s deadline) is worth curl's shot.
       if (signal?.aborted === true) throw error;
+      /* A relay-owned throw under `fallbackToDirect: false` is the user
+       * saying "never touch upstream outside the relay" — retrying it over
+       * curl/raw fetch would silently bypass that boundary. */
+      if (isRelayOwnedError(error)) throw error;
     }
     if (response) {
       const relayed = isRelayedResponse(response);
@@ -515,9 +520,19 @@ export async function providerFetchText(
         // Retryable unmarked status / non-final relayed status → curl.
       } else {
         // A mid-body disconnect is the same class of fact as a failed fetch —
-        // curl/impersonate settles it.
+        // curl/impersonate settles it — *unless* the response is relay-owned:
+        // re-requesting the same URL direct is exactly what the mark forbids.
         const text = await readResponseText(response).catch((error: unknown) => {
           if (signal?.aborted === true) throw error;
+          if (relayed) {
+            throw new ProviderTransportError({
+              message: `${label} connection error (${transportMessageDetail(error)}) from ${urlLabel} via relay`,
+              transportKind: transportKindFromFetchError(error),
+              providerId: policy.providerId,
+              stage,
+              cause: error,
+            });
+          }
           return undefined;
         });
         if (text !== undefined) {

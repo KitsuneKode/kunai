@@ -332,12 +332,17 @@ export async function fetchAnimekaiEpisodeCatalog(
     });
   }
   episodeCache.set(showId, entries);
-  void context?.cache?.write(
-    ANIMEKAI_EPISODES_CACHE_NAMESPACE,
-    showId,
-    entries,
-    EPISODE_CATALOG_PERSIST_TTL_MS,
-  );
+  // Fire-and-forget still needs a rejection handler — an unhandled rejection
+  // escalates to a fatal shutdown in main.ts, so a cache-port failure degrades
+  // to a no-op here, matching the anidb write.
+  void Promise.resolve(
+    context?.cache?.write(
+      ANIMEKAI_EPISODES_CACHE_NAMESPACE,
+      showId,
+      entries,
+      EPISODE_CATALOG_PERSIST_TTL_MS,
+    ),
+  ).catch(() => {});
   return entries;
 }
 

@@ -811,7 +811,9 @@ export function classifyProviderCycleError(error: unknown): ProviderCycleErrorCl
         structured.retryable ??
         (structured.status !== undefined
           ? httpStatusIsRetryable(structured.status)
-          : structured.transportKind !== "offline"),
+          : structured.transportKind !== undefined
+            ? structured.transportKind !== "offline"
+            : !NON_RETRYABLE_RESOLVE_CODES.has(structured.code ?? "unknown")),
     };
   }
   if (message.includes("network") || message.includes("fetch")) {
@@ -899,6 +901,21 @@ const RESOLVE_ERROR_CODES: ReadonlySet<string> = new Set<ResolveErrorCode>([
   "cancelled",
   "missing-input",
   "unknown",
+]);
+
+/** Codes that cannot heal inside a resolve cycle, so a code-only structured
+ * error defaults to non-retryable instead of falling through to the loose
+ * `transportKind !== "offline"` default — the message branches below already
+ * refuse `blocked`/`parse` the same way. `not-found` stays out on purpose:
+ * providers disagree about whether it can heal, so the sender must say. */
+const NON_RETRYABLE_RESOLVE_CODES: ReadonlySet<string> = new Set<ResolveErrorCode>([
+  "blocked",
+  "parse-failed",
+  "unsupported-title",
+  "cancelled",
+  "missing-input",
+  "runtime-missing",
+  "yt-dlp-missing",
 ]);
 
 /**

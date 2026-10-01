@@ -469,6 +469,7 @@ export const animekaiProviderModule: CoreProviderModule = {
 
       const resolution = await resolveAnimekaiEpisodeStreams({
         context,
+        signal: context.signal,
         showId: show.id,
         episode: entry.number,
         requestedMode: audioMode,
@@ -477,6 +478,20 @@ export const animekaiProviderModule: CoreProviderModule = {
           onlyServerIndex: explicitSource.serverIndex,
         }),
       });
+
+      if (context.signal?.aborted === true) {
+        return createExhaustedResult(
+          input,
+          context,
+          ANIMEKAI_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "AnimeKai resolution was cancelled",
+            retryable: false,
+          },
+          { cachePolicy, events, failures, startedAt },
+        );
+      }
 
       if (resolution.availableModes.length > 0) {
         emitTraceEvent(events, context, {

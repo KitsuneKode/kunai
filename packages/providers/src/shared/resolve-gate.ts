@@ -172,7 +172,11 @@ export async function selectVerifiedStream<
 
     firstReason ??= verdict.reason;
     if (verdict.probe?.status === "unreachable" && verdict.probe.hostRefusal) {
+      // A host-scoped refusal with no parseable host (e.g. the URL itself is
+      // unparseable) still has to refuse *something* — otherwise the walk
+      // re-picks the same stream until the deadline burns out.
       if (host) refusedHosts.add(host);
+      else refusedRequests.add(requestKey);
     } else {
       refusedRequests.add(requestKey);
     }
@@ -284,8 +288,11 @@ export async function selectVerifiedReadyStream({
     firstReason ??= verdict.reason;
     refusedCount += 1;
     if (verdict.probe?.status === "unreachable" && verdict.probe.hostRefusal) {
+      // Same rule as the single-stream path: a host refusal that produced no
+      // host still refuses the request, or the loop re-probes it forever.
       const host = streamHost(pick.selected.url);
       if (host) refusedHosts.add(host);
+      else refusedRequests.add(streamRequestKey(pick.selected));
     } else {
       refusedRequests.add(streamRequestKey(pick.selected));
     }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { ProviderRuntimeContext } from "@kunai/types";
+import { isRelayOwnedError, markRelayOwnedError } from "@kunai/types";
 
 import { ProviderHttpError } from "../src/runtime/fetch";
 import {
@@ -143,6 +144,69 @@ describe("providerFetchText — context leg", () => {
       spawnCurl: async () => ({ stdout: "real page\n200", stderr: "", exitCode: 0 }),
     });
     expect(text).toBe("real page");
+  });
+
+  test("a relay-owned throw never falls to curl or a direct retry", async () => {
+    /* `fallbackToDirect: false` is the user's privacy promise — the relay port
+     * marks its throws so this layer rethrows instead of touching upstream. */
+    let curlRan = false;
+    const restore = stubRawFetch(async () => {
+      throw new Error("SENTINEL: direct upstream request happened");
+    });
+    let thrown: unknown;
+    try {
+      await providerFetchText(URL_UNDER_TEST, {
+        ...POLICY,
+        context: contextWith(async () => {
+          throw markRelayOwnedError(new TypeError("fetch failed"));
+        }),
+        curlEnvironment: CURL_ENV,
+        spawnCurl: async () => {
+          curlRan = true;
+          return { stdout: "x\n200", stderr: "", exitCode: 0 };
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    } finally {
+      restore();
+    }
+    expect(thrown).toBeInstanceOf(TypeError);
+    expect(isRelayOwnedError(thrown)).toBe(true);
+    expect(curlRan).toBe(false);
+  });
+
+  test("a mid-body disconnect on a relayed response reports via relay, not via curl", async () => {
+    /* Reading the relayed body is still relay traffic — a disconnect there
+     * must not become a fresh direct request for the same URL. */
+    let curlRan = false;
+    let thrown: unknown;
+    try {
+      await providerFetchText(URL_UNDER_TEST, {
+        ...POLICY,
+        context: contextWith(
+          async () =>
+            new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.error(new Error("socket hung up mid-body"));
+                },
+              }),
+              { status: 200, headers: { "X-Kunai-Relayed": "1" } },
+            ),
+        ),
+        curlEnvironment: CURL_ENV,
+        spawnCurl: async () => {
+          curlRan = true;
+          return { stdout: "x\n200", stderr: "", exitCode: 0 };
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ProviderTransportError);
+    expect(thrown).toMatchObject({ message: expect.stringContaining("via relay") });
+    expect(curlRan).toBe(false);
   });
 });
 

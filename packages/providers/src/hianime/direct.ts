@@ -12,6 +12,7 @@ import type {
   ProviderResolveInput,
   ProviderRuntimeContext,
   ProviderSearchResult,
+  ProviderSelectionDecision,
   ProviderSourceCandidate,
   ProviderTraceEvent,
   ProviderVariantCandidate,
@@ -41,6 +42,7 @@ import {
   type HianimeAudioMode,
   type HianimeServerKind,
   type HianimeServerResolution,
+  type HianimeStreamFailure,
   type HianimeStreamFailureCode,
   type HianimeStreamLink,
 } from "./client";
@@ -83,6 +85,7 @@ export {
   resolveHianimeEpisodeStreams,
   resolveHianimeShow,
   searchHianime,
+  setHianimeCurlEnvironmentForTests,
   splitCurlHttpTrailer,
   type HianimeAudioMode,
   type HianimeEmbedPayload,
@@ -357,6 +360,31 @@ function isRetryableHianimeStreamFailure(code: HianimeStreamFailureCode): boolea
   );
 }
 
+/**
+ * Gate refusal → lane failure. The probe reasons carry their evidence — an
+ * `HTTP <status>` embeds the upstream's own answer, `blocked stream target`
+ * is the SSRF guard, and a malformed playlist is a parse verdict — so the
+ * code follows the reason instead of collapsing everything to `blocked`.
+ */
+function gateRefusalFailure(reason: string, serverName: string): HianimeStreamFailure {
+  const message = `HiAnime stream gate refused every rung on ${serverName}: ${reason}`;
+  const httpStatus = /HTTP (\d{3})/.exec(reason)?.[1];
+  if (httpStatus !== undefined) {
+    const status = Number(httpStatus);
+    if (status === 401 || status === 403 || status === 429) return { code: "blocked", message };
+    if (status === 404 || status === 410) return { code: "not-found", message };
+    if (status === 408 || status === 504) return { code: "timeout", message };
+    if (status >= 500) return { code: "provider-unavailable", message };
+    return { code: "network-error", message };
+  }
+  if (/timed?\s*out/i.test(reason)) return { code: "timeout", message };
+  if (/blocked/i.test(reason)) return { code: "blocked", message };
+  if (/no variant|no segment|text\/html|malformed/i.test(reason)) {
+    return { code: "parse-failed", message };
+  }
+  return { code: "network-error", message };
+}
+
 export const hianimeProviderModule: CoreProviderModule = {
   providerId: HIANIME_PROVIDER_ID,
   manifest: hianimeManifest,
@@ -502,6 +530,20 @@ export const hianimeProviderModule: CoreProviderModule = {
           input.preferredAudioLanguage ?? input.preferredPresentation ?? "original",
         ).catalogMode;
 
+      // The resolve gate runs inside the lane walk: a resolved lane whose
+      // rungs all fail the probe counts as a failed lane and the walk moves
+      // on to the next server — otherwise a dead ZokoAnime takes the whole
+      // episode down while HD-1 or Vidstream-2 still play.
+      let gated:
+        | {
+            readonly selected: StreamCandidate;
+            readonly decision: ProviderSelectionDecision;
+            readonly streams: StreamCandidate[];
+            readonly variants: readonly ProviderVariantCandidate[];
+            readonly subtitles: readonly SubtitleCandidate[];
+          }
+        | undefined;
+
       const resolution = await resolveHianimeEpisodeStreams({
         context,
         episodeId: entry.episodeId,
@@ -510,7 +552,127 @@ export const hianimeProviderModule: CoreProviderModule = {
           onlyServerIndex: explicitSource.serverIndex,
         }),
         signal: context.signal,
+        verifyLane: async (lane) => {
+          const laneSourceId = sourceIdFor(audioMode, lane.serverIndex);
+          const laneTiming: Record<string, { readonly start: number; readonly end: number }> = {};
+          if (lane.intro) laneTiming.intro = lane.intro;
+          if (lane.outro) laneTiming.outro = lane.outro;
+          const laneSubtitleLanguages = [
+            ...new Set(
+              lane.subtitles
+                .map((subtitle) => normalizeIsoLanguageCode(subtitle.lang ?? subtitle.label))
+                .filter((language): language is string => Boolean(language)),
+            ),
+          ];
+          const laneSubtitles = toSubtitleCandidates(lane.subtitles, laneSourceId, cachePolicy);
+          const laneArtwork: ProviderArtworkInfo | undefined =
+            lane.poster || lane.spriteVtt
+              ? {
+                  ...(lane.poster && { posterUrl: lane.poster, thumbnailUrl: lane.poster }),
+                  ...(lane.spriteVtt && { seekBarVttUrl: lane.spriteVtt }),
+                }
+              : undefined;
+          const { streams: laneStreams, variants: laneVariants } = linksToCandidates(
+            lane.links,
+            {
+              audioMode,
+              serverIndex: lane.serverIndex,
+              serverName: lane.serverName,
+              serverKind: lane.serverKind,
+              subtitleLanguages:
+                laneSubtitleLanguages.length > 0 ? laneSubtitleLanguages : undefined,
+              hasExternalSubtitles: laneSubtitles.length > 0,
+              ...(Object.keys(laneTiming).length > 0 && { timing: laneTiming }),
+              ...(laneArtwork && { artwork: laneArtwork }),
+            },
+            cachePolicy,
+          );
+          const laneSelection = await selectVerifiedReadyStream({
+            streams: laneStreams,
+            input: {
+              startupPriority: input.startupPriority,
+              qualityPreference: input.qualityPreference,
+              // User value only: every stream here shares `sourceId`, so
+              // defaulting would match streams[0] as `explicit` and bypass
+              // favorites, quality preference, and startup ordering. The mode
+              // switch already resolved above via explicitSourceMode, so
+              // nothing is lost.
+              preferredSourceId: input.preferredSourceId,
+              preferredStreamId: input.preferredStreamId,
+              favoriteSourceNames: input.favoriteSourceNames,
+            },
+            context,
+            timeoutMs: resolveGateBudgetMs(
+              providerCycleCandidateTimeoutMs(input.startupPriority ?? "balanced"),
+            ),
+            // One server, several quality rungs on the same CDN: cap the walk
+            // so serial refusals cannot spend the rest of the attempt budget
+            // the ladder fetch already drew from.
+            walkBudgetMs: 7_000,
+          });
+          if (!laneSelection.accepted) {
+            emitTraceEvent(events, context, {
+              type: "source:failed",
+              providerId: HIANIME_PROVIDER_ID,
+              sourceId: laneSourceId,
+              message: `HiAnime stream gate refused every rung`,
+              attributes: { mode: audioMode, reason: laneSelection.reason },
+            });
+            return gateRefusalFailure(laneSelection.reason, lane.serverName);
+          }
+          emitTraceEvent(events, context, {
+            type: "source:success",
+            providerId: HIANIME_PROVIDER_ID,
+            sourceId: laneSourceId,
+            message: `HiAnime ${audioMode} source resolved via ${lane.serverName}`,
+            attributes: { mode: audioMode, server: lane.serverName },
+          });
+          if (lane.ladderFallback === true) {
+            emitTraceEvent(events, context, {
+              type: "ladder:fallback",
+              providerId: HIANIME_PROVIDER_ID,
+              sourceId: laneSourceId,
+              message: `HiAnime ladder expansion fell back to a single auto row`,
+              attributes: { mode: audioMode },
+            });
+          }
+          if (laneSubtitles.length > 0) {
+            emitTraceEvent(events, context, {
+              type: "subtitle:discovered",
+              providerId: HIANIME_PROVIDER_ID,
+              sourceId: laneSourceId,
+              message: `HiAnime exposed ${laneSubtitles.length} subtitle track(s)`,
+            });
+          }
+          gated = {
+            selected: laneSelection.selected,
+            decision: laneSelection.decision,
+            streams: laneSelection.streams,
+            variants: laneVariants.filter((variant) =>
+              laneSelection.streams.some((stream) => stream.variantId === variant.id),
+            ),
+            subtitles: laneSubtitles,
+          };
+          return undefined;
+        },
       });
+
+      // The stream probe reports a caller abort as a non-definitive timeout —
+      // which the gate accepts — so an abort that lands inside the last lane
+      // check would otherwise ship a resolved result after the caller hung up.
+      if (context.signal?.aborted === true) {
+        return createExhaustedResult(
+          input,
+          context,
+          HIANIME_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "HiAnime resolution was cancelled",
+            retryable: false,
+          },
+          { cachePolicy, events, failures, startedAt },
+        );
+      }
 
       if (resolution.availableModes.length > 0) {
         emitTraceEvent(events, context, {
@@ -559,129 +721,24 @@ export const hianimeProviderModule: CoreProviderModule = {
       }
 
       const sourceId = sourceIdFor(audioMode, resolvedLane.serverIndex);
-      emitTraceEvent(events, context, {
-        type: "source:success",
-        providerId: HIANIME_PROVIDER_ID,
-        sourceId,
-        message: `HiAnime ${audioMode} source resolved via ${resolvedLane.serverName}`,
-        attributes: { mode: audioMode, server: resolvedLane.serverName },
-      });
-      if (resolvedLane.ladderFallback === true) {
-        emitTraceEvent(events, context, {
-          type: "ladder:fallback",
-          providerId: HIANIME_PROVIDER_ID,
-          sourceId,
-          message: "HiAnime ladder expansion fell back to a single auto row",
-          attributes: { mode: audioMode },
-        });
-      }
-      if (resolvedLane.subtitles.length > 0) {
-        emitTraceEvent(events, context, {
-          type: "subtitle:discovered",
-          providerId: HIANIME_PROVIDER_ID,
-          sourceId,
-          message: `HiAnime exposed ${resolvedLane.subtitles.length} subtitle track(s)`,
-        });
-      }
-
-      const timing: Record<string, { readonly start: number; readonly end: number }> = {};
-      if (resolvedLane.intro) timing.intro = resolvedLane.intro;
-      if (resolvedLane.outro) timing.outro = resolvedLane.outro;
-
-      const subtitleLanguages = [
-        ...new Set(
-          resolvedLane.subtitles
-            .map((subtitle) => normalizeIsoLanguageCode(subtitle.lang ?? subtitle.label))
-            .filter((language): language is string => Boolean(language)),
-        ),
-      ];
-      const subtitles = toSubtitleCandidates(resolvedLane.subtitles, sourceId, cachePolicy);
-      // The embed ships a poster frame and a sprite-sheet VTT (seek-bar
-      // previews). Parsed but previously dropped — surface both via the
-      // standard artwork slot so Tracks/source views can render them.
-      const artwork: ProviderArtworkInfo | undefined =
-        resolvedLane.poster || resolvedLane.spriteVtt
-          ? {
-              ...(resolvedLane.poster && {
-                posterUrl: resolvedLane.poster,
-                thumbnailUrl: resolvedLane.poster,
-              }),
-              ...(resolvedLane.spriteVtt && { seekBarVttUrl: resolvedLane.spriteVtt }),
-            }
-          : undefined;
-      const { streams, variants } = linksToCandidates(
-        resolvedLane.links,
-        {
-          audioMode,
-          serverIndex: resolvedLane.serverIndex,
-          serverName: resolvedLane.serverName,
-          serverKind: resolvedLane.serverKind,
-          subtitleLanguages: subtitleLanguages.length > 0 ? subtitleLanguages : undefined,
-          hasExternalSubtitles: subtitles.length > 0,
-          ...(Object.keys(timing).length > 0 && { timing }),
-          ...(artwork && { artwork }),
-        },
-        cachePolicy,
-      );
-      // Resolve-gate the picked variant before reporting success: the ladder
-      // fetch proves the master playlist, but the shipped stream is a variant
-      // URL that was never fetched — a dead rung would report success and let
-      // mpv discover it. The walk keeps user preference order and drops only
-      // the rungs the gate refused.
-      const selection = await selectVerifiedReadyStream({
-        streams,
-        input: {
-          startupPriority: input.startupPriority,
-          qualityPreference: input.qualityPreference,
-          // User value only: every stream here shares `sourceId`, so defaulting
-          // would match streams[0] as `explicit` and bypass favorites, quality
-          // preference, and startup ordering. The mode switch already resolved
-          // above via explicitSourceMode, so nothing is lost.
-          preferredSourceId: input.preferredSourceId,
-          preferredStreamId: input.preferredStreamId,
-          favoriteSourceNames: input.favoriteSourceNames,
-        },
-        context,
-        timeoutMs: resolveGateBudgetMs(
-          providerCycleCandidateTimeoutMs(input.startupPriority ?? "balanced"),
-        ),
-        // One server, several quality rungs on the same CDN: cap the walk so
-        // serial refusals cannot spend the rest of the attempt budget the
-        // ladder fetch already drew from.
-        walkBudgetMs: 7_000,
-      });
-      if (!selection.accepted) {
-        emitTraceEvent(events, context, {
-          type: "source:failed",
-          providerId: HIANIME_PROVIDER_ID,
-          sourceId,
-          message: "HiAnime stream gate refused every rung",
-          attributes: { mode: audioMode, reason: selection.reason },
-        });
-        return createExhaustedResult(
-          input,
-          context,
-          HIANIME_PROVIDER_ID,
-          {
-            code: "blocked",
-            message: `HiAnime streams refused by resolve gate: ${selection.reason}`,
-            retryable: false,
-          },
-          { cachePolicy, events, failures, startedAt },
-        );
+      if (!gated) {
+        // The walk only marks a lane resolved after verifyLane accepted it, so
+        // a missing stash means the invariant broke — fail loud rather than
+        // ship an inventory the gate never probed.
+        throw new Error("hianime resolved a lane the stream gate never saw");
       }
       // Selection reads provider order first; the handed-back inventory stays
       // quality-sorted for the Tracks picker, minus the rungs the gate refused.
-      const gatedStreams = selection.streams;
+      const gatedStreams = gated.streams;
       gatedStreams.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
-      const gatedVariants = variants
-        .filter((variant) => gatedStreams.some((stream) => stream.variantId === variant.id))
-        .sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
+      const gatedVariants = [...gated.variants].sort(
+        (a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0),
+      );
       const sources = finalizeCycleSourceInventory({
         sources: buildHianimeSourceInventory(resolution, audioMode, sourceId, cachePolicy),
         attempts: [],
         streams: gatedStreams,
-        selectedStreamId: selection.selected.id,
+        selectedStreamId: gated.selected.id,
       });
       const endedAt = context.now();
 
@@ -690,7 +747,7 @@ export const hianimeProviderModule: CoreProviderModule = {
         providerId: HIANIME_PROVIDER_ID,
         message: `Resolved ${gatedStreams.length} HiAnime stream(s)`,
         attributes: {
-          sourceId: selection.selected.sourceId ?? sourceId,
+          sourceId: gated.selected.sourceId ?? sourceId,
           showId: show.id,
           episodeId: entry.episodeId,
           episodeNumber: entry.number,
@@ -701,12 +758,12 @@ export const hianimeProviderModule: CoreProviderModule = {
       return {
         status: "resolved",
         providerId: HIANIME_PROVIDER_ID,
-        selectedStreamId: selection.selected.id,
-        selectionDecision: selection.decision,
+        selectedStreamId: gated.selected.id,
+        selectionDecision: gated.decision,
         sources,
         streams: gatedStreams,
         variants: gatedVariants,
-        subtitles,
+        subtitles: gated.subtitles,
         externalIds: {
           anilistId: input.title.externalIds?.anilistId ?? input.title.anilistId,
           malId: resolvedLane.malId,
@@ -717,7 +774,7 @@ export const hianimeProviderModule: CoreProviderModule = {
           title: input.title,
           episode: input.episode,
           providerId: HIANIME_PROVIDER_ID,
-          streamId: selection.selected.id,
+          streamId: gated.selected.id,
           cacheHit: false,
           runtime: "direct-http",
           startedAt,

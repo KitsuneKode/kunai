@@ -81,7 +81,10 @@ export function parseAnimekaiSearchHtml(html: string): readonly AnimekaiSearchRe
   const results: AnimekaiSearchResult[] = [];
   const seen = new Set<string>();
   for (const block of html.split(/<div class="aitem">/i).slice(1)) {
-    const anchorTag = /<a\b[^>]*class="title"[^>]*>/i.exec(block)?.[0];
+    // Bounded quantifiers: upstream HTML is uncontrolled input, and an
+    // unbounded `[^>]*` scan is the polynomial-regex shape CodeQL flags — a
+    // title anchor tag never legitimately exceeds this bound.
+    const anchorTag = /<a\b[^>]{0,2000}?class="title"[^>]{0,2000}?>/i.exec(block)?.[0];
     if (!anchorTag) continue;
     const href = extractAttribute(anchorTag, "href");
     const titleAttr = extractAttribute(anchorTag, "title");
@@ -92,8 +95,8 @@ export function parseAnimekaiSearchHtml(html: string): readonly AnimekaiSearchRe
     if (!looksLikeAnimekaiShowId(slug) || !title || seen.has(slug)) continue;
     seen.add(slug);
 
-    const subCount = /<span class="sub">[^0-9]*(\d+)/i.exec(block)?.[1];
-    const dubCount = /<span class="dub">[^0-9]*(\d+)/i.exec(block)?.[1];
+    const subCount = /<span class="sub">[^0-9]{0,64}(\d+)/i.exec(block)?.[1];
+    const dubCount = /<span class="dub">[^0-9]{0,64}(\d+)/i.exec(block)?.[1];
     const format = /<b>([A-Za-z]+)<\/b>/i.exec(block)?.[1];
     results.push({
       id: slug,

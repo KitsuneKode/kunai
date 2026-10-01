@@ -1046,15 +1046,24 @@ const SHIPPED_VIDEASY_DEFAULT_PRIORITIES: ReadonlyArray<readonly string[]> = [
   ["rivestream", "vidlink"],
 ];
 
+/** The revision whose defaults moved the series lane off Videasy — the
+ * migration above only applies to configs older than it. */
+const SERIES_DEFAULT_MOVED_AT_REVISION = 3;
+
 /**
- * Configs stamped before `CURRENT_PROVIDER_DEFAULTS_REVISION` whose series pair
+ * Configs stamped before `SERIES_DEFAULT_MOVED_AT_REVISION` whose series pair
  * is exactly a pair a release once shipped are moved to `DEFAULT_CONFIG`'s
  * series defaults. Anything else — a reordered list, a non-Videasy pick, a
  * hand-edited file — is left alone. A user who re-picks Videasy after the
  * migration writes `provider` alone, which this check no longer matches.
  */
 function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): boolean {
-  if (readProviderDefaultsRevision(loaded) >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
+  /* The cutoff is keyed to the revision that moved the lane — not to
+   * CURRENT_PROVIDER_DEFAULTS_REVISION — because a later bump must not
+   * re-migrate configs stamped by the release that already ran it. A rev-3
+   * config holding `videasy` + the shipped pair is a deliberate re-pick made
+   * *after* VidLink became the default; resetting it destroys user intent. */
+  if (readProviderDefaultsRevision(loaded) >= SERIES_DEFAULT_MOVED_AT_REVISION) return false;
   const provider = typeof loaded.provider === "string" ? loaded.provider.trim() : "";
   if (migrateLegacyProviderId(provider) !== "videasy") return false;
   const priority = loaded.providerPriority;

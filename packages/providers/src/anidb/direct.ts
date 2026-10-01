@@ -371,7 +371,11 @@ export const anidbProviderModule: CoreProviderModule = {
     const metadata = new Map<number, AnimeEpisodeMetadata>();
     mergeSeededEpisodeMetadataInto(metadata, metadataCacheKey);
     if (metadata.size === 0 && pageIds?.officialAid) {
-      const official = await fetchAnidbOfficialEpisodeMetadata(pageIds.officialAid, context.signal);
+      const official = await fetchAnidbOfficialEpisodeMetadata(
+        pageIds.officialAid,
+        context.signal,
+        context,
+      );
       for (const [number, meta] of official) metadata.set(number, meta);
       seedEpisodeMetadataFromProvider(metadataCacheKey, [...official.values()]);
     }
