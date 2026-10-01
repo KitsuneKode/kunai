@@ -49,8 +49,6 @@ import {
   type BrowseFocusZoneContext,
   type BrowseFocusZoneEvent,
 } from "./browse-focus-zone";
-import { buildBrowseIdleReturnLoopModel, resolveIdleRowAction } from "./browse-idle-actions";
-import { setBrowseIdleRefreshListener } from "./browse-idle-context";
 import {
   browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
@@ -140,6 +138,7 @@ import {
   type BrowseShellSearchResponse,
   type ShellAction,
 } from "./types";
+import { useIdleSurface } from "./use-idle-surface";
 import { usePosterPreview } from "./use-poster-preview";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
@@ -311,11 +310,6 @@ export function BrowseShell<T>({
   const [emptyMessage, setEmptyMessage] = useState(
     () => initialEmptyMessage ?? browseIdleHint(mode),
   );
-  const [activeIdleContext, setActiveIdleContext] = useState(idleContext);
-  const [idleContextStatus, setIdleContextStatus] = useState<"loading" | "ready" | "error">(
-    loadIdleContext ? "loading" : "ready",
-  );
-  const [showIdleLoadingHint, setShowIdleLoadingHint] = useState(false);
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const [searchWarnings, setSearchWarnings] = useState<readonly string[]>(initialWarnings ?? []);
   const [resultFilter, setResultFilter] = useState("");
@@ -348,7 +342,6 @@ export function BrowseShell<T>({
   });
   /** Zone to restore when closing browse-local overlays (details). */
   const focusZoneBeforeOverlayRef = useRef<BrowseFocusZone | null>(null);
-  const [idleSelectedIndex, setIdleSelectedIndex] = useState(0);
   const focusZoneContextRef = useRef<BrowseFocusZoneContext>({
     hasResults: false,
     hasFilterBar: false,
@@ -356,7 +349,6 @@ export function BrowseShell<T>({
   });
   const searchRequestGateRef = useRef(createLatestRequestGate());
   const detailRequestGateRef = useRef(createLatestRequestGate());
-  const [idleContextRequestGate] = useState(() => createLatestRequestGate());
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -396,54 +388,6 @@ export function BrowseShell<T>({
   });
   const calendarRouteKind = calendarRouteState.state.kind;
   const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
-
-  useEffect(() => {
-    if (!loadIdleContext) return;
-    const requestGate = idleContextRequestGate;
-    const request = requestGate.begin();
-    let active = true;
-    setIdleContextStatus("loading");
-    const timer = setTimeout(() => {
-      if (active) setShowIdleLoadingHint(true);
-    }, 150);
-
-    void (async () => {
-      try {
-        const next = await loadIdleContext();
-        if (!active || !requestGate.isCurrent(request)) return;
-        setIdleSelectedIndex(0);
-        setActiveIdleContext(next);
-        setIdleContextStatus("ready");
-      } catch {
-        if (!active || !requestGate.isCurrent(request)) return;
-        setIdleContextStatus("error");
-      } finally {
-        clearTimeout(timer);
-        if (active) setShowIdleLoadingHint(false);
-      }
-    })();
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-      requestGate.invalidate();
-    };
-  }, [idleContextRequestGate, loadIdleContext]);
-
-  useEffect(() => {
-    if (!loadIdleContext) return undefined;
-    setBrowseIdleRefreshListener(() => {
-      void (async () => {
-        try {
-          const next = await loadIdleContext();
-          setActiveIdleContext(next);
-        } catch {
-          // best-effort refresh after history mutations
-        }
-      })();
-    });
-    return () => setBrowseIdleRefreshListener(null);
-  }, [loadIdleContext]);
 
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
@@ -942,14 +886,15 @@ export function BrowseShell<T>({
     setFocusZone((current) => browseFocusZoneReducer(current, event, focusZoneContextRef.current));
   }, []);
 
-  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(activeIdleContext, {
+  // The idle surface owns its load lifecycle, selection index, and row intents;
+  // this shell only translates its boundary exits into focus-zone events.
+  const idle = useIdleSurface({
+    initial: idleContext,
+    load: loadIdleContext,
     idleFocused,
-    selectedIndex: idleSelectedIndex,
   });
   const canFocusIdleRows =
-    options.length === 0 &&
-    searchState === "idle" &&
-    Boolean(idleReturnLoopModel?.hasSelectableRows);
+    options.length === 0 && searchState === "idle" && Boolean(idle.model?.hasSelectableRows);
 
   // Local narrow mode only earns space on long result sets. Ctrl+F opens it;
   // /filters opens guided facets via SearchPhase.
@@ -1444,11 +1389,6 @@ export function BrowseShell<T>({
     // Menu only when list/idle owns focus — never from the search box.
     // Query zone must stay a clean text field (no m / Shift+M chords).
     // Never Ctrl+M — that is Enter in a TTY.
-    const idleMenuRow = idleReturnLoopModel?.rows[idleSelectedIndex];
-    const idleMenuTitleReady =
-      idleFocused &&
-      ((idleMenuRow?.id === "continue" && Boolean(activeIdleContext?.continueWatching?.titleId)) ||
-        (idleMenuRow?.id === "playlist-next" && Boolean(activeIdleContext?.playlistNext?.titleId)));
     const resultsMenuReady =
       listFocused &&
       Boolean(selectedOption) &&
@@ -1460,7 +1400,7 @@ export function BrowseShell<T>({
       input.toLowerCase() === "m" &&
       !key.ctrl &&
       !key.meta &&
-      (resultsMenuReady || idleMenuTitleReady)
+      (resultsMenuReady || idle.menuReady)
     ) {
       // Pass the highlighted result so SearchPhase can open the same starting-point
       // flow as Enter (not the sparse title-control hub with stale session title).
@@ -1474,12 +1414,6 @@ export function BrowseShell<T>({
     }
 
     const canFocusContinueInInput = canFocusIdleRows;
-
-    const resolveFocusedIdleAction = (): ShellAction | null => {
-      const row = idleReturnLoopModel?.rows[idleSelectedIndex];
-      if (!row?.actionable) return null;
-      return resolveIdleRowAction(row.id, activeIdleContext);
-    };
 
     // Calendar: Tab / Shift+Tab cycle the type tabs (All · Anime · TV · Movies ·
     // Tracked). Mode toggle is unavailable while browsing the schedule.
@@ -1556,31 +1490,22 @@ export function BrowseShell<T>({
     }
 
     if (key.return && idleFocused && canFocusContinueInInput) {
-      const action = resolveFocusedIdleAction();
+      const action = idle.selectedRowAction();
       if (action) {
         onResolve(action);
         return;
       }
     }
 
-    if (key.downArrow && idleFocused && idleReturnLoopModel) {
-      const lastIndex = idleReturnLoopModel.rows.length - 1;
-      if (idleSelectedIndex >= lastIndex) {
-        // Circle back to search — same exit as ↑ on the first row / Esc.
-        setIdleSelectedIndex(0);
-        dispatchFocusZone({ type: "focus-query" });
-        return;
-      }
-      setIdleSelectedIndex((current) => Math.min(current + 1, lastIndex));
+    if (key.downArrow && idleFocused && idle.model) {
+      // Boundary exits are intents: past the last row circles back to the query.
+      if (idle.moveDown() === "exit-to-query") dispatchFocusZone({ type: "focus-query" });
       return;
     }
 
     if (key.upArrow && idleFocused) {
-      if (idleSelectedIndex > 0) {
-        setIdleSelectedIndex((current) => Math.max(0, current - 1));
-        return;
-      }
-      dispatchFocusZone({ type: "escape" });
+      // ↑ on the first row is the same exit as Esc.
+      if (idle.moveUp() === "escape") dispatchFocusZone({ type: "escape" });
       return;
     }
 
@@ -2055,23 +1980,23 @@ export function BrowseShell<T>({
               }}
               width={Math.min(innerWidth, 72)}
             />
-            {idleContextStatus === "loading" && showIdleLoadingHint ? (
+            {idle.status === "loading" && idle.showLoadingHint ? (
               <Text color={palette.dim} dimColor>
                 Loading your local shortcuts…
               </Text>
-            ) : idleContextStatus === "error" ? (
+            ) : idle.status === "error" ? (
               <Text color={palette.dim} dimColor>
                 Local shortcuts unavailable · search is ready
               </Text>
             ) : null}
             {!commandMode &&
-            idleReturnLoopModel &&
-            (!viewport.ultraCompact || idleReturnLoopModel.rows.length > 0) ? (
+            idle.model &&
+            (!viewport.ultraCompact || idle.model.rows.length > 0) ? (
               <Box flexDirection="column" marginTop={1} gap={0}>
                 <Text color={palette.dim} bold>
-                  {idleReturnLoopModel.heading}
+                  {idle.model.heading}
                 </Text>
-                {idleReturnLoopModel.rows.map((row) => (
+                {idle.model.rows.map((row) => (
                   <Text
                     key={row.id}
                     backgroundColor={row.focused ? palette.accentFill : undefined}
@@ -2129,8 +2054,8 @@ export function BrowseShell<T>({
             : []),
           ...(listFocused && searchState === "ready" ? ["browse-title-control-menu"] : []),
           ...(idleFocused &&
-          (idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "continue" ||
-            idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "playlist-next")
+          (idle.model?.rows[idle.selectedIndex]?.id === "continue" ||
+            idle.model?.rows[idle.selectedIndex]?.id === "playlist-next")
             ? ["browse-title-control-menu"]
             : []),
           ...(listFocused && options.length > 0 && !queryDirty && searchState === "ready"
