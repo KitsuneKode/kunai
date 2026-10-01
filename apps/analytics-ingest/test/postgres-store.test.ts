@@ -36,6 +36,14 @@ test("the rollup reads lifetime as of the day, not as of now", () => {
   expect(ROLL_UP_DAY_SQL).not.toContain("select count(*) from install_lifetime\n");
 });
 
+test("new_installs counts the day's first-seen rows exactly", () => {
+  // `first_seen = day` — not `<=`: the series metric is installs first
+  // observed ON that day. It stays exact under recomputation because such a
+  // row is only prunable after the day itself leaves the retention window.
+  expect(ROLL_UP_DAY_SQL).toContain("from install_lifetime where first_seen = $1::date");
+  expect(ROLL_UP_DAY_SQL).toContain("new_installs = excluded.new_installs");
+});
+
 test("the rollup is a single statement so its parts share one snapshot", () => {
   expect(ROLL_UP_DAY_SQL.startsWith("with ")).toBe(true);
   expect(ROLL_UP_DAY_SQL).toContain("insert into daily_rollup");

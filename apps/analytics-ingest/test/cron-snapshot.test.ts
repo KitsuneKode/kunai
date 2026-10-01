@@ -24,6 +24,7 @@ function rollup(day: string): DailyRollup {
     day,
     computedAt: `${day}T00:05:00.000Z`,
     activeInstalls: 11,
+    newInstalls: 3,
     byVersion: { "0.3.0": 11 },
     byOs: { linux: 11 },
     byArch: { x64: 11 },

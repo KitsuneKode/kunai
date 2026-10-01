@@ -69,11 +69,18 @@ export function TrendTable({
 
   const visible = rows.slice(0, visibleCount);
   const exhausted = visibleCount >= rows.length;
+  // The column is absent, not a column of dashes, when the served series
+  // predates the field entirely. A mid-window null is a real gap and gets `—`.
+  const hasNewColumn = points.some((point) => point.newInstalls !== null);
 
   return (
     <div className="flex max-h-[260px] flex-col overflow-y-auto">
       <table className="kunai-chart text-xs">
-        <caption className="sr-only">Active and lifetime installs per day</caption>
+        <caption className="sr-only">
+          {hasNewColumn
+            ? "Active, first-seen, and lifetime installs per day"
+            : "Active and lifetime installs per day"}
+        </caption>
         <thead className="bg-card sticky top-0">
           <tr>
             <th scope="col" className="text-muted-foreground text-left font-normal">
@@ -82,6 +89,11 @@ export function TrendTable({
             <th scope="col" className="text-muted-foreground text-right font-normal">
               Active
             </th>
+            {hasNewColumn ? (
+              <th scope="col" className="text-muted-foreground text-right font-normal">
+                New
+              </th>
+            ) : null}
             <th scope="col" className="text-muted-foreground text-right font-normal">
               Lifetime
             </th>
@@ -101,6 +113,11 @@ export function TrendTable({
                   {point.day}
                 </th>
                 <td className="text-foreground text-right tabular-nums">{point.activeInstalls}</td>
+                {hasNewColumn ? (
+                  <td className="text-foreground text-right tabular-nums">
+                    {point.newInstalls ?? "—"}
+                  </td>
+                ) : null}
                 <td className="text-muted-foreground text-right tabular-nums">
                   {point.lifetimeInstalls}
                 </td>

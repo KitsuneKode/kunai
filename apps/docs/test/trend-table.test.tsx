@@ -30,6 +30,7 @@ function makePoints(count: number): SeriesPoint[] {
     points.push({
       day,
       activeInstalls: i,
+      newInstalls: null,
       lifetimeInstalls: 100 + i,
       byVersion: {},
       byOs: {},

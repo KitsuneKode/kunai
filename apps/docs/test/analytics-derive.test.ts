@@ -16,6 +16,7 @@ function day(index: number, activeInstalls = 1): SeriesPoint {
   return {
     day: date.toISOString().slice(0, 10),
     activeInstalls,
+    newInstalls: null,
     lifetimeInstalls: index + 1,
     byVersion: { other: activeInstalls },
     byOs: { other: activeInstalls },

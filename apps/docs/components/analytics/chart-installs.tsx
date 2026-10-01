@@ -39,27 +39,28 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 /**
  * Installs over time — the page's one interactive chart.
  *
- * Two series, NOT stacked. `active` counts installs that pinged on a day and
- * `lifetime` counts installs ever seen, so the areas nest: lifetime is the
- * outer envelope, active the region inside it. Stacking would draw
- * `lifetime + active` and overstate the population by the active count on
- * every single day.
+ * A metric toggle picks the view; within a view, series that nest are drawn
+ * nested and nothing is ever stacked:
  *
- * Nesting is the normal shape, not a guarantee. `lifetime` is
- * retention-adjusted and can FALL when the ingest prunes retired installs, so
- * a window that straddles a prune can show active poking above it. That is
- * correct data — the axis is shared and both areas are drawn, so the crossing
- * is visible rather than clipped.
+ * - **Per day** draws `active` (installs that pinged that day) as the envelope
+ *   and `new` (installs first seen that day) inside it. `new` is a strict
+ *   subset of `active` — a first-seen install pinged that day by definition —
+ *   so the nesting is structural, not a visual coincidence.
+ * - **Total** draws `lifetime` alone: installs ever observed, a cumulative
+ *   count that can legitimately fall when retention folds silent installs
+ *   into the retired counter.
  *
- * Lifetime is here at all because it is the only series with shape. Active
- * oscillates 0–2 at this population; a chart of it alone is a flat zigzag that
- * tells the reader nothing. Lifetime carries the growth story and gives the
- * active band something to sit inside.
- *
- * Both are counts of installs in the same unit, so they share one axis. This is
- * the one case where two series on one scale is honest — a second y-axis here
- * would invent a relationship that the nesting already states truthfully.
+ * Stacking any pair of these would draw `a + b` and overstate the population
+ * on every single day. Each view shares one axis deliberately — a second
+ * y-axis would invent a relationship the nesting already states truthfully.
  */
+
+type MetricKey = "day" | "total";
+
+const METRICS: readonly { readonly key: MetricKey; readonly label: string }[] = [
+  { key: "day", label: "Per day" },
+  { key: "total", label: "Total" },
+];
 
 const chartConfig = {
   lifetimeInstalls: {
@@ -69,6 +70,10 @@ const chartConfig = {
   activeInstalls: {
     label: "Active that day",
     color: "var(--kunai-chart-active)",
+  },
+  newInstalls: {
+    label: "First seen that day",
+    color: "var(--kunai-chart-new)",
   },
 } satisfies ChartConfig;
 
@@ -90,11 +95,16 @@ export function ChartInstalls({
 }) {
   const ranges = availableRanges(points);
   const [range, setRange] = React.useState<RangeKey>("all");
+  const [metric, setMetric] = React.useState<MetricKey>("day");
 
   const visible = sliceRange(points, range);
+  // `null`, not 0, where the wire did not publish the field — recharts treats
+  // null as a gap, while 0 would draw a false floor under every old point.
+  const hasNew = visible.some((point) => point.newInstalls !== null);
   const data = visible.map((point) => ({
     t: dayToEpoch(point.day),
     activeInstalls: point.activeInstalls,
+    newInstalls: point.newInstalls,
     lifetimeInstalls: point.lifetimeInstalls,
   }));
 
@@ -135,61 +145,110 @@ export function ChartInstalls({
         <CardTitle>Installs over time</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
-            Daily active installs inside the lifetime total · {spanLabel}
+            {metric === "day"
+              ? "Installs active and first seen each day"
+              : "Installs ever observed, cumulative"}{" "}
+            · {spanLabel}
           </span>
           <span className="@[540px]/card:hidden">{spanLabel}</span>
         </CardDescription>
-        {/*
-          The toggle is absent, not disabled, when no range would cut the
-          window — a control that cannot change what you see is worse than no
-          control. `availableRanges` returns [] below eight days.
-        */}
-        {ranges.length > 0 ? (
-          <CardAction>
-            <ToggleGroup
-              value={[range]}
-              onValueChange={(next: string[]) => {
-                const picked = next[0];
-                if (picked) setRange(picked as RangeKey);
-              }}
-              variant="outline"
-              size="sm"
-              spacing={0}
-              className="hidden @[600px]/card:flex"
-            >
-              {ranges.map((option) => (
-                <ToggleGroupItem key={option.key} value={option.key} className="px-3">
-                  {option.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-            <Select
-              value={range}
-              onValueChange={(next: string | null) => {
-                if (next) setRange(next as RangeKey);
-              }}
-            >
-              <SelectTrigger
+        <CardAction className="flex flex-wrap items-center gap-2">
+          {/*
+            Which metric the card draws. Unlike the range toggle below, this
+            stays visible at every width — switching views is the point of the
+            card, not an optional refinement.
+          */}
+          <ToggleGroup
+            value={[metric]}
+            onValueChange={(next: string[]) => {
+              const picked = next[0];
+              if (picked) setMetric(picked as MetricKey);
+            }}
+            variant="outline"
+            size="sm"
+            spacing={0}
+            className="hidden @[600px]/card:flex"
+            aria-label="Metric"
+          >
+            {METRICS.map((option) => (
+              <ToggleGroupItem key={option.key} value={option.key} className="px-3">
+                {option.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <Select
+            value={metric}
+            onValueChange={(next: string | null) => {
+              if (next) setMetric(next as MetricKey);
+            }}
+          >
+            <SelectTrigger size="sm" className="w-32 @[600px]/card:hidden" aria-label="Metric">
+              <SelectValue>
+                {(value: string) => METRICS.find((o) => o.key === value)?.label ?? value}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {METRICS.map((option) => (
+                  <SelectItem key={option.key} value={option.key}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {/*
+            The range toggle is absent, not disabled, when no range would cut
+            the window — a control that cannot change what you see is worse
+            than no control. `availableRanges` returns [] below eight days.
+          */}
+          {ranges.length > 0 ? (
+            <>
+              <ToggleGroup
+                value={[range]}
+                onValueChange={(next: string[]) => {
+                  const picked = next[0];
+                  if (picked) setRange(picked as RangeKey);
+                }}
+                variant="outline"
                 size="sm"
-                className="w-36 @[600px]/card:hidden"
-                aria-label="Time range"
+                spacing={0}
+                className="hidden @[600px]/card:flex"
               >
-                <SelectValue>
-                  {(value: string) => ranges.find((o) => o.key === value)?.label ?? value}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {ranges.map((option) => (
-                    <SelectItem key={option.key} value={option.key}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </CardAction>
-        ) : null}
+                {ranges.map((option) => (
+                  <ToggleGroupItem key={option.key} value={option.key} className="px-3">
+                    {option.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              <Select
+                value={range}
+                onValueChange={(next: string | null) => {
+                  if (next) setRange(next as RangeKey);
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-36 @[600px]/card:hidden"
+                  aria-label="Time range"
+                >
+                  <SelectValue>
+                    {(value: string) => ranges.find((o) => o.key === value)?.label ?? value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {ranges.map((option) => (
+                      <SelectItem key={option.key} value={option.key}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </>
+          ) : null}
+        </CardAction>
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6">
         {/*
@@ -225,6 +284,10 @@ export function ChartInstalls({
               <linearGradient id="kunai-fill-active" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--color-activeInstalls)" stopOpacity={0.9} />
                 <stop offset="95%" stopColor="var(--color-activeInstalls)" stopOpacity={0.12} />
+              </linearGradient>
+              <linearGradient id="kunai-fill-new" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-newInstalls)" stopOpacity={0.95} />
+                <stop offset="95%" stopColor="var(--color-newInstalls)" stopOpacity={0.2} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} />
@@ -286,23 +349,43 @@ export function ChartInstalls({
               of 2 → 0 → 0 dips the curve BELOW zero and draws a negative
               install count. Monotone cannot overshoot.
             */}
-            <Area
-              dataKey="lifetimeInstalls"
-              type="monotone"
-              fill="url(#kunai-fill-lifetime)"
-              stroke="var(--color-lifetimeInstalls)"
-              strokeWidth={2}
-              isAnimationActive={false}
-            />
-            <Area
-              dataKey="activeInstalls"
-              type="monotone"
-              fill="url(#kunai-fill-active)"
-              stroke="var(--color-activeInstalls)"
-              strokeWidth={2}
-              isAnimationActive={false}
-            />
-            {/* Two series: identity is never colour alone, so the legend is not optional. */}
+            {metric === "total" ? (
+              <Area
+                dataKey="lifetimeInstalls"
+                type="monotone"
+                fill="url(#kunai-fill-lifetime)"
+                stroke="var(--color-lifetimeInstalls)"
+                strokeWidth={2}
+                isAnimationActive={false}
+              />
+            ) : (
+              <>
+                {/*
+                  Painted back to front: `active` is the envelope, `new` the
+                  subset inside it. connectNulls stays off — a day the wire did
+                  not carry the field for is a gap, not a zero.
+                */}
+                <Area
+                  dataKey="activeInstalls"
+                  type="monotone"
+                  fill="url(#kunai-fill-active)"
+                  stroke="var(--color-activeInstalls)"
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                />
+                {hasNew ? (
+                  <Area
+                    dataKey="newInstalls"
+                    type="monotone"
+                    fill="url(#kunai-fill-new)"
+                    stroke="var(--color-newInstalls)"
+                    strokeWidth={2}
+                    isAnimationActive={false}
+                  />
+                ) : null}
+              </>
+            )}
+            {/* Identity is never colour alone, so the legend is not optional. */}
             <ChartLegend content={<ChartLegendContent />} />
           </AreaChart>
         </ChartContainer>

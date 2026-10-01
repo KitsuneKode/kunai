@@ -62,17 +62,34 @@
 :root {
   --kunai-chart-lifetime: #d9899f;
   --kunai-chart-active: #a8123f;
+  /*
+   * First-seen installs — the innermost nested area on the per-day view, so it
+   * takes the deepest tone of the family. Same hue, lower lightness: this is a
+   * subset of `active`, not a different kind of data, so it does not earn a
+   * second colour.
+   */
+  --kunai-chart-new: #5f0a27;
+  /*
+   * npm registry downloads — deliberately outside the rose family. It is a
+   * third-party counter on a different day grid, so a neutral slate keeps the
+   * eye from grouping it with the measured install series.
+   */
+  --kunai-chart-npm: #6f6a78;
 }
 
 :root.dark {
   --kunai-chart-lifetime: #b84a6e;
   --kunai-chart-active: var(--kunai-accent);
+  --kunai-chart-new: #ffc9d9;
+  --kunai-chart-npm: #a49dab;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     --kunai-chart-lifetime: #b84a6e;
     --kunai-chart-active: var(--kunai-accent);
+    --kunai-chart-new: #ffc9d9;
+    --kunai-chart-npm: #a49dab;
   }
 }
 

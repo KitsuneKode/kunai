@@ -117,11 +117,19 @@ When on, Kunai sends at most one tiny ping per day:
   install with a first-seen date, which is what a lifetime count costs. Installs
   silent past the retention window fold into a retired count, and one that
   returns is counted again
-- Public docs show yesterday's active installs, a lifetime total, and version /
-  platform / architecture breakdowns. Any group with **fewer than 5** installs is
+- Public docs show yesterday's active installs, installs first seen each day,
+  a lifetime total, and version / platform / architecture breakdowns. The
+  lifetime total counts _installs ever observed_: rows retired for long
+  silence stay counted, so one that returns is counted again. It is not a
+  unique-install figure. Any group with **fewer than 5** installs is
   reported as `other`. This is per-breakdown small-cell suppression, not a joint
   anonymity guarantee. Those numbers can be inflated by abuse; they cannot expose
   what you watch. See the live [usage analytics](/analytics) page.
+- The page also shows **npm's own download counter** for the package, on a
+  separate card because it is a different kind of number: every tarball fetch
+  counts (reinstalls, upgrades, CI), installs made through `install.sh` or
+  GitHub binaries never reach it, and npm's days are UTC. It is fetched from
+  npm when the page revalidates, not sent to or stored by Kunai's ingest.
 - A day ends at **midnight IST (18:30 UTC)** from 15 September 2026. Days before
   that end at midnight UTC, and 14 September 2026 is a shorter changeover day
   whose count reads low. The "updated" time on the analytics page is shown in

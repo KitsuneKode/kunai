@@ -56,6 +56,7 @@ const series: DocsAnalyticsSeries = {
     {
       day: "2026-08-11",
       activeInstalls: 100,
+      newInstalls: 4,
       lifetimeInstalls: 480,
       byVersion: { "0.3.0": 100 },
       byOs: { linux: 60, darwin: 40 },
@@ -64,6 +65,7 @@ const series: DocsAnalyticsSeries = {
     {
       day: "2026-08-12",
       activeInstalls: 120,
+      newInstalls: 5,
       lifetimeInstalls: 500,
       byVersion: { "0.3.0": 120 },
       byOs: { linux: 72, darwin: 48 },
@@ -72,6 +74,7 @@ const series: DocsAnalyticsSeries = {
     {
       day: "2026-08-13",
       activeInstalls: 128,
+      newInstalls: 7,
       lifetimeInstalls: 512,
       byVersion: { "0.3.0": 128 },
       byOs: { linux: 80, darwin: 48 },
@@ -154,6 +157,24 @@ describe("section cards", () => {
     const html = renderToStaticMarkup(<SectionCards metrics={sample} series={null} />);
     expect(html).toContain("512");
     expect(html).toContain("History not published yet");
+  });
+
+  test("names the first-seen count when the series reaches the snapshot day", () => {
+    // The tail point shares the snapshot day (2026-08-13), so its newInstalls
+    // belongs on the active tile.
+    const html = renderToStaticMarkup(<SectionCards metrics={sample} series={series} />);
+    expect(html).toContain("7 of them first seen that day");
+  });
+
+  test("a lagging series must not lend the wrong day's first-seen count", () => {
+    const lagging: DocsAnalyticsSeries = {
+      ...series,
+      to: "2026-08-12",
+      points: series.points.slice(0, 2),
+    };
+    const html = renderToStaticMarkup(<SectionCards metrics={sample} series={lagging} />);
+    expect(html).not.toContain("first seen that day");
+    expect(html).toContain("A ping is one install, once a day");
   });
 
   test("renders nothing at all without metrics", () => {

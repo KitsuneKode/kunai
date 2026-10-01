@@ -24,15 +24,21 @@ This README is the operator's guide; the contract wins on any disagreement.
 
 ## Tables
 
-| Table              | Holds                                                       | Retention |
-| ------------------ | ----------------------------------------------------------- | --------- |
-| `ping_day`         | `(day, HMAC(installId), version, os, arch)`; PK is the gate | 35 days   |
-| `install_lifetime` | one hashed row per install + first-seen date                | permanent |
-| `daily_rollup`     | counts only, no identity                                    | permanent |
+| Table              | Holds                                                       | Retention             |
+| ------------------ | ----------------------------------------------------------- | --------------------- |
+| `ping_day`         | `(day, HMAC(installId), version, os, arch)`; PK is the gate | 35 days               |
+| `install_lifetime` | one hashed row per install + first-seen/last-seen dates     | retired after silence |
+| `lifetime_retired` | a counter holding installs folded out of `install_lifetime` | permanent             |
+| `daily_rollup`     | counts only, no identity                                    | permanent             |
 
-`install_lifetime` is a durable pseudonymous record — the cost of an exact
-lifetime count. The contract states this plainly; do not describe it as
-equivalent to a probabilistic sketch.
+`install_lifetime` is a durable pseudonymous record — the cost of a durable
+lifetime figure — and its `first_seen` is what makes the per-day first-seen
+count (`daily_rollup.new_installs`) exact. Rows unseen for
+`lifetimeRetentionDays` (default 400) fold into `lifetime_retired`, which keeps
+the published total from dropping; identity is lost in the fold, so a return
+after retirement counts again — read the lifetime figure as cumulative
+observations, not unique installs. The contract states this plainly; do not
+describe it as equivalent to a probabilistic sketch.
 
 ## Endpoints
 

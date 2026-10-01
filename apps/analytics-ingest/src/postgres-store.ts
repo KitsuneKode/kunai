@@ -101,6 +101,11 @@ function bucketJsonCte(alias: string, column: "version" | "os" | "arch"): string
  */
 export const ROLL_UP_DAY_SQL = `with active as (
   select count(*)::int as n from ping_day where day = $1::date
+), fresh as (
+  -- first_seen = day is exact here: such a row has last_seen >= day and can
+  -- only ever be pruned once that day is past the retention window — by which
+  -- point the raw window has long since stopped offering it for rollup.
+  select count(*)::int as n from install_lifetime where first_seen = $1::date
 ), lifetime as (
   select (
     (select count(*) from install_lifetime where first_seen <= $1::date)
@@ -111,9 +116,10 @@ export const ROLL_UP_DAY_SQL = `with active as (
    ${bucketJsonCte("by_arch", "arch")},
 persisted as (
   insert into daily_rollup
-    (day, active_installs, by_version, by_os, by_arch, lifetime_installs, computed_at)
+    (day, active_installs, new_installs, by_version, by_os, by_arch, lifetime_installs, computed_at)
   select $1::date,
          (select n from active),
+         (select n from fresh),
          (select j from by_version),
          (select j from by_os),
          (select j from by_arch),
@@ -121,6 +127,7 @@ persisted as (
          now()
   on conflict (day) do update set
     active_installs = excluded.active_installs,
+    new_installs = excluded.new_installs,
     by_version = excluded.by_version,
     by_os = excluded.by_os,
     by_arch = excluded.by_arch,
@@ -128,6 +135,7 @@ persisted as (
     computed_at = now()
   returning day::text as day,
             active_installs,
+            new_installs,
             by_version,
             by_os,
             by_arch,
@@ -136,7 +144,7 @@ persisted as (
 )
 select * from persisted`;
 
-const ROLLUP_COLUMNS = `day::text as day, active_installs, by_version, by_os, by_arch,
+const ROLLUP_COLUMNS = `day::text as day, active_installs, new_installs, by_version, by_os, by_arch,
   lifetime_installs, computed_at::text as computed_at`;
 
 function toRollup(row: Record<string, unknown>): DailyRollup {
@@ -144,6 +152,7 @@ function toRollup(row: Record<string, unknown>): DailyRollup {
     day: String(row.day),
     computedAt: String(row.computed_at),
     activeInstalls: Number(row.active_installs),
+    newInstalls: Number(row.new_installs),
     byVersion: row.by_version as Record<string, number>,
     byOs: row.by_os as Record<string, number>,
     byArch: row.by_arch as Record<string, number>,

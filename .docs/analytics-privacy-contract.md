@@ -85,12 +85,15 @@ UUIDs for as long as they run.
 Because the digest changes the hash input, installs that existed before 0.3.0
 are counted again once on upgrade. That was accepted deliberately at a
 `lifetimeInstalls` of 2; it is the cheapest this change will ever be.
-`lifetimeMethod` was removed from the public schema; the public count is exact,
-not an estimate.
+`lifetimeMethod` was removed from the public schema; the count published is the
+real stored figure, not a sketch — what it means is stated in the series
+section, where retirement makes it cumulative observations rather than unique
+installs.
 
 `ping_day` stores an HMAC of the id plus version, OS, and architecture for 35
-days. `install_lifetime` stores one permanent HMAC and first-seen date per
-install; this durable pseudonymous record is the cost of exact lifetime counts.
+days. `install_lifetime` stores one HMAC row per install with first-seen and
+last-seen dates until long silence retires it into `lifetime_retired`; that
+durable pseudonymous record is the cost of any durable lifetime figure at all.
 The two writes occur in one SQL statement. `daily_rollup` holds aggregate counts
 only and is permanent. The ingest never reads a client IP.
 
@@ -163,6 +166,14 @@ zero would hide every new release.
 
 The elimination guard runs per day on the surviving buckets, exactly as it does
 for the snapshot, so a closed dimension is never recoverable by subtraction.
+
+Series points additionally carry `newInstalls`: installs whose `first_seen`
+equals the day. It is exact for every day the endpoints can still publish — a
+first-seen row survives pruning until its own day is past the retention window,
+far beyond the 180-day series maximum. The semantic caveat is deliberate: an
+install returning after retirement is indistinguishable from a first-ever
+install and counts as new on the day it returns. `daily.json` does not gain the
+key — its strict key contract is load-bearing, and the field is per-day data.
 
 `lifetimeInstalls` is retention-adjusted and therefore **not monotonic**. It may
 fall when `lifetime_retired` absorbs pruned installs; a consumer charting it as
