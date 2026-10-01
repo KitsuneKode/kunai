@@ -44,9 +44,19 @@ test("the rollup is a single statement so its parts share one snapshot", () => {
   }
 });
 
-test("lifetime pruning and the retired counter move in one statement", () => {
+test("lifetime pruning records the hash so a return is not counted twice", () => {
   expect(PRUNE_LIFETIME_SQL).toContain("delete from install_lifetime where last_seen < $1::date");
-  expect(PRUNE_LIFETIME_SQL).toContain("update lifetime_retired set retired_installs");
+  expect(PRUNE_LIFETIME_SQL).toContain("insert into retired_install");
+  expect(PRUNE_LIFETIME_SQL).not.toContain("retired_installs +");
+  expect(RECORD_PING_SQL).toContain("delete from retired_install");
+  // A data-modifying CTE that the outer query reads must return rows.
+  // Postgres and Neon both reject `select count(*) from unretire` otherwise.
+  expect(RECORD_PING_SQL).toMatch(/delete from retired_install[\s\S]*returning install_hash/);
+  expect(RECORD_PING_SQL).toContain("first_seen from retired_install");
+  expect(PRUNE_LIFETIME_SQL).toContain("returning install_hash, first_seen");
+  expect(ROLL_UP_DAY_SQL).toContain(
+    "count(*) from retired_install where first_seen is null or first_seen <= $1::date",
+  );
 });
 
 test("postgres suites mint disjoint install ids at the same n", () => {

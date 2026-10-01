@@ -17,24 +17,38 @@ import { join } from "node:path";
  * can drift apart again, which is exactly how the Videasy bug happened.
  */
 const PROVIDER_SRC = join(import.meta.dir, "../src");
+const BOOTSTRAP_PROVIDERS = join(
+  import.meta.dir,
+  "../../../apps/cli/src/container/bootstrap-providers.ts",
+);
 
-/** Providers registered by `loadProductionProviderModules()`. */
+/**
+ * The production roster is whatever `loadProductionProviderModules()` imports —
+ * a hand-maintained list here drifted once already and let a registered
+ * provider ship with no gate marker at all. Parse the bootstrap module keys so
+ * registering a new provider without gate coverage fails this test on its own.
+ */
 const PRODUCTION_PROVIDERS = [
-  "videasy",
-  "vidlink",
-  "vidrock",
-  "rivestream",
-  "allmanga",
-  "anidb",
-  "miruro",
-  "youtube",
-] as const;
+  ...new Set(
+    [
+      ...readFileSync(BOOTSTRAP_PROVIDERS, "utf8").matchAll(
+        /import\("@kunai\/providers\/([^"]+)"\)/g,
+      ),
+    ].flatMap((match) => (match[1] === undefined ? [] : [match[1]])),
+  ),
+];
+
+// The roster is parsed out of `loadProductionProviderModules` — if the import
+// form ever changes, an empty parse must fail, not silently check nothing.
+if (PRODUCTION_PROVIDERS.length === 0) {
+  throw new Error("No providers parsed from bootstrap-providers.ts; update the roster regex");
+}
 
 /**
  * A provider may only appear here with a reason that is about the *runtime*,
  * not about effort.
  */
-const EXEMPT: Partial<Record<(typeof PRODUCTION_PROVIDERS)[number], string>> = {
+const EXEMPT = {
   // YouTube hands mpv a watch URL and lets ytdl resolve the media at play time.
   // There is no direct stream URL at resolve time to probe, and the smoke
   // asserts the watch-host contract instead.
@@ -64,11 +78,22 @@ function providerSources(provider: string): string {
     .join("\n");
 }
 
+/** A comment that names the gate is not a call. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
 describe("resolve gate coverage", () => {
+  test("a comment that names verifyCandidateStream does not count as coverage", () => {
+    const commented = stripComments("/* verifyCandidateStream */\n// selectVerifiedStream\n");
+    expect(commented.includes("verifyCandidateStream")).toBe(false);
+    expect(commented.includes("selectVerifiedStream")).toBe(false);
+  });
+
   test.each(PRODUCTION_PROVIDERS.filter((provider) => !(provider in EXEMPT)))(
     "%s verifies a stream before reporting success",
     (provider) => {
-      const source = providerSources(provider);
+      const source = stripComments(providerSources(provider));
 
       expect(GATE_MARKERS.some((marker) => source.includes(marker))).toBe(true);
     },
@@ -76,8 +101,8 @@ describe("resolve gate coverage", () => {
 
   test("every exemption states a runtime reason", () => {
     for (const [provider, reason] of Object.entries(EXEMPT)) {
-      expect(PRODUCTION_PROVIDERS).toContain(provider as (typeof PRODUCTION_PROVIDERS)[number]);
-      expect(reason.length).toBeGreaterThan(20);
+      expect(PRODUCTION_PROVIDERS).toContain(provider);
+      expect((reason ?? "").length).toBeGreaterThan(20);
     }
   });
 

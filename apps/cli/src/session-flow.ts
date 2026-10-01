@@ -22,7 +22,12 @@ import { cyan, dim, yellow } from "@/menu";
 import { formatEpisodePickerLabel } from "@/services/catalog/episode-display";
 import { isFinished } from "@/services/continuation/history-progress";
 import { formatTimestamp } from "@/services/continuation/history-progress";
-import { fetchEpisodes, fetchSeriesData, type EpisodeInfo as TmdbEpisodeInfo } from "@/tmdb";
+import {
+  fetchEpisodes,
+  fetchSeriesData,
+  seasonLoadFailureMessage,
+  type EpisodeInfo as TmdbEpisodeInfo,
+} from "@/tmdb";
 import type { HistoryProgress } from "@kunai/storage";
 
 export type EpisodeSelection = {
@@ -303,9 +308,14 @@ async function pickEpisodeSelection(
   }
 
   const loadSeasons = opts.loaders?.loadSeasons ?? fetchSeriesData;
-  const { seasons, episodes: initialEpisodes } = await loadSeasons(opts.currentId, initSeason);
+  const loaded = await loadSeasons(opts.currentId, initSeason);
+  const { seasons, episodes: initialEpisodes } = loaded;
   if (!seasons) {
-    return unavailable("Could not load season data for this title. Check your connection.");
+    return unavailable(
+      loaded.failure
+        ? seasonLoadFailureMessage(loaded.failure)
+        : "Could not load season data for this title. Check your connection.",
+    );
   }
   let selectedSeason = initSeason;
   while (true) {

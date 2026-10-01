@@ -36,6 +36,7 @@ export function createProviderRuntimeContext({
   titleBridge,
   cache,
   emit,
+  host,
 }: {
   readonly now?: () => string;
   readonly providerId?: ProviderId;
@@ -47,6 +48,7 @@ export function createProviderRuntimeContext({
   readonly titleBridge?: ProviderTitleBridgePort;
   readonly cache?: ProviderCachePort;
   readonly emit?: (event: ProviderTraceEvent) => void;
+  readonly host?: ProviderRuntimeContext["host"];
 } = {}): ProviderRuntimeContext {
   return {
     providerId,
@@ -59,6 +61,7 @@ export function createProviderRuntimeContext({
     titleBridge,
     cache,
     emit,
+    host,
   };
 }
 

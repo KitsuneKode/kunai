@@ -6,5 +6,5 @@
  Type your relay server URL, then press Enter
 
  Input: https://relay-server-two.vercel.app▌
- Saved: https://relay.example.com  ·  Paste supported · Enter save ·
+ On disk: https://relay.example.com  ·  Paste supported · Enter save ·
  Esc cancel · Ctrl+U clear

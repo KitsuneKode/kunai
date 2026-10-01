@@ -9,7 +9,11 @@ import {
 } from "@/services/update/platform-assets";
 import { parseCanonicalVersion } from "@/services/update/version";
 
-import { createInstallerSandbox, withReleaseFixture } from "./helpers/installer-script-harness";
+import {
+  createInstallerSandbox,
+  RELEASE_TEST_PUBLIC_KEY,
+  withReleaseFixture,
+} from "./helpers/installer-script-harness";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const CANDIDATE_DIR = process.env.KUNAI_RELEASE_CANDIDATE_DIR?.trim();
@@ -74,6 +78,7 @@ describeCandidate("preserved native installer smoke", () => {
           const env = {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
+            KUNAI_RELEASE_ED25519_PUBLIC_KEY: RELEASE_TEST_PUBLIC_KEY,
             KUNAI_SKIP_PATH_UPDATE: "1",
           };
           const installCommand =
@@ -106,8 +111,10 @@ describeCandidate("preserved native installer smoke", () => {
           expect(install.status, `${install.stderr}\n${install.stdout}`).toBe(0);
           expect(evidence.requests).toEqual([
             `/download/v${version}/SHA256SUMS.archives`,
+            `/download/v${version}/SHA256SUMS.archives.sig`,
             `/download/v${version}/${target.archiveName}`,
             `/download/v${version}/SHA256SUMS`,
+            `/download/v${version}/SHA256SUMS.sig`,
           ]);
           expect(evidence.requests).not.toContain(`/download/v${version}/${target.out}`);
 

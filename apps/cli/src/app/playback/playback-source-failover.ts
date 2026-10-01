@@ -48,10 +48,10 @@ export function pickNextCatalogSourceId(
   if (sourceIds.length === 0) return null;
   const current = currentSourceId?.trim() || null;
   const startIndex = current ? sourceIds.indexOf(current) : -1;
-  for (let index = Math.max(0, startIndex + 1); index < sourceIds.length; index += 1) {
+  for (let offset = 1; offset <= sourceIds.length; offset += 1) {
+    const index = startIndex < 0 ? offset - 1 : (startIndex + offset) % sourceIds.length;
     const candidate = sourceIds[index];
-    if (!candidate || triedSourceIds.has(candidate)) continue;
-    if (candidate === current) continue;
+    if (!candidate || triedSourceIds.has(candidate) || candidate === current) continue;
     return candidate;
   }
   return null;

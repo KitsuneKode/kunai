@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-03"
+lastReviewed: "2026-10-01"
 ---
 
 # Mobile device lab
@@ -16,10 +16,13 @@ version. Evidence without this field must be recollected.
 
 Test two concurrent launches from the same installation. The second must fail
 without altering the first session's arguments or state. Normal cancellation
-must release `session.lock`. After a forced termination, first close every
-Kunai session, then remove only the empty lock directory with `rmdir`: Android
-uses the state directory's `session.lock`; iOS uses `.runtime/session.lock`.
-Never remove a lock while another session is running. Rerun to recover state.
+must release `session.lock`. After a forced Android termination, the next
+launch reclaims the state directory's `session.lock` when its pid file names a
+dead process or the lock has no pid file. A live pid is not reclaimed. iOS
+still needs an explicit recovery: close every Kunai session, then remove only
+the empty `.runtime/session.lock` with `rmdir`. Never remove a lock while
+another session is running. Rerun to recover state. A desktop fixture is not a
+physical phone pass.
 
 Use one physical ARM64 Android phone and one physical iPhone. They are the
 minimum support-gating matrix. A desktop run, Android emulator, iOS Simulator,

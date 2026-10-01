@@ -1,3 +1,4 @@
+import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -59,30 +60,45 @@ export function withCommandPath(
   return next;
 }
 
-export function createInstallerSandbox(name: string) {
+export function createInstallerSandbox(name: string, layout: "host" | "powershell" = "host") {
   const root = mkdtempSync(join(tmpdir(), `kunai-${name}-`));
+  const home = join(root, "home");
   const binDir = join(root, "bin");
   const dataDir = join(root, "data");
-  const configDir = join(root, "config");
   const cacheDir = join(root, "cache");
+  // install.sh on Darwin writes ~/Library/Application Support/kunai and ignores
+  // XDG. install.ps1 always writes $env:APPDATA/kunai. The powershell layout
+  // keeps those two the same directory so a macOS runner with pwsh installed
+  // reads the manifest the script actually wrote.
+  const configParent = join(root, "config-parent");
+  const useWindowsConfig = layout === "powershell" || process.platform !== "darwin";
+  const configDir = useWindowsConfig
+    ? join(configParent, "kunai")
+    : join(home, "Library", "Application Support", "kunai");
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...windowsShellEnvDefaults(root),
+    HOME: home,
+    USERPROFILE: home,
+    XDG_CONFIG_HOME: configParent,
+    APPDATA: useWindowsConfig ? configParent : join(root, "appdata"),
+    KUNAI_BIN_DIR: binDir,
+    KUNAI_DATA_DIR: dataDir,
+    KUNAI_CACHE_DIR: cacheDir,
+    // Redirecting filesystem roots does not redirect HKCU\Environment. Every
+    // successful binary fixture used to append this temporary bin directory
+    // to the developer's real User PATH and then delete it during cleanup.
+    KUNAI_SKIP_PATH_UPDATE: "1",
+  };
+  // Not an install destination. A leaked shell value must not steer the script.
+  delete env.KUNAI_CONFIG_DIR;
   return {
     root,
     binDir,
     dataDir,
     configDir,
     cacheDir,
-    env: {
-      ...process.env,
-      ...windowsShellEnvDefaults(root),
-      KUNAI_BIN_DIR: binDir,
-      KUNAI_DATA_DIR: dataDir,
-      KUNAI_CONFIG_DIR: configDir,
-      KUNAI_CACHE_DIR: cacheDir,
-      // Redirecting filesystem roots does not redirect HKCU\Environment. Every
-      // successful binary fixture used to append this temporary bin directory
-      // to the developer's real User PATH and then delete it during cleanup.
-      KUNAI_SKIP_PATH_UPDATE: "1",
-    } as NodeJS.ProcessEnv,
+    env,
     cleanup: () => removeTempDir(root),
   };
 }
@@ -210,10 +226,35 @@ function buildResponse(route: ReleaseFixtureRoute): Response {
   return new Response(bytes, { status, headers });
 }
 
+const releaseTestKeys = generateKeyPairSync("ed25519");
+
+/** Public half used by install.sh tests. The private half never leaves this process. */
+export const RELEASE_TEST_PUBLIC_KEY = releaseTestKeys.publicKey.export({
+  type: "spki",
+  format: "pem",
+}) as string;
+
+function signedChecksumRoutes(
+  routes: Readonly<Record<string, ReleaseFixtureRoute>>,
+): Record<string, ReleaseFixtureRoute> {
+  const signed: Record<string, ReleaseFixtureRoute> = { ...routes };
+  for (const [path, route] of Object.entries(routes)) {
+    const status = route.status ?? 200;
+    if (status !== 200) continue;
+    if (!path.endsWith("/SHA256SUMS") && !path.endsWith("/SHA256SUMS.archives")) continue;
+    const signaturePath = `${path}.sig`;
+    if (signed[signaturePath]) continue;
+    const body = toBytes(route.body);
+    signed[signaturePath] = { body: sign(null, body, releaseTestKeys.privateKey) };
+  }
+  return signed;
+}
+
 export async function withReleaseFixture(
   routes: Readonly<Record<string, ReleaseFixtureRoute>>,
   run: (baseUrl: string, evidence: ReleaseFixtureEvidence) => Promise<void>,
 ): Promise<void> {
+  const signedRoutes = signedChecksumRoutes(routes);
   const hitCounts = new Map<string, number>();
   const requests: string[] = [];
 
@@ -223,7 +264,7 @@ export async function withReleaseFixture(
     fetch(request) {
       const pathname = new URL(request.url).pathname;
       requests.push(pathname);
-      const route = routes[pathname];
+      const route = signedRoutes[pathname];
       if (!route) {
         return new Response("not found", { status: 404 });
       }

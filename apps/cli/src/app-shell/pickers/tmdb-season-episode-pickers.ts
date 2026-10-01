@@ -1,7 +1,10 @@
 import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
 import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-types";
 import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "@/app-shell/session-picker";
-import { describeEpisodeWatchPresentation } from "@/app/playback/playback-episode-picker";
+import {
+  describeEpisodeWatchPresentation,
+  episodePickerHighlightIndex,
+} from "@/app/playback/playback-episode-picker";
 import type { Container } from "@/container";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
 import {
@@ -195,9 +198,9 @@ export async function chooseEpisodeFromOptions(
     const picked = await openSessionPicker(container.stateManager, {
       type: "episode_picker",
       season,
-      initialIndex: Math.max(
-        0,
+      initialIndex: episodePickerHighlightIndex(
         episodes.findIndex((episode) => episode.number === currentEpisode),
+        episodes.length,
       ),
       options,
     });

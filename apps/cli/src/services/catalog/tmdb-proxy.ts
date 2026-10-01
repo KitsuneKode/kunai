@@ -14,8 +14,11 @@ export const TMDB_DIRECT_BASE = "https://api.themoviedb.org/3";
  * still resolves to CloudFront. Same API key, same payloads.
  */
 export const TMDB_ALT_BASE = "https://api.tmdb.org/3";
-/** Public TMDB API key (same as used in the luffy reference project). */
-export const TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
+
+function tmdbApiKey(): string | undefined {
+  const key = process.env.KUNAI_TMDB_API_KEY?.trim();
+  return key ? key : undefined;
+}
 
 const DEFAULT_TIMEOUT_MS = 6_000;
 const SESSION_CACHE_MS = 2 * 60 * 1_000;
@@ -53,7 +56,10 @@ const TMDB_PROXY_HOSTS: readonly TmdbHost[] = VIDEASY_DB_BASES.map((base) => ({
 const TMDB_DIRECT_HOST: TmdbHost = { base: TMDB_DIRECT_BASE, needsApiKey: true };
 const TMDB_ALT_HOST: TmdbHost = { base: TMDB_ALT_BASE, needsApiKey: true };
 
-const TMDB_HOSTS: readonly TmdbHost[] = [...TMDB_PROXY_HOSTS, TMDB_DIRECT_HOST, TMDB_ALT_HOST];
+function tmdbHosts(): readonly TmdbHost[] {
+  if (!tmdbApiKey()) return TMDB_PROXY_HOSTS;
+  return [...TMDB_PROXY_HOSTS, TMDB_DIRECT_HOST, TMDB_ALT_HOST];
+}
 
 /** A host answered with a non-2xx status — the API itself responded. */
 class TmdbHttpError extends Error {
@@ -159,6 +165,7 @@ export async function fetchTmdbDirectJson(
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<JsonValue> {
+  if (!tmdbApiKey()) throw new Error("catalog unavailable");
   return fetchTmdbHostJson(TMDB_DIRECT_HOST, normalizePath(path), signal, timeoutMs);
 }
 
@@ -168,9 +175,11 @@ async function fetchTmdbHostJson(
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<JsonValue> {
-  const joiner = host.needsApiKey ? (normalizedPath.includes("?") ? "&" : "?") : "";
-  const url = host.needsApiKey
-    ? `${host.base}${normalizedPath}${joiner}api_key=${TMDB_API_KEY}`
+  const apiKey = host.needsApiKey ? tmdbApiKey() : undefined;
+  if (host.needsApiKey && !apiKey) throw new Error("catalog unavailable");
+  const joiner = apiKey ? (normalizedPath.includes("?") ? "&" : "?") : "";
+  const url = apiKey
+    ? `${host.base}${normalizedPath}${joiner}api_key=${apiKey}`
     : `${host.base}${normalizedPath}`;
   return observeOnlineIfBound("search-error", async () => {
     const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
@@ -199,7 +208,7 @@ export async function fetchTmdbJsonWithFallback(
   const now = Date.now();
   let lastError: Error | null = null;
 
-  for (const host of TMDB_HOSTS) {
+  for (const host of tmdbHosts()) {
     if (now < (hostRetryAfter.get(host.base) ?? 0)) continue;
     try {
       return await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
@@ -210,7 +219,7 @@ export async function fetchTmdbJsonWithFallback(
       lastError = error instanceof Error ? error : new Error(String(error));
     }
   }
-  throw lastError ?? new Error("no TMDB hosts available");
+  throw new Error("catalog unavailable", { cause: lastError ?? undefined });
 }
 
 export function isTmdbNetworkError(error: unknown): boolean {

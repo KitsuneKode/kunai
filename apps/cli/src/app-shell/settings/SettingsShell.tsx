@@ -167,7 +167,23 @@ export function SettingsShell({
         return;
       }
       if (result.persist === "immediate") {
-        void persistSettingsDraft(container, result.state.draft);
+        const draft = result.state.draft;
+        const previous = state.draft;
+        onStatus("Saving…");
+        void persistSettingsDraft(container, draft, previous).then(
+          () => {
+            onStatus("Saved.");
+            return undefined;
+          },
+          () => {
+            setState((current) => ({
+              ...current,
+              error: "Could not save. The draft is still here.",
+            }));
+            onStatus("Could not save. The draft is still here.");
+            return undefined;
+          },
+        );
       }
       if (result.runActionId) {
         void runAction(result.runActionId);

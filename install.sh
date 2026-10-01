@@ -85,11 +85,13 @@ esac
 ((ACTIVATION_LOCK_POLL_MS > 0)) || ACTIVATION_LOCK_POLL_MS=1
 
 if [[ "$HOST_OS" == "darwin" ]]; then
-	CONFIG_DIR="${KUNAI_CONFIG_DIR:-$HOME/Library/Application Support/kunai}"
+	# KUNAI_CONFIG_DIR is not a runtime override and is not where install.json
+	# belongs. kunai reads config through HOME / XDG / APPDATA (getKunaiPaths).
+	CONFIG_DIR="$HOME/Library/Application Support/kunai"
 	DATA_DIR="${KUNAI_DATA_DIR:-$HOME/Library/Application Support/kunai}"
 	CACHE_DIR="${KUNAI_CACHE_DIR:-$HOME/Library/Caches/kunai}"
 else
-	CONFIG_DIR="${KUNAI_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kunai}"
+	CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/kunai"
 	DATA_DIR="${KUNAI_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/kunai}"
 	CACHE_DIR="${KUNAI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kunai}"
 fi
@@ -345,6 +347,87 @@ sha256_of() {
 	else
 		shasum -a 256 "$1" | awk '{print $1}'
 	fi
+}
+
+# macOS ships LibreSSL as `openssl`. It cannot verify an Ed25519 signature.
+# Prefer a real OpenSSL 3, including the Homebrew prefix that is not on PATH.
+ed25519_openssl() {
+	local candidate
+	for candidate in \
+		"${KUNAI_OPENSSL:-}" \
+		/opt/homebrew/opt/openssl@3/bin/openssl \
+		/usr/local/opt/openssl@3/bin/openssl \
+		openssl; do
+		[[ -n "$candidate" ]] || continue
+		if [[ "$candidate" == openssl ]]; then
+			command -v openssl >/dev/null 2>&1 || continue
+		elif [[ ! -x "$candidate" ]]; then
+			continue
+		fi
+		if "$candidate" version 2>/dev/null | grep -q '^OpenSSL '; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Node and Bun verify the same raw signature LibreSSL rejects. Used only when
+# no OpenSSL 3 binary is on the machine.
+verify_ed25519_with_runtime() {
+	local sums_file="$1"
+	local pub_file="$2"
+	local sig_file="$3"
+	local runtime=""
+	if command -v node >/dev/null 2>&1; then
+		runtime="node"
+	elif command -v bun >/dev/null 2>&1; then
+		runtime="bun"
+	else
+		return 1
+	fi
+	"$runtime" -e 'const fs=require("fs");const crypto=require("crypto");const ok=crypto.verify(null,fs.readFileSync(process.argv[1]),fs.readFileSync(process.argv[2],"utf8"),fs.readFileSync(process.argv[3]));process.exit(ok?0:1);' \
+		"$sums_file" "$pub_file" "$sig_file"
+}
+
+# A checksum file without a matching ed25519 signature is a failure. The
+# previous published installer still accepts checksums alone; this script is
+# the release that starts requiring SHA256SUMS.sig.
+verify_ed25519_sums() {
+	local sums_file="$1"
+	local sig_url="$2"
+	local sig_file="$3"
+	if ! bounded_download "$sig_url" "$sig_file" "$DOWNLOAD_CHECKSUM_MAX_BYTES" "$(basename "$sig_url")"; then
+		err "A checksum match without a signature is a failure."
+		exit 1
+	fi
+	local pub openssl_bin
+	pub="$(mktemp)"
+	if [[ -n "${KUNAI_RELEASE_ED25519_PUBLIC_KEY:-}" ]]; then
+		printf '%s\n' "$KUNAI_RELEASE_ED25519_PUBLIC_KEY" >"$pub"
+	else
+		cat >"$pub" <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAiJ7jdwwCejDY1gA90xbA+HSJI89eqI79y0qVOrdwiYw=
+-----END PUBLIC KEY-----
+EOF
+	fi
+	# OpenSSL 3.0 needs -rawin. A later OpenSSL also accepts the raw file
+	# without it. Either success is a verification; a bad signature fails both.
+	if openssl_bin="$(ed25519_openssl)" &&
+		{ "$openssl_bin" pkeyutl -verify -pubin -inkey "$pub" -rawin -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1 ||
+			"$openssl_bin" pkeyutl -verify -pubin -inkey "$pub" -in "$sums_file" -sigfile "$sig_file" >/dev/null 2>&1; }; then
+		rm -f "$pub"
+		return 0
+	fi
+	if verify_ed25519_with_runtime "$sums_file" "$pub" "$sig_file"; then
+		rm -f "$pub"
+		return 0
+	fi
+	rm -f "$pub"
+	err "SHA256SUMS signature did not verify."
+	err "Ed25519 needs OpenSSL 3. The openssl on macOS is LibreSSL and cannot verify it."
+	exit 1
 }
 
 is_retryable_http_status() {
@@ -1711,6 +1794,8 @@ install_binary() {
 			download_failed_hint "SHA256SUMS.archives"
 			exit 1
 		fi
+	else
+		verify_ed25519_sums "$staged_archive_sums" "$archive_sums.sig" "$staging/SHA256SUMS.archives.sig"
 	fi
 
 	if [[ "$archive_available" == 1 ]]; then
@@ -1742,6 +1827,7 @@ install_binary() {
 		download_failed_hint "SHA256SUMS"
 		exit 1
 	fi
+	verify_ed25519_sums "$staged_sums" "$sums.sig" "$staging/SHA256SUMS.sig"
 	if ! want="$(checksum_for_asset "$staged_sums" "$asset")"; then
 		err "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries; the release is incomplete."
 		exit 1

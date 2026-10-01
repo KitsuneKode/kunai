@@ -5,6 +5,7 @@ import {
   isStreamReachableForResolve,
   probeStreamReachability,
   type StreamReachabilityFetch,
+  type StreamReachabilityLookup,
   type StreamReachabilityProbeResult,
 } from "./stream-reachability";
 
@@ -57,6 +58,11 @@ export type StreamHealthCheckInput = {
   readonly streamReachabilityVerified?: boolean;
   readonly force?: boolean;
   readonly fetchImpl?: StreamReachabilityFetch;
+  /**
+   * DNS answer source for probes whose fetchImpl opens local sockets through a
+   * wrapper (the provider fetch port). See ProbeStreamReachabilityInput.
+   */
+  readonly lookupImpl?: StreamReachabilityLookup;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
   readonly now?: number;
@@ -132,6 +138,7 @@ export async function runStreamHealthCheck(
     url: input.url,
     headers: input.headers,
     fetchImpl: input.fetchImpl,
+    lookupImpl: input.lookupImpl,
     timeoutMs: plan.timeoutMs,
     signal: input.signal,
   });
@@ -141,6 +148,7 @@ export async function runStreamHealthCheck(
       url: input.url,
       headers: input.headers,
       fetchImpl: input.fetchImpl,
+      lookupImpl: input.lookupImpl,
       timeoutMs: Math.max(plan.timeoutMs, 1_500),
       signal: input.signal,
     });

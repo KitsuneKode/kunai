@@ -1,6 +1,7 @@
 import type { ProviderFetchPort, StreamCandidate } from "@kunai/types";
 
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
+import { probeLookupForPort } from "../shared/stream-reachability";
 
 /**
  * A lightweight utility to fetch a master HLS playlist and split it into explicitly
@@ -20,6 +21,7 @@ export async function extractQualitiesFromMaster(
     fetch: fetchPort.fetch.bind(fetchPort),
     masterUrl,
     headers,
+    lookupImpl: probeLookupForPort(fetchPort),
   });
   const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
 

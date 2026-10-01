@@ -32,11 +32,11 @@ export function resolveCanonicalCatalogTitleId(
   const malId = externalIds?.malId;
 
   if (kind === "anime") {
-    return anilistId ?? malId ?? id;
+    return anilistId ?? malCatalogId(malId) ?? id;
   }
 
   if (options?.contentClass === "anime" && kind !== "video" && (anilistId || malId)) {
-    return anilistId ?? malId ?? id;
+    return anilistId ?? malCatalogId(malId) ?? id;
   }
 
   if (kind === "video") {
@@ -58,7 +58,13 @@ export function resolveCanonicalCatalogTitleId(
     return id.startsWith("tmdb:") ? id : `tmdb:${tmdbId}`;
   }
 
-  return anilistId ?? malId ?? id;
+  return anilistId ?? malCatalogId(malId) ?? id;
+}
+
+/** AniList stays a bare integer. MAL-only keys cannot share that integer. */
+function malCatalogId(malId: string | undefined): string | undefined {
+  if (!malId) return undefined;
+  return malId.startsWith("mal:") ? malId : `mal:${malId}`;
 }
 
 /** Canonical title id for history / prefs / continuation lookups (alias for clarity at call sites). */

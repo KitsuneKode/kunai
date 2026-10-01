@@ -34,6 +34,7 @@ export type TitleControlActionId =
   | "mark-watched"
   | "mark-unwatched"
   | "mark-season-watched"
+  | "mark-up-to-episode"
   | "share"
   | "diagnostics"
   | "bookmark"
@@ -91,6 +92,7 @@ const ACTION_ICONS: Partial<Record<TitleControlActionId, string>> = {
   "mark-watched": "✓",
   "mark-unwatched": "○",
   "mark-season-watched": "✓",
+  "mark-up-to-episode": "✓",
   share: "↗",
   bookmark: "★",
   watchlist: "★",
@@ -424,6 +426,17 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     when: (ctx) => (ctx.hasTitle ? enabled() : disabled("Select a title first")),
   },
   {
+    id: "mark-up-to-episode",
+    label: "Mark up to episode",
+    detail: "Mark this season through a chosen episode as watched",
+    group: "this-title",
+    shellAction: "mark-up-to-episode",
+    when: (ctx) =>
+      ctx.hasTitle && (ctx.titleType === "series" || ctx.isAnime)
+        ? enabled()
+        : disabled("Mark up to episode needs a series"),
+  },
+  {
     id: "mark-watched",
     label: "Mark watched",
     group: "this-title",
@@ -528,6 +541,7 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "download",
     "mark-watched",
     "mark-unwatched",
+    "mark-up-to-episode",
     "share",
     "bookmark",
     "setup",
@@ -548,7 +562,14 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
   // rather than the session's current title, so only actions that can be
   // targeted at a row belong here. `play` is excluded because it shares the
   // `resume` shell action and the two would be indistinguishable on arrival.
-  history: ["resume", "download", "mark-watched", "mark-unwatched", "diagnostics"],
+  history: [
+    "resume",
+    "download",
+    "mark-watched",
+    "mark-unwatched",
+    "mark-up-to-episode",
+    "diagnostics",
+  ],
   // Episode navigation belongs here, not just on `playing`. This is an
   // allow-list, so omitting these filtered them out before `when()` ever ran:
   // opening the menu mid-resolve for a series showed only recovery actions and
@@ -585,6 +606,7 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "mark-watched",
     "mark-unwatched",
     "mark-season-watched",
+    "mark-up-to-episode",
     "share",
     "diagnostics",
   ],
@@ -604,6 +626,7 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "mark-watched",
     "mark-unwatched",
     "mark-season-watched",
+    "mark-up-to-episode",
     "share",
     "setup",
     "diagnostics",

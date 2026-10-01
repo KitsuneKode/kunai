@@ -127,6 +127,14 @@ export function buildDetailCastLines(detail: TitleDetail, maxCast = 6): readonly
 // Synopsis wrapping
 // ---------------------------------------------------------------------------
 
+/**
+ * Synopsis is its own row under the header, so it uses the card width.
+ * The poster column is not subtracted; that would draw the synopsis beside the poster.
+ */
+export function detailsCardSynopsisWidth(columns: number): number {
+  return Math.max(20, columns - 2);
+}
+
 /** Wrap synopsis to `width` columns, capped to `maxLines`. */
 export function wrapSynopsis(
   synopsis: string | undefined,

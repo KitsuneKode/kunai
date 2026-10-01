@@ -86,6 +86,7 @@ export async function materializeHlsManifestForPlayback(
         },
       },
       signal: fetchSignal,
+      timeoutMs: HLS_FETCH_TIMEOUT_MS,
     });
     if (outcome.kind === "blocked") {
       // A private or non-http target is terminal, not a skip — letting mpv

@@ -57,6 +57,12 @@ describe("history row intents", () => {
     });
   });
 
+  test("mark up to episode targets the history row, not the globally selected title", () => {
+    expect(historyRowIntentForShellAction("mark-up-to-episode")).toEqual({
+      kind: "mark-up-to-episode",
+    });
+  });
+
   test("resume hands back to the existing confirm path", () => {
     expect(historyRowIntentForShellAction("resume")).toEqual({
       kind: "resume",

@@ -67,6 +67,7 @@ function fixture(options: FixtureOptions = {}): Container {
       onEvent: () => () => undefined,
       deleteJob: (jobId: string) => {
         options.deletes?.push(jobId);
+        return { status: "deleted", jobId };
       },
       abort: async () => undefined,
       retry: async () => undefined,
@@ -453,7 +454,7 @@ describe("library input ownership", () => {
     try {
       await waitForFrame(handle, "Dune");
       handle.stdin.enqueue("x");
-      await waitForFrame(handle, "Press x again");
+      await waitForFrame(handle, "x deletes");
       handle.stdin.enqueue("x");
       expect(deletes).toEqual(["movie"]);
     } finally {

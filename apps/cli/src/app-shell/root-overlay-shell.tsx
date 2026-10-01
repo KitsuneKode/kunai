@@ -1,4 +1,5 @@
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
+import { episodePickerMarkArmed, nextQueueClear } from "@/app-shell/filter-capture";
 import { resolveHistorySelectionLaunch } from "@/app-shell/history-selection-launch";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
@@ -569,6 +570,7 @@ export function RootOverlayShell({
   const [diagnosticsExpandedSpanIds, setDiagnosticsExpandedSpanIds] =
     useState<ReadonlySet<string> | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
+  const [queueClearArmed, setQueueClearArmed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(() =>
     overlay.type === "provider_picker" ? providerInitialIndex : overlayInitialIndex,
   );
@@ -585,9 +587,11 @@ export function RootOverlayShell({
   const pickerFilterQuery = isRootMediaPickerOverlay(overlay)
     ? (overlay.filterQuery ?? "")
     : filterQuery;
-  const pickerSelectedIndex = isRootMediaPickerOverlay(overlay)
+  const rawPickerIndex = isRootMediaPickerOverlay(overlay)
     ? (overlay.selectedIndex ?? (overlay.type === "episode_picker" ? overlay.initialIndex : 0) ?? 0)
     : selectedIndex;
+  // A missing or negative continue index highlights episode 1, not a blank row.
+  const pickerSelectedIndex = rawPickerIndex < 0 ? 0 : rawPickerIndex;
   const filterEditor = useLineEditor({
     value: pickerFilterQuery,
     onChange: (nextValue) => {
@@ -1646,11 +1650,19 @@ export function RootOverlayShell({
         return;
       }
       if (input === "c" && !key.ctrl) {
+        const decision = nextQueueClear(queueClearArmed ? "armed" : "idle", "c");
+        setQueueClearArmed(decision.state === "armed");
+        if (!decision.clear) {
+          setOverlayStatus("Press c again to clear the queue");
+          return;
+        }
         container.queueService.clear();
         setSelectedIndex(0);
+        setOverlayStatus("Queue cleared");
         refresh();
         return;
       }
+      if (queueClearArmed) setQueueClearArmed(false);
       if (input.toLowerCase() === "r") {
         const sessions = container.queueService.listRecoverableSessions();
         // Sessions come back most-recent-first; naming the target in the status
@@ -1840,7 +1852,8 @@ export function RootOverlayShell({
         overlay.type === "episode_picker" &&
         input.toLowerCase() === "m" &&
         !key.ctrl &&
-        !key.meta
+        !key.meta &&
+        episodePickerMarkArmed(pickerFilterQuery)
       ) {
         const pickerState = container.stateManager.getState();
         const pickerTitle = pickerState.currentTitle;

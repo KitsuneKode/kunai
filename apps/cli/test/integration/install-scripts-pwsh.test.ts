@@ -21,14 +21,19 @@ import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 
 import { createReleaseArchive } from "../../scripts/build-release-archives";
 import {
-  createInstallerSandbox,
+  createInstallerSandbox as createHostInstallerSandbox,
   installCommandShim,
   seedActivationLock,
   seedLifecycleLock,
   windowsShellEnvDefaults,
   withCommandPath,
+  RELEASE_TEST_PUBLIC_KEY,
   withReleaseFixture,
 } from "./helpers/installer-script-harness";
+
+function createInstallerSandbox(name: string) {
+  return createHostInstallerSandbox(name, "powershell");
+}
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const INSTALL_PS1 = join(REPO_ROOT, "install.ps1");
@@ -163,7 +168,11 @@ async function runInstallPs1Async(
 ): Promise<{ status: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["pwsh", "-NoProfile", "-File", INSTALL_PS1, ...args], {
     cwd,
-    env: { ...BOUNDED_DOWNLOAD_ENV, ...env },
+    env: {
+      ...BOUNDED_DOWNLOAD_ENV,
+      KUNAI_RELEASE_ED25519_PUBLIC_KEY: RELEASE_TEST_PUBLIC_KEY,
+      ...env,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -504,8 +513,10 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(result.status, `${result.stderr}${result.stdout}`).toBe(0);
           expect(evidence.requests).toEqual([
             "/download/v9.8.7/SHA256SUMS.archives",
+            "/download/v9.8.7/SHA256SUMS.archives.sig",
             `/download/v9.8.7/${target.archiveName}`,
             "/download/v9.8.7/SHA256SUMS",
+            "/download/v9.8.7/SHA256SUMS.sig",
           ]);
           expect(
             readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai.exe"), "utf8"),
@@ -866,6 +877,7 @@ describePwsh("install.ps1 release asset failures", () => {
             "/releases/latest",
             "/download/v9.8.7/SHA256SUMS.archives",
             "/download/v9.8.7/SHA256SUMS",
+            "/download/v9.8.7/SHA256SUMS.sig",
             `/download/v9.8.7/${asset}`,
           ]);
           expect(evidence.requests.some((path) => path.includes("/latest/download"))).toBe(false);
@@ -983,6 +995,7 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(evidence.requests).toEqual([
             "/download/v9.8.7/SHA256SUMS.archives",
             "/download/v9.8.7/SHA256SUMS",
+            "/download/v9.8.7/SHA256SUMS.sig",
             `/download/v9.8.7/${asset}`,
           ]);
           expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(true);
@@ -1004,6 +1017,33 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
           const versionMetadata = await readInstallerVersionMetadata(sandbox.dataDir, "9.8.7");
           expect(versionMetadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects a checksum file whose signature does not verify", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-bad-signature";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-bad-sig");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+          "/download/v9.8.7/SHA256SUMS.sig": { body: Buffer.alloc(64) },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status, `${result.stderr}${result.stdout}`).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toContain("signature");
+          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
         },
       );
     } finally {
@@ -1628,6 +1668,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
     const digest = createHash("sha256").update(body).digest("hex");
     const sandbox = createInstallerSandbox("install-ps1-activation-failure");
     const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    mkdirSync(dirname(sandbox.configDir), { recursive: true });
     writeFileSync(sandbox.configDir, "not-a-directory");
     try {
       await withReleaseFixture(
@@ -2238,7 +2279,11 @@ async function runPortableHelperProbe(
   );
 
   const proc = Bun.spawn([PWSH_PATH, "-NoProfile", "-File", probePath], {
-    env: { ...BOUNDED_DOWNLOAD_ENV, ...env },
+    env: {
+      ...BOUNDED_DOWNLOAD_ENV,
+      KUNAI_RELEASE_ED25519_PUBLIC_KEY: RELEASE_TEST_PUBLIC_KEY,
+      ...env,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });

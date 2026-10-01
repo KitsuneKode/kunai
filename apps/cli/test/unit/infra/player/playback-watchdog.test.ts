@@ -326,4 +326,77 @@ describe("playback-watchdog", () => {
       demuxerViaNetwork: true,
     });
   });
+
+  test("core idle plus cache underrun emits one stall, and a user pause emits none", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 1_000,
+      cacheStallAfterMs: 1_000,
+      networkReadDeadAfterMs: 1_000,
+    });
+
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 40,
+      durationSeconds: 600,
+      coreIdle: true,
+      pausedForCache: true,
+      demuxerViaNetwork: true,
+      demuxerCacheUnderrun: true,
+      demuxerRawInputRate: 0,
+    });
+    nowMs = 1_500;
+    runTimers();
+    nowMs = 3_000;
+    runTimers();
+
+    const stalled = events.filter((event) => event.type === "stream-stalled");
+    expect(stalled).toHaveLength(1);
+
+    const paused: PlayerPlaybackEvent[] = [];
+    const pauseWatch = createPlaybackWatchdog((event) => paused.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 1_000,
+    });
+    pauseWatch.observe({
+      source: "ipc",
+      observedAt: 0,
+      positionSeconds: 40,
+      durationSeconds: 600,
+      paused: true,
+    });
+    nowMs = 5_000;
+    runTimers();
+    expect(paused.filter((event) => event.type === "stream-stalled")).toHaveLength(0);
+
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 3_100,
+      positionSeconds: 40,
+      durationSeconds: 600,
+      seeking: true,
+      pausedForCache: true,
+      demuxerCacheUnderrun: true,
+    });
+    const beforeSeek = events.filter((event) => event.type === "stream-stalled").length;
+    nowMs = 6_000;
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(beforeSeek);
+
+    watchdog.resetForNewFile(6_100);
+    watchdog.observe({
+      source: "ipc",
+      observedAt: 6_100,
+      positionSeconds: 1,
+      durationSeconds: 600,
+    });
+    nowMs = 6_400;
+    runTimers();
+    expect(events.filter((event) => event.type === "stream-stalled")).toHaveLength(beforeSeek);
+
+    watchdog.stop();
+    pauseWatch.stop();
+  });
 });

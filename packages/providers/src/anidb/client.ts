@@ -2,7 +2,6 @@ import type { ProviderRuntimeContext, ResolveErrorCode, StartupPriority } from "
 import {
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
-  isRelayedResponse,
   ProviderHttpError,
 } from "@kunai/types";
 
@@ -21,6 +20,7 @@ import {
   BALANCED_QUALITY_WAIT_BUDGET_MS,
   QUALITY_FIRST_WAIT_BUDGET_MS,
 } from "../shared/startup-selection";
+import { probeLookupForPort } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { anidbNumericId, parseAnidbBrowseHtml, type AnidbSearchResult } from "./browse-parser";
 
@@ -222,6 +222,101 @@ function isFingerprintRetryableStatus(status: number): boolean {
   return status === 403 || status === 429;
 }
 
+const ANIDB_GUARDED_WRITE_OUT = ["-w", "\n%{http_code}\n%{redirect_url}"] as const;
+
+function splitAnidbGuardedStatus(stdout: string): {
+  readonly body: string;
+  readonly status: number;
+  readonly redirectUrl: string;
+} {
+  const redirectCut = stdout.lastIndexOf("\n");
+  const redirectUrl = redirectCut >= 0 ? stdout.slice(redirectCut + 1).trim() : "";
+  const rest = redirectCut >= 0 ? stdout.slice(0, redirectCut) : "";
+  const statusCut = rest.lastIndexOf("\n");
+  const status = Number.parseInt(statusCut >= 0 ? rest.slice(statusCut + 1) : rest, 10);
+  return {
+    body: statusCut >= 0 ? rest.slice(0, statusCut) : "",
+    status: Number.isFinite(status) ? status : 0,
+    redirectUrl,
+  };
+}
+
+/**
+ * Playlist fetch for the guarded HLS expander. The expander follows redirects
+ * itself, so this returns the real status and Location instead of a synthetic
+ * 200. A private redirect is then refused before a second request.
+ */
+export async function anidbGuardedFetch(
+  url: string,
+  init: RequestInit | undefined,
+  options: {
+    readonly context?: ProviderRuntimeContext;
+    readonly signal?: AbortSignal;
+  } = {},
+): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("user-agent")) headers.set("user-agent", ANIDB_USER_AGENT);
+  if (!headers.has("referer")) headers.set("referer", ANIDB_REFERER);
+  const signal = init?.signal instanceof AbortSignal ? init.signal : options.signal;
+
+  if (options.context?.fetch) {
+    try {
+      const response = await options.context.fetch.fetch(url, {
+        ...init,
+        headers,
+        signal,
+        redirect: "manual",
+      });
+      if (response.status >= 300 && response.status < 400) return response;
+      if (response.ok) {
+        const text = await response.clone().text();
+        if (isAnidbMaintenanceText(text)) return new Response(text, { status: 503 });
+        if (!isCloudflareChallengeText(text)) return response;
+      } else if (!isFingerprintRetryableStatus(response.status)) {
+        return response;
+      }
+    } catch (error) {
+      if (signal?.aborted === true) throw error;
+      // The relay port already refused this request and direct fallback is off.
+      // Swallowing that and curling the upstream is the fallback the user disabled.
+      if (error instanceof Error && error.name === "RelayRefusalError") throw error;
+    }
+  }
+
+  const curl = resolveAnidbCurl();
+  if (!curl) {
+    return fetch(url, { ...init, headers, signal, redirect: "manual" });
+  }
+
+  const args = [
+    curl.path,
+    "-s",
+    "--max-redirs",
+    "0",
+    "-A",
+    headers.get("user-agent") ?? ANIDB_USER_AGENT,
+    "-H",
+    `Referer: ${headers.get("referer") ?? ANIDB_REFERER}`,
+    "--max-time",
+    "12",
+    ...anidbCipherArgs(curl.impersonates),
+    ...ANIDB_GUARDED_WRITE_OUT,
+    "--",
+    url,
+  ];
+  const stdout = await runAnidbCurlWithRetry(args, signal);
+  const parsed = splitAnidbGuardedStatus(stdout);
+  const responseHeaders = new Headers();
+  if (parsed.redirectUrl) responseHeaders.set("location", parsed.redirectUrl);
+  if (parsed.status >= 200 && parsed.status < 300 && isCloudflareChallengeText(parsed.body)) {
+    throw new AnidbBlockedError(anidbBlockedMessage(curl.impersonates));
+  }
+  return new Response(parsed.body, {
+    status: parsed.status || 502,
+    headers: responseHeaders,
+  });
+}
+
 /**
  * Fetches an AniDB page as text, or throws {@link AnidbHttpStatusError}.
  *
@@ -253,21 +348,14 @@ export async function anidbFetchText(
         if (!isCloudflareChallengeText(text)) {
           return text;
         }
-      } else if (
-        !isFingerprintRetryableStatus(response.status) &&
-        !(response.status === 404 && isRelayedResponse(response))
-      ) {
+      } else if (!isFingerprintRetryableStatus(response.status)) {
         // Falling through to curl exists so a Cloudflare challenge gets a
         // second chance with a better TLS fingerprint. An upstream outage or
         // a genuine 404 is not a fingerprint problem, so it is answered here.
-        //
-        // A 404 that arrived over a relay hop is a different fact. A relay
-        // deployed before this provider existed answers `unknown-provider`
-        // with a 404 of its own, and reading that as anidb.app's verdict marks
-        // the catalogue permanently missing and caches the miss — which took
-        // the whole anime lane down behind a stale relay while the same id
-        // resolved fine over curl. Let curl settle it: a genuine 404 still
-        // throws below, one request later.
+        // A relay that does not know this provider sets its own error header
+        // and the fetch port turns that into a direct retry or a typed
+        // refusal before this function sees the response. A 404 that arrives
+        // here is the upstream's answer.
         throw new AnidbHttpStatusError(response.status);
       }
     } catch (error) {
@@ -278,6 +366,7 @@ export async function anidbFetchText(
       // `options.signal` rather than the error shape, so the 15s internal
       // timeout still earns its second chance through curl.
       if (options.signal?.aborted === true) throw error;
+      if (error instanceof Error && error.name === "RelayRefusalError") throw error;
       // Fallback to local curl/impersonate
     }
   }
@@ -315,7 +404,9 @@ export async function anidbFetchText(
   const maxTime = String(options.maxTimeSec ?? 12);
   const args = [
     curl.path,
-    "-sL",
+    "-s",
+    "--max-redirs",
+    "0",
     "-A",
     ANIDB_USER_AGENT,
     "-H",
@@ -331,10 +422,8 @@ export async function anidbFetchText(
     url,
   ];
   const stdout = await runAnidbCurlWithRetry(args, options.signal);
-  // `-sL` has no `--fail`, so curl exits 0 and hands back the error page for a
-  // 404. Without asking for the status explicitly the miss is indistinguishable
-  // from a body that merely failed to parse, which is how a reindexed id used
-  // to look exactly like an empty catalogue.
+  // Redirects are not followed. A 3xx body is an HTTP status, and a metadata
+  // address such as 169.254.169.254 never receives a second request.
   const { body, status } = splitAnidbStatus(stdout);
   if (status >= 400) throw new AnidbHttpStatusError(status);
   if (isCloudflareChallengeText(body)) {
@@ -823,30 +912,22 @@ export async function resolveAnidbLanguageStreams(options: {
   if (!masterUrl) return empty();
 
   const inventory = await expandHlsMasterInventory({
-    fetch: async (url: string, init?: RequestInit) => {
-      try {
-        const text = await anidbFetchText(url, {
-          signal: (init?.signal instanceof AbortSignal ? init.signal : undefined) ?? options.signal,
-          context: options.context,
-        });
-        return new Response(text, {
-          status: 200,
-          headers: { "content-type": "application/vnd.apple.mpegurl" },
-        });
-      } catch (error) {
-        if (error instanceof AnidbHttpStatusError) {
-          return new Response(null, { status: error.status });
-        }
-        throw error;
-      }
-    },
+    fetch: (url: string | URL | Request, init?: RequestInit) =>
+      anidbGuardedFetch(String(url), init, {
+        context: options.context,
+        signal: options.signal,
+      }),
     masterUrl,
     headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
     signal: options.signal,
+    lookupImpl: probeLookupForPort(options.context?.fetch),
   });
   // Dead master host → drop the `auto` fallback row that would point mpv at
   // the same dead URL.
-  const variants = isHlsDeadHostStatus(inventory.probe.httpStatus) ? [] : inventory.variants;
+  const variants =
+    inventory.probe.kind === "blocked-target" || isHlsDeadHostStatus(inventory.probe.httpStatus)
+      ? []
+      : inventory.variants;
 
   return {
     links: variants.map((variant) => ({

@@ -6,8 +6,10 @@ import {
   type ProviderEngine,
   type ProviderPriorityInput,
 } from "@kunai/core";
+import { productionProviderRoster } from "@kunai/providers";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import { ProviderCacheRepository } from "@kunai/storage";
+import type { ProviderRuntimeHost } from "@kunai/types";
 
 import { PlaybackResolveCoordinator } from "../services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
@@ -66,7 +68,7 @@ export async function loadProductionProviderModules(
     import("@kunai/providers/youtube"),
   ]);
 
-  return orderProviderModulesByPriority(
+  const modules = orderProviderModulesByPriority(
     [
       videasyProviderModule,
       vidlinkProviderModule,
@@ -83,6 +85,19 @@ export async function loadProductionProviderModules(
     ],
     providerPriority,
   );
+  const expected = new Set<string>(productionProviderRoster.map((descriptor) => descriptor.id));
+  const loaded = new Set(modules.map((module) => module.providerId as string));
+  for (const id of expected) {
+    if (!loaded.has(id)) {
+      throw new Error(`Production roster id ${id} was not loaded`);
+    }
+  }
+  for (const id of loaded) {
+    if (!expected.has(id)) {
+      throw new Error(`Loaded provider ${id} is not on the production roster`);
+    }
+  }
+  return modules;
 }
 
 export async function bootstrapProviders(
@@ -130,6 +145,7 @@ export async function bootstrapProviders(
     endpointHealth,
     cache: providerCachePort,
     titleBridge: titleBridgePort,
+    host: bunProviderRuntimeHost,
     auth: {
       getSecret(providerId, key) {
         if (!isVideasyFamilyProvider(providerId)) return undefined;
@@ -197,3 +213,41 @@ export async function bootstrapProviders(
     playbackResolveWork,
   };
 }
+
+const bunProviderRuntimeHost: ProviderRuntimeHost = {
+  which: (name) => Bun.which(name),
+  sleep: (ms) => Bun.sleep(ms),
+  async hash(_algorithm, bytes) {
+    return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  },
+  async gzip(bytes) {
+    const zipped = Bun.gzipSync(Buffer.from(bytes));
+    const copy = new Uint8Array(zipped.byteLength);
+    copy.set(zipped);
+    return copy;
+  },
+  async gunzip(bytes) {
+    const unzipped = Bun.gunzipSync(Buffer.from(bytes));
+    const copy = new Uint8Array(unzipped.byteLength);
+    copy.set(unzipped);
+    return copy;
+  },
+  async spawn(command, options) {
+    const proc = Bun.spawn([...command], {
+      cwd: options?.cwd,
+      env: options?.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).arrayBuffer(),
+      new Response(proc.stderr).arrayBuffer(),
+      proc.exited,
+    ]);
+    return {
+      stdout: new Uint8Array(stdout),
+      stderr: new Uint8Array(stderr),
+      exitCode,
+    };
+  },
+};

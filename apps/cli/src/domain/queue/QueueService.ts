@@ -87,18 +87,6 @@ export class QueueService {
     return this.repo.restoreInFlightToPending(intent.queueEntryId, this.sessionId, failure);
   }
 
-  /**
-   * @deprecated Head-based consumption. Prefer beginPlayback(id) with exact queue identity.
-   * Retained until PlaybackPhase auto-next migrates (S3 Task 4).
-   */
-  advance(): QueueEntry | undefined {
-    const current = this.repo.peekNext(this.sessionId);
-    if (current) {
-      this.repo.markPlayed(current.id);
-    }
-    return this.repo.peekNext(this.sessionId);
-  }
-
   getStatus(): QueueStatus {
     const unplayedCount = this.repo.countUnplayed(this.sessionId);
     const nextItem = this.repo.peekNext(this.sessionId);
@@ -237,7 +225,10 @@ export class QueueService {
    * closed. Never emits notifications — startup recovery owns signals.
    */
   prepareForShutdown(at = new Date().toISOString()): "recoverable" | "closed" {
-    if (this.repo.countUnplayed(this.sessionId) > 0) {
+    const outstanding = this.repo
+      .getAll(this.sessionId)
+      .some((entry) => entry.status === "pending" || entry.status === "in-flight");
+    if (outstanding) {
       this.repo.markQueueSessionRecoverable(this.sessionId, at);
       return "recoverable";
     }

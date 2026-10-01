@@ -33,6 +33,7 @@ import {
   seedLifecycleLock,
   withCommandPath,
   withoutKunaiPathOverrides,
+  RELEASE_TEST_PUBLIC_KEY,
   withReleaseFixture,
 } from "./helpers/installer-script-harness";
 
@@ -144,7 +145,10 @@ function runInstallSh(
   args: string[],
   env: NodeJS.ProcessEnv,
 ): { status: number | null; stdout: string; stderr: string } {
-  return spawnSync("bash", [INSTALL_SH, ...args], { encoding: "utf8", env });
+  return spawnSync("bash", [INSTALL_SH, ...args], {
+    encoding: "utf8",
+    env: { ...env, KUNAI_RELEASE_ED25519_PUBLIC_KEY: RELEASE_TEST_PUBLIC_KEY },
+  });
 }
 
 /** Async so Bun.serve can answer while the installer runs (spawnSync deadlocks the fixture). */
@@ -153,7 +157,7 @@ async function runInstallShAsync(
   env: NodeJS.ProcessEnv,
 ): Promise<{ status: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["bash", INSTALL_SH, ...args], {
-    env,
+    env: { ...env, KUNAI_RELEASE_ED25519_PUBLIC_KEY: RELEASE_TEST_PUBLIC_KEY },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -179,7 +183,7 @@ async function runInstallShWithin(
   timeoutMs: number,
 ): Promise<{ status: number; stdout: string; stderr: string } | null> {
   const proc = Bun.spawn(["bash", INSTALL_SH, ...args], {
-    env,
+    env: { ...env, KUNAI_RELEASE_ED25519_PUBLIC_KEY: RELEASE_TEST_PUBLIC_KEY },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -523,8 +527,10 @@ exec ${quoteShellArgument(realDd)} "$@"
           expect(result.status, result.stderr).toBe(0);
           expect(evidence.requests).toEqual([
             "/download/v9.8.7/SHA256SUMS.archives",
+            "/download/v9.8.7/SHA256SUMS.archives.sig",
             `/download/v9.8.7/${target.archiveName}`,
             "/download/v9.8.7/SHA256SUMS",
+            "/download/v9.8.7/SHA256SUMS.sig",
           ]);
           expect(readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai"), "utf8")).toBe(
             body,
@@ -876,6 +882,7 @@ exec ${quoteShellArgument(realDd)} "$@"
             "/releases/latest",
             "/download/v9.8.7/SHA256SUMS.archives",
             "/download/v9.8.7/SHA256SUMS",
+            "/download/v9.8.7/SHA256SUMS.sig",
             `/download/v9.8.7/${asset}`,
           ]);
           expect(evidence.requests.some((path) => path.includes("/latest/download"))).toBe(false);
@@ -989,6 +996,7 @@ exec ${quoteShellArgument(realDd)} "$@"
           expect(evidence.requests).toEqual([
             "/download/v9.8.7/SHA256SUMS.archives",
             "/download/v9.8.7/SHA256SUMS",
+            "/download/v9.8.7/SHA256SUMS.sig",
             `/download/v9.8.7/${asset}`,
           ]);
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(true);
@@ -1789,6 +1797,7 @@ describe("install.sh lifecycle contract", () => {
     const digest = createHash("sha256").update(body).digest("hex");
     const sandbox = createInstallerSandbox("install-sh-activation-failure");
     const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
+    mkdirSync(join(sandbox.configDir, ".."), { recursive: true });
     writeFileSync(sandbox.configDir, "not-a-directory");
     try {
       await withReleaseFixture(

@@ -323,7 +323,15 @@ export function DownloadManagerContent({
             job.status === "repairable" ||
             job.status === "completed" ||
             job.status === "completed-with-notes";
-          void container.downloadService.deleteJob(job.id, { deleteArtifact });
+          void (async () => {
+            const result = await container.downloadService.deleteJob(job.id, { deleteArtifact });
+            if (result.status === "retained") {
+              container.stateManager.dispatch({
+                type: "SET_PLAYBACK_FEEDBACK",
+                note: "Kept the download. A file could not be removed.",
+              });
+            }
+          })();
           return;
         }
         setConfirmingDeleteIndex(selectedIndex);

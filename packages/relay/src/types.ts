@@ -90,6 +90,8 @@ export interface RelayHandlerOptions {
   readonly diagnostics?: RelayDiagnosticSink;
   readonly timeoutMs?: number;
   readonly maxRedirects?: number;
+  /** Browser origins allowed to read relay responses. Empty means none. `*` is an explicit opt-in. */
+  readonly corsOrigins?: readonly string[];
 }
 
 export interface RelayFetchPortOptions {

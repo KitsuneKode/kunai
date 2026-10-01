@@ -4,6 +4,8 @@ Status: Planned
 
 Last updated: 2026-04-29
 
+**Parked — do not implement, cite as current work, or extend unless the user explicitly names web, desktop, paid sync, paid cloud, or a daemon in the task.** The active product is the CLI, then the mobile host proof.
+
 Use this plan when shaping Kunai's CLI, future web, future desktop, optional local daemon, cloud proxy, cache, provider runtime, paid compute, sync, or security model.
 
 Current execution note: the active build target is the full-fledged CLI. Web, desktop, remote sync, paid cloud compute, account-required flows, and public plugin marketplaces are parked until local playback, SQLite storage, subtitles/audio switching, provider health, cache correctness, and diagnostics are excellent.

@@ -96,8 +96,9 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "autoCleanupWatched",
-      label: "Auto-cleanup",
-      detail: "Flag watched completed downloads for explicit cleanup after the grace period",
+      label: "Cleanup candidates",
+      detail:
+        "Record watched completed downloads as cleanup candidates after the grace period. Does not delete them.",
       read: (config) => config.autoCleanupWatched,
       write: (config, value) => ({ ...config, autoCleanupWatched: value }),
     },

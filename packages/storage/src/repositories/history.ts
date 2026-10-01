@@ -570,7 +570,15 @@ export class HistoryRepository {
 
     if (title.kind === "anime" && /^\d+$/.test(title.id)) {
       add(this.titleAliases.lookupTitleId("anilist", title.id));
-      add(this.titleAliases.lookupTitleId("mal", title.id));
+    }
+    const malBare = title.id.startsWith("mal:") ? title.id.slice("mal:".length) : undefined;
+    if (malBare && /^\d+$/.test(malBare)) {
+      add(this.titleAliases.lookupTitleId("mal", malBare));
+    }
+    const externalMal = title.externalIds?.malId?.trim();
+    if (externalMal && !title.externalIds?.anilistId) {
+      add(this.titleAliases.lookupTitleId("mal", externalMal));
+      add(externalMal.startsWith("mal:") ? externalMal : `mal:${externalMal}`);
     }
 
     const tmdbId = title.externalIds?.tmdbId?.trim();

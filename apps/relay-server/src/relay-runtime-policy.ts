@@ -1,4 +1,4 @@
-import type { RelayAuthorizationPolicy } from "@kunai/relay";
+import { warnOnWildcardRelayCors, type RelayAuthorizationPolicy } from "@kunai/relay";
 
 import { handleRelayRequest } from "./relay-app";
 
@@ -34,12 +34,26 @@ export function resolveRelayDevelopmentPolicy(
   };
 }
 
-export function createRelayDevServerOptions(policy: RelayDevelopmentPolicy) {
+export function resolveRelayCorsOrigins(env: NodeJS.ProcessEnv): readonly string[] {
+  return (env.RELAY_CORS_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+}
+
+export function createRelayDevServerOptions(
+  policy: RelayDevelopmentPolicy,
+  corsOrigins: readonly string[] = [],
+) {
+  warnOnWildcardRelayCors(corsOrigins);
   return {
     hostname: policy.hostname,
     port: policy.port,
     fetch(request: Request) {
-      return handleRelayRequest(request, { authorization: policy.authorization });
+      return handleRelayRequest(request, {
+        authorization: policy.authorization,
+        corsOrigins,
+      });
     },
   };
 }

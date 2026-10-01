@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-01"
 ---
 
 # Kunai — Repo Infrastructure
@@ -151,7 +151,9 @@ every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
 would otherwise skip the check meant to catch it. It runs `setup-bun` without
 `bun install` — the script imports only `node:fs` and `node:path`.
 
-<<<<<<< HEAD
+`scripts/verify-active-conflicts.ts` fails when an active source, doc, or config
+file still contains a conflict marker.
+
 `scripts/ci-affected-run.ts` wraps `--affected` because a PR touching only
 non-package files (`.github/`, `install.sh`, `tools/`, `docs/`, `.docs/`) used
 to select zero workspace tasks and exit 0 — four green legs that ran nothing.

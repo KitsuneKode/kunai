@@ -30,7 +30,7 @@ export const SettingsInputBanner = React.memo(function SettingsInputBanner({
         <Text color={palette.dim}>▌</Text>
       </Box>
       <Text color={palette.dim} dimColor>
-        {`Saved: ${saved}`}
+        {`On disk: ${saved}`}
         {def.envOverride && process.env[def.envOverride]?.trim() ? "  ·  (env override)" : ""}
         {"  ·  Paste supported · Enter save · Esc cancel · Ctrl+U clear"}
       </Text>

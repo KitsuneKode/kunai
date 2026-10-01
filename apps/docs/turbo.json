@@ -3,6 +3,22 @@
   "extends": ["//"],
   "tasks": {
     "generate": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../docs/**",
+        "../../.release/**",
+        "../../.reference/design/brand/kunai-mascot-og.png",
+        "../../README.md",
+        "../../apps/cli/README.md",
+        "../../apps/cli/package.json",
+        "../../apps/cli/src/container.ts",
+        "../../apps/cli/src/container/bootstrap-providers.ts",
+        "../../apps/cli/src/domain/session/command-registry.ts",
+        "../../apps/cli/src/cli-args.ts",
+        "../../apps/cli/src/app-shell/keybindings.ts",
+        "../../packages/providers/src/**/manifest.ts"
+      ],
+      "env": ["DOCS_SITE_URL", "SOURCE_COMMIT", "VERCEL_GIT_COMMIT_SHA", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_URL"],
       "outputs": [
         "lib/generated-metadata.json",
         "lib/generated-release-notes.json",
@@ -21,6 +37,7 @@
     },
     "build": {
       "dependsOn": ["^typecheck", "generate", "typecheck:app"],
+      "env": ["DOCS_SITE_URL", "SOURCE_COMMIT", "VERCEL_GIT_COMMIT_SHA", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_URL"],
       "outputs": [".next/**", "!.next/cache/**"]
     }
   }

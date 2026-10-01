@@ -1753,11 +1753,18 @@ function StatsShell({
   useEffect(() => {
     setStatsWithGenres(stats);
     let cancelled = false;
-    void statsService.fetchGenreBreakdown(windowDays, mediaKindFilter).then((breakdown) => {
-      if (cancelled) return undefined;
-      setStatsWithGenres(statsService.applyGenreBreakdown(stats, breakdown));
-      return undefined;
-    });
+    void statsService
+      .fetchGenreBreakdown(windowDays, mediaKindFilter)
+      .then((breakdown) => {
+        if (cancelled) return undefined;
+        setStatsWithGenres(statsService.applyGenreBreakdown(stats, breakdown));
+        return undefined;
+      })
+      .catch(() => {
+        if (cancelled) return undefined;
+        setCopiedFlash("Genres could not be loaded.");
+        return undefined;
+      });
     return () => {
       cancelled = true;
     };
@@ -1832,17 +1839,23 @@ function StatsShell({
         setTimeout(() => setCopiedFlash(null), 2_000);
       })();
     } else if (input === "e") {
+      setCopiedFlash("Exporting…");
       void (async () => {
         const dir = join(exportDir, "stats");
-        await mkdir(dir, { recursive: true });
-        const stamp = new Date().toISOString().slice(0, 10);
-        const base = `kunai-stats-${stamp}`;
-        const jsonPath = join(dir, `${base}.json`);
-        const csvPath = join(dir, `${base}.csv`);
-        await Bun.write(jsonPath, statsService.exportStatsJson(windowDays, mediaKindFilter));
-        await Bun.write(csvPath, statsService.exportStatsCsv(windowDays, mediaKindFilter));
-        setCopiedFlash(`Exported to ${dir}`);
-        setTimeout(() => setCopiedFlash(null), 3_000);
+        try {
+          await mkdir(dir, { recursive: true });
+          const stamp = new Date().toISOString().slice(0, 10);
+          const base = `kunai-stats-${stamp}`;
+          const jsonPath = join(dir, `${base}.json`);
+          const csvPath = join(dir, `${base}.csv`);
+          await Bun.write(jsonPath, statsService.exportStatsJson(windowDays, mediaKindFilter));
+          await Bun.write(csvPath, statsService.exportStatsCsv(windowDays, mediaKindFilter));
+          setCopiedFlash(`Exported to ${dir}`);
+          setTimeout(() => setCopiedFlash(null), 3_000);
+        } catch {
+          setCopiedFlash("Export failed. Nothing was written.");
+          setTimeout(() => setCopiedFlash(null), 3_000);
+        }
       })();
     }
   });

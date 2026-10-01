@@ -176,6 +176,107 @@ export class OfflineAssetsRepository {
       .map(mapAssetRow);
   }
 
+  countReadyByTitle(titleId: string): number {
+    const row = this.db
+      .query<{ count: number }, [string]>(
+        "SELECT COUNT(*) AS count FROM offline_assets WHERE title_id = ? AND state = 'ready'",
+      )
+      .get(titleId);
+    return row?.count ?? 0;
+  }
+
+  /**
+   * Ready titles matching a name, filtered in SQL before the page limit.
+   * `after` is the last row of the previous page, ordered by updated_at then id.
+   */
+  searchReadyByName(
+    query: string,
+    limit: number,
+    after?: { readonly updatedAt: string; readonly id: string },
+  ): readonly {
+    readonly id: string;
+    readonly titleId: string;
+    readonly titleName: string;
+    readonly updatedAt: string;
+  }[] {
+    const needle = query.trim().replaceAll("\\", "").replaceAll("%", "").replaceAll("_", "");
+    if (!needle) return [];
+    const afterUpdatedAt = after?.updatedAt ?? null;
+    const afterId = after?.id ?? null;
+    return this.db
+      .query<
+        { id: string; title_id: string; title_name: string; updated_at: string },
+        [string, string | null, string | null, string | null, string | null, number]
+      >(
+        `SELECT id, title_id, title_name, updated_at FROM offline_assets
+         WHERE state = 'ready'
+           AND title_name LIKE ? COLLATE NOCASE
+           AND (
+             ? IS NULL
+             OR updated_at < ?
+             OR (updated_at = ? AND id < ?)
+           )
+         ORDER BY updated_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .all(`%${needle}%`, afterUpdatedAt, afterUpdatedAt, afterUpdatedAt, afterId, limit)
+      .map((row) => ({
+        id: row.id,
+        titleId: row.title_id,
+        titleName: row.title_name,
+        updatedAt: row.updated_at,
+      }));
+  }
+
+  /**
+   * The ready file for this episode, including one past the first page of the title.
+   * A null season is season 1 for absolute-numbered anime.
+   */
+  findReadyOriginJobId(
+    titleId: string,
+    season: number,
+    episode: number,
+    mediaKind?: "movie" | "series" | "anime" | "video",
+    providerEpisodeIdentity?: { readonly providerId: string; readonly value: string },
+  ): string | undefined {
+    const identitySql = providerEpisodeIdentity
+      ? " AND provider_episode_provider_id = ? AND provider_episode_value = ?"
+      : "";
+    if (mediaKind === "movie" || mediaKind === "video") {
+      const row = this.db
+        .query<{ origin_job_id: string | null }, string[]>(
+          `SELECT origin_job_id FROM offline_assets
+           WHERE title_id = ? AND state = 'ready' AND media_kind = ?${identitySql}
+           ORDER BY updated_at DESC LIMIT 1`,
+        )
+        .get(
+          titleId,
+          mediaKind,
+          ...(providerEpisodeIdentity
+            ? [providerEpisodeIdentity.providerId, providerEpisodeIdentity.value]
+            : []),
+        );
+      return row?.origin_job_id ?? undefined;
+    }
+    const row = this.db
+      .query<{ origin_job_id: string | null }, Array<string | number>>(
+        `SELECT origin_job_id FROM offline_assets
+         WHERE title_id = ? AND state = 'ready' AND episode = ?
+           AND (season = ? OR (season IS NULL AND ? = 1))${identitySql}
+         ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(
+        titleId,
+        episode,
+        season,
+        season,
+        ...(providerEpisodeIdentity
+          ? [providerEpisodeIdentity.providerId, providerEpisodeIdentity.value]
+          : []),
+      );
+    return row?.origin_job_id ?? undefined;
+  }
+
   listByTitleIds(titleIds: readonly string[]): readonly OfflineAssetRecord[] {
     const ids = [...new Set(titleIds)].filter(Boolean);
     if (ids.length === 0) return [];
@@ -215,23 +316,25 @@ export class OfflineAssetsRepository {
     const update = this.db.query(
       "UPDATE OR REPLACE offline_assets SET title_id = ?, identity_key = ?, updated_at = ? WHERE id = ?",
     );
-    for (const row of rows) {
-      const identityKey = createOfflineAssetIdentityKey({
-        titleId: newTitleId,
-        mediaKind: row.media_kind,
-        season: row.season ?? undefined,
-        episode: row.episode ?? undefined,
-        providerEpisodeIdentity:
-          row.provider_episode_provider_id !== null && row.provider_episode_value !== null
-            ? {
-                providerId: row.provider_episode_provider_id,
-                value: row.provider_episode_value,
-              }
-            : undefined,
-        profileKey: row.profile_key,
-      });
-      update.run(newTitleId, identityKey, now, row.id);
-    }
+    this.db.transaction(() => {
+      for (const row of rows) {
+        const identityKey = createOfflineAssetIdentityKey({
+          titleId: newTitleId,
+          mediaKind: row.media_kind,
+          season: row.season ?? undefined,
+          episode: row.episode ?? undefined,
+          providerEpisodeIdentity:
+            row.provider_episode_provider_id !== null && row.provider_episode_value !== null
+              ? {
+                  providerId: row.provider_episode_provider_id,
+                  value: row.provider_episode_value,
+                }
+              : undefined,
+          profileKey: row.profile_key,
+        });
+        update.run(newTitleId, identityKey, now, row.id);
+      }
+    })();
     return rows.length;
   }
 
@@ -263,13 +366,12 @@ export class OfflineAssetsRepository {
           FROM offline_assets
           JOIN requested ON requested.title_id = offline_assets.title_id
           WHERE offline_assets.state = 'ready'
-            AND offline_assets.season IS NOT NULL
             AND offline_assets.episode IS NOT NULL
             AND (
-              offline_assets.season > requested.season_cursor
+              COALESCE(offline_assets.season, 1) > CAST(requested.season_cursor AS INTEGER)
               OR (
-                offline_assets.season = requested.season_cursor
-                AND offline_assets.episode > requested.episode_cursor
+                COALESCE(offline_assets.season, 1) = CAST(requested.season_cursor AS INTEGER)
+                AND offline_assets.episode > CAST(requested.episode_cursor AS INTEGER)
               )
             )
         )

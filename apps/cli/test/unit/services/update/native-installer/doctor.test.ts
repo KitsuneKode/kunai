@@ -344,8 +344,24 @@ describe("storage writability", () => {
       { label: "cache", path: "/var/cache/kunai", exists: true, writable: true },
     ]);
 
-    const finding = report.findings.find((c) => c.code === "storage-not-writable-config");
+    const finding = report.findings.find((c) => c.code === "storage-will-be-created-config");
+    expect(finding?.message).toContain("will be created");
+    expect(finding?.remediation.join(" ")).not.toContain("sudo");
     expect(finding?.remediation[0]).toContain("parent directory is not writable");
+    expect(report.findings.some((c) => c.code === "storage-not-writable-config")).toBe(false);
+  });
+
+  test("a missing data directory will be created and is not called unwritable", async () => {
+    const report = await reportWithStorage([
+      { label: "config", path: "/c", exists: true, writable: true },
+      { label: "data", path: "/var/kunai", exists: false, writable: true },
+      { label: "cache", path: "/e", exists: true, writable: true },
+    ]);
+
+    const finding = report.findings.find((c) => c.code === "storage-will-be-created-data");
+    expect(finding?.message).toContain("will be created");
+    expect(finding?.message.toLowerCase()).not.toContain("unwritable");
+    expect(finding?.remediation.join(" ")).not.toContain("sudo");
   });
 
   test("stays silent when every directory is writable", async () => {
@@ -369,7 +385,7 @@ describe("storage writability", () => {
     expect(text).toContain("Storage");
     expect(text).toContain("config: /etc/kunai (NOT WRITABLE)");
     expect(text).toContain("data: /var/kunai (writable)");
-    expect(text).toContain("cache: /var/cache/kunai (writable, missing)");
+    expect(text).toContain("cache: /var/cache/kunai (will be created)");
   });
 
   test("probes the layout it was given, not the machine's real directories", async () => {

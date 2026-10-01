@@ -47,7 +47,11 @@ describe("agent driver · fresh-profile onboarding", () => {
 
         const config = s.inspect().config();
         expect(config.onboardingVersion).toBeGreaterThan(0);
-        expect(config.analytics).toBe("unset");
+        // A decision never made is absent from the file. Writing "unset" back
+        // would be a write, and the consent tests forbid that. Absence is not
+        // consent: the key must not be enabled, and no install id may appear.
+        expect(config.analytics === undefined || config.analytics === "unset").toBe(true);
+        expect(config.installId).toBeUndefined();
       } finally {
         await s.stop();
       }

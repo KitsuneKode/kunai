@@ -1,14 +1,17 @@
 import { afterEach, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  assertReleaseSignature,
   cleanupOldBinary,
   pickChecksum,
+  releasePublicKeyOverride,
   selfReplace,
   verifyChecksum,
+  verifyReleaseSignature,
 } from "@/services/update/self-replace";
 
 const made: string[] = [];
@@ -24,6 +27,15 @@ test("pickChecksum finds the matching line in SHA256SUMS", () => {
   const sums = "aaaa  kunai-linux-x64\nbbbb  kunai-darwin-arm64\n";
   expect(pickChecksum(sums, "kunai-darwin-arm64")).toBe("bbbb");
   expect(pickChecksum(sums, "kunai-missing")).toBeNull();
+});
+
+test("an empty release-key override keeps the embedded public key", () => {
+  const previous = process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY;
+  process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY = "  fixture-key\n";
+  expect(releasePublicKeyOverride()).toBe("fixture-key");
+  delete process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY;
+  expect(releasePublicKeyOverride()).toBeUndefined();
+  if (previous !== undefined) process.env.KUNAI_RELEASE_ED25519_PUBLIC_KEY = previous;
 });
 
 test("verifyChecksum rejects a mismatch and empty input", () => {
@@ -83,6 +95,22 @@ test("win32 path renames the running binary aside to .old", async () => {
   expect(await Bun.file(bin).text()).toBe(next);
   expect(existsSync(`${bin}.old`)).toBe(true);
   expect(await Bun.file(`${bin}.old`).text()).toBe("OLD");
+});
+
+test("a checksum match without a valid signature is a failure", () => {
+  const message = new TextEncoder().encode("abc  kunai\n");
+  expect(() => assertReleaseSignature(message, undefined)).toThrow(
+    "checksum match without a valid signature is a failure",
+  );
+  const keys = generateKeyPairSync("ed25519");
+  const pem = keys.publicKey.export({ type: "spki", format: "pem" }) as string;
+  const signature = sign(null, message, keys.privateKey);
+  expect(verifyReleaseSignature(message, signature, pem)).toBe(true);
+  const other = generateKeyPairSync("ed25519");
+  const forged = sign(null, message, other.privateKey);
+  expect(() => assertReleaseSignature(message, forged, pem)).toThrow(
+    "checksum match without a valid signature is a failure",
+  );
 });
 
 test("cleanupOldBinary removes stale .old files", async () => {

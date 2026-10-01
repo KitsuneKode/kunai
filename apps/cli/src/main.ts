@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 
 import { applyShareRefLaunch } from "@/app/bootstrap/apply-resolved-share-target";
 import {
+  directIdRejectionMessage,
   formatBootstrapPlan,
   resolveAutoPickIndex,
   resolveBootstrapIntent,
@@ -44,6 +45,7 @@ import {
 import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
 import { mapAnimeTitleToProviderNative } from "@/app/bootstrap/resolve-share-target";
 import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
+import { isFatalRejection } from "@/app/session/fatal-rejection";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
 import {
@@ -989,10 +991,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         break;
       case "id-unknown-namespace":
         logger.warn("Ignoring direct ID with an unknown namespace", { id: entry.id });
-        process.stderr.write(
-          `kunai: -i/--id ${entry.id} uses an unknown namespace, so it was ignored.\n` +
-            `Supported: anilist:<id>, mal:<id>, tmdb:<id>, youtube:<id> — or a bare TMDB id.\n`,
-        );
+        process.stderr.write(directIdRejectionMessage(entry.id));
         break;
       case "id-lane-conflict":
         logger.warn("Direct ID namespace conflicts with the requested lane", {
@@ -1335,13 +1334,21 @@ function setupSignalHandlers(): void {
     });
   });
 
-  process.on("unhandledRejection", (e) => {
-    console.error("Unhandled rejection:", e);
-    void getShutdownCoordinator().request({
-      reason: "unhandled rejection",
-      exitCode: 1,
-      fatal: true,
-    });
+  process.on("unhandledRejection", (reason) => {
+    // Background work (settings persist, stats export, prefetch, presence,
+    // analytics flush) logs and continues. The playback session is awaited in
+    // startCli; a throw there still shuts down. A rejection marked fatal does
+    // too, so a playback promise that escapes the session loop can opt in.
+    if (isFatalRejection(reason)) {
+      console.error("Unhandled rejection:", reason);
+      void getShutdownCoordinator().request({
+        reason: "unhandled rejection",
+        exitCode: 1,
+        fatal: true,
+      });
+      return;
+    }
+    console.error("Unhandled rejection (background, continuing):", reason);
   });
 }
 

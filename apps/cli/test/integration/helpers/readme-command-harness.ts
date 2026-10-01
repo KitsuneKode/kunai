@@ -10,7 +10,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
@@ -121,8 +121,13 @@ export type FixtureReleaseTree = {
   readonly root: string;
   readonly assetName: string;
   readonly version: string;
+  readonly publicKeyPem: string;
   cleanup: () => void;
 };
+
+function spkiPem(key: KeyObject): string {
+  return key.export({ type: "spki", format: "pem" });
+}
 
 /** Build a mock GitHub Releases tree (same layout as prepare-fixture.sh). */
 export function prepareReadmeFixtureRelease(options: {
@@ -139,7 +144,11 @@ export function prepareReadmeFixtureRelease(options: {
   copyFileSync(options.binaryPath, join(dest, assetName));
   chmodSync(join(dest, assetName), 0o755);
   const hash = sha256File(join(dest, assetName));
-  writeFileSync(join(dest, "SHA256SUMS"), `${hash}  ${assetName}\n`);
+  const sums = `${hash}  ${assetName}\n`;
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  writeFileSync(join(dest, "SHA256SUMS"), sums);
+  writeFileSync(join(dest, "SHA256SUMS.sig"), sign(null, Buffer.from(sums), privateKey));
+  const publicKeyPem = spkiPem(publicKey);
   mkdirSync(join(root, "releases"), { recursive: true });
   writeFileSync(
     join(root, "releases", "latest.json"),
@@ -154,6 +163,7 @@ export function prepareReadmeFixtureRelease(options: {
     root,
     assetName,
     version,
+    publicKeyPem,
     cleanup: () => removeTempDir(root),
   };
 }
@@ -294,9 +304,8 @@ function profileEnv(
     ...profile.env,
     ...extras,
     KUNAI_BIN_DIR: profile.binDir,
-    // Keep installer overrides aligned with getKunaiPaths so install.sh and the
-    // CLI agree under the shadow HOME on darwin (Library) and linux (XDG).
-    KUNAI_CONFIG_DIR: profile.configDir,
+    // install.sh and install.ps1 resolve config the same way getKunaiPaths does
+    // (HOME / XDG / APPDATA). KUNAI_CONFIG_DIR is not that path.
     KUNAI_DATA_DIR: profile.dataDir,
     KUNAI_CACHE_DIR: profile.cacheDir,
     PATH: pathParts.join(":"),
@@ -496,6 +505,7 @@ export async function verifyReadmeCommands(
     const installEnv = profileEnv(profile, {
       KUNAI_DL_BASE: server.baseUrl,
       KUNAI_RELEASES_API: `${server.baseUrl}/releases/latest.json`,
+      KUNAI_RELEASE_ED25519_PUBLIC_KEY: fixture.publicKeyPem,
     });
 
     // Exact README install shape (curl|bash). Only documented rewrite: append
@@ -550,6 +560,7 @@ export async function verifyReadmeCommands(
     const withMpvEnv = profileEnv(profile, {
       KUNAI_DL_BASE: server.baseUrl,
       KUNAI_RELEASES_API: `${server.baseUrl}/releases/latest.json`,
+      KUNAI_RELEASE_ED25519_PUBLIC_KEY: fixture.publicKeyPem,
     });
     const mpvResult = await runShell(mpvCmd, withMpvEnv);
     const mpvOk = mpvResult.exitCode === 0 && /mpv/i.test(mpvResult.stdout);

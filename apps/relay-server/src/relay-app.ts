@@ -10,6 +10,7 @@ import { relayRegistry } from "./provider-registry";
 export interface RelayAppEnv {
   readonly authorization: RelayAuthorizationPolicy;
   readonly transport?: RelayTransport;
+  readonly corsOrigins?: readonly string[];
 }
 
 export async function handleRelayRequest(request: Request, env: RelayAppEnv): Promise<Response> {
@@ -19,7 +20,7 @@ export async function handleRelayRequest(request: Request, env: RelayAppEnv): Pr
     return Response.json({
       ok: true,
       service: "kunai-relay",
-      providers: relayRegistry.providers.length,
+      providers: relayRegistry.providers.map((provider) => provider.providerId),
     });
   }
 
@@ -30,6 +31,7 @@ export async function handleRelayRequest(request: Request, env: RelayAppEnv): Pr
       registry: relayRegistry,
       authorization: env.authorization,
       transport: env.transport,
+      corsOrigins: env.corsOrigins,
     });
   }
 

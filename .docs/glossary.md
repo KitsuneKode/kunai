@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: 2026-08-14
+lastReviewed: 2026-10-01
 ---
 
 # Kunai — Glossary
@@ -91,8 +91,9 @@ the stable catalog key for history, continue-watching, and cross-provider merge.
 
 Not the same as a provider's own title id. The `contentClass` option lets an
 anime work that arrived through the TMDB/series lane keep its AniList/MAL history
-unit; pure western series are never forced. Every offline lookup resolves through
-one title id.
+unit; pure western series are never forced. AniList history keys stay bare
+integers. A MAL-only key is `mal:<id>`, so the same number in the two catalogues
+cannot share a row. Every offline lookup resolves through one title id.
 
 ## Playback stats vs resolve trace vs analytics
 

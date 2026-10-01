@@ -98,8 +98,9 @@ For each run, the JSON payload should include:
 - redacted diagnostics export path when a failure needs reporting
 
 `bun run test:live:matrix` runs the focused provider smokes as one serial pass and emits a single
-JSON report. It covers every provider `loadProductionProviderModules()` registers, so a default
-lane cannot go dark without a red row. Pass a provider id (`videasy`, `rivestream`, `vidlink`,
+JSON report. It covers every provider `loadProductionProviderModules()` registers — a unit test
+asserts the roster, so a default lane cannot go dark without a red row. Pass a provider id
+(`videasy`, `rivestream`, `vidlink`, `movy`, `vidrock`, `hianime`, `kickassanime`, `animegg`,
 `anidb`, `allanime`, `miruro`, `youtube`) or media bucket (`movie`, `series`, `anime`, `youtube`)
 to narrow the matrix while debugging. Each smoke has
 a 45-second deadline so a provider outage returns a diagnostic report instead of hanging the pass.

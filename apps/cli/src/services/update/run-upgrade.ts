@@ -15,6 +15,7 @@ import { isMuslEnvironmentSync } from "./native-installer/musl";
 import { detectPlatform } from "./platform-assets";
 import { resolveLatestVersion } from "./resolve-latest-version";
 import { inspectPackageInstall, type PackageInstallEvidence } from "./run-install";
+import { releasePublicKeyOverride } from "./self-replace";
 import { planUpgrade } from "./upgrade-planner";
 import { normalizeRequestedVersion } from "./version";
 
@@ -145,7 +146,12 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
   // Binary channel: migrate flat installs, then use versioned native installer.
   if (channel === "binary" || plan.kind === "self-replace") {
     await migrateFlatInstall({ manifest, currentVersion: opts.currentVersion });
-    const result = await installLatest({ version: latest, dlBase, force: true });
+    const result = await installLatest({
+      version: latest,
+      dlBase,
+      force: true,
+      releasePublicKeyPem: releasePublicKeyOverride(),
+    });
     if (result.status === "installed") {
       console.log(`Updated to ${latest}.`);
       return 0;

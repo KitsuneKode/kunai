@@ -263,14 +263,18 @@ export async function routeOfflineLibraryGroupAction(
       ],
     });
     if (!confirmed) return "continue";
-    await Promise.all(
+    const deleted = await Promise.all(
       entries.map((entry) =>
         container.downloadService.deleteJob(entry.job.id, { deleteArtifact: true }),
       ),
     );
+    const kept = deleted.filter((result) => result.status === "retained").length;
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: `Deleted offline title: ${first.titleName}`,
+      note:
+        kept === 0
+          ? `Deleted offline title: ${first.titleName}`
+          : `Kept ${kept} ${kept === 1 ? "download" : "downloads"}. A file could not be removed.`,
     });
     return "exit";
   }

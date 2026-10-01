@@ -1,8 +1,25 @@
 import type { PlayerStatsSample } from "./mpv-stats";
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
+function isUserPause(sample: PlayerStatsSample): boolean {
+  return Boolean(sample.paused && !sample.pausedForCache && !sample.seeking);
+}
+
+/** No file is loaded. Cache underrun is not this: the core can sit idle while the demuxer starves. */
+function isUnloadedIdle(sample: PlayerStatsSample): boolean {
+  return Boolean(
+    sample.idleActive && !sample.pausedForCache && sample.demuxerCacheUnderrun !== true,
+  );
+}
+
+function holdsProgressClock(sample: PlayerStatsSample): boolean {
+  return isUserPause(sample) || isUnloadedIdle(sample);
+}
+
 export interface PlaybackWatchdog {
   observe(sample: PlayerStatsSample): void;
+  /** A newly loaded file starts the stall clocks over. The previous file's idle does not count. */
+  resetForNewFile(observedAt: number): void;
   stop(): void;
 }
 
@@ -52,7 +69,7 @@ export function createPlaybackWatchdog(
     if (!latest) return;
 
     const now = Date.now();
-    const userPausedOrIdle = Boolean(latest.paused || latest.idleActive || latest.coreIdle);
+    const userPausedOrIdle = holdsProgressClock(latest);
 
     if (userPausedOrIdle) {
       pausedOrIdle = true;
@@ -100,7 +117,7 @@ export function createPlaybackWatchdog(
       if (networkReadDead) {
         networkReadDeadSince ??= now;
         const deadForMs = now - networkReadDeadSince;
-        if (deadForMs >= networkReadDeadAfterMs && !emittedNetworkReadDead) {
+        if (deadForMs >= networkReadDeadAfterMs && !emittedNetworkReadDead && !emittedStreamStall) {
           emittedNetworkReadDead = true;
           emittedStreamStall = true;
           emit({
@@ -198,7 +215,7 @@ export function createPlaybackWatchdog(
         emittedSlowNetwork = false;
       }
 
-      const userPausedOrIdle = Boolean(sample.paused || sample.idleActive || sample.coreIdle);
+      const userPausedOrIdle = holdsProgressClock(sample);
       if (userPausedOrIdle) {
         pausedOrIdle = true;
         resetProgressClock(sample.observedAt, sample.positionSeconds);
@@ -227,6 +244,18 @@ export function createPlaybackWatchdog(
           cacheSpeed: sample.cacheSpeedBytesPerSecond,
         });
       }
+    },
+    resetForNewFile(observedAt) {
+      latest = null;
+      resetProgressClock(observedAt, 0);
+      lastCacheAheadSeconds = 0;
+      seekingSince = null;
+      emittedSeekStall = false;
+      pausedOrIdle = false;
+      networkReadDeadSince = null;
+      emittedNetworkReadDead = false;
+      bufferingSince = null;
+      emittedSlowNetwork = false;
     },
     stop() {
       clearInterval(timer);

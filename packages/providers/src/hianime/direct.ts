@@ -28,6 +28,7 @@ import {
   formatAnimeSourceLabel,
 } from "../shared/anime-source-presentation";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { dropRefusedStreams, selectVerifiedStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
@@ -588,11 +589,51 @@ export const hianimeProviderModule: CoreProviderModule = {
       // quality-sorted for the Tracks picker.
       streams.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
       variants.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
+
+      // Resolve gate: probe the selected stream with its own headers before
+      // reporting success, walking the rank-ordered remainder on refusal. An
+      // unprobeable ladder ends exhausted — never a shipped "resolved".
+      const gated = await selectVerifiedStream({
+        streams: [
+          selection.selected,
+          ...streams.filter((stream) => stream.id !== selection.selected.id),
+        ].slice(0, 3),
+        context,
+        signal: context.signal,
+      });
+      if (context.signal?.aborted) {
+        return createExhaustedResult(
+          input,
+          context,
+          HIANIME_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "HiAnime resolve-gate probe was cancelled",
+            retryable: false,
+          },
+          { cachePolicy, events, failures, startedAt },
+        );
+      }
+      if (!gated.accepted) {
+        return createExhaustedResult(
+          input,
+          context,
+          HIANIME_PROVIDER_ID,
+          {
+            code: "not-found",
+            message: `HiAnime selected stream is unreachable (${gated.reason})`,
+            retryable: true,
+          },
+          { cachePolicy, events, failures, startedAt },
+        );
+      }
+      const shippedStreams = dropRefusedStreams(streams, gated.refusedFingerprints);
+
       const sources = finalizeCycleSourceInventory({
         sources: buildHianimeSourceInventory(resolution.availableModes, audioMode, cachePolicy),
         attempts: [],
-        streams,
-        selectedStreamId: selection.selected.id,
+        streams: shippedStreams,
+        selectedStreamId: gated.stream.id,
       });
       const endedAt = context.now();
 
@@ -612,11 +653,13 @@ export const hianimeProviderModule: CoreProviderModule = {
       return {
         status: "resolved",
         providerId: HIANIME_PROVIDER_ID,
-        selectedStreamId: selection.selected.id,
+        selectedStreamId: gated.stream.id,
         selectionDecision: selection.decision,
         sources,
-        streams,
-        variants,
+        streams: shippedStreams,
+        variants: variants.filter((variant) =>
+          (variant.streamIds ?? []).some((id) => shippedStreams.some((s) => s.id === id)),
+        ),
         subtitles,
         externalIds: {
           anilistId: input.title.externalIds?.anilistId ?? input.title.anilistId,
@@ -628,7 +671,7 @@ export const hianimeProviderModule: CoreProviderModule = {
           title: input.title,
           episode: input.episode,
           providerId: HIANIME_PROVIDER_ID,
-          streamId: selection.selected.id,
+          streamId: gated.stream.id,
           cacheHit: false,
           runtime: "direct-http",
           startedAt,

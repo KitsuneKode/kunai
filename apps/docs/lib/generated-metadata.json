@@ -1,10 +1,10 @@
 {
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceFingerprint": "48edf6e3f51c283b713dc69d37366517415102b8911d6136f51932b8db757a04",
-  "docsContentFingerprint": "27c7a908e2425ab7a7f6747f5e7db6a797417aae1f10c209c09c026412bd439a",
+  "cliSourceFingerprint": "87f3b4b261ed0f382acf82c4356276ed9f7e75082bf7d9063d7c15b01486858b",
+  "docsContentFingerprint": "9135da03f3ab50990dbf79e2c3746164a19d64cb96a7b81dd15e72ca96ff2167",
   "featureStatusRevision": "5a88d5e2542655bbbfab1e4d050f51632669ac5d46e2b22ef14596f3684a8257",
-  "commandCount": 82,
+  "commandCount": 83,
   "providerIds": [
     "videasy",
     "vidlink",
@@ -599,6 +599,12 @@
       "label": "Mute Releases",
       "aliases": ["mute", "mute-title", "mute-releases", "hide-releases"],
       "description": "Stop release notices for the current title"
+    },
+    {
+      "id": "unmute",
+      "label": "Unmute Releases",
+      "aliases": ["unmute", "unmute-title", "unmute-releases"],
+      "description": "Resume release notices for the current title"
     },
     {
       "id": "mark-watched",

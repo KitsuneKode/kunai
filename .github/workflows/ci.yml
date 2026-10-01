@@ -260,10 +260,14 @@ jobs:
       # resolve path requires the binary even though every test injects its
       # metadata service, so the binary is present but never invoked. Without
       # it those tests used to report a vacuous pass (#468).
-      - name: Install yt-dlp (present-only; never invoked by tests)
+      - name: Install pinned yt-dlp
         run: |
-          sudo curl -sSfL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod +x /usr/local/bin/yt-dlp
+          set -euo pipefail
+          version=2026.08.19
+          expected=1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6
+          curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/download/${version}/yt-dlp" -o /tmp/yt-dlp
+          echo "${expected}  /tmp/yt-dlp" | sha256sum -c -
+          sudo install -m 0755 /tmp/yt-dlp /usr/local/bin/yt-dlp
           yt-dlp --version
 
       - name: Test (affected on PR, full when nothing is affected)
@@ -557,9 +561,18 @@ jobs:
           bash test/install/make-fake-release.sh 9.9.9 "$rel" "$unsigned"
 
           home="$(mktemp -d)"
-          env -i HOME="$home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" SHELL=/bin/zsh \
+          # The login-shell PATH stays minimal so ~/.local/bin has to be added
+          # by the installer. Node stays available because macOS LibreSSL cannot
+          # verify the fixture signature, and the fixture key is not the
+          # embedded release key.
+          verify_path="/usr/bin:/bin:/usr/sbin:/sbin"
+          if command -v node >/dev/null 2>&1; then
+            verify_path="$verify_path:$(dirname "$(command -v node)")"
+          fi
+          env -i HOME="$home" PATH="$verify_path" SHELL=/bin/zsh \
             KUNAI_DL_BASE="file://$rel/releases" \
             KUNAI_RELEASES_API="file://$rel/releases/latest" \
+            KUNAI_RELEASE_ED25519_PUBLIC_KEY="$(cat "$rel/ed25519-public.pem")" \
             bash install.sh --yes --skip-deps --version 9.9.9
 
           # A fresh login shell, with nothing inherited: the only question a user
@@ -679,6 +692,7 @@ jobs:
         run: |
           bun run verify:doc-paths
           bun run verify:doc-frontmatter
+          bun run verify:active-conflicts
           # Freshness is checked BEFORE generate, deliberately. The script reads
           # the committed generated-metadata.json from disk and compares it to
           # freshly built metadata, so running generate first made it compare a

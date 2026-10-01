@@ -121,7 +121,7 @@ export function didPlaybackEndNearNaturalEnd(
     result.watchedSeconds ??
     0;
   const dur = result.lastNonZeroDurationSeconds ?? result.duration ?? 0;
-  if (dur > 30 && pos / dur >= 0.95) return true;
+  if (dur > 30 && pos >= getCompletionThresholdSeconds(dur, null, "percent-only")) return true;
 
   return false;
 }

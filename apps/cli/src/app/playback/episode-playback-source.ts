@@ -22,6 +22,22 @@ export function mapContinuePreferenceToSourcePreference(
   return "prefer-local";
 }
 
+function pinnedSourceMatchesEpisode(
+  job: {
+    readonly season?: number;
+    readonly episode?: number;
+    readonly providerEpisodeIdentity?: EpisodeInfo["providerEpisodeIdentity"];
+  },
+  episode: EpisodeInfo,
+): boolean {
+  if ((job.season ?? 1) !== episode.season) return false;
+  if ((job.episode ?? 1) !== episode.episode) return false;
+  const pinned = job.providerEpisodeIdentity;
+  const requested = episode.providerEpisodeIdentity;
+  if (!pinned || !requested) return true;
+  return pinned.providerId === requested.providerId && pinned.value === requested.value;
+}
+
 export async function resolveLocalEpisodePlayback(
   container: Container,
   title: TitleInfo,
@@ -33,6 +49,28 @@ export async function resolveLocalEpisodePlayback(
   } = {},
 ): Promise<LocalEpisodePlaybackResolution | null> {
   if (options.forceOnline) return null;
+
+  if (title.offlineJobId) {
+    const pinned = await container.offlineLibraryService.getPlayableSource(title.offlineJobId);
+    // The pin is one file. A deleted selection must not fall through to a sibling.
+    if (!pinned.job) return null;
+    // Asking for a different episode must not play this file.
+    // The same episode, when that file is gone, must not fall through to another.
+    if (pinnedSourceMatchesEpisode(pinned.job, episode)) {
+      if (pinned.status !== "ready") return null;
+      if (options.forceLocal) return buildLocalEpisodeResolution(pinned);
+      const decision = createSourceSelectionEngine().decide({
+        entrypoint: options.entrypoint ?? "offline-library",
+        local: { status: "ready", jobId: title.offlineJobId },
+        networkAvailable: container.connectivity.isOnline(),
+        preference: mapContinuePreferenceToSourcePreference(
+          container.config.continueSourcePreference,
+        ),
+      });
+      if (decision.source !== "local") return null;
+      return buildLocalEpisodeResolution(pinned);
+    }
+  }
 
   const mode = container.stateManager.getState().mode;
   const mediaKind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;

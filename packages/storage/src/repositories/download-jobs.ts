@@ -1,4 +1,5 @@
 import { SQLiteError } from "bun:sqlite";
+import { randomUUID } from "node:crypto";
 import { win32 } from "node:path";
 
 import type {
@@ -82,6 +83,21 @@ export interface DownloadJobRecord {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly completedAt?: string;
+  /** Present only while this process holds the running lease. */
+  readonly ownerToken?: string;
+  readonly claimGeneration?: number;
+  /** Directory this claim may write. A later claim gets a different directory. */
+  readonly stagingDir?: string;
+  /** Set before artifact removal so a crash can retry the delete. */
+  readonly cleanupPending?: boolean;
+}
+
+/** The lease a worker must present to change a job it claimed. */
+export interface DownloadClaimRef {
+  readonly jobId: string;
+  readonly ownerToken: string;
+  readonly generation: number;
+  readonly stagingDir: string;
 }
 
 interface DownloadJobRow {
@@ -131,6 +147,10 @@ interface DownloadJobRow {
   readonly updated_at: string;
   readonly completed_at: string | null;
   readonly last_validated_at: string | null;
+  readonly owner_token: string | null;
+  readonly claim_generation: number;
+  readonly staging_dir: string | null;
+  readonly cleanup_pending: number;
 }
 
 export class DownloadJobAdmissionConflictError extends Error {
@@ -170,6 +190,23 @@ export class DownloadJobsRepository {
       ) AS conflict`,
         )
         .get(outputPath, jobId, outputPath, jobId)?.conflict === 1
+    );
+  }
+
+  /** Another finished job still points at this subtitle or thumbnail. */
+  sharesReadySidecar(jobId: string, path: string): boolean {
+    if (!path) return false;
+    return (
+      this.db
+        .query<{ conflict: number }, [string, string, string]>(
+          `SELECT EXISTS (
+            SELECT 1 FROM download_jobs
+            WHERE id <> ?
+              AND status IN ('completed', 'completed-with-notes', 'repairable')
+              AND (subtitle_path = ? OR thumbnail_path = ?)
+          ) AS conflict`,
+        )
+        .get(jobId, path, path)?.conflict === 1
     );
   }
   constructor(
@@ -325,62 +362,130 @@ export class DownloadJobsRepository {
       .run(input.streamUrl, JSON.stringify(input.headers), input.providerId ?? null, updatedAt, id);
   }
 
-  /** Compare-and-set a queued job into running ownership. */
-  markRunning(id: string, updatedAt: string): boolean {
-    const result = this.db
-      .query(
-        `
-          UPDATE download_jobs
-          SET status = 'running',
-              attempt = attempt + 1,
-              started_at = COALESCE(started_at, ?),
-              last_heartbeat_at = ?,
-              next_retry_at = NULL,
-              updated_at = ?
-          WHERE id = ? AND status = 'queued'
-        `,
-      )
-      .run(updatedAt, updatedAt, updatedAt, id);
-    return result.changes > 0;
+  /** Compare-and-set a queued job into a new running lease. */
+  markRunning(id: string, updatedAt: string): DownloadClaimRef | undefined {
+    const claim = this.db.transaction((): DownloadClaimRef | undefined => {
+      const row = this.db
+        .query<ClaimSeedRow, [string]>(
+          "SELECT claim_generation, temp_path, status FROM download_jobs WHERE id = ?",
+        )
+        .get(id);
+      if (row === null || row.status !== "queued") return undefined;
+      const generation = row.claim_generation + 1;
+      const ownerToken = randomUUID();
+      const stagingDir = `${row.temp_path}.claim-${generation}`;
+      const result = this.db
+        .query(
+          `
+            UPDATE download_jobs
+            SET status = 'running',
+                attempt = attempt + 1,
+                started_at = COALESCE(started_at, ?),
+                last_heartbeat_at = ?,
+                next_retry_at = NULL,
+                owner_token = ?,
+                claim_generation = ?,
+                staging_dir = ?,
+                updated_at = ?
+            WHERE id = ? AND status = 'queued' AND claim_generation = ?
+          `,
+        )
+        .run(
+          updatedAt,
+          updatedAt,
+          ownerToken,
+          generation,
+          stagingDir,
+          updatedAt,
+          id,
+          row.claim_generation,
+        );
+      if (result.changes === 0) return undefined;
+      return { jobId: id, ownerToken, generation, stagingDir };
+    });
+    return claim();
   }
 
-  /** Acquire an expired running lease using the heartbeat observed by the reader. */
+  /**
+   * Take an expired running lease. The previous owner's token stops matching,
+   * so a late completion from that owner cannot finish this job.
+   */
   claimRunningForRecovery(
     id: string,
     observedHeartbeatAt: string | undefined,
     updatedAt: string,
-  ): boolean {
-    const result = this.db
-      .query(
-        `
-          UPDATE download_jobs
-          SET last_heartbeat_at = ?, updated_at = ?
-          WHERE id = ?
-            AND status = 'running'
-            AND last_heartbeat_at IS ?
-        `,
-      )
-      .run(updatedAt, updatedAt, id, observedHeartbeatAt ?? null);
-    return result.changes > 0;
+  ): DownloadClaimRef | undefined {
+    const claim = this.db.transaction((): DownloadClaimRef | undefined => {
+      const row = this.db
+        .query<ClaimSeedRow, [string]>(
+          "SELECT claim_generation, temp_path, status, last_heartbeat_at FROM download_jobs WHERE id = ?",
+        )
+        .get(id);
+      if (row === null || row.status !== "running") return undefined;
+      if ((row.last_heartbeat_at ?? null) !== (observedHeartbeatAt ?? null)) return undefined;
+      const generation = row.claim_generation + 1;
+      const ownerToken = randomUUID();
+      const stagingDir = `${row.temp_path}.claim-${generation}`;
+      const result = this.db
+        .query(
+          `
+            UPDATE download_jobs
+            SET last_heartbeat_at = ?,
+                updated_at = ?,
+                owner_token = ?,
+                claim_generation = ?,
+                staging_dir = ?
+            WHERE id = ?
+              AND status = 'running'
+              AND last_heartbeat_at IS ?
+              AND claim_generation = ?
+          `,
+        )
+        .run(
+          updatedAt,
+          updatedAt,
+          ownerToken,
+          generation,
+          stagingDir,
+          id,
+          observedHeartbeatAt ?? null,
+          row.claim_generation,
+        );
+      if (result.changes === 0) return undefined;
+      return { jobId: id, ownerToken, generation, stagingDir };
+    });
+    return claim();
   }
 
-  markHeartbeat(id: string, updatedAt: string): void {
-    this.db
-      .query("UPDATE download_jobs SET last_heartbeat_at = ?, updated_at = ? WHERE id = ?")
-      .run(updatedAt, updatedAt, id);
+  markHeartbeat(id: string, updatedAt: string, claim?: DownloadClaimRef): void {
+    applyClaimedUpdate(
+      this.db,
+      "UPDATE download_jobs SET last_heartbeat_at = ?, updated_at = ? WHERE id = ?",
+      [updatedAt, updatedAt],
+      id,
+      claim,
+    );
   }
 
-  updateProgress(id: string, progressPercent: number, updatedAt: string): void {
-    this.db
-      .query(
-        "UPDATE download_jobs SET progress_percent = ?, last_heartbeat_at = ?, updated_at = ? WHERE id = ?",
-      )
-      .run(Math.max(0, Math.min(100, Math.trunc(progressPercent))), updatedAt, updatedAt, id);
+  updateProgress(
+    id: string,
+    progressPercent: number,
+    updatedAt: string,
+    claim?: DownloadClaimRef,
+  ): void {
+    applyClaimedUpdate(
+      this.db,
+      "UPDATE download_jobs SET progress_percent = ?, last_heartbeat_at = ?, updated_at = ? WHERE id = ?",
+      [Math.max(0, Math.min(100, Math.trunc(progressPercent))), updatedAt, updatedAt],
+      id,
+      claim,
+    );
   }
 
-  complete(id: string, updatedAt: string): void {
-    this.db
-      .query(
+  complete(id: string, updatedAt: string, claim?: DownloadClaimRef): boolean {
+    return (
+      applyClaimedUpdate(
+        this.db,
         `
           UPDATE download_jobs
           SET status = 'completed',
@@ -388,13 +493,17 @@ export class DownloadJobsRepository {
               next_retry_at = NULL,
               failure_kind = NULL,
               artifact_status = 'ready',
+              owner_token = NULL,
               updated_at = ?,
               completed_at = ?,
               last_validated_at = ?
           WHERE id = ?
         `,
-      )
-      .run(updatedAt, updatedAt, updatedAt, id);
+        [updatedAt, updatedAt, updatedAt],
+        id,
+        claim,
+      ) > 0
+    );
   }
 
   completeWithNotes(
@@ -405,9 +514,11 @@ export class DownloadJobsRepository {
       repairMetadataJson?: string | null;
     },
     updatedAt: string,
-  ): void {
-    this.db
-      .query(
+    claim?: DownloadClaimRef,
+  ): boolean {
+    return (
+      applyClaimedUpdate(
+        this.db,
         `
           UPDATE download_jobs
           SET status = 'completed-with-notes',
@@ -417,21 +528,24 @@ export class DownloadJobsRepository {
               error_message = ?,
               artifact_status = ?,
               repair_metadata_json = ?,
+              owner_token = NULL,
               updated_at = ?,
               completed_at = COALESCE(completed_at, ?),
               last_validated_at = ?
           WHERE id = ?
         `,
-      )
-      .run(
-        input.message,
-        input.artifactStatus,
-        input.repairMetadataJson ?? null,
-        updatedAt,
-        updatedAt,
-        updatedAt,
+        [
+          input.message,
+          input.artifactStatus,
+          input.repairMetadataJson ?? null,
+          updatedAt,
+          updatedAt,
+          updatedAt,
+        ],
         id,
-      );
+        claim,
+      ) > 0
+    );
   }
 
   markRepairable(
@@ -442,9 +556,11 @@ export class DownloadJobsRepository {
       repairMetadataJson: string;
     },
     updatedAt: string,
-  ): void {
-    this.db
-      .query(
+    claim?: DownloadClaimRef,
+  ): boolean {
+    return (
+      applyClaimedUpdate(
+        this.db,
         `
           UPDATE download_jobs
           SET status = 'repairable',
@@ -454,21 +570,24 @@ export class DownloadJobsRepository {
               error_message = ?,
               artifact_status = ?,
               repair_metadata_json = ?,
+              owner_token = NULL,
               updated_at = ?,
               completed_at = COALESCE(completed_at, ?),
               last_validated_at = ?
           WHERE id = ?
         `,
-      )
-      .run(
-        input.message,
-        input.artifactStatus,
-        input.repairMetadataJson,
-        updatedAt,
-        updatedAt,
-        updatedAt,
+        [
+          input.message,
+          input.artifactStatus,
+          input.repairMetadataJson,
+          updatedAt,
+          updatedAt,
+          updatedAt,
+        ],
         id,
-      );
+        claim,
+      ) > 0
+    );
   }
 
   markArtifactValidated(id: string, status: DownloadArtifactStatus, validatedAt: string): void {
@@ -491,9 +610,11 @@ export class DownloadJobsRepository {
     incrementRetry: boolean,
     updatedAt: string,
     failureKind: string = "unknown",
-  ): void {
-    this.db
-      .query(
+    claim?: DownloadClaimRef,
+  ): boolean {
+    return (
+      applyClaimedUpdate(
+        this.db,
         `
           UPDATE download_jobs
           SET status = 'failed',
@@ -502,16 +623,27 @@ export class DownloadJobsRepository {
               next_retry_at = NULL,
               artifact_status = CASE WHEN ? = 'artifact-invalid' THEN 'invalid-file' ELSE artifact_status END,
               retry_count = retry_count + ?,
+              owner_token = NULL,
               updated_at = ?
           WHERE id = ?
         `,
-      )
-      .run(message, failureKind, failureKind, incrementRetry ? 1 : 0, updatedAt, id);
+        [message, failureKind, failureKind, incrementRetry ? 1 : 0, updatedAt],
+        id,
+        claim,
+      ) > 0
+    );
   }
 
-  scheduleRetry(id: string, message: string, retryAt: string, updatedAt: string): void {
-    this.db
-      .query(
+  scheduleRetry(
+    id: string,
+    message: string,
+    retryAt: string,
+    updatedAt: string,
+    claim?: DownloadClaimRef,
+  ): boolean {
+    return (
+      applyClaimedUpdate(
+        this.db,
         `
           UPDATE download_jobs
           SET status = 'queued',
@@ -519,27 +651,63 @@ export class DownloadJobsRepository {
               failure_kind = 'transient',
               retry_count = retry_count + 1,
               next_retry_at = ?,
+              owner_token = NULL,
               updated_at = ?
           WHERE id = ?
         `,
-      )
-      .run(message, retryAt, updatedAt, id);
+        [message, retryAt, updatedAt],
+        id,
+        claim,
+      ) > 0
+    );
   }
 
-  pause(id: string, message: string, retryAt: string, updatedAt: string): void {
-    this.db
+  /**
+   * A start-time deferral. The row is still queued because the worker has not
+   * taken the running lease, so `pause` — which only moves a running job —
+   * would leave `next_retry_at` empty and the same pass would pick it again.
+   */
+  deferQueued(id: string, message: string, retryAt: string, updatedAt: string): boolean {
+    const result = this.db
       .query(
+        `
+          UPDATE download_jobs
+          SET error_message = ?,
+              failure_kind = 'interrupted',
+              next_retry_at = ?,
+              updated_at = ?
+          WHERE id = ? AND status = 'queued'
+        `,
+      )
+      .run(message, retryAt, updatedAt, id);
+    return result.changes > 0;
+  }
+
+  pause(
+    id: string,
+    message: string,
+    retryAt: string,
+    updatedAt: string,
+    claim?: DownloadClaimRef,
+  ): boolean {
+    return (
+      applyClaimedUpdate(
+        this.db,
         `
           UPDATE download_jobs
           SET status = 'queued',
               error_message = ?,
               failure_kind = 'interrupted',
               next_retry_at = ?,
+              owner_token = NULL,
               updated_at = ?
-          WHERE id = ?
+          WHERE id = ? AND status = 'running'
         `,
-      )
-      .run(message, retryAt, updatedAt, id);
+        [message, retryAt, updatedAt],
+        id,
+        claim,
+      ) > 0
+    );
   }
 
   requeue(id: string, updatedAt: string): void {
@@ -570,24 +738,44 @@ export class DownloadJobsRepository {
     }
   }
 
-  abort(id: string, updatedAt: string): void {
-    this.db
-      .query(
+  abort(id: string, updatedAt: string, claim?: DownloadClaimRef): boolean {
+    return (
+      applyClaimedUpdate(
+        this.db,
         `
           UPDATE download_jobs
           SET status = 'aborted',
               error_message = NULL,
               failure_kind = 'aborted',
               next_retry_at = NULL,
+              owner_token = NULL,
               updated_at = ?
           WHERE id = ?
         `,
-      )
-      .run(updatedAt, id);
+        [updatedAt],
+        id,
+        claim,
+      ) > 0
+    );
   }
 
   delete(id: string): void {
     this.db.query("DELETE FROM download_jobs WHERE id = ?").run(id);
+  }
+
+  markCleanupPending(id: string, updatedAt: string): void {
+    this.db
+      .query("UPDATE download_jobs SET cleanup_pending = 1, updated_at = ? WHERE id = ?")
+      .run(updatedAt, id);
+  }
+
+  listCleanupPending(limit = 20): readonly DownloadJobRecord[] {
+    return this.db
+      .query<DownloadJobRow, [number]>(
+        "SELECT * FROM download_jobs WHERE cleanup_pending = 1 ORDER BY updated_at ASC LIMIT ?",
+      )
+      .all(limit)
+      .map(mapRow);
   }
 
   get(id: string): DownloadJobRecord | undefined {
@@ -633,6 +821,36 @@ export class DownloadJobsRepository {
         "SELECT * FROM download_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT ?",
       )
       .all(limit)
+      .map(mapRow);
+  }
+
+  /**
+   * Due work only, ordered before the page limit. A page of deferred pauses
+   * must not hide a job whose retry time has already passed.
+   */
+  listDueQueued(
+    nowIso: string,
+    limit: number,
+    after?: { readonly createdAt: string; readonly id: string },
+  ): readonly DownloadJobRecord[] {
+    const due = `status = 'queued' AND (next_retry_at IS NULL OR next_retry_at <= ?)`;
+    if (!after) {
+      return this.db
+        .query<DownloadJobRow, [string, number]>(
+          `SELECT * FROM download_jobs WHERE ${due} ORDER BY created_at ASC, id ASC LIMIT ?`,
+        )
+        .all(nowIso, limit)
+        .map(mapRow);
+    }
+    return this.db
+      .query<DownloadJobRow, [string, string, string, string, number]>(
+        `SELECT * FROM download_jobs
+         WHERE ${due}
+           AND (created_at > ? OR (created_at = ? AND id > ?))
+         ORDER BY created_at ASC, id ASC
+         LIMIT ?`,
+      )
+      .all(nowIso, after.createdAt, after.createdAt, after.id, limit)
       .map(mapRow);
   }
 
@@ -786,7 +1004,33 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at ?? undefined,
+    ownerToken: row.owner_token ?? undefined,
+    claimGeneration: row.claim_generation,
+    stagingDir: row.staging_dir ?? undefined,
+    cleanupPending: row.cleanup_pending === 1,
   };
+}
+
+interface ClaimSeedRow {
+  readonly claim_generation: number;
+  readonly temp_path: string;
+  readonly status: string;
+  readonly last_heartbeat_at: string | null;
+}
+
+function applyClaimedUpdate(
+  db: KunaiDatabase,
+  sql: string,
+  values: readonly (string | number | null)[],
+  id: string,
+  claim: DownloadClaimRef | undefined,
+): number {
+  if (claim) {
+    return db
+      .query(`${sql} AND owner_token = ? AND claim_generation = ?`)
+      .run(...values, id, claim.ownerToken, claim.generation).changes;
+  }
+  return db.query(sql).run(...values, id).changes;
 }
 
 function parseExternalIds(value: string | null): ProviderExternalIds | undefined {

@@ -23,6 +23,13 @@ export class ConfigStoreImpl implements ConfigStore {
     await this.storage.write(STORAGE_KEY, config);
   }
 
+  async merge(patch: Partial<KitsuneConfig>): Promise<void> {
+    await this.storage.mutate<Record<string, unknown>>(STORAGE_KEY, (current) => ({
+      ...(current && typeof current === "object" ? current : {}),
+      ...patch,
+    }));
+  }
+
   async reset(): Promise<void> {
     await this.storage.write(STORAGE_KEY, DEFAULT_CONFIG);
   }

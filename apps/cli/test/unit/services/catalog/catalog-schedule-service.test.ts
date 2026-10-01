@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 
 import {
   buildLocalDayWindow,
+  anilistMediaIdFromTitleId,
   CatalogScheduleService,
   CatalogScheduleRequestError,
   classifyReleaseStatus,
@@ -11,6 +12,11 @@ import {
 const NOW = Date.parse("2026-05-08T12:00:00.000Z");
 
 describe("CatalogScheduleService", () => {
+  test("a MAL history key is not queried as an AniList media id", () => {
+    expect(anilistMediaIdFromTitleId("mal:16498")).toBeNull();
+    expect(anilistMediaIdFromTitleId("16498")).toBe(16498);
+  });
+
   test("normalizes date and timestamp release status deterministically", () => {
     expect(classifyReleaseStatus("2026-05-07", "date", NOW)).toBe("released"); // strictly past
     // date-only precision: an episode dated *today* stays upcoming until the day ends

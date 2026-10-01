@@ -5,6 +5,7 @@ import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import type { DownloadJobRecord } from "@kunai/storage";
 
 export type OfflinePlaybackLaunch = {
+  readonly jobId: string;
   readonly title: TitleInfo;
   readonly episode?: EpisodeInfo;
 };
@@ -25,19 +26,26 @@ export function titleInfoFromDownloadJob(job: DownloadJobRecord): TitleInfo {
       job.contentType ??
       (job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series"),
     name: job.titleName,
-    posterUrl: job.posterUrl,
+    ...(job.posterUrl ? { posterUrl: job.posterUrl } : {}),
     isAnime: job.mediaKind === "anime" || job.mode === "anime",
     launchSource: "offline-library",
+    offlineJobId: job.id,
   };
 }
 
 export function episodeInfoFromDownloadJob(job: DownloadJobRecord): EpisodeInfo | undefined {
   if (job.contentType === "movie" || job.mediaKind === "movie") return undefined;
   if (job.season === undefined && job.episode === undefined) return undefined;
-  return {
-    season: job.season ?? 1,
-    episode: job.episode ?? 1,
-  };
+  const season = job.season ?? 1;
+  const episode = job.episode ?? 1;
+  if (job.providerEpisodeIdentity) {
+    return {
+      season,
+      episode,
+      providerEpisodeIdentity: job.providerEpisodeIdentity,
+    };
+  }
+  return { season, episode };
 }
 
 function applyDownloadJobSessionRouting(container: Container, job: DownloadJobRecord): void {
@@ -57,6 +65,7 @@ function applyDownloadJobSessionRouting(container: Container, job: DownloadJobRe
 
 export function buildOfflinePlaybackLaunch(job: DownloadJobRecord): OfflinePlaybackLaunch {
   return {
+    jobId: job.id,
     title: titleInfoFromDownloadJob(job),
     episode: episodeInfoFromDownloadJob(job),
   };

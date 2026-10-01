@@ -1,4 +1,5 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import { libraryFilterAcceptsText } from "@/app-shell/filter-capture";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import {
@@ -41,6 +42,7 @@ import {
   isFinished,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
+import { manualArtworkFetchAllowed } from "@/services/offline/manual-artwork";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
@@ -175,6 +177,7 @@ function LibraryTab({
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
+  const [filterFocused, setFilterFocused] = useState(false);
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const titlesActive = libraryView === "titles";
 
@@ -262,6 +265,11 @@ function LibraryTab({
           setConfirmDeleteKey(null);
           return;
         }
+        if (filterQuery.length > 0 || filterFocused) {
+          setFilterQuery("");
+          setFilterFocused(false);
+          return;
+        }
         onClose();
         return;
       }
@@ -275,6 +283,10 @@ function LibraryTab({
         return;
       }
       if (input === "\u001b") return;
+      if (input === "/" && !filterFocused && filterQuery.length === 0) {
+        setFilterFocused(true);
+        return;
+      }
       if (
         input.length === 1 &&
         !key.ctrl &&
@@ -284,11 +296,9 @@ function LibraryTab({
         !key.upArrow &&
         !key.downArrow &&
         !key.tab &&
-        input !== "x" &&
-        input !== "X" &&
-        input !== "p" &&
-        input !== "P"
+        libraryFilterAcceptsText(input, filterQuery, filterFocused)
       ) {
+        setFilterFocused(true);
         setFilterQuery((query) => query + input);
         return;
       }
@@ -303,24 +313,41 @@ function LibraryTab({
         setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
         return;
       }
-      if (input === "x" || key.delete) {
+      if (
+        (input === "x" || input === "X" || key.delete) &&
+        filterQuery.length === 0 &&
+        !filterFocused
+      ) {
         if (!selectedOfflineGroup) return;
         if (confirmDeleteKey === selectedOfflineGroup.key) {
           setConfirmDeleteKey(null);
           const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
-          const groupEntryIdSet = offlineGroupJobIdSet(selectedOfflineGroup);
-          for (const jobId of groupEntryIds) {
-            container.downloadService.deleteJob(jobId, { deleteArtifact: true });
-          }
-          setEntries((prev) =>
-            prev ? prev.filter((entry) => !groupEntryIdSet.has(entry.job.id)) : null,
-          );
+          void (async () => {
+            const results = await Promise.all(
+              groupEntryIds.map((jobId) =>
+                container.downloadService.deleteJob(jobId, { deleteArtifact: true }),
+              ),
+            );
+            const removed = new Set(
+              results.filter((result) => result.status === "deleted").map((result) => result.jobId),
+            );
+            const kept = results.length - removed.size;
+            setEntries((prev) =>
+              prev ? prev.filter((entry) => !removed.has(entry.job.id)) : null,
+            );
+            if (kept > 0) {
+              container.stateManager.dispatch({
+                type: "SET_PLAYBACK_FEEDBACK",
+                note: `Kept ${kept} ${kept === 1 ? "download" : "downloads"}. A file could not be removed.`,
+              });
+            }
+          })();
         } else {
           setConfirmDeleteKey(selectedOfflineGroup.key);
         }
         return;
       }
-      if (input === "p" || input === "P") {
+      if ((input === "p" || input === "P") && filterQuery.length === 0 && !filterFocused) {
         if (!selectedOfflineGroup) return;
         const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
         const protectedSet = new Set(container.config.protectedDownloadJobIds);
@@ -368,7 +395,8 @@ function LibraryTab({
       !loading &&
       !loadError &&
       Boolean(entries) &&
-      (viewport.columns ?? 80) >= 124,
+      (viewport.columns ?? 80) >= 124 &&
+      manualArtworkFetchAllowed(container.config),
   });
 
   if (loading) {
@@ -492,7 +520,7 @@ function LibraryTab({
       {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}Press x again to delete {selectedOfflineGroup.titleName} and all local files
+            {"⚠ "}Delete {selectedOfflineGroup.titleName} and all local files? x deletes · Esc keeps
           </Text>
         </Box>
       ) : null}

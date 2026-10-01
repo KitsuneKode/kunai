@@ -31,15 +31,22 @@ export function combineAbortSignals(signals: readonly AbortSignal[]): AbortSigna
 /** Manual combine used when `AbortSignal.any` is unavailable. Exported for tests. */
 export function combineAbortSignalsManually(signals: readonly AbortSignal[]): AbortSignal {
   const controller = new AbortController();
-  const abort = (source: AbortSignal) => {
+  const listeners: Array<{ signal: AbortSignal; listener: () => void }> = [];
+  const finish = (source: AbortSignal) => {
     if (!controller.signal.aborted) controller.abort(source.reason);
+    for (const entry of listeners) {
+      entry.signal.removeEventListener("abort", entry.listener);
+    }
+    listeners.length = 0;
   };
   for (const signal of signals) {
     if (signal.aborted) {
-      abort(signal);
+      finish(signal);
       break;
     }
-    signal.addEventListener("abort", () => abort(signal), { once: true });
+    const listener = () => finish(signal);
+    listeners.push({ signal, listener });
+    signal.addEventListener("abort", listener, { once: true });
   }
   return controller.signal;
 }

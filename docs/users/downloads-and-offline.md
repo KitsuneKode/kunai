@@ -92,7 +92,8 @@ stolen. Completed files in `/library` are unaffected.
 - Re-download uses the saved download intent when available.
 - Opening the offline library uses local SQLite/filesystem facts and must not trigger provider calls.
 - Artifact validation records local size and duration when available, which makes offline rows easier to inspect.
-- Delete actions ask for confirmation before removing a whole offline title.
+- Delete actions ask for confirmation before removing a whole offline title. If a file cannot be
+  removed, Kunai keeps that download and says so instead of claiming it was deleted.
 - Network handoff stays explicit: if the local shelf is exhausted, Kunai points you toward online search instead of silently switching modes.
 
 ## Persistent offline mode

@@ -16,7 +16,8 @@ test("relay app health route reports configured providers", async () => {
 
   expect(response.status).toBe(200);
   expect(body).toMatchObject({ ok: true, service: "kunai-relay" });
-  expect(body.providers).toBeGreaterThan(0);
+  expect(body.providers).toContain("allanime");
+  expect(body.providers).not.toContain("youtube");
 });
 
 test("relay app forwards allowlisted provider RPC requests", async () => {

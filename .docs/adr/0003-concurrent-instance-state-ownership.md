@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-19"
+lastReviewed: "2026-10-01"
 ---
 
 # 0003 — Concurrent-instance state ownership
@@ -34,14 +34,14 @@ re-litigated from scratch.
 **A second instance is supported, but degraded** — and the degraded paths are
 the ones listed here, not a general "it should be fine". Per-state ownership:
 
-| Shared state                               | Ownership                                                            | On contention                                                                                                                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kunai-data.sqlite` / `kunai-cache.sqlite` | **Safely shared**                                                    | WAL: readers never block writers; writers serialize. Corruption quarantine is keyed on corruption errors, not contention.                                              |
-| Version lock (`version-lock.ts`)           | **Must not be shared**                                               | Single-holder by construction. A second instance that fails to acquire runs _unprotected_ — degraded — and now logs that it did (`main.ts` startup).                   |
-| mpv IPC sockets                            | **Per-process**                                                      | Crypto-random session ids in private dirs; two instances' players cannot collide.                                                                                      |
-| Download queue                             | **Safely shared** (durable) — but `claimedJobIds` is **per-process** | Two instances can claim the same durable job; the in-memory claim set is not shared state. The asymmetry is tracked as #116 — this ADR names it, it does not close it. |
-| Sync outbox                                | **Safely shared**                                                    | Rows are transactional inside the SQLite writer contract.                                                                                                              |
-| `config.json`                              | **Safely shared, last-writer-wins**                                  | Atomic writes; concurrent writers race but cannot corrupt the file.                                                                                                    |
+| Shared state                               | Ownership                            | On contention                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kunai-data.sqlite` / `kunai-cache.sqlite` | **Safely shared**                    | WAL: readers never block writers; writers serialize. Corruption quarantine is keyed on corruption errors, not contention.                                                                                                                                                                                                                                                                             |
+| Version lock (`version-lock.ts`)           | **Must not be shared**               | Single-holder by construction. A second instance that fails to acquire runs _unprotected_ — degraded — and now logs that it did (`main.ts` startup).                                                                                                                                                                                                                                                  |
+| mpv IPC sockets                            | **Per-process**                      | Crypto-random session ids in private dirs; two instances' players cannot collide.                                                                                                                                                                                                                                                                                                                     |
+| Download queue                             | **Safely shared**, one running lease | `markRunning` and stale-lease recovery each mint an owner token and generation. A later pause, failure, completion, or heartbeat must present that lease. A second instance can still see the queue; it cannot finish a lease it does not hold. User abort stays an explicit intent and does not need the worker token. Sync outbox expiry after an ambiguous remote write is still a separate limit. |
+| Sync outbox                                | **Safely shared**                    | Rows are transactional inside the SQLite writer contract.                                                                                                                                                                                                                                                                                                                                             |
+| `config.json`                              | **Safely shared, last-writer-wins**  | Atomic writes; concurrent writers race but cannot corrupt the file.                                                                                                                                                                                                                                                                                                                                   |
 
 The version lock is deliberately single-holder: the lock guards the installed
 binary's lifetime (cleanup, activation), not the user session. A second
@@ -54,8 +54,9 @@ _visible_ (logged at startup) rather than silent.
   cite the row, not a fresh investigation.
 - New shared state gets classified at authoring time: per-process, safely
   shared, or must-not-be-shared, with the contention behavior written down.
-- The `claimedJobIds` asymmetry (#116) remains open — a durable queue with a
-  per-process claim set is the known gap, not a resolved one.
+- The in-memory `claimedJobIds` set still only coordinates workers inside one
+  process. Durable ownership is the owner token: a second process loses
+  `markRunning`, and a recovered lease invalidates the previous token.
 
 See [.docs/architecture.md](../architecture.md) for the persistence flow this
 state lives under.

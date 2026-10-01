@@ -25,20 +25,15 @@ function relayContext(status: number, body: string): ProviderRuntimeContext {
   } as unknown as ProviderRuntimeContext;
 }
 
-test("a 404 from a stale relay is not treated as a missing catalogue", async () => {
-  // No curl fallback is reachable in the unit environment, so the call fails
-  // rather than resolving — the point is that it does NOT report `missing`,
-  // which is what poisoned the cache and blanked the lane.
-  const context = relayContext(
-    404,
-    JSON.stringify({ error: { code: "unknown-provider", providerId: "anidb" } }),
-  );
+test("a relayed upstream 404 is still a missing catalogue", async () => {
+  // The fetch port turns a relay-generated refusal into a direct retry or a
+  // typed error before this provider sees it. A 404 that arrives here, even
+  // marked as relayed, is the upstream's own verdict.
+  const context = relayContext(404, "not found");
 
-  const catalog = await fetchAnidbEpisodeCatalog("onigiri-3942", undefined, context).catch(
-    () => "threw" as const,
-  );
+  const catalog = await fetchAnidbEpisodeCatalog("onigiri-3942", undefined, context);
 
-  expect(catalog).not.toEqual({ episodes: [], missing: true });
+  expect(catalog).toEqual({ episodes: [], missing: true });
 });
 
 test("a 404 straight from anidb.app is still a missing catalogue", async () => {

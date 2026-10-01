@@ -206,4 +206,25 @@ describe("PersistentSubtitleManager", () => {
       failedTrack: "primary",
     });
   });
+
+  test("an episode change does not clear subtitles after the new list has arrived", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+    const arrived = "https://subs.example/new.vtt";
+    manager.updateTrackList([{ id: 2, type: "sub", external: true }]);
+    manager.beginEpisodeSubtitleChange();
+    await manager.removeExternalSubtitles(ipc);
+    manager.noteEpisodeFileLoaded();
+    manager.updateTrackList([{ id: 9, type: "sub", external: true, "external-filename": arrived }]);
+
+    await manager.replaceSubtitleInventory(ipc, arrived, undefined, undefined);
+
+    const removed = commands
+      .filter((command) => command[0] === "sub-remove")
+      .map((command) => command[1]);
+    expect(removed).toEqual([2]);
+    expect(commands.some((command) => command[0] === "sub-add" && command[1] === arrived)).toBe(
+      false,
+    );
+  });
 });

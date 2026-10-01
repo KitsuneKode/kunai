@@ -15,7 +15,10 @@ import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-cata
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
 import { confirmPlaybackStart } from "@/app/playback/confirmed-playback-start";
-import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
+import {
+  resolveLocalEpisodePlayback,
+  type LocalEpisodePlaybackResolution,
+} from "@/app/playback/episode-playback-source";
 import {
   adoptEpisodePrefetchBundle,
   EpisodePrefetchHandle,
@@ -96,6 +99,7 @@ import {
   type PlaybackSessionPhaseEvent,
   type PlaybackSessionState,
 } from "@/app/playback/playback-session-controller";
+import { resolvePlaybackSourceAuthority } from "@/app/playback/playback-source-authority";
 import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
 import {
   listOrderedPlaybackSourceIds,
@@ -1101,20 +1105,87 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (run.sessionSoftProviderId && run.sessionSoftProviderId !== configuredProviderId) {
             run.sessionSoftProviderId = null;
           }
-          const currentProvider = providerRegistry.get(
+          const registeredProvider = providerRegistry.get(
             run.sessionSoftProviderId ?? configuredProviderId,
           );
-
-          if (!currentProvider) {
-            return {
-              status: "error",
-              error: {
-                code: "PROVIDER_UNAVAILABLE",
-                message: `Provider ${stateManager.getState().provider} not found`,
-                retryable: false,
-              },
-            };
+          const refreshPending =
+            run.pendingSourceRefreshAction !== null || run.pendingRecomputeSources;
+          const localEntrypoint: "online-search" | "continue" | "offline-library" = isOfflineLaunch
+            ? "offline-library"
+            : title.launchSource === "continue"
+              ? "continue"
+              : "online-search";
+          const localOptions = {
+            entrypoint: localEntrypoint,
+            forceOnline: run.episodePlaybackSourceOverride === "online",
+            forceLocal:
+              !registeredProvider ||
+              isOfflineLaunch ||
+              run.episodePlaybackSourceOverride === "local",
+          };
+          let earlyLocal: LocalEpisodePlaybackResolution | null = null;
+          let resolvedEarly = false;
+          if (!refreshPending) {
+            resolvedEarly = true;
+            const authority = await resolvePlaybackSourceAuthority(
+              container,
+              title,
+              currentEpisode,
+              localOptions,
+            );
+            if (authority.kind === "local") earlyLocal = authority.resolution;
           }
+
+          if (!registeredProvider) {
+            if (!earlyLocal) {
+              return {
+                status: "error",
+                error: {
+                  code: "PROVIDER_UNAVAILABLE",
+                  message: `Provider ${stateManager.getState().provider} not found`,
+                  retryable: false,
+                },
+              };
+            }
+            run.episodePlaybackSourceOverride = null;
+            run.localEpisodeTiming = earlyLocal.timing;
+            run.localPlaybackJobId = earlyLocal.jobId;
+            run.localPlaybackSource = earlyLocal.source;
+            const start = run.pendingStart;
+            const played = await this.playStream(
+              earlyLocal.stream,
+              title,
+              currentEpisode,
+              context,
+              start.startAt,
+              start.resumePromptAt,
+              run.playbackSession.mode,
+              earlyLocal.timing,
+              undefined,
+              start.suppressResumePrompt,
+              undefined,
+              undefined,
+              earlyLocal.source.providerId,
+              playbackIterationAbort.signal,
+              undefined,
+              earlyLocal.source,
+            );
+            if (this.playbackLedger) {
+              const completed = played.duration > 0 && played.watchedSeconds >= played.duration;
+              this.playbackLedger.finalize({
+                positionSeconds: played.watchedSeconds,
+                durationSeconds: played.duration,
+                completed,
+                posterUrl: title.posterUrl,
+              });
+              this.playbackLedger = null;
+              this.unregisterActiveCheckpoint?.();
+              this.unregisterActiveCheckpoint = null;
+            }
+            return { status: "success", value: "back_to_results" };
+          }
+
+          const currentProvider = registeredProvider;
 
           const deadStreamScope = playbackDeadStreamScopeKey({
             titleId: title.id,
@@ -1455,7 +1526,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           run.pendingSourceRefreshAction = null;
           const recomputeSources = run.pendingRecomputeSources;
           run.pendingRecomputeSources = false;
-          await selectionCoordinator.hydrate(currentProvider.metadata.id, currentEpisode);
+          if (!earlyLocal) {
+            await selectionCoordinator.hydrate(currentProvider.metadata.id, currentEpisode);
+          }
           const profileContext = {
             mode: stateManager.getState().mode,
             title,
@@ -1536,11 +1609,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               subtitlePreference: playbackSubtitlePreference(profileContext),
             };
           };
-          const consumedBundle = sourceRefreshDecision
-            ? null
-            : episodePrefetch.takeReadyFor(
-                buildPrefetchTarget(currentEpisode, currentProvider.metadata.id),
-              );
+          const consumedBundle =
+            earlyLocal || sourceRefreshDecision
+              ? null
+              : episodePrefetch.takeReadyFor(
+                  buildPrefetchTarget(currentEpisode, currentProvider.metadata.id),
+                );
           const prefetchWasPrepared = consumedBundle?.prepared === true;
 
           let stream: StreamInfo | null = consumedBundle?.stream ?? null;
@@ -1636,20 +1710,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (!stream && !sourceRefreshDecision) {
-            const localResolution = await resolveLocalEpisodePlayback(
-              container,
-              title,
-              currentEpisode,
-              {
-                entrypoint: isOfflineLaunch
-                  ? "offline-library"
-                  : title.launchSource === "continue"
-                    ? "continue"
-                    : "online-search",
-                forceOnline: run.episodePlaybackSourceOverride === "online",
-                forceLocal: isOfflineLaunch || run.episodePlaybackSourceOverride === "local",
-              },
-            );
+            const localResolution = resolvedEarly
+              ? earlyLocal
+              : await resolveLocalEpisodePlayback(container, title, currentEpisode, localOptions);
             run.episodePlaybackSourceOverride = null;
             if (localResolution) {
               stream = localResolution.stream;

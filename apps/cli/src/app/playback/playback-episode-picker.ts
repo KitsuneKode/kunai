@@ -358,9 +358,25 @@ function mergeEpisodeDetail(
   return parts.length > 0 ? parts.join("  ·  ") : undefined;
 }
 
+export function episodePickerHighlightIndex(
+  continueIndex: number | null | undefined,
+  optionCount: number,
+): number {
+  if (optionCount <= 0) return 0;
+  if (
+    continueIndex === undefined ||
+    continueIndex === null ||
+    !Number.isFinite(continueIndex) ||
+    continueIndex < 0
+  ) {
+    return 0;
+  }
+  return Math.min(Math.floor(continueIndex), optionCount - 1);
+}
+
 function getInitialIndex(options: readonly ShellPickerOption<string>[], value: string): number {
-  return Math.max(
-    0,
+  return episodePickerHighlightIndex(
     options.findIndex((option) => option.value === value),
+    options.length,
   );
 }

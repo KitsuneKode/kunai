@@ -27,7 +27,7 @@
     "lint": "oxlint .",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "test": "bun test test",
+    "test": "bun test --preload ./test/restore-runtime-stubs.ts test",
     "test:file": "bun test"
   },
   "dependencies": {

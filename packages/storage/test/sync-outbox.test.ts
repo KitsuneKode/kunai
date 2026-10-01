@@ -157,18 +157,16 @@ test("enqueue starts at generation 1 and supersedes the payload in place", () =>
   expect(replacement.id).toBe(first.id);
   expect(replacement.generation).toBe(2);
   expect(replacement.payload).toEqual(progressB.payload);
-  expect(replacement.state).toBe("pending");
-  expect(replacement.attempts).toBe(0);
-  expect(replacement.claimToken).toBeUndefined();
-  expect(replacement.claimedAt).toBeUndefined();
-  expect(replacement.nextAttemptAt).toBe(at(60_000).toISOString());
+  expect(replacement.state).toBe("claimed");
+  expect(replacement.claimToken).toBe(claimed!.claimToken);
   expect(replacement.createdAt).toBe(T0.toISOString());
   expect(replacement.updatedAt).toBe(at(60_000).toISOString());
 
   const other = repo.enqueue(tmdbRating, at(60_000));
   expect(other.id).not.toBe(first.id);
   expect(other.generation).toBe(1);
-  expect(repo.counts().pending).toBe(2);
+  expect(repo.counts().pending).toBe(1);
+  expect(repo.counts().claimed).toBe(1);
 });
 
 test("progress coalescing keeps the maximum episode in both arrival orders", () => {
@@ -295,6 +293,7 @@ test("a stale completion is superseded and never deletes newer intent", () => {
 
   const replacement = repo.enqueue(progressB, at(60_000));
   expect(replacement.generation).toBe(first.generation + 1);
+  expect(repo.claimDue(1, at(60_000))).toHaveLength(0);
 
   expect(repo.complete(claimed)).toBe("superseded");
   expect(repo.claimDue(1, at(60_000))).toMatchObject([

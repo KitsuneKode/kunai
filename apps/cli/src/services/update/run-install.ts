@@ -10,6 +10,7 @@ import {
 } from "./install-manifest";
 import { checkInstall, getInstallDiagnostics, installLatest } from "./native-installer";
 import { DEFAULT_DL_BASE } from "./native-installer/install-layout";
+import { releasePublicKeyOverride } from "./self-replace";
 import { normalizeRequestedVersion, type CanonicalVersion } from "./version";
 
 const PKG = "@kitsunekode/kunai";
@@ -179,6 +180,7 @@ export async function runInstall(
     const result = await installLatest({
       version: version === "latest" ? undefined : version,
       force,
+      releasePublicKeyPem: releasePublicKeyOverride(),
     });
     if (result.status === "failed") {
       console.error(result.error);

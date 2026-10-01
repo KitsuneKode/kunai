@@ -289,3 +289,14 @@ function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInf
   logs.push({ kind: "id-without-type", id: args.id, type: args.type });
   return null;
 }
+
+/** User-facing sentence for an `-i` namespace Kunai does not resolve. */
+export function directIdRejectionMessage(id: string): string {
+  if (id.trim().toLowerCase().startsWith("imdb:")) {
+    return `kunai: -i/--id ${id} is not resolved yet. IMDb ids are not looked up.\n`;
+  }
+  return (
+    `kunai: -i/--id ${id} uses an unknown namespace, so it was ignored.\n` +
+    `Supported: anilist:<id>, mal:<id>, tmdb:<id>, youtube:<id> — or a bare TMDB id.\n`
+  );
+}

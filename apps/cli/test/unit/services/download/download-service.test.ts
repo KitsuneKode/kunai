@@ -1836,7 +1836,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "valid-media-bytes");
     writeFileSync(job.tempPath, "orphaned-temp-bytes");
 
@@ -1868,7 +1868,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "");
     writeFileSync(job.tempPath, "orphaned-temp-bytes");
 
@@ -1902,7 +1902,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "valid-media-that-must-survive");
     const updateFileSizeSpy = spyOn(repo, "updateFileSize").mockImplementation(() => {
       throw new Error("simulated SQLite write failure");
@@ -1934,7 +1934,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "published-media-that-must-survive");
 
     const probe = createHangingProbe("SIGKILL");
@@ -1977,7 +1977,7 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
-    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "published-media-that-must-survive-shutdown");
 
     let expireProbe!: () => void;
@@ -2236,6 +2236,16 @@ describe("DownloadService", () => {
       providerId: "vidking",
       mode: "series",
     });
+    // Due order is created_at, then id. Two enqueues in the same millisecond
+    // tie, and the id tie-break is not insertion order.
+    db.query("UPDATE download_jobs SET created_at = ? WHERE id = ?").run(
+      "2020-01-01T00:00:00.000Z",
+      firstJob.id,
+    );
+    db.query("UPDATE download_jobs SET created_at = ? WHERE id = ?").run(
+      "2020-01-01T00:00:01.000Z",
+      secondJob.id,
+    );
     const originalMarkRunning = repo.markRunning.bind(repo);
     const claimedJobIds: string[] = [];
     const markRunningSpy = spyOn(repo, "markRunning").mockImplementation((jobId, updatedAt) => {
@@ -2243,8 +2253,8 @@ describe("DownloadService", () => {
       if (claimedJobIds.length === 1) {
         // Simulate another Kunai process winning this row between selection and
         // our compare-and-set. The durable update makes the recursive pass pick B.
-        expect(originalMarkRunning(jobId, updatedAt)).toBe(true);
-        return false;
+        expect(originalMarkRunning(jobId, updatedAt)?.jobId).toBe(jobId);
+        return undefined;
       }
       throw new Error("simulated SQLite claim failure for job B");
     });
@@ -2451,7 +2461,7 @@ describe("DownloadService", () => {
       mode: "series",
     });
     const activeAt = new Date().toISOString();
-    expect(repo.markRunning(job.id, activeAt)).toBe(true);
+    expect(repo.markRunning(job.id, activeAt)?.jobId).toBe(job.id);
     writeFileSync(job.outputPath, "partially-published-by-owner");
     writeFileSync(job.tempPath, "active-temp-bytes");
 
@@ -2491,8 +2501,8 @@ describe("DownloadService", () => {
       mode: "series",
       outputDirectory: tempDir,
     });
-    expect(repo.markRunning(stale.id, "2026-04-29T00:01:00.000Z")).toBe(true);
-    expect(repo.markRunning(fresh.id, new Date().toISOString())).toBe(true);
+    expect(repo.markRunning(stale.id, "2026-04-29T00:01:00.000Z")?.jobId).toBe(stale.id);
+    expect(repo.markRunning(fresh.id, new Date().toISOString())?.jobId).toBe(fresh.id);
     writeFileSync(stale.outputPath, "valid-stale-output");
     writeFileSync(stale.tempPath, "stale-temp");
     writeFileSync(fresh.tempPath, "fresh-temp");
@@ -2581,6 +2591,147 @@ describe("DownloadService", () => {
     const reloaded = repo.get(job.id);
     expect(reloaded?.status).toBe("queued");
     expect(reloaded?.nextRetryAt).toBeDefined();
+  });
+
+  test("fifty deferred pauses do not hide a download that is due now", async () => {
+    spawnSpy.mockImplementation(() => {
+      throw new Error("spawn blocked");
+    });
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const deferred: string[] = [];
+    for (let index = 0; index < 50; index += 1) {
+      const job = await service.enqueue({
+        title: { id: `tmdb:${index}`, type: "movie", name: `Later ${index}` },
+        stream: { url: "https://cdn.example/later.mp4", headers: {}, timestamp: 0 },
+        providerId: "vidking",
+      });
+      repo.scheduleRetry(job.id, "paused", "2099-01-01T00:00:00.000Z", new Date().toISOString());
+      deferred.push(job.id);
+    }
+    const due = await service.enqueue({
+      title: { id: "tmdb:due", type: "movie", name: "Due now" },
+      stream: { url: "https://cdn.example/due.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+
+    const started = await service.processNextQueued();
+
+    expect(started?.id).toBe(due.id);
+    for (const id of deferred) {
+      expect(repo.get(id)?.nextRetryAt).toBe("2099-01-01T00:00:00.000Z");
+    }
+  });
+
+  test("a failed subtitle delete keeps the download row", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:sidecar", type: "movie", name: "Sidecar" },
+      stream: { url: "https://cdn.example/sidecar.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const subtitlePath = join(tempDir, "sidecar.vtt");
+    writeFileSync(subtitlePath, "WEBVTT\n");
+    const updatedAt = new Date().toISOString();
+    repo.complete(job.id, updatedAt);
+    repo.updateOfflineMetadata(job.id, { subtitlePath }, updatedAt);
+    const events: string[] = [];
+    service.onEvent((event) => {
+      events.push(event.type);
+    });
+    const rmSpy = spyOn(fsPromises, "rm").mockImplementation(async (path) => {
+      if (String(path) === subtitlePath) throw new Error("eacces");
+    });
+    let result: Awaited<ReturnType<typeof service.deleteJob>> | undefined;
+    try {
+      result = await service.deleteJob(job.id, { deleteArtifact: true });
+    } finally {
+      rmSpy.mockRestore();
+    }
+
+    expect(result).toEqual({
+      status: "retained",
+      jobId: job.id,
+      reason: "artifact-removal-failed",
+      remainingPaths: [subtitlePath],
+    });
+    expect(repo.get(job.id)?.status).toBe("completed");
+    expect(repo.get(job.id)?.artifactStatus).toBe("missing");
+    expect(events).not.toContain("deleted");
+    expect(events).toContain("failed");
+  });
+
+  test("a failed media delete keeps the download and does not mark the file missing", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:media-lock", type: "movie", name: "Locked" },
+      stream: { url: "https://cdn.example/locked.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    writeFileSync(job.outputPath, "still here");
+    repo.complete(job.id, new Date().toISOString());
+    const events: string[] = [];
+    service.onEvent((event) => {
+      events.push(event.type);
+    });
+    const rmSpy = spyOn(fsPromises, "rm").mockImplementation(async (path) => {
+      if (String(path) === job.outputPath) throw new Error("eacces");
+    });
+    let result: Awaited<ReturnType<typeof service.deleteJob>> | undefined;
+    try {
+      result = await service.deleteJob(job.id, { deleteArtifact: true });
+    } finally {
+      rmSpy.mockRestore();
+    }
+
+    expect(result).toEqual({
+      status: "retained",
+      jobId: job.id,
+      reason: "artifact-removal-failed",
+      remainingPaths: [job.outputPath],
+    });
+    expect(repo.get(job.id)?.status).toBe("completed");
+    expect(repo.get(job.id)?.artifactStatus).not.toBe("missing");
+    expect(events).not.toContain("deleted");
+    expect(events).toContain("failed");
+  });
+
+  test("delete leaves a download another worker is running", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:other-worker", type: "movie", name: "Other" },
+      stream: { url: "https://cdn.example/other.mp4", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const claim = repo.markRunning(job.id, new Date().toISOString());
+    expect(claim?.ownerToken).toBeTruthy();
+    const result = await service.deleteJob(job.id, { deleteArtifact: true });
+    expect(result).toEqual({
+      status: "retained",
+      jobId: job.id,
+      reason: "owned-by-other-worker",
+      remainingPaths: [],
+    });
+    expect(repo.get(job.id)?.status).toBe("running");
   });
 });
 

@@ -8,6 +8,34 @@
 
 import { cleanEpisodeSynopsis, isPlaceholderEpisodeName } from "@/services/catalog/episode-display";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
+
+export type SeasonLoadFailure = "not-found" | "parse" | "fixture" | "offline";
+
+export function classifySeasonLoadError(error: unknown): SeasonLoadFailure {
+  if (process.env.KUNAI_COMPILED_SMOKE === "1") return "fixture";
+  const status =
+    error && typeof error === "object" && "status" in error && typeof error.status === "number"
+      ? error.status
+      : undefined;
+  if (status === 404) return "not-found";
+  const message = error instanceof Error ? error.message : String(error);
+  if (/\b404\b/.test(message)) return "not-found";
+  if (error instanceof SyntaxError || /JSON|parse/i.test(message)) return "parse";
+  return "offline";
+}
+
+export function seasonLoadFailureMessage(failure: SeasonLoadFailure): string {
+  switch (failure) {
+    case "not-found":
+      return "Season data was not found (404).";
+    case "parse":
+      return "Season data could not be parsed.";
+    case "fixture":
+      return "Season data is unavailable in fixture mode.";
+    case "offline":
+      return "Could not load season data for this title. Check your connection.";
+  }
+}
 import {
   filterPlayableEpisodes,
   isDefinitelyFutureAirDate,
@@ -190,7 +218,10 @@ function stripSeasonCandidate(summary: SeasonSummaryCandidate): SeasonSummary {
 
 // Returns season metadata for a series (excludes specials and unreleased-only seasons).
 // Returns null if both the proxy and direct TMDB API are unreachable.
-export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummary[] | null> {
+export async function fetchSeasonSummaries(
+  tmdbId: string,
+  options?: { readonly rethrow?: boolean },
+): Promise<SeasonSummary[] | null> {
   const key = tmdbId;
   const cachedSeasons = seasonCache.get(key);
   if (cachedSeasons) return cachedSeasons;
@@ -214,7 +245,8 @@ export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummar
     const summaries = await resolvePlayableSeasonSummaries(tmdbId, candidates);
     seasonCache.set(key, summaries);
     return summaries;
-  } catch {
+  } catch (error) {
+    if (options?.rethrow) throw error;
     return null;
   }
 }
@@ -247,8 +279,17 @@ export async function fetchEpisodesUnfiltered(
 export async function fetchSeriesData(
   tmdbId: string,
   preferredSeason?: number,
-): Promise<{ seasons: number[] | null; episodes: EpisodeInfo[] | null }> {
-  const summaries = await fetchSeasonSummaries(tmdbId);
+): Promise<{
+  seasons: number[] | null;
+  episodes: EpisodeInfo[] | null;
+  failure?: SeasonLoadFailure;
+}> {
+  let summaries: SeasonSummary[] | null;
+  try {
+    summaries = await fetchSeasonSummaries(tmdbId, { rethrow: true });
+  } catch (error) {
+    return { seasons: null, episodes: null, failure: classifySeasonLoadError(error) };
+  }
   if (!summaries || summaries.length === 0) return { seasons: null, episodes: null };
 
   const seasons = summaries.map((season) => season.number);

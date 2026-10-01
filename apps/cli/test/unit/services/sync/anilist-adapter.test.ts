@@ -1,8 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import * as externalUrl from "@/infra/shell/open-external-url";
-import type { SyncTokenStore } from "@/services/persistence/SyncTokenStore";
+import { SyncTokenStore } from "@/services/persistence/SyncTokenStore";
 import { AniListAdapter } from "@/services/sync/AniListAdapter";
 import type { TrackerOperation } from "@/services/sync/operations";
 
@@ -140,6 +143,85 @@ test("AniList Connect sends a non-empty attempt state to the browser", async () 
     controller.abort();
     await pending;
     open.mockRestore();
+  }
+});
+
+test("a failed credential save keeps the AniList account that is on disk", async () => {
+  const port = await reserveLoopbackPort();
+  const root = mkdtempSync(join(tmpdir(), "kunai-anilist-persist-"));
+  const tokenStore = new SyncTokenStore(
+    {
+      configDir: root,
+      dataDir: root,
+      cacheDir: root,
+      tempDir: root,
+      configPath: join(root, "config.json"),
+      mpvBridgePath: join(root, "kunai-bridge.lua"),
+      dataDbPath: join(root, "data.sqlite"),
+      cacheDbPath: join(root, "cache.sqlite"),
+      logPath: join(root, "logs.txt"),
+    },
+    {
+      readTokens: async () => ({ anilist: { accessToken: "old-token", userId: 7 } }),
+      writeTokens: async () => {
+        throw new Error("disk full");
+      },
+    },
+  );
+  const authorizations: string[] = [];
+  const opened: string[] = [];
+  const open = spyOn(externalUrl, "openExternalUrl").mockImplementation(async (url) => {
+    opened.push(url);
+    return { ok: false, reason: "disabled", target: { kind: "url", url } };
+  });
+  const controller = new AbortController();
+  const adapter = new AniListAdapter(
+    tokenStore,
+    async (_input, init) => {
+      const authorization = new Headers(init?.headers).get("authorization");
+      if (authorization) authorizations.push(authorization);
+      return new Response(JSON.stringify({ data: { Viewer: { id: 99, name: "new-name" } } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+    {
+      availability: {
+        available: true,
+        redirectUri: `http://127.0.0.1:${port}/callback`,
+        clientIdSource: "environment",
+      },
+      clientId: "48500",
+    },
+  );
+  await adapter.init();
+  const pending = adapter.connect({ signal: controller.signal });
+  try {
+    await waitUntil(() => opened.length > 0, { label: "authorize URL opened" });
+    const authorize = opened[0];
+    if (!authorize) throw new Error("authorize URL missing");
+    const state = new URL(authorize).searchParams.get("state");
+    const page = await fetch(`http://127.0.0.1:${port}/callback`);
+    const collect = (await page.text()).match(/\/callback\/collect\/[0-9a-f-]+/);
+    if (!collect?.[0]) throw new Error("callback collector was not advertised");
+    const posted = await fetch(`http://127.0.0.1:${port}${collect[0]}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: `http://127.0.0.1:${port}`,
+      },
+      body: `access_token=new-token&state=${state ?? ""}&expires_in=3600`,
+    });
+    expect(posted.ok).toBe(true);
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    authorizations.length = 0;
+    await adapter.refreshIdentity();
+    expect(authorizations.at(-1)).toBe("Bearer old-token");
+  } finally {
+    controller.abort();
+    open.mockRestore();
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

@@ -4,6 +4,8 @@ Status: Planned
 
 Last updated: 2026-04-29
 
+**Parked — do not implement, cite as current work, or extend unless the user explicitly names this surface in the task.** Web, desktop, paid sync, watch rooms, and growth-moat work in this file are not scheduled. Active work is the CLI, then the mobile host proof.
+
 Use this document when converting Kunai from an exciting architecture into an investable, durable, premium product plan.
 
 This is the hard-question companion to:

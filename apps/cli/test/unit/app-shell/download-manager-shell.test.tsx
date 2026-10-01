@@ -57,7 +57,7 @@ function createContainerFixture() {
         failed: 0,
       }),
       abort: async () => undefined,
-      deleteJob: async () => undefined,
+      deleteJob: async (jobId: string) => ({ status: "deleted", jobId }),
       retry: async () => undefined,
       kickQueue: () => undefined,
     },

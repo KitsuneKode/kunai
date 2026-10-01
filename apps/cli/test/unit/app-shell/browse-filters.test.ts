@@ -35,6 +35,7 @@ const OPTIONS: readonly BrowseShellOption<string>[] = [
     label: "Solo Leveling",
     detail: "Series · downloaded · release today",
     previewMeta: ["Series", "2024", "downloaded", "release today"],
+    providerId: "allanime",
     previewFacts: [
       { label: "Offline", detail: "downloaded", tone: "success" },
       { label: "Local progress", detail: "continue S01E04 · 12:00", tone: "warning" },
@@ -236,5 +237,27 @@ describe("browse filters", () => {
     // Breaking Bad (2008) and Better Call Saul (2015) fall inside 2007..2016;
     // Frieren (2023) and Solo Leveling (2024) are outside.
     expect(filtered.map((o) => o.value)).toEqual(["breaking-bad", "better-call-saul"]);
+    expect(
+      describeBrowseResultFilters(parseBrowseFilterQuery("year:2007..2016").filters),
+    ).toContain("year 2007..2016");
+    expect(parseBrowseFilterQuery("year:1990..2000").filters.year).toBe("1990..2000");
+  });
+
+  test("provider: matches a provider id and does not match a title substring", () => {
+    const david: BrowseShellOption<string> = {
+      value: "david",
+      label: "David",
+      providerId: "tmdb",
+    };
+    const filtered = applyBrowseResultFilters(
+      [...OPTIONS, david],
+      parseBrowseFilterQuery("provider:vid").filters,
+    );
+    expect(filtered.map((option) => option.value)).toEqual([]);
+    expect(
+      applyBrowseResultFilters(OPTIONS, parseBrowseFilterQuery("provider:allanime").filters).map(
+        (option) => option.value,
+      ),
+    ).toEqual(["solo-leveling"]);
   });
 });

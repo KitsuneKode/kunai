@@ -8,6 +8,7 @@ import {
 import {
   classifyProviderFailure,
   isOfflineNetworkFailure,
+  transportFailureIsRetryable,
 } from "../src/provider-failure-classifier";
 
 const HTTP_503_FAILURE = {
@@ -92,6 +93,13 @@ test("HTTP 503 remains provider-local network failure", () => {
     failureClass: "network",
     fallbackPolicy: "auto-fallback",
   });
+});
+
+test("an ENOTFOUND errno is offline before the message is read, and an unknown error is not retryable", () => {
+  expect(isOfflineNetworkFailure({ code: "ENOTFOUND", message: "lookup failed" })).toBe(true);
+  expect(transportFailureIsRetryable({ code: "ENOTFOUND", message: "lookup failed" })).toBe(false);
+  expect(transportFailureIsRetryable(new Error("something unexpected"))).toBe(false);
+  expect(transportFailureIsRetryable({ code: "ECONNRESET", message: "reset" })).toBe(true);
 });
 
 test("ENOTFOUND classifies as offline with no-fallback", () => {

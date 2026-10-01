@@ -17,6 +17,10 @@ export KUNAI_DATA_DIR="$HOME/.local/share/kunai"
 export KUNAI_CACHE_DIR="$HOME/.cache/kunai"
 export KUNAI_DL_BASE="${KUNAI_DL_BASE:-http://127.0.0.1:9876}"
 export KUNAI_RELEASES_API="${KUNAI_RELEASES_API:-http://127.0.0.1:9876/releases/latest.json}"
+if [[ -f "$FIXTURE/ed25519-public.pem" ]]; then
+  KUNAI_RELEASE_ED25519_PUBLIC_KEY="$(cat "$FIXTURE/ed25519-public.pem")"
+  export KUNAI_RELEASE_ED25519_PUBLIC_KEY
+fi
 
 case "$VARIANT" in
   glibc) ASSET="${KUNAI_ASSET:-kunai-linux-x64}" ;;

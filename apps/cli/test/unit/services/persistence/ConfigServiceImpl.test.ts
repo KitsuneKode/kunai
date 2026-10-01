@@ -15,6 +15,10 @@ class MemoryConfigStore implements ConfigStore {
     this.loaded = config;
   }
 
+  async merge(patch: Partial<KitsuneConfig>): Promise<void> {
+    this.loaded = { ...this.loaded, ...patch };
+  }
+
   async reset(): Promise<void> {
     this.loaded = {};
   }
@@ -755,5 +759,75 @@ describe("session overrides", () => {
 
     expect(service.zenMode).toBe(false);
     expect((await store.load()).zenMode).toBe(false);
+  });
+
+  test("offline session override is visible and is not written when another key is saved", async () => {
+    const store = new MemoryConfigStore({ offlineMode: false, subLang: "en" });
+    const service = await ConfigServiceImpl.load(store);
+    service.applySessionOverrides({ offlineMode: true });
+    expect(service.offlineMode).toBe(true);
+
+    await service.update({ footerHints: "minimal" });
+    await service.save();
+
+    const persisted = await store.load();
+    expect(persisted.offlineMode).toBe(false);
+    expect(persisted.footerHints).toBe("minimal");
+    expect(service.offlineMode).toBe(true);
+  });
+
+  test("a second service cannot resurrect analytics enabled or an old install id", async () => {
+    const store = new MemoryConfigStore({
+      analytics: "enabled",
+      analyticsNoticeShown: true,
+      installId: "install-from-opt-in",
+    });
+    const first = await ConfigServiceImpl.load(store);
+    const second = await ConfigServiceImpl.load(store);
+
+    await second.update({ analytics: "disabled", installId: "" });
+    await second.save();
+    await first.save();
+
+    const persisted = await store.load();
+    expect(persisted.analytics).toBe("disabled");
+    expect(persisted.installId).toBe("");
+    expect(first.analytics).toBe("enabled");
+  });
+
+  test("a numeric provider recovers to the default and keeps an unknown key", async () => {
+    const store = new MemoryConfigStore({
+      provider: 12 as unknown as string,
+      youtubeProvider: 7 as unknown as string,
+      defaultDownloadQuality: 1080 as unknown as string,
+      providerPriority: ["vidlink", 3] as unknown as string[],
+      favoriteSources: [false] as unknown as string[],
+      customFlag: true,
+    } as Partial<KitsuneConfig>);
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.provider).toBe(DEFAULT_CONFIG.provider);
+    expect(service.youtubeProvider).toBe(DEFAULT_CONFIG.youtubeProvider);
+    expect(service.defaultDownloadQuality).toBe("best");
+    expect(service.providerPriority).toEqual(["vidlink"]);
+    expect(service.favoriteSources).toEqual([]);
+    expect(service.repairedConfigFields).toEqual(
+      expect.arrayContaining([
+        "provider",
+        "youtubeProvider",
+        "defaultDownloadQuality",
+        "providerPriority",
+        "favoriteSources",
+      ]),
+    );
+    expect(
+      ((await store.load()) as Partial<KitsuneConfig> & { customFlag?: boolean }).customFlag,
+    ).toBe(true);
+  });
+
+  test("a missing config loads defaults without throwing", async () => {
+    const service = await ConfigServiceImpl.load(new MemoryConfigStore());
+    expect(service.provider).toBe(DEFAULT_CONFIG.provider);
+    expect(service.repairedConfigFields).toEqual([]);
   });
 });

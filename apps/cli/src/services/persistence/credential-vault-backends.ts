@@ -117,10 +117,9 @@ function secretServiceVault(spawn: CredentialSpawn): CredentialVaultPort {
 }
 
 /**
- * macOS Keychain via the `security` CLI. `add-generic-password` has no stdin
- * secret channel — `-w` is argv — which is a brief `ps` exposure documented
- * here deliberately; a native Keychain binding is the follow-up that removes
- * it. Lookup/delete carry only attribute names in argv.
+ * macOS Keychain via the `security` CLI. `set` runs `security -i` and sends
+ * the add-generic-password command on stdin so the secret is not an argv
+ * element. Lookup and delete carry only attribute names in argv.
  */
 function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
   return {
@@ -142,9 +141,12 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
       );
     },
     async set(key, value) {
+      // `security -i` reads the command from stdin so the secret is not an
+      // argv element visible to `ps`.
+      const quoted = value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
       const out = await spawn(
-        ["security", "add-generic-password", "-U", "-s", VAULT_SERVICE, "-a", key, "-w", value],
-        "",
+        ["security", "-i"],
+        `add-generic-password -U -s ${VAULT_SERVICE} -a ${key} -w "${quoted}"\n`,
         SPAWN_TIMEOUT_MS,
       );
       if (out.exitCode !== 0) throw new Error(`security add-generic-password failed`);
@@ -169,9 +171,9 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
  * read inside the script — `cmdkey` is not used because it cannot store
  * arbitrary secrets for arbitrary targets.
  */
-function wincredVault(spawn: CredentialSpawn): CredentialVaultPort {
+function wincredVault(spawn: CredentialSpawn, binary: string): CredentialVaultPort {
   const run = (script: string, input: string) =>
-    spawn(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script], input, SPAWN_TIMEOUT_MS);
+    spawn([binary, "-NoProfile", "-NonInteractive", "-Command", script], input, SPAWN_TIMEOUT_MS);
   return {
     backend: "wincred",
     async get(key) {
@@ -238,7 +240,8 @@ async function probeBackend(
       return which("security") ? keychainVault(spawn) : undefined;
     }
     if (backend === "wincred") {
-      return which("pwsh") || which("powershell") ? wincredVault(spawn) : undefined;
+      const binary = which("powershell.exe") ?? which("powershell") ?? which("pwsh");
+      return binary ? wincredVault(spawn, binary) : undefined;
     }
   } catch {
     return undefined;

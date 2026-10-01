@@ -136,7 +136,7 @@ describe("OfflineTitleIdentityService.resolveForJob", () => {
       service.resolveForJob(
         job({ titleId: "x1", mediaKind: "anime", mode: "anime", externalIds: { malId: "21" } }),
       ),
-    ).toBe("21");
+    ).toBe("mal:21");
   });
 
   test("a legacy job with no stored mode recovers it from the media kind", () => {

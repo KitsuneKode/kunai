@@ -318,7 +318,7 @@ export async function searchTitles(
  * route is unavailable. Registry order is priority order, so the first provider
  * that both advertises search and answers wins.
  */
-async function searchAnimeViaSiblingProvider(
+export async function searchAnimeViaSiblingProvider(
   query: string,
   excludeProviderId: string,
   context: SearchRoutingContext,
@@ -347,14 +347,13 @@ async function searchAnimeViaSiblingProvider(
         },
         context.signal,
       );
-      const normalized = (results ?? []).map(normalizeProviderSearchResult);
-      if (normalized.length > 0) {
-        return {
-          results: normalized,
-          providerId: sibling.metadata.id,
-          providerName: sibling.metadata.name,
-        };
-      }
+      if (results === null || results === undefined) continue;
+      const normalized = results.map(normalizeProviderSearchResult);
+      return {
+        results: normalized,
+        providerId: sibling.metadata.id,
+        providerName: sibling.metadata.name,
+      };
     } catch {
       // Try the next sibling; the original failure is rethrown if none answer.
     }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -248,5 +248,20 @@ describe("SyncTokenStore on the real filesystem", () => {
     const store = new SyncTokenStore(paths);
 
     expect(await store.load()).toEqual({});
+  });
+
+  test("invalid JSON is quarantined and a later connect does not overwrite it", async () => {
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(paths.configDir, { recursive: true });
+    await writeFile(tokenPath, "{not json", "utf8");
+    const store = new SyncTokenStore(paths);
+
+    await expect(store.patchAniList(ANILIST)).rejects.toThrow();
+
+    const quarantine = await readFile(`${tokenPath}.quarantine`, "utf8");
+    expect(quarantine).toBe("{not json");
+    await store.patchTmdb(TMDB);
+    expect(await readFile(`${tokenPath}.quarantine`, "utf8")).toBe("{not json");
+    expect(JSON.parse(await readFile(tokenPath, "utf8"))).toEqual({ tmdb: TMDB });
   });
 });

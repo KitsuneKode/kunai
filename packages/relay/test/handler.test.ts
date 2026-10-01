@@ -3,7 +3,7 @@ import { Readable, Writable } from "node:stream";
 
 import type { CoreProviderManifest } from "@kunai/core";
 
-import { handleRpcRequest } from "../src/handler";
+import { handleRpcRequest, warnOnWildcardRelayCors } from "../src/handler";
 import { createPinnedRelayTransport, type RelayNodeRequest } from "../src/pinned-transport";
 import { buildProviderRelayRegistry } from "../src/registry";
 import type { RelayAuthorizationPolicy } from "../src/types";
@@ -327,6 +327,41 @@ test("handleRpcRequest rejects oversized upstream metadata responses", async () 
 
   expect(response.status).toBe(502);
   expect(await response.json()).toMatchObject({ error: { code: "response-too-large" } });
+});
+
+test("an upstream body over the cap is cancelled instead of buffered", async () => {
+  let pulls = 0;
+  let cancelled = false;
+  const response = await handleRpcRequest(
+    rpcRequest({
+      method: "GET",
+      upstreamUrl: "https://api.allanime.day/api",
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport() {
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              pulls += 1;
+              controller.enqueue(new Uint8Array(200));
+              if (pulls > 8) controller.close();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/plain" } },
+        );
+      },
+    },
+  );
+
+  expect(response.status).toBe(502);
+  expect(cancelled).toBe(true);
+  expect(pulls).toBeLessThan(8);
 });
 
 test("handleRpcRequest does not read or return a body for HEAD responses", async () => {
@@ -1065,3 +1100,25 @@ function nodeResponse(
   }) as unknown as import("node:http").ClientRequest;
   return outgoing;
 }
+
+test("relay CORS has no browser origin until the operator opts in", async () => {
+  const request = new Request("https://relay.example/rpc/allanime", { method: "GET" });
+  const denied = await handleRpcRequest(request, {
+    providerId: "allanime",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+  });
+  expect(denied.headers.get("access-control-allow-origin")).toBeNull();
+
+  const open = await handleRpcRequest(request, {
+    providerId: "allanime",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+    corsOrigins: ["*"],
+  });
+  expect(open.headers.get("access-control-allow-origin")).toBe("*");
+
+  const warnings: string[] = [];
+  warnOnWildcardRelayCors(["*"], (message) => warnings.push(message));
+  expect(warnings[0]).toContain("every browser origin");
+});

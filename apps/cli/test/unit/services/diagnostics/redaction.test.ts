@@ -206,4 +206,17 @@ describe("Kunai's own identifiers survive redaction", () => {
       expect(redactDiagnosticValue({ token: secret })).toEqual({ token: "[redacted]" });
     }
   });
+
+  test("po_token query values and long mixed-case path ids are redacted", () => {
+    const redacted = redactDiagnosticValue({
+      url: "https://player.example/AbCdEfGhIjKlMnOpQrSt/master.m3u8?po_token=super-secret&quality=1080p",
+      note: "poToken=plain-text-token",
+    });
+    const text = JSON.stringify(redacted);
+    expect(text).not.toContain("super-secret");
+    expect(text).not.toContain("plain-text-token");
+    expect(text).not.toContain("AbCdEfGhIjKlMnOpQrSt");
+    expect(text).toContain("[redacted-id]");
+    expect(text).toContain("po_token=[redacted]");
+  });
 });

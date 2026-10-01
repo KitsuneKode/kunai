@@ -52,6 +52,7 @@ describe("ConfigService.tuning", () => {
     const store = {
       load: async () => ({ ...DEFAULT_CONFIG }),
       save: async () => {},
+      merge: async () => {},
       reset: async () => {},
     };
     const service = await ConfigServiceImpl.load(store);
@@ -62,6 +63,7 @@ describe("ConfigService.tuning", () => {
     const store = {
       load: async () => ({ ...DEFAULT_CONFIG, tuningOverrides: { thumbnailTimeoutMs: 20_000 } }),
       save: async () => {},
+      merge: async () => {},
       reset: async () => {},
     };
     const service = await ConfigServiceImpl.load(store);

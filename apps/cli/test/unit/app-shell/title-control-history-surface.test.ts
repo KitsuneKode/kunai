@@ -46,6 +46,22 @@ describe("history title-control surface", () => {
     expect(actions.find((action) => action.id === "mark-unwatched")?.enabled).toBe(true);
   });
 
+  test("mark up to episode is on the history menu for anime and series rows", () => {
+    for (const context of [
+      { titleType: "series" as const, isAnime: false },
+      { titleType: "series" as const, isAnime: true },
+    ]) {
+      const actions = buildTitleControlActions({
+        surface: "history",
+        hasTitle: true,
+        hasHistory: true,
+        downloadsEnabled: true,
+        ...context,
+      });
+      expect(actions.find((action) => action.id === "mark-up-to-episode")?.enabled).toBe(true);
+    }
+  });
+
   test("omits actions that would target the session instead of the row", () => {
     // The overlay executes the picked action against the highlighted row, so an
     // action it cannot target that way must not be offered at all.

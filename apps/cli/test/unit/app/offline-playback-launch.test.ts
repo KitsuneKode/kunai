@@ -76,14 +76,43 @@ describe("requestUnifiedOfflinePlayback", () => {
     );
 
     expect(launch).toEqual({
+      jobId: "job-1",
       title: {
         id: "anilist:181053",
         type: "movie",
         name: "Infinity Castle",
         isAnime: true,
         launchSource: "offline-library",
+        offlineJobId: "job-1",
       },
       episode: undefined,
     });
+  });
+
+  test("two completed files for one episode keep the selected job for anime and series", () => {
+    const seriesA = readyJob({
+      id: "job-a",
+      providerEpisodeIdentity: { providerId: "videasy", value: "a" },
+    });
+    const seriesB = readyJob({
+      id: "job-b",
+      providerEpisodeIdentity: { providerId: "videasy", value: "b" },
+    });
+    const anime = readyJob({
+      id: "job-anime",
+      titleId: "mal:20",
+      mediaKind: "anime",
+      mode: "anime",
+      providerEpisodeIdentity: { providerId: "allmanga", value: "12" },
+    });
+
+    expect(buildOfflinePlaybackLaunch(seriesA).title.offlineJobId).toBe("job-a");
+    expect(buildOfflinePlaybackLaunch(seriesB).title.offlineJobId).toBe("job-b");
+    expect(buildOfflinePlaybackLaunch(seriesB).episode?.providerEpisodeIdentity).toEqual({
+      providerId: "videasy",
+      value: "b",
+    });
+    expect(titleInfoFromDownloadJob(anime).isAnime).toBe(true);
+    expect(buildOfflinePlaybackLaunch(anime).episode?.providerEpisodeIdentity?.value).toBe("12");
   });
 });

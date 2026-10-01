@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { KunaiPaths } from "@kunai/storage";
@@ -32,19 +32,39 @@ export interface SyncTokens {
  * implementation so mutation interleavings are forced rather than raced.
  */
 export interface SyncTokenFileIo {
-  /** Persisted tokens, or `{}` when the file is absent or unreadable. */
+  /** Persisted tokens. A missing file is `{}`. Invalid JSON is quarantined and thrown. */
   readonly readTokens: (path: string) => Promise<SyncTokens>;
   /** Replace the whole file with `tokens`. */
   readonly writeTokens: (path: string, tokens: SyncTokens) => Promise<void>;
 }
 
+function isMissingFile(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "ENOENT"
+  );
+}
+
 export const realSyncTokenFileIo: SyncTokenFileIo = {
   async readTokens(path: string): Promise<SyncTokens> {
+    let raw: string;
     try {
-      const raw = await readFile(path, "utf8");
-      return JSON.parse(raw) as SyncTokens;
-    } catch {
-      return {};
+      raw = await readFile(path, "utf8");
+    } catch (error) {
+      if (isMissingFile(error)) return {};
+      throw error;
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("sync tokens are not an object");
+      }
+      return parsed as SyncTokens;
+    } catch (error) {
+      await rename(path, `${path}.quarantine`).catch(() => undefined);
+      throw error instanceof Error ? error : new Error("sync tokens are unreadable");
     }
   },
   writeTokens(path: string, tokens: SyncTokens): Promise<void> {

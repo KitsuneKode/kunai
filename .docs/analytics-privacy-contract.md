@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-30"
+lastReviewed: "2026-10-01"
 ---
 
 # Analytics Privacy Contract
@@ -31,10 +31,12 @@ Read this before touching `apps/cli/src/services/analytics/`,
 - An `enabled` value written before this opt-in contract is migrated to `unset`
   and its legacy id is cleared before startup; it is not treated as consent.
 - `/settings` exposes the enable/disable option. Disabling clears `installId`.
-  The id exists on disk only while analytics is enabled. A ping already in flight
-  may finish, but its result must not restore an id cleared by disable, undo a
-  rotation, or apply the old identity's cadence/retry bookkeeping. The completion
-  checks current consent and the pre-send stored identity before updating config.
+  The id exists on disk only while analytics is enabled. A ping already on the
+  wire may finish. Before a send starts, and again before its result is written,
+  the process re-reads the config file. An opt-out or a cleared id saved by
+  another window wins over this process's memory: the send does not start, and
+  a finished request must not restore the id, undo a rotation, or apply the old
+  identity's cadence/retry bookkeeping.
 - No analytics request is made before consent, in a non-TTY session, or while
   `DO_NOT_TRACK` or `CI` is truthy (`1`, `true`, or `yes`).
 - A default endpoint ships: `analytics.kunai.kitsunekode.in`. It is where a ping
@@ -164,9 +166,7 @@ zero would hide every new release.
 The elimination guard runs per day on the surviving buckets, exactly as it does
 for the snapshot, so a closed dimension is never recoverable by subtraction.
 
-`lifetimeInstalls` is retention-adjusted and therefore **not monotonic**. It may
-fall when `lifetime_retired` absorbs pruned installs; a consumer charting it as
-a cumulative line will show a dip that is correct data, not a bug.
+`lifetimeInstalls` counts installs whose `first_seen` is on or before that day, plus pruned install hashes that have not come back, plus the pre-migration `lifetime_retired` counter. Pruning moves a hash; it does not lower the total. A later ping from that install deletes the hash, so the install is not counted both as live and as retired. A rollup for an earlier day still excludes installs first seen after it, so recomputing yesterday does not grow because of today's installs.
 
 The ingest body is capped at 512 bytes and a real install is limited by the
 `(day, install_hash)` primary key. Before production enablement, configure a

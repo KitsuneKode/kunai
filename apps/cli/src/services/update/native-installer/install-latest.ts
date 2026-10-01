@@ -11,7 +11,7 @@ import {
   resolveReleaseBinaryTarget,
   type PlatformLibc,
 } from "../platform-assets";
-import { pickChecksum, verifyChecksum } from "../self-replace";
+import { assertReleaseSignature, pickChecksum, verifyChecksum } from "../self-replace";
 import { normalizeRequestedVersion, parseCanonicalVersion } from "../version";
 import { withActivationLock } from "./activation-lock";
 import { cleanupOldVersions } from "./cleanup-versions";
@@ -60,6 +60,8 @@ export type InstallLatestOptions = {
   readonly layout?: InstallLayoutPaths;
   readonly fetchImpl?: FetchLike;
   readonly libc?: PlatformLibc;
+  /** Test seam. Production verifies with the key embedded in self-replace.ts. */
+  readonly releasePublicKeyPem?: string;
 };
 
 let inFlightInstall: Promise<InstallLatestResult> | null = null;
@@ -137,13 +139,12 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
       const stagedArchive = archiveName ? join(staging, archiveName) : undefined;
 
       try {
-        await downloadToFile({
-          url: checksumUrl,
-          destinationPath: stagedChecksums,
+        const sumsText = await readVerifiedChecksumFile(
+          checksumUrl,
+          stagedChecksums,
           fetchImpl,
-          policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
-        });
-        const sumsText = await readFile(stagedChecksums, "utf8");
+          options.releasePublicKeyPem,
+        );
         const expected = pickChecksum(sumsText, assetName);
         if (!expected) {
           throw new Error(`No checksum entry for ${assetName}`);
@@ -165,12 +166,12 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
         );
         if (archiveManifestAvailable) {
           try {
-            await downloadToFile({
-              url: archiveChecksumUrl,
-              destinationPath: stagedArchiveChecksums,
+            await readVerifiedChecksumFile(
+              archiveChecksumUrl,
+              stagedArchiveChecksums,
               fetchImpl,
-              policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
-            });
+              options.releasePublicKeyPem,
+            );
           } catch (error) {
             if (error instanceof DownloadError && (error.status === 404 || error.status === 410)) {
               archiveManifestAvailable = false;
@@ -388,4 +389,32 @@ export async function checkInstall(
   }
 
   return messages;
+}
+
+async function readVerifiedChecksumFile(
+  url: string,
+  destinationPath: string,
+  fetchImpl: FetchLike,
+  publicKeyPem: string | undefined,
+): Promise<string> {
+  await downloadToFile({
+    url,
+    destinationPath,
+    fetchImpl,
+    policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
+  });
+  const signaturePath = `${destinationPath}.sig`;
+  try {
+    await downloadToFile({
+      url: `${url}.sig`,
+      destinationPath: signaturePath,
+      fetchImpl,
+      policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
+    });
+  } catch {
+    throw new Error("checksum match without a valid signature is a failure");
+  }
+  const sumsBytes = await readFile(destinationPath);
+  assertReleaseSignature(sumsBytes, new Uint8Array(await readFile(signaturePath)), publicKeyPem);
+  return new TextDecoder().decode(sumsBytes);
 }

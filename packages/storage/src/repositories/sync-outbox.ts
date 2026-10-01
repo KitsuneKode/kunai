@@ -130,13 +130,34 @@ export class SyncOutboxRepository {
          ON CONFLICT(tracker_id, dedupe_key) DO UPDATE SET
            payload_json = excluded.payload_json,
            generation = sync_outbox.generation + 1,
-           claim_token = NULL,
-           claimed_at = NULL,
-           attempts = 0,
-           state = 'pending',
-           next_attempt_at = excluded.next_attempt_at,
-           last_error_code = NULL,
-           last_error_detail = NULL,
+           claim_token = CASE
+             WHEN sync_outbox.state = 'claimed' THEN sync_outbox.claim_token
+             ELSE NULL
+           END,
+           claimed_at = CASE
+             WHEN sync_outbox.state = 'claimed' THEN sync_outbox.claimed_at
+             ELSE NULL
+           END,
+           attempts = CASE
+             WHEN sync_outbox.state = 'claimed' THEN sync_outbox.attempts
+             ELSE 0
+           END,
+           state = CASE
+             WHEN sync_outbox.state = 'claimed' THEN 'claimed'
+             ELSE 'pending'
+           END,
+           next_attempt_at = CASE
+             WHEN sync_outbox.state = 'claimed' THEN sync_outbox.next_attempt_at
+             ELSE excluded.next_attempt_at
+           END,
+           last_error_code = CASE
+             WHEN sync_outbox.state = 'claimed' THEN sync_outbox.last_error_code
+             ELSE NULL
+           END,
+           last_error_detail = CASE
+             WHEN sync_outbox.state = 'claimed' THEN sync_outbox.last_error_detail
+             ELSE NULL
+           END,
            updated_at = excluded.updated_at
          WHERE json_extract(excluded.payload_json, '$.kind') != 'progress:set'
             OR json_extract(sync_outbox.payload_json, '$.kind') != 'progress:set'
@@ -462,7 +483,17 @@ export class SyncOutboxRepository {
     // A missing row was already completed by whoever owned it last: the caller
     // no longer holds a claim, and nothing newer is waiting to be protected.
     if (!row) return "not-claimed";
-    return row.generation > item.generation ? "superseded" : "not-claimed";
+    if (row.generation > item.generation) {
+      this.db
+        .query(
+          `UPDATE sync_outbox
+           SET state = 'pending', claim_token = NULL, claimed_at = NULL, updated_at = ?
+           WHERE id = ? AND claim_token = ? AND state = 'claimed'`,
+        )
+        .run(new Date().toISOString(), item.id, item.claimToken);
+      return "superseded";
+    }
+    return "not-claimed";
   }
 
   private readOwnedAttempts(item: SyncOutboxClaimRef): number | undefined {

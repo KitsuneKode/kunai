@@ -22,6 +22,12 @@ export const REQUIRED_ARCHIVE_ASSET_NAMES = Object.freeze(
   RELEASE_BINARY_TARGETS.map((target) => target.archiveName).sort(),
 );
 
+/** Published beside the manifests. Absent on releases cut before signatures. */
+export const OPTIONAL_RELEASE_SIGNATURE_NAMES = Object.freeze([
+  "SHA256SUMS.sig",
+  "SHA256SUMS.archives.sig",
+]);
+
 export const REQUIRED_RELEASE_ASSET_NAMES = Object.freeze(
   [
     ...REQUIRED_ARCHIVE_ASSET_NAMES,
@@ -59,7 +65,9 @@ export function assertCompleteReleaseAssetSet(assets: readonly ReleaseAssetDescr
   }
 
   const unexpected = [...seen.keys()].filter(
-    (name) => !(REQUIRED_RELEASE_ASSET_NAMES as readonly string[]).includes(name),
+    (name) =>
+      !(REQUIRED_RELEASE_ASSET_NAMES as readonly string[]).includes(name) &&
+      !(OPTIONAL_RELEASE_SIGNATURE_NAMES as readonly string[]).includes(name),
   );
   if (unexpected.length > 0) {
     throw new Error(`[release-assets] unexpected asset(s): ${unexpected.sort().join(", ")}`);

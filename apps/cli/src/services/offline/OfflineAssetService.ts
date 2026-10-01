@@ -12,6 +12,7 @@ export type OfflineAssetRepositoryPort = Pick<
   OfflineAssetsRepository,
   | "get"
   | "listTitleAssets"
+  | "findReadyOriginJobId"
   | "listByTitleIds"
   | "listNextReadyByTitleCursors"
   | "markValidation"
@@ -37,6 +38,22 @@ export class OfflineAssetService {
 
   listTitleAssets(titleId: string): readonly OfflineAssetRecord[] {
     return this.assets.listTitleAssets(titleId);
+  }
+
+  findReadyOriginJobId(
+    titleId: string,
+    season: number,
+    episode: number,
+    mediaKind?: "movie" | "series" | "anime" | "video",
+    providerEpisodeIdentity?: { readonly providerId: string; readonly value: string },
+  ): string | undefined {
+    return this.assets.findReadyOriginJobId(
+      titleId,
+      season,
+      episode,
+      mediaKind,
+      providerEpisodeIdentity,
+    );
   }
 
   listByTitleIds(titleIds: readonly string[]): readonly OfflineAssetRecord[] {

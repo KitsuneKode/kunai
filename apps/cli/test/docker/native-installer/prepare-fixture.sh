@@ -8,7 +8,10 @@
 #   <output>/download/v<ver>/<asset>
 #   <output>/download/v<ver>/<asset>.tar.gz
 #   <output>/download/v<ver>/SHA256SUMS
+#   <output>/download/v<ver>/SHA256SUMS.sig
 #   <output>/download/v<ver>/SHA256SUMS.archives
+#   <output>/download/v<ver>/SHA256SUMS.archives.sig
+#   <output>/ed25519-public.pem
 #   <output>/releases/latest.json   (tag_name = highest semver arg)
 set -euo pipefail
 
@@ -47,6 +50,20 @@ for ver in "$@"; do
   cp "$ARCHIVE_SUMS" "$dest/SHA256SUMS.archives"
   chmod 0755 "$dest/$ASSET"
 done
+
+# Sign after the copies so every version directory carries a signature over
+# the checksum bytes the installer will verify. The private key never lands
+# in the tree the mock server publishes.
+sign_key="$(mktemp)"
+openssl genpkey -algorithm ED25519 -out "$sign_key"
+openssl pkey -in "$sign_key" -pubout -out "$OUT/ed25519-public.pem"
+for ver in "$@"; do
+  dest="$OUT/download/v$ver"
+  openssl pkeyutl -sign -inkey "$sign_key" -rawin -in "$dest/SHA256SUMS" -out "$dest/SHA256SUMS.sig"
+  openssl pkeyutl -sign -inkey "$sign_key" -rawin \
+    -in "$dest/SHA256SUMS.archives" -out "$dest/SHA256SUMS.archives.sig"
+done
+rm -f "$sign_key"
 
 mkdir -p "$OUT/releases"
 printf '{"tag_name":"v%s","name":"v%s"}\n' "$latest" "$latest" >"$OUT/releases/latest.json"

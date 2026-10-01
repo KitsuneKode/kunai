@@ -3,7 +3,7 @@ import {
   createResolveTrace,
   createTraceStep,
   isAbortError,
-  isOfflineNetworkFailure,
+  transportFailureIsRetryable,
   type CoreProviderModule,
   defineProviderManifest,
 } from "@kunai/core";
@@ -303,7 +303,7 @@ export const templateProviderModule: CoreProviderModule = {
               providerId: TEMPLATE_PROVIDER_ID,
               code: "network-error",
               message,
-              retryable: !isOfflineNetworkFailure({ code: "network-error", message }),
+              retryable: transportFailureIsRetryable(error),
               at: context.now(),
             };
       failures.push(failure);

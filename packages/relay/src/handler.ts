@@ -47,6 +47,11 @@ export async function handleRpcRequest(
   request: Request,
   options: RelayHandlerOptions,
 ): Promise<Response> {
+  const response = await dispatchRelayRpc(request, options);
+  return stampRelayCors(response, options.corsOrigins, request.headers.get("origin"));
+}
+
+async function dispatchRelayRpc(request: Request, options: RelayHandlerOptions): Promise<Response> {
   if (request.method === "OPTIONS") return corsPreflightResponse();
   if (request.method !== "POST") {
     return relayError("method-not-allowed", options.providerId, "RPC route requires POST", 405);
@@ -189,10 +194,14 @@ async function readRpcRequest(request: Request): Promise<RelayRpcRequest> {
   if (contentLength && Number(contentLength) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
     throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
   }
-  const text = await request.text();
-  if (byteLength(text) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
+  if (!request.body) {
+    throw new RelayValidationError("bad-request", "Relay request body must be JSON", 400);
+  }
+  const bytes = await readCappedStream(request.body, DEFAULT_MAX_REQUEST_BODY_BYTES);
+  if (bytes === "too-large") {
     throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
   }
+  const text = new TextDecoder().decode(bytes);
 
   let parsed: unknown;
   try {
@@ -311,7 +320,6 @@ async function relayUpstreamResponse(
   method: RelayMethod,
 ): Promise<Response> {
   const headers = filteredResponseHeaders(upstream.headers);
-  headers.set("Access-Control-Allow-Origin", "*");
 
   if (method === "HEAD" || !upstream.body) {
     return new Response(null, {
@@ -331,8 +339,8 @@ async function relayUpstreamResponse(
     );
   }
 
-  const body = await upstream.arrayBuffer();
-  if (body.byteLength > maxResponseBytes) {
+  const body = await readCappedStream(upstream.body, maxResponseBytes);
+  if (body === "too-large") {
     return relayError(
       "response-too-large",
       providerId,
@@ -340,7 +348,42 @@ async function relayUpstreamResponse(
       502,
     );
   }
-  return new Response(body, { status: upstream.status, statusText: upstream.statusText, headers });
+  const copy = new ArrayBuffer(body.byteLength);
+  new Uint8Array(copy).set(body);
+  return new Response(copy, { status: upstream.status, statusText: upstream.statusText, headers });
+}
+
+async function readCappedStream(
+  body: ReadableStream<Uint8Array>,
+  maxBytes: number,
+): Promise<Uint8Array | "too-large"> {
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let cancelled = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        cancelled = true;
+        return "too-large";
+      }
+      chunks.push(value);
+    }
+  } finally {
+    if (!cancelled) reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 function filteredResponseHeaders(source: Headers): Headers {
@@ -368,10 +411,44 @@ export function relayError(
   return Response.json(body, {
     status,
     headers: {
-      "Access-Control-Allow-Origin": "*",
       [RELAY_ERROR_CODE_HEADER]: code,
     },
   });
+}
+
+export function stampRelayCors(
+  response: Response,
+  origins: readonly string[] | undefined,
+  requestOrigin: string | null,
+): Response {
+  const headers = new Headers(response.headers);
+  const allow = corsAllowOrigin(origins, requestOrigin);
+  if (allow) headers.set("Access-Control-Allow-Origin", allow);
+  else headers.delete("Access-Control-Allow-Origin");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function corsAllowOrigin(
+  origins: readonly string[] | undefined,
+  requestOrigin: string | null,
+): string | null {
+  if (!origins || origins.length === 0) return null;
+  if (origins.includes("*")) return "*";
+  if (requestOrigin && origins.includes(requestOrigin)) return requestOrigin;
+  return null;
+}
+
+export function warnOnWildcardRelayCors(
+  origins: readonly string[] | undefined,
+  warn: (message: string) => void = console.warn,
+): void {
+  if (origins?.includes("*")) {
+    warn("RELAY_CORS_ORIGINS=* allows every browser origin");
+  }
 }
 
 function corsPreflightResponse(): Response {
@@ -380,7 +457,6 @@ function corsPreflightResponse(): Response {
     headers: {
       "Access-Control-Allow-Headers": "Authorization, Content-Type",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Origin": "*",
       "Access-Control-Max-Age": "600",
     },
   });

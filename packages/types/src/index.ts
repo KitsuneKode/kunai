@@ -594,6 +594,14 @@ export interface ProviderAbortState {
 
 export interface ProviderFetchPort {
   readonly runtime: "browser-safe-fetch" | "direct-http";
+  /**
+   * True when requests through this port can open a socket on this machine —
+   * the direct path, or a relay port whose fallback is the local fetch. The
+   * stream target guard uses it to decide whether DNS answers must be
+   * validated and the connection pinned: a request that resolves remotely
+   * (a real relay hop) must never carry a locally-pinned address.
+   */
+  readonly resolvesLocally?: boolean;
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 }
 
@@ -696,6 +704,26 @@ export interface ProviderTitleBridgePort {
   }): void;
 }
 
+/**
+ * Host operations a provider may need. The CLI passes Bun. Mobile passes its
+ * own fakes. Providers on that path do not call `Bun.*` themselves.
+ */
+export interface ProviderRuntimeHost {
+  which(name: string): string | null;
+  sleep(ms: number): Promise<void>;
+  hash(algorithm: "sha256", bytes: Uint8Array): Promise<string>;
+  gzip(bytes: Uint8Array): Promise<Uint8Array>;
+  gunzip(bytes: Uint8Array): Promise<Uint8Array>;
+  spawn(
+    command: readonly string[],
+    options?: { readonly cwd?: string; readonly env?: Record<string, string | undefined> },
+  ): Promise<{
+    readonly stdout: Uint8Array;
+    readonly stderr: Uint8Array;
+    readonly exitCode: number;
+  }>;
+}
+
 export interface ProviderRuntimeContext {
   readonly providerId?: ProviderId;
   readonly signal?: AbortSignal;
@@ -705,6 +733,7 @@ export interface ProviderRuntimeContext {
   readonly endpointHealth?: EndpointHealthPort;
   readonly titleBridge?: ProviderTitleBridgePort;
   readonly cache?: ProviderCachePort;
+  readonly host?: ProviderRuntimeHost;
   now(): string;
   emit?(event: ProviderTraceEvent): void;
 }
