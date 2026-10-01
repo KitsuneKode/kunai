@@ -468,6 +468,71 @@ describe("providerFetchText — curl leg", () => {
   });
 });
 
+describe("providerFetchText — Retry-After capture", () => {
+  test("a relayed 429 stamps the hint on the thrown error", async () => {
+    const thrown = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: contextWith(
+        async () =>
+          new Response("slow down", {
+            status: 429,
+            headers: { "X-Kunai-Relayed": "1", "retry-after": "30" },
+          }),
+      ),
+      curlEnvironment: CURL_ENV,
+      spawnCurl: async () => {
+        throw new Error("SENTINEL: a final relayed answer must not reach curl");
+      },
+    }).then(
+      () => null,
+      (error) => error,
+    );
+    expect(thrown).toBeInstanceOf(ProviderRelayedUpstreamError);
+    expect(mustBe(thrown, ProviderRelayedUpstreamError).retryAfterMs).toBe(30_000);
+  });
+
+  test("a non-curl-retryable direct status carries the hint", async () => {
+    const thrown = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: stubContext(429, "limited", { "retry-after": "12" }),
+      retryStatusViaCurl: () => false,
+    }).then(
+      () => null,
+      (error) => error,
+    );
+    expect(thrown).toBeInstanceOf(ProviderHttpError);
+    expect(mustBe(thrown, ProviderHttpError).retryAfterMs).toBe(12_000);
+  });
+
+  test("the HTTP-date form resolves against the response time", async () => {
+    const thrown = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: stubContext(503, "down", {
+        "retry-after": new Date(Date.now() + 45_000).toUTCString(),
+      }),
+      retryStatusViaCurl: () => false,
+    }).then(
+      () => null,
+      (error) => error,
+    );
+    const hint = mustBe(thrown, ProviderHttpError).retryAfterMs;
+    expect(hint).toBeGreaterThan(40_000);
+    expect(hint).toBeLessThanOrEqual(45_000);
+  });
+
+  test("an absent header leaves retryAfterMs unset", async () => {
+    const thrown = await providerFetchText(URL_UNDER_TEST, {
+      ...POLICY,
+      context: stubContext(503, "down"),
+      retryStatusViaCurl: () => false,
+    }).then(
+      () => null,
+      (error) => error,
+    );
+    expect(mustBe(thrown, ProviderHttpError).retryAfterMs).toBeUndefined();
+  });
+});
+
 describe("transportKindFromFetchError", () => {
   const cases: Array<[string, unknown, ProviderTransportKind]> = [
     [

@@ -267,4 +267,102 @@ describe("endpoint quarantine under single-title viewing", () => {
 
     expect(repo.get("videasy", "cdn")).toBeUndefined();
   });
+
+  test("a Retry-After hint on a transient failure parks the endpoint at once", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    let now = NOW;
+    const service = new ProviderEndpointHealthService(repo, () => now);
+
+    // One transient record would normally not cool anything — the upstream's
+    // explicit window is worth more than the local strike count.
+    service.recordFailure("videasy", "cdn", {
+      class: "transient",
+      titleId: "x",
+      at: NOW.toISOString(),
+      retryAfterMs: 120_000,
+    });
+
+    expect(service.shouldTry("videasy", "cdn")).toBe(false);
+
+    // The hint outlasts the default 60s transient cooldown.
+    now = new Date(NOW.getTime() + 61_000);
+    expect(service.shouldTry("videasy", "cdn")).toBe(false);
+
+    now = new Date(NOW.getTime() + 120_000);
+    expect(service.shouldTry("videasy", "cdn")).toBe(true);
+  });
+
+  test("a short hint never shrinks the default transient cooldown", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    let now = NOW;
+    const service = new ProviderEndpointHealthService(repo, () => now);
+
+    service.recordFailure("videasy", "cdn", {
+      class: "transient",
+      titleId: "x",
+      at: NOW.toISOString(),
+      retryAfterMs: 5_000,
+    });
+
+    now = new Date(NOW.getTime() + 5_000);
+    expect(service.shouldTry("videasy", "cdn")).toBe(false);
+    now = new Date(NOW.getTime() + 60_000);
+    expect(service.shouldTry("videasy", "cdn")).toBe(true);
+  });
+
+  test("a sub-threshold server-error with a hint parks in memory, not the row", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    let now = NOW;
+    const service = new ProviderEndpointHealthService(repo, () => now);
+
+    // One title's server-error earns no quarantine — but the upstream's own
+    // hint still parks the endpoint for the hinted window.
+    service.recordFailure("videasy", "flaky", {
+      class: "server-error",
+      titleId: "125988",
+      at: NOW.toISOString(),
+      retryAfterMs: 90_000,
+    });
+
+    expect(repo.get("videasy", "flaky")?.quarantinedUntil).toBeUndefined();
+    expect(service.shouldTry("videasy", "flaky")).toBe(false);
+
+    now = new Date(NOW.getTime() + 90_000);
+    expect(service.shouldTry("videasy", "flaky")).toBe(true);
+  });
+
+  test("an earned quarantine takes the max of its window and the hint", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    const service = new ProviderEndpointHealthService(repo, () => NOW);
+
+    // Route-dead quarantines for 24h — a 2h hint must not shorten it.
+    service.recordFailure("videasy", "dead-route", {
+      class: "route-dead",
+      titleId: "x",
+      at: NOW.toISOString(),
+      retryAfterMs: 2 * 60 * 60 * 1000,
+    });
+    const until = repo.get("videasy", "dead-route")?.quarantinedUntil;
+    expect(Date.parse(until ?? "")).toBeGreaterThan(NOW.getTime() + 23 * 60 * 60 * 1000);
+  });
+
+  test("a hint longer than the earned quarantine extends it", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    const service = new ProviderEndpointHealthService(repo, () => NOW);
+
+    // Two distinct titles quarantine for 1h; a 3h hint is the longer window.
+    service.recordFailure("videasy", "limited", {
+      class: "server-error",
+      titleId: "a",
+      at: NOW.toISOString(),
+    });
+    service.recordFailure("videasy", "limited", {
+      class: "server-error",
+      titleId: "b",
+      at: NOW.toISOString(),
+      retryAfterMs: 3 * 60 * 60 * 1000,
+    });
+    const until = repo.get("videasy", "limited")?.quarantinedUntil;
+    expect(Date.parse(until ?? "")).toBe(NOW.getTime() + 3 * 60 * 60 * 1000);
+  });
 });

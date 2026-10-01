@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { TTLCache } from "../src/shared/provider-cache";
+import { EndpointResilienceTracker, TTLCache } from "../src/shared/provider-cache";
 
 describe("TTLCache expiry", () => {
   test("deletes an expired entry on access rather than returning it", () => {
@@ -98,5 +98,85 @@ describe("TTLCache size bound", () => {
 
     expect(cache.size).toBe(0);
     expect(cache.get("a")).toBeUndefined();
+  });
+});
+
+describe("EndpointResilienceTracker", () => {
+  test("single-strike policy parks an endpoint on its first failure", () => {
+    let now = 1_000;
+    const tracker = new EndpointResilienceTracker({ cooldownMs: 60_000, now: () => now });
+
+    expect(tracker.recordFailure("host-a")).toBe(false);
+    expect(tracker.shouldTry("host-a")).toBe(false);
+
+    now += 60_000;
+    expect(tracker.shouldTry("host-a")).toBe(true);
+  });
+
+  test("multi-strike policy tolerates a transient blip before cooling", () => {
+    const tracker = new EndpointResilienceTracker({
+      cooldownMs: 60_000,
+      strikesToCooldown: 2,
+      now: () => 0,
+    });
+
+    expect(tracker.recordFailure("host-a")).toBe(true);
+    expect(tracker.shouldTry("host-a")).toBe(true);
+    expect(tracker.recordFailure("host-a")).toBe(false);
+    expect(tracker.shouldTry("host-a")).toBe(false);
+  });
+
+  test("a cooldown override parks immediately regardless of strike count", () => {
+    let now = 0;
+    const tracker = new EndpointResilienceTracker({
+      cooldownMs: 60_000,
+      strikesToCooldown: 5,
+      now: () => now,
+    });
+
+    expect(tracker.recordFailure("host-a", { cooldownMs: 30_000 })).toBe(false);
+    expect(tracker.shouldTry("host-a")).toBe(false);
+
+    now = 29_999;
+    expect(tracker.shouldTry("host-a")).toBe(false);
+    now = 30_000;
+    expect(tracker.shouldTry("host-a")).toBe(true);
+  });
+
+  test("the `at` anchor lets per-call injected clocks pin the window", () => {
+    const tracker = new EndpointResilienceTracker({ cooldownMs: 60_000, now: () => 0 });
+
+    tracker.recordFailure("host-a", { at: 10_000 });
+    expect(tracker.shouldTry("host-a", 69_999)).toBe(false);
+    expect(tracker.shouldTry("host-a", 70_000)).toBe(true);
+  });
+
+  test("a stable success resets both the streak and the cooldown", () => {
+    let now = 0;
+    const tracker = new EndpointResilienceTracker({
+      cooldownMs: 60_000,
+      strikesToCooldown: 2,
+      now: () => now,
+    });
+
+    tracker.recordFailure("host-a");
+    tracker.recordFailure("host-a");
+    expect(tracker.shouldTry("host-a")).toBe(false);
+
+    tracker.recordSuccess("host-a");
+    expect(tracker.shouldTry("host-a")).toBe(true);
+    expect(tracker.failureCount("host-a")).toBe(0);
+  });
+
+  test("maxEntries bounds the map", () => {
+    const tracker = new EndpointResilienceTracker({
+      cooldownMs: 60_000,
+      maxEntries: 3,
+      now: () => 0,
+    });
+
+    for (let i = 0; i < 10; i++) tracker.recordFailure(`host-${i}`);
+
+    expect(tracker.size).toBeLessThanOrEqual(3);
   });
 });

@@ -60,32 +60,46 @@ export class ProviderEndpointHealthService implements EndpointHealthPort {
       this.curatedDead.delete(key);
     }
 
-    const nowIso = this.now().toISOString();
-    if (this.repository.isQuarantined(providerId, endpoint, nowIso)) {
+    const now = this.now();
+    if (this.repository.isQuarantined(providerId, endpoint, now.toISOString())) {
       return false;
     }
 
-    return this.shouldTryTransient(key);
+    return this.shouldTryTransient(key, now.getTime());
   }
 
   recordFailure(providerId: ProviderId, endpoint: string, info: EndpointHealthFailureInfo): void {
     const now = this.now();
     const nowIso = now.toISOString();
+    const key = this.key(providerId, endpoint);
     const existing = this.repository.get(providerId, endpoint);
     const distinctTitleIds = mergeDistinctTitleIds(existing, info.titleId);
     const consecutiveFailures = (existing?.consecutiveFailures ?? 0) + 1;
 
     if (info.class === "transient") {
-      this.recordTransientFailure(this.key(providerId, endpoint));
+      this.recordTransientFailure(key, now.getTime(), info.retryAfterMs);
       return;
     }
 
-    const quarantinedUntil = resolveQuarantineUntil({
+    let quarantinedUntil = resolveQuarantineUntil({
       failureClass: info.class,
       distinctTitleIds,
       consecutiveFailures,
       now,
     });
+
+    /* The upstream's Retry-After is a floor, never a veto: a quarantine the
+     * evidence already earned outranks it, and a sub-threshold failure parks
+     * in memory for the hinted window instead of writing a quarantine row it
+     * did not earn. */
+    if (info.retryAfterMs !== undefined) {
+      const hintedUntil = new Date(now.getTime() + info.retryAfterMs).toISOString();
+      if (quarantinedUntil !== undefined) {
+        quarantinedUntil = hintedUntil > quarantinedUntil ? hintedUntil : quarantinedUntil;
+      } else {
+        this.transientCooldowns.set(key, now.getTime() + info.retryAfterMs);
+      }
+    }
 
     const record: ProviderEndpointHealthRecord = {
       providerId,
@@ -159,21 +173,28 @@ export class ProviderEndpointHealthService implements EndpointHealthPort {
     return `${providerId}:${endpoint}`;
   }
 
-  private shouldTryTransient(key: string): boolean {
+  private shouldTryTransient(key: string, nowMs: number): boolean {
     const cooldownUntil = this.transientCooldowns.get(key);
     if (!cooldownUntil) return true;
-    if (Date.now() >= cooldownUntil) {
+    if (nowMs >= cooldownUntil) {
       this.clearTransient(key);
       return true;
     }
     return false;
   }
 
-  private recordTransientFailure(key: string): void {
+  private recordTransientFailure(key: string, nowMs: number, retryAfterMs?: number): void {
+    /* An explicit Retry-After is both strikes' worth of evidence at once —
+     * the upstream told us the window, so waiting for a second failure to
+     * honor it would just waste one more request on a known refusal. */
+    if (retryAfterMs !== undefined) {
+      this.transientCooldowns.set(key, nowMs + Math.max(TRANSIENT_COOLDOWN_MS, retryAfterMs));
+      return;
+    }
     const count = (this.transientFailureCounts.get(key) ?? 0) + 1;
     this.transientFailureCounts.set(key, count);
     if (count >= 2) {
-      this.transientCooldowns.set(key, Date.now() + TRANSIENT_COOLDOWN_MS);
+      this.transientCooldowns.set(key, nowMs + TRANSIENT_COOLDOWN_MS);
     }
   }
 

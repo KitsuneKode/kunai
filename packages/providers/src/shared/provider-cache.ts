@@ -80,42 +80,92 @@ export class TTLCache<K, V> {
   }
 }
 
+export type EndpointResiliencePolicy = {
+  /**
+   * Consecutive failures before an endpoint cools down. `1` is the
+   * single-strike discipline (one failure parks the host — invidious pools,
+   * wings seed hosts); `2+` tolerates a transient blip before cooling
+   * (vidking's 60s/2-failure rule).
+   */
+  readonly strikesToCooldown?: number;
+  /** The default cooldown once the strike threshold is reached. */
+  readonly cooldownMs: number;
+  /** Injectable clock so cooldown expiry is testable without real time. */
+  readonly now?: () => number;
+  /** Hard entry ceiling — same reasoning as {@link TTLCacheOptions.maxEntries}. */
+  readonly maxEntries?: number;
+};
+
 /**
- * Tracks server/endpoint health with failure cooldown.
- * Skips servers that have failed recently to avoid hammering known-bad endpoints.
+ * In-memory endpoint resilience tracker — the volatile sibling of the
+ * persistent `EndpointHealthPort`. Providers keep one as the fallback for
+ * contexts that inject no port (unit tests, bare resolves), and for host-level
+ * bookkeeping the port is not scoped to (mirror pools, seed hosts).
+ *
+ * One primitive replaces what used to be three ad-hoc stores — a TTLCache of
+ * flag values (wings), a bare cooldown Map (invidious), and a
+ * consecutive-failure counter (vidking) — because the semantics differ only in
+ * `strikesToCooldown`: how many consecutive failures park an endpoint, and for
+ * how long. A stable success resets both, everywhere.
+ *
+ * `recordFailure` accepts a per-failure `cooldownMs` override so an upstream
+ * `Retry-After` hint lands directly on the endpoint that earned it — a 429's
+ * own "come back later" is better evidence than the policy default.
  */
-export class HealthTracker {
+export class EndpointResilienceTracker {
   private readonly cooldowns = new Map<string, number>();
   private readonly failureCounts = new Map<string, number>();
+  private readonly strikesToCooldown: number;
+  private readonly cooldownMs: number;
+  private readonly maxEntries?: number;
+  private readonly now: () => number;
 
-  constructor(
-    private readonly cooldownMs: number,
-    private readonly maxFailures: number,
-  ) {}
-
-  /** Mark a server as failed. Returns true if it should still be tried (within failure limit). */
-  recordFailure(id: string): boolean {
-    const count = (this.failureCounts.get(id) ?? 0) + 1;
-    this.failureCounts.set(id, count);
-
-    if (count >= this.maxFailures) {
-      this.cooldowns.set(id, Date.now() + this.cooldownMs);
-      return false;
-    }
-    return true;
+  constructor(policy: EndpointResiliencePolicy) {
+    this.strikesToCooldown = Math.max(1, policy.strikesToCooldown ?? 1);
+    this.cooldownMs = policy.cooldownMs;
+    this.maxEntries = policy.maxEntries;
+    this.now = policy.now ?? Date.now;
   }
 
-  /** Mark a server as healthy (reset failure count). */
+  /**
+   * Mark an endpoint as failed. Returns whether it should still be tried —
+   * `false` once the strike threshold cools it down. A `cooldownMs` override
+   * parks the endpoint for exactly that window regardless of strike count: an
+   * explicit upstream `Retry-After` outranks the policy's leniency. `at`
+   * anchors the window for callers whose clock is injected per call.
+   */
+  recordFailure(
+    id: string,
+    opts?: { readonly cooldownMs?: number; readonly at?: number },
+  ): boolean {
+    const at = opts?.at ?? this.now();
+    let stillTry = true;
+    if (opts?.cooldownMs !== undefined) {
+      this.cooldowns.set(id, at + Math.max(0, opts.cooldownMs));
+      stillTry = false;
+    } else {
+      const count = (this.failureCounts.get(id) ?? 0) + 1;
+      this.failureCounts.set(id, count);
+      if (count >= this.strikesToCooldown) {
+        this.cooldowns.set(id, at + this.cooldownMs);
+        stillTry = false;
+      }
+    }
+    this.evictIfNeeded();
+    return stillTry;
+  }
+
+  /** A stable success is the only reset that means anything. */
   recordSuccess(id: string): void {
     this.failureCounts.delete(id);
     this.cooldowns.delete(id);
   }
 
-  /** Check if a server should be tried (not in cooldown). */
-  shouldTry(id: string): boolean {
+  /** Cooldown expiry self-heals — past the window the endpoint earns a retry. */
+  shouldTry(id: string, atEpochMs?: number): boolean {
     const cooldown = this.cooldowns.get(id);
-    if (!cooldown) return true;
-    if (Date.now() >= cooldown) {
+    if (cooldown === undefined) return true;
+    if ((atEpochMs ?? this.now()) >= cooldown) {
       this.cooldowns.delete(id);
       this.failureCounts.delete(id);
       return true;
@@ -123,8 +173,37 @@ export class HealthTracker {
     return false;
   }
 
-  /** Get failure count for diagnostics. */
   failureCount(id: string): number {
     return this.failureCounts.get(id) ?? 0;
+  }
+
+  /** Distinct tracked endpoints — an id can sit in both maps at once. */
+  get size(): number {
+    let count = 0;
+    for (const id of this.cooldowns.keys()) count += this.failureCounts.has(id) ? 0 : 1;
+    return count + this.failureCounts.size;
+  }
+
+  reset(): void {
+    this.cooldowns.clear();
+    this.failureCounts.clear();
+  }
+
+  private evictIfNeeded(): void {
+    const limit = this.maxEntries;
+    if (limit === undefined) return;
+    const now = this.now();
+    for (const [id, until] of this.cooldowns) {
+      if (now >= until) {
+        this.cooldowns.delete(id);
+        this.failureCounts.delete(id);
+      }
+    }
+    while (this.size > limit) {
+      const oldest = this.failureCounts.keys().next().value ?? this.cooldowns.keys().next().value;
+      if (oldest === undefined) return;
+      this.cooldowns.delete(oldest);
+      this.failureCounts.delete(oldest);
+    }
   }
 }

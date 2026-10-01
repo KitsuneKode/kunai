@@ -1,6 +1,7 @@
 import { providerHttpErrorForStatus, type ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
+import { EndpointResilienceTracker } from "../shared/provider-cache";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { YOUTUBE_PROVIDER_ID } from "./manifest";
 
@@ -36,7 +37,15 @@ type CachedInstances = {
  * one served.
  */
 const cachedInstancesByUrl = new Map<string, CachedInstances>();
-const cooldownUntil = new Map<string, number>();
+/**
+ * Instance cooldowns — one failed request parks an instance for the policy
+ * window. Single-strike is right here: the pool always has more instances to
+ * substitute, so a sick one earns nothing by being re-asked immediately.
+ */
+const instanceHealth = new EndpointResilienceTracker({
+  cooldownMs: INSTANCE_COOLDOWN_MS,
+  maxEntries: 256,
+});
 
 export type InvidiousInstancePoolOptions = {
   readonly instancesUrl?: string;
@@ -50,10 +59,9 @@ export async function fetchHealthyInvidiousInstances(
   options: InvidiousInstancePoolOptions = {},
 ): Promise<readonly string[]> {
   const now = options.now?.() ?? Date.now();
-  pruneExpiredCooldowns(now);
   if (options.preferredInstanceUrl?.trim()) {
     const preferred = normalizeInstanceUrl(options.preferredInstanceUrl);
-    if ((cooldownUntil.get(preferred) ?? 0) <= now) {
+    if (instanceHealth.shouldTry(preferred, now)) {
       return [preferred];
     }
   }
@@ -122,7 +130,7 @@ export async function fetchHealthyInvidiousInstances(
 }
 
 export function markInvidiousInstanceFailure(instanceUrl: string, now = Date.now()): void {
-  cooldownUntil.set(normalizeInstanceUrl(instanceUrl), now + INSTANCE_COOLDOWN_MS);
+  instanceHealth.recordFailure(normalizeInstanceUrl(instanceUrl), { at: now });
 }
 
 export async function pickInvidiousInstance(
@@ -177,13 +185,7 @@ function selectReachableInstances(
 }
 
 function filterAvailableInstances(instances: readonly string[], now: number): readonly string[] {
-  return instances.filter((instance) => (cooldownUntil.get(instance) ?? 0) <= now);
-}
-
-function pruneExpiredCooldowns(now: number): void {
-  for (const [instance, until] of cooldownUntil) {
-    if (until <= now) cooldownUntil.delete(instance);
-  }
+  return instances.filter((instance) => instanceHealth.shouldTry(instance, now));
 }
 
 function normalizeInstanceUrl(value: string): string {

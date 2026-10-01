@@ -25,6 +25,14 @@ export class ProviderHttpError extends Error {
 
   readonly retryable: boolean;
 
+  /**
+   * The upstream's own cooldown hint, when it sent one (`Retry-After`), in
+   * milliseconds from the moment the response arrived. Consumed by the cycle
+   * engine as a retry-delay floor and by endpoint health as a cooldown floor —
+   * a 429 that says "come back in 60s" should not be re-asked in 750ms.
+   */
+  readonly retryAfterMs?: number;
+
   constructor({
     message,
     providerId,
@@ -32,6 +40,7 @@ export class ProviderHttpError extends Error {
     status,
     code,
     retryable,
+    retryAfterMs,
     cause,
   }: {
     readonly message: string;
@@ -40,6 +49,7 @@ export class ProviderHttpError extends Error {
     readonly status?: number;
     readonly code: ResolveErrorCode;
     readonly retryable: boolean;
+    readonly retryAfterMs?: number;
     readonly cause?: unknown;
   }) {
     super(message, { cause });
@@ -48,7 +58,35 @@ export class ProviderHttpError extends Error {
     this.status = status;
     this.code = code;
     this.retryable = retryable;
+    this.retryAfterMs = retryAfterMs;
   }
+}
+
+/**
+ * The longest a `Retry-After` hint is honored. A hostile or sloppy upstream
+ * sending `Retry-After: 86400` must not park an endpoint for a day — the hint
+ * is a floor on the local cooldown, never a veto over it.
+ */
+export const RETRY_AFTER_CAP_MS = 15 * 60 * 1000;
+
+/**
+ * Parse a `Retry-After` header value into milliseconds-from-now. Supports the
+ * two real forms — integer seconds and HTTP-date — and clamps hostile values
+ * to {@link RETRY_AFTER_CAP_MS}. Returns undefined for absent/malformed input.
+ */
+export function parseRetryAfterHeader(
+  value: string | null | undefined,
+  now = Date.now(),
+): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (/^\d+$/.test(trimmed)) {
+    return Math.min(Number(trimmed) * 1000, RETRY_AFTER_CAP_MS);
+  }
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return undefined;
+  return Math.min(Math.max(0, at - now), RETRY_AFTER_CAP_MS);
 }
 
 export function httpStatusToResolveErrorCode(status: number): ResolveErrorCode {
@@ -72,6 +110,21 @@ export function httpStatusIsRetryable(status: number): boolean {
 }
 
 /**
+ * Read a `Retry-After` hint off any thrown value — `ProviderHttpError` and its
+ * subclasses carry it as a field, and the duck-typed read keeps working for
+ * errors reconstituted across a serialization boundary. Anything else returns
+ * undefined.
+ */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- boundary probe: the thrown value's type is what this answers
+export function errorRetryAfterMs(error: unknown): number | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- duck-typed field read; survives error reconstitution by design
+  if (typeof error !== "object" || error === null) return undefined;
+  // SAFETY: object-guarded above; the field is probed as unknown before the number check.
+  const value = (error as { readonly retryAfterMs?: unknown }).retryAfterMs;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/**
  * Canonical constructor for "the API answered a non-OK status" throws — one
  * mapping table instead of every provider re-deriving code/retryable itself.
  * The message stays caller-owned so existing message-level evidence (provider
@@ -82,6 +135,7 @@ export function providerHttpErrorForStatus(input: {
   readonly message: string;
   readonly providerId?: ProviderId | string;
   readonly stage?: string;
+  readonly retryAfterMs?: number;
   readonly cause?: unknown;
 }): ProviderHttpError {
   return new ProviderHttpError({

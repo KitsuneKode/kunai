@@ -28,12 +28,12 @@ import type {
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
-import { providerHttpErrorForStatus } from "@kunai/types";
+import { errorRetryAfterMs, parseRetryAfterHeader, providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { readJsonObjectBody } from "../shared/json-body";
 import { decryptOpensslSalted, sha256Hex } from "../shared/openssl-evp";
-import { HealthTracker, TTLCache } from "../shared/provider-cache";
+import { EndpointResilienceTracker, TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
   cycleExhaustedResult,
@@ -224,7 +224,10 @@ function normalizeLanguageCode(value: string | undefined): string | undefined {
 }
 
 /** Track server health with 60s cooldown after 2 consecutive failures. */
-const vidkingHealth = new HealthTracker(60_000, 2);
+const vidkingHealth = new EndpointResilienceTracker({
+  cooldownMs: 60_000,
+  strikesToCooldown: 2,
+});
 
 function createVideasyEndpointHealth(context: ProviderRuntimeContext) {
   const port = context.endpointHealth;
@@ -242,17 +245,25 @@ function createVideasyEndpointHealth(context: ProviderRuntimeContext) {
     },
     recordFailure(
       endpoint: string,
-      info: { readonly class: EndpointFailureClass; readonly titleId?: string },
+      info: {
+        readonly class: EndpointFailureClass;
+        readonly titleId?: string;
+        readonly retryAfterMs?: number;
+      },
     ): void {
       if (port) {
         port.recordFailure(VIDEOSY_PROVIDER_ID, endpoint, {
           class: info.class,
           titleId: info.titleId,
           at: context.now(),
+          retryAfterMs: info.retryAfterMs,
         });
         return;
       }
-      vidkingHealth.recordFailure(endpoint);
+      vidkingHealth.recordFailure(
+        endpoint,
+        info.retryAfterMs !== undefined ? { cooldownMs: info.retryAfterMs } : undefined,
+      );
     },
   };
 }
@@ -1445,11 +1456,16 @@ const wingsSeedCache = new TTLCache<string, string>(30_000, {
 const wingsPreferredHostCache = new TTLCache<number, string>(30_000, {
   maxEntries: WINGS_TRANSPORT_LIMITS.preferredHostEntries,
 });
-/** Hosts that recently failed a seed request get skipped for a while (host-level). */
-const wingsHostFailureCache = new TTLCache<string, true>(5 * 60_000, {
+const WINGS_HOST_FAILURE_PENALTY_MS = 5 * 60_000;
+/**
+ * Hosts that recently failed a seed request get skipped for a while
+ * (host-level). One strike parks the host — a dead seed mirror is cheap to
+ * skip while three alternatives exist.
+ */
+const wingsHostFailureCache = new EndpointResilienceTracker({
+  cooldownMs: WINGS_HOST_FAILURE_PENALTY_MS,
   maxEntries: WINGS_TRANSPORT_LIMITS.failureEntries,
 });
-const WINGS_HOST_FAILURE_PENALTY_MS = 5 * 60_000;
 
 /** Test seam: the seed race is deterministic only with an injected requester. */
 export function fetchWingsdatabaseSeedForTest(
@@ -1471,14 +1487,14 @@ export function fetchWingsdatabaseSeedForTest(
 export function wingsPenalizedHostsForTest(
   hosts: readonly string[] = WINGS_API_BASES,
 ): readonly string[] {
-  return hosts.filter((base) => Boolean(wingsHostFailureCache.get(base)));
+  return hosts.filter((base) => !wingsHostFailureCache.shouldTry(base));
 }
 
 /** Test seam: module-scoped transport state must not leak between test cases. */
 export function clearWingsTransportCachesForTest(): void {
   wingsSeedCache.clear();
   wingsPreferredHostCache.clear();
-  wingsHostFailureCache.clear();
+  wingsHostFailureCache.reset();
 }
 
 function wingsSeedCacheKey(apiBase: string, mediaId: number): string {
@@ -1522,7 +1538,7 @@ async function fetchWingsdatabaseSeed(
   }
 
   // Skip recently-failed hosts unless every host is in the penalty box.
-  const healthy = uncached.filter((base) => !wingsHostFailureCache.get(base));
+  const healthy = uncached.filter((base) => wingsHostFailureCache.shouldTry(base));
   const candidates = healthy.length > 0 ? healthy : uncached;
   if (candidates.length === 0) return undefined;
 
@@ -1551,6 +1567,7 @@ async function fetchWingsdatabaseSeed(
               message: `seed HTTP ${response.status}`,
               providerId: VIDEOSY_PROVIDER_ID,
               stage: "wings-seed",
+              retryAfterMs: parseRetryAfterHeader(response.headers.get("retry-after")),
             });
           }
           const body = await readJsonObjectBody<{ seed?: string; ttlMs?: number }>(response);
@@ -1563,7 +1580,12 @@ async function fetchWingsdatabaseSeed(
           // used to poison both hosts for five minutes on every cancelled
           // playback. A genuine pre-winner failure or timeout is real evidence.
           if (!won && !effectiveSignal?.aborted) {
-            wingsHostFailureCache.set(apiBase, true, WINGS_HOST_FAILURE_PENALTY_MS);
+            // The upstream's own Retry-After outranks the generic penalty —
+            // an explicit "come back in 30s" is better evidence than a
+            // guessed 5-minute timeout.
+            wingsHostFailureCache.recordFailure(apiBase, {
+              cooldownMs: errorRetryAfterMs(error) ?? WINGS_HOST_FAILURE_PENALTY_MS,
+            });
             lastGenuineError = error;
           }
           throw error;
@@ -1577,7 +1599,7 @@ async function fetchWingsdatabaseSeed(
 
     wingsSeedCache.set(wingsSeedCacheKey(winner.apiBase, mediaId), winner.seed, winner.ttlMs);
     wingsPreferredHostCache.set(mediaId, winner.apiBase, winner.ttlMs);
-    wingsHostFailureCache.delete(winner.apiBase);
+    wingsHostFailureCache.recordSuccess(winner.apiBase);
     return { apiBase: winner.apiBase, seed: winner.seed };
   } finally {
     // Stop the losing seed requests; Promise.any already consumed their outcomes.
@@ -1735,6 +1757,7 @@ async function tryVidkingServer(opts: {
             endpointHealth.recordFailure(server, {
               class: classifyVideasyHttpFailure(response.status),
               titleId,
+              retryAfterMs: parseRetryAfterHeader(response.headers.get("retry-after")),
             });
             const statusCode = response.status;
             const body = await safeReadResponseText(response);
@@ -1896,6 +1919,7 @@ async function tryVidkingServer(opts: {
           endpointHealth.recordFailure(server, {
             class: isVideasyTimeoutError(error) ? "transient" : "server-error",
             titleId,
+            retryAfterMs: errorRetryAfterMs(error),
           });
           const timedOut = isVideasyTimeoutError(error);
           // Only a decrypt-stage throw is a parse failure — a DNS/reset thrown

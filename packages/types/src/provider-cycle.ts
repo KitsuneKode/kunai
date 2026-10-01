@@ -66,6 +66,14 @@ export interface ProviderCycleFailure {
    * observed against the endpoint itself.
    */
   readonly endpointScoped?: boolean;
+
+  /**
+   * The upstream's `Retry-After` hint in milliseconds, when the failed request
+   * carried one. The engine honors it as a floor on the inter-attempt delay
+   * (capped — a resolve cannot sleep for minutes) and endpoint health as a
+   * floor on the cooldown it would otherwise compute.
+   */
+  readonly retryAfterMs?: number;
 }
 
 export interface ProviderCycleAttempt {
