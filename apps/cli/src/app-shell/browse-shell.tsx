@@ -3,9 +3,9 @@ import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
 import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
-import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
+import { useCommandPalette } from "@/app-shell/use-command-palette";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { FilterStateKey } from "@/domain/search/SearchIntent";
 import type { SearchResult, ShellMode } from "@/domain/types";
@@ -126,11 +126,6 @@ import {
   takeNotificationDetailsItem,
 } from "./root-overlay-bridge";
 import { SakuraLoader } from "./SakuraLoader";
-import {
-  getCommandAutocompleteTarget,
-  getCommandMatches,
-  getHighlightedCommand,
-} from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
@@ -277,9 +272,13 @@ export function BrowseShell<T>({
   // list, so nothing re-renders on its own when the underlying row changes.
   // Only the setter is needed — the count itself is never read.
   const [, setFavoriteTick] = useState(0);
-  const [commandMode, setCommandMode] = useState(false);
-  const [commandInput, setCommandInput] = useState("");
-  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const commandPalette = useCommandPalette({ onInputRedraw: clearShellScreen });
+  // Destructure the stable callbacks so dep arrays name them, not the
+  // per-render aggregate object.
+  const { openPalette, closePalette } = commandPalette;
+  const commandMode = commandPalette.open;
+  const commandInput = commandPalette.input;
+  const highlightedCommandIndex = commandPalette.highlightedIndex;
   // Transient confirmation for row actions (follow / queue / download) — without it,
   // following a title looked like a no-op even though it persisted.
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -295,14 +294,7 @@ export function BrowseShell<T>({
     },
     [],
   );
-  const commandEditor = useLineEditor({
-    value: commandInput,
-    onChange: (nextValue) => {
-      setCommandInput(nextValue);
-      setHighlightedCommandIndex(0);
-    },
-    onRedraw: clearShellScreen,
-  });
+  const commandEditor = commandPalette.editor;
   const [activeOverlay, setActiveOverlay] = useState<BrowseOverlay | null>(null);
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
@@ -542,15 +534,13 @@ export function BrowseShell<T>({
       setQuery(normalized.value);
       setHistoryIndex(-1);
       if (normalized.openCommandPalette) {
-        setCommandMode(true);
-        setCommandInput("");
-        setHighlightedCommandIndex(0);
+        openPalette();
       }
       // Emptying the draft is not a gesture — backspacing to retype must not
       // fire a discovery reload or move focus. Restoring trending is deliberate
       // and lives on the Esc ladder (query → clear text, results → clearResults).
     },
-    [setQuery],
+    [setQuery, openPalette],
   );
 
   const runSearch = useCallback(
@@ -814,7 +804,7 @@ export function BrowseShell<T>({
       if (!resolved) return;
       const detailRequestId = detailRequestGateRef.current.begin();
       const panel = buildBrowseDetailsPanel(resolved);
-      setCommandMode(false);
+      closePalette();
       focusZoneBeforeOverlayRef.current = focusZone;
       // Keep list ownership under the sheet so close restores the highlighted row,
       // not a forced dump into the search field.
@@ -866,7 +856,7 @@ export function BrowseShell<T>({
         })();
       }
     },
-    [selectedOption, mode, focusZone],
+    [selectedOption, mode, focusZone, closePalette],
   );
 
   const runMutationWithFeedback = useCallback(
@@ -915,24 +905,18 @@ export function BrowseShell<T>({
       });
       if (decision.kind === "open-narrow") {
         setFilterModeOpen(true);
-        setCommandMode(false);
-        setCommandInput("");
-        setHighlightedCommandIndex(0);
+        closePalette();
         setFocusZone("filter");
       }
       return true;
     }
     if (action === "trending") {
-      setCommandMode(false);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      closePalette();
       void loadDiscovery();
       return true;
     }
     if (action === "recommendation") {
-      setCommandMode(false);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      closePalette();
       void loadRecommendations();
       return true;
     }
@@ -1306,59 +1290,18 @@ export function BrowseShell<T>({
     }
 
     if (commandMode) {
-      const matches = getCommandMatches(commandInput, commands);
-
-      if (key.escape) {
-        setCommandMode(false);
-        setCommandInput("");
-        setHighlightedCommandIndex(0);
-        return;
-      }
-      if (key.return) {
-        const resolved = getHighlightedCommand(commandInput, commands, highlightedCommandIndex);
-        if (resolved?.enabled) {
-          const action = toShellAction(resolved.id);
-          if (!handleLocalAction(action)) {
-            onResolve(action);
-          }
+      const paletteResult = commandPalette.handleKey(input, key, commands);
+      if (paletteResult.kind === "resolved") {
+        const action = toShellAction(paletteResult.command.id);
+        if (!handleLocalAction(action)) {
+          onResolve(action);
         }
-        return;
-      }
-      if (key.tab) {
-        const target = getCommandAutocompleteTarget(
-          commandInput,
-          commands,
-          highlightedCommandIndex,
-        );
-        if (target) {
-          commandEditor.setValue(target.aliases[0] ?? target.id);
-          const nextIndex = matches.findIndex((candidate) => candidate.id === target.id);
-          setHighlightedCommandIndex(nextIndex >= 0 ? nextIndex : 0);
-        }
-        return;
-      }
-      if (key.upArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
-        }
-        return;
-      }
-      if (key.downArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
-        }
-        return;
-      }
-      if (commandEditor.handleInput(input, key)) {
-        return;
       }
       return;
     }
 
     if (input === "/") {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      openPalette();
       return;
     }
 

@@ -2,9 +2,9 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
-import { useLineEditor } from "@/app-shell/line-editor";
 import { resolveHonestLoadingStageDetail } from "@/app-shell/loading-shell-model";
 import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
+import { useCommandPalette } from "@/app-shell/use-command-palette";
 import {
   buildPlaybackBootstrapPresentation,
   formatBootstrapInventorySummary,
@@ -82,9 +82,6 @@ import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state
 import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
 import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "./session-picker";
 import {
-  getCommandAutocompleteTarget,
-  getCommandMatches,
-  getHighlightedCommand,
   getListShellCommandPaletteMaxVisible,
   shouldHideCompanionForCommandPalette,
 } from "./shell-command-model";
@@ -1372,9 +1369,10 @@ function ListShell<T>({
   const [index, setIndex] = useState(initialSelectedIndex ?? 0);
   const [confirmed, setConfirmed] = useState(false);
   const [filterQuery, setFilterQuery] = useState(initialFilter ?? "");
-  const [commandMode, setCommandMode] = useState(false);
-  const [commandInput, setCommandInput] = useState("");
-  const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  const commandPalette = useCommandPalette();
+  const commandMode = commandPalette.open;
+  const commandInput = commandPalette.input;
+  const highlightedCommandIndex = commandPalette.highlightedIndex;
   const viewport = useDebouncedViewportPolicy("picker");
   const normalizedFilter = filterQuery.trim().toLowerCase();
   const filteredOptions = useMemo(() => {
@@ -1456,18 +1454,10 @@ function ListShell<T>({
     const normalized = normalizeReservedCommandInput(nextValue);
     setFilterQuery(normalized.value);
     if (normalized.openCommandPalette && actionContext) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      commandPalette.openPalette();
     }
   };
-  const commandEditor = useLineEditor({
-    value: commandInput,
-    onChange: (nextValue) => {
-      setCommandInput(nextValue);
-      setHighlightedCommandIndex(0);
-    },
-  });
+  const commandEditor = commandPalette.editor;
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -1475,65 +1465,20 @@ function ListShell<T>({
     }
 
     if (commandMode) {
-      const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
-
-      if (key.escape) {
-        setCommandMode(false);
-        setCommandInput("");
-        setHighlightedCommandIndex(0);
-        return;
-      }
-      if (key.return) {
-        const resolved = getHighlightedCommand(
-          commandInput,
-          actionContext?.commands ?? [],
-          highlightedCommandIndex,
-        );
-        if (resolved?.enabled) {
-          onAction?.({
-            type: "action",
-            action: toShellAction(resolved.id),
-            filterQuery,
-            selectedIndex: index,
-          });
-        }
-        return;
-      }
-      if (key.tab) {
-        const target = getCommandAutocompleteTarget(
-          commandInput,
-          actionContext?.commands ?? [],
-          highlightedCommandIndex,
-        );
-        if (target) {
-          commandEditor.setValue(target.aliases[0] ?? target.id);
-          const nextIndex = matches.findIndex((candidate) => candidate.id === target.id);
-          setHighlightedCommandIndex(nextIndex >= 0 ? nextIndex : 0);
-        }
-        return;
-      }
-      if (key.upArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current - 1 + matches.length) % matches.length);
-        }
-        return;
-      }
-      if (key.downArrow) {
-        if (matches.length > 0) {
-          setHighlightedCommandIndex((current) => (current + 1) % matches.length);
-        }
-        return;
-      }
-      if (commandEditor.handleInput(input, key)) {
-        return;
+      const paletteResult = commandPalette.handleKey(input, key, actionContext?.commands ?? []);
+      if (paletteResult.kind === "resolved") {
+        onAction?.({
+          type: "action",
+          action: toShellAction(paletteResult.command.id),
+          filterQuery,
+          selectedIndex: index,
+        });
       }
       return;
     }
 
     if (input === "/" && actionContext) {
-      setCommandMode(true);
-      setCommandInput("");
-      setHighlightedCommandIndex(0);
+      commandPalette.openPalette();
       return;
     }
 
