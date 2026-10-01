@@ -64,14 +64,18 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // holds the *rest* of the order and must not repeat the lane default. Miruro
   // is first of the rest: it aggregates roughly a dozen backends behind one
   // AniList-keyed pipe, so one upstream going dark costs a server rather than
-  // the lane. KickAssAnime and AnimeGG share nothing with Miruro — own
+  // the lane. AnimeKai follows — its own catalog, own site, and a megaplay
+  // embed, sharing no infrastructure with either HiAnime or Miruro, and it is
+  // direct-HTTP (no browser), so it works where the relay-dependent lanes are
+  // geo-blocked. KickAssAnime and AnimeGG share nothing with Miruro — own
   // catalog, own site, own CDN — and KickAssAnime can take over a title Miruro
   // found. AniDB follows for when it returns, then AllAnime for the ani-cli
   // parity path.
-  animeProviderPriority: ["miruro", "kickassanime", "animegg", "anidb", "allanime"],
+  animeProviderPriority: ["miruro", "animekai", "kickassanime", "animegg", "anidb", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
-  providerDefaultsRevision: 3,
+  // Revision 4 adds AnimeKai to the anime fallback order.
+  providerDefaultsRevision: 4,
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

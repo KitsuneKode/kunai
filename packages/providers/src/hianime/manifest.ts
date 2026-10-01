@@ -2,8 +2,15 @@ import { defineProviderManifest } from "@kunai/core";
 
 export const HIANIME_PROVIDER_ID = "hianime" as const;
 
-/** Which embed server Kunai resolves. ani-cli parity: only ZokoAnime is understood. */
+/** The primary embed server — ani-cli parity lane and preferred lead. */
 export const HIANIME_SUPPORTED_SERVER = "ZokoAnime" as const;
+
+/**
+ * MegaPlay-family servers resolved through the shared data-id/getSources
+ * contract — live again upstream (they 410'd in Sept). VidPlay-1
+ * (vidtube.site) is a different player page and stays unsupported.
+ */
+export const HIANIME_MEGAPLAY_SERVERS = ["HD-1", "Vidstream-2"] as const;
 
 export const hianimeManifest = defineProviderManifest({
   id: HIANIME_PROVIDER_ID,
@@ -60,11 +67,21 @@ export const hianimeManifest = defineProviderManifest({
   relaySafe: true,
   relayProfile: {
     // Fetched hosts only: hianime.at (search/catalog/servers), zokoanime.video
-    // (embeds), aniwatchtv.uk (HLS ladder + subtitles — parent domain so CDN
-    // host rotation stays relay-routed via suffix match). Megaplay/VidTube
-    // embed hosts decode for the observed-servers trace but are never fetched
-    // (ZokoAnime is the only resolved server), so they stay out.
-    upstreamHosts: ["hianime.at", "zokoanime.video", "aniwatchtv.uk"],
+    // (ZokoAnime embeds), megaplay.buzz (HD-1/Vidstream-2 embeds + getSources
+    // XHR), aniwatchtv.uk + norami.top + nexabloom.top + shiora.top (HLS
+    // ladders and subtitles — parent domains so CDN host rotation stays
+    // relay-routed via suffix match; megaplay's CDN parents are the observed
+    // set and may grow). vidtube.site stays out: its player contract is
+    // unimplemented, so nothing fetches it.
+    upstreamHosts: [
+      "hianime.at",
+      "zokoanime.video",
+      "aniwatchtv.uk",
+      "megaplay.buzz",
+      "norami.top",
+      "nexabloom.top",
+      "shiora.top",
+    ],
   },
   // Production since it became the anime lane default (providerDefaultsRevision
   // 3): it is the configured provider search hits first, so it cannot wear the
@@ -72,7 +89,7 @@ export const hianimeManifest = defineProviderManifest({
   status: "production",
   notes: [
     "Parity with ani-cli v5.1.4: /search, /api/theme/episode/list + servers, ZokoAnime embed window.__P base64(XOR(json, otaku-embed-v1)) → HLS master. Curl-path failures name the layer (no HTTP response vs HTTP NNN) per upstream #1902. Pin: scripts/parity-references.json.",
-    "Only the ZokoAnime server is resolved — HD-1/Vidstream-2 answer 410 upstream and VidPlay-1 (vidtube.site) is a different JWPlayer-style page. Both are recorded as observed/unsupported, matching ani-cli.",
+    "Three servers resolve as provider-local lanes in API order: ZokoAnime first (ani-cli parity), then HD-1 and Vidstream-2 — both megaplay.buzz embeds speaking the shared data-id/getSources/AES-256-CBC contract (upstream revived them after the Sept 410 window; live-verified). A dead lane falls through to the next server; VidPlay-1 (vidtube.site) is a different JWPlayer-style page and stays observed-only.",
     "Sub = Japanese audio, dub = English audio, each with its own embed fetch. No audio fallback: a missing mode fails closed like AniDB.",
     "Each season is a separate provider-native slug; there is no in-provider season routing.",
     "Bun/fetch may meet Cloudflare where curl passes; the client falls back to curl/curl-impersonate like AniDB/Miruro.",

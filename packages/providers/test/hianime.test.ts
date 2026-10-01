@@ -13,6 +13,7 @@ import {
   HianimeEmbedDecodeError,
   hianimeCurlFailureMessage,
   hianimeEmbedReferer,
+  hianimeServerKind,
   hianimeUrlLabel,
   hianimeMalIdFromEmbedUrl,
   hianimeNumericId,
@@ -25,9 +26,15 @@ import {
   resolveHianimeShow,
   fetchHianimeEpisodeCatalog,
   hianimeFetchText,
+  setHianimeCurlEnvironmentForTests,
   splitCurlHttpTrailer,
 } from "../src/hianime/direct";
 import { HIANIME_PROVIDER_ID, hianimeManifest } from "../src/hianime/manifest";
+
+/* Every hianime fetch in this file runs behind `happyRouter` — a URL that
+ * misses the stub must fail inside the sandbox, not fall through to the real
+ * curl binary on the dev machine's PATH. */
+setHianimeCurlEnvironmentForTests({ which: () => null, listPathEntries: () => [] });
 
 const NOW = "2026-09-13T00:00:00.000Z";
 
@@ -82,6 +89,63 @@ const MASTER_TWO_VARIANT = [
   "1080/index.m3u8",
 ].join("\n");
 
+const MEGAPLAY_MASTER = [
+  "#EXTM3U",
+  "#EXT-X-VERSION:4",
+  "#EXT-X-STREAM-INF:BANDWIDTH=5300000,RESOLUTION=1920x1080",
+  "1080/index.m3u8",
+].join("\n");
+
+/**
+ * A megaplay.buzz player page. Real pages can carry two ids — `data-mediaid`
+ * is the getSources key on dual-id deployments while `data-id` decrypts to
+ * `{}`; both parse for the walk.
+ */
+function megaplayEmbedPage(dataId: string, mediaId?: string): string {
+  const mediaAttr = mediaId === undefined ? "" : ` data-mediaid="${mediaId}"`;
+  return `<!doctype html><html><body><div id="player" data-id="${dataId}"${mediaAttr}></div></body></html>`;
+}
+
+/**
+ * Fixture encrypted with the same constants the embed ships: key
+ * "i?LMTAx0Q6,:}50U" zero-padded to 32 bytes, iv "W0;27ToaUpl_P%'c".
+ */
+async function encryptMegaplayFixture(json: string): Promise<string> {
+  const keyBytes = new Uint8Array(32);
+  keyBytes.set(new TextEncoder().encode("i?LMTAx0Q6,:}50U"));
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, [
+    "encrypt",
+  ]);
+  const cipher = await crypto.subtle.encrypt(
+    { name: "AES-CBC", iv: new TextEncoder().encode("W0;27ToaUpl_P%'c") },
+    key,
+    new TextEncoder().encode(json),
+  );
+  return Buffer.from(cipher).toString("base64url");
+}
+
+async function megaplaySourcesJson(masterUrl: string): Promise<LooseJsonValue> {
+  return {
+    enc: await encryptMegaplayFixture(JSON.stringify({ file: masterUrl })),
+    tracks: [
+      {
+        file: "https://subs.example/eng-2.vtt",
+        label: "English",
+        kind: "captions",
+        default: true,
+      },
+    ],
+    intro: { start: 0, end: 83 },
+    outro: { start: 1280, end: 1369 },
+    server: 4,
+  };
+}
+
+/** The live trap: decrypts fine but carries no playlist (wrong getSources id). */
+async function megaplayEmptySourcesJson(): Promise<LooseJsonValue> {
+  return { enc: await encryptMegaplayFixture("{}") };
+}
+
 const EPISODES_HTML = [
   '<a title="Episode 1" class="ssl-item ep-item" data-number="1" data-id="22676" href="https://hianime.at/watch/naruto-1335?ep=22676">',
   '<div class="ep-name dynamic-name" data-jname="Enter: Naruto Uzumaki!" title="Enter: Naruto Uzumaki!">Enter</div></a>',
@@ -96,14 +160,16 @@ const SERVERS_HTML = [
   '<div class="item server-item" data-type="dub" data-server-name="VidPlay-1" data-hash="aHR0cHM6Ly92aWR0dWJlLnNpdGUvc3RyZWFtL3Rva2VuL2R1Yg==">',
 ].join("");
 
-function stubContext(router: (url: string) => Response | string): ProviderRuntimeContext {
+function stubContext(
+  router: (url: string) => Response | string | Promise<Response | string>,
+): ProviderRuntimeContext {
   return {
     now: () => NOW,
     fetch: {
       runtime: "direct-http",
       fetch: async (input) => {
         const url = String(input);
-        const answer = router(url);
+        const answer = await router(url);
         return typeof answer === "string" ? new Response(answer) : answer;
       },
     },
@@ -380,10 +446,11 @@ describe("hianime module resolve", () => {
       providerNativeIds: { [HIANIME_PROVIDER_ID]: "naruto-1335" },
     });
     const byId = new Map((result.sources ?? []).map((source) => [source.id, source]));
-    expect(byId.get("source:hianime:sub")?.status).toBe("selected");
-    // The dub row is confirmed by the servers listing but unprobed: `skipped`
-    // rows stay switchable (manual re-resolve) from the Tracks panel.
-    expect(byId.get("source:hianime:dub")?.status).toBe("skipped");
+    expect(byId.get("source:hianime:sub:0")?.status).toBe("selected");
+    // HD-1 is the second sub lane — offered but unprobed (`skipped` rows stay
+    // switchable from the Tracks panel), same as the dub lane.
+    expect(byId.get("source:hianime:sub:1")?.status).toBe("skipped");
+    expect(byId.get("source:hianime:dub:0")?.status).toBe("skipped");
     expect(result.trace.events?.map((event) => event.type)).toEqual(
       expect.arrayContaining(["inventory:audio-modes", "source:success", "provider:success"]),
     );
@@ -410,6 +477,228 @@ describe("hianime module resolve", () => {
     expect(selected?.audioLanguages).toEqual(["en"]);
     expect(selected?.url).toBe("https://hls2.aniwatchtv.uk/v/demo/dub/1080/index.m3u8");
     expect(selected?.metadata).toMatchObject({ intro: { start: 10, end: 90 } });
+  });
+
+  /**
+   * Router adding the HD-1 megaplay lane's fixture on top of the happy path.
+   * `zokoanimeSubBroken` serves a 200 embed page with no `__P` blob — a
+   * deterministic decode failure. Unstubbed getSources ids answer the empty
+   * payload rather than throwing so a decrypt-to-`{}` payload fails inside
+   * the sandbox.
+   */
+  function megaplayRouter(
+    url: string,
+    options: {
+      readonly zokoanimeSubBroken?: boolean;
+      readonly pageIds?: { readonly dataId: string; readonly mediaId?: string };
+      readonly sources?: Readonly<Record<string, () => Promise<LooseJsonValue>>>;
+    } = {},
+  ): Response | string | Promise<Response | string> {
+    if (options.zokoanimeSubBroken && url.endsWith("/mal/20/1/sub")) {
+      return "<!doctype html><html><body>no blob</body></html>";
+    }
+    const pageIds = options.pageIds ?? { dataId: "104103", mediaId: "104104" };
+    if (url.endsWith("/s-2/12352/sub")) {
+      return megaplayEmbedPage(pageIds.dataId, pageIds.mediaId);
+    }
+    const sourcesId = /[?&]id=(\d+)/.exec(url)?.[1];
+    if (url.includes("/stream/getSources") && sourcesId) {
+      const source =
+        options.sources?.[sourcesId] ??
+        (sourcesId === "104104"
+          ? () => megaplaySourcesJson("https://megap.norami.top/anime/mega/master.m3u8")
+          : megaplayEmptySourcesJson);
+      return source().then((body) => jsonResponse(body));
+    }
+    if (url.endsWith("/anime/mega/master.m3u8")) return MEGAPLAY_MASTER;
+    return happyRouter(url);
+  }
+
+  test("falls through a dead ZokoAnime lane to the HD-1 megaplay lane", async () => {
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => megaplayRouter(url, { zokoanimeSubBroken: true })),
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved");
+    const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+    expect(selected?.serverName).toBe("HD-1");
+    expect(selected?.sourceId).toBe("source:hianime:sub:1");
+    expect(selected?.url).toBe("https://megap.norami.top/anime/mega/1080/index.m3u8");
+    expect(selected?.headers).toMatchObject({ Referer: "https://megaplay.buzz/" });
+    // The megaplay getSources payload carries its own subs and skip data.
+    expect(selected?.metadata).toMatchObject({
+      intro: { start: 0, end: 83 },
+      outro: { start: 1280, end: 1369 },
+    });
+    expect(result.subtitles[0]).toMatchObject({ label: "English", format: "vtt" });
+    // The inventory names the dead lane's row, not just the survivor's.
+    const byId = new Map((result.sources ?? []).map((source) => [source.id, source]));
+    expect(byId.get("source:hianime:sub:0")?.label).toContain("ZokoAnime");
+    expect(byId.get("source:hianime:sub:1")?.status).toBe("selected");
+  });
+
+  test("a resolved lane whose rungs all fail the gate falls through to the next server", async () => {
+    /* The ZokoAnime lane resolves fine — embed decodes, ladder expands — but
+     * every probed variant answers a definitive 403. Before the gate moved
+     * inside the lane walk, that single verdict ended the episode; now it is
+     * a lane failure and HD-1 still gets its turn. */
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        if (url.startsWith("https://hls2.aniwatchtv.uk/") && url.endsWith("/index.m3u8")) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        return megaplayRouter(url);
+      }),
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved");
+    const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+    expect(selected?.serverName).toBe("HD-1");
+    expect(selected?.sourceId).toBe("source:hianime:sub:1");
+    expect(result.trace.events?.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["source:failed", "source:success"]),
+    );
+  });
+
+  test("a gate refusal on every lane exhausts with the refusal's own code", async () => {
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        // Streams refuse on both lanes; the ladders/embeds stay up, so the
+        // exhausted verdict carries the gate's classification (403 → blocked),
+        // not a collapsed "not-found".
+        if (url.endsWith("/index.m3u8")) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        return megaplayRouter(url);
+      }),
+    );
+
+    expect(result.status).toBe("exhausted");
+    // HiAnime keeps `blocked` retryable on purpose — a WAF verdict on one
+    // episode can heal on the next attempt, so it must not poison the lane.
+    expect(result.failures[0]).toMatchObject({ code: "blocked", retryable: true });
+  });
+
+  test("a pinned lane source id resolves only that megaplay lane", async () => {
+    clearHianimeCachesForTest();
+    const fetched: string[] = [];
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        preferredSourceId: "source:hianime:sub:1",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        fetched.push(url);
+        return megaplayRouter(url);
+      }),
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved");
+    // The pin skips the ZokoAnime embed entirely — no fetch of its URL.
+    expect(fetched.some((url) => url.includes("zokoanime.video"))).toBe(false);
+    expect(fetched.some((url) => url.includes("/s-2/12352/sub"))).toBe(true);
+    const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+    expect(selected?.serverName).toBe("HD-1");
+    expect(selected?.sourceId).toBe("source:hianime:sub:1");
+  });
+
+  test("a getSources id that decrypts empty falls through to the next advertised id", async () => {
+    clearHianimeCachesForTest();
+    const fetched: string[] = [];
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        preferredSourceId: "source:hianime:sub:1",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext((url) => {
+        fetched.push(url);
+        // Page carries a bogus mediaid alongside the working data-id: the
+        // walk tries mediaid first (decrypts to `{}`), then data-id (real).
+        return megaplayRouter(url, { pageIds: { dataId: "104104", mediaId: "999" } });
+      }),
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved");
+    expect(
+      fetched
+        .filter((url) => url.includes("/stream/getSources"))
+        .map((url) => /[?&]id=(\d+)/.exec(url)?.[1]),
+    ).toEqual(["999", "104104"]);
+  });
+
+  test("a legacy mode-only pin still resolves the lead lane", async () => {
+    clearHianimeCachesForTest();
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        preferredSourceId: "source:hianime:sub",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext(megaplayRouter),
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") throw new Error("expected resolved");
+    const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+    expect(selected?.serverName).toBe("ZokoAnime");
+    expect(selected?.sourceId).toBe("source:hianime:sub:0");
+  });
+
+  test("classifies embed hosts and server names into lane kinds", () => {
+    const lane = (serverName: string, embedUrl: string) =>
+      hianimeServerKind({ serverName, embedUrl, audioMode: "sub" });
+    expect(lane("ZokoAnime", "https://zokoanime.video/stream/mal/20/1/sub")).toBe("zokoanime");
+    // Megaplay embeds classify by host — the exact server name does not matter.
+    expect(lane("HD-1", "https://megaplay.buzz/stream/s-2/12352/sub")).toBe("megaplay");
+    expect(lane("Vidstream-2", "https://megaplay.buzz/stream/s-2/12352/sub")).toBe("megaplay");
+    expect(lane("Whatever", "https://megaplay.buzz/stream/x/1/sub")).toBe("megaplay");
+    // TLD rotation on either family still resolves its contract.
+    expect(lane("ZokoAnime", "https://zokoanime.io/stream/mal/20/1/sub")).toBe("zokoanime");
+    expect(lane("HD-1", "https://megaplay.mom/stream/s-2/12352/sub")).toBe("megaplay");
+    // Name fallback covers a domain the host list has not caught yet.
+    expect(lane("HD-1", "https://newhost.example/stream/x/1/sub")).toBe("megaplay");
+    // vidtube.site (VidPlay-1) is a different player page — unsupported.
+    expect(lane("VidPlay-1", "https://vidtube.site/stream/token/sub")).toBeNull();
+    expect(lane("Mystery", "https://unknown.example/x")).toBeNull();
   });
 
   test("honors an explicit quality preference over ladder order", async () => {

@@ -5,7 +5,7 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
-import { providerHttpErrorForStatus } from "../runtime/fetch";
+import { providerFetch, providerHttpErrorForStatus } from "../runtime/fetch";
 import {
   directStreamFetchSignal,
   resolveDirectStreamSource,
@@ -50,7 +50,7 @@ export function resolveRgshowsDirect(
           ? `movie/${tmdbId}`
           : `tv/${tmdbId}/${season}/${episode}`;
 
-      const response = await fetch(`${BASE_URL}/${path}`, {
+      const response = await providerFetch(ctx, `${BASE_URL}/${path}`, {
         headers: {
           accept: "*/*",
           referer: REQUEST_REFERER,

@@ -1,12 +1,13 @@
 ---
 status: current
-lastReviewed: "2026-09-13"
+lastReviewed: "2026-10-01"
 ---
 
 # Provider Research Dossier — HiAnime (`hianime`)
 
 > Agent-facing (L3). Live material: responses recorded 2026-09-13 against
-> `hianime.at` with plain curl + Chrome 124 UA. No browser, no auth, no account.
+> `hianime.at` with plain curl + Chrome 124 UA, plus a 2026-10-01 recheck of
+> the MegaPlay servers (see the matrix below). No browser, no auth, no account.
 
 Parity reference: ani-cli `5.1.4` (`/home/kitsunekode/Projects/osc/ani-cli`,
 single `ani-cli` shell script; pinned in `scripts/parity-references.json`).
@@ -76,10 +77,22 @@ data-hash="<base64 embed URL>">`. Observed matrix 2026-09-13:
 
   | Server      | Sub | Dub | Embed host                                      | Verdict                                                                                             |
   | ----------- | --- | --- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-  | ZokoAnime   | yes | yes | `zokoanime.video/stream/mal/<malId>/<n>/<mode>` | **supported**                                                                                       |
-  | HD-1        | yes | yes | `megaplay.buzz/…`                               | dead — HTTP 200 body is a 410 "file not found" page, old and new titles alike                       |
-  | Vidstream-2 | yes | yes | `megaplay.buzz/…`                               | dead — same 410                                                                                     |
+  | ZokoAnime   | yes | yes | `zokoanime.video/stream/mal/<malId>/<n>/<mode>` | **supported** — lead lane                                                                           |
+  | HD-1        | yes | yes | `megaplay.buzz/stream/s-2/<id>/<mode>?s=tcdn`   | **supported** — megaplay data-id/getSources contract (revived; see below)                           |
+  | Vidstream-2 | yes | yes | `megaplay.buzz/stream/s-2/<id>/<mode>`          | **supported** — same contract, default CDN                                                          |
   | VidPlay-1   | yes | yes | `vidtube.site/stream/<token>/…`                 | different JWPlayer-style page (`data-id`, `settings.cid`), no `window.__P`; future work, not parity |
+
+  **2026-10-01 recheck:** the 2026-09-13 "dead — 410" verdict for the megaplay
+  pair is stale. Both servers now answer the same MegaPlay contract AnimeKai's
+  embeds use: the page carries `data-id` (+ `data-mediaid` on dual-id
+  deployments), `GET /stream/getSources?id=<id>` (`X-Requested-With:
+XMLHttpRequest`, embed-origin referer) returns `{enc, tracks, intro, outro}`,
+  and `enc` decrypts with the shared AES-256-CBC constants
+  (`i?LMTAx0Q6,:}50U` / `W0;27ToaUpl_P%'c`) to `{file: <master.m3u8>}`. The
+  embed URL's `?s=tcdn` selects the CDN upstream (`megap.norami.top`,
+  `fetch.nexabloom.top`, `megap.shiora.top` observed); the page's own
+  GetSourcesRewrite forwards `s` into the API call. Lanes resolve in API order
+  and a dead lane falls through to the next — Kunai's in-provider fallback.
 
 - ZokoAnime embed decoding (ani-cli `deobfuscate_blob` parity, verified byte-for-byte):
   `window.__P="<b64>"` → base64 decode → XOR with `otaku-embed-v1` (repeating) →
@@ -98,7 +111,9 @@ default, src}` VTT), `skip: {intro, outro: {start, end}}` (either may be null),
   subtitle file, different outro timestamps). Dub still ships an English VTT with
   `default:true`, so subtitle delivery is `external`/`soft` for both modes.
 - ani-cli plays only ZokoAnime (`hianime_m3u8` greps `data-server-name="ZokoAnime"`);
-  every other server uses a different player and is ignored upstream too.
+  Kunai additionally resolves the MegaPlay lanes (HD-1, Vidstream-2) since
+  2026-10-01 — the upstream 410 window closed and the contract is shared with
+  AnimeKai's embeds (`packages/providers/src/shared/megaplay-embed.ts`).
 
 ## Suspected
 
@@ -114,7 +129,11 @@ default, src}` VTT), `skip: {intro, outro: {start, end}}` (either may be null),
   curl-impersonate fallback as AniDB/Miruro; the fallback path is exercised by a
   unit seam, not live.
 - VidTube (`vidtube.site`) extraction contract — page shape captured (JWPlayer
-  settings + `data-mediaid`), stream derivation not attempted.
+  settings + `data-mediaid`), stream derivation not attempted. The megaplay
+  `data-mediaid` handling does NOT generalize to it: different player page.
+- MegaPlay `getSourcesNew`/`trustWatch` path — the current deployment's script
+  references them but the plain `getSources` + AES defaults still answer;
+  whether newer deployments require the trust path is unmeasured.
 - Rate limits / WAF thresholds — none hit during research (dozens of requests).
 
 ## User Flow
@@ -164,12 +183,13 @@ No iframes, no JS execution, no browser needed.
 
 ## Candidate Stream Inventory
 
-| Candidate            | Source host          | Quality                                   | Audio               | Subs            | Evidence                   | Notes                    |
-| -------------------- | -------------------- | ----------------------------------------- | ------------------- | --------------- | -------------------------- | ------------------------ |
-| ZokoAnime sub ladder | `hls2.aniwatchtv.uk` | 360p+1080p (Solo S1E1) / 800p (Naruto E1) | ja                  | en VTT external | live decode + master fetch | supported                |
-| ZokoAnime dub ladder | `hls2.aniwatchtv.uk` | same shape, distinct URLs                 | en                  | en VTT external | live decode                | supported                |
-| HD-1 / Vidstream-2   | `megaplay.buzz`      | —                                         | —                   | —               | 410 error page             | dead upstream            |
-| VidPlay-1            | `vidtube.site`       | unknown                                   | sub/dub pages exist | unknown         | JWPlayer settings page     | different player, future |
+| Candidate            | Source host                             | Quality                                   | Audio               | Subs                          | Evidence                          | Notes                     |
+| -------------------- | --------------------------------------- | ----------------------------------------- | ------------------- | ----------------------------- | --------------------------------- | ------------------------- |
+| ZokoAnime sub ladder | `hls2.aniwatchtv.uk`                    | 360p+1080p (Solo S1E1) / 800p (Naruto E1) | ja                  | en VTT external               | live decode + master fetch        | supported                 |
+| ZokoAnime dub ladder | `hls2.aniwatchtv.uk`                    | same shape, distinct URLs                 | en                  | en VTT external               | live decode                       | supported                 |
+| HD-1 sub/dub ladder  | `megap.norami.top` / `megap.shiora.top` | 1080p observed                            | sub: ja / dub: en   | VTT via getSources `tracks[]` | live decrypt + resolve 2026-10-01 | supported — megaplay lane |
+| Vidstream-2 sub/dub  | `fetch.nexabloom.top`                   | 1080p observed                            | same                | same                          | live decrypt + resolve 2026-10-01 | supported — megaplay lane |
+| VidPlay-1            | `vidtube.site`                          | unknown                                   | sub/dub pages exist | unknown                       | JWPlayer settings page            | different player, future  |
 
 ## Subtitle Inventory
 
@@ -188,13 +208,17 @@ No iframes, no JS execution, no browser needed.
 
 ## Runtime Contract Recommendation
 
-- Provider kind: API-first HTTP (`direct-http`), no browser. Single `ZokoAnime`
-  server per audio mode; no provider-local cycling beyond sub/dub source rows.
+- Provider kind: API-first HTTP (`direct-http`), no browser. Per audio mode,
+  supported servers resolve as lanes in API order (ZokoAnime → HD-1 →
+  Vidstream-2); a dead lane falls through. Source ids carry the lane index
+  (`source:hianime:<mode>:<n>`); bare `source:hianime:<mode>` pins stay
+  parseable as mode-only.
 - What should be extracted: show slug catalog, episode `(number, episodeId,
 title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
   HLS ladder, `inventory:audio-modes` when servers expose both modes.
-- What should be deferred: VidTube support, Megaplay revival watch, per-episode
-  MAL enrichment at list time (resolve supplies it).
+- What should be deferred: VidTube support, per-episode
+  MAL enrichment at list time (resolve supplies it). Megaplay lanes landed
+  2026-10-01 — keep a revival watch on the `getSourcesNew`/trust path.
 - Diagnostics needed: stage-coded embed failures (base64 vs JSON vs shape),
   server matrix in trace attributes (which servers were observed vs used),
   `blocked` on Cloudflare challenge text, `not-found` on HTTP 404/410 (gone
@@ -217,7 +241,8 @@ title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
 - Subtitle case: dub embed still carries default English VTT.
 - Dub/audio case: same episodeId, `dub` embed resolves distinct `src`.
 - Multi-mirror case: servers HTML with Zoko + HD-1 + Vidstream-2 + VidPlay-1 —
-  only Zoko resolves; the rest are recorded as observed/unsupported.
+  Zoko/HD-1/Vidstream-2 resolve as lanes (dead lane → next server);
+  VidPlay-1 stays observed-only.
 - Entity case: `Don't Toy with Me, Miss Nagatoro` search + `I&#039;m used to it`
   episode titles decode to apostrophes.
 
@@ -225,7 +250,10 @@ title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
 
 - What is likely to change first: embed obfuscation (`otaku-embed-v1` key,
   `window.__P` name), embed host (`zokoanime.video`), CDN host
-  (`hls2.aniwatchtv.uk`), servers HTML attributes. Megaplay already died once.
+  (`hls2.aniwatchtv.uk`), servers HTML attributes, megaplay AES constants and
+  the `getSources`→`getSourcesNew` hand-off. Megaplay died once (Sept 410
+  window) and revived — lane order means a dead lane degrades gracefully
+  rather than killing the episode.
 - What evidence should be re-collected if it breaks: compare against ani-cli
   first (parity policy: ani-cli is the reference implementation for this lane),
   then re-capture servers HTML → embed page → blob decode in that order.
@@ -242,6 +270,8 @@ title)`, per-mode embed payload (`src`, subtitles, skip, MAL id), expanded
   `formatAnimeEpisodeLabel` (labels), `createExhaustedResult` + `emitTraceEvent`
   (results), `TTLCache` (episode catalog).
 - Open implementation questions: none blocking; VidTube left for a follow-up.
-- Things the next agent should not assume: Megaplay is not a fallback (410);
-  `totalItems` is not an episode count; dub needs its own embed fetch (no
-  audio fallback — fail closed like AniDB); each season is a separate slug.
+- Things the next agent should not assume: `totalItems` is not an episode
+  count; dub needs its own embed fetch (no audio fallback — fail closed like
+  AniDB); each season is a separate slug; a megaplay page can carry both
+  `data-id` and `data-mediaid` — the wrong id decrypts to `{}`, so
+  `parseMegaplayEmbedSourceIds` walks both.

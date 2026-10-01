@@ -10,7 +10,9 @@ import { expect, test } from "bun:test";
  * helpers, with no seam to observe it from a behavioural test.
  */
 const CURL_ARGV_SITES = [
-  { file: "src/anidb/client.ts", url: "url" },
+  // The shared transport assembles the argv for every provider that delegates
+  // to it (hianime, animekai, anidb, animegg); miruro still builds its own.
+  { file: "src/shared/provider-http-transport.ts", url: "url" },
   { file: "src/miruro/direct.ts", url: "url" },
 ] as const;
 

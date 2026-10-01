@@ -701,6 +701,7 @@ export class PlayerServiceImpl implements PlayerService {
         ytdlFormat: stream.ytdlFormat,
         ytdlRawOptions: stream.ytdlRawOptions,
         isLive: stream.isLive,
+        demuxerProfile: stream.demuxerProfile,
         attach: options.attach,
         timing: options.timing,
         autoSkipEnabled: options.autoSkipEnabled,

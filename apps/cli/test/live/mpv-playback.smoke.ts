@@ -1,13 +1,16 @@
 /**
  * Opt-in mpv decode check: resolve one matrix fixture, then prove mpv decodes it.
  *
- * Usage — one provider per run, and only the four with fixtures here. The
- * anime providers keep their own search-based smokes, so naming them prints the
- * supported list instead:
+ * Usage — one provider per run, one fixture each:
  *   bun run test:live:mpv videasy
  *   bun run test:live:mpv rivestream
  *   bun run test:live:mpv vidlink
+ *   bun run test:live:mpv vidrock
+ *   bun run test:live:mpv movy
  *   bun run test:live:mpv youtube
+ *   bun run test:live:mpv kickassanime   (AniList bridge → Frieren E05)
+ *   bun run test:live:mpv animegg        (AniList bridge → Death Note E05)
+ *   bun run test:live:mpv hianime        (AniList bridge → Naruto E01)
  *
  * Isolated temporary XDG profile (never touches live config/data/cache),
  * headless mpv (`--vo=null --ao=null --frames=30`), 20s deadline. Prints one
@@ -76,6 +79,22 @@ const FIXTURES = new Map<string, MpvFixture>([
     },
   ],
   [
+    "vidrock",
+    {
+      title: { id: "1396", type: "series", name: "Breaking Bad" },
+      mode: "series",
+      season: 1,
+      episode: 1,
+    },
+  ],
+  [
+    "movy",
+    {
+      title: { id: "1423191", type: "movie", name: "Resident Evil" },
+      mode: "series",
+    },
+  ],
+  [
     "youtube",
     {
       title: {
@@ -85,6 +104,74 @@ const FIXTURES = new Map<string, MpvFixture>([
         externalIds: { youtubeId: "jNQXAC9IVRw" },
       },
       mode: "youtube",
+    },
+  ],
+  [
+    "kickassanime",
+    {
+      // Bridge needs name AND year evidence — "Frieren" alone matches the
+      // season slugs ambiguously and the bridge fails closed on purpose.
+      title: {
+        id: "anilist:154587",
+        type: "series",
+        name: "Frieren: Beyond Journey's End",
+        year: "2023",
+        isAnime: true,
+        externalIds: { anilistId: "154587" },
+      },
+      mode: "anime",
+      season: 1,
+      episode: 5,
+    },
+  ],
+  [
+    "animegg",
+    {
+      title: {
+        id: "anilist:1535",
+        type: "series",
+        name: "Death Note",
+        isAnime: true,
+        externalIds: { anilistId: "1535" },
+      },
+      mode: "anime",
+      season: 1,
+      episode: 5,
+    },
+  ],
+  [
+    "hianime",
+    {
+      title: {
+        id: "anilist:20",
+        type: "series",
+        name: "Naruto",
+        isAnime: true,
+        externalIds: { anilistId: "20" },
+      },
+      mode: "anime",
+      season: 1,
+      episode: 1,
+    },
+  ],
+  [
+    "animekai",
+    {
+      // Provider-native id pins the show — "Naruto" alone also matches
+      // Shippuden in AnimeKai's catalogue and the matcher would have to guess.
+      title: {
+        id: "anilist:20",
+        type: "series",
+        name: "Naruto",
+        isAnime: true,
+        externalIds: {
+          anilistId: "20",
+          providerNativeIds: { animekai: "naruto" },
+        },
+      },
+      mode: "anime",
+      season: 1,
+      episode: 1,
     },
   ],
 ]);
@@ -139,8 +226,14 @@ const resolved = await resolveProviderSmokeStream({
     ...(fixture.season && fixture.episode
       ? { episode: { season: fixture.season, episode: fixture.episode } }
       : null),
-    audioPreference: container.config.seriesLanguageProfile.audio,
-    subtitlePreference: container.config.seriesLanguageProfile.subtitle,
+    audioPreference:
+      fixture.mode === "anime"
+        ? container.config.animeLanguageProfile.audio
+        : container.config.seriesLanguageProfile.audio,
+    subtitlePreference:
+      fixture.mode === "anime"
+        ? container.config.animeLanguageProfile.subtitle
+        : container.config.seriesLanguageProfile.subtitle,
   },
 }).catch((error) => {
   resolveError = error instanceof Error ? error : new Error(String(error));

@@ -1124,7 +1124,12 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
 
   if (!anilistId && !malId) return baseEpisodes;
 
-  const externalMetadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId, malId }, signal);
+  const externalMetadata = await fetchAnimeEpisodeMetadataByNumber(
+    { anilistId, malId },
+    signal,
+    "full",
+    context,
+  );
   mergeExternalEpisodeMetadataInto(metadata, externalMetadata);
 
   if (metadata.size === 0) return baseEpisodes;

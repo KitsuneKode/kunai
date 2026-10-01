@@ -112,3 +112,15 @@ export const DEFAULT_RELAY_TIMEOUT_MS = 20_000;
 export { RELAY_HOP_HEADER } from "@kunai/types";
 
 export const RELAY_ERROR_CODE_HEADER = "X-Kunai-Relay-Error-Code";
+
+/**
+ * Stamped by the relay handler on responses that carry a real upstream answer
+ * (`relayUpstreamResponse`). Relay-generated errors carry
+ * {@link RELAY_ERROR_CODE_HEADER} instead, so a response bearing neither marker
+ * never reached the relay function (platform crash, wrong route, SSO wall) —
+ * the client may then honour `fallbackToDirect` without mistaking the failure
+ * for upstream truth.
+ */
+export const RELAY_RESULT_HEADER = "X-Kunai-Relay-Result";
+
+export const RELAY_RESULT_UPSTREAM = "upstream";

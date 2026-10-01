@@ -117,6 +117,7 @@ async function searchYoutube(
         const piped = await pipedSearch(query, {
           apiBaseUrl: globalYoutubeConfig.pipedApiUrl,
           signal: context.signal,
+          context,
         });
         const mapped = mapPipedSearchResults(piped.items).filter(
           (result) => result.resultKind === "short",
@@ -132,6 +133,7 @@ async function searchYoutube(
     const items = await invidiousSearch(query, {
       preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
       signal: context.signal,
+      context,
     });
     return filterYoutubeResultKind(mapInvidiousSearchResults(items), input.preferredResultKind);
   } catch (invidiousError) {
@@ -140,6 +142,7 @@ async function searchYoutube(
         const piped = await pipedSearch(query, {
           apiBaseUrl: globalYoutubeConfig.pipedApiUrl,
           signal: context.signal,
+          context,
         });
         const mapped = filterYoutubeResultKind(
           mapPipedSearchResults(piped.items),
@@ -308,6 +311,7 @@ async function listYoutubeEpisodes(
     const playlist = await invidiousGetPlaylist(parsed.nativeId, {
       preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
       signal: context.signal,
+      context,
     });
     return (playlist.videos ?? []).map((video, index) => ({
       index: video.index ?? index + 1,
@@ -323,6 +327,7 @@ async function listYoutubeEpisodes(
     const channel = await invidiousGetChannelVideos(parsed.nativeId, {
       preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
       signal: context.signal,
+      context,
     });
     const channelVideos = channel.latestVideos ?? channel.videos ?? [];
     return channelVideos.map((video, index) => ({

@@ -1,5 +1,6 @@
-import { providerHttpErrorForStatus } from "@kunai/types";
+import { providerHttpErrorForStatus, type ProviderRuntimeContext } from "@kunai/types";
 
+import { providerFetch } from "../runtime/fetch";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { YOUTUBE_PROVIDER_ID } from "./manifest";
 
@@ -42,6 +43,7 @@ export type InvidiousInstancePoolOptions = {
   readonly preferredInstanceUrl?: string;
   readonly now?: () => number;
   readonly signal?: AbortSignal;
+  readonly context?: ProviderRuntimeContext;
 };
 
 export async function fetchHealthyInvidiousInstances(
@@ -64,7 +66,7 @@ export async function fetchHealthyInvidiousInstances(
 
   let instances: readonly string[];
   try {
-    const response = await fetch(instancesUrl, {
+    const response = await providerFetch(options.context, instancesUrl, {
       headers: { Accept: "application/json" },
       signal: createTimeoutSignal(options.signal, INSTANCE_REGISTRY_TIMEOUT_MS),
     });

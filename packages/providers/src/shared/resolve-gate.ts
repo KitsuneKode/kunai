@@ -1,5 +1,10 @@
-import type { ProviderRuntimeContext, StreamCandidate } from "@kunai/types";
+import type {
+  ProviderRuntimeContext,
+  ProviderSelectionDecision,
+  StreamCandidate,
+} from "@kunai/types";
 
+import { selectReadyStream } from "./startup-selection";
 import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "./stream-health";
 import {
   isStreamReachableForResolve,
@@ -103,11 +108,17 @@ export type VerifiedStreamSelection<TStream> =
       readonly stream: TStream;
       readonly verified: boolean;
       /**
-       * Hosts proven dead during the walk. The caller must drop their streams:
-       * leaving a refused rung in the inventory lets selection ship the very
-       * stream the gate rejected.
+       * Hosts proven dead during the walk — DNS/TLS/refused-connection
+       * verdicts, which apply to every rung the host serves.
        */
       readonly refusedHosts: ReadonlySet<string>;
+      /**
+       * Requests the gate refused on their own evidence — an HTTP refusal is
+       * scoped to the URL and headers that produced it. A signed URL's 403
+       * says nothing about a sibling rendition on the same CDN, so the caller
+       * drops exactly these requests and no more.
+       */
+      readonly refusedRequests: ReadonlySet<string>;
     }
   | { readonly accepted: false; readonly reason: string };
 
@@ -118,11 +129,14 @@ export type VerifiedStreamSelection<TStream> =
  * often carries several qualities, and they do not always sit on the same host.
  * Rejecting the whole source on the first refusal throws away rungs that would
  * have played, so the walk continues and the source is refused only when every
- * distinct host has refused.
+ * request has refused.
  *
- * One probe per host, because a host answers the same for every rung it serves
- * — the extra probes would cost latency inside the candidate's budget and tell
- * us nothing new.
+ * Two refusal scopes, because they are different evidence. A connection-level
+ * verdict — DNS, TLS, refused socket, SSRF-block — kills the host, so sibling
+ * rungs on it are skipped unprobed. An HTTP refusal is scoped to the request:
+ * the same CDN host happily serves the 720p rung whose signature is still
+ * valid after refusing the 1080p one, so the walk keys by request shape
+ * (URL + headers) and probes each distinct request once.
  */
 export async function selectVerifiedStream<
   TStream extends Pick<StreamCandidate, "url" | "headers">,
@@ -139,10 +153,12 @@ export async function selectVerifiedStream<
 }): Promise<VerifiedStreamSelection<TStream>> {
   let firstReason: string | undefined;
   const refusedHosts = new Set<string>();
+  const refusedRequests = new Set<string>();
 
   for (const stream of streams) {
     const host = streamHost(stream.url);
-    if (host && refusedHosts.has(host)) continue;
+    const requestKey = streamRequestKey(stream);
+    if ((host && refusedHosts.has(host)) || refusedRequests.has(requestKey)) continue;
 
     const verdict = await verifyCandidateStream({
       stream,
@@ -151,30 +167,176 @@ export async function selectVerifiedStream<
       ...(timeoutMs === undefined ? null : { timeoutMs }),
     });
     if (verdict.accepted) {
-      return { accepted: true, stream, verified: verdict.verified, refusedHosts };
+      return { accepted: true, stream, verified: verdict.verified, refusedHosts, refusedRequests };
     }
 
     firstReason ??= verdict.reason;
-    if (host) refusedHosts.add(host);
+    if (verdict.probe?.status === "unreachable" && verdict.probe.hostRefusal) {
+      // A host-scoped refusal with no parseable host (e.g. the URL itself is
+      // unparseable) still has to refuse *something* — otherwise the walk
+      // re-picks the same stream until the deadline burns out.
+      if (host) refusedHosts.add(host);
+      else refusedRequests.add(requestKey);
+    } else {
+      refusedRequests.add(requestKey);
+    }
+  }
+
+  return { accepted: false, reason: firstReason ?? "candidate has no stream url" };
+}
+
+export type VerifiedReadySelection =
+  | {
+      readonly accepted: true;
+      readonly selected: StreamCandidate;
+      readonly decision: ProviderSelectionDecision;
+      readonly verified: boolean;
+      /**
+       * Inventory minus what the gate proved dead — ship this, not the input
+       * list. Refused requests stay out even when they were not the pick.
+       */
+      readonly streams: StreamCandidate[];
+      readonly refusedHosts: ReadonlySet<string>;
+      readonly refusedRequests: ReadonlySet<string>;
+    }
+  | { readonly accepted: false; readonly reason: string };
+
+/**
+ * `selectReadyStream` with the resolve gate folded in.
+ *
+ * Selection order is user preference (explicit pin, favorite source, quality),
+ * not array order, so `selectVerifiedStream` cannot express it: probing in
+ * array order would attest whichever rung sits first, not the one the picker
+ * would ship. This walks the same preference order — pick, probe the pick,
+ * and on a definitive refusal drop exactly the refused scope and re-pick —
+ * so the stream that reports success is the stream that was probed, and a
+ * dead top preference falls through to the next preference tier rather than
+ * being shipped anyway.
+ *
+ * Terminates because every refused pick is removed from `remaining` before
+ * the next iteration.
+ */
+export async function selectVerifiedReadyStream({
+  streams,
+  input,
+  context,
+  signal,
+  timeoutMs,
+  walkBudgetMs,
+}: {
+  readonly streams: readonly StreamCandidate[];
+  readonly input: Parameters<typeof selectReadyStream>[1];
+  readonly context: ProviderRuntimeContext;
+  readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
+  /**
+   * Total budget for the whole walk — not per probe. A candidate's stream list
+   * can hold many rungs, and a definitive refusal each is still serial probe
+   * time inside one candidate/attempt bound; without a wall the walk can spend
+   * the entire attempt proving rungs dead and never give the next candidate
+   * its turn. Default: two probes' worth.
+   */
+  readonly walkBudgetMs?: number;
+}): Promise<VerifiedReadySelection> {
+  let remaining = [...streams];
+  const refusedHosts = new Set<string>();
+  const refusedRequests = new Set<string>();
+  let firstReason: string | undefined;
+  let refusedCount = 0;
+  const walkDeadline = Date.now() + (walkBudgetMs ?? ((timeoutMs ?? 0) * 2 || 12_000));
+
+  while (remaining.length > 0) {
+    const walkRemainingMs = walkDeadline - Date.now();
+    if (walkRemainingMs <= 0) {
+      // The evidence so far is only refusals — the un-probed remainder is
+      // not an answer, so the candidate fails rather than shipping a pick
+      // nobody verified.
+      return {
+        accepted: false,
+        reason:
+          firstReason !== undefined
+            ? `${firstReason} (walk budget exhausted after ${refusedCount} refusal(s))`
+            : "stream gate walk budget exhausted",
+      };
+    }
+
+    let pick: ReturnType<typeof selectReadyStream>;
+    try {
+      pick = selectReadyStream(remaining, input);
+    } catch {
+      break;
+    }
+
+    const verdict = await verifyCandidateStream({
+      stream: pick.selected,
+      context,
+      ...(signal === undefined ? null : { signal }),
+      timeoutMs: timeoutMs === undefined ? walkRemainingMs : Math.min(timeoutMs, walkRemainingMs),
+    });
+    if (verdict.accepted) {
+      return {
+        accepted: true,
+        selected: pick.selected,
+        decision: pick.decision,
+        verified: verdict.verified,
+        streams: remaining,
+        refusedHosts,
+        refusedRequests,
+      };
+    }
+
+    firstReason ??= verdict.reason;
+    refusedCount += 1;
+    if (verdict.probe?.status === "unreachable" && verdict.probe.hostRefusal) {
+      // Same rule as the single-stream path: a host refusal that produced no
+      // host still refuses the request, or the loop re-probes it forever.
+      const host = streamHost(pick.selected.url);
+      if (host) refusedHosts.add(host);
+      else refusedRequests.add(streamRequestKey(pick.selected));
+    } else {
+      refusedRequests.add(streamRequestKey(pick.selected));
+    }
+    remaining = dropRefusedStreams(remaining, { refusedHosts, refusedRequests });
   }
 
   return { accepted: false, reason: firstReason ?? "candidate has no stream url" };
 }
 
 /**
- * Drop the streams whose host the gate proved dead.
- *
- * The walk refuses a host, not a rung, so the caller cannot just remove the one
- * stream that failed — every rung on that host is equally gone. Leaving them in
+ * Drop the streams the gate proved dead — every rung on a refused host, and
+ * every individually refused request. Leaving a refused rung in the inventory
  * lets startup selection ship the exact stream the gate rejected, which is
  * usually the highest quality and therefore the one it prefers.
  */
-export function dropRefusedStreams<TStream extends Pick<StreamCandidate, "url">>(
+export function dropRefusedStreams<TStream extends Pick<StreamCandidate, "url" | "headers">>(
   streams: readonly TStream[],
-  refusedHosts: ReadonlySet<string>,
+  refused: {
+    readonly refusedHosts: ReadonlySet<string>;
+    readonly refusedRequests: ReadonlySet<string>;
+  },
 ): TStream[] {
-  if (refusedHosts.size === 0) return [...streams];
-  return streams.filter((stream) => !refusedHosts.has(streamHost(stream.url)));
+  if (refused.refusedHosts.size === 0 && refused.refusedRequests.size === 0) {
+    return [...streams];
+  }
+  return streams.filter(
+    (stream) =>
+      !refused.refusedHosts.has(streamHost(stream.url)) &&
+      !refused.refusedRequests.has(streamRequestKey(stream)),
+  );
+}
+
+/**
+ * The dedupe key is the whole request shape: a candidate's URL *and* headers
+ * both decide whether the host serves it, so two streams that differ only in
+ * headers are different requests (and get probed separately).
+ */
+function streamRequestKey(stream: Pick<StreamCandidate, "url" | "headers">): string {
+  const headers = stream.headers ?? {};
+  const ordered = Object.keys(headers)
+    .sort()
+    .map((name) => `${name.toLowerCase()}:${headers[name] ?? ""}`)
+    .join("\n");
+  return `${stream.url ?? ""}\n${ordered}`;
 }
 
 function streamHost(url: string | undefined): string {

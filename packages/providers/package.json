@@ -12,6 +12,7 @@
     "./allmanga/crypto": "./src/allmanga/crypto.ts",
     "./anidb": "./src/anidb/direct.ts",
     "./hianime": "./src/hianime/direct.ts",
+    "./animekai": "./src/animekai/direct.ts",
     "./animegg": "./src/animegg/direct.ts",
     "./kickassanime": "./src/kickassanime/direct.ts",
     "./miruro": "./src/miruro/direct.ts",

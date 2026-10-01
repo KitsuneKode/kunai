@@ -51,6 +51,7 @@ describe("production provider defaults", () => {
       "allanime",
       "anidb",
       "animegg",
+      "animekai",
       "hianime",
       "kickassanime",
       "miruro",

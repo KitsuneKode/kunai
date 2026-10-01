@@ -130,6 +130,14 @@ export interface StreamInfo {
   readonly ytdlRawOptions?: string;
   readonly isLive?: boolean;
   readonly liveStatus?: string;
+  /**
+   * Demuxer shaping the provider asks mpv for. `"capped-readahead"` bounds
+   * mpv's read-ahead queue for CDN hosts that rate-limit burst segment pulls
+   * (the megaplay-family hosts kill IPs pulling ~100 uncached segments in
+   * 10s — ani-cli mitigates with `--cache-secs=120`; here the readahead cap
+   * does the same work at the demuxer).
+   */
+  readonly demuxerProfile?: "capped-readahead";
   readonly providerResolveResult?: SharedProviderResolveResult;
   readonly cacheProvenance?:
     | "fresh"

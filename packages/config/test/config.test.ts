@@ -72,13 +72,15 @@ describe("@kunai/config parse boundary", () => {
   test("anime lane leads with a provider that answers and keeps the rest of the order behind it", () => {
     // HiAnime leads because search only queries the configured default, and
     // anidb.app answers 503 at the origin. Miruro is first of the rest: one
-    // aggregated pipe behind the lead. AniDB stays late — it still carries the
-    // only verified AID cross-link and XML episode titles.
+    // aggregated pipe behind the lead. AnimeKai is next — direct-HTTP with no
+    // shared infrastructure with either. AniDB stays late — it still carries
+    // the only verified AID cross-link and XML episode titles.
     expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
     // The array holds the rest of the order — `createProviderPrioritySnapshot`
     // prepends the lane default — so it must not repeat it.
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
       "miruro",
+      "animekai",
       "kickassanime",
       "animegg",
       "anidb",
@@ -91,6 +93,6 @@ describe("@kunai/config parse boundary", () => {
     // Load migrates an inherited old default only when the on-disk revision is
     // behind this one. Changing a default without bumping it strands every user
     // who saved a setting on the previous default.
-    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(3);
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(4);
   });
 });

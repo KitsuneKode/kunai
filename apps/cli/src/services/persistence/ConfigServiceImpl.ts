@@ -10,7 +10,7 @@ import {
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
-import { migrateLegacyProviderId } from "@kunai/providers";
+import { migrateLegacyProviderId, YOUTUBE_PROVIDER_ID } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
 import { isJsonString, type ProviderRelayConfig, type StartupPriority } from "@kunai/types";
 
@@ -34,6 +34,28 @@ function normalizeSeriesProvider(value: string | undefined): string {
   const normalized = value?.trim();
   if (!normalized) return DEFAULT_CONFIG.provider;
   return migrateLegacyProviderId(normalized);
+}
+
+/**
+ * `provider`/`animeProvider` only need legacy-id migration: any surviving id is
+ * still a member of its own lane, and lane filtering downstream keeps the
+ * damage to one wasted attempt. A series id in the youtube slot is different —
+ * it can never resolve a `video`-kind title, and under manual recovery mode it
+ * is the only candidate tried. The youtube lane is exactly `YOUTUBE_PROVIDER_ID`
+ * today; extend the membership check if a second `video`-kind provider ships.
+ */
+function normalizeYoutubeProvider(value: string | undefined): string {
+  const normalized = migrateLegacyProviderId(value?.trim() ?? "");
+  return normalized === YOUTUBE_PROVIDER_ID ? normalized : DEFAULT_CONFIG.youtubeProvider;
+}
+
+function normalizeYoutubeProviderIdList(
+  values: readonly string[] | undefined,
+  fallback: readonly string[],
+): readonly string[] {
+  return normalizeProviderIdList(values, fallback).filter(
+    (providerId) => providerId === YOUTUBE_PROVIDER_ID,
+  );
 }
 
 function normalizeProviderIdList(
@@ -219,9 +241,8 @@ export class ConfigServiceImpl implements ConfigService {
         readProviderDefaultsRevision(loaded),
         CURRENT_PROVIDER_DEFAULTS_REVISION,
       ),
-      youtubeProvider:
-        normalizeSeriesProvider(loaded.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
-      youtubeProviderPriority: normalizeProviderIdList(
+      youtubeProvider: normalizeYoutubeProvider(loaded.youtubeProvider),
+      youtubeProviderPriority: normalizeYoutubeProviderIdList(
         loaded.youtubeProviderPriority,
         DEFAULT_CONFIG.youtubeProviderPriority,
       ),
@@ -977,6 +998,12 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "miruro",
     priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
   },
+  // Revision 3 leads with HiAnime; revision 4 inserts AnimeKai into the tail.
+  {
+    revision: 3,
+    animeProvider: "hianime",
+    priorities: [["miruro", "kickassanime", "animegg", "anidb", "allanime"]],
+  },
 ];
 
 function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
@@ -1019,15 +1046,24 @@ const SHIPPED_VIDEASY_DEFAULT_PRIORITIES: ReadonlyArray<readonly string[]> = [
   ["rivestream", "vidlink"],
 ];
 
+/** The revision whose defaults moved the series lane off Videasy — the
+ * migration above only applies to configs older than it. */
+const SERIES_DEFAULT_MOVED_AT_REVISION = 3;
+
 /**
- * Configs stamped before `CURRENT_PROVIDER_DEFAULTS_REVISION` whose series pair
+ * Configs stamped before `SERIES_DEFAULT_MOVED_AT_REVISION` whose series pair
  * is exactly a pair a release once shipped are moved to `DEFAULT_CONFIG`'s
  * series defaults. Anything else — a reordered list, a non-Videasy pick, a
  * hand-edited file — is left alone. A user who re-picks Videasy after the
  * migration writes `provider` alone, which this check no longer matches.
  */
 function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): boolean {
-  if (readProviderDefaultsRevision(loaded) >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
+  /* The cutoff is keyed to the revision that moved the lane — not to
+   * CURRENT_PROVIDER_DEFAULTS_REVISION — because a later bump must not
+   * re-migrate configs stamped by the release that already ran it. A rev-3
+   * config holding `videasy` + the shipped pair is a deliberate re-pick made
+   * *after* VidLink became the default; resetting it destroys user intent. */
+  if (readProviderDefaultsRevision(loaded) >= SERIES_DEFAULT_MOVED_AT_REVISION) return false;
   const provider = typeof loaded.provider === "string" ? loaded.provider.trim() : "";
   if (migrateLegacyProviderId(provider) !== "videasy") return false;
   const priority = loaded.providerPriority;

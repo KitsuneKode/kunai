@@ -31,6 +31,7 @@ import {
   miruroCharacterLabel,
   miruroTechnicalServerLabel,
 } from "../catalogs/miruro";
+import { providerFetch } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   type AnimeEpisodeMetadata,
@@ -59,11 +60,7 @@ import {
 } from "../shared/hls-ladder";
 import { isJsonNumber, isJsonObject, isJsonString, type JsonObject } from "../shared/json-value";
 import { TTLCache } from "../shared/provider-cache";
-import {
-  appendCycleEventsToResult,
-  findLastCycleFailure,
-  providerFailureCodeFromCycleFailure,
-} from "../shared/provider-cycle";
+import { appendCycleEventsToResult, cycleExhaustedResult } from "../shared/provider-cycle";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
@@ -956,9 +953,7 @@ async function expandMiruroPipeStreams(
 
   if (expandable.length === 0) return { streams: out, deadHosts };
 
-  const fetchImpl =
-    context?.fetch?.fetch.bind(context.fetch) ??
-    ((url: string, init?: RequestInit) => fetch(url, init));
+  const fetchImpl = (url: string, init?: RequestInit) => providerFetch(context, url, init);
 
   const results = await Promise.allSettled(
     expandable.map(async ({ url, referer }) => {
@@ -2553,27 +2548,26 @@ export const miruroProviderModule: CoreProviderModule = {
 
       if (!cycleResult.selected) {
         events.push(...cycleResult.events);
-        const cycleFailure = findLastCycleFailure(cycleResult.attempts);
-        const failure = cycleFailure
-          ? {
-              code: providerFailureCodeFromCycleFailure(cycleFailure.failureClass),
-              message: cycleFailure.message,
-              retryable: cycleFailure.retryable,
-            }
-          : {
-              code: "not-found" as const,
-              message: "No HLS streams from miruro sources pipe",
-              retryable: true,
-            };
-        return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, failure, {
-          cachePolicy,
-          events,
-          failures,
-          sources: finalizeCycleSourceInventory({
-            sources: sourceInventorySeeds,
-            attempts: cycleResult.attempts,
-          }),
-          startedAt,
+        return cycleExhaustedResult({
+          input,
+          context,
+          providerId: MIRURO_PROVIDER_ID,
+          attempts: cycleResult.attempts,
+          fallback: {
+            code: "not-found",
+            message: "No HLS streams from miruro sources pipe",
+            retryable: true,
+          },
+          evidence: {
+            cachePolicy,
+            events,
+            failures,
+            sources: finalizeCycleSourceInventory({
+              sources: sourceInventorySeeds,
+              attempts: cycleResult.attempts,
+            }),
+            startedAt,
+          },
         });
       }
 

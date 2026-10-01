@@ -6,6 +6,8 @@ export * from "./allmanga/manifest";
 export * from "./animegg/direct";
 export * from "./animegg/manifest";
 export * from "./animegg/site";
+export * from "./animekai/direct";
+export * from "./animekai/manifest";
 export * from "./anidb/direct";
 export * from "./anidb/manifest";
 export * from "./hianime/direct";

@@ -1,7 +1,12 @@
-import { RELAYED_RESPONSE_HEADER } from "@kunai/types";
+import { markRelayOwnedError, RELAYED_RESPONSE_HEADER } from "@kunai/types";
 
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
-import { RELAY_ERROR_CODE_HEADER, type RelayRpcRequest } from "./types";
+import {
+  RELAY_ERROR_CODE_HEADER,
+  RELAY_RESULT_HEADER,
+  RELAY_RESULT_UPSTREAM,
+  type RelayRpcRequest,
+} from "./types";
 import type { RelayFetchPort, RelayFetchPortOptions } from "./types";
 
 type RelayHeadersInit = ConstructorParameters<typeof Headers>[0];
@@ -50,13 +55,25 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
           headers,
           body: JSON.stringify(requestInfo),
           signal: init?.signal,
+          /* The relay itself never redirects (`fetchWithValidatedRedirects`
+           * follows upstream hops server-side), so a 3xx on the RPC route is a
+           * platform-level hop — a login wall or a stale deployment — and must
+           * surface instead of being followed into a fake 200. */
+          redirect: "manual",
         });
-        if (fallbackToDirect && isRelayAuthorizationFailure(response)) {
+        if (fallbackToDirect && shouldFallbackToDirect(response)) {
+          // The abandoned relay body holds a socket until GC — cancel it
+          // explicitly so the direct request does not wait on cleanup.
+          void response.body?.cancel().catch(() => {});
           return fetchImpl(input, init);
         }
         return markRelayedResponse(response);
       } catch (error) {
-        if (!fallbackToDirect) throw error;
+        /* `fallbackToDirect: false` is a privacy promise: never touch the
+         * upstream outside the relay. The marker lets downstream transports
+         * (curl impersonate, raw fetch) tell this throw apart from a generic
+         * network failure and rethrow instead of retrying direct. */
+        if (!fallbackToDirect) throw markRelayOwnedError(error);
         return fetchImpl(input, init);
       }
     },
@@ -81,12 +98,26 @@ function markRelayedResponse(response: Response): Response {
   });
 }
 
-function isRelayAuthorizationFailure(response: Response): boolean {
-  const code = response.headers.get(RELAY_ERROR_CODE_HEADER);
-  return (
-    (response.status === 503 && code === "relay-not-configured") ||
-    (response.status === 401 && code === "unauthorized")
-  );
+/**
+ * Decide whether the RPC answer means "the relay did not deliver upstream data".
+ *
+ * A relay that ran proves it on every response: errors carry
+ * {@link RELAY_ERROR_CODE_HEADER}, proxied upstream answers carry
+ * {@link RELAY_RESULT_HEADER}=upstream. Any error code — auth, refusal, or
+ * upstream transport — means the provider never got its upstream answer, so
+ * direct is worth a try when the user opted into `fallbackToDirect`.
+ *
+ * Responses with neither marker are ambiguous: a 2xx is an old relay's proxied
+ * success (platform failures never answer 2xx), but an unmarked non-2xx could be
+ * an old relay's proxied upstream error *or* a platform crash above the function
+ * (`x-vercel-error`, SSO walls, missing routes). Re-asking direct resolves the
+ * ambiguity either way: a real upstream error reproduces with the same status,
+ * while a dead deployment stops poisoning every provider it fronts.
+ */
+function shouldFallbackToDirect(response: Response): boolean {
+  if (response.headers.has(RELAY_ERROR_CODE_HEADER)) return true;
+  if (response.headers.get(RELAY_RESULT_HEADER) === RELAY_RESULT_UPSTREAM) return false;
+  return !response.ok;
 }
 
 async function toRelayRequest(
