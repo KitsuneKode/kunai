@@ -183,6 +183,105 @@ describe("ConfigService.save debounce", () => {
     expect(written.at(-1)?.analytics).toBe("disabled");
   });
 
+  test("overlapping saves serialize their load→write runs", async () => {
+    // A save() whose debounce fired while a write was in flight used to start
+    // a second run over the same disk base — the second write dropped the
+    // keys the first had just persisted, and each run clobbered the other's
+    // shared inFlightValues snapshot.
+    let releaseFirstLoad!: () => void;
+    let loadCalls = 0;
+    const written: KitsuneConfig[] = [];
+    const store = {
+      load: (): Promise<Partial<KitsuneConfig>> => {
+        loadCalls += 1;
+        // Call 1 boots the service; call 2 is the first save's pre-write
+        // read and parks on the latch; the second save's read must not start
+        // until the first run fully settles.
+        if (loadCalls === 2) {
+          return new Promise<void>((resolve) => {
+            releaseFirstLoad = resolve;
+          }).then(() => ({ ...DEFAULT_CONFIG }));
+        }
+        return Promise.resolve({ ...DEFAULT_CONFIG });
+      },
+      save: (config: KitsuneConfig) => {
+        written.push(config);
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+    await service.update({ analytics: "disabled" });
+
+    const first = service.save();
+    const firstFlush = service.flushPending();
+    await drainMicrotasks();
+    expect(loadCalls).toBe(2);
+
+    // A newer value for the same key lands while the first write is parked.
+    await service.update({ analytics: "enabled" });
+    const second = service.save();
+    const secondFlush = service.flushPending();
+    await drainMicrotasks();
+
+    // Serialized: the second run waits on the first tail instead of opening
+    // its own load→write window over the same disk base.
+    expect(loadCalls).toBe(2);
+    expect(written).toHaveLength(0);
+
+    releaseFirstLoad();
+    await Promise.all([first, second, firstFlush, secondFlush]);
+
+    expect(written.map((config) => config.analytics)).toEqual(["disabled", "enabled"]);
+    expect(service.analytics).toBe("enabled");
+  });
+
+  test("a failed save keeps a mid-flight newer value for the same key", async () => {
+    // update() during the parked write dirties the same key the snapshot
+    // holds. Restoring the snapshot over it (without re-applying dirty keys)
+    // left the retry persisting the stale value.
+    let rejectSave!: (reason: unknown) => void;
+    let mode: "fail" | "ok" = "fail";
+    const written: KitsuneConfig[] = [];
+    const store = {
+      load: async () => ({ ...DEFAULT_CONFIG }),
+      save: (config: KitsuneConfig) => {
+        if (mode === "ok") {
+          written.push(config);
+          return Promise.resolve();
+        }
+        return new Promise<void>((_resolve, reject) => {
+          rejectSave = reject;
+        });
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+    await service.update({ analytics: "disabled" });
+
+    const pending = service.save().then(
+      () => "resolved",
+      () => "rejected",
+    );
+    const flushed = service.flushPending().then(
+      () => "resolved",
+      () => "rejected",
+    );
+    await drainMicrotasks();
+
+    await service.update({ analytics: "enabled" });
+    rejectSave(new Error("disk full"));
+    await Promise.all([pending, flushed]);
+
+    // The newer value survives the restore and is what the retry persists.
+    expect(service.analytics).toBe("enabled");
+    mode = "ok";
+    const retry = service.save();
+    await service.flushPending();
+    await retry;
+    expect(written.at(-1)?.analytics).toBe("enabled");
+  });
+
   test("a synchronous store throw does not strand the in-flight handle", async () => {
     // `store.save()` throwing synchronously runs the catch and the finally before
     // `saveInFlight` was assigned, so assigning afterwards parked an
