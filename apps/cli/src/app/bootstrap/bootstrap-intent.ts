@@ -35,7 +35,11 @@ export type BootstrapLog =
       readonly id: string;
       readonly namespace: string;
       readonly lane: "anime" | "youtube";
-    };
+    }
+  // A parsed flag that no code path will read — parsed-and-dropped is the
+  // failure class this codebase treats as a bug, so each carries the flag
+  // spelling and why it cannot apply.
+  | { readonly kind: "flag-ignored"; readonly flag: string; readonly detail: string };
 
 export interface BootstrapArgs {
   readonly search?: string;
@@ -45,6 +49,9 @@ export interface BootstrapArgs {
   readonly youtube?: boolean;
   readonly quick: boolean;
   readonly jump?: number;
+  /** Orphan-detection only — the download path itself never reads these. */
+  readonly download?: boolean;
+  readonly downloadPath?: string;
 }
 
 type ParsedDirectId =
@@ -190,6 +197,17 @@ export function formatBootstrapPlan(input: BootstrapPlanInput): readonly string[
     if (entry.kind === "id-without-type") {
       lines.push(`  warning:     -i/--id needs -t movie|series, so ${entry.id} is ignored`);
     }
+    if (entry.kind === "id-unknown-namespace") {
+      lines.push(`  warning:     -i/--id uses an unknown namespace, so ${entry.id} is ignored`);
+    }
+    if (entry.kind === "id-lane-conflict") {
+      lines.push(
+        `  warning:     ${entry.id} conflicts with the ${entry.lane} lane, so the id is ignored`,
+      );
+    }
+    if (entry.kind === "flag-ignored") {
+      lines.push(`  warning:     ${entry.flag} ignored — ${entry.detail}`);
+    }
   }
 
   return lines;
@@ -205,6 +223,43 @@ export function resolveBootstrapIntent(args: BootstrapArgs): BootstrapIntent {
   }
 
   const directTitle = resolveDirectTitle(args, logs);
+
+  // Flags that parse but reach no reader are reported, not dropped.
+  if (args.anime && args.youtube) {
+    logs.push({
+      kind: "flag-ignored",
+      flag: "-a/--anime",
+      detail: "-y/--youtube selects the youtube mode, which wins the lane",
+    });
+  }
+  if (args.type !== undefined && args.id === undefined) {
+    logs.push({
+      kind: "flag-ignored",
+      flag: "-t/--type",
+      detail: "it only applies together with -i/--id",
+    });
+  }
+  if (query !== undefined && directTitle !== null) {
+    logs.push({
+      kind: "flag-ignored",
+      flag: "-S/--search",
+      detail: "-i/--id opens its title directly, so the search never runs",
+    });
+  }
+  if (args.jump !== undefined && query === undefined) {
+    logs.push({
+      kind: "flag-ignored",
+      flag: "--jump",
+      detail: "it only auto-picks from -S/--search results",
+    });
+  }
+  if (args.downloadPath !== undefined && !args.download) {
+    logs.push({
+      kind: "flag-ignored",
+      flag: "--download-path",
+      detail: "it only applies together with --download",
+    });
+  }
 
   // A direct title never needs a search auto-pick (there is no result list).
   const autoPickSearchResultIndex = resolveAutoPickIndex({
@@ -236,6 +291,14 @@ function resolveDirectTitle(args: BootstrapArgs, logs: BootstrapLog[]): TitleInf
   if (parsed.kind === "invalid") {
     logs.push({ kind: "id-unknown-namespace", id: args.id });
     return null;
+  }
+
+  if (parsed.kind === "namespaced" && parsed.ns !== "tmdb" && args.type !== undefined) {
+    logs.push({
+      kind: "flag-ignored",
+      flag: "-t/--type",
+      detail: `${parsed.ns}: ids carry their own content type`,
+    });
   }
 
   if (parsed.kind === "namespaced" && (parsed.ns === "anilist" || parsed.ns === "mal")) {

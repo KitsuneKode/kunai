@@ -1009,6 +1009,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
             `${entry.lane === "youtube" ? "-y/--youtube" : "-a/--anime"} selected the ${entry.lane} lane, so it was ignored.\n`,
         );
         break;
+      case "flag-ignored":
+        logger.warn("Parsed flag has no reader in this launch", {
+          flag: entry.flag,
+          detail: entry.detail,
+        });
+        process.stderr.write(`kunai: ${entry.flag} was ignored — ${entry.detail}.\n`);
+        break;
     }
   }
 

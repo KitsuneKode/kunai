@@ -68,6 +68,69 @@ describe("resolveBootstrapIntent", () => {
   test("does not auto-pick for quick mode without a query", () => {
     expect(resolveBootstrapIntent(args({ quick: true })).autoPickSearchResultIndex).toBeUndefined();
   });
+
+  test("warns when -t arrives without -i", () => {
+    const logs = resolveBootstrapIntent(args({ type: "movie" })).logs;
+    expect(logs).toEqual([
+      { kind: "flag-ignored", flag: "-t/--type", detail: "it only applies together with -i/--id" },
+    ]);
+  });
+
+  test("warns when --jump arrives without -S", () => {
+    const logs = resolveBootstrapIntent(args({ jump: 2 })).logs;
+    expect(logs).toEqual([
+      {
+        kind: "flag-ignored",
+        flag: "--jump",
+        detail: "it only auto-picks from -S/--search results",
+      },
+    ]);
+  });
+
+  test("warns when -a and -y are both set (youtube wins)", () => {
+    const logs = resolveBootstrapIntent(args({ anime: true, youtube: true })).logs;
+    expect(logs).toEqual([
+      {
+        kind: "flag-ignored",
+        flag: "-a/--anime",
+        detail: "-y/--youtube selects the youtube mode, which wins the lane",
+      },
+    ]);
+  });
+
+  test("warns when -S is shadowed by a resolvable -i", () => {
+    const logs = resolveBootstrapIntent(args({ search: "dune", id: "438631", type: "movie" })).logs;
+    expect(logs).toContainEqual({
+      kind: "flag-ignored",
+      flag: "-S/--search",
+      detail: "-i/--id opens its title directly, so the search never runs",
+    });
+  });
+
+  test("warns when --download-path arrives without --download", () => {
+    const logs = resolveBootstrapIntent(args({ downloadPath: "/tmp/x" })).logs;
+    expect(logs).toEqual([
+      {
+        kind: "flag-ignored",
+        flag: "--download-path",
+        detail: "it only applies together with --download",
+      },
+    ]);
+  });
+
+  test("warns when -t rides a namespaced id that carries its own type", () => {
+    const logs = resolveBootstrapIntent(args({ id: "anilist:21", type: "series" })).logs;
+    expect(logs).toContainEqual({
+      kind: "flag-ignored",
+      flag: "-t/--type",
+      detail: "anilist: ids carry their own content type",
+    });
+  });
+
+  test("emits no orphan warnings for flags that all have readers", () => {
+    const logs = resolveBootstrapIntent(args({ search: "dune", jump: 1, quick: true })).logs;
+    expect(logs.some((entry) => entry.kind === "flag-ignored")).toBe(false);
+  });
 });
 
 test("a resolved catalog detail replaces the -i placeholder name", () => {
