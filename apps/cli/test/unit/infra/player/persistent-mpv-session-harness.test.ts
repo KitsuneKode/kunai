@@ -876,6 +876,66 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     await playbackResult;
   });
 
+  test("a no-progress stream stall triggers the same bounded in-process reconnect", async () => {
+    // The watchdog verdict that used to dead-end: position frozen while
+    // unpaused, unseeked and unbuffered is a dead feed too — it now takes the
+    // same same-URL reload lane as network-read-dead/cache-starved.
+    let nowMs = 1_000;
+    const timers: Array<{ callback: () => void }> = [];
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const originalDateNow = Date.now;
+    // SAFETY: the test swaps the process-wide timer pair for a callback queue it
+    // fires by hand — the fake is never-shaped, the real pair is restored in
+    // finally. Same seam the watchdog unit tests use.
+    globalThis.setInterval = ((callback: () => void) => {
+      timers.push({ callback });
+      return timers.length;
+    }) as never;
+    // SAFETY: ditto — the fake pair is never-shaped and restored in finally.
+    globalThis.clearInterval = (() => {}) as never;
+    Date.now = () => nowMs;
+    try {
+      const harness = createHarness();
+      const session = await PersistentMpvSession.create({
+        stream: createStream({ url: "https://video.example/frozen.m3u8" }),
+        options: { displayTitle: "Episode 1", primarySubtitle: null },
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        kitsuneConfig: {
+          mpvInProcessStreamReconnect: true,
+          mpvInProcessStreamReconnectMaxAttempts: 1,
+          mpvKunaiScriptOpts: "",
+        } as never,
+        onControlReady: () => {},
+        runtime: harness.runtime,
+      });
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 50 });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 60 });
+
+      // Frozen position for 13s while playing — past the 12s no-progress lane.
+      nowMs = 13_100;
+      for (const timer of timers) timer.callback();
+      await flushAsyncWork();
+
+      const reload = harness.commands.find(
+        (command) =>
+          command[0] === "loadfile" && command[1] === "https://video.example/frozen.m3u8",
+      );
+      expect(reload?.[4]).toEqual(expect.objectContaining({ start: "100" }));
+
+      harness.callbacks().onFileLoaded?.({ observedAt: 13_300 });
+      await flushAsyncWork();
+      const playbackResult = session.waitForCurrentPlayback();
+      harness.callbacks().onEndFile({ reason: "quit", observedAt: 13_500 });
+      await playbackResult;
+    } finally {
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+      Date.now = originalDateNow;
+    }
+  });
+
   test("an in-process reconnect on a live stream never seeks back to the drop position", async () => {
     // Nulling the loadfile `start` was not enough: the completion step issued its own
     // absolute seek, which on a live broadcast lands in the DVR window or fails.

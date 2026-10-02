@@ -97,7 +97,12 @@ const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
  */
 const RECONNECT_ATTEMPT_CEILING = 12;
 
-type InProcessReconnectTrigger = "network-read-dead" | "cache-starved" | "premature-eof" | "error";
+type InProcessReconnectTrigger =
+  | "network-read-dead"
+  | "cache-starved"
+  | "no-progress"
+  | "premature-eof"
+  | "error";
 
 type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill" | "signalCode">;
 
@@ -732,10 +737,14 @@ export class PersistentMpvSession {
         this.mpvInProcessStreamReconnectEnabled &&
         this.mpvInProcessStreamReconnectMaxAttempts > 0 &&
         event.type === "stream-stalled" &&
-        (event.stallKind === "network-read-dead" || event.stallKind === "cache-starved")
+        (event.stallKind === "network-read-dead" ||
+          event.stallKind === "cache-starved" ||
+          event.stallKind === "no-progress")
       ) {
-        // Both kinds mean the source stopped feeding bytes — a same-URL reload
-        // is the repair. Fire-and-forget is fine; an unhandled rejection is not.
+        // All three kinds mean playback is going nowhere — the source stopped
+        // feeding bytes or the position froze while unpaused, unseeked and
+        // unbuffered — a same-URL reload is the repair. Fire-and-forget is
+        // fine; an unhandled rejection is not.
         void this.handleDeadFeedReconnect(event.stallKind).catch((error) => {
           dbg("mpv-ipc", "in-process-reconnect-failed", {
             error: error instanceof Error ? error.message : String(error),
@@ -1725,7 +1734,10 @@ export class PersistentMpvSession {
   }
 
   private async handleDeadFeedReconnect(
-    trigger: Extract<InProcessReconnectTrigger, "network-read-dead" | "cache-starved">,
+    trigger: Extract<
+      InProcessReconnectTrigger,
+      "network-read-dead" | "cache-starved" | "no-progress"
+    >,
   ): Promise<void> {
     if (
       !this.mpvInProcessStreamReconnectEnabled ||
