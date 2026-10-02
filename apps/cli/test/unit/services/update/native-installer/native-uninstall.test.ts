@@ -183,6 +183,26 @@ describe("nativeUninstall residue and preservation", () => {
     expect(abandoned.id).toBeTruthy();
   });
 
+  test("foreign files in the transactions dir survive and keep their directory", async () => {
+    const { layout } = await makeRoot();
+    await seedManagedUnixInstall(layout);
+
+    const owned = join(layout.transactionsDir, "deadbeef.json");
+    const foreign = join(layout.transactionsDir, "scratch-notes.txt");
+    await writeFile(owned, "{}");
+    await writeFile(foreign, "not ours");
+
+    const result = await nativeUninstall({ layout, platform: "linux" });
+
+    expect(result.status).toBe("removed");
+    expect(existsSync(owned)).toBe(false);
+    expect(existsSync(foreign)).toBe(true);
+    expect(existsSync(layout.transactionsDir)).toBe(true);
+    // Preserving foreign residue is not a lifecycle failure — the manifest still goes.
+    expect(result.failed).toEqual([]);
+    expect(existsSync(join(layout.configDir, "install.json"))).toBe(false);
+  });
+
   test("--purge reports each user root and preserves external download directories", async () => {
     const { root, layout } = await makeRoot();
     await seedManagedUnixInstall(layout);

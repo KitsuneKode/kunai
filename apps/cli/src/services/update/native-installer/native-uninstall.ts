@@ -206,12 +206,20 @@ export async function nativeUninstall(
     const versionsOk = await tryRemove(layout.versionsDir, removed, failed, rmImpl);
     const stagingOk = await tryRemove(layout.stagingRoot, removed, failed, rmImpl);
 
+    let transactionsOk = true;
     if (existsSync(layout.transactionsDir)) {
       for (const entry of await readdir(layout.transactionsDir).catch(() => [] as string[])) {
+        // Transaction files are `<id>.json`; anything else in the dir is foreign.
+        if (!entry.endsWith(".json")) continue;
         await tryRemove(join(layout.transactionsDir, entry), removed, failed, rmImpl, false);
       }
+      // Only remove the dir once nothing foreign remains — a recursive rm here
+      // would sweep files the installer never wrote.
+      const remaining = await readdir(layout.transactionsDir).catch(() => [] as string[]);
+      if (remaining.length === 0) {
+        transactionsOk = await tryRemove(layout.transactionsDir, removed, failed, rmImpl);
+      }
     }
-    const transactionsOk = await tryRemove(layout.transactionsDir, removed, failed, rmImpl);
 
     const lifecyclePartial = failed.length > 0 || !versionsOk || !stagingOk || !transactionsOk;
 
