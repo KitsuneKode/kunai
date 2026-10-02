@@ -25,7 +25,10 @@ export const MOBILE_TARGETS: readonly MobileTarget[] = [
 
 export type MobileBuildMetafileEntry = {
   readonly bytes: number;
-  readonly imports?: readonly { readonly path: string; readonly kind?: string }[];
+  readonly imports?: readonly {
+    readonly path: string;
+    readonly kind?: string;
+  }[];
 };
 
 export type MobileBuildMetafile = {
@@ -87,6 +90,21 @@ const IOS_FORBIDDEN_OUTPUT_TOKENS = [
   "Bun.",
   "node:",
   "bun:",
+  "new URL(",
+  "URLSearchParams",
+  "TextEncoder",
+  "TextDecoder",
+  "WebSocket",
+  "XMLHttpRequest",
+  "localStorage",
+  "indexedDB",
+] as const;
+
+// Whole-word scans for tokens that would false-positive as plain substrings
+// (`prefetch(` contains `fetch(`) or that bare JavaScriptCore lacks.
+const IOS_FORBIDDEN_OUTPUT_PATTERNS = [
+  ["process", /\bprocess\b/u],
+  ["fetch(", /\bfetch\(/u],
 ] as const;
 
 export function resolveRuntimeModule(targetId: MobileTargetId): string {
@@ -137,7 +155,9 @@ export function findForbiddenIosOutputTokens(source: string): readonly string[] 
   const violations: string[] = IOS_FORBIDDEN_OUTPUT_TOKENS.filter((token) =>
     source.includes(token),
   );
-  if (/\bprocess\b/u.test(source)) violations.push("process");
+  for (const [label, pattern] of IOS_FORBIDDEN_OUTPUT_PATTERNS) {
+    if (pattern.test(source)) violations.push(label);
+  }
   return violations.sort();
 }
 

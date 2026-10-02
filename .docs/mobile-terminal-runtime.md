@@ -70,7 +70,12 @@ React, SQLite, tests, plans, and archived experiments from the Android graph.
 The iOS output is a browser-targeted IIFE. The build rejects Node, Bun,
 Android, native, SQLite, Ink, React, tests, plans, and archived experiments from
 the iOS graph. It also scans emitted JavaScript and executes the IIFE against a
-fake JavaScriptCore host.
+fake JavaScriptCore host whose global surface is stripped to match bare JSC —
+Node and Web API names (`process`, `URL`, `fetch`, `TextEncoder`, and friends)
+are bound to `undefined`, so the shared application layer cannot use them. URL
+validation lives in `application/portable-url.ts` as a hand-rolled
+HTTPS-only parser; `new URL` appears only on the Android/Node side for redirect
+base resolution.
 
 On iOS the launcher never places raw user arguments in `jsc` source. It writes
 at most 32 arguments to fixed private files, publishes the count last, invokes

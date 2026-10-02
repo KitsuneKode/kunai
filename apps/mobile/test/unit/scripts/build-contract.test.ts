@@ -132,4 +132,14 @@ describe("mobile artifact build contract", () => {
       expect(findForbiddenIosOutputTokens(source)).toContain("process");
     }
   });
+
+  test("finds Web API globals bare JavaScriptCore lacks, without substring traps", () => {
+    expect(findForbiddenIosOutputTokens("const u=new URL('https://x');")).toContain("new URL(");
+    expect(findForbiddenIosOutputTokens("fetch('https://x')")).toContain("fetch(");
+    // `prefetch`/`TextEncoder`-named locals must not trip the scan.
+    expect(findForbiddenIosOutputTokens("prefetch('https://x')")).toEqual([]);
+    expect(findForbiddenIosOutputTokens("const s='open vlc-x-callback-url now please';")).toEqual(
+      [],
+    );
+  });
 });

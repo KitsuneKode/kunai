@@ -39,7 +39,9 @@ function mobileRuntimePlugin(runtimePath: string): BunPlugin {
   return {
     name: "kunai-mobile-runtime",
     setup(build) {
-      build.onResolve({ filter: /^mobile:runtime$/ }, () => ({ path: runtimePath }));
+      build.onResolve({ filter: /^mobile:runtime$/ }, () => ({
+        path: runtimePath,
+      }));
     },
   };
 }
@@ -136,6 +138,64 @@ async function assertIosGraph(metafile: MobileBuildMetafile): Promise<void> {
   }
 }
 
+// Bare JavaScriptCore in a-Shell exposes none of these Node/Web globals; the
+// fake host binds them to undefined so the bundle fails here, not on-device.
+const STRIPPED_IOS_GLOBALS = [
+  "process",
+  "Buffer",
+  "URL",
+  "URLSearchParams",
+  "fetch",
+  "TextEncoder",
+  "TextDecoder",
+  "require",
+  "module",
+  "exports",
+  "__dirname",
+  "__filename",
+  "global",
+  "Bun",
+  "Deno",
+  "setTimeout",
+  "setInterval",
+  "clearTimeout",
+  "clearInterval",
+  "setImmediate",
+  "queueMicrotask",
+  "crypto",
+  "btoa",
+  "atob",
+  "structuredClone",
+  "AbortController",
+  "AbortSignal",
+  "Request",
+  "Response",
+  "Headers",
+  "FormData",
+  "Blob",
+  "File",
+  "FileReader",
+  "ReadableStream",
+  "WritableStream",
+  "TransformStream",
+  "WebAssembly",
+  "WebSocket",
+  "XMLHttpRequest",
+  "EventSource",
+  "localStorage",
+  "sessionStorage",
+  "indexedDB",
+  "navigator",
+  "location",
+  "document",
+  "window",
+  "Worker",
+  "BroadcastChannel",
+  "MessageChannel",
+  "SharedArrayBuffer",
+  "Atomics",
+] as const;
+
 async function assertIosBundleRuns(bundlePath: string): Promise<void> {
   const source = await Bun.file(bundlePath).text();
   const forbiddenTokens = findForbiddenIosOutputTokens(source);
@@ -179,7 +239,8 @@ async function assertIosBundleRuns(bundlePath: string): Promise<void> {
   };
   console.log = (...values: unknown[]) => output.push(values.map(String).join(" "));
   try {
-    Function(source)();
+    const harness = Function(...STRIPPED_IOS_GLOBALS, `"use strict"; ${source}`);
+    harness(...STRIPPED_IOS_GLOBALS.map(() => undefined));
     await waitForMobileHostProof(hostProofCompleted, "[mobile-build] fake JSC host proof");
   } finally {
     console.log = previousLog;
