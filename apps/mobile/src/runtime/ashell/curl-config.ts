@@ -20,6 +20,7 @@ export function encodeCurlConfig(request: MobileHttpRequest): string {
     `request = ${quoteCurlConfig(request.method)}`,
     `max-time = ${timeoutMs / 1_000}`,
     `max-filesize = ${maxBytes}`,
+    `range = "0-${maxBytes - 1}"`,
     "",
   ].join("\n");
 }

@@ -128,7 +128,10 @@ recovery is explicit rather than guessing whether another session is alive.
 
 - Accept only absolute credential-free HTTPS URLs without fragments or control
   characters.
-- Bound HTTP to 8 seconds, three HTTPS-only redirects, and 64 KiB.
+- Bound HTTP to 8 seconds, three HTTPS-only redirects, and 64 KiB. The byte cap
+  is also sent as a `Range` request so chunked responses stop at the cap
+  mid-transfer wherever the origin honors ranges; the recorded `size_download`
+  still rejects oversized bodies on origins that ignore it.
 - Pass media URLs as one opaque process argument; never evaluate a constructed
   shell string.
 - Android uses `spawn` with `shell: false`; explicit VLC handoff can use only
