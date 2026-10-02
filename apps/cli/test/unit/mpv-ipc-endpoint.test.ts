@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, utimesSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   createMpvIpcEndpoint,
   ipcServerCliArg,
   mpvIpcTransportTag,
   shouldUnlinkUnixSocket,
+  sweepStaleMpvIpcArtifacts,
 } from "@/infra/player/mpv-ipc-endpoint";
 
 const BACKSLASH = String.fromCharCode(92);
@@ -71,4 +75,68 @@ test("builds a unix socket endpoint with simulated POSIX filesystem facts off Wi
   expect(endpoint.path).toBe("/tmp/kunai-ipc/kunai-mpv-abc123.sock");
   expect(mpvIpcTransportTag(endpoint)).toBe("unix");
   expect(shouldUnlinkUnixSocket(endpoint)).toBe(true);
+});
+
+/** A real bound unix socket gives the sweep an honest socket inode to judge. */
+function bindTestSocket(path: string) {
+  const server = Bun.listen({
+    unix: path,
+    socket: {
+      data() {},
+      open() {},
+      close() {},
+      error() {},
+    },
+  });
+  return { stop: () => server.stop(true) };
+}
+
+function ipcDirUnder(root: string): string {
+  const dir = join(root, "kunai-ipc");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+test("sweep unlinks a dead socket and its conf, keeps a live pair", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kunai-ipc-sweep-"));
+  const dir = ipcDirUnder(root);
+
+  const deadSock = join(dir, "kunai-mpv-dead.sock");
+  const liveSock = join(dir, "kunai-mpv-live.sock");
+  const dead = bindTestSocket(deadSock);
+  const live = bindTestSocket(liveSock);
+  writeFileSync(`${deadSock}.conf`, "http-header-fields=Cookie: dead=1\n");
+  writeFileSync(`${liveSock}.conf`, "http-header-fields=Cookie: live=1\n");
+
+  try {
+    // The probe, not file existence, decides: `dead` is reported dead even
+    // though its socket inode is bound — the liveness verdict is the contract.
+    await sweepStaleMpvIpcArtifacts({ TMPDIR: root }, async (path) => path === liveSock);
+
+    expect(existsSync(deadSock)).toBe(false);
+    expect(existsSync(`${deadSock}.conf`)).toBe(false);
+    expect(existsSync(liveSock)).toBe(true);
+    expect(existsSync(`${liveSock}.conf`)).toBe(true);
+  } finally {
+    dead.stop();
+    live.stop();
+  }
+});
+
+test("sweep removes only aged orphan confs so an in-flight spawn's conf survives", async () => {
+  const root = mkdtempSync(join(tmpdir(), "kunai-ipc-sweep-"));
+  const dir = ipcDirUnder(root);
+
+  // Confs whose `.sock` sibling was never bound (crash between write and bind).
+  const staleConf = join(dir, "kunai-mpv-crashed.sock.conf");
+  const freshConf = join(dir, "kunai-mpv-inflight.sock.conf");
+  writeFileSync(staleConf, "http-header-fields=Cookie: old=1\n");
+  writeFileSync(freshConf, "http-header-fields=Cookie: new=1\n");
+  const old = new Date(Date.now() - 120_000);
+  utimesSync(staleConf, old, old);
+
+  await sweepStaleMpvIpcArtifacts({ TMPDIR: root }, async () => false);
+
+  expect(existsSync(staleConf)).toBe(false);
+  expect(existsSync(freshConf)).toBe(true);
 });

@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, statSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { posix as posixPath } from "node:path";
 
 /** Where Bun connects for mpv JSON IPC (`--input-ipc-server` value). */
@@ -194,6 +194,98 @@ export function newMpvIpcSessionId(): string {
  * accepts either spelling, so the backslash form is the one that satisfies both
  * ends (verified against mpv on Windows for each combination).
  */
+/**
+ * A crashed session leaves `kunai-mpv-*.sock` entries (and now `*.sock.conf`
+ * siblings) in the private dir. Sweep them once per process: a socket that
+ * refuses a connect is dead and safe to unlink — one that answers belongs to
+ * another running instance's mpv, and unlinking its path would sever that
+ * session's reconnects.
+ *
+ * Conf files are never probed — they can legally precede their socket by a
+ * few instructions (the launch writes the conf before mpv binds). A conf is
+ * only removed when its socket sibling is absent or dead AND the conf is old;
+ * fresh confs are in-flight spawns, not litter.
+ */
+const STALE_CONF_MIN_AGE_MS = 60_000;
+
+async function unixSocketIsLive(path: string): Promise<boolean> {
+  try {
+    const socket = await Promise.race([
+      Bun.connect({ unix: path, socket: { data: () => {} } }).then((s) => {
+        s.end();
+        return true;
+      }),
+      Bun.sleep(300).then(() => false),
+    ]);
+    return socket;
+  } catch {
+    return false;
+  }
+}
+
+export async function sweepStaleMpvIpcArtifacts(
+  env: Record<string, string | undefined> = Bun.env,
+  isSocketLive: (path: string) => Promise<boolean> = unixSocketIsLive,
+): Promise<void> {
+  for (const dir of mpvIpcSocketDirCandidates(env)) {
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!/^kunai-mpv-[^/]+\.sock$/.test(entry)) continue;
+      const sockPath = posixPath.join(dir, entry);
+      if (await isSocketLive(sockPath)) continue;
+      try {
+        if (lstatSync(sockPath).isSocket()) unlinkSync(sockPath);
+      } catch {
+        continue;
+      }
+      const confPath = `${sockPath}.conf`;
+      try {
+        unlinkSync(confPath);
+      } catch {
+        // No sibling conf — the common case.
+      }
+    }
+    // Orphan confs whose socket never materialized (crash between write and
+    // bind). Age check keeps a just-written conf of an in-flight spawn safe.
+    for (const entry of entries) {
+      if (!/^kunai-mpv-[^/]+\.sock\.conf$/.test(entry)) continue;
+      const confPath = posixPath.join(dir, entry);
+      try {
+        const sibling = confPath.slice(0, -".conf".length);
+        const facts = statSync(confPath);
+        const now = Date.now();
+        if (now - facts.mtimeMs < STALE_CONF_MIN_AGE_MS) continue;
+        try {
+          statSync(sibling);
+          continue; // socket file exists — live or dead, its sweep owns the conf
+        } catch {
+          unlinkSync(confPath);
+        }
+      } catch {
+        // stat failed or unlink failed — leave it, cosmetic at worst.
+      }
+    }
+  }
+}
+
+let staleArtifactSweepStarted = false;
+
+/** Fire-and-forget once-per-process sweep; endpoint creation stays synchronous. */
+export function sweepStaleMpvIpcArtifactsOnce(
+  env: Record<string, string | undefined> = Bun.env,
+): void {
+  if (staleArtifactSweepStarted) return;
+  staleArtifactSweepStarted = true;
+  void sweepStaleMpvIpcArtifacts(env).catch(() => {
+    // Best effort — a dead sweep never blocks playback.
+  });
+}
+
 export function createMpvIpcEndpoint(
   sessionId: string,
   platform: NodeJS.Platform = process.platform,
@@ -201,6 +293,8 @@ export function createMpvIpcEndpoint(
     readonly env?: Record<string, string | undefined>;
     /** Injectable filesystem boundary for deterministic directory trust checks. */
     readonly directoryOperations?: MpvIpcDirectoryOperations;
+    /** Set false in tests that construct endpoints without touching real dirs. */
+    readonly sweep?: boolean;
   } = {},
 ): MpvIpcEndpoint {
   if (platform === "win32") {
@@ -210,6 +304,9 @@ export function createMpvIpcEndpoint(
       kind: "windows_pipe",
       path: `\\\\.\\pipe\\kunai-mpv-${ipcPipeSuffix(sessionId)}`,
     };
+  }
+  if (options.sweep !== false) {
+    sweepStaleMpvIpcArtifactsOnce(options.env ?? Bun.env);
   }
   return {
     kind: "unix_socket",
