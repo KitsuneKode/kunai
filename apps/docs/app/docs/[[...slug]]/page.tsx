@@ -8,7 +8,7 @@ import {
   serializeJsonLd,
   techArticleJsonLd,
 } from "@/lib/json-ld";
-import { buildPageMetadata } from "@/lib/page-metadata";
+import { buildPageMetadata, docsOgImagePath } from "@/lib/page-metadata";
 import { docsCanonicalUrl } from "@/lib/site";
 import { source } from "@/lib/source";
 import { troubleshootingFaqEntries } from "@/lib/troubleshooting-faq";
@@ -46,6 +46,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     description: page.data.description ?? "",
     path: page.url,
     type: "article",
+    // A card that names this page, so a share of "Troubleshooting" and a share
+    // of "CLI reference" no longer unfurl identically.
+    socialImageUrl: docsOgImagePath(page.url),
   });
 }
 
