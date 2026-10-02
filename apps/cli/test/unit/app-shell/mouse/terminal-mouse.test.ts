@@ -95,6 +95,35 @@ describe("splitMouseSequences", () => {
     expect(input).toBe("\x1b");
   });
 
+  test("strips an X10 report that a stale tracking mode can still emit", () => {
+    // \x1b[M + three value+32 bytes (button 0, col 5, row 2 → 32/37/34).
+    const { input, events } = splitMouseSequences('a\x1b[M %"b');
+    expect(input).toBe("ab");
+    expect(events).toHaveLength(0);
+  });
+
+  test("strips a urxvt report (no SGR < prefix)", () => {
+    const { input, events } = splitMouseSequences("a\x1b[35;10;20Mb");
+    expect(input).toBe("ab");
+    expect(events).toHaveLength(0);
+  });
+
+  test("an X10 report split across chunks is held, not released as keys", () => {
+    const first = splitMouseSequences("k\x1b[M %");
+    expect(first.input).toBe("k");
+    expect(first.pendingTail).toBe("\x1b[M %");
+    // Third payload byte arrives next chunk.
+    const second = splitMouseSequences(`${first.pendingTail}"`);
+    expect(second.input).toBe("");
+    expect(second.events).toHaveLength(0);
+  });
+
+  test("a lone ESC [ M with no payload is still a tail, not a keypress", () => {
+    const { input, pendingTail } = splitMouseSequences("x\x1b[M");
+    expect(input).toBe("x");
+    expect(pendingTail).toBe("\x1b[M");
+  });
+
   test("tracking sequences are reversible ANSI toggles", () => {
     expect(MOUSE_TRACKING_ENABLE).toBe("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
     expect(MOUSE_TRACKING_DISABLE).toBe("\x1b[?1006l\x1b[?1002l\x1b[?1000l");
