@@ -106,6 +106,11 @@ export type StreamLink = {
   readonly protocol?: "hls" | "dash" | "mp4";
   readonly container?: "m3u8" | "mpd" | "mp4";
   readonly deferredLocator?: string;
+  /**
+   * Stable content identity for dead-stream bookkeeping when `url` is an
+   * ephemeral deferred locator — the upstream rep URL the locator wraps.
+   */
+  readonly contentKey?: string;
 };
 
 export type AllMangaAkRepresentation = {
@@ -1548,6 +1553,7 @@ async function fetchAkLinks(
     {
       url: deferredLocator,
       deferredLocator,
+      contentKey: video.url,
       quality: `${video.height ?? "auto"}p`,
       referer,
       subtitles,

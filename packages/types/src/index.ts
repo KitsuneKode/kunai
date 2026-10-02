@@ -276,6 +276,13 @@ export interface StreamCandidate {
   readonly variantId?: string;
   readonly url?: string;
   readonly deferredLocator?: string;
+  /**
+   * Stable identity of the playable payload for dead-stream bookkeeping. Set
+   * when `url` is absent or ephemeral (e.g. a deferred locator minted per
+   * resolve): the value must identify the same upstream content across
+   * resolves so a recorded failure can block the next identical pick.
+   */
+  readonly contentKey?: string;
   readonly protocol: "hls" | "dash" | "mp4" | "iframe" | "youtube" | "unknown";
   readonly container?: "m3u8" | "mpd" | "mp4" | "webm" | "unknown";
   readonly requiresYtdl?: boolean;

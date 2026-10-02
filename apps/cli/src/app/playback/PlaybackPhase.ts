@@ -2736,7 +2736,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 providerEpisodeIdentity: currentEpisode.providerEpisodeIdentity,
                 providerId: invalidateProviderId,
               }),
-              preparedStream.url,
+              // Deferred streams record their stable content key — the locator
+              // sitting in `url` is re-minted every resolve and can never match.
+              preparedStream.contentKey ?? preparedStream.url,
             );
             await invalidateEpisodePlaybackCaches({
               cacheStore,

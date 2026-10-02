@@ -471,7 +471,9 @@ export const allmangaProviderModule: CoreProviderModule = {
               : undefined;
           const hardSubLanguage = mode === "sub" && !hasExternalSubs ? "en" : undefined;
 
-          const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
+          // Deferred links carry an ephemeral locator in `url`; key the stream
+          // id on the stable content so the same pick resolves to the same id.
+          const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.contentKey ?? link.url).toString(36)}`;
           const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityLabel}`;
 
           const headers = buildStreamHeaders(link.referer, ALLANIME_REFERER, DEFAULT_UA);
@@ -484,6 +486,7 @@ export const allmangaProviderModule: CoreProviderModule = {
             ...(link.deferredLocator
               ? { deferredLocator: link.deferredLocator }
               : { url: link.url }),
+            contentKey: link.contentKey,
             protocol,
             container:
               link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
