@@ -189,8 +189,8 @@ describe("breakdown section", () => {
     expect(html).toContain("By OS");
     expect(html).toContain("By architecture");
     expect(html).toContain("0.3.0");
-    expect(html).toContain("linux");
-    expect(html).toContain("darwin");
+    expect(html).toContain("Linux");
+    expect(html).toContain("macOS");
     expect(html).toContain("x64");
     expect(html).toContain("arm64");
   });

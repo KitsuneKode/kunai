@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  NPM_DOWNLOADS_MAX_ENTRIES,
   NPM_DOWNLOADS_WINDOW_DAYS,
   NPM_PACKAGE_NAME,
   fetchNpmDownloads,
@@ -94,6 +95,19 @@ describe("parseNpmDownloads", () => {
     expect(parseNpmDownloads(bad({ day: "2026-09-02", downloads: "1" }))).toBeNull();
     expect(parseNpmDownloads(bad(null))).toBeNull();
   });
+
+  test("an oversized point list is refused", () => {
+    // The request asks for a 30-day window; a payload claiming far more is
+    // not an answer to it.
+    const downloads = Array.from({ length: NPM_DOWNLOADS_MAX_ENTRIES + 1 }, (_, i) => ({
+      day: new Date(Date.parse("2025-01-01T00:00:00.000Z") + i * DAY_MS).toISOString().slice(0, 10),
+      downloads: 1,
+    }));
+    expect(parseNpmDownloads({ ...valid, downloads })).toBeNull();
+    expect(
+      parseNpmDownloads({ ...valid, downloads: downloads.slice(0, NPM_DOWNLOADS_MAX_ENTRIES) }),
+    ).not.toBeNull();
+  });
 });
 
 describe("fetchNpmDownloads", () => {
@@ -118,5 +132,15 @@ describe("fetchNpmDownloads", () => {
   test("a non-2xx and a non-JSON body both fail closed to null", async () => {
     expect(await fetchNpmDownloads({ fetchImpl: stubFetch({ error: "x" }, 404) })).toBeNull();
     expect(await fetchNpmDownloads({ fetchImpl: stubFetch("<html>nope</html>") })).toBeNull();
+  });
+
+  test("a response for a different package is refused", async () => {
+    // The URL names the package; an echo for another package would chart a
+    // channel the card does not claim to show.
+    const wrong = await fetchNpmDownloads({
+      fetchImpl: stubFetch({ ...valid, package: "left-pad" }),
+      now: Date.parse("2026-09-15T12:00:00.000Z"),
+    });
+    expect(wrong).toBeNull();
   });
 });

@@ -75,6 +75,17 @@
    * eye from grouping it with the measured install series.
    */
   --kunai-chart-npm: #6f6a78;
+  /*
+   * Platform partition — one band per OS bucket. These are categorical, so
+   * they step outside the rose hue entirely but stay at the same muted
+   * saturation; `other` is the quietest since it is the suppressed residue,
+   * and `extra` only ever serves an out-of-schema bucket.
+   */
+  --kunai-chart-os-windows: #4a7caa;
+  --kunai-chart-os-macos: #8a7f96;
+  --kunai-chart-os-linux: #a6853f;
+  --kunai-chart-os-other: #cfc6cb;
+  --kunai-chart-os-extra: #5f8a72;
 }
 
 :root.dark {
@@ -82,6 +93,11 @@
   --kunai-chart-active: var(--kunai-accent);
   --kunai-chart-new: #ffc9d9;
   --kunai-chart-npm: #a49dab;
+  --kunai-chart-os-windows: #7ba8d1;
+  --kunai-chart-os-macos: #b0a8bc;
+  --kunai-chart-os-linux: #d1ae62;
+  --kunai-chart-os-other: #57505c;
+  --kunai-chart-os-extra: #7fae93;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -90,6 +106,11 @@
     --kunai-chart-active: var(--kunai-accent);
     --kunai-chart-new: #ffc9d9;
     --kunai-chart-npm: #a49dab;
+    --kunai-chart-os-windows: #7ba8d1;
+    --kunai-chart-os-macos: #b0a8bc;
+    --kunai-chart-os-linux: #d1ae62;
+    --kunai-chart-os-other: #57505c;
+    --kunai-chart-os-extra: #7fae93;
   }
 }
 

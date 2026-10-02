@@ -136,6 +136,36 @@ describe("trend section wiring", () => {
   });
 });
 
+describe("platform columns", () => {
+  const withOs = makePoints(3).map((point, i) => ({
+    ...point,
+    byOs:
+      i === 2
+        ? ({ linux: 6, darwin: 5, other: 2 } as Record<string, number>)
+        : ({ other: point.activeInstalls } as Record<string, number>),
+  }));
+
+  test("a named OS bucket earns its column; an under-floor day reads a dash", () => {
+    const html = renderToStaticMarkup(<TrendTable points={withOs} />);
+    // Headers carry the readable names, not the ingest's platform identifiers.
+    expect(html).toContain(">Linux<");
+    expect(html).toContain(">macOS<");
+    expect(html).toContain(">Other<");
+    // The two suppressed days contribute `other` only — linux reads a dash,
+    // which says "under the naming floor", not zero.
+    const suppressedDay = html.slice(html.indexOf(withOs[0]?.day ?? ""));
+    expect(suppressedDay).toContain("—");
+  });
+
+  test("a window with empty byOs renders no platform columns at all", () => {
+    // makePoints carries no OS buckets — the table must not promise a series
+    // that is empty end to end.
+    const html = renderToStaticMarkup(<TrendTable points={makePoints(4)} />);
+    expect(html).not.toContain(">Linux<");
+    expect(html).not.toContain(">Other<");
+  });
+});
+
 describe("version buckets link to release pages", () => {
   test("a real version links to its release notes; residual and unknown do not", () => {
     const html = renderToStaticMarkup(

@@ -1,5 +1,6 @@
 "use client";
 
+import { platformColumns, platformLabel } from "@/lib/analytics-derive";
 import type { SeriesPoint } from "@/lib/analytics-series";
 import * as React from "react";
 
@@ -72,6 +73,10 @@ export function TrendTable({
   // The column is absent, not a column of dashes, when the served series
   // predates the field entirely. A mid-window null is a real gap and gets `—`.
   const hasNewColumn = points.some((point) => point.newInstalls !== null);
+  // Platform columns only for buckets the window published. A dash means the
+  // platform was under the naming floor that day — NOT zero, since the
+  // suppressed installs are counted inside `other`.
+  const osColumns = platformColumns(points);
 
   return (
     <div className="flex max-h-[260px] flex-col overflow-y-auto">
@@ -80,6 +85,9 @@ export function TrendTable({
           {hasNewColumn
             ? "Active, first-seen, and lifetime installs per day"
             : "Active and lifetime installs per day"}
+          {osColumns.length > 0
+            ? "; platform columns hold the day's published OS buckets — a dash means under the naming floor, not zero"
+            : ""}
         </caption>
         <thead className="bg-card sticky top-0">
           <tr>
@@ -94,6 +102,11 @@ export function TrendTable({
                 New
               </th>
             ) : null}
+            {osColumns.map((key) => (
+              <th key={key} scope="col" className="text-muted-foreground text-right font-normal">
+                {platformLabel(key)}
+              </th>
+            ))}
             <th scope="col" className="text-muted-foreground text-right font-normal">
               Lifetime
             </th>
@@ -118,6 +131,11 @@ export function TrendTable({
                     {point.newInstalls ?? "—"}
                   </td>
                 ) : null}
+                {osColumns.map((key) => (
+                  <td key={key} className="text-muted-foreground text-right tabular-nums">
+                    {point.byOs[key] ?? "—"}
+                  </td>
+                ))}
                 <td className="text-muted-foreground text-right tabular-nums">
                   {point.lifetimeInstalls}
                 </td>

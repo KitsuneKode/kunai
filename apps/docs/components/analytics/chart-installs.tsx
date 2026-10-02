@@ -29,6 +29,8 @@ import {
   availableRanges,
   dayToEpoch,
   formatDayTick,
+  platformColumns,
+  platformLabel,
   sliceRange,
   type RangeKey,
 } from "@/lib/analytics-derive";
@@ -40,27 +42,50 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
  * Installs over time — the page's one interactive chart.
  *
  * A metric toggle picks the view; within a view, series that nest are drawn
- * nested and nothing is ever stacked:
+ * nested and stacking appears only where the parts genuinely sum to the whole:
  *
  * - **Per day** draws `active` (installs that pinged that day) as the envelope
  *   and `new` (installs first seen that day) inside it. `new` is a strict
  *   subset of `active` — a first-seen install pinged that day by definition —
  *   so the nesting is structural, not a visual coincidence.
+ * - **Platforms** draws the per-day OS buckets as a STACK — the one place
+ *   stacking is honest here. Suppression folds small buckets into `other`
+ *   rather than dropping them, so the stack always sums to `active`: a true
+ *   partition of the day's installs, not independent series glued together.
  * - **Total** draws `lifetime` alone: installs ever observed, a cumulative
  *   count that can legitimately fall when retention folds silent installs
  *   into the retired counter.
  *
- * Stacking any pair of these would draw `a + b` and overstate the population
- * on every single day. Each view shares one axis deliberately — a second
- * y-axis would invent a relationship the nesting already states truthfully.
+ * Stacking `active + new` would draw `a + b` and overstate the population on
+ * every single day — the views keep the nested pair and the partition on
+ * separate tabs so neither can masquerade as the other. One shared axis is
+ * deliberate — a second y-axis would invent a relationship the views already
+ * state truthfully.
  */
 
-type MetricKey = "day" | "total";
+type MetricKey = "day" | "platforms" | "total";
 
 const METRICS: readonly { readonly key: MetricKey; readonly label: string }[] = [
   { key: "day", label: "Per day" },
+  { key: "platforms", label: "Platforms" },
   { key: "total", label: "Total" },
 ];
+
+/** CSS token for a platform series; unexpected buckets fall back to `extra`. */
+function platformToken(key: string): string {
+  switch (key) {
+    case "linux":
+      return "var(--kunai-chart-os-linux)";
+    case "darwin":
+      return "var(--kunai-chart-os-macos)";
+    case "win32":
+      return "var(--kunai-chart-os-windows)";
+    case "other":
+      return "var(--kunai-chart-os-other)";
+    default:
+      return "var(--kunai-chart-os-extra)";
+  }
+}
 
 const chartConfig = {
   lifetimeInstalls: {
@@ -97,6 +122,12 @@ export function ChartInstalls({
   const [range, setRange] = React.useState<RangeKey>("all");
   const [metric, setMetric] = React.useState<MetricKey>("day");
 
+  // Platform buckets the window published at all — an empty byOs earns no tab.
+  const osKeys = React.useMemo(() => platformColumns(points), [points]);
+  const effectiveMetric: MetricKey = metric === "platforms" && osKeys.length === 0 ? "day" : metric;
+  const metricOptions =
+    osKeys.length === 0 ? METRICS.filter((m) => m.key !== "platforms") : METRICS;
+
   const visible = sliceRange(points, range);
   // `null`, not 0, where the wire did not publish the field — recharts treats
   // null as a gap, while 0 would draw a false floor under every old point.
@@ -106,7 +137,27 @@ export function ChartInstalls({
     activeInstalls: point.activeInstalls,
     newInstalls: point.newInstalls,
     lifetimeInstalls: point.lifetimeInstalls,
+    // A missing platform key means "below the naming floor or zero" — the
+    // suppressed mass lives in `other`, so zero here keeps the stack summing
+    // to the day's true total instead of tearing it open.
+    ...Object.fromEntries(osKeys.map((key) => [`os_${key}`, point.byOs[key] ?? 0])),
   }));
+
+  // The fixed config names the install series; the platform series are added
+  // dynamically so the legend/tooltip carry readable OS names and their own
+  // categorical colours.
+  const config: ChartConfig = React.useMemo(
+    () => ({
+      ...chartConfig,
+      ...Object.fromEntries(
+        osKeys.map((key) => [
+          `os_${key}`,
+          { label: platformLabel(key), color: platformToken(key) },
+        ]),
+      ),
+    }),
+    [osKeys],
+  );
 
   // The axis reports `activeLabel` as the plotted epoch `t`; this inverts
   // `dayToEpoch` for the drawn range so the caller gets the rollup day back.
@@ -145,9 +196,11 @@ export function ChartInstalls({
         <CardTitle>Installs over time</CardTitle>
         <CardDescription>
           <span className="hidden @[540px]/card:block">
-            {metric === "day"
+            {effectiveMetric === "day"
               ? "Installs active and first seen each day"
-              : "Installs ever observed, cumulative"}{" "}
+              : effectiveMetric === "platforms"
+                ? "Active installs by platform — parts of each day's total"
+                : "Installs ever observed, cumulative"}{" "}
             · {spanLabel}
           </span>
           <span className="@[540px]/card:hidden">{spanLabel}</span>
@@ -159,7 +212,7 @@ export function ChartInstalls({
             card, not an optional refinement.
           */}
           <ToggleGroup
-            value={[metric]}
+            value={[effectiveMetric]}
             onValueChange={(next: string[]) => {
               const picked = next[0];
               if (picked) setMetric(picked as MetricKey);
@@ -170,26 +223,26 @@ export function ChartInstalls({
             className="hidden @[600px]/card:flex"
             aria-label="Metric"
           >
-            {METRICS.map((option) => (
+            {metricOptions.map((option) => (
               <ToggleGroupItem key={option.key} value={option.key} className="px-3">
                 {option.label}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
           <Select
-            value={metric}
+            value={effectiveMetric}
             onValueChange={(next: string | null) => {
               if (next) setMetric(next as MetricKey);
             }}
           >
             <SelectTrigger size="sm" className="w-32 @[600px]/card:hidden" aria-label="Metric">
               <SelectValue>
-                {(value: string) => METRICS.find((o) => o.key === value)?.label ?? value}
+                {(value: string) => metricOptions.find((o) => o.key === value)?.label ?? value}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {METRICS.map((option) => (
+                {metricOptions.map((option) => (
                   <SelectItem key={option.key} value={option.key}>
                     {option.label}
                   </SelectItem>
@@ -259,7 +312,7 @@ export function ChartInstalls({
           then paints correctly, which is the better of the two flashes.
         */}
         <ChartContainer
-          config={chartConfig}
+          config={config}
           className="aspect-auto h-[260px] w-full"
           initialDimension={{ width: 0, height: 260 }}
         >
@@ -349,7 +402,7 @@ export function ChartInstalls({
               of 2 → 0 → 0 dips the curve BELOW zero and draws a negative
               install count. Monotone cannot overshoot.
             */}
-            {metric === "total" ? (
+            {effectiveMetric === "total" ? (
               <Area
                 dataKey="lifetimeInstalls"
                 type="monotone"
@@ -358,6 +411,27 @@ export function ChartInstalls({
                 strokeWidth={2}
                 isAnimationActive={false}
               />
+            ) : effectiveMetric === "platforms" ? (
+              /*
+                A partition, not independent series: suppression folds small
+                buckets into `other` without dropping them, so the stacked
+                bands sum to exactly `active` each day. Flat translucent fills
+                rather than gradients — stacked bands need flat colour to keep
+                the boundaries legible where one band ends and the next begins.
+              */
+              osKeys.map((key) => (
+                <Area
+                  key={key}
+                  dataKey={`os_${key}`}
+                  type="monotone"
+                  stackId="platform"
+                  fill={`var(--color-os_${key})`}
+                  fillOpacity={0.55}
+                  stroke={`var(--color-os_${key})`}
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                />
+              ))
             ) : (
               <>
                 {/*

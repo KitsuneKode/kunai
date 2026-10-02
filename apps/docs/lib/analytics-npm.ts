@@ -19,6 +19,13 @@ export const NPM_PACKAGE_NAME = "@kitsunekode/kunai";
 /** Window the card plots — long enough to see a release, short enough to stay a sparkline. */
 export const NPM_DOWNLOADS_WINDOW_DAYS = 30;
 
+/**
+ * Hard bound on accepted points. The window asked for is 30 days; a response
+ * claiming far more days is not an answer to that question, and an unbounded
+ * list would keep a malformed payload renderable.
+ */
+export const NPM_DOWNLOADS_MAX_ENTRIES = 400;
+
 export type NpmDownloadPoint = {
   readonly day: string;
   readonly downloads: number;
@@ -68,6 +75,7 @@ export function parseNpmDownloads(raw: unknown): NpmDownloadSeries | null {
   if (typeof to !== "string" || !isCalendarDay(to)) return null;
   if (from > to) return null;
   if (!Array.isArray(record.downloads) || record.downloads.length === 0) return null;
+  if (record.downloads.length > NPM_DOWNLOADS_MAX_ENTRIES) return null;
 
   const byDay = new Map<string, number>();
   for (const entry of record.downloads) {
@@ -92,5 +100,8 @@ export async function fetchNpmDownloads(options?: {
   const { from, to } = npmWindow(options?.now);
   const url = options?.url ?? npmDownloadsUrl(from, to);
   const json = await fetchAnalyticsJson(url, options?.fetchImpl ?? fetch);
-  return parseNpmDownloads(json);
+  const series = parseNpmDownloads(json);
+  // The URL names the package; a response echoing a different one is not the
+  // counter this card claims to show — fail closed rather than chart it.
+  return series && series.package === NPM_PACKAGE_NAME ? series : null;
 }
