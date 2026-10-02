@@ -163,6 +163,47 @@ describe("ConfigService.save debounce", () => {
     expect(saves).toBe(1);
     await service.flushPending();
   });
+
+  test("an overlapping write cannot land after a newer one", async () => {
+    // The store's atomic rename makes each write crash-safe but cannot order
+    // two writes running at once — if the first save's rename finished after
+    // the second, stale state would win the file. Saves must chain.
+    const landed: string[] = [];
+    let releaseFirst!: () => void;
+    let writes = 0;
+    const store = {
+      load: async () => ({ ...DEFAULT_CONFIG }),
+      save: (config: { analyticsEndpoint?: string }) => {
+        writes += 1;
+        if (writes === 1) {
+          return new Promise<void>((resolve) => {
+            releaseFirst = () => {
+              landed.push(config.analyticsEndpoint ?? "");
+              resolve();
+            };
+          });
+        }
+        landed.push(config.analyticsEndpoint ?? "");
+        return Promise.resolve();
+      },
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    const first = service.save();
+    const firstFlush = service.flushPending();
+    // Write A is now held in the store. Queue write B behind it with newer data.
+    await drainMicrotasks();
+    await service.update({ analyticsEndpoint: "https://new.example" });
+    const second = service.save();
+    const secondFlush = service.flushPending();
+    await drainMicrotasks();
+
+    releaseFirst();
+    await Promise.all([first, firstFlush, second, secondFlush]);
+
+    expect(landed).toEqual(["", "https://new.example"]);
+  });
 });
 
 /**

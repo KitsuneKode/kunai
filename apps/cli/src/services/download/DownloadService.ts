@@ -1114,9 +1114,20 @@ export class DownloadService {
    * buffering GBs of RAM after Kunai is gone. This is the hard backstop.
    */
   killActiveProcessesSync(): void {
+    // TERM sweep first: yt-dlp's handler reaps its own children (an ffmpeg
+    // merge is a child process) before exiting, and a bare SIGKILL orphans
+    // them. The kernel queues both signals in order, so a responsive child
+    // can start its reap before the KILL lands.
     for (const active of this.activeProcesses.values()) {
       try {
         active.releaseIo?.();
+        active.process.kill("SIGTERM");
+      } catch {
+        // best effort — process may already be gone
+      }
+    }
+    for (const active of this.activeProcesses.values()) {
+      try {
         active.process.kill("SIGKILL");
       } catch {
         // best effort — process may already be gone
@@ -1339,6 +1350,10 @@ export class DownloadService {
     const handle = runYtDlpProcess({
       args,
       maxStderrBytes: STDERR_MAX_BYTES,
+      // --socket-timeout bounds a hung read, but a server dribbling bytes or a
+      // fragment-retry loop can stay alive without producing a progress line.
+      // Two minutes of total output silence is a wedge, not a slow download.
+      idleTimeoutMs: 120_000,
       onStdoutLine: (line) => {
         const match = line.match(/\[download\]\s+([\d.]+)%/);
         if (match && match[1]) {

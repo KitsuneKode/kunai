@@ -207,7 +207,13 @@ attaches has to ride `http-header-fields`, which is why
 Those fields (and `ytdl-raw-options`, which can carry a PO token) never ride
 mpv argv: `writeMpvSensitiveConf` writes them to an owner-only `--include`
 conf next to the IPC socket, deleted once the endpoint proves mpv's startup
-parse is done — argv is world-readable via `/proc/<pid>/cmdline`.
+parse is done — argv is world-readable via `/proc/<pid>/cmdline`. A crashed
+session leaves the socket file (and possibly the conf) behind: endpoint
+creation kicks a once-per-process sweep that connect-probes every
+`kunai-mpv-*.sock` — a refused connect means dead, so the socket and its conf
+are unlinked; an answering socket belongs to a live instance and is left
+alone. A conf with no socket sibling only goes once it's old, so a just-spawned
+process's conf is never swept out from under it.
 
 **Per-candidate timeouts are clamped to the attempt budget.**
 `providerCycleCandidateTimeoutMs` (in `packages/core/src/provider-attempt-budget.ts`)
