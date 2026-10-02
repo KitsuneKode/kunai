@@ -842,12 +842,7 @@ export function RootOverlayShell({
       commands,
       escapeAction: null,
       onResolve: (action) => {
-        resolveRootSurfaceCommand({
-          container,
-          state,
-          action,
-          cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
-        });
+        resolveRootSurfaceCommand({ container, state, action });
       },
     });
 

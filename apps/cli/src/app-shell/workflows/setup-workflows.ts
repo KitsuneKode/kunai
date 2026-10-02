@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 
+import { cancelRootOverlay } from "@/app-shell/cancel-root-overlay";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
 import {
@@ -332,8 +333,12 @@ export async function runSetupWizard({
 
 function closeActiveOverlays(container: Container): void {
   let guard = 0;
-  while (container.stateManager.getState().activeModals.length > 0 && guard < 32) {
-    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+  while (guard < 32) {
+    const top = container.stateManager.getState().activeModals.at(-1);
+    if (!top) return;
+    // Settle pickers/tracks/bridge waiters as each overlay leaves — a bare
+    // CLOSE_TOP_OVERLAY here strands whoever opened it.
+    cancelRootOverlay(top, container.stateManager);
     guard += 1;
   }
 }

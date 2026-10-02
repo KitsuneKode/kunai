@@ -32,7 +32,10 @@ describe("requestUnifiedOfflinePlayback", () => {
         dispatch: (event: { type: string }) => {
           dispatches.push(event.type);
         },
-        getState: () => ({ provider: "vidking" }),
+        getState: () => ({
+          provider: "vidking",
+          activeModals: [{ type: "tracks_panel", id: "tracks-1", groups: [], favorites: [] }],
+        }),
       },
       offlineLibraryService: {
         getPlayableSource: async () => ({
@@ -48,7 +51,9 @@ describe("requestUnifiedOfflinePlayback", () => {
       launch: buildOfflinePlaybackLaunch(readyJob()),
     });
     expect(dispatches).toContain("SELECT_TITLE");
+    // A picker-backed overlay on top must be settled, not silently popped.
     expect(dispatches).toContain("CLOSE_TOP_OVERLAY");
+    expect(dispatches).toContain("CANCEL_PICKER");
   });
 
   test("preserves video mode and marks library launches as local-only", () => {

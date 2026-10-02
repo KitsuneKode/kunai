@@ -1,3 +1,4 @@
+import { cancelRootOverlay } from "@/app-shell/cancel-root-overlay";
 import { forceCloseRootContent } from "@/app-shell/root-content-state";
 import type { BrowseShellResult } from "@/app-shell/types";
 import type { Container } from "@/container";
@@ -116,7 +117,10 @@ export async function requestUnifiedOfflinePlayback(
     options.onDirectLaunch?.(launch);
   }
 
-  container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+  const topOverlay = container.stateManager.getState().activeModals.at(-1);
+  if (topOverlay) {
+    cancelRootOverlay(topOverlay, container.stateManager);
+  }
 
   if (closedBrowse) {
     return { status: "browse-handoff", launch };

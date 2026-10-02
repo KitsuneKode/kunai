@@ -239,7 +239,11 @@ async function maybeOpenStartupHistory(
   const selectionPromise = waitForRootHistorySelection();
   container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "history" } });
   const selection = await selectionPromise;
-  container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+  const { cancelRootOverlay } = await import("./app-shell/cancel-root-overlay");
+  const topOverlay = container.stateManager.getState().activeModals.at(-1);
+  if (topOverlay) {
+    cancelRootOverlay(topOverlay, container.stateManager);
+  }
   if (!selection) return null;
   if (selection.localJobId) {
     const { prepareOfflinePlaybackLaunch } = await import("./app/offline/offline-playback-launch");

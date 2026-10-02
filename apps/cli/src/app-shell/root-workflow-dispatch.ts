@@ -4,6 +4,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import type { SearchResult } from "@/domain/types";
 import { buildUiDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 
+import { cancelRootOverlay } from "./cancel-root-overlay";
 import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
 import { forceCloseRootContent } from "./root-content-state";
 import { openDiagnosticsOverlay } from "./root-overlay-bridge";
@@ -14,20 +15,24 @@ type WorkflowModule = typeof import("./workflows");
 /**
  * Resolve a palette command from any root surface — overlay host, idle
  * surface, or the error panel. Overlay opens dispatch `OPEN_OVERLAY`; workflow
- * commands go through `runRootWorkflowSafely`. `cancelPickerId` is set by the
- * overlay host when the palette sat on a media picker.
+ * commands go through `runRootWorkflowSafely`. A palette command replaces the
+ * overlay it sat on: settle the top through `cancelRootOverlay` so a picker,
+ * tracks panel, or queue/history bridge waiter is never left parked on a
+ * modal that no longer renders.
  */
 export function resolveRootSurfaceCommand({
   container,
   state,
   action,
-  cancelPickerId,
 }: {
   readonly container: Container;
   readonly state: SessionState;
   readonly action: ShellAction;
-  readonly cancelPickerId?: string;
 }): void {
+  const settleTopOverlay = () => {
+    const top = container.stateManager.getState().activeModals.at(-1);
+    if (top) cancelRootOverlay(top, container.stateManager);
+  };
   if (
     action === "settings" ||
     action === "presence" ||
@@ -47,9 +52,7 @@ export function resolveRootSurfaceCommand({
       });
       return;
     }
-    if (cancelPickerId) {
-      container.stateManager.dispatch({ type: "CANCEL_PICKER", id: cancelPickerId });
-    }
+    settleTopOverlay();
     if (action === "diagnostics") {
       void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
       return;
@@ -76,9 +79,7 @@ export function resolveRootSurfaceCommand({
     return;
   }
   if (action === "library") {
-    if (cancelPickerId) {
-      container.stateManager.dispatch({ type: "CANCEL_PICKER", id: cancelPickerId });
-    }
+    settleTopOverlay();
     container.stateManager.dispatch({
       type: "OPEN_OVERLAY",
       overlay: { type: "library" as const, view: "library" as const },
@@ -97,24 +98,22 @@ export function resolveRootSurfaceCommand({
     action === "providers" ||
     action === "image-pane"
   ) {
-    void runRootWorkflowSafely({ container, action, cancelPickerId });
+    void runRootWorkflowSafely({ container, action });
   }
 }
 
 export async function runRootWorkflowSafely({
   container,
   action,
-  cancelPickerId,
   loadWorkflow = () => import("./workflows"),
 }: {
   readonly container: Container;
   readonly action: ShellAction;
-  readonly cancelPickerId?: string;
   readonly loadWorkflow?: () => Promise<WorkflowModule>;
 }): Promise<void> {
   try {
     const { runShellWorkflowFromOverlay } = await loadWorkflow();
-    const result = await runShellWorkflowFromOverlay(container, action, { cancelPickerId });
+    const result = await runShellWorkflowFromOverlay(container, action);
 
     // A workflow that asks to start playing something used to be ignored here:
     // the result was awaited and dropped, so the workflow reported success and

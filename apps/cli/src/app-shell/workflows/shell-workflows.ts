@@ -10,6 +10,7 @@ import {
 } from "@/app-shell/pickers";
 
 export { buildPickerActionContext };
+import { cancelRootOverlay } from "@/app-shell/cancel-root-overlay";
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
 import {
   buildExternalOpenFallback,
@@ -914,21 +915,19 @@ export async function handleShellAction({
   return "unhandled";
 }
 
-/** Close the active overlay (or cancel a picker) before running a workflow command. */
+/** Close the active overlay (settling any picker/bridge waiter) before running a workflow command. */
 export async function runShellWorkflowFromOverlay(
   container: Container,
   action: ShellAction,
   options: {
-    readonly cancelPickerId?: string;
     readonly execute?: (
       input: Parameters<typeof handleShellAction>[0],
     ) => ReturnType<typeof handleShellAction>;
   } = {},
 ): Promise<ShellWorkflowResult> {
-  if (options.cancelPickerId) {
-    container.stateManager.dispatch({ type: "CANCEL_PICKER", id: options.cancelPickerId });
-  } else if (container.stateManager.getState().activeModals.length > 0) {
-    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+  const top = container.stateManager.getState().activeModals.at(-1);
+  if (top) {
+    cancelRootOverlay(top, container.stateManager);
   }
   const execute = options.execute ?? handleShellAction;
   return execute({ action, container });
@@ -945,7 +944,7 @@ const withOverlay = async <T>(
   } finally {
     const top = stateManager.getState().activeModals.at(-1);
     if (top?.type === overlay.type) {
-      stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      cancelRootOverlay(top, stateManager);
     }
   }
 };
