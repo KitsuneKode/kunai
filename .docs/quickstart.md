@@ -152,6 +152,11 @@ Summary:
 | `--jump`                |             | With `-S`, auto-pick *n*th result (1-based)                       |
 | `--debug`               |             | Verbose logging                                                   |
 
+A flag with no reader in the launch (e.g. `-t` without `-i`, `--jump` without
+`-S`, `-a` and `-y` together, `--download-path` without `--download`) prints a
+`kunai: <flag> was ignored — …` line on stderr and in `--dry-run` output rather
+than being silently dropped.
+
 Use `/export-diagnostics` in the shell (or the command palette) to write a **redacted** JSON snapshot of recent diagnostics next to the process working directory for bug reports.
 Then run `/report-issue` to open the GitHub issue form with triage guidance.
 
