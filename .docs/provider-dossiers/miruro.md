@@ -67,6 +67,11 @@ this change to keep the release-hardening branches independently mergeable.
 - **Transport, measured:** Bun `fetch` is always CF-403'd at the pipe (TLS
   fingerprint). curl — plain or impersonate — clears it with the `sec-fetch-*`
   triplet the client already sends.
+- **Curl leg contract (2026-10):** the pipe fallback passes `-q` first (no
+  `~/.curlrc` injection) and walks redirects in-process — `-L` is deliberately
+  absent. Each hop's target clears scheme, private-literal, and DNS checks
+  (`miruroCurlTargetBlockReason`) before curl touches it; mirror URLs come from
+  upstream JSON, so even hop 0 is treated as remote-controlled.
 - **Per-server `sources`, One Piece ep 1159:** `moo` (AnimeGG) 200/4 streams,
   `bee` (Anikoto) 200/2, `bonk` 200/7, `kiwi` (owocdn/kwik) 200/4; `pewe` (AniDB),
   `ally` (AllManga) and `hop` 444 — the first two because their upstreams are down.

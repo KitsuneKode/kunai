@@ -67,7 +67,9 @@ import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import {
+  blockedLiteralTargetReason,
   isStreamReachabilityVerified,
+  resolvedAddressBlockReason,
   type StreamReachabilityProbeResult,
 } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
@@ -1617,7 +1619,9 @@ function buildMiruroPipeHeaders(baseUrl: string, referer?: string) {
 }
 
 const MIRURO_CURL_STATUS_MARKER = "\n__KUNAI_CURL_STATUS__:";
-const MIRURO_CURL_STATUS_WRITE_OUT = "\n__KUNAI_CURL_STATUS__:%{http_code}";
+// `%{redirect_url}` rides the trailer so redirect hops can be walked
+// in-process — `-L` would hand them to curl without per-hop validation.
+const MIRURO_CURL_STATUS_WRITE_OUT = "\n__KUNAI_CURL_STATUS__:%{http_code}\t%{redirect_url}";
 /** Abort only when throughput collapses below this for `STALL_SECONDS`. */
 const MIRURO_CURL_MIN_BYTES_PER_SECOND = 1024;
 const MIRURO_CURL_STALL_SECONDS = 5;
@@ -1634,7 +1638,12 @@ const MIRURO_CURL_CONNECT_SECONDS = 5;
  * and the decoder then reported that transport failure as `pipe-xor-gunzip-failed`.
  * A non-zero exit means the body is partial — refuse it.
  */
-type MiruroCurlResult = { readonly status: number; readonly text: string };
+type MiruroCurlResult = {
+  readonly status: number;
+  readonly text: string;
+  /** `Location` target on a 3xx response; absent when curl reported none. */
+  readonly redirectUrl?: string;
+};
 
 export function interpretMiruroCurlResult(input: {
   readonly exitCode: number;
@@ -1650,15 +1659,15 @@ export function interpretMiruroCurlResult(input: {
     throw new Error(input.stderr.trim() || "curl returned without an HTTP response");
   }
 
-  const status = Number.parseInt(
-    input.stdout.slice(index + MIRURO_CURL_STATUS_MARKER.length).trim(),
-    10,
-  );
+  const trailer = input.stdout.slice(index + MIRURO_CURL_STATUS_MARKER.length).trim();
+  const tab = trailer.indexOf("\t");
+  const status = Number.parseInt(tab < 0 ? trailer : trailer.slice(0, tab), 10);
   if (!Number.isFinite(status) || status <= 0) {
     throw new Error(input.stderr.trim() || "curl returned without an HTTP status");
   }
 
-  return { status, text: input.stdout.slice(0, index) };
+  const redirectUrl = tab < 0 ? undefined : trailer.slice(tab + 1) || undefined;
+  return { status, text: input.stdout.slice(0, index), redirectUrl };
 }
 
 /**
@@ -1762,24 +1771,76 @@ export async function fetchMiruroPipeBody(
   }
 
   const hasCurlHttp2 = await detectCurlHttp2Support(curl.path);
+  const result = await runMiruroCurlWithHopGuard({
+    curlPath: curl.path,
+    impersonates: curl.impersonates,
+    http2: hasCurlHttp2,
+    headers,
+    url,
+    signal,
+  });
+  return {
+    status: result.status,
+    text: result.text,
+    xObfuscated: isMiruroObfuscatedPipeBody(result.text, null) ? "2" : null,
+    cloudflareHtml: isCloudflareBlockBody(result.text),
+  };
+}
+
+/**
+ * The blocklist verdict for one miruro curl hop. The mirror URL itself comes
+ * from an upstream JSON payload, so every hop — including the first — is
+ * remote-controlled here: scheme, private-literal, and DNS checks all apply.
+ * (The shared transport exempts its first hop as caller intent; miruro's first
+ * hop is payload content, not caller intent.)
+ */
+async function miruroCurlTargetBlockReason(
+  target: string,
+  signal: AbortSignal | undefined,
+): Promise<string | null> {
+  let parsed: URL;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return "unparseable target";
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return `scheme ${parsed.protocol}`;
+  }
+  const literal = blockedLiteralTargetReason(target);
+  if (literal !== null) return literal;
+  if (signal?.aborted === true) return null;
+  return resolvedAddressBlockReason(target, signal);
+}
+
+const MIRURO_CURL_MAX_HOPS = 3;
+
+async function runMiruroCurlOnce(input: {
+  readonly curlPath: string;
+  readonly impersonates: boolean;
+  readonly http2: boolean;
+  readonly headers: Record<string, string>;
+  readonly target: string;
+  readonly signal?: AbortSignal;
+}): Promise<MiruroCurlResult> {
   const args = [
-    curl.path,
-    ...curlCipherArgs(curl.impersonates),
+    input.curlPath,
+    // First argv only: curl reads ~/.curlrc unless -q/--disable leads the
+    // command line — a user config could inject proxy/cert flags here.
+    "-q",
+    ...curlCipherArgs(input.impersonates),
     "-sS",
-    ...(hasCurlHttp2 ? ["--http2"] : []),
-    "-L",
-    "--max-redirs",
-    "3",
+    ...(input.http2 ? ["--http2"] : []),
     "-A",
-    headers["User-Agent"] ?? USER_AGENT,
+    input.headers["User-Agent"] ?? USER_AGENT,
     "-H",
-    `Accept: ${headers.Accept ?? "*/*"}`,
+    `Accept: ${input.headers.Accept ?? "*/*"}`,
     "-H",
-    `Accept-Language: ${headers["Accept-Language"] ?? "en-US,en;q=0.9"}`,
+    `Accept-Language: ${input.headers["Accept-Language"] ?? "en-US,en;q=0.9"}`,
     "-H",
-    `Referer: ${headers.Referer ?? MIRURO_REFERER}`,
+    `Referer: ${input.headers.Referer ?? MIRURO_REFERER}`,
     "-H",
-    `Origin: ${headers.Origin ?? "https://www.miruro.bz"}`,
+    `Origin: ${input.headers.Origin ?? "https://www.miruro.bz"}`,
     "-H",
     "sec-fetch-dest: empty",
     "-H",
@@ -1808,7 +1869,7 @@ export async function fetchMiruroPipeBody(
     // an upstream JSON payload, so without this a value beginning with `-`
     // would be read as curl flags rather than as the address to fetch.
     "--",
-    url,
+    input.target,
   ];
 
   const proc = Bun.spawn(args, {
@@ -1824,28 +1885,61 @@ export async function fetchMiruroPipeBody(
       // ignore
     }
   };
-  signal?.addEventListener("abort", onAbort, { once: true });
+  input.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     const raw = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
     const exit = await proc.exited;
-    if (aborted || signal?.aborted) {
+    if (aborted || input.signal?.aborted) {
       throw new Error("aborted");
     }
-    const { status, text } = interpretMiruroCurlResult({
+    return interpretMiruroCurlResult({
       exitCode: exit,
       stdout: raw,
       stderr,
     });
-    return {
-      status,
-      text,
-      xObfuscated: isMiruroObfuscatedPipeBody(text, null) ? "2" : null,
-      cloudflareHtml: isCloudflareBlockBody(text),
-    };
   } finally {
-    signal?.removeEventListener("abort", onAbort);
+    input.signal?.removeEventListener("abort", onAbort);
   }
+}
+
+/**
+ * Redirect hops are walked in-process instead of `-L` so every target is
+ * re-validated before curl touches it — `-L` would hand the hop to curl
+ * unchecked and resend the miruro headers to whatever host it lands on.
+ */
+async function runMiruroCurlWithHopGuard(input: {
+  readonly curlPath: string;
+  readonly impersonates: boolean;
+  readonly http2: boolean;
+  readonly headers: Record<string, string>;
+  readonly url: string;
+  readonly signal?: AbortSignal;
+}): Promise<MiruroCurlResult> {
+  let target = input.url;
+  for (let hop = 0; hop <= MIRURO_CURL_MAX_HOPS; hop += 1) {
+    const blocked = await miruroCurlTargetBlockReason(target, input.signal);
+    if (blocked !== null) {
+      throw new ProviderHttpError({
+        message: `miruro curl refused unsafe target: ${blocked}`,
+        providerId: MIRURO_PROVIDER_ID,
+        stage: "fetch-curl",
+        code: "blocked",
+        retryable: false,
+      });
+    }
+    const result = await runMiruroCurlOnce({ ...input, target });
+    const redirectUrl = result.redirectUrl;
+    if (!redirectUrl || result.status < 300 || result.status >= 400) {
+      return result;
+    }
+    if (hop === MIRURO_CURL_MAX_HOPS) {
+      throw new Error(`miruro curl redirect chain exceeded ${MIRURO_CURL_MAX_HOPS} hops`);
+    }
+    // Location may be relative — resolve against the hop that produced it.
+    target = new URL(redirectUrl, target).href;
+  }
+  throw new Error("unreachable: miruro curl hop loop");
 }
 
 async function pipeCall(

@@ -588,6 +588,18 @@ describe("interpretMiruroCurlResult", () => {
       interpretMiruroCurlResult({ exitCode: 0, stdout: `body${marker}0`, stderr: "" }),
     ).toThrow();
   });
+
+  test("reads the redirect target off the trailer for the in-process hop walk", () => {
+    const result = interpretMiruroCurlResult({
+      exitCode: 0,
+      stdout: `<html>redirect</html>${marker}301\thttps://cdn2.example/pipe`,
+      stderr: "",
+    });
+
+    expect(result.status).toBe(301);
+    expect(result.text).toBe("<html>redirect</html>");
+    expect(result.redirectUrl).toBe("https://cdn2.example/pipe");
+  });
 });
 
 describe("miruro audio fallback detection", () => {
