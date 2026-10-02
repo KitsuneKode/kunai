@@ -66,6 +66,7 @@ export function providerResolveResultToStreamInfo(
   return {
     url: playableUrl,
     deferredLocator: selected.deferredLocator,
+    contentKey: selected.contentKey,
     headers: selected.headers ?? {},
     audioLanguages: selected.audioLanguages ? [...selected.audioLanguages] : undefined,
     hardSubLanguage: selected.hardSubLanguage,
@@ -105,8 +106,8 @@ function selectPreferredStream(
 ) {
   const blockedUrls = new Set(selection.blockedStreamUrls ?? []);
   const streams = result.streams.filter((stream) => {
-    const playableUrl = stream.url ?? stream.deferredLocator;
-    return !playableUrl || !blockedUrls.has(playableUrl);
+    const playableKey = stream.contentKey ?? stream.url ?? stream.deferredLocator;
+    return !playableKey || !blockedUrls.has(playableKey);
   });
 
   const exact = selection.selectedStreamId

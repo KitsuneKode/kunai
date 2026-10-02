@@ -15,7 +15,7 @@ import type {
 import { ProviderHttpError } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "./catalog-id";
 import { verifyCandidateStream } from "./resolve-gate";
-import { createExhaustedResult, emitTraceEvent } from "./resolve-helpers";
+import { createExhaustedResult, emitTraceEvent, isProviderTimeoutError } from "./resolve-helpers";
 import { hasResolvableSeriesCoordinates } from "./series-coordinates";
 import {
   createStreamId,
@@ -368,7 +368,7 @@ export async function resolveDirectStreamSource(
         retryable: false,
       });
     }
-    const timedOut = isTimeoutError(error);
+    const timedOut = isProviderTimeoutError(error);
     // A ProviderHttpError already carries the classified code and retryability
     // (e.g. 429 → rate-limited, 403 → blocked); collapsing it to network-error
     // would retry-storm throttled endpoints and mis-report them as generic
@@ -472,12 +472,6 @@ function normalizeSubtitles(
 /** Combine an optional caller signal with a per-request timeout. */
 export function directStreamFetchSignal(signal: AbortSignal | undefined, ms: number): AbortSignal {
   return createTimeoutSignal(signal, ms);
-}
-
-function isTimeoutError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (error.name === "TimeoutError" || error.name === "AbortError") return true;
-  return /timed out|timeout/i.test(error.message);
 }
 
 function inferProtocol(url: string): StreamCandidate["protocol"] {

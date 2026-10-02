@@ -33,7 +33,11 @@ import {
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { providerFetchText } from "../shared/provider-http-transport";
 import { matchProviderCatalogTitle } from "../shared/provider-title-match";
-import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
+import {
+  classifyProviderFetchFailure,
+  createExhaustedResult,
+  emitTraceEvent,
+} from "../shared/resolve-helpers";
 import { searchWithPhraseFallback } from "../shared/search-fallback";
 import {
   createSourceCandidateFromStream,
@@ -251,7 +255,10 @@ export const animeggProviderModule: CoreProviderModule = {
     try {
       slug = await locateAnimeggShow(input.title, context, events);
     } catch (error) {
-      return fail("network-error", `AnimeGG search failed: ${describe(error)}`, true);
+      const { code, retryable } = classifyProviderFetchFailure(
+        error instanceof Error ? error : undefined,
+      );
+      return fail(code, `AnimeGG search failed: ${describe(error)}`, retryable);
     }
     if (!slug) {
       return fail("not-found", `AnimeGG has no show that is clearly "${input.title.title}"`);
@@ -265,7 +272,10 @@ export const animeggProviderModule: CoreProviderModule = {
     try {
       tabs = parseAnimeggEpisodeTabs(await fetchText(episodeUrl, context));
     } catch (error) {
-      return fail("network-error", `AnimeGG episode page failed: ${describe(error)}`, true);
+      const { code, retryable } = classifyProviderFetchFailure(
+        error instanceof Error ? error : undefined,
+      );
+      return fail(code, `AnimeGG episode page failed: ${describe(error)}`, retryable);
     }
     const picked = selectAnimeggTab(tabs, audio.catalogMode);
     if (!picked) {
@@ -286,7 +296,10 @@ export const animeggProviderModule: CoreProviderModule = {
         await fetchText(animeggEmbedPath(picked.tab.embedId), context),
       );
     } catch (error) {
-      return fail("network-error", `AnimeGG embed failed: ${describe(error)}`, true);
+      const { code, retryable } = classifyProviderFetchFailure(
+        error instanceof Error ? error : undefined,
+      );
+      return fail(code, `AnimeGG embed failed: ${describe(error)}`, retryable);
     }
 
     const sourceId = `source:${ANIMEGG_PROVIDER_ID}:${picked.tab.mirror.toLowerCase()}:${presentation}`;

@@ -116,6 +116,12 @@ export interface EpisodePickerOption {
 export interface StreamInfo {
   readonly url: string;
   readonly deferredLocator?: string;
+  /**
+   * Stable content identity carried from the provider stream — the dead-stream
+   * ledger records and matches this instead of `url` when the URL is an
+   * ephemeral handle (deferred locators change every resolve).
+   */
+  readonly contentKey?: string;
   readonly headers: Record<string, string>;
   readonly audioLanguages?: string[];
   readonly hardSubLanguage?: string;

@@ -1313,6 +1313,67 @@ test("PlaybackResolveService selects an alternate provider stream when the prefe
   expect(result.stream?.providerResolveResult?.selectedStreamId).toBe("stream:vidking:alt");
 });
 
+test("PlaybackResolveService blocks a deferred stream by its stable content key", async () => {
+  // A deferred stream's locator (and thus its `url`) is re-minted on every
+  // resolve — only the contentKey survives across attempts.
+  const deadContentKey = "https://ak-cdn.example/dead-rep.mp4";
+  const alternateUrl = "https://cdn.example/source-b.m3u8";
+  const cache = createMemoryCache(null);
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "vidking",
+      selectedStreamId: "stream:vidking:ak",
+      streams: [
+        {
+          id: "stream:vidking:ak",
+          providerId: "vidking",
+          deferredLocator: "allmanga-ak:fresh-handle-1",
+          contentKey: deadContentKey,
+          protocol: "dash" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+        {
+          id: "stream:vidking:alt",
+          providerId: "vidking",
+          url: alternateUrl,
+          protocol: "hls" as const,
+          confidence: 0.8,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:alt",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "vidking",
+    attempts: [{ providerId: "vidking", result: undefined }],
+  });
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    blockedStreamUrls: [deadContentKey],
+  });
+
+  expect(result.stream?.url).toBe(alternateUrl);
+  expect(result.stream?.providerResolveResult?.selectedStreamId).toBe("stream:vidking:alt");
+});
+
 test("PlaybackResolveService validates stale cached stream and returns it when healthy", async () => {
   const staleStream = {
     ...stream,

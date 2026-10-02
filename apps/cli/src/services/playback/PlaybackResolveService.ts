@@ -289,7 +289,10 @@ export class PlaybackResolveService {
 
     if (input.prefetchedStream) {
       const prefetched = input.prefetchedStream;
-      const blocked = isBlockedStreamUrl(prefetched.url, input.blockedStreamUrls);
+      const blocked = isBlockedStreamUrl(
+        prefetched.contentKey ?? prefetched.url,
+        input.blockedStreamUrls,
+      );
       const stale = !isStreamTimestampFresh(prefetched);
       if (!blocked && !stale) {
         return {
@@ -322,7 +325,10 @@ export class PlaybackResolveService {
       await this.deleteCachedStream(cacheKey);
       cachedStream = null;
       cacheBecameStale = true;
-    } else if (cachedStream && isBlockedStreamUrl(cachedStream.url, input.blockedStreamUrls)) {
+    } else if (
+      cachedStream &&
+      isBlockedStreamUrl(cachedStream.contentKey ?? cachedStream.url, input.blockedStreamUrls)
+    ) {
       await this.deleteCachedStream(cacheKey);
       cachedStream = null;
       cacheBecameStale = true;
@@ -476,7 +482,12 @@ export class PlaybackResolveService {
           }
         } else if (
           inventoryResult.streams.some((stream) =>
-            isBlockedStreamUrl(stream.url, input.blockedStreamUrls),
+            // Match the same key the ledger records: stable contentKey for
+            // deferred streams (their locator is re-minted every resolve).
+            isBlockedStreamUrl(
+              stream.contentKey ?? stream.url ?? stream.deferredLocator,
+              input.blockedStreamUrls,
+            ),
           )
         ) {
           await this.deleteSourceInventory(inventoryInput);

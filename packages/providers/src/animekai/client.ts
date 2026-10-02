@@ -9,7 +9,7 @@
 
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
-import { providerFetch, ProviderHttpError } from "../runtime/fetch";
+import { providerFetch, ProviderHttpError, providerHttpErrorForStatus } from "../runtime/fetch";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
 import { parseMegaplayEmbedSourceIds } from "../shared/megaplay-embed";
 import { TTLCache } from "../shared/provider-cache";
@@ -212,7 +212,12 @@ export async function animekaiFetchText(
     referer: options.referer ?? ANIMEKAI_REFERER,
     extraHeaders: options.extraHeaders,
     maxTimeSec: options.maxTimeSec,
-    blockedError: (impersonated) => new Error(animekaiCloudflareBlockMessage(impersonated)),
+    blockedError: (impersonated) =>
+      providerHttpErrorForStatus({
+        status: 403,
+        providerId: ANIMEKAI_PROVIDER_ID,
+        message: animekaiCloudflareBlockMessage(impersonated),
+      }),
   });
 }
 
@@ -230,8 +235,13 @@ async function animekaiFetchJson(
     referer: options.referer ?? ANIMEKAI_REFERER,
     extraHeaders: options.extraHeaders,
     maxTimeSec: options.maxTimeSec,
-    blockedError: (impersonated) => new Error(animekaiCloudflareBlockMessage(impersonated)),
-    stage: "fetch-json",
+    blockedError: (impersonated) =>
+      providerHttpErrorForStatus({
+        status: 403,
+        providerId: ANIMEKAI_PROVIDER_ID,
+        stage: "fetch-json",
+        message: animekaiCloudflareBlockMessage(impersonated),
+      }),
   });
 }
 
