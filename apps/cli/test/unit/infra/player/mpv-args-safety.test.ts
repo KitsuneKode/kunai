@@ -24,6 +24,10 @@ describe("mpv URL safety", () => {
     expect(isAllowedMpvUrl("file:///tmp/movie.mp4", "local")).toBe(true);
     expect(isAllowedMpvUrl("/tmp/movie.mp4", "remote")).toBe(false);
     expect(isAllowedMpvUrl("/tmp/movie.mp4", "local")).toBe(true);
+    // "local" widens the scheme set to files; it is not a network-target
+    // exemption — an http(s) URL on a private literal stays blocked either way.
+    expect(isAllowedMpvUrl("https://169.254.169.254/latest/meta-data", "local")).toBe(false);
+    expect(isAllowedMpvUrl("http://127.0.0.1:8080/admin", "local")).toBe(false);
   });
 
   test("rejects unsafe media argv and terminates options before the URL", () => {

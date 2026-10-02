@@ -4,15 +4,17 @@ export type MpvUrlKind = "remote" | "local";
 
 /**
  * Restricts provider-controlled media targets to HTTP(S); trusted local
- * surfaces may use files. Remote targets additionally refuse private literal
- * hosts — a provider-supplied stream/trailer URL must not make mpv (or a
- * spawn of it) reach the LAN, since mpv fetches the URL itself.
+ * surfaces may use files. Any HTTP(S) URL — remote OR local-kind — refuses
+ * private literal hosts: a provider-supplied stream/trailer URL must not make
+ * mpv (or a spawn of it) reach the LAN, since mpv fetches the URL itself. The
+ * local kind only widens the scheme set to files; it is not a network-target
+ * exemption.
  */
 export function isAllowedMpvUrl(url: string, kind: MpvUrlKind): boolean {
   const trimmed = url.trim();
   if (!trimmed || trimmed.startsWith("-")) return false;
   if (/^https?:\/\//i.test(trimmed)) {
-    return kind === "local" || blockedLiteralTargetReason(trimmed) === null;
+    return blockedLiteralTargetReason(trimmed) === null;
   }
   if (kind !== "local") return false;
   if (/^file:\/\//i.test(trimmed)) return true;
