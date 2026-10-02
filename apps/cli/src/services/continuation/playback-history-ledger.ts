@@ -108,7 +108,10 @@ export class PlaybackHistoryLedger {
     const lastWatchedAt = bumpLastWatched
       ? now
       : (existing?.lastWatchedAt ?? existing?.updatedAt ?? null);
-    this.recordEvent("complete", {
+    // "complete" means the watch actually finished (same flag written to
+    // history_progress.completed). Quit/error/crash finales are "end" —
+    // a cycle boundary, never a completed watch.
+    this.recordEvent(input.completed ? "complete" : "end", {
       positionSeconds,
       durationSeconds: input.durationSeconds,
     });
@@ -184,7 +187,7 @@ export class PlaybackHistoryLedger {
   }
 
   private recordEvent(
-    eventType: "start" | "progress" | "pause" | "resume" | "seek" | "complete",
+    eventType: "start" | "progress" | "pause" | "resume" | "seek" | "complete" | "end",
     input: { positionSeconds?: number; durationSeconds?: number },
   ): void {
     if (!this.context) return;

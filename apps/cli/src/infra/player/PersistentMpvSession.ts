@@ -602,6 +602,10 @@ export class PersistentMpvSession {
           : closed
             ? null
             : ("SIGKILL" as NodeJS.Signals)),
+      // target.killed is only set when a kill() actually delivered — an
+      // external SIGKILL racing our teardown leaves it false and still
+      // classifies as a crash, not a quit.
+      terminatedByUs: target?.killed === true,
     });
   }
 
@@ -718,6 +722,10 @@ export class PersistentMpvSession {
         // A real crash signal (SIGSEGV/...) must reach recordPlayerExit so it
         // classifies as an error, never as a completed watch.
         signal: proc.signalCode ?? (proc.killed ? ("SIGTERM" as NodeJS.Signals) : null),
+        // proc.killed is the initiated-by-us bit: our teardown calls
+        // proc.kill(); an OOM-killer or external `kill -9` leaves it false,
+        // so an unowned SIGKILL classifies as a crash instead of a quit.
+        terminatedByUs: proc.killed === true,
       });
       return undefined;
     });
@@ -1438,6 +1446,9 @@ export class PersistentMpvSession {
     await this.handleProcessTermination({
       code: exit.exitCode ?? 1,
       signal: exit.signal,
+      // target.killed only marks a kill() that actually delivered — a
+      // SIGKILL that beat our teardown to the process stays crash-class.
+      terminatedByUs: target.killed === true,
     });
   }
 
@@ -1450,6 +1461,8 @@ export class PersistentMpvSession {
   private async handleProcessTermination(exit: {
     code: number | null;
     signal: NodeJS.Signals | null;
+    /** True when our own teardown kill()ed the process (see recordPlayerExit). */
+    terminatedByUs?: boolean;
   }): Promise<void> {
     if (this.terminationPromise) {
       await this.terminationPromise;

@@ -35,7 +35,8 @@ import {
 function usage(): never {
   console.error(`usage: bun run agent:session -- <command> [opts]
   start [--name N] [--seed onboarded|fresh] [--width C] [--rows R]
-        [--no-fake-mpv] [--command "..."] [--keep-profile] [--set-env K=V]...
+        [--no-fake-mpv] [--fake-mpv-mode normal|fail-pre-loaded|hold]
+        [--command "..."] [--keep-profile] [--set-env K=V]...
   see [--name N] [--raw]
   do <key>... [--name N]      keys: text types literally, <enter> <esc> <up> ...
   keys [--name N]             list the [key] hints the current pane advertises
@@ -141,6 +142,7 @@ async function main(): Promise<void> {
         "--width",
         "--rows",
         "--no-fake-mpv",
+        "--fake-mpv-mode",
         "--command",
         "--keep-profile",
         "--set-env",
@@ -165,12 +167,22 @@ async function main(): Promise<void> {
       ) {
         usage();
       }
+      const fakeMpvMode = argValue(rest, "--fake-mpv-mode");
+      if (
+        fakeMpvMode !== undefined &&
+        fakeMpvMode !== "normal" &&
+        fakeMpvMode !== "fail-pre-loaded" &&
+        fakeMpvMode !== "hold"
+      ) {
+        usage();
+      }
       const session = await startTmuxSession({
         name,
         seed,
         columns: argValue(rest, "--width") !== undefined ? width : undefined,
         rows: argValue(rest, "--rows") !== undefined ? rows : undefined,
         fakeMpv: !rest.includes("--no-fake-mpv"),
+        fakeMpvMode,
         command: argValue(rest, "--command"),
         keepProfile: rest.includes("--keep-profile"),
         env,

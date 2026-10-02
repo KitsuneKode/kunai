@@ -310,6 +310,9 @@ async function launchMpvInner(
     // Prefer the real terminating signal — a crash (SIGSEGV/...) must not be
     // laundered into a clean "quit".
     signal: mpv.signalCode ?? (mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null),
+    // mpv.killed marks kills this process issued; an external SIGKILL (OOM,
+    // kill -9) arrives with killed=false and must classify as a crash.
+    terminatedByUs: mpv.killed === true,
   }));
 
   const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000, {
