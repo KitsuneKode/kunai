@@ -102,6 +102,11 @@ export function createMemoryAnalyticsStore(
           removed += 1;
         }
       }
+      // Budget rows for closed days are dead weight — the Postgres twin clears
+      // them in the same pass.
+      for (const dayKey of budget.keys()) {
+        if (dayKey < day) budget.delete(dayKey);
+      }
       return removed;
     },
     async pruneLifetimeBefore(day) {

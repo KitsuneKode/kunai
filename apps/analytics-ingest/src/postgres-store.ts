@@ -230,8 +230,13 @@ export function createPostgresAnalyticsStore(
     },
 
     async pruneRawBefore(day: string): Promise<number> {
+      // ingest_budget is day-keyed too — a past day's admission count means
+      // nothing once the day is gone, so the table would otherwise grow one
+      // row per day forever. The return counts ping_day rows only; the budget
+      // sweep is housekeeping, not a signal worth reporting.
       const rows = (await sql.query(
-        `with deleted as (delete from ping_day where day < $1::date returning 1)
+        `with deleted as (delete from ping_day where day < $1::date returning 1),
+              budget as (delete from ingest_budget where day < $1::date returning 1)
          select count(*)::int as n from deleted`,
         [day],
       )) as { n: number }[];
