@@ -39,7 +39,8 @@ const PROJECT_LINKS: readonly FooterLink[] = [
 ];
 
 const TRUST_LINKS: readonly FooterLink[] = [
-  { href: "/docs/users/reliability-and-privacy", label: "Privacy & reliability" },
+  { href: "/privacy", label: "Privacy" },
+  { href: "/docs/users/reliability-and-privacy", label: "Reliability & data" },
   { href: "/docs/users/supported-and-unsupported#disclaimer", label: "Disclaimer" },
   { href: docsGithubIssuesUrl(), label: "Report an issue", external: true },
   { href: docsGithubRepoUrl(), label: "GitHub", external: true },

@@ -30,6 +30,7 @@ describe("SiteFooter", () => {
       "/analytics",
       "/feedback",
       "/docs/users/kanna",
+      "/privacy",
       "/docs/users/reliability-and-privacy",
       "/docs/users/supported-and-unsupported#disclaimer",
     ]) {
