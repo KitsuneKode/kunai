@@ -30,6 +30,8 @@ export const MPV_INITIAL_PROPERTIES = ["playback-time", "duration", "percent-pos
  * life of the session. Oversized remainders are dropped, not the connection.
  */
 const MAX_IPC_UNPARSED_BYTES = 256 * 1024;
+/** Init get_property replies older than this are stale samples, not stats — dropped. */
+const MPV_INIT_RESPONSE_TTL_MS = 5_000;
 
 type MpvIpcMessage = {
   event?: string;
@@ -219,6 +221,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
               dispatchMessage(
                 parsed,
                 requestIds,
+                initResponseDeadlineMs,
                 pendingCommands,
                 options.onPropertyUpdate,
                 options.onEndFile,
@@ -258,6 +261,12 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
     initPayload += buildMpvIpcCommand(["observe_property", nextRequestId, name], nextRequestId);
     nextRequestId++;
   }
+  // Init get_property replies carry the value mpv sampled when it answered, not
+  // when the reply reaches us — a response that outlives the stall window is
+  // stale by definition, and applying it stamps old position/duration as fresh
+  // stats. Past the deadline the observe_property pushes still repopulate the
+  // value, so dropping costs nothing but the poisoned sample.
+  const initResponseDeadlineMs = Date.now() + MPV_INIT_RESPONSE_TTL_MS;
   for (const name of MPV_INITIAL_PROPERTIES) {
     const id = nextRequestId++;
     requestIds.set(id, name);
@@ -378,6 +387,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
 function dispatchMessage(
   message: MpvIpcMessage,
   requestIds: Map<number, string>,
+  initResponseDeadlineMs: number,
   pendingCommands: Map<number, PendingCommand>,
   onPropertyUpdate: PropertyUpdateHandler,
   onEndFile: EndFileHandler,
@@ -434,8 +444,10 @@ function dispatchMessage(
     message.error === "success"
   ) {
     const name = requestIds.get(message.request_id);
-    if (!name) return;
     requestIds.delete(message.request_id);
+    // Late init replies are value-samples from before the stall — fresher
+    // property-change pushes already own the truth, so drop rather than apply.
+    if (!name || observedAt > initResponseDeadlineMs) return;
     onPropertyUpdate({ name, value: message.data, observedAt });
   }
 }

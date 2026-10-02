@@ -130,7 +130,11 @@ export async function launchMpv(opts: {
     noteTrustedSeek(stats, opts.startAt ?? 0);
     const baseEmit = opts.onPlaybackEvent ?? (() => {});
     const emitPlaybackEvent = (event: PlayerPlaybackEvent) => {
-      if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
+      // Only the watchdog's stream-stall verdicts mean the feed died — same rule
+      // as the persistent session: ipc-stalled fires for any non-subtitle
+      // command timeout, and a cosmetic set_property during heavy demux must
+      // not stamp the eof-demotion window.
+      if (event.type === "stream-stalled") {
         noteStreamStall(stats, Date.now());
       }
       try {

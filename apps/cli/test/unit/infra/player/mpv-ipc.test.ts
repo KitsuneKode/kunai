@@ -424,4 +424,97 @@ describe("mpv-ipc receive path", () => {
       stub.restore();
     }
   });
+
+  test("applies an init get_property reply that arrives inside the TTL", async () => {
+    const updates: CapturedPropertyUpdate[] = [];
+    const writes: string[] = [];
+    const stub = stubConnectCapture((data) => ({
+      data,
+      readyState: 1,
+      write(payload) {
+        writes.push(String(payload));
+      },
+      end() {},
+      terminate() {},
+    }));
+    try {
+      await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate: ({ name, value }) => {
+          updates.push({ name, value });
+        },
+        onEndFile() {},
+      });
+      const durationId = initRequestIdFor(writes, "duration");
+      stub
+        .handlers()
+        .data?.(
+          stub.socket(),
+          new TextEncoder().encode(
+            `${JSON.stringify({ request_id: durationId, error: "success", data: 1440 })}\n`,
+          ),
+        );
+      expect(updates).toEqual([{ name: "duration", value: 1440 }]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test("drops an init get_property reply that outlived the stall window", async () => {
+    // A reply queued behind an IPC stall carries the value mpv sampled before
+    // the hang — applied fresh it rewinds position/duration stats with stale
+    // data. Past the TTL the reply is dropped; observe_property pushes keep the
+    // value honest from then on.
+    const updates: CapturedPropertyUpdate[] = [];
+    const writes: string[] = [];
+    const stub = stubConnectCapture((data) => ({
+      data,
+      readyState: 1,
+      write(payload) {
+        writes.push(String(payload));
+      },
+      end() {},
+      terminate() {},
+    }));
+    try {
+      await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate: ({ name, value }) => {
+          updates.push({ name, value });
+        },
+        onEndFile() {},
+      });
+      const durationId = initRequestIdFor(writes, "duration");
+      const realNow = Date.now;
+      try {
+        Date.now = () => realNow() + 6_000;
+        stub
+          .handlers()
+          .data?.(
+            stub.socket(),
+            new TextEncoder().encode(
+              `${JSON.stringify({ request_id: durationId, error: "success", data: 1440 })}\n`,
+            ),
+          );
+      } finally {
+        Date.now = realNow;
+      }
+      expect(updates).toEqual([]);
+    } finally {
+      stub.restore();
+    }
+  });
 });
+
+/**
+ * The init burst writes observe_property ids first, then one get_property per
+ * MPV_INITIAL_PROPERTIES entry — read the id back from what was written instead
+ * of re-deriving the numbering here.
+ */
+function initRequestIdFor(writes: readonly string[], property: string): number {
+  const match = writes
+    .join("")
+    .match(new RegExp(`"command":\\s*\\["get_property","${property}"\\],\\s*"request_id":(\\d+)`));
+  if (!match) throw new Error(`no init get_property for ${property} was written`);
+  return Number(match[1]);
+}
