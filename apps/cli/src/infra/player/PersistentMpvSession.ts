@@ -99,7 +99,7 @@ const RECONNECT_ATTEMPT_CEILING = 12;
 
 type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
 
-type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
+type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill" | "signalCode">;
 
 const defaultPersistentMpvSessionRuntime: PersistentMpvSessionRuntime = {
   which: (command) => whichLive(command),
@@ -593,11 +593,15 @@ export class PersistentMpvSession {
 
     await this.handleProcessTermination({
       code: target?.exitCode ?? (closed ? 0 : null),
-      signal: target?.killed
-        ? ("SIGTERM" as NodeJS.Signals)
-        : closed
-          ? null
-          : ("SIGKILL" as NodeJS.Signals),
+      // A crash signal observed before/during teardown outranks the signal we
+      // sent — the player faulted, it was not stopped.
+      signal:
+        target?.signalCode ??
+        (target?.killed
+          ? ("SIGTERM" as NodeJS.Signals)
+          : closed
+            ? null
+            : ("SIGKILL" as NodeJS.Signals)),
     });
   }
 
@@ -711,7 +715,9 @@ export class PersistentMpvSession {
     proc.exited.then((code) => {
       void this.handleProcessTermination({
         code,
-        signal: proc.killed ? ("SIGTERM" as NodeJS.Signals) : null,
+        // A real crash signal (SIGSEGV/...) must reach recordPlayerExit so it
+        // classifies as an error, never as a completed watch.
+        signal: proc.signalCode ?? (proc.killed ? ("SIGTERM" as NodeJS.Signals) : null),
       });
       return undefined;
     });

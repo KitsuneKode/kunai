@@ -8,7 +8,7 @@ export type PersistentMpvSessionRuntime = {
   spawn(
     command: string[],
     options: Parameters<typeof Bun.spawn>[1],
-  ): Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
+  ): Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill" | "signalCode">;
   waitForIpcEndpoint: typeof waitForMpvIpcEndpoint;
   openIpcSession(options: MpvIpcSessionOptions): Promise<MpvIpcSession>;
 };

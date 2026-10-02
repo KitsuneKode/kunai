@@ -487,4 +487,99 @@ describe("mpv-stats", () => {
     expect(stats.latestIpcSample?.cacheSpeedBytesPerSecond).toBe(1_000_000);
     expect(stats.latestIpcSample?.seeking).toBe(true);
   });
+
+  test("does not promote a crashed player's eof-reached sample to a completed watch", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1_400,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1_440,
+      observedAt: 1_010,
+    });
+    applyObservedPropertySample(stats, {
+      name: "eof-reached",
+      value: true,
+      observedAt: 1_100,
+    });
+    // mpv faulted on shutdown — never an end-file event, so endReason stayed
+    // "unknown". The crash must not be rewritten as a finished watch.
+    recordPlayerExit(stats, { code: null, signal: "SIGSEGV" });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("error");
+    expect(result.watchedSeconds).toBe(1_400);
+    expect(result.playerExitedCleanly).toBe(false);
+    expect(result.playerExitSignal).toBe("SIGSEGV");
+  });
+
+  test("does not promote eof-reached on a non-zero exit either", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1_400,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1_440,
+      observedAt: 1_010,
+    });
+    applyObservedPropertySample(stats, {
+      name: "eof-reached",
+      value: true,
+      observedAt: 1_100,
+    });
+    recordPlayerExit(stats, { code: 1, signal: null });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("error");
+    expect(result.watchedSeconds).toBe(1_400);
+  });
+
+  test("still promotes eof-reached when the exit itself was clean", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 1_400,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1_440,
+      observedAt: 1_010,
+    });
+    applyObservedPropertySample(stats, {
+      name: "eof-reached",
+      value: true,
+      observedAt: 1_100,
+    });
+    recordPlayerExit(stats, { code: 0, signal: null });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("eof");
+    expect(result.watchedSeconds).toBe(1_440);
+  });
+
+  test("maps crash signals mid-play to error, not quit", () => {
+    const stats = createPlayerStatsState("/tmp/mpv.sock");
+    applyObservedPropertySample(stats, {
+      name: "playback-time",
+      value: 600,
+      observedAt: 1_000,
+    });
+    applyObservedPropertySample(stats, {
+      name: "duration",
+      value: 1_440,
+      observedAt: 1_010,
+    });
+    recordPlayerExit(stats, { code: null, signal: "SIGABRT" });
+
+    const result = finalizePlaybackResult(stats, { socketPathCleanedUp: true });
+    expect(result.endReason).toBe("error");
+    expect(result.watchedSeconds).toBe(600);
+  });
 });

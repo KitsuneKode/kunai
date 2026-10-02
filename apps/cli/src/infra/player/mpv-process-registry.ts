@@ -7,6 +7,8 @@ export type MpvKillableProcess = {
 export type MpvChildProcess = MpvKillableProcess & {
   exited: Promise<number>;
   exitCode: number | null;
+  /** Real terminating signal when the OS delivered one — prefer it over the signal we sent. */
+  signalCode?: NodeJS.Signals | null;
 };
 
 export type MpvTerminationResult = {
@@ -75,7 +77,7 @@ export async function terminateMpvProcess(
     return {
       exited: true,
       exitCode: process.exitCode ?? gracefulCode,
-      signal: "SIGTERM",
+      signal: process.signalCode ?? "SIGTERM",
     };
   }
 
@@ -89,6 +91,6 @@ export async function terminateMpvProcess(
   return {
     exited: forcedCode !== undefined,
     exitCode: process.exitCode ?? forcedCode ?? null,
-    signal: "SIGKILL",
+    signal: process.signalCode ?? "SIGKILL",
   };
 }

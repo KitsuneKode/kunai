@@ -516,6 +516,21 @@ export function applyEndFileEvent(
   }
 }
 
+/**
+ * Signals that mean mpv faulted rather than being asked to stop. Kill-family
+ * signals (SIGTERM/SIGINT/SIGKILL/...) stay "quit" — our own teardown
+ * escalates through them.
+ */
+const PLAYER_CRASH_SIGNALS: ReadonlySet<NodeJS.Signals> = new Set([
+  "SIGABRT",
+  "SIGBUS",
+  "SIGFPE",
+  "SIGILL",
+  "SIGSEGV",
+  "SIGSYS",
+  "SIGTRAP",
+]);
+
 export function recordPlayerExit(
   state: PlayerStatsState,
   exit: {
@@ -527,18 +542,24 @@ export function recordPlayerExit(
   state.playerExitSignal = exit.signal;
   state.playerExitedCleanly = exit.code === 0 && exit.signal === null;
 
+  // A player that died abnormally must never be promoted to eof — a crash
+  // after a transient eof-reached (keep-open, flaky HLS) is not a completed
+  // watch.
+  const exitedAbnormally =
+    (exit.signal !== null && PLAYER_CRASH_SIGNALS.has(exit.signal)) ||
+    (exit.code !== null && exit.code !== 0);
+
   if (
     state.endReason === "unknown" &&
     state.latestIpcSample?.eofReached &&
-    !state.eofDemotedByPrematureGuard
+    !state.eofDemotedByPrematureGuard &&
+    !exitedAbnormally
   ) {
     state.endReason = "eof";
   } else if (state.endReason === "unknown") {
-    if (exit.code !== null && exit.code !== 0) {
+    if (exitedAbnormally) {
       state.endReason = "error";
-    } else if (exit.signal) {
-      state.endReason = "quit";
-    } else if (exit.code === 0) {
+    } else if (exit.signal || exit.code === 0) {
       state.endReason = "quit";
     }
   }
