@@ -45,9 +45,10 @@ describe("SiteFooter", () => {
       "https://www.npmjs.com/package/@kitsunekode/kunai",
       "https://github.com/KitsuneKode/kittymux",
       "https://github.com/KitsuneKode/sweep",
-      "https://github.com/KitsuneKode/portless",
       "https://github.com/KitsuneKode/run-cli",
       "https://github.com/KitsuneKode/arche",
+      "https://github.com/KitsuneKode/js-questions-lab",
+      "https://github.com/KitsuneKode/yt-playlist-dedupe",
     ]) {
       expect(html).toContain(`href="${href}"`);
     }

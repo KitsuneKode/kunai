@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { HomeSupportStrip } from "../components/home/home-support-strip";
+import { HomeOpenSource } from "../components/home/home-open-source";
 import { SiteFooter } from "../components/layout/site-footer";
 import { SponsorWall } from "../components/support/sponsor-wall";
 import { SPONSOR_URL, SUPPORT_PATH, sponsors, supportWays } from "../lib/support";
@@ -56,13 +56,13 @@ describe("SponsorWall", () => {
 });
 
 describe("support entry points", () => {
-  test("the home strip and the footer both reach the support page", () => {
-    expect(renderToStaticMarkup(<HomeSupportStrip />)).toContain(`href="${SUPPORT_PATH}"`);
+  test("the home section and the footer both reach the support page", () => {
+    expect(renderToStaticMarkup(<HomeOpenSource />)).toContain(`href="${SUPPORT_PATH}"`);
     expect(renderToStaticMarkup(<SiteFooter />)).toContain(`href="${SUPPORT_PATH}"`);
   });
 
-  test("the home strip opens sponsorship in a new tab and says so to assistive tech", () => {
-    const html = renderToStaticMarkup(<HomeSupportStrip />);
+  test("the home section opens sponsorship in a new tab and says so to assistive tech", () => {
+    const html = renderToStaticMarkup(<HomeOpenSource />);
     expect(html).toContain(SPONSOR_URL);
     expect(html).toContain('target="_blank"');
     expect(html).toContain("opens GitHub Sponsors in a new tab");

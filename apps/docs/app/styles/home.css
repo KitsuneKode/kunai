@@ -25,6 +25,8 @@
 .kunai-home-highlights,
 .kunai-home-providers,
 .kunai-home-start,
+.kunai-home-open,
+.kunai-home-workshop,
 .kunai-home-final {
   margin-top: clamp(2.5rem, 5vw, 4rem);
 }
@@ -310,6 +312,12 @@
 
 .kunai-section-head {
   margin-bottom: clamp(2rem, 4vw, 3.5rem);
+}
+
+/* The bento section prints one quiet line of usage under its heading, so the heading
+   hands over to it sooner than the full section gap would. */
+.kunai-home-highlights .kunai-section-head {
+  margin-bottom: 1rem;
 }
 .kunai-final {
   border: 1px solid var(--kunai-line);
