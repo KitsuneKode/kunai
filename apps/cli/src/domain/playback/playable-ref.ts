@@ -1,9 +1,7 @@
-// =============================================================================
-// playable-ref.ts — surface-agnostic "play this" identity + pure intent builder
+// Surface-agnostic "play this" identity + pure intent builder
 //
 // `mediaKind` is content truth; it is the ONLY thing that decides labels /
 // episode / autoplay — never ShellMode (which is provider routing only).
-// =============================================================================
 
 import type { ShellMode } from "@/domain/types";
 import type { MediaKind, ProviderExternalIds } from "@kunai/types";

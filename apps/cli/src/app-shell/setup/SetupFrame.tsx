@@ -1,5 +1,4 @@
-// =============================================================================
-// setup-frame.tsx — the Sakura shell frame, for setup
+// The Sakura shell frame, for setup
 //
 // Setup was the only surface in Kunai with no frame: no header, no surface
 // label, no `[/] commands`. That, more than any copy, is why it read as a
@@ -11,7 +10,6 @@
 //   🦊 Kunai · <context>                                        setup · N⁄7
 //   <body — the current decision>
 //   [key] label  [key] label                                         Setup
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";

@@ -1,8 +1,6 @@
-// =============================================================================
-// history-view.ts — pure view-model builder for history / continue UI
+// Pure view-model builder for history / continue UI
 //
 // Design authority: .reference/design/cli/surfaces/stats-history-library.md
-// =============================================================================
 
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";

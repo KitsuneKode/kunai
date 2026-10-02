@@ -1,5 +1,4 @@
-// =============================================================================
-// setup-shell.tsx — first run, in seven framed screens
+// First run, in seven framed screens
 //
 // Every screen asks something or pays something off, and every one of them
 // wears the Sakura shell frame. Setup used to be the only surface in Kunai
@@ -13,7 +12,6 @@
 // Every control hydrates from the current config (`SetupInitialState`), so a
 // rerun shows what is really set and completing writes back exactly what the
 // screens showed — rerunning can never silently sever a linked account.
-// =============================================================================
 
 import {
   AUDIO_PREFERENCE_OPTIONS,

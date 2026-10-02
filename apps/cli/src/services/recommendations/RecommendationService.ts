@@ -1,8 +1,6 @@
-// =============================================================================
 // RecommendationService Interface (Domain)
 //
 // Contract for fetching TMDB-backed recommendation sections.
-// =============================================================================
 
 import type { ContentType, SearchResult } from "@/domain/types";
 

@@ -1,5 +1,4 @@
-// =============================================================================
-// AnalyticsDisclosureBanner.tsx — the one-time notice for upgraders
+// The one-time notice for upgraders
 //
 // Users who never see the setup wizard sit at analytics: "unset" and would
 // otherwise never be told. This shows once, on the first interactive launch
@@ -8,7 +7,6 @@
 // It takes no keyboard input on purpose: `ink-shell` owns a global `useInput`
 // handler, and a second one here would make Enter both dismiss the notice and
 // fire whatever Enter means in the current view. It auto-hides instead.
-// =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";

@@ -1,5 +1,4 @@
-// =============================================================================
-// media-panel-model.ts — ONE content-kind-aware view-model for the media panel
+// ONE content-kind-aware view-model for the media panel
 //
 // Both Now Playing and Post-play render the same `MediaPanel` from this model,
 // so movie / series / anime / video share one tasteful layout. A new kind plugs
@@ -10,7 +9,6 @@
 // (aligned label/value rows), synopsis (clamped), miniCards (resume/prev/next),
 // poster (season-aware art), progress. Per-kind builders only decide WHAT fills
 // each slot; the component decides HOW it renders.
-// =============================================================================
 
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { ContentKind } from "@/domain/media/content-kind";
