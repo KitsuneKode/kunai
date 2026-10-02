@@ -156,7 +156,14 @@ accounts, usage ping, done. Implementation is
   artifact is adopted without another network request; an invalid regular file is removed before
   bounded retry. This closes the unavoidable filesystem-rename/SQLite-commit crash window.
 - Abort terminates active download processes (`yt-dlp`), deletes temporary files, and persists an aborted job state.
+- A wedged download cannot sit forever: `--socket-timeout` only bounds a hung
+  read, so the job additionally dies after 120s of total stdout/stderr silence
+  (any output line re-arms it — a live transfer talks constantly). The kill
+  record in the job's stderr says `treating as wedged`.
 - App shutdown pauses active downloads, cleans temporary workers, and leaves jobs retryable.
+  The last-resort kill sends SIGTERM before SIGKILL: yt-dlp's TERM handler is
+  what reaps its own children (an ffmpeg merge is a child process), so a bare
+  KILL could orphan it mid-merge.
 - Abort or shutdown requested while stream resolution is pending prevents a later
   downloader launch and fresh-stream metadata writes. When resolution settles,
   the queue preserves the recorded abort/pause decision without consuming a

@@ -270,7 +270,7 @@ function pushableStream() {
   let closed = false;
   return {
     stream,
-    push: (text) => {
+    push: (text: string) => {
       if (!closed) controller.enqueue(new TextEncoder().encode(text));
     },
     close: () => {
