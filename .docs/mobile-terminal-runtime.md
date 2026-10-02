@@ -135,7 +135,9 @@ recovery is explicit rather than guessing whether another session is alive.
 - Pass media URLs as one opaque process argument; never evaluate a constructed
   shell string.
 - Android uses `spawn` with `shell: false`; explicit VLC handoff can use only
-  `termux-am` or `/system/bin/am`.
+  `termux-am` or `/system/bin/am`. A bare exit 0 is not acceptance: launcher
+  output is scanned for intent-resolution errors (`am` can print `Error:` lines
+  while still exiting 0).
 - iOS uses a literal helper allowlist and fixed private files.
 - The iOS HTTP helper disables implicit curl configuration with `-q` before
   loading its private request configuration. That configuration disables URL
