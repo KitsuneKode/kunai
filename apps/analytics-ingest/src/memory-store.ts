@@ -44,6 +44,10 @@ export function createMemoryAnalyticsStore(
         day,
         computedAt: new Date().toISOString(),
         activeInstalls: rows.length,
+        // Retired rows carry no first_seen, but they can never have belonged
+        // to a day still rollable: a first_seen = day row lives at least until
+        // day + retention, longer than the raw window keeps `day` reachable.
+        newInstalls: [...lifetime.values()].filter((entry) => entry.firstSeen === day).length,
         byVersion: capBuckets(
           countBy(rows, (row) => row.version),
           cap,
@@ -97,6 +101,11 @@ export function createMemoryAnalyticsStore(
           raw.delete(key);
           removed += 1;
         }
+      }
+      // Budget rows for closed days are dead weight — the Postgres twin clears
+      // them in the same pass.
+      for (const dayKey of budget.keys()) {
+        if (dayKey < day) budget.delete(dayKey);
       }
       return removed;
     },

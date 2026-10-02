@@ -10,6 +10,14 @@ export type DailyRollup = {
   /** Persisted cron completion time; public `updatedAt` must report this value. */
   readonly computedAt: string;
   readonly activeInstalls: number;
+  /**
+   * Installs first seen on `day`. Unlike `lifetimeInstalls` this IS exact for
+   * every day the raw window can roll up: a first-seen row survives pruning
+   * until its own day passes the retention window. The caveat is semantic —
+   * an install returning after retirement is indistinguishable from a
+   * first-ever install and counts as new on the day it returns.
+   */
+  readonly newInstalls: number;
   readonly byVersion: Readonly<Record<string, number>>;
   readonly byOs: Readonly<Record<string, number>>;
   readonly byArch: Readonly<Record<string, number>>;

@@ -62,17 +62,55 @@
 :root {
   --kunai-chart-lifetime: #d9899f;
   --kunai-chart-active: #a8123f;
+  /*
+   * First-seen installs — the innermost nested area on the per-day view, so it
+   * takes the deepest tone of the family. Same hue, lower lightness: this is a
+   * subset of `active`, not a different kind of data, so it does not earn a
+   * second colour.
+   */
+  --kunai-chart-new: #5f0a27;
+  /*
+   * npm registry downloads — deliberately outside the rose family. It is a
+   * third-party counter on a different day grid, so a neutral slate keeps the
+   * eye from grouping it with the measured install series.
+   */
+  --kunai-chart-npm: #6f6a78;
+  /*
+   * Platform partition — one band per OS bucket. These are categorical, so
+   * they step outside the rose hue entirely but stay at the same muted
+   * saturation; `other` is the quietest since it is the suppressed residue,
+   * and `extra` only ever serves an out-of-schema bucket.
+   */
+  --kunai-chart-os-windows: #4a7caa;
+  --kunai-chart-os-macos: #8a7f96;
+  --kunai-chart-os-linux: #a6853f;
+  --kunai-chart-os-other: #cfc6cb;
+  --kunai-chart-os-extra: #5f8a72;
 }
 
 :root.dark {
   --kunai-chart-lifetime: #b84a6e;
   --kunai-chart-active: var(--kunai-accent);
+  --kunai-chart-new: #ffc9d9;
+  --kunai-chart-npm: #a49dab;
+  --kunai-chart-os-windows: #7ba8d1;
+  --kunai-chart-os-macos: #b0a8bc;
+  --kunai-chart-os-linux: #d1ae62;
+  --kunai-chart-os-other: #57505c;
+  --kunai-chart-os-extra: #7fae93;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     --kunai-chart-lifetime: #b84a6e;
     --kunai-chart-active: var(--kunai-accent);
+    --kunai-chart-new: #ffc9d9;
+    --kunai-chart-npm: #a49dab;
+    --kunai-chart-os-windows: #7ba8d1;
+    --kunai-chart-os-macos: #b0a8bc;
+    --kunai-chart-os-linux: #d1ae62;
+    --kunai-chart-os-other: #57505c;
+    --kunai-chart-os-extra: #7fae93;
   }
 }
 

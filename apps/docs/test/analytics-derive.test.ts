@@ -6,19 +6,26 @@ import {
   delta,
   formatDayTick,
   namedVersionCount,
+  platformColumns,
+  platformLabel,
   residualShare,
   sliceRange,
 } from "../lib/analytics-derive";
 import type { SeriesPoint } from "../lib/analytics-series";
 
-function day(index: number, activeInstalls = 1): SeriesPoint {
+function day(
+  index: number,
+  activeInstalls = 1,
+  byOs: Record<string, number> = { other: activeInstalls },
+): SeriesPoint {
   const date = new Date(Date.UTC(2026, 0, 1 + index));
   return {
     day: date.toISOString().slice(0, 10),
     activeInstalls,
+    newInstalls: null,
     lifetimeInstalls: index + 1,
     byVersion: { other: activeInstalls },
-    byOs: { other: activeInstalls },
+    byOs,
     byArch: { other: activeInstalls },
   };
 }
@@ -140,5 +147,43 @@ describe("formatDayTick", () => {
 
   test("an unparseable tick renders empty rather than 'Invalid Date'", () => {
     expect(formatDayTick(Number.NaN)).toBe("");
+  });
+});
+
+describe("platformLabel", () => {
+  test("decodes the closed OS keyspace into names a reader recognises", () => {
+    expect(platformLabel("linux")).toBe("Linux");
+    expect(platformLabel("darwin")).toBe("macOS");
+    expect(platformLabel("win32")).toBe("Windows");
+    expect(platformLabel("other")).toBe("Other");
+  });
+
+  test("passes anything else through — safe on version and arch buckets", () => {
+    expect(platformLabel("0.3.0")).toBe("0.3.0");
+    expect(platformLabel("x64")).toBe("x64");
+    expect(platformLabel("freebsd")).toBe("freebsd");
+  });
+});
+
+describe("platformColumns", () => {
+  test("orders the canonical platforms first and the residual last", () => {
+    const points = [
+      day(0, 12, { win32: 5, other: 4, darwin: 3 }),
+      day(1, 20, { darwin: 8, linux: 12 }),
+    ];
+    expect(platformColumns(points)).toEqual(["linux", "darwin", "win32", "other"]);
+  });
+
+  test("a bucket absent from the whole window earns no column", () => {
+    expect(platformColumns([day(0, 6, { linux: 6 })])).toEqual(["linux"]);
+  });
+
+  test("no OS data at all yields no columns", () => {
+    expect(platformColumns([day(0, 3, {})])).toEqual([]);
+  });
+
+  test("an unexpected bucket sorts between the named platforms and the residual", () => {
+    const points = [day(0, 9, { linux: 4, freebsd: 2, other: 3 })];
+    expect(platformColumns(points)).toEqual(["linux", "freebsd", "other"]);
   });
 });

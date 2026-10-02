@@ -125,6 +125,13 @@ export function SectionCards({
   const suppressed = residualShare(metrics.byVersion);
   const named = namedVersionCount(points);
 
+  // First-seen count for the snapshot day, when the series reaches it. The
+  // field lives on the series only, and the tail point counts only when it is
+  // the same day the snapshot describes — a lagging series must not lend the
+  // wrong day's number to this tile.
+  const latest = points.at(-1);
+  const newThatDay = latest?.day === metrics.day ? (latest.newInstalls ?? null) : null;
+
   return (
     <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs @xl/analytics:grid-cols-2 @5xl/analytics:grid-cols-4">
       <StatCard
@@ -145,7 +152,11 @@ export function SectionCards({
           activeDelta ? { text: activeDelta.label, direction: activeDelta.direction } : undefined
         }
         headline={`Distinct installs on ${metrics.day}`}
-        detail="A ping is one install, once a day"
+        detail={
+          newThatDay !== null
+            ? `${newThatDay} of them first seen that day`
+            : "A ping is one install, once a day"
+        }
       />
       <StatCard
         label="Reporting window"

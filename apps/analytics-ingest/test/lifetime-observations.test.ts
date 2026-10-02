@@ -65,6 +65,25 @@ describe("lifetimeInstalls is cumulative observations", () => {
     expect((await store.rollUpDay("2026-09-20")).lifetimeInstalls).toBe(1);
   });
 
+  test("a return after retirement reads as a new install on the return day", async () => {
+    const store = createMemoryAnalyticsStore();
+    const hash = "ff".repeat(32);
+
+    await store.recordPing(ping(hash, "2026-09-20"));
+    await store.rollUpDay("2026-09-20");
+    await store.pruneLifetimeBefore("2027-11-01");
+    await store.recordPing(ping(hash, "2027-11-02"));
+
+    // The row's first_seen is the return day — identity was folded away, so a
+    // comeback is indistinguishable from a first-ever install by design.
+    const rollup = await store.rollUpDay("2027-11-02");
+    expect(rollup.newInstalls).toBe(1);
+    // Recomputing the original day now reads 0: first_seen moved with the
+    // identity. The stored rollup for it keeps the 1 it computed at the time —
+    // the day is far outside the raw window, so nothing can re-roll it.
+    expect((await store.rollUpDay("2026-09-20")).newInstalls).toBe(0);
+  });
+
   test("a retiring install that never returns keeps the total flat", async () => {
     const store = createMemoryAnalyticsStore();
 
