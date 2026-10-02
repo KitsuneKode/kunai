@@ -27,7 +27,10 @@ export interface MobileStateStore {
 
 export type MobileChoiceRequest = {
   readonly prompt: string;
-  readonly choices: readonly { readonly value: string; readonly label: string }[];
+  readonly choices: readonly {
+    readonly value: string;
+    readonly label: string;
+  }[];
 };
 
 export type MobileChoiceResult =
@@ -58,6 +61,6 @@ export type MobileEnvironment = {
 };
 
 export type MobileExit = {
-  readonly code: number;
+  readonly code: 0 | 1 | 2;
   readonly reason: "completed" | "cancelled" | "handoff" | "invalid-input" | "failed";
 };

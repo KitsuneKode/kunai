@@ -138,6 +138,10 @@ recovery is explicit rather than guessing whether another session is alive.
   `termux-am` or `/system/bin/am`. A bare exit 0 is not acceptance: launcher
   output is scanned for intent-resolution errors (`am` can print `Error:` lines
   while still exiting 0).
+- The `jsc`→launcher exit contract is exactly `{0,1,2}`: `MobileExit.code` is a
+  literal union, `exitMobile` clamps to the same set, and the launcher rejects
+  any other status-file value. Helper statuses are normalized through the
+  command bridge (string statuses are trimmed before parsing).
 - iOS uses a literal helper allowlist and fixed private files.
 - The iOS HTTP helper disables implicit curl configuration with `-q` before
   loading its private request configuration. That configuration disables URL
