@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveEscTransition, resolveRootShellSurface } from "@/app-shell/root-shell-state";
+import { resolveRootShellSurface } from "@/app-shell/root-shell-state";
 import { parseCommand, resolveCommands } from "@/domain/session/command-registry";
 import {
   createInitialState,
@@ -90,10 +90,10 @@ describe("SessionState overlays", () => {
     });
     state = reduceState(state, {
       type: "OPEN_OVERLAY",
-      overlay: { type: "confirm", message: "Apply now?" },
+      overlay: { type: "help" },
     });
 
-    expect(state.activeModals.map((modal) => modal.type)).toEqual(["settings", "confirm"]);
+    expect(state.activeModals.map((modal) => modal.type)).toEqual(["settings", "help"]);
 
     state = reduceState(state, { type: "CLOSE_TOP_OVERLAY" });
     expect(state.activeModals.map((modal) => modal.type)).toEqual(["settings"]);
@@ -402,16 +402,16 @@ describe("SessionState overlays", () => {
       type: "OPEN_OVERLAY",
       overlay: { type: "help" },
     });
-    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
+    expect(reduceState(state, { type: "CLOSE_TOP_OVERLAY" }).activeModals).toHaveLength(0);
   });
 
-  test("Esc is a no-op when no overlay is open", () => {
+  test("closing with no overlay open is a no-op", () => {
     const state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
       movie: { audio: "original", subtitle: "en" },
     });
-    expect(resolveEscTransition(state)).toBeNull();
+    expect(reduceState(state, { type: "CLOSE_TOP_OVERLAY" }).activeModals).toHaveLength(0);
   });
 
   test("a root-owned overlay opened over mounted root content takes the full screen", () => {
@@ -789,7 +789,6 @@ describe("root shell surface selection", () => {
     expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
       "root-overlay",
     );
-    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
   test("treats settings as a root-owned overlay surface too", () => {
@@ -807,7 +806,6 @@ describe("root shell surface selection", () => {
     expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
       "root-overlay",
     );
-    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
   test("treats season picker as a root-owned overlay surface too", () => {
@@ -832,7 +830,6 @@ describe("root shell surface selection", () => {
     expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
       "root-overlay",
     );
-    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
   test("treats subtitle picker as a root-owned overlay surface too", () => {
@@ -853,7 +850,6 @@ describe("root shell surface selection", () => {
     expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
       "root-overlay",
     );
-    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
   test("treats episode picker as a root-owned overlay surface too", () => {
@@ -875,7 +871,6 @@ describe("root shell surface selection", () => {
     expect(resolveRootShellSurface(state, { hasRootContent: false, hasMountedScreen: true })).toBe(
       "root-overlay",
     );
-    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 
   test("prefers root content over mounted helper screens when browse or playback is active", () => {
