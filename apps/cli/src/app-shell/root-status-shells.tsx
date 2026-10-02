@@ -6,6 +6,7 @@ import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
+import { reducedMotionEnabled } from "./motion-policy";
 import {
   GUTTER_COLUMN,
   PETAL_STEP_MS,
@@ -15,7 +16,7 @@ import {
 } from "./petal-fall";
 import { buildErrorRows, type ErrorRow, type ErrorRowTone, rowText } from "./playback-error-rows";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
-import { reducedMotionEnabled, useFrameTick } from "./primitives/SakuraPetal";
+import { useFrameTick } from "./primitives/SakuraPetal";
 import { SakuraLoader } from "./SakuraLoader";
 import { palette } from "./shell-theme";
 import { useShellDimensions } from "./use-viewport-policy";

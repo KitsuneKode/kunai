@@ -88,9 +88,9 @@ So the still stays still and **the motion is in the character cells beside it**
 — a few bytes of diff per frame instead of a re-upload.
 
 Reuse the existing motion primitives rather than inventing a second policy:
-`useFrameTick(active, intervalMs, stopAfter)` and `reducedMotionEnabled()` in
-`primitives/SakuraPetal.tsx`. `stopAfter` is what makes a one-shot reaction
-possible without leaving a timer running.
+`useFrameTick(active, intervalMs, stopAfter)` in `primitives/SakuraPetal.tsx`
+and `reducedMotionEnabled()` in `motion-policy.ts`. `stopAfter` is what makes a
+one-shot reaction possible without leaving a timer running.
 
 | reaction                     | mechanism                                                  | cost     |
 | ---------------------------- | ---------------------------------------------------------- | -------- |
