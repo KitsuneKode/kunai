@@ -5,6 +5,7 @@ import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc"
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
+import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 
 import { waitUntil } from "../../../support/wait-until";
 
@@ -1173,6 +1174,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     const session = await PersistentMpvSession.create({
       stream: createStream({ url: "https://video.example/jump.m3u8" }),
       options: { displayTitle: "Episode 1", primarySubtitle: null, onPlaybackEvent: () => {} },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       kitsuneConfig: {
         mpvInProcessStreamReconnect: true,
         mpvInProcessStreamReconnectMaxAttempts: 1,
@@ -1201,23 +1203,26 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     const reload = harness.commands.find(
       (command) => command[0] === "loadfile" && command[2] === "replace",
     );
-    expect((reload as [string, string, string, number, Record<string, string>])[4].start).toBe(
-      "400",
-    );
+    // SAFETY: captured argv is the session's own loadfile tuple — [command,
+    // url, mode, flags?, options] — options carries the resume start offset.
+    const reloadStart = (reload?.[4] as { start?: unknown } | undefined)?.start;
+    expect(reloadStart).toBe("400");
 
     const playbackResult = session.waitForCurrentPlayback();
     harness.callbacks().onEndFile({ reason: "quit", observedAt: 9_000 });
     await playbackResult;
   });
 
-  test("a watchdog-triggered reconnect survives the replaced file's stop end-file", async () => {
+  test("a stray replaced-file stop end-file during reconnect does not orphan the reload", async () => {
     // `loadfile ... replace` makes mpv emit end-file reason "stop" for the file
-    // it unloads. On the watchdog-triggered path (network-read-dead etc.) the
-    // old file is still loaded, so that stray event lands while the reconnect's
-    // file-loaded is pending. Resolving the cycle on it orphans the recovered
-    // file — the subsequent file-loaded finds no owner and mpv plays unowned.
+    // it unloads. That stray event lands while the reconnect's file-loaded is
+    // pending; resolving the cycle on it orphans the recovered file — the
+    // subsequent file-loaded finds no owner and mpv plays unowned. The error
+    // end-file below arms the same pendingInProcessReconnect window the
+    // watchdog path uses (runSameUrlReconnect is shared), so this drives the
+    // stray stop through the public event surface.
     const harness = createHarness();
-    const events: unknown[] = [];
+    const events: PlayerPlaybackEvent[] = [];
     const session = await PersistentMpvSession.create({
       stream: createStream({ url: "https://video.example/dead-feed.m3u8" }),
       options: {
@@ -1225,6 +1230,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         primarySubtitle: null,
         onPlaybackEvent: (event) => events.push(event),
       },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       kitsuneConfig: {
         mpvInProcessStreamReconnect: true,
         mpvInProcessStreamReconnectMaxAttempts: 1,
@@ -1240,14 +1246,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
       .callbacks()
       .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: 4 });
 
-    // The watchdog needs real seconds of dead feed to emit stream-stalled;
-    // drive its handler directly (same private-introspection pattern as
-    // pendingLoadOwners above).
-    void (
-      session as unknown as {
-        handleDeadFeedReconnect(trigger: "network-read-dead"): Promise<void>;
-      }
-    ).handleDeadFeedReconnect("network-read-dead");
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 5 });
     await waitUntil(
       () =>
         harness.commands.some((command) => command[0] === "loadfile" && command[2] === "replace"),
@@ -1268,11 +1267,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
       expect.objectContaining({ type: "mpv-in-process-reconnect", phase: "complete" }),
     );
     expect(
-      events.some(
-        (event) =>
-          (event as { type?: string }).type === "mpv-in-process-reconnect" &&
-          (event as { phase?: string }).phase === "failed",
-      ),
+      events.some((event) => event.type === "mpv-in-process-reconnect" && event.phase === "failed"),
     ).toBe(false);
 
     const playbackResult = session.waitForCurrentPlayback();
