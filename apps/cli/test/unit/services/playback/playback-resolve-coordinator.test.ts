@@ -544,6 +544,7 @@ describe("PlaybackResolveCoordinator", () => {
           physicalAttempt: 1,
           elapsedMs: 2000,
           failureCode: "timeout",
+          failureClass: "timeout",
         }),
       }),
     );
@@ -557,7 +558,118 @@ describe("PlaybackResolveCoordinator", () => {
           fromProviderId: "vidking",
           toProviderId: "rivestream",
           failureCode: "timeout",
+          failureClass: "timeout",
         }),
+      }),
+    );
+  });
+
+  test("maps provider failure codes to real diagnostic classes, not raw or 'unknown'", async () => {
+    const events: unknown[] = [];
+    const diagnostics = {
+      record: (event: unknown) => events.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+    const blockedFailure = {
+      providerId: "vidking",
+      code: "blocked",
+      message: "VidKing blocked the request",
+      retryable: true,
+      at: "2026-05-15T00:00:02.000Z",
+    } as const;
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createObservedMockEngine(createProviderResultAfterFallback(), [
+        {
+          type: "provider-attempt-failed",
+          providerId: "vidking",
+          attempt: 1,
+          at: "2026-05-15T00:00:02.000Z",
+          elapsedMs: 2000,
+          failure: blockedFailure,
+        },
+        {
+          type: "provider-fallback-started",
+          fromProviderId: "vidking",
+          toProviderId: "rivestream",
+          at: "2026-05-15T00:00:02.001Z",
+          failure: blockedFailure,
+        },
+      ]),
+      cacheStore: createMemoryCache(null),
+      diagnostics,
+    });
+
+    await coordinator.resolve(input());
+
+    // "blocked" is a ProviderFailureClass, not a DiagnosticFailureClass — before
+    // the mapping these events recorded "unknown" (or an invalid enum value via
+    // the timeline cast), and support-bundle recommended actions dropped out.
+    for (const operation of ["provider.resolve.attempt", "provider.resolve.fallback"]) {
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          operation,
+          context: expect.objectContaining({ failureCode: "blocked", failureClass: "http" }),
+        }),
+      );
+    }
+    // The timeline rollup maps the attempt's classified ProviderFailureClass —
+    // the old cast stored raw values like "blocked" that are not enum members.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        operation: "provider.resolve.timeline",
+        context: expect.objectContaining({ failureClass: "timeout" }),
+      }),
+    );
+  });
+
+  test("maps non-enum provider classes on the timeline to a real diagnostic class", async () => {
+    const events: unknown[] = [];
+    const diagnostics = {
+      record: (event: unknown) => events.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+    // "not-found" classifies as provider-empty — not a DiagnosticFailureClass —
+    // so the previous cast leaked an invalid enum value into the rollup.
+    const emptyFallbackResult = createProviderResultAfterFallback();
+    const [failedAttempt, ...rest] = emptyFallbackResult.attempts;
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createMockEngine({
+        ...emptyFallbackResult,
+        attempts: [
+          {
+            ...failedAttempt,
+            providerId: "vidking",
+            failure: {
+              providerId: "vidking",
+              code: "not-found",
+              message: "VidKing has no such title",
+              retryable: true,
+              at: "2026-05-15T00:00:00.000Z",
+            },
+          },
+          ...rest,
+        ],
+      }),
+      cacheStore: createMemoryCache(null),
+      diagnostics,
+    });
+
+    await coordinator.resolve(input());
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        operation: "provider.resolve.timeline",
+        context: expect.objectContaining({ failureClass: "not-found" }),
       }),
     );
   });
