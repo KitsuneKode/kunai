@@ -5,6 +5,8 @@ import {
   describeHistoryReturnLoopDetail,
   formatNewSinceEpisodeLabel,
   releaseProgressToContinueHistoryRelease,
+  resolveRootHistorySelection,
+  waitForRootHistorySelection,
 } from "@/app-shell/root-history-bridge";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import type { HistoryProgress } from "@kunai/storage";
@@ -163,5 +165,16 @@ describe("root history bridge return loop", () => {
     });
 
     expect(release).toMatchObject({ status: "released", season: 1, episode: 6 });
+  });
+});
+
+describe("root history bridge waiters", () => {
+  test("a second waiter resolves the superseded one with null instead of leaking it", async () => {
+    const first = waitForRootHistorySelection();
+    const second = waitForRootHistorySelection();
+
+    await expect(first).resolves.toBeNull();
+    resolveRootHistorySelection(null);
+    await expect(second).resolves.toBeNull();
   });
 });

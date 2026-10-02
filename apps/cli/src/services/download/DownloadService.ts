@@ -557,8 +557,10 @@ export class DownloadService {
     const active = this.listActive(120);
     const running = active.filter((job) => job.status === "running").length;
     const queued = active.filter((job) => job.status === "queued").length;
-    const repairable = this.listRepairable(20).length;
-    const terminalFailed = this.listFailed(20).length;
+    // Exact counts — a capped list length would silently under-report any
+    // bucket past its LIMIT.
+    const repairable = this.countJobsByStatus("repairable");
+    const terminalFailed = this.countJobsByStatus("failed");
     const parts: string[] = [];
     if (running > 0) parts.push(`${running} running`);
     if (queued > 0) parts.push(`${queued} queued`);

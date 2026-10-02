@@ -60,10 +60,13 @@ export function LibraryShell({
   container,
   onClose,
   initialView = "library",
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   initialView?: TabId;
+  /** Palette open over this surface — keys belong to the palette, not the list. */
+  commandMode?: boolean;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
@@ -116,12 +119,14 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToLibrary={() => setTab("library")}
             showSelectionHints={false}
+            commandMode={commandMode}
           />
         ) : (
           <LibraryTab
             container={container}
             onClose={onClose}
             onNavigateToQueue={() => setTab("queue")}
+            commandMode={commandMode}
           />
         )}
       </Box>
@@ -161,10 +166,12 @@ function LibraryTab({
   container,
   onClose,
   onNavigateToQueue,
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToQueue: () => void;
+  commandMode?: boolean;
 }) {
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
@@ -354,7 +361,7 @@ function LibraryTab({
         setConfirmDeleteKey(null);
       }
     },
-    { isActive: titlesActive },
+    { isActive: titlesActive && !commandMode },
   );
 
   const railPosterUrl =
@@ -434,6 +441,7 @@ function LibraryTab({
         }}
         onNavigateToQueue={onNavigateToQueue}
         onEntriesChanged={refreshEntries}
+        commandMode={commandMode}
       />
     );
   }

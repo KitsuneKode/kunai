@@ -17,7 +17,6 @@ import {
   providerMetadataMatchesLane,
   providerPickerLanesForTitle,
   providerPriorityForLane,
-  shellModeToProviderLane,
 } from "@/domain/provider-lane";
 import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
@@ -67,7 +66,6 @@ import {
   resolveDiagnosticsExpandedSpanIds,
   toggleDiagnosticsSpanExpanded,
 } from "./diagnostics-panel.model";
-import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { HistoryShell } from "./history-shell";
 import {
@@ -77,6 +75,7 @@ import {
   type HistoryTypeFilter,
 } from "./history-view";
 import { routeOverlayInput } from "./input-router";
+import { resolveShellInputCommand } from "./keybinding-runtime";
 import { helpSections, helpSectionsForScope, type HelpSection, type KeyScope } from "./keybindings";
 import {
   getOverlayContentViewport,
@@ -134,7 +133,6 @@ import {
 } from "./root-history-bridge";
 import {
   clearNotificationPlaybackIntent,
-  openDiagnosticsOverlay,
   stageNotificationDetailsItem,
   stageNotificationPlaybackIntent,
 } from "./root-overlay-bridge";
@@ -155,7 +153,7 @@ import {
   titleInfoFromQueuePlaybackLaunch,
 } from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
-import { runRootWorkflowSafely } from "./root-workflow-dispatch";
+import { resolveRootSurfaceCommand } from "./root-workflow-dispatch";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
@@ -844,84 +842,12 @@ export function RootOverlayShell({
       commands,
       escapeAction: null,
       onResolve: (action) => {
-        if (
-          action === "settings" ||
-          action === "presence" ||
-          action === "help" ||
-          action === "about" ||
-          action === "diagnostics" ||
-          action === "downloads" ||
-          action === "notifications" ||
-          action === "continue" ||
-          action === "history" ||
-          action === "provider"
-        ) {
-          if (action === "notifications" && !container.featureFlags.attentionInbox) {
-            container.stateManager.dispatch({
-              type: "SET_PLAYBACK_FEEDBACK",
-              note: "Attention inbox is disabled.",
-            });
-            return;
-          }
-          if (action === "diagnostics") {
-            if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-              container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-            }
-            void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
-            return;
-          }
-          const nextOverlay =
-            action === "provider"
-              ? {
-                  type: "provider_picker" as const,
-                  currentProvider: state.provider,
-                  lane: shellModeToProviderLane(state.mode),
-                }
-              : action === "history" || action === "continue"
-                ? { type: "history" as const, initialFilterMode: "watching" as const }
-                : action === "notifications"
-                  ? { type: "notifications" as const }
-                  : action === "downloads"
-                    ? { type: "downloads" as const }
-                    : action === "settings" || action === "presence"
-                      ? { type: "settings" as const }
-                      : { type: action };
-          if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-            container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-          }
-          container.stateManager.dispatch({
-            type: "OPEN_OVERLAY",
-            overlay: nextOverlay,
-          });
-          return;
-        }
-        if (action === "library") {
-          const nextOverlay = { type: "library" as const, view: "library" as const };
-          if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-            container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-          }
-          container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
-          return;
-        }
-        if (
-          PALETTE_WORKFLOW_ACTIONS.has(action) ||
-          // Enabled in the rootOverlay context but not in the palette workflow
-          // set — they still have real shell-workflow handlers. Without this
-          // branch Enter on /up-next, /watch, /playlists, /providers and
-          // /image-pane inside any overlay was a silent dead key.
-          action === "up-next" ||
-          action === "watch" ||
-          action === "playlists" ||
-          action === "providers" ||
-          action === "image-pane"
-        ) {
-          void runRootWorkflowSafely({
-            container,
-            action,
-            cancelPickerId:
-              isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
-          });
-        }
+        resolveRootSurfaceCommand({
+          container,
+          state,
+          action,
+          cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
+        });
       },
     });
 
@@ -1197,13 +1123,16 @@ export function RootOverlayShell({
             // browse has already resolved, so this returns false and the intent
             // is staged for `openNotificationsOverlay` to take on close. The two
             // cases are mutually exclusive, so playback can never start twice.
-            const delivered = forceCloseRootContent<BrowseShellResult<SearchResult>>({
-              type: "launch-playback",
-              launch: {
-                title: intent.title,
-                ...(intent.episode ? { episode: intent.episode } : {}),
+            const delivered = forceCloseRootContent<BrowseShellResult<SearchResult>>(
+              {
+                type: "launch-playback",
+                launch: {
+                  title: intent.title,
+                  ...(intent.episode ? { episode: intent.episode } : {}),
+                },
               },
-            });
+              { kinds: ["browse", "post-playback"] },
+            );
             if (!delivered) stageNotificationPlaybackIntent(intent);
           },
         },
@@ -1359,6 +1288,13 @@ export function RootOverlayShell({
 
   useInput((input, key) => {
     if (commandMode) {
+      return;
+    }
+
+    // `useShellInput` opens the palette on this same keypress — the state flag
+    // flips only after both handlers have run, so the chord must be consumed
+    // here or it also lands in picker/history filter inputs.
+    if (resolveShellInputCommand(["global"], input, key) === "open-command-palette") {
       return;
     }
 
@@ -1601,16 +1537,26 @@ export function RootOverlayShell({
               container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
               if (!awaited) {
                 void resolveHistorySelectionLaunch(container, selection, "history").then(
-                  (launch) =>
-                    launch
-                      ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
-                          type: "launch-playback",
-                          launch: {
-                            title: launch.title,
-                            ...(launch.episode ? { episode: launch.episode } : {}),
+                  (launch) => {
+                    const settled = launch
+                      ? forceCloseRootContent<BrowseShellResult<SearchResult>>(
+                          {
+                            type: "launch-playback",
+                            launch: {
+                              title: launch.title,
+                              ...(launch.episode ? { episode: launch.episode } : {}),
+                            },
                           },
-                        })
-                      : false,
+                          { kinds: ["browse", "post-playback"] },
+                        )
+                      : false;
+                    if (!settled) {
+                      container.stateManager.dispatch({
+                        type: "SET_PLAYBACK_FEEDBACK",
+                        note: "can't launch that title here — close this surface and retry",
+                      });
+                    }
+                  },
                 );
               }
             }
@@ -1642,27 +1588,30 @@ export function RootOverlayShell({
         // resolving a null waiter would drop the launch *and* leave the row
         // claimed in-flight forever. Deliver through the retained-session
         // channel like the history fallback does, and roll the claim back with
-        // a visible refusal when nothing can receive it (e.g. mid-playback).
+        // a visible refusal when the mounted session can't consume it.
         const launch = claimQueuePlaybackLaunch(container.queueService, row.id);
         if (!launch) return;
         container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-        const settled = forceCloseRootContent<BrowseShellResult<SearchResult>>({
-          type: "launch-playback",
-          launch: {
-            title: titleInfoFromQueuePlaybackLaunch(launch),
-            episode: episodeInfoFromQueuePlaybackLaunch(launch),
+        const settled = forceCloseRootContent<BrowseShellResult<SearchResult>>(
+          {
+            type: "launch-playback",
+            launch: {
+              title: titleInfoFromQueuePlaybackLaunch(launch),
+              episode: episodeInfoFromQueuePlaybackLaunch(launch),
+            },
           },
-        });
+          { kinds: ["browse", "post-playback"] },
+        );
         if (!settled) {
           container.queueService.rollbackBeforeStart(launch.intent, {
             code: "handoff-failed",
             stage: "handoff",
             at: new Date().toISOString(),
-            detail: "no retained root session for queue launch",
+            detail: "no playback-capable root session for queue launch",
           });
           container.stateManager.dispatch({
             type: "SET_PLAYBACK_FEEDBACK",
-            note: "can't start another title while one is playing — press q to stop first",
+            note: "can't launch that title here — close this surface and retry",
           });
         }
         return;
@@ -2037,6 +1986,7 @@ export function RootOverlayShell({
         <DownloadManagerContent
           container={container}
           onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+          commandMode={commandMode}
         />
         {commandMode ? (
           <CommandPalette
@@ -2065,6 +2015,7 @@ export function RootOverlayShell({
           container={container}
           onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
           initialView={overlay.view ?? "library"}
+          commandMode={commandMode}
         />
         {commandMode ? (
           <CommandPalette

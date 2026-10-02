@@ -50,12 +50,13 @@ describe("DetailsSheet", () => {
     });
     // Real keymap: ↵ submit · q queue · w watchlist · s seasons (when rows
     // exist) · t trailer / l links (when present) · esc.
-    expect(frame).toContain("↵ play · q queue · w watchlist");
+    expect(frame).toContain("q queue · w watchlist");
     expect(frame).toContain("· esc");
     expect(frame).not.toContain("+ queue");
     expect(frame).not.toContain("follow");
     expect(frame).not.toContain("e episodes");
-    // `d` is gated on `searchReady` at press time — hidden by default.
+    // `↵` and `d` are gated on `searchReady` at press time — hidden by default.
+    expect(frame).not.toContain("↵ play");
     expect(frame).not.toContain("d download");
     // No seasons in this model — `s` must not be advertised either.
     expect(frame).not.toContain("s seasons");
@@ -75,7 +76,7 @@ describe("DetailsSheet", () => {
     };
     const model = buildDetailsSheet({ seed, detail, history: null, availability: null });
     const frame = captureFrame(
-      <DetailsSheet model={model} seasonsExpanded={false} width={90} canDownload />,
+      <DetailsSheet model={model} seasonsExpanded={false} width={90} searchReady />,
       { columns: 100 },
     );
     expect(frame).toContain("d download");

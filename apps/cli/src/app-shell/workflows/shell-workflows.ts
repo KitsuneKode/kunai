@@ -86,6 +86,11 @@ import type { SyncPushSummary } from "@/services/sync/SyncService";
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
+import {
+  claimQueuePlaybackLaunch,
+  episodeInfoFromQueuePlaybackLaunch,
+  titleInfoFromQueuePlaybackLaunch,
+} from "../root-queue-bridge";
 import { openTrackerConnectShell } from "../tracker-connect-shell";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
@@ -2919,17 +2924,17 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
         queueService.moveDownInQueue(picked.id);
         continue;
       } else if (itemAction === "play") {
+        // Claim the exact row before handing the launch back — a bare
+        // history-entry would leave it `pending` forever while something else
+        // (auto-advance, a second picker) could still play it again. A failed
+        // CAS means the row is already claimed elsewhere; re-render instead of
+        // launching a duplicate.
+        const launch = claimQueuePlaybackLaunch(queueService, picked.id, "queue");
+        if (!launch) continue;
         return {
           type: "history-entry",
-          title: {
-            id: picked.titleId,
-            type: picked.mediaKind === "movie" ? "movie" : "series",
-            name: picked.title,
-          },
-          episode:
-            picked.season !== undefined && picked.episode !== undefined
-              ? { season: picked.season, episode: picked.episode }
-              : undefined,
+          title: titleInfoFromQueuePlaybackLaunch(launch),
+          episode: episodeInfoFromQueuePlaybackLaunch(launch),
         };
       }
       continue;

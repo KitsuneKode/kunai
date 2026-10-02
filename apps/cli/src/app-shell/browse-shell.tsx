@@ -1682,7 +1682,7 @@ export function BrowseShell<T>({
           <OverlayPanel
             overlay={activeOverlay}
             width={innerWidth}
-            canDownload={searchState === "ready"}
+            searchReady={searchState === "ready"}
           />
         ) : calendarRoutePending ? (
           <Box marginTop={2} flexGrow={1} flexDirection="column">

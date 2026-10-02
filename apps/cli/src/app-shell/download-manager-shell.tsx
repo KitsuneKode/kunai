@@ -177,12 +177,15 @@ export function DownloadManagerContent({
   onClose,
   onNavigateToLibrary,
   showSelectionHints = true,
+  commandMode = false,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToLibrary?: () => void;
   /** When false, omit per-selection hint row (parent shell owns the footer). */
   showSelectionHints?: boolean;
+  /** Palette open over this surface — keys belong to the palette, not the list. */
+  commandMode?: boolean;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   // Inside a root-owned overlay the provider's content box is the width budget;
@@ -300,12 +303,17 @@ export function DownloadManagerContent({
         if (repairSweepRunning) return;
         // Repairable jobs are not in listFailed — they live in listCompleted
         // (media landed; only sidecars failed). Read the dedicated bucket or the
-        // sweep can never fire.
-        const repairableCount = container.downloadService.listRepairable(50).length;
+        // sweep can never fire. Count exactly: the sweep itself is bounded.
+        const repairableCount = container.downloadService.countJobsByStatus("repairable");
         if (repairableCount === 0) return;
         setRepairSweepRunning(true);
+        // The sweep itself caps at 100 per pass — say so rather than claiming
+        // every repairable job is being handled.
+        const attempted = Math.min(repairableCount, 100);
         setRepairSweepStatus(
-          `Repairing ${repairableCount} sidecar${repairableCount === 1 ? "" : "s"}...`,
+          attempted < repairableCount
+            ? `Repairing ${attempted} of ${repairableCount} sidecars...`
+            : `Repairing ${attempted} sidecar${attempted === 1 ? "" : "s"}...`,
         );
         void container.downloadService
           .repairRepairableSidecars()
@@ -399,7 +407,7 @@ export function DownloadManagerContent({
         return;
       }
     },
-    { isActive: true },
+    { isActive: !commandMode },
   );
 
   const { tooSmall, minColumns, minRows } = viewport;
@@ -600,7 +608,7 @@ export function DownloadManagerContent({
             <Box marginTop={1}>
               <Text color={palette.muted} dimColor>
                 {hints}
-                {bucketTotals.repairable > 0 ? "  ·  a to repair all" : ""}
+                {bucketTotals.repairable > 0 ? "  ·  a to repair sidecars" : ""}
               </Text>
             </Box>
           ) : null;

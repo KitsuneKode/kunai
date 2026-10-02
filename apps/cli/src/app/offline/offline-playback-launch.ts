@@ -104,10 +104,13 @@ export async function requestUnifiedOfflinePlayback(
   const launch = await prepareOfflinePlaybackLaunch(container, jobId);
   if (!launch) return null;
 
-  const closedBrowse = forceCloseRootContent<BrowseShellResult<SearchResult>>({
-    type: "launch-playback",
-    launch,
-  });
+  const closedBrowse = forceCloseRootContent<BrowseShellResult<SearchResult>>(
+    {
+      type: "launch-playback",
+      launch,
+    },
+    { kinds: ["browse", "post-playback"] },
+  );
 
   if (!closedBrowse) {
     options.onDirectLaunch?.(launch);

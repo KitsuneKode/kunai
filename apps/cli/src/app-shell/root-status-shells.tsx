@@ -84,7 +84,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           </Box>
           <Box marginTop={1}>
             <Text color={palette.dim} dimColor>
-              {"/history to continue  ·  /calendar for today  ·  / for commands"}
+              {"/history to continue  ·  / for commands"}
             </Text>
           </Box>
         </Box>
@@ -94,9 +94,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
             {"◈  welcome to kunai"}
           </Text>
           <Box marginTop={1}>
-            <Text color={palette.dim}>
-              {"search for a title to begin  ·  /discover for recommendations"}
-            </Text>
+            <Text color={palette.dim}>{"search for a title to begin  ·  / for commands"}</Text>
           </Box>
         </Box>
       )}
@@ -216,6 +214,7 @@ export function ErrorShell({
   waterfall,
   debugEnabled = false,
   debugError,
+  inputLocked = false,
   onResolve,
   onRetry,
 }: {
@@ -224,6 +223,8 @@ export function ErrorShell({
   waterfall?: PlaybackFailureWaterfallModel | null;
   debugEnabled?: boolean;
   debugError?: unknown;
+  /** Command palette is open over the panel — Enter/Esc/r belong to it. */
+  inputLocked?: boolean;
   onResolve: () => void;
   onRetry?: () => void;
 }) {
@@ -234,15 +235,18 @@ export function ErrorShell({
     [debugEnabled, debugError],
   );
 
-  useInput((input, key) => {
-    if (key.return || key.escape) {
-      onResolve();
-      return;
-    }
-    if (input.toLowerCase() === "r" && onRetry) {
-      onRetry();
-    }
-  });
+  useInput(
+    (input, key) => {
+      if (key.return || key.escape) {
+        onResolve();
+        return;
+      }
+      if (input.toLowerCase() === "r" && onRetry) {
+        onRetry();
+      }
+    },
+    { isActive: !inputLocked },
+  );
 
   // Width comes from the terminal alone — never from the petals, or the border
   // would move frame to frame. Computed before the rows so the free-text

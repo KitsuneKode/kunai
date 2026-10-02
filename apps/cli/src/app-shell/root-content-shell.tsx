@@ -5,6 +5,7 @@ import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { Box } from "ink";
 import React from "react";
 
+import { resolveCommandContext } from "./commands";
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { PlaybackRootContent, type PlaybackRootContentInput } from "./playback-mount-shell";
 import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
@@ -12,8 +13,12 @@ import type { ResolvedRootContent, RootContentSession } from "./root-content-sta
 import { getRootOverlayResetKey } from "./root-overlay-model";
 import type { RootOwnedOverlay } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
+import { resolveRootSurfaceCommand } from "./root-workflow-dispatch";
 import { RootContentSuspension } from "./RootContentSuspension";
 import { RootOverlayLoader } from "./RootOverlayLoader";
+import { useShellInput } from "./shell-command-input";
+import { CommandPalette } from "./shell-command-ui";
+import type { FooterAction } from "./types";
 
 export type RootContentRendererContext = {
   readonly container: Container;
@@ -62,9 +67,11 @@ export function renderRootOverlayContent(
   );
 }
 
-export function renderErrorRootContent(
-  ctx: Pick<RootContentRendererContext, "container" | "state" | "stateManager">,
-): React.ReactElement {
+function ErrorRootSurface({
+  ctx,
+}: {
+  readonly ctx: Pick<RootContentRendererContext, "container" | "state" | "stateManager">;
+}): React.ReactElement {
   const { state, container, stateManager } = ctx;
   const playbackFailureWaterfall = buildPlaybackFailureWaterfall({
     state,
@@ -72,33 +79,121 @@ export function renderErrorRootContent(
   });
 
   return (
-    <ErrorShell
-      message={state.playbackError || "An unknown error occurred"}
-      scenario={toErrorScenario(state.playbackProblem, {
-        providerName:
-          container.providerRegistry.get(state.provider)?.metadata.name ?? state.provider,
-        title: state.currentTitle?.name,
-        resolveRetryCount: state.resolveRetryCount,
-      })}
-      waterfall={playbackFailureWaterfall}
-      debugEnabled={Boolean(container.debugTracePath)}
-      debugError={peekPlaybackShellError()}
-      onResolve={() => {
+    <CommandCapableRootSurface
+      container={container}
+      state={state}
+      // "error" outranks overlays in resolveRootShellSurface — an overlay opened
+      // while it is set would sit in activeModals unrendered. Clear first, the
+      // same transition Enter performs, then let the command land on the
+      // surface that replaces it.
+      beforeResolve={() => {
         clearPlaybackShellError();
         stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
         stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
       }}
-      onRetry={() => {
-        clearPlaybackShellError();
-        stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
-        stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
-      }}
-    />
+    >
+      {(commandMode) => (
+        <ErrorShell
+          message={state.playbackError || "An unknown error occurred"}
+          scenario={toErrorScenario(state.playbackProblem, {
+            providerName:
+              container.providerRegistry.get(state.provider)?.metadata.name ?? state.provider,
+            title: state.currentTitle?.name,
+            resolveRetryCount: state.resolveRetryCount,
+          })}
+          waterfall={playbackFailureWaterfall}
+          debugEnabled={Boolean(container.debugTracePath)}
+          debugError={peekPlaybackShellError()}
+          inputLocked={commandMode}
+          onResolve={() => {
+            clearPlaybackShellError();
+            stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
+            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+          }}
+          onRetry={() => {
+            clearPlaybackShellError();
+            stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
+            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
+          }}
+        />
+      )}
+    </CommandCapableRootSurface>
   );
 }
 
-export function renderIdleRootContent(state: SessionState): React.ReactElement {
-  return <RootIdleShell state={state} />;
+export function renderErrorRootContent(
+  ctx: Pick<RootContentRendererContext, "container" | "state" | "stateManager">,
+): React.ReactElement {
+  return <ErrorRootSurface ctx={ctx} />;
+}
+
+const SURFACE_FOOTER_ACTIONS: readonly FooterAction[] = [
+  { key: "/", label: "commands", action: "command-mode" },
+];
+
+/**
+ * Idle and error surfaces print `/verb` hints — for those to be true the
+ * surface has to own a palette. `useShellInput` mounts it; resolutions route
+ * through the same resolver the overlay host uses so behaviour cannot fork.
+ */
+function CommandCapableRootSurface({
+  container,
+  state,
+  beforeResolve,
+  children,
+}: {
+  readonly container: Container;
+  readonly state: SessionState;
+  /** Runs before a resolved command — e.g. clearing the error state so an opened overlay can actually render over the surface. */
+  readonly beforeResolve?: () => void;
+  readonly children: (commandMode: boolean) => React.ReactElement;
+}): React.ReactElement {
+  const commands = resolveCommandContext(state, "rootOverlay");
+  const { commandMode, commandInput, commandCursor, highlightedIndex, paletteNotice } =
+    useShellInput({
+      footerActions: SURFACE_FOOTER_ACTIONS,
+      commands,
+      escapeAction: null,
+      onResolve: (action) => {
+        beforeResolve?.();
+        resolveRootSurfaceCommand({ container, state, action });
+      },
+    });
+  return (
+    <>
+      {children(commandMode)}
+      {commandMode ? (
+        <CommandPalette
+          input={commandInput}
+          cursor={commandCursor}
+          commands={commands}
+          highlightedIndex={highlightedIndex}
+          notice={paletteNotice}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function IdleRootSurface({
+  container,
+  state,
+}: {
+  readonly container: Container;
+  readonly state: SessionState;
+}): React.ReactElement {
+  return (
+    <CommandCapableRootSurface container={container} state={state}>
+      {() => <RootIdleShell state={state} />}
+    </CommandCapableRootSurface>
+  );
+}
+
+export function renderIdleRootContent(ctx: {
+  readonly container: Container;
+  readonly state: SessionState;
+}): React.ReactElement {
+  return <IdleRootSurface container={ctx.container} state={ctx.state} />;
 }
 
 export function renderPlaybackRootContent(input: PlaybackRootContentInput): React.ReactElement {
@@ -129,10 +224,10 @@ export function RootContentBody({
     case "overlay":
       return ctx.rootOverlay
         ? renderRootOverlayContent(ctx.rootOverlay, ctx)
-        : renderIdleRootContent(ctx.state);
+        : renderIdleRootContent(ctx);
     case "idle":
     default:
-      return renderIdleRootContent(ctx.state);
+      return renderIdleRootContent(ctx);
   }
 }
 

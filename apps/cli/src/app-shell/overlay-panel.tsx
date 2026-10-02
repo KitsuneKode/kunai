@@ -146,13 +146,13 @@ export function OverlayPanel({
   overlay,
   width,
   maxLinesOverride,
-  canDownload,
+  searchReady,
 }: {
   overlay: BrowseOverlay;
   width: number;
   maxLinesOverride?: number;
-  /** Mirrors the `d` key's press-time gate (`selectedOption && searchReady`). */
-  canDownload?: boolean;
+  /** Mirrors the sheet's `↵`/`d` press-time gates (`searchReady`). */
+  searchReady?: boolean;
 }) {
   const insideOverlay = useIsInsideOverlay();
   const contentWidth = Math.max(24, width - 4);
@@ -370,7 +370,7 @@ export function OverlayPanel({
             model={overlay.sheet}
             seasonsExpanded={overlay.seasonsExpanded ?? false}
             width={contentWidth}
-            canDownload={canDownload === true}
+            searchReady={searchReady === true}
           />
         </Box>
       ) : overlay.type === "details" && overlay.detailData ? (

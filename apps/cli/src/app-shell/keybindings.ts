@@ -521,7 +521,9 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-resume-seek",
     chord: { input: "r", meta: true },
     display: "Alt+R",
-    label: "Resume to your saved position",
+    // No terminal consumer — the mpv bridge owns this chord; the label says so
+    // instead of advertising a key that does nothing on the terminal surface.
+    label: "Resume to your saved position (in mpv)",
     scope: "player",
     group: "In the player",
     docs: { tier: "surface", order: 420 },

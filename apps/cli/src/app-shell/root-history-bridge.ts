@@ -28,6 +28,9 @@ let pendingResolver: HistoryResolver | null = null;
 
 export function waitForRootHistorySelection(): Promise<RootHistorySelection | null> {
   return new Promise<RootHistorySelection | null>((resolve) => {
+    // A second waiter means the first workflow was superseded — resolve it
+    // with null instead of leaking the promise.
+    pendingResolver?.(null);
     pendingResolver = resolve;
   });
 }
