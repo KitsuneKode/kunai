@@ -133,7 +133,13 @@ export function isPrivateLiteralAddress(host: string): string | null {
  * lookup yields no answers and the fetch fails on its own, same as an
  * unresolvable name.
  */
-const DNS_LOOKUP_BUDGET_MS = 4_000;
+const DEFAULT_DNS_LOOKUP_BUDGET_MS = 4_000;
+let dnsLookupBudgetMs = DEFAULT_DNS_LOOKUP_BUDGET_MS;
+
+/** Test seam — the bound is module state so a test need not wait 4s to see it. */
+export function setBlockedTargetDnsBudgetMsForTest(ms: number): void {
+  dnsLookupBudgetMs = ms;
+}
 
 async function resolveHostAddresses(host: string, signal?: AbortSignal): Promise<string[]> {
   if (parseIpv4(host) || host.includes(":")) return [];
@@ -144,7 +150,7 @@ async function resolveHostAddresses(host: string, signal?: AbortSignal): Promise
       const timer = setTimeout(() => {
         cleanup();
         resolve(null);
-      }, DNS_LOOKUP_BUDGET_MS);
+      }, dnsLookupBudgetMs);
       timer.unref?.();
       const onAbort = () => {
         cleanup();
@@ -158,11 +164,11 @@ async function resolveHostAddresses(host: string, signal?: AbortSignal): Promise
       lookup(host, { all: true }).then(
         (value) => {
           cleanup();
-          resolve(value);
+          return resolve(value);
         },
         () => {
           cleanup();
-          resolve(null);
+          return resolve(null);
         },
       );
     });
