@@ -1,0 +1,91 @@
+---
+title: Mobile preview
+description: What the experimental Kunai mobile terminal host proof is, what it deliberately is not, and how to run it on Android (Termux) and iOS (a-Shell) if you want to help qualify it.
+---
+
+<ScopeCallout variant="beta" title="Preview, not a supported app">
+  The mobile slice on this page proves a terminal runtime and a VLC handoff on real hardware. It has
+  no catalog, no search, and no playback monitoring, and it is not a supported distribution channel.
+  Physical-device qualification is pending.
+</ScopeCallout>
+
+Kunai's mobile work is a **capability preview**, not a supported app. There is no search, no catalog, no provider picker, no install or update path, and no playback monitoring. The preview exists to prove the terminal runtime and the VLC handoff on real hardware before anything else is built on top of it.
+
+If that sounds like your kind of experiment, read on. If you wanted the actual app, [Getting started](/docs/users/getting-started) is the supported path.
+
+## What the preview does
+
+A run does exactly four things, in order:
+
+1. Asks whether to continue; `Ctrl+C` or `0` cancels cleanly.
+2. Makes one bounded HTTPS GET to a probe URL you provide (8 seconds, 3 redirects, 64 KiB, HTTPS only even through redirects).
+3. Records one line of state in a private directory on the device.
+4. Hands one media URL to VLC (an explicit intent on Android, the `vlc-x-callback` scheme on iOS) and reports whether the OS accepted the request.
+
+**"Accepted" means the OS took the request.** It does not prove VLC played anything; seeing the media begin is a human's job, and the preview says so itself.
+
+No analytics, no install ID, no account, no relay, no media proxy. Your URLs go to VLC and nowhere else. The same no-telemetry posture documented on [Reliability and privacy](/docs/users/reliability-and-privacy) binds the preview, only stricter: there is nothing to opt out of because nothing exists.
+
+## Requirements
+
+**Android**
+
+- A physical ARM64 phone (emulators are diagnostic only, not qualification)
+- [Termux](https://github.com/termux/termux-app#installation) from one official source; do not mix signing sources
+- `pkg install nodejs` (Node **18 or newer**; Termux's package is well past that)
+- VLC for Android, and `termux-am` or `am` resolvable
+
+**iPhone**
+
+- A physical device with current App Store **a-Shell mini** and VLC for iOS
+- JavaScriptCore ships with iOS, so nothing else to install
+
+**Both**: one credential-free HTTPS probe URL you own (under 64 KiB), one HTTPS media URL VLC can play without custom headers or cookies, and a desktop Kunai checkout to build the artifacts. Nothing is downloaded prebuilt; you build the bundle yourself and verify its hash.
+
+## Build, transfer, run
+
+In a trusted checkout:
+
+```sh
+bun install --frozen-lockfile
+bun run --cwd apps/mobile build
+bun run --cwd apps/mobile test:unit
+bun run --cwd apps/mobile test:integration
+```
+
+`apps/mobile/dist/` now holds the artifacts plus `mobile-build-meta.json` with SHA-256 digests for each one.
+
+**Android**: copy `dist/android/kunai-mobile-android.mjs` to the device (`adb push` to shared storage is fine for transfer; copy it into private Termux storage and `chmod 700` before running, and never execute from shared storage). Then in a foreground Termux session:
+
+```sh
+node kunai-mobile-android.mjs --help
+node kunai-mobile-android.mjs --host-proof \
+  --probe-url "https://your.example/status" \
+  --media-url "https://your.example/video.m3u8"
+```
+
+**iPhone**: copy all five `dist/ios/` files into a fresh a-Shell directory (Files, AirDrop, or `Put File`), `chmod 700` the four helper scripts, then:
+
+```sh
+./kunai-mobile --help
+./kunai-mobile --host-proof \
+  --probe-url "https://your.example/status" \
+  --media-url "https://your.example/video.m3u8"
+```
+
+Verify every transferred file's hash against `mobile-build-meta.json` before running. `--help` and `--version` must return to the prompt on their own; a command that prints and stays alive is a failure, not a slow start.
+
+## Boundaries worth knowing
+
+- Exit codes: `0` help, version, cancellation, or accepted handoff; `2` invalid arguments or URL; `1` state, HTTP, or handoff failure.
+- URLs must be absolute credential-free HTTPS; plaintext HTTP, embedded credentials, fragments, and control characters exit `2` before any network or VLC work.
+- VLC missing means the handoff is rejected with exit `1`, honestly labeled.
+- A second concurrent launch is refused. A crash can leave `session.lock` behind; remove only the empty lock directory with `rmdir` after closing every session.
+- Quote and backslash characters in URLs are data, never evaluated; they must reach the prompt safely. Try it.
+- If VLC opens but nothing plays, the failure is in the URL, codec, or network; the preview told you the truth the whole time.
+
+## Reporting and qualification
+
+The preview graduates when one physical ARM64 Android row and one physical iPhone row pass against artifact digests from a trusted build. The full evidence procedure lives in the repository under `.docs/mobile-device-lab.md`. If you run the qualification, record your device OS, Termux/Node/a-Shell/VLC versions, and which of the seven observations actually passed, and keep your URLs out of reports; they point at your media.
+
+For the supported surface today, see [Supported and unsupported](/docs/users/supported-and-unsupported) and [Providers](/docs/users/providers).
