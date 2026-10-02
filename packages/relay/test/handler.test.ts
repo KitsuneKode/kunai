@@ -485,6 +485,83 @@ test("handleRpcRequest handles CORS preflight without upstream fetch", async () 
   expect(response.headers.get("access-control-allow-methods")).toContain("POST");
 });
 
+test("handleRpcRequest in local-loopback mode refuses foreign browser origins", async () => {
+  // A tokenless loopback relay must not be drivable by an arbitrary web page:
+  // browser POSTs always carry Origin, and a cross-site one is refused before
+  // the request body is even read.
+  const post = (origin: string | null) => {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (origin) headers.origin = origin;
+    return new Request("https://relay.test/rpc/allanime", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ method: "GET" }),
+    });
+  };
+
+  const foreign = await handleRpcRequest(post("https://evil.example"), {
+    providerId: "allanime",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+  });
+  expect(foreign.status).toBe(403);
+
+  for (const origin of ["http://localhost:3000", "http://127.0.0.1:8080", null]) {
+    const res = await handleRpcRequest(post(origin), {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+    });
+    // Loopback origins and Origin-less CLI traffic pass the origin gate; they
+    // may still 4xx on a missing upstreamUrl — the point is not 403-by-origin.
+    expect(res.status).not.toBe(403);
+  }
+});
+
+test("handleRpcRequest in local-loopback mode refuses cross-site fetch metadata", async () => {
+  const request = new Request("https://relay.test/rpc/allanime", {
+    method: "POST",
+    headers: { "content-type": "application/json", "sec-fetch-site": "cross-site" },
+    body: JSON.stringify({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
+  });
+  const response = await handleRpcRequest(request, {
+    providerId: "allanime",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+  });
+  expect(response.status).toBe(403);
+});
+
+test("handleRpcRequest preflight refuses foreign origins in loopback mode", async () => {
+  const foreign = await handleRpcRequest(
+    new Request("https://relay.test/rpc/allanime", {
+      method: "OPTIONS",
+      headers: { origin: "https://evil.example" },
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+    },
+  );
+  expect(foreign.status).toBe(403);
+
+  // Bearer-authenticated relays are remote-facing: CORS is irrelevant to their
+  // threat model, so preflight stays permissive there.
+  const bearer = await handleRpcRequest(
+    new Request("https://relay.test/rpc/allanime", {
+      method: "OPTIONS",
+      headers: { origin: "https://evil.example" },
+    }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: { mode: "bearer", token: "secret" },
+    },
+  );
+  expect(bearer.status).toBe(204);
+});
+
 test("handleRpcRequest authenticates before pinned transport resolves DNS", async () => {
   let resolutions = 0;
   const response = await handleRpcRequest(

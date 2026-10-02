@@ -1023,6 +1023,7 @@ export class PersistentMpvSession {
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => this.ipcSession,
       getInitialOptions: () => this.initialOptions,
+      getPlaybackStream: () => this.playbackStream,
       getLoadStartAt: () => this.loadStartAt,
       getTitleAppliedViaArgs: () => this.titleAppliedViaArgs,
       setTitleAppliedViaArgs: (value) => {
@@ -1074,6 +1075,7 @@ export class PersistentMpvSession {
       onAttached,
       primarySubtitleUrlKind,
       isCurrent,
+      this.playbackStream,
     );
   }
 
@@ -1093,10 +1095,14 @@ export class PersistentMpvSession {
       return result.ok;
     }
 
-    const attached = await this.subtitleManager.attachSubtitles(this.ipcSession, {
-      primarySubtitle: selection.subtitleUrl,
-      subtitleTracks: selection.subtitleTracks,
-    });
+    const attached = await this.subtitleManager.attachSubtitles(
+      this.ipcSession,
+      {
+        primarySubtitle: selection.subtitleUrl,
+        subtitleTracks: selection.subtitleTracks,
+      },
+      this.playbackStream,
+    );
     if (attached.attachedCount <= 0) return false;
     this.currentCycleOptions().onPlaybackEvent?.({
       type: "late-subtitles-attached",
@@ -1106,7 +1112,11 @@ export class PersistentMpvSession {
   }
 
   private async attachSubtitles(attachment: LateSubtitleAttachment) {
-    const result = await this.subtitleManager.attachSubtitles(this.ipcSession, attachment);
+    const result = await this.subtitleManager.attachSubtitles(
+      this.ipcSession,
+      attachment,
+      this.playbackStream,
+    );
 
     if (result.attachedCount > 0) {
       this.currentCycleOptions().onPlaybackEvent?.({

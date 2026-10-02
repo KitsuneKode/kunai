@@ -10,6 +10,7 @@
 // testable source of truth instead of ad-hoc picking scattered across surfaces.
 // =============================================================================
 
+import { sanitizeProviderArtworkRef } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { ContentType } from "@/domain/types";
 import type { ProviderExternalIds } from "@kunai/types";
 
@@ -180,6 +181,36 @@ export function mergeArtwork(
     ...(seasonPosters ? { seasonPosters } : null),
     ...(episodeThumbnails ? { episodeThumbnails } : null),
     ...(contributingSources.length ? { contributingSources } : null),
+  };
+}
+
+/**
+ * Drop non-URL artwork values from a candidate before merge. Every candidate
+ * source is remote JSON (TMDB, AniList, or a provider), so a value that is not
+ * an http(s) URL or single-segment TMDB-relative path can only be junk — or a
+ * local-path/file ref that would turn the poster pipeline into a file-read
+ * oracle. `seasonPosters`/`episodeThumbnails` values get the same treatment.
+ */
+export function sanitizeArtworkCandidate(candidate: ArtworkCandidate): ArtworkCandidate {
+  const mapValues = (
+    map: Readonly<Record<string | number, string>> | undefined,
+  ): Record<string | number, string> | undefined => {
+    if (!map) return undefined;
+    const out: Record<string | number, string> = {};
+    for (const [key, value] of Object.entries(map)) {
+      const clean = sanitizeProviderArtworkRef(value);
+      if (clean) out[key] = clean;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  };
+  const seasonPosters = mapValues(candidate.seasonPosters);
+  const episodeThumbnails = mapValues(candidate.episodeThumbnails);
+  return {
+    source: candidate.source,
+    poster: sanitizeProviderArtworkRef(candidate.poster),
+    backdrop: sanitizeProviderArtworkRef(candidate.backdrop),
+    ...(seasonPosters ? { seasonPosters } : null),
+    ...(episodeThumbnails ? { episodeThumbnails } : null),
   };
 }
 

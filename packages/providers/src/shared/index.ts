@@ -17,3 +17,4 @@ export * from "./stream-reachability";
 export * from "./stream-health";
 export * from "./source-inventory";
 export * from "./subtitle-helpers";
+export * from "./markup-text";

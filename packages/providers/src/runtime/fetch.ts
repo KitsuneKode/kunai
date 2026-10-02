@@ -7,10 +7,19 @@ import {
   type ProviderRuntimeContext,
 } from "@kunai/types";
 
+import { createGuardedFetch, PROVIDER_API_SENSITIVE_HEADERS } from "../shared/stream-reachability";
+
 // The error contract lives in @kunai/types so the cycle engine's classifier
 // can read status/code/retryable instead of string-matching messages (#458).
 // Re-exported here to keep the long-standing import path stable.
 export { ProviderHttpError, providerHttpErrorForStatus };
+
+const guardedDirectFetch = createGuardedFetch({
+  extraSensitiveHeaders: PROVIDER_API_SENSITIVE_HEADERS,
+  // User-configured endpoints (self-hosted Invidious/Piped) are legitimately
+  // private; only redirect hops are attacker-controlled and stay guarded.
+  allowInitialPrivateTarget: true,
+});
 
 export interface ProviderHttpRequestContext {
   readonly providerId?: ProviderId | string;
@@ -25,7 +34,9 @@ export function providerFetch(
   // The port itself decides whether a request can ride the relay — hosts
   // outside `upstreamHosts` fall back to direct — so `context` is optional
   // only where a shared helper genuinely has no caller context to take.
-  return context?.fetch?.fetch(input, init) ?? fetch(input, init);
+  // Context-free calls still run the private-target + redirect guard rather
+  // than raw fetch: a provider redirect must not carry secrets cross-origin.
+  return context?.fetch?.fetch(input, init) ?? guardedDirectFetch(input, init);
 }
 
 export async function providerJson<T>(

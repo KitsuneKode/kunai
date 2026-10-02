@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
+import { fetchGuardedRemoteTarget } from "@/infra/net/guarded-remote-fetch";
 import type { DownloadJobRecord } from "@kunai/storage";
 
 export type OfflineArtworkFetch = (url: string, init: RequestInit) => Promise<Response>;
@@ -44,7 +45,10 @@ async function fetchAndWritePoster(
   const posterUrl = job.posterUrl;
   if (!posterUrl) return null;
 
-  const fetchImpl = fetchImplOverride ?? fetch;
+  // job.posterUrl is provider-originated: without the guard a redirect could
+  // pull a private/loopback target through this process.
+  const fetchImpl =
+    fetchImplOverride ?? ((url: string, init: RequestInit) => fetchGuardedRemoteTarget(url, init));
   const response = await fetchImpl(posterUrl, {
     signal: AbortSignal.timeout(POSTER_CACHE_TIMEOUT_MS),
     headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" },

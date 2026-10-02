@@ -1,3 +1,4 @@
+import { sanitizeProviderArtworkRef } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { ProviderMetadata, ShellMode, TitleInfo } from "@/domain/types";
 import {
   buildFirstSeenRank,
@@ -7,11 +8,29 @@ import {
   type CoreProviderManifest,
   type ProviderEngine,
 } from "@kunai/core";
-import type { MediaKind } from "@kunai/types";
+import { stripControlCharacters } from "@kunai/providers";
+import type { MediaKind, ProviderArtworkInfo } from "@kunai/types";
 
 import { createProviderFromModule, type Provider } from "./Provider";
 import { providerLaneMatchesMode, shellModeToProviderLane } from "./provider-lane";
 import { titleToCoreIdentity } from "./stream-request-adapter";
+
+/**
+ * Every URL on a provider-supplied {@link ProviderArtworkInfo} is untrusted:
+ * each field feeds a poster/thumbnail fetch or mpv surface, so local-shaped
+ * refs and private literals are dropped at admission.
+ */
+function sanitizeProviderArtwork(
+  artwork: ProviderArtworkInfo | undefined,
+): ProviderArtworkInfo | undefined {
+  if (!artwork) return artwork;
+  return {
+    posterUrl: sanitizeProviderArtworkRef(artwork.posterUrl),
+    backdropUrl: sanitizeProviderArtworkRef(artwork.backdropUrl),
+    thumbnailUrl: sanitizeProviderArtworkRef(artwork.thumbnailUrl),
+    seekBarVttUrl: sanitizeProviderArtworkRef(artwork.seekBarVttUrl),
+  };
+}
 
 export interface ProviderRegistry {
   get(id: string): Provider | undefined;
@@ -60,41 +79,63 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 this.engine.createRuntimeContext(module.providerId, signal),
               );
               if (!results) return null;
-              return results.map((r): import("@/domain/types").SearchResult => ({
-                id: r.id,
-                type: r.type,
-                title: r.title,
-                titleAliases: [
-                  ...(r.englishTitle ? [{ kind: "english" as const, value: r.englishTitle }] : []),
-                  ...(r.nativeTitle ? [{ kind: "native" as const, value: r.nativeTitle }] : []),
-                  ...(r.altNames ?? [])
-                    .slice(0, 3)
-                    .map((v) => ({ kind: "synonym" as const, value: v })),
-                ],
-                year: r.year ?? "",
-                overview: r.overview ?? "",
-                posterPath: r.posterPath ?? null,
-                posterSource: r.posterPath ? ("provider" as const) : undefined,
-                metadataSource: r.metadataSource,
-                rating: r.rating ?? null,
-                popularity: r.popularity ?? null,
-                episodeCount: r.episodeCount,
-                availableAudioModes: r.availableAudioModes,
-                subtitleAvailability: r.subtitleAvailability,
-                externalIds: r.externalIds,
-                release: r.release,
-                artwork: r.artwork,
-                languageEvidence: r.languageEvidence,
-                durationSeconds: r.durationSeconds,
-                channelTitle: r.channelTitle,
-                channelId: r.channelId,
-                viewCount: r.viewCount,
-                publishedAt: r.publishedAt,
-                liveStatus: r.liveStatus,
-                premium: r.premium,
-                paid: r.paid,
-                resultKind: r.resultKind,
-              }));
+              // Provider JSON is attacker-influenceable text: titles, aliases,
+              // overviews, and channel names all render into the terminal, so
+              // control characters (ESC/OSC/BEL) are stripped at this boundary —
+              // otherwise a hostile response could write clipboard escapes or
+              // spoof UI lines, and the bytes would persist via history/SQLite.
+              return results.map((r): import("@/domain/types").SearchResult => {
+                // Provider-supplied poster refs must be remote http(s) URLs on
+                // public literal hosts — a local-shaped or private target would
+                // turn the poster pipeline into a file-read/SSRF oracle.
+                const posterPath = sanitizeProviderArtworkRef(r.posterPath) ?? null;
+                return {
+                  id: r.id,
+                  type: r.type,
+                  title: stripControlCharacters(r.title),
+                  titleAliases: [
+                    ...(r.englishTitle
+                      ? [
+                          {
+                            kind: "english" as const,
+                            value: stripControlCharacters(r.englishTitle),
+                          },
+                        ]
+                      : []),
+                    ...(r.nativeTitle
+                      ? [{ kind: "native" as const, value: stripControlCharacters(r.nativeTitle) }]
+                      : []),
+                    ...(r.altNames ?? [])
+                      .slice(0, 3)
+                      .map((v) => ({ kind: "synonym" as const, value: stripControlCharacters(v) })),
+                  ],
+                  year: r.year ?? "",
+                  overview: stripControlCharacters(r.overview ?? ""),
+                  posterPath,
+                  posterSource: posterPath ? ("provider" as const) : undefined,
+                  metadataSource: r.metadataSource,
+                  rating: r.rating ?? null,
+                  popularity: r.popularity ?? null,
+                  episodeCount: r.episodeCount,
+                  availableAudioModes: r.availableAudioModes,
+                  subtitleAvailability: r.subtitleAvailability,
+                  externalIds: r.externalIds,
+                  release: r.release,
+                  artwork: sanitizeProviderArtwork(r.artwork),
+                  languageEvidence: r.languageEvidence,
+                  durationSeconds: r.durationSeconds,
+                  channelTitle: r.channelTitle
+                    ? stripControlCharacters(r.channelTitle)
+                    : r.channelTitle,
+                  channelId: r.channelId,
+                  viewCount: r.viewCount,
+                  publishedAt: r.publishedAt,
+                  liveStatus: r.liveStatus,
+                  premium: r.premium,
+                  paid: r.paid,
+                  resultKind: r.resultKind,
+                };
+              });
             }
           : undefined,
         listEpisodes: module.listEpisodes
@@ -128,20 +169,23 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 this.engine.createRuntimeContext(module.providerId, signal),
               );
               if (!episodes) return null;
-              return episodes.map((ep) => ({
-                index: ep.index,
-                label: ep.label,
-                providerEpisodeIdentity: ep.providerEpisodeIdentity,
-                name: ep.name,
-                detail: ep.detail,
-                previewImageUrl: ep.artwork?.thumbnailUrl,
-                airDate: ep.release?.airDate,
-                overview: ep.detail,
-                externalIds: ep.externalIds,
-                release: ep.release,
-                artwork: ep.artwork,
-                totalEpisodeCount: ep.totalEpisodeCount,
-              }));
+              return episodes.map((ep) => {
+                const detail = ep.detail ? stripControlCharacters(ep.detail) : ep.detail;
+                return {
+                  index: ep.index,
+                  label: ep.label ? stripControlCharacters(ep.label) : ep.label,
+                  providerEpisodeIdentity: ep.providerEpisodeIdentity,
+                  name: ep.name ? stripControlCharacters(ep.name) : ep.name,
+                  detail,
+                  previewImageUrl: ep.artwork?.thumbnailUrl,
+                  airDate: ep.release?.airDate,
+                  overview: detail,
+                  externalIds: ep.externalIds,
+                  release: ep.release,
+                  artwork: sanitizeProviderArtwork(ep.artwork),
+                  totalEpisodeCount: ep.totalEpisodeCount,
+                };
+              });
             }
           : undefined,
       });

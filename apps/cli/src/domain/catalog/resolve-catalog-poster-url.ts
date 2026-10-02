@@ -1,3 +1,5 @@
+import { blockedLiteralTargetReason } from "@kunai/types";
+
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
 
 export type ResolveCatalogPosterUrlOptions = {
@@ -26,6 +28,9 @@ export function resolveCatalogPosterUrl(
   try {
     const url = new URL(trimmed);
     if (url.protocol !== "https:") return null;
+    // Literal private/loopback targets are provider-controlled SSRF surface —
+    // DNS answers are re-checked at fetch time by the guarded remote fetch.
+    if (blockedLiteralTargetReason(trimmed) !== null) return null;
     return trimmed;
   } catch {
     return null;
@@ -41,4 +46,25 @@ export function resolveCatalogPosterUrlFromCandidates(
     if (resolved) return resolved;
   }
   return null;
+}
+
+/**
+ * Admission check for provider-originated image/artwork refs — poster and
+ * artwork fields on search results, episodes, and detail artwork candidates.
+ * A value passes only as a remote http(s) URL on a public literal host, or a
+ * single-segment TMDB-relative `/x.jpg`. Anything else (`file:`, UNC shares,
+ * absolute local paths, private literals, bare filenames) is dropped so it can
+ * never reach the local poster reader — `resolvePosterUrl` treats local-shaped
+ * strings as filesystem paths by design for Kunai-produced artwork.
+ *
+ * `http:` is allowed at admission (providers legitimately emit http artwork);
+ * surfaces that require https — Discord presence, catalog resolution — still
+ * enforce it through {@link resolveCatalogPosterUrl}.
+ */
+export function sanitizeProviderArtworkRef(raw: string | null | undefined): string | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  if (/^\/[^/]+$/.test(trimmed)) return trimmed;
+  if (!/^https?:\/\//i.test(trimmed)) return undefined;
+  return blockedLiteralTargetReason(trimmed) === null ? trimmed : undefined;
 }

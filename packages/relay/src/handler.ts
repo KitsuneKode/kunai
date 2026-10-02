@@ -51,6 +51,19 @@ export async function handleRpcRequest(
   request: Request,
   options: RelayHandlerOptions,
 ): Promise<Response> {
+  // In tokenless loopback mode, any web page could otherwise POST the relay
+  // through a browser CORS request and read the response. Browsers always mark
+  // those: `Origin` (non-loopback) or `Sec-Fetch-Site: cross-site`. Bun's fetch
+  // sends neither, so CLI traffic is unaffected.
+  if (options.authorization.mode === "local-loopback") {
+    if (!isLoopbackOrigin(request.headers.get("origin"))) {
+      return relayError("forbidden-origin", options.providerId, "Origin is not loopback", 403);
+    }
+    const fetchSite = request.headers.get("sec-fetch-site");
+    if (fetchSite === "cross-site") {
+      return relayError("forbidden-origin", options.providerId, "Cross-site request refused", 403);
+    }
+  }
   if (request.method === "OPTIONS") return corsPreflightResponse();
   if (request.method !== "POST") {
     return relayError("method-not-allowed", options.providerId, "RPC route requires POST", 405);
@@ -367,6 +380,26 @@ export function relayError(
       [RELAY_ERROR_CODE_HEADER]: code,
     },
   });
+}
+
+/**
+ * A preflighted browser POST always carries Origin. In tokenless loopback mode
+ * the only trustworthy origins are loopback ones; anything else is a foreign
+ * web page trying to drive the relay through the browser.
+ */
+function isLoopbackOrigin(origin: string | null): boolean {
+  if (!origin) return true;
+  try {
+    const host = new URL(origin).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return (
+      host === "localhost" ||
+      host.endsWith(".localhost") ||
+      host === "::1" ||
+      host.startsWith("127.")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function corsPreflightResponse(): Response {

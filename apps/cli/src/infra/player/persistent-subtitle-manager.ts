@@ -1,5 +1,9 @@
 import type { SubtitleTrack } from "@/domain/types";
-import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+import {
+  isAllowedSubtitleTarget,
+  type MpvUrlKind,
+  type SubtitleStreamContext,
+} from "@/infra/player/mpv-playback-url";
 import { collectAdditionalSubtitleTracks, describeSubtitleTrackForMpv } from "@/mpv";
 
 import type { MpvIpcSession } from "./mpv-ipc";
@@ -61,13 +65,14 @@ export class PersistentSubtitleManager {
     onAttached?: (trackCount: number) => void,
     primarySubtitleKind: MpvUrlKind = "remote",
     isCurrent: () => boolean = () => true,
+    stream?: SubtitleStreamContext,
   ): Promise<void> {
     if (!ipcSession || !isCurrent()) return;
 
     if (!(await this.removeExternalSubtitles(ipcSession, isCurrent))) return;
 
     const safePrimary =
-      primarySubtitle && isAllowedMpvUrl(primarySubtitle, primarySubtitleKind)
+      primarySubtitle && isAllowedSubtitleTarget(primarySubtitle, primarySubtitleKind, stream)
         ? primarySubtitle
         : null;
     if (safePrimary) {
@@ -80,7 +85,7 @@ export class PersistentSubtitleManager {
     }
 
     const additionalTracks = collectAdditionalSubtitleTracks(safePrimary, subtitleTracks).filter(
-      (track) => isAllowedMpvUrl(track.url, "remote"),
+      (track) => isAllowedSubtitleTarget(track.url, "remote", stream),
     );
     for (const track of additionalTracks) {
       if (!isCurrent()) return;
@@ -100,17 +105,19 @@ export class PersistentSubtitleManager {
   async attachSubtitles(
     ipcSession: MpvIpcSession | null,
     attachment: PersistentLateSubtitleAttachment,
+    stream?: SubtitleStreamContext,
   ): Promise<SubtitleAttachmentResult> {
     if (!ipcSession) return { status: "no-ipc", attachedCount: 0 };
     let attached = 0;
     const safePrimary =
-      attachment.primarySubtitle && isAllowedMpvUrl(attachment.primarySubtitle, "remote")
+      attachment.primarySubtitle &&
+      isAllowedSubtitleTarget(attachment.primarySubtitle, "remote", stream)
         ? attachment.primarySubtitle
         : null;
     const additionalTracks = collectAdditionalSubtitleTracks(
       safePrimary,
       attachment.subtitleTracks,
-    ).filter((track) => isAllowedMpvUrl(track.url, "remote"));
+    ).filter((track) => isAllowedSubtitleTarget(track.url, "remote", stream));
     if (!safePrimary && additionalTracks.length === 0) {
       return { status: "none-requested", attachedCount: 0 };
     }

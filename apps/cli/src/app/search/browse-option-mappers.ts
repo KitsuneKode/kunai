@@ -11,6 +11,7 @@ import {
   historyContentType,
   isFinished,
 } from "@/services/continuation/history-progress";
+import { stripControlCharacters } from "@kunai/providers";
 import {
   formatDurationSeconds,
   formatRelativeTime,
@@ -327,7 +328,7 @@ export function toBrowseResultOption(
 function normalizeProviderText(value: string | null | undefined): string {
   const trimmed = value?.trim();
   if (!trimmed) return "";
-  return decodeHtmlEntities(trimmed.replace(/<[^>]*>/g, " "))
+  return stripControlCharacters(decodeHtmlEntities(trimmed.replace(/<[^>]*>/g, " ")))
     .replace(/\s+/g, " ")
     .trim();
 }

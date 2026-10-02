@@ -3,6 +3,7 @@ import { selectAutomaticSubtitle } from "@/subtitle";
 import {
   looksLikeHiSubtitle,
   normalizeIsoLanguageCode,
+  stripControlCharacters,
   subtitleLanguageDisplayName,
 } from "@kunai/providers";
 import type { ProviderResolveResult, SubtitleCandidate } from "@kunai/types";
@@ -125,22 +126,22 @@ function selectPreferredStream(
 
 export function subtitleCandidateToTrack(candidate: SubtitleCandidate): SubtitleTrack {
   const normalizedLang = normalizeIsoLanguageCode(candidate.language);
-  const displayName = normalizedLang
-    ? subtitleLanguageDisplayName(normalizedLang)
-    : candidate.label;
+  // label/syncEvidence are provider-JSON strings rendered in the track picker —
+  // strip control characters before they can reach <Text> or a notification.
+  const label = candidate.label ? stripControlCharacters(candidate.label) : candidate.label;
+  const syncEvidence = candidate.syncEvidence
+    ? stripControlCharacters(candidate.syncEvidence)
+    : candidate.syncEvidence;
+  const displayName = normalizedLang ? subtitleLanguageDisplayName(normalizedLang) : label;
 
   return {
     url: candidate.url,
-    display: displayName ?? candidate.label,
+    display: displayName ?? label,
     language: normalizedLang,
-    release: candidate.syncEvidence,
+    release: syncEvidence,
     sourceKind: candidate.source === "provider" ? "external" : "embedded",
-    sourceName: candidate.source,
-    isHearingImpaired: looksLikeHiSubtitle(
-      candidate.label,
-      candidate.syncEvidence,
-      candidate.language,
-    ),
+    sourceName: stripControlCharacters(candidate.source),
+    isHearingImpaired: looksLikeHiSubtitle(label, syncEvidence, candidate.language),
   };
 }
 
