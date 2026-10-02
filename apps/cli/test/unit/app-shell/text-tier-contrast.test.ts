@@ -8,6 +8,7 @@ import { resolveDesignTokens } from "@kunai/design";
  * body-text floor (75), label text (60), and hints and pending steps (45).
  */
 const TARGETS = { textDim: 75, muted: 60, dim: 45 } as const;
+const TIERS = ["textDim", "muted", "dim"] as const;
 
 // APCA-W3 0.0.98G-4g (SA98G), the algorithm `apca-w3` implements. Only light-on-dark is needed here.
 function luminance(hex: string): number {
@@ -17,6 +18,7 @@ function luminance(hex: string): number {
 }
 
 function lc(foreground: string, background: string): number {
+  // eslint-disable-next-line approx-constant -- APCA's published soft-clamp exponent, not √2; Math.SQRT2 would drift from apca-w3
   const clamp = (y: number) => (y > 0.022 ? y : y + (0.022 - y) ** 1.414);
   const text = clamp(luminance(foreground));
   const ground = clamp(luminance(background));
@@ -39,14 +41,12 @@ describe("lc", () => {
 describe.each(["truecolor", "256"] as const)("text tiers at %s color", (level) => {
   const tokens = resolveDesignTokens(level);
 
-  test.each(Object.entries(TARGETS))(
-    "%s reaches Lc %d on the canvas and the panel",
-    (tier, minimum) => {
-      const foreground = tokens[tier as keyof typeof TARGETS];
-      expect(lc(foreground, tokens.bg)).toBeGreaterThanOrEqual(minimum);
-      expect(lc(foreground, tokens.surface)).toBeGreaterThanOrEqual(minimum);
-    },
-  );
+  for (const tier of TIERS) {
+    test(`${tier} reaches its Lc target on the canvas and the panel`, () => {
+      expect(lc(tokens[tier], tokens.bg)).toBeGreaterThanOrEqual(TARGETS[tier]);
+      expect(lc(tokens[tier], tokens.surface)).toBeGreaterThanOrEqual(TARGETS[tier]);
+    });
+  }
 
   test("the ramp keeps its order: text, textDim, muted, dim", () => {
     const ladder = [tokens.text, tokens.textDim, tokens.muted, tokens.dim].map((hex) =>

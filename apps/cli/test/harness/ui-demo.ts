@@ -13,11 +13,16 @@ import { join } from "node:path";
 
 import { applyStorageRootEnv } from "../helpers/storage-env";
 
-const sandbox = join(tmpdir(), `kunai-vhs-ui-demo-${process.pid}`);
-mkdirSync(sandbox, { recursive: true });
-applyStorageRootEnv(sandbox);
-process.env.KUNAI_POSTER = "0";
-process.env.KUNAI_PET = "off";
+function isolateDemoProcess(): void {
+  const sandbox = join(tmpdir(), `kunai-vhs-ui-demo-${process.pid}`);
+  mkdirSync(sandbox, { recursive: true });
+  applyStorageRootEnv(sandbox);
+  process.env.KUNAI_POSTER = "0";
+  process.env.KUNAI_PET = "off";
+}
+
+// Must run before the dynamic imports below: shell modules read these at load.
+isolateDemoProcess();
 
 const { createElement } = await import("react");
 const { bindShutdownRequestHandler } = await import("@/app/session/shutdown-request");
