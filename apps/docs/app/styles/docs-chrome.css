@@ -290,8 +290,13 @@
    content here (the install notes live in them), so they take the muted token (6.2:1)
    instead. The selector matches the inline custom properties the highlighter writes, so
    it follows the theme: if the theme ever changes its comment colour this stops matching,
-   so recheck the rendered contrast then (`test/palette.test.ts` pins the numbers). */
-#nd-docs-layout pre span[style*="--shiki-dark: #6A737D"] {
+   so recheck the rendered contrast then (`test/palette.test.ts` pins the numbers).
+
+   It matches on the colour alone, not on `--shiki-dark: #6A737D`. The server writes the
+   attribute without the space after the colon (`--shiki-dark:#6A737D`) while the
+   browser's CSSOM serialises it with one, so a selector spelled either way silently
+   matched nothing on the other. The `i` flag covers the hex's case for the same reason. */
+#nd-docs-layout pre span[style*="#6A737D" i] {
   --shiki-dark: var(--color-fd-muted-foreground) !important;
   --shiki-light: var(--color-fd-muted-foreground) !important;
 }
