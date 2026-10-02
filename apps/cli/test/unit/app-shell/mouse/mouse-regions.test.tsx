@@ -78,11 +78,17 @@ function mountWithMouse(node: React.ReactElement) {
   const stdout = new FakeStdout();
   let instance: { unmount(): void };
   act(() => {
+    // SAFETY: the fake stdout implements the exact write/columns/rows surface
+    // inkRender reads; a real WriteStream is unconstructible in-process.
+    const stdoutForInk: unknown = stdout;
+    // SAFETY: MouseSplitStdin implements the readable/read/setRawMode subset
+    // Ink's stdin contract calls — verified against ink 7.x source.
+    const stdinForInk: unknown = proxy;
     instance = inkRender(
       <MouseDispatchProvider dispatcher={dispatcher}>{node}</MouseDispatchProvider>,
       {
-        stdout: stdout as unknown as NodeJS.WriteStream,
-        stdin: proxy as unknown as NodeJS.ReadStream,
+        stdout: stdoutForInk as NodeJS.WriteStream,
+        stdin: stdinForInk as NodeJS.ReadStream,
         debug: true,
         exitOnCtrlC: false,
         patchConsole: false,
@@ -340,7 +346,7 @@ describe("BrowseShell mouse rows", () => {
         ]}
         onSearch={async () => ({ options: [], subtitle: "" })}
         onResolve={() => {}}
-        onSubmit={(value) => submitted.push(value as string)}
+        onSubmit={(value) => submitted.push(value)}
         onCancel={() => {}}
       />,
     );

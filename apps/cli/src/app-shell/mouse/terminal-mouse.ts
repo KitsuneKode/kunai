@@ -34,7 +34,12 @@ const SGR_MOUSE_PATTERN = new RegExp(`${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])`, "g"
 const SGR_MOUSE_PARTIAL = new RegExp(`${ESC}\\[<[0-9;]*$`);
 const SGR_MOUSE_EXACT = new RegExp(`^${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])$`);
 
-function decodeButton(code: number): { button: MouseButton; kind: MouseEvent["kind"] } {
+type DecodedButton = {
+  readonly button: MouseButton;
+  readonly kind: MouseEvent["kind"];
+};
+
+function decodeButton(code: number): DecodedButton {
   const wheel = (code & 64) !== 0;
   const motion = (code & 32) !== 0;
   const base = code & 3;

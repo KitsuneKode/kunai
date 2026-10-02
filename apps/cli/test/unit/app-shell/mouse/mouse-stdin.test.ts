@@ -43,11 +43,7 @@ class FakeSource extends EventEmitter {
   }
 }
 
-function harness(writes?: string[]): {
-  source: FakeSource;
-  proxy: MouseSplitStdin;
-  dispatcher: MouseDispatcher;
-} {
+function harness(writes?: string[]) {
   const source = new FakeSource();
   const dispatcher = new MouseDispatcher();
   const proxy = new MouseSplitStdin(source, dispatcher, {
