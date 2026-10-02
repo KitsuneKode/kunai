@@ -19,7 +19,12 @@ import {
   shouldEmitPlaybackProgress,
 } from "@/infra/player/mpv-playback-kernel";
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
-import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+import {
+  isAllowedMpvUrl,
+  isAllowedSubtitleTarget,
+  type MpvUrlKind,
+  type SubtitleStreamContext,
+} from "@/infra/player/mpv-playback-url";
 import {
   registerMpvProcess,
   terminateMpvProcess,
@@ -48,6 +53,7 @@ import {
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+export type { SubtitleStreamContext } from "@/infra/player/mpv-playback-url";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
 import {
   applyEndFileEvent,
@@ -278,13 +284,19 @@ async function launchMpvInner(
         (trackCount) => {
           emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
         },
+        opts,
       );
       return attached > 0;
     },
     async attachSubtitles(attachment: LateSubtitleAttachment) {
-      return await attachLateSubtitles(ipcSession, attachment, (trackCount) => {
-        emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
-      });
+      return await attachLateSubtitles(
+        ipcSession,
+        attachment,
+        (trackCount) => {
+          emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
+        },
+        opts,
+      );
     },
     async skipCurrentSegment() {
       return trySkipSegment(false);
@@ -385,7 +397,7 @@ async function launchMpvInner(
     emitPlaybackEvent({ type: "ipc-connected" });
     emitPlaybackEvent({ type: "opening-stream" });
     notifyPlayerReady();
-    const trackCount = allowedLaunchSubtitleFiles(opts).length;
+    const trackCount = allowedLaunchSubtitleFiles({ ...opts, stream: opts }).length;
     if (trackCount > 0) {
       emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
       emitPlaybackEvent({ type: "subtitle-attached", trackCount });
@@ -596,7 +608,7 @@ export function buildMpvArgs(
     args.push("--tls-verify=no");
   }
 
-  for (const file of allowedLaunchSubtitleFiles(opts)) {
+  for (const file of allowedLaunchSubtitleFiles({ ...opts, stream: opts })) {
     args.push(`--sub-file=${file}`);
   }
 
@@ -769,11 +781,13 @@ function allowedLaunchSubtitleFiles(opts: {
   subtitle: string | null;
   subtitleUrlKind?: MpvUrlKind;
   subtitleTracks?: readonly SubtitleTrack[];
+  /** The stream these subs travel with — scopes credential-bearing headers. */
+  stream?: SubtitleStreamContext;
 }): string[] {
   const allowed: string[] = [];
   for (const file of collectLaunchSubtitleFiles(opts.subtitle, opts.subtitleTracks)) {
     const kind = file === opts.subtitle ? (opts.subtitleUrlKind ?? "remote") : "remote";
-    if (isAllowedMpvUrl(file, kind)) {
+    if (isAllowedSubtitleTarget(file, kind, opts.stream)) {
       allowed.push(file);
     } else {
       dbg("mpv", "subtitle-target-rejected", { delivery: "launch" });
@@ -821,11 +835,13 @@ export async function attachLateSubtitles(
   ipcSession: MpvIpcSession | null,
   attachment: LateSubtitleAttachment,
   onAttached?: (trackCount: number) => void,
+  stream?: SubtitleStreamContext,
 ): Promise<number> {
   if (!ipcSession) return 0;
   let attached = 0;
   const primarySubtitle =
-    attachment.primarySubtitle && isAllowedMpvUrl(attachment.primarySubtitle, "remote")
+    attachment.primarySubtitle &&
+    isAllowedSubtitleTarget(attachment.primarySubtitle, "remote", stream)
       ? attachment.primarySubtitle
       : null;
   if (attachment.primarySubtitle && !primarySubtitle) {
@@ -844,7 +860,7 @@ export async function attachLateSubtitles(
   }
 
   for (const track of collectAdditionalSubtitleTracks(primarySubtitle, attachment.subtitleTracks)) {
-    if (!isAllowedMpvUrl(track.url, "remote")) {
+    if (!isAllowedSubtitleTarget(track.url, "remote", stream)) {
       dbg("mpv", "subtitle-target-rejected", { delivery: "late-additional" });
       continue;
     }

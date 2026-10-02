@@ -6,6 +6,7 @@ import {
   type ProviderEngine,
   type ProviderPriorityInput,
 } from "@kunai/core";
+import { createGuardedFetch, PROVIDER_API_SENSITIVE_HEADERS } from "@kunai/providers";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import { ProviderCacheRepository } from "@kunai/storage";
 
@@ -120,6 +121,15 @@ export async function bootstrapProviders(
         baseUrl: process.env.KUNAI_RELAY_BASE_URL,
         token: process.env.KUNAI_RELAY_TOKEN,
       },
+      // Upstream-direct legs (no relay / non-relayable host / opted fallback)
+      // follow redirects hop-by-hop with private-target checks so a provider
+      // 302 cannot leak x-aa-boot/x-session-token cross-origin or read LAN.
+      // Hop 0 is exempt for user-configured endpoints (self-hosted Invidious
+      // / Piped instances legitimately live on private addresses).
+      directFetch: createGuardedFetch({
+        extraSensitiveHeaders: PROVIDER_API_SENSITIVE_HEADERS,
+        allowInitialPrivateTarget: true,
+      }),
     });
   const providerCachePort = createProviderCachePort(
     new ProviderCacheRepository(persistence.cacheDb),

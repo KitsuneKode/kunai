@@ -14,6 +14,10 @@ type RelayHeadersInit = ConstructorParameters<typeof Headers>[0];
 
 export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetchPort {
   const fetchImpl = options.fetch ?? fetch;
+  // Upstream-target legs go through `directFetch` (a redirect-validating impl
+  // in production); the relay RPC call itself stays on `fetchImpl` so a
+  // loopback relay is never rejected by the private-target guard.
+  const directFetch = options.directFetch ?? fetchImpl;
   const relay = resolveEffectiveProviderRelayConfig(options.relayConfig, options.env);
   const baseUrl = relay.baseUrl;
   const fallbackToDirect = relay.fallbackToDirect ?? true;
@@ -21,24 +25,24 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
   return {
     runtime: "direct-http",
     async fetch(input, init) {
-      if (!baseUrl) return fetchImpl(input, init);
+      if (!baseUrl) return directFetch(input, init);
 
       const requestInfo = await toRelayRequest(input, init);
-      if (!requestInfo) return fetchImpl(input, init);
+      if (!requestInfo) return directFetch(input, init);
       // Validate the envelope against the same schema the handler enforces —
       // a drifted contract fails here instead of round-tripping a 400.
       const envelope = relayRpcRequestSchema.safeParse(requestInfo);
-      if (!envelope.success) return fetchImpl(input, init);
+      if (!envelope.success) return directFetch(input, init);
       const entry = options.providerId
         ? options.registry.get(options.providerId)
         : options.registry.findByUpstreamUrl(requestInfo.upstreamUrl);
-      if (!entry) return fetchImpl(input, init);
+      if (!entry) return directFetch(input, init);
 
       const providerConfig = relay.providers?.[entry.providerId];
-      if (providerConfig?.enabled === false) return fetchImpl(input, init);
-      if (entry.manifest.relaySafe !== true) return fetchImpl(input, init);
+      if (providerConfig?.enabled === false) return directFetch(input, init);
+      if (entry.manifest.relaySafe !== true) return directFetch(input, init);
       if (!options.registry.isHostAllowed(entry.providerId, requestInfo.upstreamUrl, "metadata")) {
-        return fetchImpl(input, init);
+        return directFetch(input, init);
       }
 
       // Appended, not resolved against the base: `new URL("/rpc/x", base)`
@@ -70,7 +74,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
           // The abandoned relay body holds a socket until GC — cancel it
           // explicitly so the direct request does not wait on cleanup.
           void response.body?.cancel().catch(() => {});
-          return fetchImpl(input, init);
+          return directFetch(input, init);
         }
         return markRelayedResponse(response);
       } catch (error) {
@@ -79,7 +83,7 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
          * (curl impersonate, raw fetch) tell this throw apart from a generic
          * network failure and rethrow instead of retrying direct. */
         if (!fallbackToDirect) throw markRelayOwnedError(error);
-        return fetchImpl(input, init);
+        return directFetch(input, init);
       }
     },
   };

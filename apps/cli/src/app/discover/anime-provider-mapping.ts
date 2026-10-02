@@ -1,7 +1,13 @@
+import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
 import { mergeProviderNativeId } from "@kunai/core";
-import { looksLikeAnidbShowId, searchAllManga, type AllMangaSearchResult } from "@kunai/providers";
+import {
+  looksLikeAnidbShowId,
+  searchAllManga,
+  stripControlCharacters,
+  type AllMangaSearchResult,
+} from "@kunai/providers";
 import type { ProviderId } from "@kunai/types";
 
 export type AnimeProviderMappingContext = {
@@ -291,30 +297,38 @@ function mergeAniListDiscoveryWithProviderResult(
   };
   const externalIds = mergeProviderNativeId(catalogIds, providerId, providerResult.id);
   context.persistProviderNative?.(providerResult.id);
+  // providerResult.posterUrl is provider-controlled text: admission requires an
+  // https URL on a public literal host, otherwise poster reads would turn a
+  // search response into a local-file/SSRF oracle.
+  const providerPoster = resolveCatalogPosterUrl(providerResult.posterUrl);
 
   return {
     ...discovery,
     id: providerResult.id,
     externalIds: externalIds ?? discovery.externalIds,
-    title: providerResult.title || discovery.title,
+    title: stripControlCharacters(providerResult.title) || discovery.title,
     titleAliases: mergeTitleAliases(discovery.titleAliases, [
-      { kind: "provider", value: providerResult.title },
+      { kind: "provider", value: stripControlCharacters(providerResult.title) },
       ...(providerResult.englishTitle
-        ? [{ kind: "english" as const, value: providerResult.englishTitle }]
+        ? [{ kind: "english" as const, value: stripControlCharacters(providerResult.englishTitle) }]
         : []),
       ...(providerResult.nativeTitle
-        ? [{ kind: "native" as const, value: providerResult.nativeTitle }]
+        ? [{ kind: "native" as const, value: stripControlCharacters(providerResult.nativeTitle) }]
         : []),
       ...(providerResult.altNames ?? [])
         .slice(0, 3)
-        .map((v: string) => ({ kind: "synonym" as const, value: v })),
+        .map((v: string) => ({ kind: "synonym" as const, value: stripControlCharacters(v) })),
     ]),
     year: discovery.year || (providerResult.year ?? ""),
-    overview: discovery.overview || (providerResult.description ?? ""),
-    posterPath: discovery.posterPath ?? providerResult.posterUrl ?? null,
+    // Provider JSON reaches the details sheet directly here — strip terminal
+    // control characters at admission (the registry path sanitizes upstream).
+    overview:
+      discovery.overview ||
+      (providerResult.description ? stripControlCharacters(providerResult.description) : ""),
+    posterPath: discovery.posterPath ?? providerPoster,
     posterSource: discovery.posterPath
       ? discovery.posterSource
-      : providerResult.posterUrl
+      : providerPoster
         ? providerId
         : undefined,
     // Name the provider that actually supplied the identity; this string is

@@ -1,6 +1,7 @@
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { sanitizeProviderHints } from "@/domain/media/media-item-identity";
 import { normalizeMediaKind } from "@/domain/media/media-presentation";
+import { stripControlCharacters } from "@kunai/providers";
 
 export type NotificationSignal =
   | {
@@ -97,13 +98,20 @@ export function deriveNotifications(
     if (signal.type === "new-playable-episode") {
       if (input.flags?.newEpisodeProjection === false) continue;
       if (input.mutedTitleIds.has(signal.titleId)) continue;
+      // Signal text is provider/toolchain-derived — strip control characters so
+      // a notification cannot smuggle terminal escapes into a persisted row.
+      const title = stripControlCharacters(signal.title);
+      const catalogSource = signal.catalogSource
+        ? stripControlCharacters(signal.catalogSource)
+        : undefined;
+      const providerId = stripControlCharacters(signal.providerId);
       const episodePart =
         signal.season !== undefined && signal.episode !== undefined
           ? `S${signal.season}E${signal.episode}`
           : "new episode";
-      const body = signal.catalogSource
-        ? `${episodePart} reported by catalog (${signal.catalogSource})`
-        : `${episodePart} is available on ${signal.providerId}`;
+      const body = catalogSource
+        ? `${episodePart} reported by catalog (${catalogSource})`
+        : `${episodePart} is available on ${providerId}`;
       derived.push({
         dedupKey: [
           "new-playable-episode",
@@ -113,12 +121,12 @@ export function deriveNotifications(
           signal.providerId,
         ].join(":"),
         kind: "new-episode",
-        title: `${signal.title} ${episodePart}`,
+        title: `${title} ${episodePart}`,
         body,
         item: {
           mediaKind: normalizeMediaKind(signal.mediaKind),
           titleId: signal.titleId,
-          title: signal.title,
+          title,
           season: signal.season,
           episode: signal.episode,
           providerHints: sanitizeProviderHints([{ providerId: signal.providerId }]),
@@ -130,6 +138,7 @@ export function deriveNotifications(
     }
 
     if (signal.type === "download-complete") {
+      const title = stripControlCharacters(signal.title);
       const episodePart =
         signal.season !== undefined && signal.episode !== undefined
           ? `S${signal.season}E${signal.episode}`
@@ -142,12 +151,12 @@ export function deriveNotifications(
           signal.episode ?? "-",
         ].join(":"),
         kind: "download-complete",
-        title: `Downloaded · ${signal.title} ${episodePart}`,
+        title: `Downloaded · ${title} ${episodePart}`,
         body: "Available offline",
         item: {
           mediaKind: normalizeMediaKind(signal.mediaKind),
           titleId: signal.titleId,
-          title: signal.title,
+          title,
           season: signal.season,
           episode: signal.episode,
           providerHints: sanitizeProviderHints([]),
@@ -159,6 +168,7 @@ export function deriveNotifications(
     }
 
     if (signal.type === "download-failed") {
+      const title = stripControlCharacters(signal.title);
       const episodePart =
         signal.season !== undefined && signal.episode !== undefined
           ? `S${signal.season}E${signal.episode}`
@@ -171,12 +181,13 @@ export function deriveNotifications(
           signal.episode ?? "-",
         ].join(":"),
         kind: "download-failed",
-        title: `Download failed · ${signal.title} ${episodePart}`,
-        body: signal.error,
+        title: `Download failed · ${title} ${episodePart}`,
+        // signal.error is raw downloader stderr — remote server text.
+        body: stripControlCharacters(signal.error),
         item: {
           mediaKind: normalizeMediaKind(signal.mediaKind),
           titleId: signal.titleId,
-          title: signal.title,
+          title,
           season: signal.season,
           episode: signal.episode,
           providerHints: sanitizeProviderHints([]),
@@ -192,21 +203,23 @@ export function deriveNotifications(
       // there is nothing to download and no action to offer beyond restarting,
       // so it gets its own dedupKey and never collides with the "available"
       // notice for the same version.
+      const latestVersion = stripControlCharacters(String(signal.latestVersion ?? ""));
+      const currentVersion = stripControlCharacters(String(signal.currentVersion));
       derived.push(
         signal.pendingRestart
           ? {
-              dedupKey: `app-restart-required:${signal.latestVersion}`,
+              dedupKey: `app-restart-required:${latestVersion}`,
               kind: "app-restart-required",
-              title: `Restart to finish updating · ${signal.latestVersion}`,
-              body: `${signal.latestVersion} is installed. Restart Kunai to leave ${signal.currentVersion}.`,
+              title: `Restart to finish updating · ${latestVersion}`,
+              body: `${latestVersion} is installed. Restart Kunai to leave ${currentVersion}.`,
               createdAt: input.now,
               updatedAt: input.now,
             }
           : {
-              dedupKey: `app-update:${signal.latestVersion}`,
+              dedupKey: `app-update:${latestVersion}`,
               kind: "app-update",
-              title: `Update available · ${signal.latestVersion}`,
-              body: `You are on ${signal.currentVersion}. Update to ${signal.latestVersion}.`,
+              title: `Update available · ${latestVersion}`,
+              body: `You are on ${currentVersion}. Update to ${latestVersion}.`,
               createdAt: input.now,
               updatedAt: input.now,
             },
@@ -215,14 +228,18 @@ export function deriveNotifications(
     }
 
     if (signal.type === "provider-health") {
+      const providerId = stripControlCharacters(signal.providerId);
+      const suggested = signal.suggestedProviderId
+        ? stripControlCharacters(signal.suggestedProviderId)
+        : undefined;
       derived.push({
         // The signal only exists while the provider is down, so a stable key
         // refreshes the same row rather than stacking notices per launch.
         dedupKey: `provider-health:${signal.providerId}`,
         kind: "provider-health",
-        title: `${signal.providerId} is unreachable`,
-        body: signal.suggestedProviderId
-          ? `Your default provider is down. Try ${signal.suggestedProviderId} — change it in Settings → Provider order.`
+        title: `${providerId} is unreachable`,
+        body: suggested
+          ? `Your default provider is down. Try ${suggested} — change it in Settings → Provider order.`
           : "Your default provider is down and no healthy fallback is on record. Check provider status or pick another provider in Settings.",
         createdAt: input.now,
         updatedAt: input.now,

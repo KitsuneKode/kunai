@@ -32,6 +32,7 @@ import {
   type TitleStatus,
   episodeThumbKey,
   mergeArtwork,
+  sanitizeArtworkCandidate,
 } from "@/domain/catalog/title-detail";
 import { upgradeContentTypeFromAniListFormat } from "@/domain/media/anilist-format";
 import type { ContentType } from "@/domain/types";
@@ -259,10 +260,12 @@ function mergeDetails(
       : "series";
   const preference = ARTWORK_PREFERENCE[artworkKind];
 
-  // Collect artwork candidates
+  // Collect artwork candidates — every value is remote-JSON text, so refs are
+  // admitted only as http(s) URLs on public hosts (or the `/x.jpg` TMDB shape);
+  // a local-shaped string must never reach the poster pipeline's file reader.
   const artworkCandidates: ArtworkCandidate[] = [];
-  if (tmdb?.artwork) artworkCandidates.push(tmdb.artwork);
-  if (anilist?.artwork) artworkCandidates.push(anilist.artwork);
+  if (tmdb?.artwork) artworkCandidates.push(sanitizeArtworkCandidate(tmdb.artwork));
+  if (anilist?.artwork) artworkCandidates.push(sanitizeArtworkCandidate(anilist.artwork));
 
   const artwork = mergeArtwork(artworkCandidates, preference);
 

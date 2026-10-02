@@ -100,6 +100,13 @@ export interface RelayFetchPortOptions {
   };
   readonly registry: ProviderRelayRegistry;
   readonly fetch?: RelayFetch;
+  /**
+   * Fetch used for the upstream-direct legs (no relay configured, host not
+   * relayable, relay fallback). Defaults to `fetch` — production callers
+   * should pass a redirect-validating implementation so a provider `302`
+   * cannot pull secrets cross-origin or read private targets.
+   */
+  readonly directFetch?: RelayFetch;
   readonly providerId?: string;
 }
 

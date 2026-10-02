@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import { HLS_SEGMENT_PROBE_MIN_BYTES } from "../src/shared/hls-manifest";
 import {
+  createGuardedFetch,
   isStreamReachableForPlaybackPreflight,
   isStreamReachableForResolve,
   probeStreamReachability,
+  PROVIDER_API_SENSITIVE_HEADERS,
   shouldAbortPlaybackForPreflight,
 } from "../src/shared/stream-reachability";
 
@@ -374,5 +376,160 @@ describe("stream reachability", () => {
       expect(probe.reason).toContain("blocked stream target");
       expect(probe.definitive).toBe(true);
     }
+  });
+});
+
+describe("guarded provider fetch", () => {
+  const guarded = (fetchImpl: (url: string, init: RequestInit) => Promise<Response>) =>
+    createGuardedFetch({
+      fetchImpl,
+      extraSensitiveHeaders: PROVIDER_API_SENSITIVE_HEADERS,
+    });
+
+  test("cross-origin redirects strip credentials and provider-secret headers", async () => {
+    const seenHeaders: Headers[] = [];
+    const fetchImpl = async (url: string, init: RequestInit) => {
+      seenHeaders.push(new Headers(init.headers));
+      if (url === "https://api.example/search") {
+        return response(302, "", { location: "https://evil.example/read" });
+      }
+      return response(200, "ok");
+    };
+
+    const res = await guarded(fetchImpl)("https://api.example/search", {
+      headers: {
+        authorization: "Bearer x",
+        cookie: "s=1",
+        "x-aa-boot": "boot",
+        "x-session-token": "tok",
+        referer: "https://api.example/",
+        origin: "https://api.example",
+        "content-type": "application/json",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const second = seenHeaders[1];
+    expect(second).toBeDefined();
+    if (!second) return;
+    for (const name of [
+      "authorization",
+      "cookie",
+      "x-aa-boot",
+      "x-session-token",
+      "referer",
+      "origin",
+    ]) {
+      expect(second.get(name)).toBeNull();
+    }
+    // Non-sensitive headers still travel with the redirect.
+    expect(second.get("content-type")).toBe("application/json");
+  });
+
+  test("same-origin redirects keep every header", async () => {
+    const seenHeaders: Headers[] = [];
+    const fetchImpl = async (url: string, init: RequestInit) => {
+      seenHeaders.push(new Headers(init.headers));
+      if (url === "https://api.example/a") {
+        return response(301, "", { location: "https://api.example/b" });
+      }
+      return response(200);
+    };
+
+    await guarded(fetchImpl)("https://api.example/a", {
+      headers: { "x-session-token": "tok", authorization: "Bearer x" },
+    });
+
+    const second = seenHeaders[1];
+    expect(second?.get("x-session-token")).toBe("tok");
+    expect(second?.get("authorization")).toBe("Bearer x");
+  });
+
+  test("a redirect into a private literal never reaches the fetch impl", async () => {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      if (url === "https://api.example/search") {
+        return response(302, "", { location: "http://169.254.169.254/meta" });
+      }
+      return response(200);
+    };
+
+    await expect(guarded(fetchImpl)("https://api.example/search")).rejects.toThrow(
+      "Blocked unsafe fetch target",
+    );
+    expect(urls).toEqual(["https://api.example/search"]);
+  });
+
+  test("an https downgrade redirect is refused", async () => {
+    const fetchImpl = async (url: string) =>
+      url === "https://api.example/a"
+        ? response(302, "", { location: "http://api.example/b" })
+        : response(200);
+
+    await expect(guarded(fetchImpl)("https://api.example/a")).rejects.toThrow(
+      "Blocked unsafe fetch target",
+    );
+  });
+
+  test("a Request input keeps method, headers, and body across a redirect", async () => {
+    const bodies: unknown[] = [];
+    const fetchImpl = async (url: string, init: RequestInit) => {
+      if (init.body) bodies.push(await new Response(init.body).text());
+      if (url === "https://api.example/a") {
+        return response(307, "", { location: "https://api.example/b" });
+      }
+      expect(init.method).toBe("POST");
+      expect(new Headers(init.headers).get("x-custom")).toBe("1");
+      return response(200);
+    };
+
+    const request = new Request("https://api.example/a", {
+      method: "POST",
+      headers: { "x-custom": "1" },
+      body: "payload",
+    });
+    const res = await guarded(fetchImpl)(request);
+
+    expect(res.status).toBe(200);
+    expect(bodies).toEqual(["payload", "payload"]);
+  });
+
+  test("allowInitialPrivateTarget exempts hop 0 but not redirect hops", async () => {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      return response(200, "ok");
+    };
+    const lenient = createGuardedFetch({ fetchImpl, allowInitialPrivateTarget: true });
+
+    // A user-configured self-hosted endpoint (Invidious/Piped) is legitimate.
+    const res = await lenient("http://127.0.0.1:3000/api/v1/search?q=x");
+    expect(res.status).toBe(200);
+
+    // But a redirect from that endpoint into a private target is still refused.
+    const redirecting = async (url: string) => {
+      urls.push(`r:${url}`);
+      return url === "http://127.0.0.1:3000/x"
+        ? response(302, "", { location: "http://169.254.169.254/meta" })
+        : response(200);
+    };
+    await expect(
+      createGuardedFetch({ fetchImpl: redirecting, allowInitialPrivateTarget: true })(
+        "http://127.0.0.1:3000/x",
+      ),
+    ).rejects.toThrow("Blocked unsafe fetch target");
+  });
+
+  test("URL inputs follow the same guard", async () => {
+    let called = false;
+    const fetchImpl = async () => {
+      called = true;
+      return response(200);
+    };
+    await expect(guarded(fetchImpl)(new URL("http://10.0.0.1/admin"))).rejects.toThrow(
+      "Blocked unsafe fetch target",
+    );
+    expect(called).toBe(false);
   });
 });

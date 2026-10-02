@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
-import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
+import { isAllowedMpvUrl, isAllowedSubtitleTarget } from "@/infra/player/mpv-playback-url";
 import { attachLateSubtitles, buildMpvArgs } from "@/mpv";
 
 function createIpcSession(commands: unknown[][]): MpvIpcSession {
@@ -152,5 +152,67 @@ describe("mpv URL safety", () => {
 
     expect(attached).toBe(1);
     expect(commands).toEqual([["sub-add", "https://sub.example/en.vtt", "auto", "", "en"]]);
+  });
+});
+
+describe("subtitle target gating", () => {
+  const stream = { url: "https://cdn.example/master.m3u8", headers: {} };
+
+  test("remote subtitles on private literals are refused before mpv ever sees them", () => {
+    for (const url of [
+      "http://169.254.169.254/latest/meta-data",
+      "https://127.0.0.1/subs.vtt",
+      "http://10.0.0.4/en.srt",
+      "http://[fd00::5]/en.srt",
+      "https://localhost/subs.vtt",
+    ]) {
+      expect(isAllowedSubtitleTarget(url, "remote", stream)).toBe(false);
+    }
+    expect(isAllowedSubtitleTarget("https://subs.example/en.vtt", "remote", stream)).toBe(true);
+  });
+
+  test("credential-bearing headers pin subtitles to the stream origin", () => {
+    const credentialed = {
+      url: "https://cdn.example/master.m3u8",
+      headers: { cookie: "signed=abc", referer: "https://watch.example/" },
+    };
+
+    // Same-origin subs may ride the signed header set; a different host would
+    // exfiltrate the stream's credentials the moment mpv fetches them.
+    expect(isAllowedSubtitleTarget("https://cdn.example/en.vtt", "remote", credentialed)).toBe(
+      true,
+    );
+    expect(isAllowedSubtitleTarget("https://evil.example/en.vtt", "remote", credentialed)).toBe(
+      false,
+    );
+
+    // Authorization counts as credentials; a bare referer alone does not.
+    expect(
+      isAllowedSubtitleTarget("https://evil.example/en.vtt", "remote", {
+        url: "https://cdn.example/x.m3u8",
+        headers: { authorization: "Bearer t" },
+      }),
+    ).toBe(false);
+    expect(
+      isAllowedSubtitleTarget("https://evil.example/en.vtt", "remote", {
+        url: "https://cdn.example/x.m3u8",
+        headers: { referer: "https://watch.example/" },
+      }),
+    ).toBe(true);
+  });
+
+  test("uncredentialed streams may attach cross-origin subtitles", () => {
+    expect(isAllowedSubtitleTarget("https://subs.example/en.vtt", "remote", stream)).toBe(true);
+    expect(isAllowedSubtitleTarget("https://subs.example/en.vtt", "remote")).toBe(true);
+  });
+
+  test("local subtitles on a local playback surface stay allowed", () => {
+    expect(
+      isAllowedSubtitleTarget("/tmp/movie.en.srt", "local", {
+        url: "/tmp/movie.mp4",
+        headers: {},
+      }),
+    ).toBe(true);
+    expect(isAllowedSubtitleTarget("/tmp/movie.en.srt", "remote", stream)).toBe(false);
   });
 });

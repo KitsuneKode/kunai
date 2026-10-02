@@ -26,6 +26,16 @@ test("resolveCatalogPosterUrl rejects non-https and local paths", () => {
   expect(resolveCatalogPosterUrl("")).toBeNull();
 });
 
+test("resolveCatalogPosterUrl rejects private literal hosts over https", () => {
+  // A provider-emitted posterUrl reaching poster fetch must not become an
+  // SSRF oracle — https alone is not enough when the host is the LAN.
+  expect(resolveCatalogPosterUrl("https://169.254.169.254/meta/p.jpg")).toBeNull();
+  expect(resolveCatalogPosterUrl("https://127.0.0.1:8443/p.jpg")).toBeNull();
+  expect(resolveCatalogPosterUrl("https://10.0.0.9/p.jpg")).toBeNull();
+  expect(resolveCatalogPosterUrl("https://[fd00::10]/p.jpg")).toBeNull();
+  expect(resolveCatalogPosterUrl("https://localhost/p.jpg")).toBeNull();
+});
+
 test("resolveCatalogPosterUrlFromCandidates picks the first valid candidate", () => {
   expect(
     resolveCatalogPosterUrlFromCandidates([undefined, "/poster.jpg", "https://cdn.example/x.jpg"]),

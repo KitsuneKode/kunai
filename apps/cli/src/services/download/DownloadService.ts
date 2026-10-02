@@ -25,7 +25,7 @@ import {
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
 import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
-import { fetchGuardedStreamTarget } from "@kunai/providers";
+import { fetchGuardedStreamTarget, stripControlCharacters } from "@kunai/providers";
 import {
   buildYoutubeYtdlProfile,
   getYoutubeProviderConfig,
@@ -755,7 +755,11 @@ export class DownloadService {
       const active = this.activeProcesses.get(next.id);
       const cancellation = this.cancellationRequests.get(next.id);
       const cancelled = active?.cancelRequested === true || cancellation !== undefined;
-      const message = error instanceof Error ? error.message : String(error);
+      // yt-dlp/child stderr is external text that lands in job.errorMessage and
+      // renders in the downloads view — strip terminal controls at admission.
+      const message = stripControlCharacters(
+        error instanceof Error ? error.message : String(error),
+      );
       const failedAt = new Date().toISOString();
       if (cancelled) {
         if (active?.cancelMode === "pause" || cancellation?.mode === "pause") {

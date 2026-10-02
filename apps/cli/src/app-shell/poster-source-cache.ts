@@ -11,6 +11,7 @@
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import { MAX_POSTER_SOURCE_BYTES } from "@/image/native-image";
+import { fetchGuardedRemoteTarget } from "@/infra/net/guarded-remote-fetch";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 
 import { ByteBudgetLruCache } from "./poster-byte-cache";
@@ -123,8 +124,11 @@ async function readRemotePosterSource(
 ): Promise<PosterSource | null> {
   const timeout = AbortSignal.timeout(5000);
   const fetchSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  // Guarded fetch: a provider-controlled poster URL — or one of its redirect
+  // hops — must not resolve into private address space. Posters are https-only
+  // at admission, so a downgrade hop is rejected too.
   const response = await observeOnlineIfBound("poster-error", () =>
-    fetch(url, { signal: fetchSignal }),
+    fetchGuardedRemoteTarget(url, { signal: fetchSignal }, { httpsOnly: true }),
   );
   if (!response.ok || !response.body) {
     // Drain nothing; just let the body go.

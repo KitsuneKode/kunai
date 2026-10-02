@@ -1,5 +1,5 @@
 import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
-import type { PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
+import type { PlaybackTimingMetadata, StreamInfo, SubtitleTrack } from "@/domain/types";
 import type { MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { collectAdditionalSubtitleTracks, shouldApplyStartAtSeek } from "@/mpv";
 
@@ -35,6 +35,8 @@ export type PersistentReadyWorkCycle = {
 export type PersistentReadyWorkExecutorDeps = {
   getIpcSession(): MpvIpcSession | null;
   getInitialOptions(): PersistentReadyWorkOptions;
+  /** The stream this generation is playing — supplies subtitle gating context. */
+  getPlaybackStream(): StreamInfo;
   getLoadStartAt(): number | null;
   getTitleAppliedViaArgs(): boolean;
   setTitleAppliedViaArgs(value: boolean): void;
@@ -172,6 +174,7 @@ export class PersistentReadyWorkExecutor {
         },
         options.subtitleUrlKind,
         isCurrent,
+        this.deps.getPlaybackStream(),
       );
     }
     if (!isCurrent()) return;

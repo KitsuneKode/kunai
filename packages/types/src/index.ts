@@ -10,6 +10,7 @@ export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 export type * from "./provider-cycle";
 export * from "./provider-http-error";
 export * from "./share";
+export * from "./blocked-target";
 
 export type ProviderId = string & { readonly __brand?: "ProviderId" };
 
@@ -666,6 +667,7 @@ export type RelayErrorCode =
   | "redirect-not-allowed"
   | "relay-not-configured"
   | "unauthorized"
+  | "forbidden-origin"
   | "upstream-timeout"
   | "upstream-error"
   | "bad-request";

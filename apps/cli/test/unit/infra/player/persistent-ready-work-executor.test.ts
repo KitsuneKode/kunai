@@ -37,6 +37,12 @@ function createCycle(events: unknown[]) {
 
 const GENERATION: PlaybackGeneration = { process: 3, cycle: 8 };
 
+const FAKE_STREAM = {
+  url: "https://cdn.example/stream.m3u8",
+  headers: {},
+  timestamp: 0,
+} as const;
+
 describe("PersistentReadyWorkExecutor", () => {
   test("a live stream never prompts to resume and never seeks", async () => {
     // The caller already drops startAt/resumePromptAt for a live broadcast, but that
@@ -50,6 +56,7 @@ describe("PersistentReadyWorkExecutor", () => {
 
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => ipc,
+      getPlaybackStream: () => FAKE_STREAM,
       getInitialOptions: () => ({ displayTitle: "Live broadcast", primarySubtitle: null }),
       getLoadStartAt: () => null,
       getTitleAppliedViaArgs: () => true,
@@ -96,6 +103,7 @@ describe("PersistentReadyWorkExecutor", () => {
 
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => ipc,
+      getPlaybackStream: () => FAKE_STREAM,
       getInitialOptions: () => ({ displayTitle: "Episode 1", primarySubtitle: null }),
       getLoadStartAt: () => null,
       getTitleAppliedViaArgs: () => true,
@@ -139,6 +147,7 @@ describe("PersistentReadyWorkExecutor", () => {
 
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => ipc,
+      getPlaybackStream: () => FAKE_STREAM,
       getInitialOptions: () => ({ displayTitle: "Episode 1", primarySubtitle: null }),
       getLoadStartAt: () => 120,
       getTitleAppliedViaArgs: () => true,
@@ -179,6 +188,7 @@ describe("PersistentReadyWorkExecutor", () => {
 
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => ipc,
+      getPlaybackStream: () => FAKE_STREAM,
       getInitialOptions: () => ({ displayTitle: "Episode 1", primarySubtitle: null }),
       getLoadStartAt: () => 0,
       getTitleAppliedViaArgs: () => false,
@@ -219,6 +229,7 @@ describe("PersistentReadyWorkExecutor", () => {
 
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => ipc,
+      getPlaybackStream: () => FAKE_STREAM,
       getInitialOptions: () => ({
         displayTitle: "Episode 1",
         primarySubtitle: "https://subs.example/main.vtt",
@@ -300,6 +311,7 @@ describe("PersistentReadyWorkExecutor stale-generation continuations", () => {
 
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => ipc,
+      getPlaybackStream: () => FAKE_STREAM,
       getInitialOptions: () => ({ displayTitle: "Other", primarySubtitle: null }),
       getLoadStartAt: () => null,
       getTitleAppliedViaArgs: () => false,
@@ -363,6 +375,7 @@ describe("PersistentReadyWorkExecutor stale-generation continuations", () => {
     const events: unknown[] = [];
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => ipc,
+      getPlaybackStream: () => FAKE_STREAM,
       getInitialOptions: () => ({ displayTitle: "Episode 1", primarySubtitle: null }),
       getLoadStartAt: () => null,
       getTitleAppliedViaArgs: () => true,

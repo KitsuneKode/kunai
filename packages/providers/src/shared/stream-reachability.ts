@@ -1,4 +1,10 @@
 import {
+  blockedLiteralTargetReason,
+  isPrivateLiteralAddress,
+  resolvedAddressBlockReason,
+} from "@kunai/types";
+
+import {
   HLS_SEGMENT_PROBE_MIN_BYTES,
   isHlsMasterPlaylist,
   isHlsPlaylistUrl,
@@ -6,6 +12,11 @@ import {
   parseFirstHlsVariantPath,
   resolveHlsSegmentUrl,
 } from "./hls-manifest";
+
+// Re-exported so existing `@kunai/providers` import sites keep working — the
+// predicates live in @kunai/types so non-provider layers (mpv launch gating,
+// poster fetch) can use the same network-range blocklist.
+export { blockedLiteralTargetReason, isPrivateLiteralAddress, resolvedAddressBlockReason };
 
 export type StreamReachabilityFetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -39,141 +50,10 @@ const SEGMENT_RANGE_HEADER = `bytes=0-${HLS_SEGMENT_PROBE_MIN_BYTES - 1}`;
 const MAX_PROBE_REDIRECT_HOPS = 3;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-/**
- * Provider-supplied URLs are untrusted input: a page or playlist can name a
- * loopback, link-local, or LAN target and the probe would otherwise fetch it —
- * a server-side request forgery by a site's own markup. Nothing a provider
- * offers should ever be private, so the gate is simple: http(s) only, public
- * literal hosts only, and (on the real fetch path) DNS answers checked too.
- *
- * `blockedLiteralTargetReason` is the synchronous half — scheme, host shape,
- * and literal ranges, no DNS — so an injected fetch sees no extra microtask.
- * `resolvedAddressBlockReason` adds DNS answer validation for the real path.
- */
-function blockedLiteralTargetReason(url: string): string | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return "unparseable URL";
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return `unsupported scheme ${parsed.protocol.replace(":", "") || "(none)"}`;
-  }
-  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (!host) return "empty host";
-  if (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal") ||
-    host.endsWith(".home.arpa")
-  ) {
-    return `local name ${host}`;
-  }
-  const literal = isPrivateLiteralAddress(host);
-  if (literal) return literal;
-  // A single-label name is an intranet name; public DNS names always carry a dot.
-  if (!host.includes(".") && !host.includes(":")) {
-    return `single-label host ${host}`;
-  }
-  return null;
-}
-
-async function resolvedAddressBlockReason(url: string): Promise<string | null> {
-  const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  const resolved = await resolveHostAddresses(host);
-  for (const address of resolved) {
-    const reason = isPrivateLiteralAddress(address);
-    if (reason) return `${reason} (DNS answer for ${host})`;
-  }
-  return null;
-}
-
-/** Dotted-quad parse; WHATWG URL canonicalises exotic forms before we see them. */
-function parseIpv4(host: string): [number, number, number, number] | null {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (!m || !m[1] || !m[2] || !m[3] || !m[4]) return null;
-  const parts: [number, number, number, number] = [
-    Number(m[1]),
-    Number(m[2]),
-    Number(m[3]),
-    Number(m[4]),
-  ];
-  return parts.every((p) => p <= 255) ? parts : null;
-}
-
-function isPrivateIpv4(parts: readonly [number, number, number, number]): boolean {
-  const a = parts[0];
-  const b = parts[1];
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) || // CGNAT
-    (a === 169 && b === 254) || // link-local
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 0) ||
-    (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) || // benchmarking
-    (a === 198 && b === 51) ||
-    (a === 203 && b === 0) ||
-    a >= 224 // multicast + reserved + broadcast
-  );
-}
-
-/** IPv6-mapped IPv4 (`::ffff:7f00:1`) and NAT64 (`64:ff9b::a9fe:1`) unwrap to v4 checks. */
-function embeddedIpv4(host: string): [number, number, number, number] | null {
-  const tail = host.match(/(?:^|:)(\d{1,3}(?:\.\d{1,3}){3})$/)?.[1];
-  if (tail) return parseIpv4(tail);
-  const hexTail = host.match(/(?:^|:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/) ?? null;
-  if (!hexTail?.[1] || !hexTail[2]) return null;
-  const hi = parseInt(hexTail[1], 16);
-  const lo = parseInt(hexTail[2], 16);
-  return [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff];
-}
-
-function isPrivateLiteralAddress(host: string): string | null {
-  const v4 = parseIpv4(host);
-  if (v4) {
-    return isPrivateIpv4(v4) ? `private address ${host}` : null;
-  }
-  if (!host.includes(":")) return null;
-  if (host === "::" || host === "::1") return `loopback address ${host}`;
-  const embedded = embeddedIpv4(host);
-  if (
-    (host.startsWith("::ffff:") || host.startsWith("64:ff9b::")) &&
-    embedded &&
-    isPrivateIpv4(embedded)
-  ) {
-    return `private address ${host}`;
-  }
-  const first = parseInt(host.split(":", 1)[0] || "0", 16);
-  if (
-    (first & 0xffc0) === 0xfe80 || // fe80::/10 link-local
-    (first & 0xfe00) === 0xfc00 || // fc00::/7 ULA
-    (first & 0xffc0) === 0xfec0 || // fec0::/10 site-local
-    (first & 0xff00) === 0xff00 ||
-    // ff00::/8 multicast
-    host.startsWith("2001:db8") ||
-    host.startsWith("2001:0db8")
-  ) {
-    return `private address ${host}`;
-  }
-  return null;
-}
-
-async function resolveHostAddresses(host: string): Promise<string[]> {
-  if (parseIpv4(host) || host.includes(":")) return [];
-  try {
-    const { lookup } = await import("node:dns/promises");
-    const answers = await lookup(host, { all: true });
-    return answers.map((a) => a.address);
-  } catch {
-    // An unresolvable name fails in the fetch anyway — don't pre-empt its error.
-    return [];
-  }
-}
+// Captured at load so `resolveNames` can tell "the platform fetch" apart from
+// a patched global or an injected impl — DNS revalidation is only meaningful
+// when the fetch really owns the connection.
+const PLATFORM_FETCH = fetch;
 
 export type ProbeFetchOutcome =
   | { readonly kind: "response"; readonly response: Response }
@@ -192,20 +72,30 @@ async function fetchProbeTarget(options: {
   readonly remaining: () => number;
   readonly parentSignal?: AbortSignal;
   readonly resolveNames: boolean;
+  readonly extraSensitiveHeaders?: readonly string[];
+  /**
+   * Skip literal/DNS checks on hop 0 only. For callers whose first URL is
+   * code-fixed or user-configured (a self-hosted Invidious instance), while
+   * provider-controlled redirect targets stay fully guarded.
+   */
+  readonly allowInitialPrivateTarget?: boolean;
 }): Promise<ProbeFetchOutcome> {
   let target = options.url;
   let init = options.init;
   for (let hop = 0; ; hop++) {
-    const literalBlocked = blockedLiteralTargetReason(target);
-    if (literalBlocked) {
-      return { kind: "blocked", reason: `${target} -> ${literalBlocked}` };
-    }
-    // DNS once the literals pass — skipped when the caller already aborted so
-    // a cancelled probe does not sit on a resolver round-trip.
-    if (options.resolveNames && !options.parentSignal?.aborted) {
-      const resolvedBlocked = await resolvedAddressBlockReason(target);
-      if (resolvedBlocked) {
-        return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
+    const exemptInitialHop = hop === 0 && options.allowInitialPrivateTarget === true;
+    if (!exemptInitialHop) {
+      const literalBlocked = blockedLiteralTargetReason(target);
+      if (literalBlocked) {
+        return { kind: "blocked", reason: `${target} -> ${literalBlocked}` };
+      }
+      // DNS once the literals pass — skipped when the caller already aborted so
+      // a cancelled probe does not sit on a resolver round-trip.
+      if (options.resolveNames && !options.parentSignal?.aborted) {
+        const resolvedBlocked = await resolvedAddressBlockReason(target);
+        if (resolvedBlocked) {
+          return { kind: "blocked", reason: `${target} -> ${resolvedBlocked}` };
+        }
       }
     }
     if (options.remaining() <= 0) {
@@ -222,10 +112,19 @@ async function fetchProbeTarget(options: {
       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {
         try {
           const next = new URL(location, target);
+          const current = new URL(target);
+          // An https hop downgrading to http would expose headers already in
+          // flight to passive observers — refuse before the blocklist pass.
+          if (current.protocol === "https:" && next.protocol === "http:") {
+            return { kind: "blocked", reason: `${target} -> https downgrade` };
+          }
           // Match undici's own redirect hygiene: credentials do not cross
           // origins, even when every hop individually validates as public.
-          if (next.origin !== new URL(target).origin && init.headers) {
-            init = { ...init, headers: stripCredentialHeaders(init.headers) };
+          if (next.origin !== current.origin && init.headers) {
+            init = {
+              ...init,
+              headers: stripCredentialHeaders(init.headers, options.extraSensitiveHeaders),
+            };
           }
           target = next.toString();
         } catch {
@@ -241,10 +140,14 @@ async function fetchProbeTarget(options: {
 
 const CREDENTIAL_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
 
-function stripCredentialHeaders(headers: RequestInit["headers"]): RequestInit["headers"] {
+function stripCredentialHeaders(
+  headers: RequestInit["headers"],
+  extraSensitiveHeaders?: readonly string[],
+): RequestInit["headers"] {
   // `new Headers()` already accepts every legal headers init shape.
   const clone = new Headers(headers);
   for (const name of CREDENTIAL_HEADERS) clone.delete(name);
+  for (const name of extraSensitiveHeaders ?? []) clone.delete(name);
   return clone;
 }
 
@@ -260,6 +163,8 @@ export function fetchGuardedStreamTarget(options: {
   readonly url: string;
   readonly init: RequestInit;
   readonly signal?: AbortSignal;
+  /** Extra headers dropped when a redirect crosses origins (provider secrets). */
+  readonly extraSensitiveHeaders?: readonly string[];
 }): Promise<ProbeFetchOutcome> {
   return fetchProbeTarget({
     fetchImpl: options.fetchImpl,
@@ -267,8 +172,92 @@ export function fetchGuardedStreamTarget(options: {
     init: { ...options.init, signal: options.signal },
     remaining: () => 1, // the caller's signal owns the deadline
     parentSignal: options.signal,
-    resolveNames: options.fetchImpl === fetch,
+    resolveNames: options.fetchImpl === PLATFORM_FETCH,
+    extraSensitiveHeaders: options.extraSensitiveHeaders,
   });
+}
+
+/**
+ * Provider-secret headers that must never survive a cross-origin redirect on
+ * the API-fetch path. The stream probe keeps the narrower credential set on
+ * purpose — mpv replays the candidate's real headers, so the probe mirrors
+ * what the player will actually send.
+ */
+export const PROVIDER_API_SENSITIVE_HEADERS: readonly string[] = [
+  "x-aa-boot",
+  "x-build-id",
+  "x-session-token",
+  "referer",
+  "origin",
+];
+
+/**
+ * A `fetch`-shaped wrapper that runs every request through the literal/DNS
+ * private-target guard and follows redirects hop-by-hop with per-hop
+ * revalidation, stripping credentials (plus `extraSensitiveHeaders`) on
+ * cross-origin hops. Blocked or timed-out requests reject, matching fetch's
+ * own failure contract, so callers need no new handling.
+ */
+export function createGuardedFetch(
+  options: {
+    readonly fetchImpl?: StreamReachabilityFetch;
+    readonly extraSensitiveHeaders?: readonly string[];
+    /**
+     * The first request URL is code-fixed or user-configured (e.g. a
+     * self-hosted Invidious instance), so literal private targets pass on
+     * hop 0. Redirect hops — the attacker-controlled part — stay guarded.
+     */
+    readonly allowInitialPrivateTarget?: boolean;
+  } = {},
+): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input, init) => {
+    // Resolved per call so a test patching `globalThis.fetch` still intercepts;
+    // the identity check against the load-time capture decides whether the
+    // impl in use is really the platform fetch (and thus merits DNS checks).
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const request = await normalizeGuardedRequest(input, init);
+    const outcome = await fetchProbeTarget({
+      fetchImpl,
+      url: request.url,
+      init: request.init,
+      remaining: () => 1,
+      parentSignal: request.init.signal ?? undefined,
+      resolveNames: fetchImpl === PLATFORM_FETCH,
+      extraSensitiveHeaders: options.extraSensitiveHeaders,
+      allowInitialPrivateTarget: options.allowInitialPrivateTarget,
+    });
+    if (outcome.kind === "response") return outcome.response;
+    throw new Error(
+      outcome.kind === "blocked"
+        ? `Blocked unsafe fetch target: ${outcome.reason}`
+        : "Guarded fetch timed out",
+    );
+  };
+}
+
+/**
+ * Collapse `string | URL | Request` + `init` into the `(url, init)` shape the
+ * hop loop follows. A `Request`'s own method/headers/signal are honored even
+ * when `init` is absent, and its body is materialized once so the bytes stay
+ * re-sendable if a redirect replays the request at a validated next hop.
+ */
+async function normalizeGuardedRequest(
+  input: string | URL | Request,
+  init: RequestInit | undefined,
+): Promise<{ url: string; init: RequestInit }> {
+  if (!(input instanceof Request)) {
+    return { url: typeof input === "string" ? input : input.toString(), init: init ?? {} };
+  }
+  const headers = new Headers(input.headers);
+  new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
+  const method = init?.method ?? input.method;
+  const hasBody = method !== "GET" && method !== "HEAD";
+  const body: RequestInit["body"] =
+    init?.body ?? (hasBody ? await input.clone().arrayBuffer() : undefined);
+  return {
+    url: input.url,
+    init: { ...init, method, headers, body },
+  };
 }
 
 /** Quick manifest/segment probe used before accepting a provider candidate or handing off to mpv. */
