@@ -97,3 +97,18 @@ test("cleanupOldBinary removes stale .old files", async () => {
   expect(existsSync(`${bin}.old`)).toBe(false);
   expect(existsSync(bin)).toBe(true);
 });
+
+test("cleanupOldBinary leaves foreign .old files in the directory alone", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kunai-replace-"));
+  made.push(dir);
+  const bin = join(dir, "kunai.exe");
+  const foreign = join(dir, "logs.txt.old");
+  await Bun.write(bin, "CUR");
+  await Bun.write(`${bin}.old`, "STALE");
+  await Bun.write(foreign, "KEEP");
+
+  await cleanupOldBinary(bin);
+
+  expect(existsSync(`${bin}.old`)).toBe(false);
+  expect(await Bun.file(foreign).text()).toBe("KEEP");
+});

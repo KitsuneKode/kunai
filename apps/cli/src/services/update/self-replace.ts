@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { chmod, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /** Find the checksum for `assetName` in a `SHA256SUMS` file body. */
@@ -26,13 +25,10 @@ async function sha256(bytes: Uint8Array): Promise<string> {
  * launch. Safe to call on every platform/startup.
  */
 export async function cleanupOldBinary(binPath: string): Promise<void> {
-  const dir = dirname(binPath);
-  if (!existsSync(dir)) return;
-  for (const entry of await readdir(dir).catch(() => [] as string[])) {
-    if (entry.endsWith(".old")) {
-      await rm(join(dir, entry), { force: true }).catch(() => {});
-    }
-  }
+  // Only the exact aside self-replace writes. Sweeping every `*.old` in the
+  // directory would delete foreign files that share the suffix (log rotations,
+  // user backups) whenever the binary dir is also a working directory.
+  await rm(`${binPath}.old`, { force: true }).catch(() => {});
 }
 
 export type SelfReplaceInput = {
