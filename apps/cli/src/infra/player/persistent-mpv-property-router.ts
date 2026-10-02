@@ -1,4 +1,5 @@
 import type { PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
+import { dbg } from "@/logger";
 
 import type { MpvIpcSession } from "./mpv-ipc";
 import { applyObservedPropertySample, type PlayerStatsState } from "./mpv-stats";
@@ -49,6 +50,15 @@ export type PersistentMpvPropertyRouterDeps = {
   handleSegmentSkipProgress(options: PersistentMpvPropertyOptions): Promise<void>;
   fireNearEofIfNeeded(positionSeconds: number): void;
   observeWatchdog(sample: LatestIpcSample): void;
+  /**
+   * Deliver a playback event to the listener carried on `target` — contained:
+   * this code runs inside the mpv socket dispatch, where a consumer throw must
+   * not abort the rest of the message's handling.
+   */
+  emitPlaybackEvent(
+    target: { onPlaybackEvent?: (event: PlayerPlaybackEvent) => void },
+    event: PlayerPlaybackEvent,
+  ): void;
 };
 
 export class PersistentMpvPropertyRouter {
@@ -103,10 +113,12 @@ export class PersistentMpvPropertyRouter {
       );
       if (value > 0 && !active.playerStartedNotified) {
         active.playerStartedNotified = true;
-        active.onPlaybackEvent?.({ type: "playback-started" });
+        this.deps.emitPlaybackEvent(active, { type: "playback-started" });
       }
       this.deps.maybeEmitPlaybackProgress(active, observedAt);
-      void this.deps.handleSegmentSkipProgress(this.deps.getCurrentOptions());
+      void this.deps
+        .handleSegmentSkipProgress(this.deps.getCurrentOptions())
+        .catch((error) => this.logUnhandled("segment-skip-progress-failed", error));
       this.deps.fireNearEofIfNeeded(value);
     }
 
@@ -117,12 +129,18 @@ export class PersistentMpvPropertyRouter {
         (name === "playback-time" && typeof value === "number" && value >= 0))
     ) {
       active.playerReadyNotified = true;
-      active.onPlaybackEvent?.({ type: "player-ready" });
-      active.onPlayerReady?.();
+      this.deps.emitPlaybackEvent(active, { type: "player-ready" });
+      try {
+        active.onPlayerReady?.();
+      } catch (error) {
+        this.logUnhandled("player-ready-callback-threw", error);
+      }
     }
 
     if (name === "pause" && typeof value === "boolean") {
-      active.onPlaybackEvent?.({ type: value ? "playback-paused" : "playback-resumed" });
+      this.deps.emitPlaybackEvent(active, {
+        type: value ? "playback-paused" : "playback-resumed",
+      });
     }
   }
 
@@ -145,11 +163,17 @@ export class PersistentMpvPropertyRouter {
     if (action) {
       this.deps.notifyMpvActionRequest(action);
     } else if (req === "resume-seek") {
-      void this.deps.handleResumeSeekFromMpv();
+      void this.deps
+        .handleResumeSeekFromMpv()
+        .catch((error) => this.logUnhandled("resume-seek-failed", error));
     } else if (req === "copy-share") {
-      void this.deps.handleCopyShareFromMpv();
+      void this.deps
+        .handleCopyShareFromMpv()
+        .catch((error) => this.logUnhandled("copy-share-failed", error));
     } else if (req === "skip" || req === "auto-skip") {
-      void this.deps.onSkipRequestFromMpv(req === "auto-skip");
+      void this.deps
+        .onSkipRequestFromMpv(req === "auto-skip")
+        .catch((error) => this.logUnhandled("skip-request-failed", error));
     } else {
       // Unrecognised request: leave the property alone rather than clearing it,
       // so an unhandled verb stays visible instead of vanishing silently.
@@ -173,7 +197,7 @@ export class PersistentMpvPropertyRouter {
     if (trackMatch) {
       const id = Number.parseInt(trackMatch[2] ?? "", 10);
       if (id >= 0) {
-        this.deps.getCurrentOptions().onPlaybackEvent?.({
+        this.deps.emitPlaybackEvent(this.deps.getCurrentOptions(), {
           type: "track-changed",
           // SAFETY: the trackMatch regex alternation only captures "audio" or "sub".
           trackType: trackMatch[1] as "audio" | "sub",
@@ -183,6 +207,13 @@ export class PersistentMpvPropertyRouter {
     }
     void this.deps
       .getIpcSession()
-      ?.send(["set_property", "user-data/kunai-track-changed", ""], 500);
+      ?.send(["set_property", "user-data/kunai-track-changed", ""], 500)
+      .catch((error) => this.logUnhandled("track-changed-ack-failed", error));
+  }
+
+  private logUnhandled(what: string, cause: unknown): void {
+    dbg("mpv-ipc", what, {
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
   }
 }

@@ -73,6 +73,7 @@ describe("PersistentReadyWorkExecutor", () => {
       subtitleManager: new PersistentSubtitleManager(),
       isLiveStream: () => true,
       isGenerationCurrent: () => true,
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     await executor.execute(
@@ -120,6 +121,7 @@ describe("PersistentReadyWorkExecutor", () => {
       subtitleManager: new PersistentSubtitleManager(),
       isLiveStream: () => false,
       isGenerationCurrent: () => true,
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     await executor.execute(
@@ -163,6 +165,7 @@ describe("PersistentReadyWorkExecutor", () => {
       subtitleManager: new PersistentSubtitleManager(),
       isLiveStream: () => false,
       isGenerationCurrent: () => true,
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     await executor.execute(
@@ -204,6 +207,7 @@ describe("PersistentReadyWorkExecutor", () => {
       subtitleManager: new PersistentSubtitleManager(),
       isLiveStream: () => false,
       isGenerationCurrent: () => true,
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     await executor.execute(
@@ -248,6 +252,7 @@ describe("PersistentReadyWorkExecutor", () => {
       subtitleManager: new PersistentSubtitleManager(),
       isLiveStream: () => false,
       isGenerationCurrent: () => true,
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     await executor.execute(
@@ -330,6 +335,7 @@ describe("PersistentReadyWorkExecutor stale-generation continuations", () => {
       subtitleManager: new PersistentSubtitleManager(),
       isLiveStream: () => false,
       isGenerationCurrent: () => current,
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     await executor.execute(
@@ -389,6 +395,7 @@ describe("PersistentReadyWorkExecutor stale-generation continuations", () => {
       subtitleManager: new PersistentSubtitleManager(),
       isLiveStream: () => false,
       isGenerationCurrent: () => false,
+      emitPlaybackEvent: (target, event) => target.onPlaybackEvent?.(event),
     });
 
     await executor.execute(

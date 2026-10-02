@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Container } from "@/container";
 import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
 
-import { storageRootEnv } from "../../helpers/storage-env";
+import { applyStorageRootEnv, storageRootEnv } from "../../helpers/storage-env";
 
 export type IsolatedCliProfile = {
   readonly rootDir: string;
@@ -43,12 +43,6 @@ export function createIsolatedCliProfile(label: string): IsolatedCliProfile {
   };
 }
 
-export function applyIsolatedCliProfile(profile: IsolatedCliProfile): void {
-  // Must run before the container is created: storage paths resolve from env
-  // at container construction.
-  Object.assign(process.env, profile.env);
-}
-
 export function disposeIsolatedCliProfile(profile: IsolatedCliProfile): void {
   // Windows refuses to unlink a file that still has an open handle, so anything
   // that opened a database under this profile must close it before calling here
@@ -61,27 +55,26 @@ export function disposeIsolatedCliProfile(profile: IsolatedCliProfile): void {
 export async function createIsolatedContainer(label: string): Promise<{
   readonly container: Container;
   readonly profile: IsolatedCliProfile;
-  readonly dispose: () => void;
+  readonly dispose: () => Promise<void>;
 }> {
   const profile = createIsolatedCliProfile(label);
-  applyIsolatedCliProfile(profile);
-  const { createContainer } = await import("@/container");
+  // applyStorageRootEnv returns the undo: the env swap must be reversed on
+  // dispose or the next container in this worker resolves paths inside the
+  // deleted profile — the closed-DB flake's other half.
+  const restoreEnv = applyStorageRootEnv(profile.rootDir);
+  const { createContainer, disposeContainer } = await import("@/container");
   const container = await createContainer();
   return {
     container,
     profile,
-    dispose: () => {
-      // Close before unlinking: the container holds open SQLite handles inside
-      // the profile directory, and on Windows those make the whole tree
-      // undeletable (EBUSY).
-      for (const db of [container.cacheDb, container.dataDb]) {
-        try {
-          db.close();
-        } catch {
-          // Already closed, or never opened — disposal must not mask the real
-          // assertion failure that may have brought us here.
-        }
-      }
+    dispose: async () => {
+      // Route through the real dispose path: it drains the scheduler, sync,
+      // and download workers, unbinds the network observer, and only then
+      // closes the databases. Closing the handles directly would leave a
+      // mid-flight queue pass (or the bound observer) writing into a dead
+      // store — the flake this helper exists to prevent.
+      await disposeContainer(container);
+      restoreEnv();
       disposeIsolatedCliProfile(profile);
     },
   };

@@ -183,7 +183,11 @@ export class PersistentMpvSession {
     getIpcSession: () => this.ipcSession,
     getCurrentOptions: () => this.currentCycleOptions(),
     subtitleManager: this.subtitleManager,
-    notifyMpvActionRequest: (action) => this.currentCycleOptions().onMpvActionRequest?.(action),
+    notifyMpvActionRequest: (action) => {
+      this.invokeContained("mpv-action-request-consumer-threw", () => {
+        this.currentCycleOptions().onMpvActionRequest?.(action);
+      });
+    },
     finishResumeChoiceWait: (choice) => {
       if (this.resumeChoiceWait) {
         this.finishResumeChoiceWait(choice);
@@ -205,6 +209,7 @@ export class PersistentMpvSession {
     handleSegmentSkipProgress: async (options) => this.handleSegmentSkipProgress(options),
     fireNearEofIfNeeded: (positionSeconds) => this.fireNearEofIfNeeded(positionSeconds),
     observeWatchdog: (sample) => this.watchdog?.observe(sample),
+    emitPlaybackEvent: (target, event) => this.emitPlaybackEventFor(target, event),
   });
   private alive = false;
   private currentControl: ActivePlayerControl;
@@ -416,7 +421,7 @@ export class PersistentMpvSession {
     this.playbackStream = stream;
     const cycle = this.beginCycle(options, { acceptPlaybackProperties: false });
     this.resetCycleState();
-    options.onPlaybackEvent?.({ type: "opening-stream" });
+    this.emitPlaybackEventFor(options, { type: "opening-stream" });
 
     if (!this.hasLoadedFile) {
       this.hasLoadedFile = true;
@@ -429,7 +434,7 @@ export class PersistentMpvSession {
     const fileLoadId = this.installPendingFileLoad(generation);
 
     await this.subtitleManager.removeExternalSubtitles(this.ipcSession);
-    options.onPlaybackEvent?.({ type: "resolving-playback" });
+    this.emitPlaybackEventFor(options, { type: "resolving-playback" });
     this.queueReadyWork(options, { armFallback: false });
 
     this.loadStartAt = shouldApplyStartAtSeek(options.startAt) ? (options.startAt ?? 0) : 0;
@@ -481,7 +486,7 @@ export class PersistentMpvSession {
     const preflight = await preflightPromise;
     if (preflight.status === "unreachable" && preflight.definitive && !loadResult?.ok) {
       void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 500);
-      options.onPlaybackEvent?.({
+      this.emitPlaybackEventFor(options, {
         type: "ipc-command-failed",
         command: "loadfile",
         error: `stream unreachable: ${preflight.reason}`,
@@ -510,7 +515,7 @@ export class PersistentMpvSession {
       // Compare id and generation so an older rejection cannot erase a newer owner.
       this.clearPendingFileLoadIf(fileLoadId, generation);
       void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 500);
-      options.onPlaybackEvent?.({
+      this.emitPlaybackEventFor(options, {
         type: "ipc-command-failed",
         command: "loadfile",
         error: loadResult?.error ?? "ipc unavailable",
@@ -535,15 +540,21 @@ export class PersistentMpvSession {
   updateTiming(timing: PlaybackTimingMetadata | null): void {
     if (!this.activeCycle) return;
     this.currentOptions = { ...this.currentOptions, timing };
-    void this.handleSegmentSkipProgress(this.currentOptions);
-    void this.syncMpvChaptersFile(timing);
+    this.observeAsync(
+      "segment-skip-progress-failed",
+      this.handleSegmentSkipProgress(this.currentOptions),
+    );
+    this.observeAsync("chapters-sync-failed", this.syncMpvChaptersFile(timing));
   }
 
   updateAutoSkipEnabled(enabled: boolean): void {
     if (!this.activeCycle) return;
     this.currentOptions = { ...this.currentOptions, autoSkipEnabled: enabled };
     this.clearSkipPromptState();
-    void this.handleSegmentSkipProgress(this.currentOptions);
+    this.observeAsync(
+      "segment-skip-progress-failed",
+      this.handleSegmentSkipProgress(this.currentOptions),
+    );
   }
 
   waitForCurrentPlayback(): Promise<PlaybackResult> {
@@ -553,8 +564,49 @@ export class PersistentMpvSession {
     return this.activeCycle.promise;
   }
 
+  /**
+   * A consumer-supplied callback throwing inside a socket handler, watchdog
+   * timer, or async continuation must not become fatal. Same contract as
+   * `DownloadService.emit`: deliver to the listener, contain the failure, log.
+   */
+  private invokeContained(what: string, fn: () => void, context?: { event?: string }): void {
+    try {
+      fn();
+    } catch (error) {
+      dbg("mpv", what, {
+        ...context,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Fire-and-forget async work (skip handling, reconnect completion, process
+   * termination) must never surface as an unhandled rejection — log it instead.
+   */
+  private observeAsync(what: string, promise: Promise<unknown>): void {
+    void promise.catch((error) => {
+      dbg("mpv", what, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  private emitPlaybackEventFor(
+    options: { onPlaybackEvent?: (event: PlayerPlaybackEvent) => void },
+    event: PlayerPlaybackEvent,
+  ): void {
+    this.invokeContained(
+      "playback-event-consumer-threw",
+      () => {
+        options.onPlaybackEvent?.(event);
+      },
+      { event: event.type },
+    );
+  }
+
   async close(): Promise<void> {
-    this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closing" });
+    this.emitPlaybackEventFor(this.currentCycleOptions(), { type: "player-closing" });
     this.clearReadyWorkFallback();
     this.pendingReadyWork = null;
     this.alive = false;
@@ -617,7 +669,7 @@ export class PersistentMpvSession {
     this.terminationPromise = null;
     this.terminated = false;
     this.beginCycle(this.initialOptions);
-    this.initialOptions.onPlaybackEvent?.({ type: "launching-player" });
+    this.emitPlaybackEventFor(this.initialOptions, { type: "launching-player" });
 
     const includeStartArg = shouldApplyStartAtSeek(this.initialOptions.startAt);
     // Persistent replacements always pass a file-local loadfile `start` option
@@ -672,24 +724,28 @@ export class PersistentMpvSession {
       if (active && (event.type === "stream-stalled" || event.type === "ipc-stalled")) {
         noteStreamStall(active.stats, Date.now());
       }
-      this.currentCycleOptions().onPlaybackEvent?.(event);
+      this.emitPlaybackEventFor(this.currentCycleOptions(), event);
       if (
         this.mpvInProcessStreamReconnectEnabled &&
         this.mpvInProcessStreamReconnectMaxAttempts > 0 &&
         event.type === "stream-stalled" &&
         event.stallKind === "network-read-dead"
       ) {
-        void this.handleNetworkReadDeadReconnect();
+        // Fire-and-forget is fine; an unhandled rejection is not.
+        void this.handleNetworkReadDeadReconnect().catch((error) => {
+          dbg("mpv-ipc", "in-process-reconnect-failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
       }
     };
-    this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
 
     const mpvInvocation = discoverMpvInvocation({
       which: this.runtime.which,
       ...(this.runtime.exists && { exists: this.runtime.exists }),
     });
     if (!mpvInvocation) {
-      this.currentCycleOptions().onPlaybackEvent?.({
+      this.emitPlaybackEventFor(this.currentCycleOptions(), {
         type: "ipc-command-failed",
         command: "spawn",
         error: "mpv is not installed or not found on PATH",
@@ -707,28 +763,38 @@ export class PersistentMpvSession {
     this.mpv = proc;
     this.mpvUnregister = registerMpvProcess(proc);
     this.alive = true;
+    // The watchdog's setInterval must only start once the process exists —
+    // a spawn throw before this point leaves it running forever.
+    this.watchdog = createPlaybackWatchdog(emitPlaybackEvent);
     // The first file is loaded from argv and never passes through IPC loadfile,
     // so it needs its owner seeded here or its file-loaded would be unowned.
     this.cycleGeneration = { process: this.cycleGeneration.process, cycle: 1 };
     this.installPendingFileLoad(this.cycleGeneration);
-    this.initialOptions.onPlaybackEvent?.({ type: "mpv-process-started" });
+    this.emitPlaybackEventFor(this.initialOptions, { type: "mpv-process-started" });
     this.hasLoadedFile = true;
     this.resetCycleState();
-    this.onControlReady(this.currentControl);
-
-    proc.exited.then((code) => {
-      void this.handleProcessTermination({
-        code,
-        // A real crash signal (SIGSEGV/...) must reach recordPlayerExit so it
-        // classifies as an error, never as a completed watch.
-        signal: proc.signalCode ?? (proc.killed ? ("SIGTERM" as NodeJS.Signals) : null),
-        // proc.killed is the initiated-by-us bit: our teardown calls
-        // proc.kill(); an OOM-killer or external `kill -9` leaves it false,
-        // so an unowned SIGKILL classifies as a crash instead of a quit.
-        terminatedByUs: proc.killed === true,
-      });
-      return undefined;
+    this.invokeContained("control-ready-consumer-threw", () => {
+      this.onControlReady(this.currentControl);
     });
+
+    void proc.exited
+      .then((code) =>
+        this.handleProcessTermination({
+          code,
+          // A real crash signal (SIGSEGV/...) must reach recordPlayerExit so it
+          // classifies as an error, never as a completed watch.
+          signal: proc.signalCode ?? (proc.killed ? ("SIGTERM" as NodeJS.Signals) : null),
+          // proc.killed is the initiated-by-us bit: our teardown calls
+          // proc.kill(); an OOM-killer or external `kill -9` leaves it false,
+          // so an unowned SIGKILL classifies as a crash instead of a quit.
+          terminatedByUs: proc.killed === true,
+        }),
+      )
+      .catch((error) => {
+        dbg("mpv", "process-termination-handler-failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
 
     {
       const ipcBootstrapStarted = Date.now();
@@ -738,7 +804,7 @@ export class PersistentMpvSession {
       if (this.retired) return;
       const waitedMs = Date.now() - ipcBootstrapStarted;
       if (!ready) {
-        this.currentCycleOptions().onPlaybackEvent?.({
+        this.emitPlaybackEventFor(this.currentCycleOptions(), {
           type: "ipc-command-failed",
           command: "ipc-bootstrap",
           error: `IPC endpoint was not ready after ${waitedMs}ms at ${ipcServerCliArg(this.ipcEndpoint)}.${mpvIpcBootstrapDiagnosticsHintSuffix()}`,
@@ -755,7 +821,10 @@ export class PersistentMpvSession {
             this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
           },
           onEndFile: ({ reason, fileError, observedAt }) => {
-            void this.handlePlaybackEnded(reason, observedAt, fileError);
+            this.observeAsync(
+              "playback-ended-handler-failed",
+              this.handlePlaybackEnded(reason, observedAt, fileError),
+            );
           },
           onFileLoaded: () => {
             const pending = this.pendingFileLoad;
@@ -771,7 +840,10 @@ export class PersistentMpvSession {
             if (reconnect) {
               this.pendingInProcessReconnect = null;
               if (!this.isGenerationCurrent(reconnect.generation)) return;
-              void this.finishInProcessReconnectAfterLoad(reconnect);
+              this.observeAsync(
+                "in-process-reconnect-failed",
+                this.finishInProcessReconnectAfterLoad(reconnect),
+              );
               return;
             }
             this.drainPendingReadyWork();
@@ -779,13 +851,13 @@ export class PersistentMpvSession {
           onCommandResult: (result) => {
             if (result.ok) return;
             const command = String(result.command[0] ?? "unknown");
-            this.currentCycleOptions().onPlaybackEvent?.({
+            this.emitPlaybackEventFor(this.currentCycleOptions(), {
               type: "ipc-command-failed",
               command,
               error: result.error,
             });
             if (result.error === "timeout" && !isSubtitleIpcCommand(command)) {
-              this.currentCycleOptions().onPlaybackEvent?.({
+              this.emitPlaybackEventFor(this.currentCycleOptions(), {
                 type: "ipc-stalled",
                 command,
                 error: result.error,
@@ -796,7 +868,7 @@ export class PersistentMpvSession {
       } catch (error) {
         const totalMs = Date.now() - ipcBootstrapStarted;
         const message = error instanceof Error ? error.message : String(error);
-        this.currentCycleOptions().onPlaybackEvent?.({
+        this.emitPlaybackEventFor(this.currentCycleOptions(), {
           type: "ipc-command-failed",
           command: "ipc-bootstrap",
           error: `${message} (${totalMs}ms total)${mpvIpcBootstrapDiagnosticsHintSuffix()}`,
@@ -819,8 +891,8 @@ export class PersistentMpvSession {
         mode: "PersistentMpvSession",
       });
 
-      this.currentCycleOptions().onPlaybackEvent?.({ type: "ipc-connected" });
-      this.currentCycleOptions().onPlaybackEvent?.({ type: "opening-stream" });
+      this.emitPlaybackEventFor(this.currentCycleOptions(), { type: "ipc-connected" });
+      this.emitPlaybackEventFor(this.currentCycleOptions(), { type: "opening-stream" });
 
       // Observe user-data properties written by the kunai Lua script so that
       // key presses inside the mpv window are routed back to the app.
@@ -976,7 +1048,11 @@ export class PersistentMpvSession {
     if (!this.ipcSession) {
       this.pendingReadyWork = null;
       this.acceptPlaybackPropertiesForActiveCycle();
-      void this.runReadyWork(options, generation);
+      void this.runReadyWork(options, generation).catch((error) => {
+        dbg("mpv", "ready-work-failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
       return;
     }
     if (opts.armFallback !== false) {
@@ -1007,7 +1083,11 @@ export class PersistentMpvSession {
     this.pendingReadyWork = null;
     this.clearReadyWorkFallback();
     this.acceptPlaybackPropertiesForActiveCycle();
-    void this.runReadyWork(pending.options, pending.generation);
+    void this.runReadyWork(pending.options, pending.generation).catch((error) => {
+      dbg("mpv", "ready-work-failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   private acceptPlaybackPropertiesForActiveCycle(): void {
@@ -1050,6 +1130,7 @@ export class PersistentMpvSession {
       },
       subtitleManager: this.subtitleManager,
       isGenerationCurrent: (candidate) => this.isGenerationCurrent(candidate),
+      emitPlaybackEvent: (target, event) => this.emitPlaybackEventFor(target, event),
     });
 
     await executor.execute(options, this.activeCycle, generation);
@@ -1104,7 +1185,7 @@ export class PersistentMpvSession {
       this.playbackStream,
     );
     if (attached.attachedCount <= 0) return false;
-    this.currentCycleOptions().onPlaybackEvent?.({
+    this.emitPlaybackEventFor(this.currentCycleOptions(), {
       type: "late-subtitles-attached",
       trackCount: attached.attachedCount,
     });
@@ -1119,7 +1200,7 @@ export class PersistentMpvSession {
     );
 
     if (result.attachedCount > 0) {
-      this.currentCycleOptions().onPlaybackEvent?.({
+      this.emitPlaybackEventFor(this.currentCycleOptions(), {
         type: "late-subtitles-attached",
         trackCount: result.attachedCount,
       });
@@ -1148,7 +1229,7 @@ export class PersistentMpvSession {
     ) {
       return;
     }
-    cycle.onPlaybackEvent?.({
+    this.emitPlaybackEventFor(cycle, {
       type: "playback-progress",
       positionSeconds: sample.positionSeconds,
       durationSeconds: sample.durationSeconds,
@@ -1164,7 +1245,9 @@ export class PersistentMpvSession {
     );
     if (triggerSeconds === null || positionSeconds < triggerSeconds) return;
     this.nearEofFired = true;
-    this.currentCycleOptions().onNearEof?.();
+    this.invokeContained("near-eof-consumer-threw", () => {
+      this.currentCycleOptions().onNearEof?.();
+    });
   }
 
   private skipConfig(options: PlayerCycleOptions): PlaybackSkipConfig {
@@ -1254,7 +1337,11 @@ export class PersistentMpvSession {
     }
     this.skippedSegments.add(activeSkip.key);
     await this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"], 1_000);
-    options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic: true });
+    this.emitPlaybackEventFor(options, {
+      type: "segment-skipped",
+      kind: activeSkip.kind,
+      automatic: true,
+    });
     return true;
   }
 
@@ -1270,7 +1357,7 @@ export class PersistentMpvSession {
     const seekResult = await this.ipcSession.send(["seek", segment.endSeconds, "absolute"], 1_000);
     if (!seekResult.ok) return false;
     this.skippedSegments.add(segment.key);
-    options.onPlaybackEvent?.({ type: "segment-skipped", kind: segment.kind, automatic });
+    this.emitPlaybackEventFor(options, { type: "segment-skipped", kind: segment.kind, automatic });
     return true;
   }
 
@@ -1309,7 +1396,9 @@ export class PersistentMpvSession {
       providerId: ctx.providerId,
       ...(position > 0 && { startSeconds: position }),
     });
-    ctx.onCopied?.(result);
+    this.invokeContained("share-copied-consumer-threw", () => {
+      ctx.onCopied?.(result);
+    });
   }
 
   private async onSkipRequestFromMpv(automatic: boolean): Promise<void> {
@@ -1416,7 +1505,10 @@ export class PersistentMpvSession {
     if (autoExecute) {
       const expectedKey = segment.key;
       this.skipAutoTimer = setTimeout(() => {
-        void this.fireScheduledAutoSkip(options, expectedKey);
+        this.observeAsync(
+          "scheduled-auto-skip-failed",
+          this.fireScheduledAutoSkip(options, expectedKey),
+        );
       }, this.skipPromptDurationMs);
     }
   }
@@ -1446,7 +1538,7 @@ export class PersistentMpvSession {
       // process exit will run handleProcessTermination; allowing fallback now
       // would knowingly stack another mpv over a still-live process.
       this.alive = false;
-      this.currentCycleOptions().onPlaybackEvent?.({
+      this.emitPlaybackEventFor(this.currentCycleOptions(), {
         type: "ipc-command-failed",
         command: "terminate",
         error: "mpv did not exit after forced bootstrap teardown",
@@ -1517,8 +1609,10 @@ export class PersistentMpvSession {
         active.resolve(result);
       }
 
-      this.currentCycleOptions().onPlaybackEvent?.({ type: "player-closed" });
-      this.onControlReady(null);
+      this.emitPlaybackEventFor(this.currentCycleOptions(), { type: "player-closed" });
+      this.invokeContained("control-ready-consumer-threw", () => {
+        this.onControlReady(null);
+      });
       this.terminated = true;
     })();
 
@@ -1570,7 +1664,9 @@ export class PersistentMpvSession {
     this.loadedFileGeneration = null;
     if (!this.nearEofFired) {
       this.nearEofFired = true;
-      this.currentCycleOptions().onNearEof?.();
+      this.invokeContained("near-eof-consumer-threw", () => {
+        this.currentCycleOptions().onNearEof?.();
+      });
     }
 
     applyEndFileEvent(active.stats, reason, observedAt, { fileError });
@@ -1679,7 +1775,7 @@ export class PersistentMpvSession {
       : computeInProcessReconnectSeek(positionSeconds, durationSeconds);
 
     try {
-      opts.onPlaybackEvent?.({
+      this.emitPlaybackEventFor(opts, {
         type: "mpv-in-process-reconnect",
         phase: "started",
         attempt: this.reconnectTryCount,
@@ -1742,7 +1838,7 @@ export class PersistentMpvSession {
           this.reconnectMaxBackoffMs,
           this.reconnectBaseBackoffMs * 2 ** (this.reconnectTryCount - 1),
         );
-      opts.onPlaybackEvent?.({
+      this.emitPlaybackEventFor(opts, {
         type: "mpv-in-process-reconnect",
         phase: "failed",
         attempt: this.reconnectTryCount,
@@ -1779,15 +1875,15 @@ export class PersistentMpvSession {
         opts.primarySubtitle,
         opts.subtitleTracks,
         (trackCount) => {
-          opts.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
-          opts.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
+          this.emitPlaybackEventFor(opts, { type: "subtitle-inventory-ready", trackCount });
+          this.emitPlaybackEventFor(opts, { type: "subtitle-attached", trackCount });
         },
         opts.subtitleUrlKind,
         isCurrent,
       );
       if (!isCurrent()) return;
 
-      opts.onPlaybackEvent?.({
+      this.emitPlaybackEventFor(opts, {
         type: "mpv-in-process-reconnect",
         phase: "complete",
         attempt: this.reconnectTryCount,
@@ -1796,7 +1892,7 @@ export class PersistentMpvSession {
     } catch (error) {
       if (!isCurrent()) return;
       const message = error instanceof Error ? error.message : String(error);
-      opts.onPlaybackEvent?.({
+      this.emitPlaybackEventFor(opts, {
         type: "mpv-in-process-reconnect",
         phase: "failed",
         attempt: this.reconnectTryCount,

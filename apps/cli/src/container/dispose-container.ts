@@ -56,6 +56,19 @@ async function runDisposal(container: Container, handles: ContainerDisposeHandle
     await bestEffort(async () => {
       await container.backgroundWorkScheduler.drain();
     });
+    // Quiesce downloads before the stores close. The shutdown coordinator runs
+    // this earlier for app exit, but dispose is also reachable directly (tests,
+    // embedded lifecycles) — without it a mid-flight queue pass keeps claiming
+    // jobs against a closed database. Both calls are idempotent, so the second
+    // run is a no-op.
+    await bestEffort(() => container.downloadService.beginShutdown("container-dispose"));
+    await bestEffort(async () => {
+      await container.downloadService.pauseActiveJobsForShutdown("container-dispose", {
+        gracefulWaitMs: 250,
+        forceWaitMs: 250,
+        inactiveWaitMs: 250,
+      });
+    });
     // Sync settles before the databases close, in this order deliberately: the
     // drain holds outbox rows open against `dataDb`, so closing first would
     // fault an in-flight claim on a dead handle. Tokens are a separate store —

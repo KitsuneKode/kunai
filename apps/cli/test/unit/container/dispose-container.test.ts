@@ -25,6 +25,12 @@ function fakeContainer(calls: string[], options: { failDataClose?: boolean } = {
         calls.push("sync:tokens-idle");
       },
     },
+    downloadService: {
+      beginShutdown: (reason: string) => calls.push(`downloads:shutdown:${reason}`),
+      pauseActiveJobsForShutdown: async (reason: string) => {
+        calls.push(`downloads:pause:${reason}`);
+      },
+    },
   } as unknown as Container;
 
   registerContainerDisposeHandles(container, {
@@ -44,8 +50,10 @@ function fakeContainer(calls: string[], options: { failDataClose?: boolean } = {
 
 /**
  * The order is the contract, not an implementation detail. A drain still
- * holding an outbox claim when `dataDb` closes faults on a dead handle, and a
- * token write that has not settled loses a credential the user just granted.
+ * holding an outbox claim when `dataDb` closes faults on a dead handle, a
+ * token write that has not settled loses a credential the user just granted,
+ * and a download worker still mid-pass must be quiesced before the stores it
+ * writes into go away.
  */
 test("disposes in order: quiesce scheduler, drain, settle sync, flush, close DBs", async () => {
   const calls: string[] = [];
@@ -56,6 +64,8 @@ test("disposes in order: quiesce scheduler, drain, settle sync, flush, close DBs
   expect(calls).toEqual([
     "scheduler:shutdown:container-dispose",
     "scheduler:drain",
+    "downloads:shutdown:container-dispose",
+    "downloads:pause:container-dispose",
     "sync:shutdown",
     "sync:tokens-idle",
     "diagnostics:flush",

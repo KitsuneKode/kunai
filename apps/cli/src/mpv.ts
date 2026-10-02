@@ -133,7 +133,16 @@ export async function launchMpv(opts: {
       if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
         noteStreamStall(stats, Date.now());
       }
-      baseEmit(event);
+      try {
+        baseEmit(event);
+      } catch (error) {
+        // Consumer callbacks run inside socket handlers, watchdog timers, and
+        // promise continuations — a throw must not become a fatal there.
+        dbg("mpv", "playback-event-consumer-threw", {
+          event: event.type,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     };
 
     const mpvInvocation = discoverMpvInvocation();
@@ -190,291 +199,315 @@ async function launchMpvInner(
   const playbackProgressThrottle = createPlaybackProgressThrottleState();
   let mutableTiming = opts.timing ?? null;
   const watchdog = createPlaybackWatchdog(emitPlaybackEvent);
-  const skippedSegments = new Set<string>();
-  const buildSkipConfig = (enabled: boolean): PlaybackSkipConfig => ({
-    skipRecap: enabled && (opts.skipRecap ?? true),
-    skipIntro: enabled && (opts.skipIntro ?? true),
-    skipPreview: false,
-    skipCredits: enabled && (opts.skipCredits ?? true),
-    autoNextEnabled: false, // launchMpv is only used for one-shot/manual playback
-  });
-  let autoSkipEnabled = opts.autoSkipEnabled !== false;
-  let skipConfig = buildSkipConfig(autoSkipEnabled);
-  const notifyPlayerReady = () => {
-    if (playerReadyNotified) return;
-    playerReadyNotified = true;
-    emitPlaybackEvent({ type: "player-ready" });
-    opts.onPlayerReady?.();
-  };
-  const notifyPlaybackStarted = () => {
-    if (playbackStartedNotified) return;
-    playbackStartedNotified = true;
-    emitPlaybackEvent({ type: "playback-started" });
-  };
-  const maybeEmitPlaybackProgress = (observedAt: number) => {
-    const sample = stats.latestIpcSample;
-    if (
-      !shouldEmitPlaybackProgress(
-        playbackProgressThrottle,
-        sample
-          ? {
-              positionSeconds: sample.positionSeconds,
-              durationSeconds: sample.durationSeconds,
-            }
-          : null,
-        observedAt,
-      ) ||
-      !sample
-    ) {
-      return;
-    }
-    emitPlaybackEvent({
-      type: "playback-progress",
-      positionSeconds: sample.positionSeconds,
-      durationSeconds: sample.durationSeconds,
+  try {
+    const skippedSegments = new Set<string>();
+    const buildSkipConfig = (enabled: boolean): PlaybackSkipConfig => ({
+      skipRecap: enabled && (opts.skipRecap ?? true),
+      skipIntro: enabled && (opts.skipIntro ?? true),
+      skipPreview: false,
+      skipCredits: enabled && (opts.skipCredits ?? true),
+      autoNextEnabled: false, // launchMpv is only used for one-shot/manual playback
     });
-  };
-  const trySkipSegment = (automatic: boolean) => {
-    const activeSkip = findActivePlaybackSkip(mutableTiming, currentPositionSeconds, skipConfig);
-    if (!activeSkip || !ipcSession || skippedSegments.has(activeSkip.key)) {
-      return false;
-    }
-    void ipcSession
-      .send(["seek", activeSkip.endSeconds, "absolute"])
-      .then((result) => {
-        if (result.ok) {
-          skippedSegments.add(activeSkip.key);
-          emitPlaybackEvent({
-            type: "segment-skipped",
-            kind: activeSkip.kind,
-            automatic,
-          });
-        }
-        return undefined;
-      })
-      .catch(() => {});
-    return true;
-  };
-  const control: ActivePlayerControl = {
-    id: sessionId,
-    async stop() {
-      if (stopRequested) return;
-      stopRequested = true;
-      if (ipcSession) {
-        const result = await ipcSession.send(["quit"], 1_000);
-        if (result.ok) return;
+    let autoSkipEnabled = opts.autoSkipEnabled !== false;
+    let skipConfig = buildSkipConfig(autoSkipEnabled);
+    const notifyPlayerReady = () => {
+      if (playerReadyNotified) return;
+      playerReadyNotified = true;
+      emitPlaybackEvent({ type: "player-ready" });
+      try {
+        opts.onPlayerReady?.();
+      } catch (error) {
+        dbg("mpv", "player-ready-consumer-threw", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-      mpv.kill("SIGTERM");
-    },
-    async reloadSubtitles() {
-      void ipcSession?.send(["sub-reload"]);
-    },
-    async selectSubtitle(selection) {
-      if (!ipcSession) return false;
-      if (!selection.subtitleUrl) {
-        const result = await ipcSession.send(["set_property", "sid", "no"], 1_000);
-        return result.ok;
+    };
+    const notifyControlReady = (next: ActivePlayerControl | null) => {
+      try {
+        opts.onControlReady?.(next);
+      } catch (error) {
+        dbg("mpv", "control-ready-consumer-threw", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-      const attached = await attachLateSubtitles(
-        ipcSession,
-        {
-          primarySubtitle: selection.subtitleUrl,
-          subtitleTracks: selection.subtitleTracks,
-        },
-        (trackCount) => {
-          emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
-        },
-        opts,
-      );
-      return attached > 0;
-    },
-    async attachSubtitles(attachment: LateSubtitleAttachment) {
-      return await attachLateSubtitles(
-        ipcSession,
-        attachment,
-        (trackCount) => {
-          emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
-        },
-        opts,
-      );
-    },
-    async skipCurrentSegment() {
-      return trySkipSegment(false);
-    },
-    updateTiming(timing) {
-      mutableTiming = timing;
-      trySkipSegment(true);
-    },
-    updateAutoSkipEnabled(enabled) {
-      autoSkipEnabled = enabled;
-      skipConfig = buildSkipConfig(autoSkipEnabled);
-      trySkipSegment(true);
-    },
-    getTimingSnapshot() {
-      return mutableTiming;
-    },
-  };
-  opts.onControlReady?.(control);
-  emitPlaybackEvent({ type: "mpv-process-started" });
-
-  const exitPromise = mpv.exited.then((code) => ({
-    code,
-    // Prefer the real terminating signal — a crash (SIGSEGV/...) must not be
-    // laundered into a clean "quit".
-    signal: mpv.signalCode ?? (mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null),
-    // mpv.killed marks kills this process issued; an external SIGKILL (OOM,
-    // kill -9) arrives with killed=false and must classify as a crash.
-    terminatedByUs: mpv.killed === true,
-  }));
-
-  const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000, {
-    requiresYtdl: opts.requiresYtdl,
-  }).then((result) => {
-    if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
-      dbg("mpv", "preflight-definitive-failure", {
-        reason: result.reason,
-        phase: "launch",
-        ipcConnected: ipcSession !== null,
+    };
+    const notifyPlaybackStarted = () => {
+      if (playbackStartedNotified) return;
+      playbackStartedNotified = true;
+      emitPlaybackEvent({ type: "playback-started" });
+    };
+    const maybeEmitPlaybackProgress = (observedAt: number) => {
+      const sample = stats.latestIpcSample;
+      if (
+        !shouldEmitPlaybackProgress(
+          playbackProgressThrottle,
+          sample
+            ? {
+                positionSeconds: sample.positionSeconds,
+                durationSeconds: sample.durationSeconds,
+              }
+            : null,
+          observedAt,
+        ) ||
+        !sample
+      ) {
+        return;
+      }
+      emitPlaybackEvent({
+        type: "playback-progress",
+        positionSeconds: sample.positionSeconds,
+        durationSeconds: sample.durationSeconds,
       });
-      mpv.kill("SIGTERM");
-    }
-    return result;
-  });
-
-  const ipcBootstrap = (async () => {
-    const ipcBootstrapStarted = Date.now();
-    const ready = await waitForMpvIpcEndpoint(ipcEndpoint, 5_000);
-    assertOneShotMpvIpcEndpointReady(
-      ready,
-      `IPC endpoint was not ready after ${Date.now() - ipcBootstrapStarted}ms at ${ipcServerCliArg(ipcEndpoint)}.${mpvIpcBootstrapDiagnosticsHintSuffix()}`,
-    );
-
-    ipcSession = await openMpvIpcSession({
-      endpoint: ipcEndpoint,
-      onPropertyUpdate: ({ name, value, observedAt }) => {
-        applyObservedPropertySample(stats, { name, value, observedAt });
-        if (stats.latestIpcSample) {
-          watchdog.observe(stats.latestIpcSample);
-        }
-        if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
-          currentPositionSeconds = value;
-          if (value > 0) {
-            notifyPlaybackStarted();
-          }
-          maybeEmitPlaybackProgress(observedAt);
-          trySkipSegment(true);
-        }
-      },
-      onEndFile: ({ reason, fileError, observedAt }) => {
-        applyEndFileEvent(stats, reason, observedAt, { fileError });
-        endFileResolve?.(reason);
-      },
-      onCommandResult: (result) => {
-        if (!result.ok) {
-          emitPlaybackEvent({
-            type: "ipc-command-failed",
-            command: String(result.command[0] ?? "unknown"),
-            error: result.error,
-          });
-          if (result.error === "timeout") {
+    };
+    const trySkipSegment = (automatic: boolean) => {
+      const activeSkip = findActivePlaybackSkip(mutableTiming, currentPositionSeconds, skipConfig);
+      if (!activeSkip || !ipcSession || skippedSegments.has(activeSkip.key)) {
+        return false;
+      }
+      void ipcSession
+        .send(["seek", activeSkip.endSeconds, "absolute"])
+        .then((result) => {
+          if (result.ok) {
+            skippedSegments.add(activeSkip.key);
             emitPlaybackEvent({
-              type: "ipc-stalled",
+              type: "segment-skipped",
+              kind: activeSkip.kind,
+              automatic,
+            });
+          }
+          return undefined;
+        })
+        .catch(() => {});
+      return true;
+    };
+    const control: ActivePlayerControl = {
+      id: sessionId,
+      async stop() {
+        if (stopRequested) return;
+        stopRequested = true;
+        if (ipcSession) {
+          const result = await ipcSession.send(["quit"], 1_000);
+          if (result.ok) return;
+        }
+        mpv.kill("SIGTERM");
+      },
+      async reloadSubtitles() {
+        void ipcSession?.send(["sub-reload"]);
+      },
+      async selectSubtitle(selection) {
+        if (!ipcSession) return false;
+        if (!selection.subtitleUrl) {
+          const result = await ipcSession.send(["set_property", "sid", "no"], 1_000);
+          return result.ok;
+        }
+        const attached = await attachLateSubtitles(
+          ipcSession,
+          {
+            primarySubtitle: selection.subtitleUrl,
+            subtitleTracks: selection.subtitleTracks,
+          },
+          (trackCount) => {
+            emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
+          },
+          opts,
+        );
+        return attached > 0;
+      },
+      async attachSubtitles(attachment: LateSubtitleAttachment) {
+        return await attachLateSubtitles(
+          ipcSession,
+          attachment,
+          (trackCount) => {
+            emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
+          },
+          opts,
+        );
+      },
+      async skipCurrentSegment() {
+        return trySkipSegment(false);
+      },
+      updateTiming(timing) {
+        mutableTiming = timing;
+        trySkipSegment(true);
+      },
+      updateAutoSkipEnabled(enabled) {
+        autoSkipEnabled = enabled;
+        skipConfig = buildSkipConfig(autoSkipEnabled);
+        trySkipSegment(true);
+      },
+      getTimingSnapshot() {
+        return mutableTiming;
+      },
+    };
+    notifyControlReady(control);
+    emitPlaybackEvent({ type: "mpv-process-started" });
+
+    const exitPromise = mpv.exited.then((code) => ({
+      code,
+      // Prefer the real terminating signal — a crash (SIGSEGV/...) must not be
+      // laundered into a clean "quit".
+      signal: mpv.signalCode ?? (mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null),
+      // mpv.killed marks kills this process issued; an external SIGKILL (OOM,
+      // kill -9) arrives with killed=false and must classify as a crash.
+      terminatedByUs: mpv.killed === true,
+    }));
+
+    const preflight = checkStreamPreflight(opts.url, opts.headers, 3_000, {
+      requiresYtdl: opts.requiresYtdl,
+    }).then((result) => {
+      if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
+        dbg("mpv", "preflight-definitive-failure", {
+          reason: result.reason,
+          phase: "launch",
+          ipcConnected: ipcSession !== null,
+        });
+        mpv.kill("SIGTERM");
+      }
+      return result;
+    });
+
+    const ipcBootstrap = (async () => {
+      const ipcBootstrapStarted = Date.now();
+      const ready = await waitForMpvIpcEndpoint(ipcEndpoint, 5_000);
+      assertOneShotMpvIpcEndpointReady(
+        ready,
+        `IPC endpoint was not ready after ${Date.now() - ipcBootstrapStarted}ms at ${ipcServerCliArg(ipcEndpoint)}.${mpvIpcBootstrapDiagnosticsHintSuffix()}`,
+      );
+
+      ipcSession = await openMpvIpcSession({
+        endpoint: ipcEndpoint,
+        onPropertyUpdate: ({ name, value, observedAt }) => {
+          applyObservedPropertySample(stats, { name, value, observedAt });
+          if (stats.latestIpcSample) {
+            watchdog.observe(stats.latestIpcSample);
+          }
+          if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
+            currentPositionSeconds = value;
+            if (value > 0) {
+              notifyPlaybackStarted();
+            }
+            maybeEmitPlaybackProgress(observedAt);
+            trySkipSegment(true);
+          }
+        },
+        onEndFile: ({ reason, fileError, observedAt }) => {
+          applyEndFileEvent(stats, reason, observedAt, { fileError });
+          endFileResolve?.(reason);
+        },
+        onCommandResult: (result) => {
+          if (!result.ok) {
+            emitPlaybackEvent({
+              type: "ipc-command-failed",
               command: String(result.command[0] ?? "unknown"),
               error: result.error,
             });
+            if (result.error === "timeout") {
+              emitPlaybackEvent({
+                type: "ipc-stalled",
+                command: String(result.command[0] ?? "unknown"),
+                error: result.error,
+              });
+            }
           }
-        }
-      },
+        },
+      });
+
+      dbg("mpv-ipc", "ipc-bootstrap-complete", {
+        ipcTransport: mpvIpcTransportTag(ipcEndpoint),
+        endpoint: ipcServerCliArg(ipcEndpoint),
+        bootstrapMs: Date.now() - ipcBootstrapStarted,
+        mode: "launchMpv",
+      });
+
+      emitPlaybackEvent({ type: "ipc-connected" });
+      emitPlaybackEvent({ type: "opening-stream" });
+      notifyPlayerReady();
+      const trackCount = allowedLaunchSubtitleFiles({ ...opts, stream: opts }).length;
+      if (trackCount > 0) {
+        emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
+        emitPlaybackEvent({ type: "subtitle-attached", trackCount });
+      }
+    })().catch(async (err) => {
+      dbg("mpv-ipc", "ipc-bootstrap-failed", {
+        endpoint: ipcServerCliArg(ipcEndpoint),
+        error: String(err),
+        mode: "launchMpv",
+      });
+      emitPlaybackEvent({
+        type: "ipc-command-failed",
+        command: "bootstrap",
+        error: String(err),
+      });
+      await settleOneShotMpvIpcBootstrapFailure({
+        process: mpv,
+        clearOwnedControl: () => notifyControlReady(null),
+        reportTerminationFailure: () => {
+          emitPlaybackEvent({
+            type: "ipc-command-failed",
+            command: "terminate",
+            error: "mpv did not exit after forced bootstrap teardown",
+          });
+        },
+      });
     });
 
-    dbg("mpv-ipc", "ipc-bootstrap-complete", {
-      ipcTransport: mpvIpcTransportTag(ipcEndpoint),
-      endpoint: ipcServerCliArg(ipcEndpoint),
-      bootstrapMs: Date.now() - ipcBootstrapStarted,
-      mode: "launchMpv",
-    });
+    const exit = await exitPromise;
+    recordPlayerExit(stats, exit);
 
-    emitPlaybackEvent({ type: "ipc-connected" });
-    emitPlaybackEvent({ type: "opening-stream" });
-    notifyPlayerReady();
-    const trackCount = allowedLaunchSubtitleFiles({ ...opts, stream: opts }).length;
-    if (trackCount > 0) {
-      emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
-      emitPlaybackEvent({ type: "subtitle-attached", trackCount });
+    // Check if preflight returned a definitive failure before mpv started.
+    // This catches dead URLs early so we can skip to fallback without waiting
+    // for full mpv startup/shutdown latency.
+    const preflightResult = await preflight;
+    if (shouldAbortLaunchForDefinitivePreflight(preflightResult, ipcSession !== null)) {
+      // Stream is definitively dead and mpv hasn't found it either — abort.
+      watchdog.stop();
+      const socketPathCleanedUp = await cleanupAbortedMpvLaunch({
+        ipcBootstrap,
+        getIpcSession: () => ipcSession,
+        closeIpcSession,
+        cleanupSocket: async () =>
+          shouldUnlinkUnixSocket(ipcEndpoint)
+            ? await cleanupUnixSocketFile(ipcEndpoint.path)
+            : true,
+      });
+      notifyControlReady(null);
+      return {
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "error",
+        resultSource: "unknown",
+        playerExitedCleanly: false,
+        playerExitCode: exit.code,
+        playerExitSignal: exit.signal ?? null,
+        socketPathCleanedUp,
+        lastNonZeroPositionSeconds: 0,
+        lastNonZeroDurationSeconds: 0,
+        lastTrustedProgressSeconds: 0,
+        lastReliableProgressSeconds: 0,
+      };
     }
-  })().catch(async (err) => {
-    dbg("mpv-ipc", "ipc-bootstrap-failed", {
-      endpoint: ipcServerCliArg(ipcEndpoint),
-      error: String(err),
-      mode: "launchMpv",
-    });
-    emitPlaybackEvent({
-      type: "ipc-command-failed",
-      command: "bootstrap",
-      error: String(err),
-    });
-    await settleOneShotMpvIpcBootstrapFailure({
-      process: mpv,
-      clearOwnedControl: () => opts.onControlReady?.(null),
-      reportTerminationFailure: () => {
-        emitPlaybackEvent({
-          type: "ipc-command-failed",
-          command: "terminate",
-          error: "mpv did not exit after forced bootstrap teardown",
-        });
-      },
-    });
-  });
 
-  const exit = await exitPromise;
-  recordPlayerExit(stats, exit);
+    await ipcBootstrap;
 
-  // Check if preflight returned a definitive failure before mpv started.
-  // This catches dead URLs early so we can skip to fallback without waiting
-  // for full mpv startup/shutdown latency.
-  const preflightResult = await preflight;
-  if (shouldAbortLaunchForDefinitivePreflight(preflightResult, ipcSession !== null)) {
-    // Stream is definitively dead and mpv hasn't found it either — abort.
+    // Wait for the end-file IPC event (or timeout) before finalizing playback result.
+    await Promise.race([endFileReceived, Bun.sleep(1_500).then(() => undefined)]);
+
+    await closeIpcSession(ipcSession);
     watchdog.stop();
-    const socketPathCleanedUp = await cleanupAbortedMpvLaunch({
-      ipcBootstrap,
-      getIpcSession: () => ipcSession,
-      closeIpcSession,
-      cleanupSocket: async () =>
-        shouldUnlinkUnixSocket(ipcEndpoint) ? await cleanupUnixSocketFile(ipcEndpoint.path) : true,
-    });
-    opts.onControlReady?.(null);
-    return {
-      watchedSeconds: 0,
-      duration: 0,
-      endReason: "error",
-      resultSource: "unknown",
-      playerExitedCleanly: false,
-      playerExitCode: exit.code,
-      playerExitSignal: exit.signal ?? null,
-      socketPathCleanedUp,
-      lastNonZeroPositionSeconds: 0,
-      lastNonZeroDurationSeconds: 0,
-      lastTrustedProgressSeconds: 0,
-      lastReliableProgressSeconds: 0,
-    };
+    emitPlaybackEvent({ type: "player-closed" });
+    const socketPathCleanedUp = shouldUnlinkUnixSocket(ipcEndpoint)
+      ? await cleanupUnixSocketFile(ipcEndpoint.path)
+      : true;
+
+    notifyControlReady(null);
+
+    return finalizePlaybackResult(stats, { socketPathCleanedUp });
+  } finally {
+    // Both exit paths above stop the watchdog; this finally guarantees the
+    // interval dies even when a mid-flight await (exitPromise, preflight,
+    // IPC teardown) throws before either stop call.
+    watchdog.stop();
   }
-
-  await ipcBootstrap;
-
-  // Wait for the end-file IPC event (or timeout) before finalizing playback result.
-  await Promise.race([endFileReceived, Bun.sleep(1_500).then(() => undefined)]);
-
-  await closeIpcSession(ipcSession);
-  watchdog.stop();
-  emitPlaybackEvent({ type: "player-closed" });
-  const socketPathCleanedUp = shouldUnlinkUnixSocket(ipcEndpoint)
-    ? await cleanupUnixSocketFile(ipcEndpoint.path)
-    : true;
-
-  opts.onControlReady?.(null);
-
-  return finalizePlaybackResult(stats, { socketPathCleanedUp });
 }
 
 export function shouldAbortLaunchForDefinitivePreflight(

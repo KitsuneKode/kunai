@@ -2582,6 +2582,178 @@ describe("DownloadService", () => {
     expect(reloaded?.status).toBe("queued");
     expect(reloaded?.nextRetryAt).toBeDefined();
   });
+
+  describe("queue wake-ups", () => {
+    test("a deferred retry runs in-session once next_retry_at arrives, without another kick", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const job = await service.enqueue({
+        title: { id: "tmdb:retry-wake", type: "movie", name: "Retry Wake" },
+        stream: { url: "https://example.com/retry-wake.mp4", headers: {}, timestamp: 0 },
+        providerId: "vidking",
+      });
+      // Defer the job just past "now": the pass below skips it, and the only
+      // thing that can ever run it is the wakeup the pass end arms.
+      const retryAt = new Date(Date.now() + 60).toISOString();
+      repo.scheduleRetry(job.id, "transient failure", retryAt, new Date().toISOString());
+      spawnSpy.mockImplementation((command: string[]) => {
+        const oIndex = command.indexOf("-o");
+        const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+        if (outputPath !== undefined) writeFileSync(outputPath, "video-bytes");
+        // SAFETY: test stub — supplies only the surface the worker consumes.
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+          kill() {},
+        } as never;
+      });
+
+      await service.processQueue();
+      expect(repo.get(job.id)?.status).toBe("queued");
+
+      // The pass-armed timer fires ~60ms out and drives the job to completion
+      // with no second explicit kick.
+      await waitUntil(() => repo.get(job.id)?.status === "completed", 4_000);
+    });
+
+    test("a kick delivered while a pass is running re-runs the queue once the pass ends", async () => {
+      const listRunningSpy = spyOn(repo, "listRunning");
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+      const jobA = await service.enqueue({
+        title: { id: "tmdb:pending-a", type: "movie", name: "Pending A" },
+        stream: { url: "https://example.com/pending-a.mp4", headers: {}, timestamp: 0 },
+        providerId: "vidking",
+      });
+
+      let releaseFirst: (() => void) | undefined;
+      let spawnCount = 0;
+      spawnSpy.mockImplementation((command: string[]) => {
+        spawnCount++;
+        const oIndex = command.indexOf("-o");
+        const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+        if (spawnCount === 1) {
+          // SAFETY: test stub — supplies only the surface the worker consumes.
+          return {
+            stdout: streamOf(""),
+            stderr: streamOf(""),
+            exited: new Promise<number>((resolve) => {
+              releaseFirst = () => {
+                if (outputPath !== undefined) writeFileSync(outputPath, "video-a");
+                resolve(0);
+              };
+            }),
+            kill() {},
+          } as never;
+        }
+        if (outputPath !== undefined) writeFileSync(outputPath, "video-b");
+        // SAFETY: test stub — supplies only the surface the worker consumes.
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: Promise.resolve(0),
+          kill() {},
+        } as never;
+      });
+
+      const firstPass = service.processQueue();
+      await waitUntil(() => spawnCount === 1);
+
+      // Kick while the pass is mid-flight — the running pass must not drop it.
+      const jobB = await service.enqueue({
+        title: { id: "tmdb:pending-b", type: "movie", name: "Pending B" },
+        stream: { url: "https://example.com/pending-b.mp4", headers: {}, timestamp: 0 },
+        providerId: "vidking",
+      });
+      service.kickQueue("download-intent");
+
+      releaseFirst?.();
+      await firstPass;
+      await waitUntil(() => repo.get(jobB.id)?.status === "completed", 4_000);
+      // The pending kick produced a real second pass — reconcile runs once per
+      // pass, so a dropped kick would leave this at 1.
+      await waitUntil(() => listRunningSpy.mock.calls.length >= 2, 4_000);
+      expect(repo.get(jobA.id)?.status).toBe("completed");
+    });
+
+    test("a heartbeat write failure is contained, logged once, and does not kill the download", async () => {
+      const warnings: string[] = [];
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+        heartbeatIntervalMs: 5,
+        logger: {
+          debug() {},
+          info() {},
+          warn(message: string) {
+            warnings.push(message);
+          },
+          error() {},
+          fatal() {},
+          child() {
+            return this;
+          },
+        },
+      });
+      const heartbeatSpy = spyOn(repo, "markHeartbeat").mockImplementation(() => {
+        throw new Error("simulated closed store");
+      });
+      const unhandled: unknown[] = [];
+      const onUnhandled = <T>(reason: T) => unhandled.push(reason);
+      process.on("unhandledRejection", onUnhandled);
+
+      let releaseDownload: (() => void) | undefined;
+      spawnSpy.mockImplementation((command: string[]) => {
+        const oIndex = command.indexOf("-o");
+        const outputPath = oIndex >= 0 ? command[oIndex + 1] : command[command.length - 1];
+        // SAFETY: test stub — supplies only the surface the worker consumes.
+        return {
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited: new Promise<number>((resolve) => {
+            releaseDownload = () => {
+              if (outputPath !== undefined) writeFileSync(outputPath, "video-bytes");
+              resolve(0);
+            };
+          }),
+          kill() {},
+        } as never;
+      });
+
+      try {
+        const job = await service.enqueue({
+          title: { id: "tmdb:heartbeat", type: "movie", name: "Heartbeat" },
+          stream: { url: "https://example.com/heartbeat.mp4", headers: {}, timestamp: 0 },
+          providerId: "vidking",
+        });
+        const pass = service.processQueue();
+
+        // Several ticks fire against the throwing store before release.
+        await waitUntil(() => heartbeatSpy.mock.calls.length >= 3, 4_000);
+        releaseDownload?.();
+        await pass;
+
+        expect(repo.get(job.id)?.status).toBe("completed");
+        expect(unhandled).toEqual([]);
+        // Reported once per outage, not once per failed tick.
+        expect(warnings.filter((w) => w.includes("heartbeat"))).toHaveLength(1);
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+        heartbeatSpy.mockRestore();
+      }
+    });
+  });
 });
 
 function buildService({
@@ -2598,6 +2770,7 @@ function buildService({
   configService,
   titleAliases = { upsertAliases() {} },
   statfs,
+  heartbeatIntervalMs,
 }: {
   repo: DownloadJobsRepository;
   downloadsEnabled: boolean;
@@ -2605,6 +2778,7 @@ function buildService({
   downloadPath: string;
   resolveDownloadStream?: ConstructorParameters<typeof DownloadService>[0]["resolveDownloadStream"];
   abortGraceMs?: number;
+  heartbeatIntervalMs?: number;
   ffprobeAvailable?: boolean;
   ffprobeDeadline?: ConstructorParameters<typeof DownloadService>[0]["ffprobeDeadline"];
   diagnostics?: ConstructorParameters<typeof DownloadService>[0]["diagnostics"];
@@ -2640,6 +2814,7 @@ function buildService({
     },
     resolveDownloadStream,
     abortGraceMs,
+    heartbeatIntervalMs,
     ffprobeDeadline,
     // Default to a volume with 1 TiB free so admission checks are deterministic
     // regardless of the host's actual disk headroom. Tests that exercise the

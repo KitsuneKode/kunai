@@ -1164,4 +1164,41 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     harness.callbacks().onEndFile({ reason: "quit", observedAt: 99_000 });
     await playbackResult;
   });
+
+  test("a throwing onPlaybackEvent consumer cannot poison the socket dispatch", async () => {
+    const seen: string[] = [];
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => {
+          seen.push(event.type);
+          if (event.type === "playback-started") {
+            throw new Error("consumer exploded");
+          }
+        },
+      },
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+    // playback-started throws inside the property dispatch; the pause event in
+    // the next message must still be delivered, and neither call may throw.
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 5, observedAt: 2 });
+    harness.callbacks().onPropertyUpdate({ name: "pause", value: true, observedAt: 3 });
+    await flushAsyncWork();
+
+    expect(seen).toContain("playback-started");
+    expect(seen).toContain("playback-paused");
+
+    const playbackResult = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "quit", observedAt: 9_000 });
+    await playbackResult;
+  });
 });

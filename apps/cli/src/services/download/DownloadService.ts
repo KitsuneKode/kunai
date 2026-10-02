@@ -193,7 +193,8 @@ export type DownloadQueueKickSource =
   | "shell-download"
   | "download-manager"
   | "offline-repair"
-  | "offline-runway";
+  | "offline-runway"
+  | "retry-wakeup";
 
 type DownloadEventListener = (event: DownloadEvent) => void;
 
@@ -261,6 +262,20 @@ type DownloadSidecarResult = {
 
 export class DownloadService {
   private queueWorkerRunning = false;
+  /**
+   * A kick that arrived mid-pass. The running pass already took its
+   * eligibility snapshot, so dropping the kick would strand freshly-queued
+   * work until some unrelated caller kicks again — the lost-wakeup case.
+   * The pass-end finally re-runs the queue once for it.
+   */
+  private pendingQueueKickSource: DownloadQueueKickSource | null = null;
+  /**
+   * The wake-up for queued jobs carrying a future `next_retry_at`. Without it
+   * a deferred retry only runs when some unrelated caller happens to kick the
+   * queue after the timestamp passes — an idle session could hold a due job
+   * forever.
+   */
+  private retryWakeupTimer: ReturnType<typeof setTimeout> | null = null;
   private lastQueuePassFailureContext: DownloadQueueFailureContext | undefined;
   private reconciledStartupJobs = false;
   private shutdownRequested = false;
@@ -306,6 +321,8 @@ export class DownloadService {
       readonly ffprobeAvailable?: boolean;
       readonly ffprobeDeadline?: DeadlineFactory;
       readonly abortGraceMs?: number;
+      /** Test seam — heartbeat cadence in ms; production uses the module constant. */
+      readonly heartbeatIntervalMs?: number;
       readonly diagnostics?: Pick<DiagnosticsService, "record">;
       readonly onCompletedArtifact?: (job: DownloadJobRecord) => Promise<void> | void;
       readonly onTerminalFailure?: (job: DownloadJobRecord, error: string) => Promise<void> | void;
@@ -829,6 +846,11 @@ export class DownloadService {
   beginShutdown(reason = "download paused by shutdown"): void {
     if (this.shutdownRequested) return;
     this.shutdownRequested = true;
+    this.pendingQueueKickSource = null;
+    if (this.retryWakeupTimer) {
+      clearTimeout(this.retryWakeupTimer);
+      this.retryWakeupTimer = null;
+    }
     for (const job of this.deps.repo.listRunning(200)) {
       if (!this.cancellationRequests.has(job.id)) {
         this.cancellationRequests.set(job.id, { mode: "pause", reason });
@@ -842,6 +864,13 @@ export class DownloadService {
    * rejection remains diagnosable without reaching the CLI-wide fatal policy.
    */
   kickQueue(source: DownloadQueueKickSource): void {
+    if (this.shutdownRequested) return;
+    if (this.queueWorkerRunning) {
+      // The running pass already evaluated eligibility; enqueueing more work
+      // here must not be a no-op or the kicked job waits for a later kick.
+      this.pendingQueueKickSource = source;
+      return;
+    }
     void this.processQueue().catch((error: unknown) => {
       this.reportQueuePassFailure(source, error);
     });
@@ -916,10 +945,54 @@ export class DownloadService {
       throw error;
     } finally {
       this.queueWorkerRunning = false;
+      this.armNextRetryWakeup();
+      const pendingSource = this.pendingQueueKickSource;
+      this.pendingQueueKickSource = null;
+      if (pendingSource && !this.shutdownRequested) {
+        void this.processQueue().catch((pendingError: unknown) => {
+          this.reportQueuePassFailure(pendingSource, pendingError);
+        });
+      }
     }
   }
 
-  private reportQueuePassFailure(source: DownloadQueueKickSource, error: unknown): void {
+  /**
+   * Re-arms the deferred-retry wake-up after each pass. Deferred jobs live in
+   * `listQueued` with a future `next_retry_at`; the workers' eligibility scan
+   * shares that same list window, so the timer mirrors exactly what a pass
+   * could have seen. Runs in the pass finally so deferrals written mid-pass
+   * (scheduleRetry, storage pauses) are already visible.
+   */
+  private armNextRetryWakeup(): void {
+    if (this.retryWakeupTimer) {
+      clearTimeout(this.retryWakeupTimer);
+      this.retryWakeupTimer = null;
+    }
+    if (this.shutdownRequested) return;
+    const now = Date.now();
+    let nearestRetryAtMs: number | null = null;
+    try {
+      for (const job of this.deps.repo.listQueued(50)) {
+        if (!job.nextRetryAt) continue;
+        const retryAt = Date.parse(job.nextRetryAt);
+        if (!Number.isFinite(retryAt) || retryAt <= now) continue;
+        if (nearestRetryAtMs === null || retryAt < nearestRetryAtMs) {
+          nearestRetryAtMs = retryAt;
+        }
+      }
+    } catch {
+      // A broken store must not turn pass teardown into a second failure.
+      return;
+    }
+    if (nearestRetryAtMs === null) return;
+    this.retryWakeupTimer = setTimeout(() => {
+      this.retryWakeupTimer = null;
+      this.kickQueue("retry-wakeup");
+    }, nearestRetryAtMs - now);
+    this.retryWakeupTimer.unref?.();
+  }
+
+  private reportQueuePassFailure(source: DownloadQueueKickSource, cause: unknown): void {
     const failureContext = this.lastQueuePassFailureContext ?? { stage: "worker" as const };
     this.lastQueuePassFailureContext = undefined;
     let event: ReturnType<typeof buildDownloadDiagnosticEvent>;
@@ -938,8 +1011,8 @@ export class DownloadService {
           workerIndex: failureContext.workerIndex,
           workerFailures: failureContext.workerFailures,
           jobId: failureContext.jobId,
-          errorName: error instanceof Error ? error.name : typeof error,
-          errorMessage: error instanceof Error ? error.message : String(error),
+          errorName: cause instanceof Error ? cause.name : typeof cause,
+          errorMessage: cause instanceof Error ? cause.message : String(cause),
         },
       });
     } catch {
@@ -1933,15 +2006,37 @@ export class DownloadService {
   }
 
   private startHeartbeat(jobId: string): () => void {
+    const intervalMs = this.deps.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let failureReported = false;
     const tick = () => {
       if (!active) return;
-      this.deps.repo.markHeartbeat(jobId, new Date().toISOString());
-      timer = setTimeout(tick, HEARTBEAT_INTERVAL_MS);
+      try {
+        this.deps.repo.markHeartbeat(jobId, new Date().toISOString());
+        failureReported = false;
+      } catch (error) {
+        // A heartbeat write that throws inside a timer callback is
+        // process-fatal — contain it here. Keep ticking anyway: a transient
+        // store fault (SQLITE_BUSY, disk pressure) recovers, and lapsing the
+        // lease only becomes risky after STALLED_HEARTBEAT_MS of outage.
+        // Report once per outage instead of every interval.
+        if (!failureReported) {
+          failureReported = true;
+          try {
+            this.deps.logger.warn("Download heartbeat write failed", {
+              jobId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          } catch {
+            // The logging side channel may be down with the store.
+          }
+        }
+      }
+      timer = setTimeout(tick, intervalMs);
       timer.unref?.();
     };
-    timer = setTimeout(tick, HEARTBEAT_INTERVAL_MS);
+    timer = setTimeout(tick, intervalMs);
     timer.unref?.();
     return () => {
       active = false;
@@ -2027,12 +2122,11 @@ export class DownloadService {
    * figure the pre-flight check computed, and there is no such figure once the
    * volume is actually full.
    *
-   * It also does not promise an automatic resume. Freeing space triggers
-   * nothing on its own — the deferral is time-based, and a queue pass only
-   * happens on a `kickQueue` (startup, opening downloads, queueing another,
-   * offline repair). There is no periodic tick, so an idle session can hold a
-   * due job indefinitely. Stating the action the user can actually take beats
-   * a promise the runtime does not keep.
+   * It also does not promise an instant resume. Freeing space triggers
+   * nothing on its own — the deferral is time-based, so the job resumes on
+   * the next queue pass after `STORAGE_DEFERRAL_RETRY_MS` elapses (the
+   * retry-wakeup timer or any other kick). Stating the action the user can
+   * actually take beats a promise the runtime does not keep.
    */
   private formatDiskExhaustedMessage(): string {
     return "Download paused because the download volume ran out of space. Free space, then retry it from /downloads.";

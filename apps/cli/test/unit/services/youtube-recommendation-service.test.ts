@@ -15,7 +15,17 @@ const mapInvidiousSearchItem = mock(
 );
 // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
 const mapInvidiousTrendingVideos = mock((items: unknown[]) => items as never);
-const getYoutubeProviderConfig = mock(() => ({ invidiousInstanceUrl: undefined }));
+// Forward the real config with only the field this suite isolates nulled. A
+// stub returning a bare object poisons every module that binds
+// getYoutubeProviderConfig while this mock is installed — preload order is
+// file order, so youtube-playback-options and youtube-download permanently
+// saw `{}` (no extractorArgs/poToken) whenever this file loaded first.
+// The real function is captured by value: reading it off actualYoutubeModule
+// at call time resolves back to this stub once the mock is installed.
+const getYoutubeProviderConfig = mock(() => ({
+  ...realGetYoutubeProviderConfig(),
+  invidiousInstanceUrl: undefined,
+}));
 
 // `mock.module` is process-global in Bun and applies at file-LOAD time, so it
 // affects every other test file in the run — including files that execute before
@@ -27,6 +37,7 @@ const getYoutubeProviderConfig = mock(() => ({ invidiousInstanceUrl: undefined }
 // Only the network/mapping seams below are stubbed, and `afterAll` restores the
 // module so even those cannot outlive this file.
 const actualYoutubeModule = await import("@kunai/providers/youtube");
+const realGetYoutubeProviderConfig = actualYoutubeModule.getYoutubeProviderConfig;
 
 mock.module("@kunai/providers/youtube", () => ({
   ...actualYoutubeModule,
