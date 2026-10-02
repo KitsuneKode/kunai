@@ -24,7 +24,7 @@ describe("PrivacyPage disclosures", () => {
   });
 
   test("states the direct-provider model instead of hiding behind it", () => {
-    expect(html).toContain("no proxy");
+    expect(html.toLowerCase()).toContain("no proxy and no relay");
   });
 
   test("carries the analytics opt-in facts, not vibes", () => {
@@ -41,5 +41,14 @@ describe("PrivacyPage disclosures", () => {
 
   test("names the project as a fun open-source build", () => {
     expect(html).toContain("open-source");
+  });
+
+  test("carries the legal furniture a policy needs", () => {
+    expect(html).toContain("Effective October 2, 2026");
+    expect(html).toContain("GDPR");
+    expect(html).toContain("CCPA");
+    expect(html).toContain("Children&#x27;s privacy");
+    expect(html).toContain("Governing law");
+    expect(html).toContain("git repository");
   });
 });
