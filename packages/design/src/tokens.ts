@@ -26,6 +26,10 @@ const raised = "#44354d";
 const line = "#473b51";
 const lineSoft = "#281f2e";
 const lineStrong = "#62526c";
+// Border for things you operate (inputs, outlined buttons, toggles). `line` is a
+// decorative divider at 1.5-1.9:1; a control whose edge is the only thing
+// marking it needs 3:1 against the surface it sits on (WCAG 1.4.11).
+const lineControl = "#786782";
 
 // Brand / focus / selection / in-progress — rose, two-step for depth.
 const accent = "#ff8fb0";
@@ -56,22 +60,23 @@ const info = "#5fb6ff";
 const infoDim = "#3c7fbf";
 const infoFill = "#112230";
 
-// Series-complete milestone — a single deliberate indigo. Never reuse elsewhere.
-const milestone = "#8b7bf0";
-const milestoneDim = "#4a417c";
-const milestoneFill = "#1c1830";
+// Series-complete milestone — a single deliberate periwinkle. Never reuse elsewhere.
+// Its hue sits 46° from the orchid anime kind (it was 20°, which read as one purple).
+const milestone = "#6d85f6";
+const milestoneDim = "#39467f";
+const milestoneFill = "#151a32";
 
 // Text ramp — warm white → faint. Carries ~80% of hierarchy.
 const text = "#f6eff4";
 const textDim = "#cabfca";
-const muted = "#968a98";
-const dim = "#665b69";
-const faint = "#3a3340";
+const muted = "#a195a3"; // 4.57:1 even on the selected-row band
+const dim = "#665b69"; // DISABLED or decorative only: 2.8:1 on surface, fails as body text
+const faint = "#3a3340"; // rules and ghost glyphs, never text
 
 // Media-type hues — Stats + Calendar surfaces (see THE ONE RULE above).
-const typeAnime = "#c98bff"; // orchid
-const typeSeries = "#4fd1c5"; // teal
-const typeMovie = "#f4c45c"; // gold
+const typeAnime = "#d885f1"; // orchid
+const typeSeries = "#4ad0cf"; // teal
+const typeMovie = "#ebc95c"; // gold
 const typeMixed = "#a48fb8"; // soft plum — the optical blend, for mixed days
 
 // Watch-activity heat ramp — rose, 5-step (brand-aligned; mint stays reserved
@@ -89,6 +94,7 @@ export const tokens = {
   line,
   lineSoft,
   lineStrong,
+  lineControl,
 
   // ---- semantic accents (use these in new code) ----
   accent,
