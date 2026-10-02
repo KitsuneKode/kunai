@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { isJsonString, type JsonValue } from "@kunai/types";
+
 import {
   NPM_DOWNLOADS_MAX_ENTRIES,
   NPM_DOWNLOADS_WINDOW_DAYS,
@@ -80,15 +82,17 @@ describe("parseNpmDownloads", () => {
 
   test("an empty download list is not a series", () => {
     expect(parseNpmDownloads({ ...valid, downloads: [] })).toBeNull();
-    expect(parseNpmDownloads({ ...valid, downloads: undefined })).toBeNull();
+    expect(
+      parseNpmDownloads({ package: valid.package, start: valid.start, end: valid.end }),
+    ).toBeNull();
   });
 
   test("one malformed entry rejects the whole window", () => {
     // Same rule as the ingest series: a half-parsed chart misstates the
     // channel it claims to show.
-    const bad = (entry: unknown) => ({
+    const bad = (entry: JsonValue) => ({
       ...valid,
-      downloads: [valid.downloads[0], entry],
+      downloads: [{ day: "2026-09-01", downloads: 4 }, entry],
     });
     expect(parseNpmDownloads(bad({ day: "nope", downloads: 1 }))).toBeNull();
     expect(parseNpmDownloads(bad({ day: "2026-09-02", downloads: -1 }))).toBeNull();
@@ -112,11 +116,11 @@ describe("parseNpmDownloads", () => {
 
 describe("fetchNpmDownloads", () => {
   const stubFetch =
-    (payload: unknown, status = 200): typeof fetch =>
+    (payload: JsonValue, status = 200): typeof fetch =>
     // @ts-expect-error — the helper only needs the response surface `fetch`
     // returns; the extra `next` init option is ignored by the stub.
     async () =>
-      new Response(typeof payload === "string" ? payload : JSON.stringify(payload), {
+      new Response(isJsonString(payload) ? payload : JSON.stringify(payload), {
         status,
         headers: { "content-type": "application/json" },
       });

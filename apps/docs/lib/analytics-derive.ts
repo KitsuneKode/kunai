@@ -49,6 +49,15 @@ const RANGE_DAYS: Readonly<Record<Exclude<RangeKey, "all">, number>> = {
 };
 
 /**
+ * Narrow a control's string back to a `RangeKey`. Select and ToggleGroup hand
+ * values back as plain strings, so the boundary re-validates rather than
+ * asserts — a string that is not a key is a no-op, not a stored lie.
+ */
+export function isRangeKey(value: string | null | undefined): value is RangeKey {
+  return value === "7d" || value === "30d" || value === "all";
+}
+
+/**
  * The ranges worth offering for a given window.
  *
  * A range only earns a button if it actually *cuts* the data. dashboard-01 can

@@ -12,6 +12,8 @@
  * as the metrics fetches.
  */
 
+import { isJsonNumber, isJsonObject, isJsonString, type JsonValue } from "@kunai/types";
+
 import { fetchAnalyticsJson } from "./analytics-fetch";
 
 export const NPM_PACKAGE_NAME = "@kitsunekode/kunai";
@@ -47,7 +49,12 @@ export function npmDownloadsUrl(from: string, to: string, pkg = NPM_PACKAGE_NAME
  * ending at yesterday keeps a half-counted today off the right edge — the same
  * rule the rollup window applies.
  */
-export function npmWindow(now: number = Date.now()): { from: string; to: string } {
+export type NpmWindow = {
+  readonly from: string;
+  readonly to: string;
+};
+
+export function npmWindow(now: number = Date.now()): NpmWindow {
   const to = new Date(now - 86_400_000).toISOString().slice(0, 10);
   const from = new Date(now - NPM_DOWNLOADS_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
   return { from, to };
@@ -64,26 +71,23 @@ function isCalendarDay(value: string): boolean {
  * build time. One malformed entry drops the whole series — a chart drawn from
  * a half-parsed window misstates the channel it claims to show.
  */
-export function parseNpmDownloads(raw: unknown): NpmDownloadSeries | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const record = raw as Record<string, unknown>;
-  const pkg = record.package;
-  const from = record.start;
-  const to = record.end;
-  if (typeof pkg !== "string" || !pkg) return null;
-  if (typeof from !== "string" || !isCalendarDay(from)) return null;
-  if (typeof to !== "string" || !isCalendarDay(to)) return null;
+export function parseNpmDownloads(raw: JsonValue): NpmDownloadSeries | null {
+  if (!isJsonObject(raw)) return null;
+  const { package: pkg, start: from, end: to, downloads } = raw;
+  if (!isJsonString(pkg) || !pkg) return null;
+  if (!isJsonString(from) || !isCalendarDay(from)) return null;
+  if (!isJsonString(to) || !isCalendarDay(to)) return null;
   if (from > to) return null;
-  if (!Array.isArray(record.downloads) || record.downloads.length === 0) return null;
-  if (record.downloads.length > NPM_DOWNLOADS_MAX_ENTRIES) return null;
+  if (!Array.isArray(downloads) || downloads.length === 0) return null;
+  if (downloads.length > NPM_DOWNLOADS_MAX_ENTRIES) return null;
 
   const byDay = new Map<string, number>();
-  for (const entry of record.downloads) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
-    const { day, downloads } = entry as Record<string, unknown>;
-    if (typeof day !== "string" || !isCalendarDay(day)) return null;
-    if (typeof downloads !== "number" || !Number.isFinite(downloads) || downloads < 0) return null;
-    byDay.set(day, Math.floor(downloads));
+  for (const entry of downloads) {
+    if (!isJsonObject(entry)) return null;
+    const { day, downloads: count } = entry;
+    if (!isJsonString(day) || !isCalendarDay(day)) return null;
+    if (!isJsonNumber(count) || !Number.isFinite(count) || count < 0) return null;
+    byDay.set(day, Math.floor(count));
   }
 
   const points = [...byDay.entries()]

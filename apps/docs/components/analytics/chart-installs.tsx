@@ -29,6 +29,7 @@ import {
   availableRanges,
   dayToEpoch,
   formatDayTick,
+  isRangeKey,
   platformColumns,
   platformLabel,
   sliceRange,
@@ -70,6 +71,11 @@ const METRICS: readonly { readonly key: MetricKey; readonly label: string }[] = 
   { key: "platforms", label: "Platforms" },
   { key: "total", label: "Total" },
 ];
+
+/** The controls emit strings; a key is only accepted if it names a real view. */
+function isMetricKey(value: string | null | undefined): value is MetricKey {
+  return METRICS.some((option) => option.key === value);
+}
 
 /** CSS token for a platform series; unexpected buckets fall back to `extra`. */
 function platformToken(key: string): string {
@@ -215,7 +221,7 @@ export function ChartInstalls({
             value={[effectiveMetric]}
             onValueChange={(next: string[]) => {
               const picked = next[0];
-              if (picked) setMetric(picked as MetricKey);
+              if (isMetricKey(picked)) setMetric(picked);
             }}
             variant="outline"
             size="sm"
@@ -232,7 +238,7 @@ export function ChartInstalls({
           <Select
             value={effectiveMetric}
             onValueChange={(next: string | null) => {
-              if (next) setMetric(next as MetricKey);
+              if (isMetricKey(next)) setMetric(next);
             }}
           >
             <SelectTrigger size="sm" className="w-32 @[600px]/card:hidden" aria-label="Metric">
@@ -261,7 +267,7 @@ export function ChartInstalls({
                 value={[range]}
                 onValueChange={(next: string[]) => {
                   const picked = next[0];
-                  if (picked) setRange(picked as RangeKey);
+                  if (isRangeKey(picked)) setRange(picked);
                 }}
                 variant="outline"
                 size="sm"
@@ -277,7 +283,7 @@ export function ChartInstalls({
               <Select
                 value={range}
                 onValueChange={(next: string | null) => {
-                  if (next) setRange(next as RangeKey);
+                  if (isRangeKey(next)) setRange(next);
                 }}
               >
                 <SelectTrigger
