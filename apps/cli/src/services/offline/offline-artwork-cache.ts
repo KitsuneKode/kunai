@@ -3,11 +3,15 @@ import { basename, dirname, extname, join } from "node:path";
 
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import { fetchGuardedRemoteTarget } from "@/infra/net/guarded-remote-fetch";
+import { readResponseBodyCapped } from "@kunai/providers";
 import type { DownloadJobRecord } from "@kunai/storage";
 
 export type OfflineArtworkFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 const POSTER_CACHE_TIMEOUT_MS = 10_000;
+/** Posters are small images — a chunked body with no declared length must not
+ * be sized by the request timeout alone. */
+const POSTER_BODY_MAX_BYTES = 8 * 1024 * 1024;
 const inFlightPosterWrites = new Map<string, Promise<string | null>>();
 
 export function resolveOfflinePosterArtifactPath(job: DownloadJobRecord): string {
@@ -57,8 +61,8 @@ async function fetchAndWritePoster(
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith("image/")) return null;
 
-  const data = await response.arrayBuffer();
-  if (data.byteLength <= 0) return null;
+  const data = await readResponseBodyCapped(response, POSTER_BODY_MAX_BYTES);
+  if (data === null || data.byteLength <= 0) return null;
   await writeAtomicBytes(targetPath, data);
   return targetPath;
 }

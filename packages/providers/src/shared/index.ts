@@ -18,3 +18,4 @@ export * from "./stream-health";
 export * from "./source-inventory";
 export * from "./subtitle-helpers";
 export * from "./markup-text";
+export * from "./bounded-body";

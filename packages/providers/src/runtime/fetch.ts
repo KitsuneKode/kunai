@@ -7,7 +7,10 @@ import {
   type ProviderRuntimeContext,
 } from "@kunai/types";
 
+import { readResponseTextCapped } from "../shared/bounded-body";
 import { createGuardedFetch, PROVIDER_API_SENSITIVE_HEADERS } from "../shared/stream-reachability";
+
+const PROVIDER_JSON_MAX_BYTES = 8 * 1024 * 1024;
 
 // The error contract lives in @kunai/types so the cycle engine's classifier
 // can read status/code/retryable instead of string-matching messages (#458).
@@ -68,8 +71,20 @@ export async function providerJson<T>(
     throw createProviderHttpError(response, requestContext);
   }
 
+  // Provider JSON is KBs, not MBs — an unbounded body is a memory vector, not
+  // a payload, so the read is capped before the parse sees it.
+  const text = await readResponseTextCapped(response, PROVIDER_JSON_MAX_BYTES);
+  if (text === null) {
+    throw new ProviderHttpError({
+      providerId: requestContext?.providerId,
+      stage: requestContext?.stage,
+      message: `Provider JSON response unreadable or exceeds ${PROVIDER_JSON_MAX_BYTES} bytes`,
+      code: "network-error",
+      retryable: true,
+    });
+  }
   try {
-    return (await response.json()) as T;
+    return JSON.parse(text) as T;
   } catch (cause) {
     throw new ProviderHttpError({
       providerId: requestContext?.providerId,

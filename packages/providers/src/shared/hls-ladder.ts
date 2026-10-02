@@ -1,5 +1,6 @@
 import type { ProviderFetchPort } from "@kunai/types";
 
+import { readResponseTextCapped } from "./bounded-body";
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
 import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
 import { fetchGuardedStreamTarget } from "./stream-reachability";
@@ -73,6 +74,8 @@ export type ExpandHlsMasterPlaylistOptions = {
 };
 
 const DEFAULT_MAX_VARIANTS = 12;
+/** A master playlist is line text; past this it is not a playlist but a leak. */
+const LADDER_PLAYLIST_MAX_BYTES = 2 * 1024 * 1024;
 
 /**
  * Fetch a master HLS playlist and expand `#EXT-X-STREAM-INF` rows into ranked
@@ -121,7 +124,8 @@ export async function expandHlsMasterInventory(
       return empty({ kind: "http-error", httpStatus: response.status });
     }
 
-    const text = await response.text();
+    const text = await readResponseTextCapped(response, LADDER_PLAYLIST_MAX_BYTES);
+    if (text === null) return empty({ kind: "network" });
     if (!isHlsMasterPlaylist(text)) {
       return empty({ kind: "not-master", httpStatus: response.status });
     }

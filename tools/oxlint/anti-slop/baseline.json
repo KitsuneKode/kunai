@@ -9,5 +9,5 @@
   "anti-slop(no-unknown-parameters)": 292,
   "anti-slop(no-unknown-returns)": 59,
   "anti-slop(no-unsafe-dictionary-type)": 337,
-  "anti-slop(require-safety-comment-for-type-assertion)": 1815
+  "anti-slop(require-safety-comment-for-type-assertion)": 1813
 }

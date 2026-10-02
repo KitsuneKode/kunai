@@ -25,7 +25,11 @@ import {
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
 import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
-import { fetchGuardedStreamTarget, stripControlCharacters } from "@kunai/providers";
+import {
+  fetchGuardedStreamTarget,
+  readResponseBodyCapped,
+  stripControlCharacters,
+} from "@kunai/providers";
 import {
   buildYoutubeYtdlProfile,
   getYoutubeProviderConfig,
@@ -72,6 +76,8 @@ const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
+/** A subtitle sidecar is text in the KBs; anything larger is not a subtitle. */
+const SUBTITLE_BODY_MAX_BYTES = 8 * 1024 * 1024;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
 /**
@@ -1721,7 +1727,14 @@ export class DownloadService {
         subtitleUrl: job.subtitleUrl,
         contentType: res.headers.get("content-type"),
       });
-      const data = await res.arrayBuffer();
+      const data = await readResponseBodyCapped(res, SUBTITLE_BODY_MAX_BYTES);
+      if (data === null) {
+        return buildRepairableSidecarResult(
+          job,
+          "subtitle",
+          `subtitle response unreadable or exceeds ${SUBTITLE_BODY_MAX_BYTES} bytes`,
+        );
+      }
       if (data.byteLength <= 0) {
         return buildRepairableSidecarResult(job, "subtitle", "subtitle response was empty");
       }
