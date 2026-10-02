@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   absolutizeHostRootHlsManifest,
+  blockedHlsManifestUriReason,
   isHlsMasterPlaylist,
   manifestUsesHostRootSegmentPaths,
   parseFirstHlsMediaSegmentPath,
@@ -72,5 +73,55 @@ describe("hls-manifest helpers", () => {
     expect(
       shouldMaterializeHlsManifest("https://light.goldweather.net/token/index.m3u8", relativeOnly),
     ).toBe(false);
+  });
+
+  describe("blockedHlsManifestUriReason", () => {
+    test("accepts relative segments, public hosts, and inline data init maps", () => {
+      const manifest = [
+        "#EXTM3U",
+        '#EXT-X-MAP:URI="init-v1.mp4"',
+        '#EXT-X-MAP:URI="data:video/mp4;base64,AAAA"',
+        "#EXTINF:4,",
+        "720/seg-1.ts",
+        "/mirror/seg-2.ts",
+        "https://media.cdn.example/seg-3.ts",
+      ].join("\n");
+      expect(blockedHlsManifestUriReason(manifest)).toBeNull();
+    });
+
+    test("rejects a file:// segment line", () => {
+      const manifest = ["#EXTM3U", "#EXTINF:4,", "file:///etc/passwd"].join("\n");
+      expect(blockedHlsManifestUriReason(manifest)).toContain("scheme");
+    });
+
+    test("rejects a private-literal segment host", () => {
+      const manifest = ["#EXTM3U", "#EXTINF:4,", "http://169.254.169.254/latest/meta-data"].join(
+        "\n",
+      );
+      expect(blockedHlsManifestUriReason(manifest)).toContain("169.254.169.254");
+    });
+
+    test("rejects a scheme-relative private host", () => {
+      const manifest = ["#EXTM3U", "#EXTINF:4,", "//127.0.0.1/seg.ts"].join("\n");
+      expect(blockedHlsManifestUriReason(manifest)).toContain("127.0.0.1");
+    });
+
+    test("rejects a non-http key URI attribute", () => {
+      const manifest = [
+        "#EXTM3U",
+        '#EXT-X-KEY:METHOD=AES-128,URI="file:///etc/kunai-data.sqlite"',
+        "#EXTINF:4,",
+        "seg-1.ts",
+      ].join("\n");
+      expect(blockedHlsManifestUriReason(manifest)).toContain("scheme file:");
+    });
+
+    test("rejects a private-literal URI attribute on a media tag", () => {
+      const manifest = [
+        "#EXTM3U",
+        '#EXT-X-MEDIA:TYPE=AUDIO,URI="https://10.0.0.5/audio.m3u8",GROUP-ID="a"',
+      ].join("\n");
+      expect(blockedHlsManifestUriReason(manifest)).toContain("10.0.0.5");
+    });
   });
 });

@@ -6,6 +6,7 @@ import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import { streamNeedsHlsRelay } from "@/infra/player/hls-relay";
 import {
   absolutizeHostRootHlsManifest,
+  blockedHlsManifestUriReason,
   fetchGuardedStreamTarget,
   isHlsPlaylistUrl,
   shouldMaterializeHlsManifest,
@@ -119,6 +120,16 @@ export async function materializeHlsManifestForPlayback(
     return null;
   } finally {
     clearTimeout(timeout);
+  }
+
+  // mpv fetches every URI the manifest names — segments, keys, maps — so a
+  // poisoned playlist is an SSRF/file-read primitive even when the file itself
+  // needs no rewrite. Checked on the already-fetched text, before the
+  // not-needed early return, so remote-played manifests are covered too.
+  const uriBlockReason = blockedHlsManifestUriReason(manifestText);
+  if (uriBlockReason !== null) {
+    onSkipped?.("blocked-target", `manifest embeds unsafe URI: ${uriBlockReason}`);
+    return null;
   }
 
   if (!shouldMaterializeHlsManifest(manifestUrl, manifestText)) {
