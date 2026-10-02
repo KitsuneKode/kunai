@@ -158,13 +158,11 @@ const PASCAL_CASE_TS_ALLOWLIST = new Set<string>([
 
 /** Existing kebab-case `.tsx` files outside PascalCase / *-shell / *-ui naming (migration allowlist). */
 const TSX_NAMING_ALLOWLIST = new Set([
-  "app-shell/dot-matrix-loader.tsx",
   "app-shell/library-title-detail.tsx",
   "app-shell/offscreen-freeze.tsx",
   "app-shell/overlay-layout-context.tsx",
   "app-shell/overlay-panel.tsx",
   "app-shell/overlay-picker-row.tsx",
-  "app-shell/picker-overlay.tsx",
   "app-shell/poster-initial-block.tsx",
   "app-shell/root-status-shells.tsx",
   "app-shell/shell-command-mode.tsx",

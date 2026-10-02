@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-02"
+lastReviewed: "2026-10-02"
 ---
 
 # Kunai Debugging Map
@@ -110,7 +110,7 @@ Start with:
 - `apps/cli/src/domain/session/command-registry.ts`
 - `apps/cli/src/app-shell/ink-shell.tsx`
 - `apps/cli/src/app-shell/root-overlay-shell.tsx`
-- `apps/cli/src/app-shell/picker-overlay.tsx`
+- `apps/cli/src/app-shell/overlay-panel.tsx`
 
 Command behavior should route through the canonical command registry and shared
 picker/overlay surfaces. Avoid adding provider-specific or player-specific

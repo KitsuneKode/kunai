@@ -15,7 +15,6 @@ import {
 } from "@/services/continuation/history-progress";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import type { HistoryProgress } from "@kunai/storage";
-import type { ProviderId } from "@kunai/types";
 
 export type HistoryLaunchSelection = {
   readonly titleId: string;
